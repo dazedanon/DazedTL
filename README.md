@@ -1,57 +1,35 @@
 # DazedTL
 
-A clean Electron application built around the existing DazedTL translation engine.
-The migration is incremental, with Guided Workflow and Len's Method as the two primary translation methods.
+An Electron application migrating the existing DazedTL translation engine into a new interface.
 
-## Current migration slice
+## Current scope
 
-- A compact Overview with the active game, status, next action, and recent projects.
-- Project identity, translation method, and visible screen stored separately.
-- Guided RPG Maker MV/MZ file preparation, game-context editing, database and dialogue phases, live/batch controls, approvals, saved-run recovery, and output handling.
-- Provider settings and credentials scoped to this application's own workspace.
-
-The guided path calls the existing Python implementations through one temporary compatibility adapter.
-The engine parser, context assembly, phase profiles, and translation runner have not been reimplemented.
-WOLF, Ace, Len's Method, and the less-used manual engines remain in the current application while their flows are migrated.
+Overview, provider settings, and the initial Guided RPG Maker MV/MZ path are connected to the existing Python backend.
+The guided slice includes file preparation, context editing, database/dialogue phases, and run controls.
+Remaining RPG Maker phases, WOLF, Ace, Len's Method, and other engines still use DazedMTLTool.
+Live provider execution still needs validation; packaging and distribution are pending.
 
 ## Development launch
 
-Keep this folder beside the preserved `DazedMTLTool` repository during this migration slice.
-The current repository supplies the Python environment and the temporary backend implementation.
+Keep this checkout beside `DazedMTLTool`, which supplies the existing Python environment and backend during migration.
+Node and the dependencies in [app/package.json](app/package.json) are required; an ignored `app/node_modules` link can reuse the sibling's desktop dependencies.
 
 ```sh
 node scripts/build.mjs
 node scripts/start.mjs
 ```
 
-`START.sh`, `START.command`, and `START.bat` call the same development launcher.
-The launcher expects Node to be available.
-It can reuse the existing Electron/React development dependencies using an ignored `app/node_modules` link.
-A normal dependency installation in `app/` can replace that development link later.
-There is no installation or update migration applied to the existing app.
+`START.sh`, `START.command`, and `START.bat` use the same launcher.
+Use `node scripts/start.mjs --offline` to inspect the UI with provider execution disabled.
 
-Optional environment settings:
+The default profile is `DazedTLNext`, separate from the existing app.
+Projects, credentials, and runs live in its workspace outside this checkout.
 
-- `DAZEDTL_LEGACY_ROOT`: location of the preserved DazedMTLTool checkout.
-- `DAZEDTL_PYTHON`: Python executable with the current backend dependencies.
-- `DAZEDTL_NEXT_PROFILE`: separate Electron profile location.
-- `DAZEDTL_NEXT_WORKSPACE`: separate writable project and run storage.
+| Optional environment variable | Purpose |
+| --- | --- |
+| `DAZEDTL_LEGACY_ROOT` | Preserved DazedMTLTool checkout |
+| `DAZEDTL_PYTHON` | Python executable with backend dependencies |
+| `DAZEDTL_NEXT_PROFILE` | Electron profile location |
+| `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
 
-The default profile is named `DazedTLNext`, separate from the existing `DazedTL` profile.
-Use `node scripts/start.mjs --offline` to disable provider execution while inspecting the interface.
-Opening the application does not start a translation or submit provider work.
-
-## Source layout
-
-```text
-app/        Electron shell and React pages
-backend/    Project model, application API, and workflow coordination
-resources/  Shipped application assets
-scripts/    Build and development launch commands
-docs/       Architecture and migration decisions
-```
-
-User projects, API credentials, logs, and translation workspaces live outside the source tree.
-Generated renderer files and development dependencies are ignored.
-
-See [architecture](docs/architecture.md) and [migration](docs/migration.md) for the intended boundaries and remaining work.
+See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.md) for contribution rules, and the [migration record](docs/migration.md) for historical provenance.

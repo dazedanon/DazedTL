@@ -1,20 +1,42 @@
-# DazedTL migration agreements
+# Repository agreements
 
-- Improve the existing translation behavior; preserve the RPG Maker and WOLF parsers and context rules.
-- Guided Workflow and Len's Method are the primary translation methods.
-- Project identity, selected translation method, and visible screen are separate state.
-- Use the compact Settings design as the default for most pages: flat sections, small headings, aligned rows, and subtle dividers.
-- Compose new pages from `app/src/ui/` and use tokens from `app/src/styles/tokens.css`; see `docs/frontend.md` for conventions.
-- Keep feature components, hooks, and styles in their own `app/src/features/` directory.
-- Use `useAction` for action feedback and `useDraft` for recoverable edits; do not introduce page-specific save queues or close handlers.
-- Read shared application and job state through `useApplication`; do not add feature polling loops.
-- Keep RPC calls in `app/src/api/client.ts` and public contracts in `app/src/api/contracts.ts`; update the shared protocol manifest and Python views together.
-- Keep Overview's project, status, next action, Quickstart, and recent projects visible together instead of adding cards or unnecessary tabs.
-- Reserve cards for content that needs a distinct container; avoid large padded or decorative boxes around routine forms and summaries.
-- Keep primary actions easy to find; editing pages need a footer outside the scrolling content so Save/Revert never cover fields.
-- Only `backend/dazedtl/compatibility/` may import code from DazedMTLTool during migration.
-- Keep credentials, run files, logs, caches, and user projects outside this repository.
-- Add functional pages one at a time; do not add prototype translation routes or synthetic output to the product UI.
-- The user has asked us not to run tests while the Electron architecture and UX are being revised.
-- Builds and visual review are appropriate; do not run test suites or create test substitutes unless the user requests them.
-- Preserve the sibling DazedMTLTool repository and its uncommitted work.
+## Changes
+
+- Preserve existing user changes and the sibling DazedMTLTool repository.
+- Keep changes focused; preserve engine parsing, context, and translation behavior during migration.
+- Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
+- Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
+- Keep credentials, games, run files, logs, and caches outside the source tree.
+- Use `rg` for repository searches.
+
+## Documentation
+
+- Keep README for setup and current limitations, architecture for boundaries and decision rationale, and AGENTS for working rules.
+- Keep each fact in one place; link to authoritative code or documentation instead of copying it.
+- Update affected documentation in the same change; remove obsolete guidance.
+- Add a document only for a distinct reader need that existing documentation cannot serve concisely.
+- Prefer working code examples over copied snippets; avoid feature inventories, function catalogs, and progress diaries.
+- Keep `docs/migration.md` as historical reference, not a second source of current status.
+
+## Testing
+
+- Tests are paused by user request; do not add or run tests or substitute harnesses until the user resumes testing.
+- Builds, static checks, and visual review are allowed when relevant to the change.
+- Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
+- Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
+- Reserve application tests for a few critical user journeys; use direct tests for difficult parsing, reconciliation, and other isolated logic.
+- Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior.
+- Keep tests hermetic with small generated or committed fixtures; no real providers, user games, credentials, or local workspace dependencies.
+- The full test suite has a hard 10-second wall-clock budget, including runner startup, fixtures, and teardown; builds and dependency installation are separate.
+- Once testing resumes, measure the full suite before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
+- If added coverage reaches the limit, report the overrun and present the same choices before proceeding with more tests.
+- Do not bypass the budget by silently deleting or skipping tests, splitting suites, weakening checks, or raising the limit.
+- Do not optimize for test counts or coverage percentages; report checks run, relevant runtime results, and unverified behavior.
+
+## First behaviors to protect when testing resumes
+
+- Draft edits survive navigation, save/close races, and recovery.
+- Project and run ownership remain correct through switching, interruption, and resume.
+- File operations preserve source games and reject invalid destinations; credentials remain isolated from renderer responses and drafts.
+- Paid work requires the intended approval and cannot be submitted twice by repeated input or retries.
+- Engine changes preserve control codes, speakers, glossary/context rules, and output formatting.
