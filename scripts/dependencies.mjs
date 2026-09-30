@@ -9,21 +9,22 @@ export const root = path.resolve(
 export const app = path.join(root, "app");
 export const legacy =
   process.env.DAZEDTL_LEGACY_ROOT || path.resolve(root, "../DazedMTLTool");
+export function requireNode() {
+  const expected = fs
+    .readFileSync(path.join(root, ".node-version"), "utf8")
+    .trim();
+  if (process.versions.node !== expected)
+    throw new Error(`Use Node ${expected}, as pinned in .node-version.`);
+}
 export function dependencies() {
+  requireNode();
   const local = path.join(app, "node_modules");
-  if (fs.existsSync(path.join(local, "vite/bin/vite.js"))) return local;
-  const existing = path.join(legacy, "desktop/node_modules");
-  if (!fs.existsSync(path.join(existing, "vite/bin/vite.js")))
+  if (
+    fs.lstatSync(local, { throwIfNoEntry: false })?.isSymbolicLink() ||
+    !fs.existsSync(path.join(local, "vite/bin/vite.js"))
+  )
     throw new Error(
-      "Install app dependencies, or set DAZEDTL_LEGACY_ROOT to the current DazedMTLTool checkout.",
-    );
-  // Temporary development dependency link, excluded from Git. The new app has
-  // its own package manifest and can use a normal local install instead.
-  if (!fs.existsSync(local))
-    fs.symlinkSync(
-      existing,
-      local,
-      process.platform === "win32" ? "junction" : "dir",
+      "Run node scripts/setup.mjs to install the locked application dependencies.",
     );
   return local;
 }

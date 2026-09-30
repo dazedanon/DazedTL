@@ -20,6 +20,7 @@ declare global {
     dazedtl: {
       call(version: number, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
+      copyDiagnostics(): Promise<void>;
       chooseFolder(): Promise<string | null>;
       openFolder(
         kind: "project" | "workspace" | "output",

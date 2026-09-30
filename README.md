@@ -11,10 +11,12 @@ Live provider execution still needs validation; packaging and distribution are p
 
 ## Development launch
 
-Keep this checkout beside `DazedMTLTool`, which supplies the existing Python environment and backend during migration.
-Node and the dependencies in [app/package.json](app/package.json) are required; an ignored `app/node_modules` link can reuse the sibling's desktop dependencies.
+Keep this checkout beside `DazedMTLTool`, which supplies engine source during migration.
+Use the Node and Python versions in [.node-version](.node-version) and [.python-version](.python-version), and the npm version in [app/package.json](app/package.json).
+Setup installs locked dependencies into this checkout's own `app/node_modules` and `.venv`.
 
 ```sh
+node scripts/setup.mjs
 node scripts/build.mjs
 node scripts/start.mjs
 ```
@@ -31,5 +33,12 @@ Projects, credentials, and runs live in its workspace outside this checkout.
 | `DAZEDTL_PYTHON` | Python executable with backend dependencies |
 | `DAZEDTL_NEXT_PROFILE` | Electron profile location |
 | `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
+
+## Diagnostics and recovery
+
+**Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.
+Local diagnostic logs live under the profile's `diagnostics/` folder, capped at three 64 KiB files per process; credentials, request bodies, game text, and raw stderr are excluded.
+Future project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current format remains version 1.
+To restore a project backup, close the app, retain the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
 
 See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.md) for contribution rules, and the [migration record](docs/migration.md) for historical provenance.

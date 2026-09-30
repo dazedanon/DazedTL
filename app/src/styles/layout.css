@@ -91,6 +91,11 @@
   padding-top: 15px;
   border-top: 1px solid var(--line);
 }
+.sidebar-feedback {
+  margin: 0 12px 8px;
+  font-size: var(--font-small);
+  color: var(--muted);
+}
 main {
   flex: 1;
   min-width: 0;

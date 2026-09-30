@@ -1,6 +1,15 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  clipboard,
+} = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const { Backend } = require("./backend.cjs");
+const { Diagnostics } = require("./diagnostics.cjs");
 
 app.setName("DazedTLNext");
 if (process.env.DAZEDTL_NEXT_PROFILE)
@@ -10,6 +19,7 @@ const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
 let window,
   backend,
+  diagnostics,
   closing = false,
   quit = false,
   currentSource = "",
@@ -65,6 +75,22 @@ app.on("before-quit", (event) => {
 });
 app.whenReady().then(() => {
   const root = path.resolve(__dirname, "../..");
+  diagnostics = new Diagnostics(
+    path.join(app.getPath("userData"), "diagnostics"),
+    {
+      app: app.getVersion(),
+      electron: process.versions.electron,
+      node: process.versions.node,
+      platform: process.platform,
+      architecture: process.arch,
+      protocol: protocol.version,
+      expectedPython: fs
+        .readFileSync(path.join(root, ".python-version"), "utf8")
+        .trim(),
+    },
+    root,
+  );
+  diagnostics.record("desktop.started");
   window = new BrowserWindow({
     width: 1280,
     height: 880,
@@ -81,8 +107,23 @@ app.whenReady().then(() => {
       backgroundThrottling: false,
     },
   });
-  backend = new Backend(root, app.getPath("userData"), (message) =>
-    window?.webContents.send("dazedtl:stopped", message),
+  backend = new Backend(
+    root,
+    app.getPath("userData"),
+    (message) => window?.webContents.send("dazedtl:stopped", message),
+    diagnostics,
+  );
+  window.webContents.on("render-process-gone", (_event, details) =>
+    diagnostics.record("renderer.gone", {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    }),
+  );
+  window.webContents.on(
+    "did-fail-load",
+    (_event, errorCode, _description, _url, mainFrame) => {
+      if (mainFrame) diagnostics.record("renderer.load-failed", { errorCode });
+    },
   );
   window.setMenuBarVisibility(false);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -115,6 +156,15 @@ app.whenReady().then(() => {
     trusted(event);
     ready = true;
   });
+  ipcMain.handle("dazedtl:copy-diagnostics", (event) => {
+    trusted(event);
+    try {
+      clipboard.writeText(diagnostics.report());
+    } catch (error) {
+      diagnostics.failure("desktop.error", error, { operation: "native" });
+      throw new Error("Diagnostics could not be copied. Try again.");
+    }
+  });
   ipcMain.handle("dazedtl:call", async (event, version, method, params) => {
     trusted(event);
     try {
@@ -136,12 +186,15 @@ app.whenReady().then(() => {
       const result = await backend.request(method, params);
       const selected =
         method === "workspace_snapshot"
-          ? result.application.project
-          : result.project;
+          ? result?.application?.project
+          : result?.project;
       if (selected?.source) currentSource = selected.source;
       if (method === "guided_export") outputs.add(result.path);
       return { version: protocol.version, ok: true, value: result };
     } catch (error) {
+      diagnostics.failure("desktop.error", error, {
+        operation: methods.has(method) ? method : "native",
+      });
       return {
         version: protocol.version,
         ok: false,
@@ -184,3 +237,6 @@ app.whenReady().then(() => {
   });
   window.loadFile(path.join(root, "app/dist/index.html"));
 });
+process.on("uncaughtExceptionMonitor", (error) =>
+  diagnostics?.failure("desktop.error", error),
+);

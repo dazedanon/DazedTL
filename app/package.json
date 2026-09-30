@@ -2,6 +2,7 @@
   "name": "dazedtl-next",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.21.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

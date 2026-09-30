@@ -31,6 +31,11 @@ Project identity, translation method, and visible screen are separate so navigat
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
 Never retry writes automatically, since some actions submit paid work.
 
+Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
+The storage helper validates the result, retains the original bytes in a backup, and replaces the file atomically; unsupported or invalid formats are left untouched.
+Engine-owned settings and run formats remain the adapter's responsibility.
+Diagnostics record only fixed metadata and relative code locations, excluding exception messages, payloads, and raw stderr.
+
 ## API changes
 
 Add renderer operations through [client.ts](../app/src/api/client.ts), with request/response types in [contracts.ts](../app/src/api/contracts.ts).

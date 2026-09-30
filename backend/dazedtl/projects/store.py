@@ -4,20 +4,62 @@ from datetime import datetime, timezone
 from pathlib import Path
 import uuid
 
-from dazedtl.storage import read_json, write_json
+from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
 METHODS = {"guided", "len"}
 SCREENS = {"overview", "guided", "settings"}
+SCHEMA_VERSION = 1
+# Register N -> N+1 transformations here when the persisted format changes.
+UPGRADES = {}
+
+
+def validate(value):
+    invalid = WorkspaceError(
+        "workspace_invalid",
+        "Saved project data is invalid. The file was left unchanged.",
+    )
+    if (
+        not isinstance(value.get("projects"), list)
+        or not isinstance(value.get("screen"), str)
+        or value.get("screen") not in SCREENS
+    ):
+        raise invalid
+    identities = set()
+    for project in value["projects"]:
+        if not isinstance(project, dict) or any(
+            not isinstance(project.get(field), str) or not project[field]
+            for field in ("id", "name", "source", "engine", "method", "phase")
+        ):
+            raise invalid
+        if project["id"] in identities or project["method"] not in METHODS:
+            raise invalid
+        if not isinstance(project.get("last_opened", ""), str) or not isinstance(
+            project.get("backend_id", ""), str
+        ):
+            raise invalid
+        identities.add(project["id"])
+    current = value.get("current_id")
+    if not isinstance(current, str) or (current and current not in identities):
+        raise invalid
 
 
 class Projects:
     def __init__(self, workspace):
         self.path = Path(workspace) / "projects.json"
-        self.data = read_json(self.path, {"version": 1, "current_id": "", "screen": "overview", "projects": []})
-        if self.data.get("version") != 1:
-            raise ValueError("This workspace requires a newer application version.")
+        self.data = read_versioned_json(
+            self.path,
+            {
+                "version": SCHEMA_VERSION,
+                "current_id": "",
+                "screen": "overview",
+                "projects": [],
+            },
+            UPGRADES,
+            validate,
+        )
 
     def save(self):
+        validate(self.data)
         write_json(self.path, self.data)
 
     def get(self, project_id):

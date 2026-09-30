@@ -5,13 +5,13 @@ const fs = require("node:fs");
 const protocol = require("../../backend/dazedtl/api/protocol.json");
 
 class Backend {
-  constructor(root, profile, onStopped) {
+  constructor(root, profile, onStopped, diagnostics) {
     const legacy =
       process.env.DAZEDTL_LEGACY_ROOT || path.resolve(root, "../DazedMTLTool");
     const python =
       process.env.DAZEDTL_PYTHON ||
       path.join(
-        legacy,
+        root,
         ".venv",
         process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
       );
@@ -22,6 +22,7 @@ class Backend {
     this.pending = new Map();
     this.serial = 0;
     this.stopping = false;
+    this.diagnostics = diagnostics;
     const env = {
       ...process.env,
       PYTHON_DOTENV_DISABLED: "1",
@@ -41,6 +42,8 @@ class Backend {
       this.workspace,
       "--legacy-root",
       legacy,
+      "--diagnostics-directory",
+      diagnostics.directory,
     ];
     if (
       process.argv.includes("--offline") ||
@@ -53,9 +56,29 @@ class Backend {
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
-    let errorText = "";
+    let stderrBytes = 0;
+    let stderrTail = "";
+    let startupCode = "";
+    const startupMessages = {
+      runtime_version:
+        "Python does not match the pinned runtime. Run the application setup again.",
+      workspace_newer: "This workspace requires a newer application version.",
+      workspace_locked:
+        "This workspace is already open in another application instance.",
+      workspace_invalid:
+        "Saved project data is invalid. It was left unchanged.",
+      workspace_upgrade:
+        "The workspace upgrade could not finish. Saved project data was left unchanged.",
+      workspace_backup:
+        "The workspace upgrade could not be saved safely. Check available space and folder permissions.",
+    };
     this.process.stderr.on("data", (chunk) => {
-      errorText = (errorText + chunk).slice(-2000);
+      stderrBytes += chunk.length;
+      // Raw stderr can contain provider payloads; only retain a bounded parser
+      // buffer and recognize our fixed startup error codes, never log the text.
+      stderrTail = (stderrTail + chunk).slice(-512);
+      const code = /(?:^|\n)DAZEDTL_ERROR ([a-z_]+)\r?\n/.exec(stderrTail)?.[1];
+      if (code && Object.hasOwn(startupMessages, code)) startupCode = code;
     });
     this.process.stdin.on("error", () =>
       this.fail("The translation service disconnected."),
@@ -67,6 +90,7 @@ class Backend {
       } catch {
         return;
       }
+      if (!response || typeof response !== "object") return;
       const task = this.pending.get(response.id);
       if (!task) return;
       this.pending.delete(response.id);
@@ -79,6 +103,20 @@ class Backend {
             { code: "protocol" },
           ),
         );
+      if (
+        (response.error && typeof response.error.message !== "string") ||
+        (!response.error && !("result" in response))
+      ) {
+        diagnostics.record("backend.invalid-response", {
+          requestId: response.id,
+        });
+        return task.reject(
+          Object.assign(
+            new Error("The backend returned an invalid response."),
+            { code: "protocol" },
+          ),
+        );
+      }
       response.error
         ? task.reject(
             Object.assign(new Error(response.error.message), {
@@ -87,19 +125,26 @@ class Backend {
           )
         : task.resolve(response.result);
     });
-    this.process.on("error", () =>
-      this.fail("Python could not start. Check the development runtime paths."),
-    );
-    this.process.on("exit", () => {
+    this.process.on("error", (error) => {
+      diagnostics.failure("backend.spawn-failed", error, {
+        operation: "startup",
+      });
       this.fail(
-        errorText
-          ? "The translation service stopped. Check the backend runtime configuration."
-          : "The translation service stopped.",
+        "Python could not start. Run node scripts/setup.mjs to prepare the runtime.",
       );
-      if (!this.stopping)
-        onStopped(
-          "The translation service stopped. Restart to recover saved work.",
-        );
+    });
+    this.process.on("exit", (exitCode, signal) => {
+      diagnostics.record("backend.exit", {
+        exitCode,
+        signal,
+        stderrBytes,
+        code: startupCode || undefined,
+      });
+      const message =
+        startupMessages[startupCode] ||
+        "The translation service stopped. Restart to recover saved work.";
+      this.fail(message);
+      if (!this.stopping) onStopped(message);
     });
   }
   fail(message) {

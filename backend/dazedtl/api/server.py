@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import platform
 from pathlib import Path
 import sys
 
@@ -11,10 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.projects.store import Projects
 from dazedtl.storage import WorkspaceLock
+from dazedtl.diagnostics import Diagnostics
 from dazedtl.translation.guided import Guided
 from dazedtl.api import views
 
-PROTOCOL = json.loads(Path(__file__).with_name("protocol.json").read_text(encoding="utf-8"))
+PROTOCOL = json.loads(
+    Path(__file__).with_name("protocol.json").read_text(encoding="utf-8")
+)
 
 
 class Application:
@@ -129,31 +133,50 @@ class Application:
         return self.backend.settings.key_action(action, name, secret, endpoint, keyless)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--workspace", required=True, type=Path)
-    parser.add_argument("--legacy-root", required=True, type=Path)
-    parser.add_argument("--offline", action="store_true")
-    args = parser.parse_args()
+def serve(args, diagnostics):
     os.environ["PYTHON_DOTENV_DISABLED"] = "1"
     app = Application(args.workspace, args.legacy_root, not args.offline)
+    diagnostics.workspace_ready(app.projects.data["version"])
     methods = {
-        'workspace_snapshot': (app.snapshot, lambda value, _params: value),
-        **{name: (getattr(app, name), lambda value, _params: views.application(value))
-           for name in ('open_project', 'select_project', 'navigate')},
-        **{name: (getattr(app, name), lambda value, _params: views.settings(value))
-           for name in ('settings_get', 'settings_save', 'settings_revert', 'credential_save')},
-        'settings_draft': (app.settings_draft, lambda value, _params: value),
-        'guided_phase_select': (app.guided.phase_select, lambda value, params: views.guided(value, params['project_id'])),
-        'guided_preview': (app.guided.preview, lambda value, _params: views.preview(value)),
-        **{'guided_' + name: (getattr(app.guided, name), lambda value, _params: views.job(value))
-           for name in ('execute', 'start', 'answer', 'stop', 'resume')},
-        'guided_export': (app.guided.export, lambda value, _params: value),
-        'guided_draft': (app.guided.draft, lambda value, _params: value),
-        'guided_save_document': (app.guided.save_document, lambda value, _params: views.documents(value)),
+        "workspace_snapshot": (app.snapshot, lambda value, _params: value),
+        **{
+            name: (getattr(app, name), lambda value, _params: views.application(value))
+            for name in ("open_project", "select_project", "navigate")
+        },
+        **{
+            name: (getattr(app, name), lambda value, _params: views.settings(value))
+            for name in (
+                "settings_get",
+                "settings_save",
+                "settings_revert",
+                "credential_save",
+            )
+        },
+        "settings_draft": (app.settings_draft, lambda value, _params: value),
+        "guided_phase_select": (
+            app.guided.phase_select,
+            lambda value, params: views.guided(value, params["project_id"]),
+        ),
+        "guided_preview": (
+            app.guided.preview,
+            lambda value, _params: views.preview(value),
+        ),
+        **{
+            "guided_" + name: (
+                getattr(app.guided, name),
+                lambda value, _params: views.job(value),
+            )
+            for name in ("execute", "start", "answer", "stop", "resume")
+        },
+        "guided_export": (app.guided.export, lambda value, _params: value),
+        "guided_draft": (app.guided.draft, lambda value, _params: value),
+        "guided_save_document": (
+            app.guided.save_document,
+            lambda value, _params: views.documents(value),
+        ),
     }
-    if set(methods) != set(PROTOCOL['methods']):
-        raise RuntimeError('The application API does not match its protocol manifest.')
+    if set(methods) != set(PROTOCOL["methods"]):
+        raise RuntimeError("The application API does not match its protocol manifest.")
     try:
         for line in sys.stdin:
             request = {}
@@ -161,29 +184,87 @@ def main():
                 request = json.loads(line)
                 if not isinstance(request, dict):
                     request = {}
-                    raise ValueError('Application requests must be objects.')
-                if request.get('version') != PROTOCOL['version']:
-                    response = {'id': request.get('id'), 'version': PROTOCOL['version'], 'error': {
-                        'code': 'protocol', 'message': 'The application and backend versions do not match. Restart after updating.'}}
+                    raise ValueError("Application requests must be objects.")
+                if request.get("version") != PROTOCOL["version"]:
+                    response = {
+                        "id": request.get("id"),
+                        "version": PROTOCOL["version"],
+                        "error": {
+                            "code": "protocol",
+                            "message": "The application and backend versions do not match. Restart after updating.",
+                        },
+                    }
                     print(json.dumps(response), flush=True)
                     continue
                 method = methods.get(request.get("method"))
                 if not method:
                     raise ValueError("Unknown application operation.")
                 with app.backend.context():
-                    params = request.get('params', {})
+                    params = request.get("params", {})
                     if not isinstance(params, dict):
-                        raise ValueError('Application parameters must be an object.')
+                        raise ValueError("Application parameters must be an object.")
                     handler, present = method
                     result = present(handler(**params), params)
-                response = {'id': request.get('id'), 'version': PROTOCOL['version'], 'result': result}
+                response = {
+                    "id": request.get("id"),
+                    "version": PROTOCOL["version"],
+                    "result": result,
+                }
             except Exception as exc:
-                response = {'id': request.get('id'), 'version': PROTOCOL['version'], 'error': views.error(exc)}
+                name = request.get("method")
+                operation = (
+                    name if isinstance(name, str) and name in methods else "native"
+                )
+                diagnostics.failure(exc, operation, request.get("id"))
+                response = {
+                    "id": request.get("id"),
+                    "version": PROTOCOL["version"],
+                    "error": views.error(exc),
+                }
             print(json.dumps(response, ensure_ascii=False), flush=True)
     finally:
-        app.backend.close()
-        app.workspace_lock.close()
+        try:
+            app.backend.close()
+        finally:
+            app.workspace_lock.close()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--legacy-root", required=True, type=Path)
+    parser.add_argument("--diagnostics-directory", type=Path)
+    parser.add_argument("--offline", action="store_true")
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[3]
+    diagnostics = Diagnostics(
+        args.diagnostics_directory or args.workspace / "diagnostics",
+        root,
+        args.legacy_root.resolve(),
+    )
+    try:
+        diagnostics.started()
+        if platform.python_version() != (root / ".python-version").read_text().strip():
+            print("DAZEDTL_ERROR runtime_version", file=sys.stderr, flush=True)
+            return 1
+        serve(args, diagnostics)
+        return 0
+    except Exception as exc:
+        diagnostics.failure(exc)
+        code = getattr(exc, "code", "internal")
+        if code not in {
+            "workspace_newer",
+            "workspace_locked",
+            "workspace_invalid",
+            "workspace_upgrade",
+            "workspace_backup",
+        }:
+            code = "internal"
+        print("DAZEDTL_ERROR " + code, file=sys.stderr, flush=True)
+        return 1
+    finally:
+        diagnostics.close()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

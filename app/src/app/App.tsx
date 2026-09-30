@@ -18,6 +18,7 @@ import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
+import { DiagnosticsAction } from "./DiagnosticsAction";
 
 export default function App() {
   const application = useApplication();
@@ -104,6 +105,7 @@ export default function App() {
             )}
           </nav>
           <div className="sidebar-bottom">
+            <DiagnosticsAction />
             <Button
               size="comfortable"
               aria-current={state?.screen === "settings" ? "page" : undefined}
