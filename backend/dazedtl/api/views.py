@@ -57,11 +57,8 @@ def guided(value, project_id):
 
 
 def settings(value):
-    result = pick(value, ('revision', 'values', 'engines', 'active_key', 'keys', 'draft'))
-    result['keys'] = [pick(item, ('name', 'endpoint', 'keyless', 'has_secret')) for item in value['keys']]
-    result['fields'] = [pick(field, ('key', 'type', 'label', 'min', 'max', 'choices', 'help'))
-                        for field in value['fields']]
-    return result
+    return pick(value, ('revision', 'values', 'engines', 'fields', 'draft',
+                        'activeConnectionId', 'connections', 'providers', 'checksEnabled'))
 
 
 def preview(value):

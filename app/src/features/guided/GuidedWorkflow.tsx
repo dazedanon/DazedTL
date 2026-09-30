@@ -207,8 +207,8 @@ export default function GuidedWorkflow({
             </label>
           </div>
           <p className="muted">
-            {state.provider.model} · {state.phaseFiles.length} imported files in
-            this phase
+            {state.provider.model || "No model selected"} ·{" "}
+            {state.phaseFiles.length} imported files in this phase
           </p>
           <details>
             <summary>Files in this phase</summary>
@@ -222,9 +222,10 @@ export default function GuidedWorkflow({
             The existing RPG Maker engine handles parsing, speaker context, the
             glossary, and phase-specific translation rules.
           </p>
-          {!state.provider.ready && mode !== "estimate" ? (
+          {!state.provider.model ||
+          (!state.provider.ready && mode !== "estimate") ? (
             <Button size="comfortable" variant="primary" onClick={settings}>
-              Set up a provider
+              Choose a connection and model
             </Button>
           ) : (
             <Button

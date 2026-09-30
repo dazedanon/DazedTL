@@ -1,24 +1,72 @@
 {
-  "version": 1,
+  "version": 2,
   "methods": {
-    "workspace_snapshot": { "refresh": false, "duringClose": true },
-    "open_project": { "refresh": true },
-    "select_project": { "refresh": true },
-    "navigate": { "refresh": true },
-    "settings_get": { "refresh": false },
-    "settings_save": { "refresh": true },
-    "settings_draft": { "refresh": false, "duringClose": true },
-    "settings_revert": { "refresh": false },
-    "credential_save": { "refresh": true },
-    "guided_phase_select": { "refresh": true },
-    "guided_preview": { "refresh": false },
-    "guided_execute": { "refresh": true },
-    "guided_start": { "refresh": true },
-    "guided_answer": { "refresh": true },
-    "guided_stop": { "refresh": true },
-    "guided_resume": { "refresh": true },
-    "guided_export": { "refresh": true },
-    "guided_draft": { "refresh": false, "duringClose": true },
-    "guided_save_document": { "refresh": true }
+    "workspace_snapshot": {
+      "refresh": false,
+      "duringClose": true
+    },
+    "open_project": {
+      "refresh": true
+    },
+    "select_project": {
+      "refresh": true
+    },
+    "navigate": {
+      "refresh": true
+    },
+    "settings_get": {
+      "refresh": false
+    },
+    "settings_save": {
+      "refresh": true
+    },
+    "settings_draft": {
+      "refresh": false,
+      "duringClose": true
+    },
+    "settings_revert": {
+      "refresh": false
+    },
+    "guided_phase_select": {
+      "refresh": true
+    },
+    "guided_preview": {
+      "refresh": false
+    },
+    "guided_execute": {
+      "refresh": true
+    },
+    "guided_start": {
+      "refresh": true
+    },
+    "guided_answer": {
+      "refresh": true
+    },
+    "guided_stop": {
+      "refresh": true
+    },
+    "guided_resume": {
+      "refresh": true
+    },
+    "guided_export": {
+      "refresh": true
+    },
+    "guided_draft": {
+      "refresh": false,
+      "duringClose": true
+    },
+    "guided_save_document": {
+      "refresh": true
+    },
+    "connection_save": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "connection_select": {
+      "refresh": true
+    },
+    "connection_check": {
+      "refresh": false
+    }
   }
 }

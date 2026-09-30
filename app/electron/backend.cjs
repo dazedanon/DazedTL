@@ -66,9 +66,9 @@ class Backend {
       workspace_locked:
         "This workspace is already open in another application instance.",
       workspace_invalid:
-        "Saved project data is invalid. It was left unchanged.",
+        "Saved workspace data is invalid. It was left unchanged.",
       workspace_upgrade:
-        "The workspace upgrade could not finish. Saved project data was left unchanged.",
+        "The workspace upgrade could not finish. Saved workspace data was left unchanged.",
       workspace_backup:
         "The workspace upgrade could not be saved safely. Check available space and folder permissions.",
     };

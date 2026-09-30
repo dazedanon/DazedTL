@@ -2,8 +2,9 @@
 
 
 class Guided:
-    def __init__(self, backend, projects):
+    def __init__(self, backend, projects, settings):
         self.backend = backend
+        self.settings = settings
         self.projects = projects
         self.confirmations = {}
 
@@ -17,6 +18,7 @@ class Guided:
             raise ValueError("This migration currently includes the guided RPG Maker MV/MZ path.")
         if not project.get("backend_id"):
             self.idle()
+            self.settings.prepare_engine()
             native = self.backend.workflows.open(project["source"])["project"]
             project["backend_id"] = native["id"]
             self.projects.save()
@@ -31,8 +33,8 @@ class Guided:
             "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in value["project"]["imported"]],
             "provider": {
-                **self.backend.settings.translation_defaults(self.backend.allow_providers),
-                "credential_ready": bool(self.backend.settings.describe()["active_key"]),
+                **self.settings.translation_defaults(),
+                "credential_ready": self.settings.ready(),
             },
         }
 
@@ -77,6 +79,7 @@ class Guided:
         state = self.backend.workflows.state(native["id"])
         if state.get("draft", {}).get("documents"):
             raise ValueError("Save or discard the context drafts before translating.")
+        self.settings.prepare_engine(mode=mode)
         self.backend.workflows.update(native["id"], native["revision"], {"mode": mode})
         # Workflows.phase preserves the original phase profiles, speaker and
         # glossary context, input snapshots, variable cache and result collection.
@@ -101,7 +104,9 @@ class Guided:
 
     def resume(self, project_id):
         self.idle()
-        return self.backend.manual.resume(self.job(project_id)["id"])
+        identity = self.job(project_id)["id"]
+        self.settings.prepare_engine(resume=self.backend.saved_run_configuration(identity))
+        return self.backend.manual.resume(identity)
 
     def export(self, project_id):
         self.idle()

@@ -13,6 +13,7 @@ from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.projects.store import Projects
 from dazedtl.storage import WorkspaceLock
 from dazedtl.diagnostics import Diagnostics
+from dazedtl.settings.store import Settings
 from dazedtl.translation.guided import Guided
 from dazedtl.api import views
 
@@ -29,13 +30,14 @@ class Application:
         self.projects = Projects(self.workspace)
         self.projects.data["screen"] = "overview"
         self.backend = ExistingBackend(legacy, self.workspace / "engine", allow_providers)
-        self.guided = Guided(self.backend, self.projects)
+        with self.backend.context():
+            self.settings = Settings(self.workspace, self.backend)
+        self.guided = Guided(self.backend, self.projects, self.settings)
 
     def state(self):
         value = self.projects.state()
         project = value["project"]
-        settings = self.backend.settings.describe()
-        value.update(running=self.backend.running(), provider_ready=bool(settings["active_key"]))
+        value.update(running=self.backend.running(), provider_ready=self.settings.ready())
         if project:
             project = dict(project)
             project.update(
@@ -100,6 +102,7 @@ class Application:
             raise ValueError(
                 "This first migration includes Guided Workflow for RPG Maker MV/MZ. Continue using the current app for the other workflows."
             )
+        self.settings.prepare_engine()
         native = self.backend.workflows.open(detected["source"])["project"]
         project = self.projects.open(detected, method)
         project["backend_id"] = native["id"]
@@ -116,21 +119,29 @@ class Application:
         return self.state()
 
     def settings_get(self):
-        return self.backend.settings.describe()
+        return self.settings.describe()
 
-    def settings_save(self, revision, values, engines):
+    def settings_save(self, revision, connection_id, values, engines):
         self.guided.idle()
-        return self.backend.settings.save(revision, values, engines)
+        return self.settings.save(revision, connection_id, values, engines)
 
-    def settings_draft(self, revision, values, engines):
-        return self.backend.settings.save_draft(revision, values, engines)
+    def settings_draft(self, revision, connection_id, values, engines):
+        return self.settings.draft(revision, connection_id, values, engines)
 
-    def settings_revert(self, revision):
-        return self.backend.discard_settings_draft(revision)
+    def settings_revert(self, revision, connection_id):
+        return self.settings.revert(revision, connection_id)
 
-    def credential_save(self, action, name, secret="", endpoint="", keyless=False):
+    def connection_save(self, **params):
         self.guided.idle()
-        return self.backend.settings.key_action(action, name, secret, endpoint, keyless)
+        return self.settings.save_connection(**params)
+
+    def connection_select(self, revision, connection_id):
+        self.guided.idle()
+        return self.settings.select(revision, connection_id)
+
+    def connection_check(self, revision, connection_id):
+        self.guided.idle()
+        return self.settings.check_connection(revision, connection_id)
 
 
 def serve(args, diagnostics):
@@ -149,7 +160,9 @@ def serve(args, diagnostics):
                 "settings_get",
                 "settings_save",
                 "settings_revert",
-                "credential_save",
+                "connection_save",
+                "connection_select",
+                "connection_check",
             )
         },
         "settings_draft": (app.settings_draft, lambda value, _params: value),
@@ -199,12 +212,15 @@ def serve(args, diagnostics):
                 method = methods.get(request.get("method"))
                 if not method:
                     raise ValueError("Unknown application operation.")
-                with app.backend.context():
-                    params = request.get("params", {})
-                    if not isinstance(params, dict):
-                        raise ValueError("Application parameters must be an object.")
-                    handler, present = method
+                params = request.get("params", {})
+                if not isinstance(params, dict):
+                    raise ValueError("Application parameters must be an object.")
+                handler, present = method
+                if request.get("method") == "connection_check":
                     result = present(handler(**params), params)
+                else:
+                    with app.backend.context():
+                        result = present(handler(**params), params)
                 response = {
                     "id": request.get("id"),
                     "version": PROTOCOL["version"],

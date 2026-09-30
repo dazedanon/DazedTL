@@ -34,6 +34,13 @@ Projects, credentials, and runs live in its workspace outside this checkout.
 | `DAZEDTL_NEXT_PROFILE` | Electron profile location |
 | `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
 
+## API setup
+
+In Settings, choose a provider, paste its API key, and save the connection.
+**Check connection** requests the provider's model list without generating text; saving alone never contacts the provider.
+Choose the connection's model under Preferences; request sizes, estimate rates, and formatting are under Advanced.
+Existing app-local settings are retained in backups during migration; connections with an unknown provider need your review.
+
 ## Diagnostics and recovery
 
 **Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.

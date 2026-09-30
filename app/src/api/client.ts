@@ -5,7 +5,7 @@ import type {
   RunMode,
   Documents,
   SettingsPayload,
-  CredentialRequest,
+  ConnectionInput,
 } from "./contracts";
 
 export const api = {
@@ -39,11 +39,36 @@ export const api = {
     text: string,
   ) => request("guided_save_document", { project_id, name, revision, text }),
   settings: () => request("settings_get", {}),
-  revertSettings: (revision: number) =>
-    request("settings_revert", { revision }),
-  saveSettings: ({ revision, values, engines }: SettingsPayload) =>
-    request("settings_save", { revision, values, engines }),
-  settingsDraft: ({ revision, values, engines }: SettingsPayload) =>
-    request("settings_draft", { revision, values, engines }),
-  credential: (params: CredentialRequest) => request("credential_save", params),
+  revertSettings: ({ revision, activeConnectionId }: SettingsPayload) =>
+    request("settings_revert", { revision, connection_id: activeConnectionId }),
+  saveSettings: ({
+    revision,
+    values,
+    engines,
+    activeConnectionId,
+  }: SettingsPayload) =>
+    request("settings_save", {
+      revision,
+      values,
+      engines,
+      connection_id: activeConnectionId,
+    }),
+  settingsDraft: ({
+    revision,
+    values,
+    engines,
+    activeConnectionId,
+  }: SettingsPayload) =>
+    request("settings_draft", {
+      revision,
+      values,
+      engines,
+      connection_id: activeConnectionId,
+    }),
+  saveConnection: (revision: number, input: ConnectionInput) =>
+    request("connection_save", { revision, ...input }),
+  selectConnection: (revision: number, connection_id: string) =>
+    request("connection_select", { revision, connection_id }),
+  checkConnection: (revision: number, connection_id: string) =>
+    request("connection_check", { revision, connection_id }),
 };

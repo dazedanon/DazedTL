@@ -50,14 +50,14 @@ def read_versioned_json(path, default, upgrades, validate):
     except (ValueError, UnicodeError) as exc:
         raise WorkspaceError(
             "workspace_invalid",
-            "Saved project data is invalid. The file was left unchanged.",
+            "Saved workspace data is invalid. The file was left unchanged.",
         ) from exc
     version = value.get("version") if isinstance(value, dict) else None
     target = default["version"]
     if type(version) is not int or version < 1:
         raise WorkspaceError(
             "workspace_invalid",
-            "Saved project data has an invalid version. The file was left unchanged.",
+            "Saved workspace data has an invalid version. The file was left unchanged.",
         )
     if version > target:
         raise WorkspaceError(
@@ -69,7 +69,7 @@ def read_versioned_json(path, default, upgrades, validate):
     if any(step not in upgrades for step in range(version, target)):
         raise WorkspaceError(
             "workspace_upgrade",
-            "This app cannot upgrade the saved project format. The file was left unchanged.",
+            "This app cannot upgrade the saved data format. The file was left unchanged.",
         )
 
     try:

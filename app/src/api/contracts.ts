@@ -92,13 +92,10 @@ export interface Settings {
   revision: number;
   values: Record<string, Value>;
   engines: Record<string, Record<string, Value>>;
-  active_key: string;
-  keys: {
-    name: string;
-    endpoint: string;
-    keyless: boolean;
-    has_secret: boolean;
-  }[];
+  activeConnectionId: string;
+  connections: Connection[];
+  providers: { id: Provider; label: string; defaultEndpoint: string }[];
+  checksEnabled: boolean;
   draft?: {
     revision: number;
     values: Record<string, Value>;
@@ -106,16 +103,53 @@ export interface Settings {
   };
 }
 
-export type CredentialRequest =
-  | {
-      action: "save";
-      name: string;
-      secret?: string;
-      endpoint?: string;
-      keyless?: boolean;
-    }
-  | { action: "select" | "delete"; name: string };
-export type SettingsPayload = Pick<Settings, "revision" | "values" | "engines">;
+export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "custom";
+export type ProviderProtocol = Exclude<Provider, "custom">;
+export interface Connection {
+  id: string;
+  name: string;
+  provider: Provider | null;
+  protocol: ProviderProtocol;
+  endpoint: string;
+  organization: string;
+  keyless: boolean;
+  has_secret: boolean;
+  needsSetup: boolean;
+  model: string;
+  models: string[];
+  check: {
+    status:
+      | "not_checked"
+      | "verified"
+      | "reachable"
+      | "failed"
+      | "unavailable"
+      | "unsupported";
+    message: string;
+    checkedAt: string | null;
+  };
+}
+export interface ConnectionInput {
+  connection_id?: string;
+  provider: Provider;
+  protocol: ProviderProtocol;
+  name: string;
+  secret: string;
+  endpoint: string;
+  organization: string;
+  keyless: boolean;
+  reuse_secret: boolean;
+}
+export type SettingsPayload = Pick<
+  Settings,
+  "revision" | "values" | "engines" | "activeConnectionId"
+>;
+interface PreferencesRequest {
+  revision: number;
+  connection_id: string;
+  values: Settings["values"];
+  engines: Settings["engines"];
+}
 export interface Saved {
   saved: boolean;
 }
@@ -135,10 +169,24 @@ export interface RpcContract {
   select_project: { request: { project_id: string }; response: AppState };
   navigate: { request: { screen: Screen }; response: AppState };
   settings_get: { request: Record<string, never>; response: Settings };
-  settings_save: { request: SettingsPayload; response: Settings };
-  settings_draft: { request: SettingsPayload; response: Saved };
-  settings_revert: { request: { revision: number }; response: Settings };
-  credential_save: { request: CredentialRequest; response: Settings };
+  settings_save: { request: PreferencesRequest; response: Settings };
+  settings_draft: { request: PreferencesRequest; response: Saved };
+  settings_revert: {
+    request: { revision: number; connection_id: string };
+    response: Settings;
+  };
+  connection_save: {
+    request: ConnectionInput & { revision: number };
+    response: Settings;
+  };
+  connection_select: {
+    request: { revision: number; connection_id: string };
+    response: Settings;
+  };
+  connection_check: {
+    request: { revision: number; connection_id: string };
+    response: Settings;
+  };
   guided_phase_select: {
     request: { project_id: string; phase: Phase };
     response: GuidedState;

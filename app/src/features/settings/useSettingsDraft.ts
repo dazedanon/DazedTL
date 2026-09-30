@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { api } from "../../api/client";
-import type { Settings, Value, CredentialRequest } from "../../api/contracts";
+import type { Settings, Value, ConnectionInput } from "../../api/contracts";
 import { useDraft } from "../../state/useDraft";
 import type { Commit } from "../../state/DraftSession";
 
@@ -43,6 +43,7 @@ function reconcile(
 }
 export function useSettingsDraft(report: (error: unknown) => void) {
   const saved = useRef<Settings | null>(null);
+  const changingConnection = useRef(false);
   const draft = useDraft<Settings>("settings", {
     persist: api.settingsDraft,
     report,
@@ -71,11 +72,13 @@ export function useSettingsDraft(report: (error: unknown) => void) {
       active = false;
     };
   }, [draft.session]);
-  const edit = (name: string, value: Value) =>
+  const edit = (name: string, value: Value) => {
+    if (changingConnection.current) return;
     draft.session.edit((current) => ({
       ...current,
       values: { ...current.values, [name]: value },
     }));
+  };
   const save = () =>
     draft.session.commit(
       async (current) => split(await api.saveSettings(current)),
@@ -84,13 +87,21 @@ export function useSettingsDraft(report: (error: unknown) => void) {
   const revert = () =>
     draft.session.commit(async () => {
       if (!saved.current) throw new Error("Wait for settings to load.");
-      return split(await api.revertSettings(saved.current.revision));
+      return split(await api.revertSettings(saved.current));
     }, reconcile);
-  const credential = (params: CredentialRequest) =>
-    draft.session.commit(
-      async () => split(await api.credential(params), true),
-      reconcile,
-    );
+  async function connectionAction(
+    operation: (revision: number) => Promise<Settings>,
+  ) {
+    changingConnection.current = true;
+    try {
+      return await draft.session.commit(
+        async (current) => split(await operation(current.revision), true),
+        reconcile,
+      );
+    } finally {
+      changingConnection.current = false;
+    }
+  }
   return {
     config: draft.value || null,
     dirty: draft.dirty,
@@ -99,6 +110,11 @@ export function useSettingsDraft(report: (error: unknown) => void) {
     flush: draft.session.flush,
     save,
     revert,
-    credential,
+    saveConnection: (input: ConnectionInput) =>
+      connectionAction((revision) => api.saveConnection(revision, input)),
+    selectConnection: (id: string) =>
+      connectionAction((revision) => api.selectConnection(revision, id)),
+    checkConnection: (id: string) =>
+      connectionAction((revision) => api.checkConnection(revision, id)),
   };
 }

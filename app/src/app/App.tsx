@@ -76,9 +76,9 @@ export default function App() {
         <span className="connection">
           <i className={application.stopped ? "disconnected" : ""} />
           {application.stopped
-            ? "Connection lost"
+            ? "App unavailable"
             : state
-              ? "Ready"
+              ? "App ready"
               : "Starting…"}
         </span>
       </header>

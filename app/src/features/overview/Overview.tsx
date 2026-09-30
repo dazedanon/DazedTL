@@ -148,7 +148,7 @@ export default function Overview({
           {!state.provider_ready &&
             (!project || project.method === "guided") && (
               <span className="overview-setup-note">
-                Set up a provider for live or batch translation.
+                Choose a connection and model for live or batch translation.
               </span>
             )}
         </div>
