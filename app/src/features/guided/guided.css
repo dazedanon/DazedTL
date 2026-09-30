@@ -1,0 +1,142 @@
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 25px;
+}
+.page-heading p {
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+.card {
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  margin-bottom: 22px;
+}
+.approval {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-surface);
+  border-radius: 8px;
+  padding: 18px;
+  margin: 18px 0;
+}
+.steps {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+}
+.steps button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.steps button span {
+  border: 1px solid var(--color-step-border);
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 12px;
+}
+.steps button[aria-current="step"] {
+  color: var(--color-step-text);
+  background: var(--color-step-selected);
+}
+.steps button[aria-current="step"] span {
+  color: var(--color-step-on-selected);
+  background: var(--color-step-dot);
+  border-color: var(--color-step-dot);
+}
+.file-list {
+  max-height: 300px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  margin: 18px 0;
+}
+.file-list label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.form-grid .wide {
+  grid-column: 1/-1;
+}
+.card > label {
+  max-width: 440px;
+}
+.estimate {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px;
+  background: var(--color-inset);
+  border-radius: 7px;
+  padding: 18px;
+}
+.estimate dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+.estimate dd {
+  margin: 7px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.operation {
+  padding: 0 4px;
+  margin: 20px 0;
+}
+.operation p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.run-panel {
+  margin-top: 22px;
+}
+.run-panel progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.output {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 18px 0;
+  font-size: 12px;
+}
+.output span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  flex: 1;
+}
+.refresh {
+  margin-top: 14px;
+}
+@media (max-width: 1000px) {
+  .card {
+    padding: 22px;
+  }
+}
+@media (max-width: 1000px) {
+  .form-grid {
+    gap: 16px;
+  }
+}
+@media (max-width: 1000px) {
+  .page-heading h1 {
+    font-size: 26px;
+  }
+}

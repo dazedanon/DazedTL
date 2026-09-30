@@ -1,0 +1,60 @@
+import { Check, X } from "lucide-react";
+import { Button } from "./Button";
+export function Feedback({
+  error = "",
+  loading = false,
+  pending = false,
+  dirty = false,
+  notice = "",
+  loadingText = "Loading…",
+}: {
+  error?: string;
+  loading?: boolean;
+  pending?: boolean;
+  dirty?: boolean;
+  notice?: string;
+  loadingText?: string;
+}) {
+  return (
+    <div
+      className={`feedback ${error ? "error" : ""}`}
+      role={error ? "alert" : "status"}
+    >
+      {error ||
+        (loading ? (
+          loadingText
+        ) : pending ? (
+          "Saving…"
+        ) : dirty ? (
+          <>
+            <span className="unsaved-dot" />
+            Unsaved changes
+          </>
+        ) : (
+          <>
+            <Check size={15} />
+            {notice || "All changes saved"}
+          </>
+        ))}
+    </div>
+  );
+}
+export function Message({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss?: () => void;
+}) {
+  if (!message) return null;
+  return (
+    <div className="banner" role="alert">
+      <span>{message}</span>
+      {onDismiss && (
+        <Button variant="quiet" aria-label="Dismiss error" onClick={onDismiss}>
+          <X size={16} />
+        </Button>
+      )}
+    </div>
+  );
+}
