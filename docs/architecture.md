@@ -38,8 +38,12 @@ Diagnostics record only fixed metadata and relative code locations, excluding ex
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
+The public preference schema contains language, model, and per-model request/pricing options; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
 Connection checks are explicit model-list requests, with bounded reads, no redirects, and no generated text.
+The compatibility pricing resolver runs without credentials, reuses the preserved pricing rules, and labels cached catalog versus built-in rates.
+New manual plans freeze resolved request size and base rates before hashing; small worker wrappers apply this policy before the native engine imports, including per-file workers.
+Existing plans without a policy retain their original behavior; provider cache and batch adjustments remain in the engine.
 
 ## API changes
 

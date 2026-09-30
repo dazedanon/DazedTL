@@ -89,12 +89,10 @@ export default function Settings() {
               error={action.error}
               notice={action.notice}
               edit={draft.edit}
+              editModelOptions={draft.editModelOptions}
               save={() => action.run(draft.save, "Preferences saved.")}
               revert={() =>
                 action.run(draft.revert, "Reverted to saved preferences.")
-              }
-              workspace={() =>
-                window.dazedtl.openFolder("workspace").catch(action.report)
               }
             />
           ) : editId !== null ? (

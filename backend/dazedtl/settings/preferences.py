@@ -1,0 +1,126 @@
+"""The supported preferences contract, independent of legacy engine settings."""
+
+from copy import deepcopy
+import math
+
+
+DEFAULT_ENTRIES_PER_REQUEST = 50
+
+DEFAULT_OPTIONS = {
+    "entriesPerRequest": None,
+    "pricing": "automatic",
+    "inputRate": None,
+    "outputRate": None,
+}
+
+
+def text(value, label, *, required=False):
+    if (
+        not isinstance(value, str)
+        or len(value) > 2000
+        or any(ord(c) < 32 for c in value)
+    ):
+        raise ValueError(f"Enter a valid {label}.")
+    if required and not value.strip():
+        raise ValueError(f"Enter a {label}.")
+    return value.strip()
+
+
+def values(value, *, draft=False, connection=False):
+    if not isinstance(value, dict) or set(value) != {"language", "model"}:
+        raise ValueError("Unknown preference. Reopen Settings after updating the app.")
+    return {
+        "language": text(value["language"], "target language", required=not draft),
+        "model": text(
+            value["model"], "model ID", required=not draft and not connection
+        ),
+    }
+
+
+def options(value, *, draft=False):
+    if not isinstance(value, dict) or set(value) != set(DEFAULT_OPTIONS):
+        raise ValueError("Invalid model options.")
+    if value["pricing"] not in ("automatic", "custom"):
+        raise ValueError("Choose automatic pricing or custom rates.")
+    entries = value["entriesPerRequest"]
+    if (
+        entries is not None
+        and not (draft and entries == "")
+        and (type(entries) is not int or not 1 <= entries <= 100)
+    ):
+        raise ValueError("Entries per request must be a whole number from 1 to 100.")
+    for name in ("inputRate", "outputRate"):
+        rate = value[name]
+        if rate is None or draft and rate == "":
+            if not draft and value["pricing"] == "custom":
+                raise ValueError("Enter both custom rates; use 0 for a free model.")
+        elif (
+            type(rate) not in (int, float)
+            or not math.isfinite(rate)
+            or not 0 <= rate <= 1_000_000
+        ):
+            raise ValueError(
+                "Rates must be finite, nonnegative amounts in USD per million tokens."
+            )
+        elif round(rate, 6) != rate:
+            raise ValueError("Use at most six decimal places for estimate rates.")
+    return deepcopy(value)
+
+
+def model_options(value, *, draft=False):
+    if not isinstance(value, dict) or len(value) > 1000:
+        raise ValueError("Invalid saved model options.")
+    result = {}
+    for model, item in value.items():
+        key = text(model, "model ID", required=True)
+        if key != model:
+            raise ValueError("Model IDs cannot have surrounding spaces.")
+        try:
+            result[key] = options(item, draft=draft)
+        except ValueError as exc:
+            raise ValueError(f"{key}: {exc}") from exc
+    return result
+
+
+def upgrade_v1(value):
+    """Retain legacy fields privately; new model choices start on automatic rates."""
+    saved = deepcopy(value["values"])
+    engines = value.pop("engines")
+    draft = value["draft"]
+    value["legacy"] = {"values": saved, "engines": engines, "draft": deepcopy(draft)}
+    value["values"] = {key: saved[key] for key in ("language", "model")}
+    value["model_options"] = {}
+    for connection in value["connections"]:
+        connection["model_options"] = {}
+        # Retain a deliberate request-size override for the model it was used with.
+        # The former global default of 30 now defers to the application default.
+        if connection["model"].strip() and saved["batchsize"] != 30:
+            connection["model_options"][connection["model"].strip()] = {
+                **DEFAULT_OPTIONS,
+                "entriesPerRequest": saved["batchsize"],
+            }
+    if not value["active"] and saved["batchsize"] != 30:
+        value["model_options"][saved["model"].strip()] = {
+            **DEFAULT_OPTIONS,
+            "entriesPerRequest": saved["batchsize"],
+        }
+    value["draft"] = None
+    if draft:
+        profiles = {}
+        for identity, model in draft["models"].items():
+            connection = next(
+                (item for item in value["connections"] if item["id"] == identity), None
+            )
+            profiles[identity] = {
+                "model": model,
+                "model_options": deepcopy(
+                    connection["model_options"]
+                    if connection
+                    else value["model_options"]
+                ),
+            }
+        value["draft"] = {
+            "language": draft["values"].get("language", saved["language"]),
+            "connections": profiles,
+        }
+    return value

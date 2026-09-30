@@ -77,29 +77,36 @@ export interface Preview {
   files: number;
   options: { files: string[] };
 }
-export type Value = string | number | boolean | string[];
-export interface SettingField {
-  key: string;
-  type: string;
-  label: string;
-  min?: number;
-  max?: number;
-  choices?: string[];
-  help?: string;
+export interface PreferenceValues {
+  language: string;
+  model: string;
+}
+export interface ModelOptions {
+  entriesPerRequest: number | "" | null;
+  pricing: "automatic" | "custom";
+  inputRate: number | "" | null;
+  outputRate: number | "" | null;
+}
+export interface ModelDefaults {
+  model: string;
+  inputRate: number | null;
+  outputRate: number | null;
+  source: "catalog" | "engine_default" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
 }
 export interface Settings {
-  fields: SettingField[];
   revision: number;
-  values: Record<string, Value>;
-  engines: Record<string, Record<string, Value>>;
+  values: PreferenceValues;
+  modelOptions: Record<string, ModelOptions>;
+  defaultEntriesPerRequest: number;
   activeConnectionId: string;
   connections: Connection[];
   providers: { id: Provider; label: string; defaultEndpoint: string }[];
   checksEnabled: boolean;
   draft?: {
-    revision: number;
-    values: Record<string, Value>;
-    engines: Record<string, Record<string, Value>>;
+    values: PreferenceValues;
+    modelOptions: Record<string, ModelOptions>;
   };
 }
 
@@ -142,13 +149,13 @@ export interface ConnectionInput {
 }
 export type SettingsPayload = Pick<
   Settings,
-  "revision" | "values" | "engines" | "activeConnectionId"
+  "revision" | "values" | "modelOptions" | "activeConnectionId"
 >;
 interface PreferencesRequest {
   revision: number;
   connection_id: string;
   values: Settings["values"];
-  engines: Settings["engines"];
+  model_options: Settings["modelOptions"];
 }
 export interface Saved {
   saved: boolean;
@@ -170,6 +177,10 @@ export interface RpcContract {
   navigate: { request: { screen: Screen }; response: AppState };
   settings_get: { request: Record<string, never>; response: Settings };
   settings_save: { request: PreferencesRequest; response: Settings };
+  settings_model_defaults: {
+    request: { connection_id: string; model: string };
+    response: ModelDefaults;
+  };
   settings_draft: { request: PreferencesRequest; response: Saved };
   settings_revert: {
     request: { revision: number; connection_id: string };

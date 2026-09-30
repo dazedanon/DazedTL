@@ -57,7 +57,7 @@ def guided(value, project_id):
 
 
 def settings(value):
-    return pick(value, ('revision', 'values', 'engines', 'fields', 'draft',
+    return pick(value, ('revision', 'values', 'modelOptions', 'defaultEntriesPerRequest', 'draft',
                         'activeConnectionId', 'connections', 'providers', 'checksEnabled'))
 
 

@@ -1,23 +1,30 @@
 import { useEffect, useRef } from "react";
 import { api } from "../../api/client";
-import type { Settings, Value, ConnectionInput } from "../../api/contracts";
+import type {
+  Settings,
+  PreferenceValues,
+  ModelOptions,
+  ConnectionInput,
+} from "../../api/contracts";
 import { useDraft } from "../../state/useDraft";
 import type { Commit } from "../../state/DraftSession";
 
 const content = (value: Settings) =>
-  JSON.stringify({ values: value.values, engines: value.engines });
-function changedValues<T>(
-  before: Record<string, T>,
-  current: Record<string, T>,
-  saved: Record<string, T>,
-) {
+  JSON.stringify({ values: value.values, modelOptions: value.modelOptions });
+function changedValues<T extends object>(before: T, current: T, saved: T) {
   const result = { ...saved };
   for (const key of new Set([
-    ...Object.keys(before),
-    ...Object.keys(current),
+    ...(Object.keys(before) as (keyof T)[]),
+    ...(Object.keys(current) as (keyof T)[]),
   ])) {
     if (JSON.stringify(before[key]) === JSON.stringify(current[key])) continue;
-    if (key in current) result[key] = current[key];
+    if (Object.hasOwn(current, key))
+      Object.defineProperty(result, key, {
+        value: current[key],
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     else delete result[key];
   }
   return result;
@@ -29,15 +36,18 @@ function reconcile(
 ): Settings {
   return {
     ...result.saved,
-    values: changedValues(
-      before.values,
-      current.values,
-      (result.draft || result.saved).values,
-    ),
-    engines: changedValues(
-      before.engines,
-      current.engines,
-      (result.draft || result.saved).engines,
+    values: {
+      ...(result.draft || result.saved).values,
+      ...changedValues(
+        before.values,
+        current.values,
+        (result.draft || result.saved).values,
+      ),
+    },
+    modelOptions: changedValues(
+      before.modelOptions,
+      current.modelOptions,
+      (result.draft || result.saved).modelOptions,
     ),
   };
 }
@@ -72,7 +82,7 @@ export function useSettingsDraft(report: (error: unknown) => void) {
       active = false;
     };
   }, [draft.session]);
-  const edit = (name: string, value: Value) => {
+  const edit = (name: keyof PreferenceValues, value: string) => {
     if (changingConnection.current) return;
     draft.session.edit((current) => ({
       ...current,
@@ -107,6 +117,13 @@ export function useSettingsDraft(report: (error: unknown) => void) {
     dirty: draft.dirty,
     committing: draft.committing,
     edit,
+    editModelOptions: (model: string, value: ModelOptions) => {
+      if (changingConnection.current || !model.trim()) return;
+      draft.session.edit((current) => ({
+        ...current,
+        modelOptions: { ...current.modelOptions, [model.trim()]: value },
+      }));
+    },
     flush: draft.session.flush,
     save,
     revert,

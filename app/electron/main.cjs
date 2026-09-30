@@ -92,6 +92,7 @@ app.whenReady().then(() => {
   );
   diagnostics.record("desktop.started");
   window = new BrowserWindow({
+    show: false,
     width: 1280,
     height: 880,
     minWidth: 900,
@@ -106,6 +107,10 @@ app.whenReady().then(() => {
       sandbox: true,
       backgroundThrottling: false,
     },
+  });
+  window.once("ready-to-show", () => {
+    window.maximize();
+    window.show();
   });
   backend = new Backend(
     root,

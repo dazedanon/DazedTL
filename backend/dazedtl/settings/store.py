@@ -6,7 +6,7 @@ from pathlib import Path
 import uuid
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
-from . import providers
+from . import providers, preferences
 
 
 class Settings:
@@ -15,10 +15,13 @@ class Settings:
         self.path = Path(workspace) / "settings" / "settings.json"
         self.metadata = adapter.settings_metadata()
         self.empty = {
-            "version": 1,
+            "version": 2,
             "revision": 0,
-            "values": self.metadata["values"],
-            "engines": {},
+            "values": {
+                key: self.metadata["values"][key] for key in ("language", "model")
+            },
+            "legacy": {"values": self.metadata["values"], "engines": {}, "draft": None},
+            "model_options": {},
             "active": "",
             "connections": [],
             "draft": None,
@@ -35,13 +38,16 @@ class Settings:
         if (
             type(value.get("revision")) is not int
             or value["revision"] < 0
-            or not isinstance(value.get("values"), dict)
-            or not isinstance(value.get("engines"), dict)
+            or not isinstance(value.get("legacy"), dict)
+            or not isinstance(value["legacy"].get("values"), dict)
+            or not isinstance(value["legacy"].get("engines"), dict)
         ):
             raise invalid
-        known = {field["key"] for field in self.metadata["fields"]}
-        if set(value["values"]) - known:
-            raise invalid
+        try:
+            preferences.values(value.get("values"))
+            preferences.model_options(value.get("model_options"))
+        except ValueError as exc:
+            raise invalid from exc
         connections = value.get("connections")
         if not isinstance(connections, list) or len(connections) > 1000:
             raise invalid
@@ -101,6 +107,10 @@ class Settings:
                 raise invalid
             if any(not isinstance(model, str) for model in connection["models"]):
                 raise invalid
+            try:
+                preferences.model_options(connection.get("model_options"))
+            except ValueError as exc:
+                raise invalid from exc
             identities.add(connection["id"])
             runtime_names.add(connection["runtime_name"])
         if (
@@ -110,16 +120,24 @@ class Settings:
         ):
             raise invalid
         draft = value.get("draft")
-        if draft is not None and (
-            not isinstance(draft, dict)
-            or any(
-                not isinstance(draft.get(key), dict)
-                for key in ("values", "engines", "models")
-            )
-        ):
-            raise invalid
-        if draft is not None and set(draft["values"]) - known:
-            raise invalid
+        if draft is not None:
+            if not isinstance(draft, dict) or not isinstance(
+                draft.get("connections"), dict
+            ):
+                raise invalid
+            try:
+                preferences.text(draft.get("language"), "target language")
+                for identity, profile in draft["connections"].items():
+                    if (
+                        identity
+                        and identity not in identities
+                        or not isinstance(profile, dict)
+                    ):
+                        raise invalid
+                    preferences.text(profile.get("model"), "model ID")
+                    preferences.model_options(profile.get("model_options"), draft=True)
+            except ValueError as exc:
+                raise invalid from exc
 
     def _read(self):
         if (
@@ -130,7 +148,9 @@ class Settings:
             raise WorkspaceError(
                 "workspace_invalid", "Choose a regular settings file below 8 MB."
             )
-        return read_versioned_json(self.path, self.empty, {}, self._validate)
+        return read_versioned_json(
+            self.path, self.empty, {1: preferences.upgrade_v1}, self._validate
+        )
 
     def _write(self, value, bump=True):
         self._validate(value)
@@ -164,10 +184,15 @@ class Settings:
 
     def _import(self):
         saved, vault, draft = self.adapter.import_settings()
-        state = deepcopy(self.empty)
-        state.update(
-            revision=saved["revision"], values=saved["values"], engines=saved["engines"]
-        )
+        state = {
+            "version": 1,
+            "revision": saved["revision"],
+            "values": saved["values"],
+            "engines": saved["engines"],
+            "active": "",
+            "connections": [],
+            "draft": None,
+        }
         for name, entry in vault["keys"].items():
             active = name == vault["active"]
             endpoint = entry["endpoint"] or (saved["values"]["api"] if active else "")
@@ -228,10 +253,16 @@ class Settings:
                 "engines": draft["engines"],
                 "models": {state["active"]: model},
             }
+        state = preferences.upgrade_v1(state)
+        state["version"] = 2
         self._write(state, bump=False)
 
     def _values(self, state):
-        values = {**self.metadata["values"], **state["values"]}
+        values = {
+            **self.metadata["values"],
+            **state["legacy"]["values"],
+            **state["values"],
+        }
         connection = self._connection(state)
         if connection:
             values.update(
@@ -244,12 +275,11 @@ class Settings:
 
     def describe(self):
         state = self._read()
-        values = self._values(state)
-        for key in ("api", "API_PROVIDER", "organization"):
-            values.pop(key, None)
-        engines = deepcopy(self.metadata["engines"])
-        for name, overrides in state["engines"].items():
-            engines.setdefault(name, {}).update(overrides)
+        values = {key: self._values(state)[key] for key in ("language", "model")}
+        selected = self._connection(state)
+        model_options = deepcopy(
+            selected["model_options"] if selected else state["model_options"]
+        )
         connections = []
         for item in state["connections"]:
             # Incomplete imported entries stay recoverable, but unsafe old URL
@@ -286,8 +316,8 @@ class Settings:
         result = {
             "revision": state["revision"],
             "values": values,
-            "engines": engines,
-            "fields": self.metadata["fields"],
+            "modelOptions": model_options,
+            "defaultEntriesPerRequest": preferences.DEFAULT_ENTRIES_PER_REQUEST,
             "activeConnectionId": state["active"],
             "connections": connections,
             "providers": [
@@ -302,17 +332,15 @@ class Settings:
         }
         if state["draft"]:
             draft = state["draft"]
-            draft_engines = deepcopy(engines)
-            for name, overrides in draft["engines"].items():
-                draft_engines.setdefault(name, {}).update(overrides)
+            profile = draft["connections"].get(state["active"])
             result["draft"] = {
-                "revision": state["revision"],
                 "values": {
-                    **values,
-                    **draft["values"],
-                    "model": draft["models"].get(state["active"], values["model"]),
+                    "language": draft["language"],
+                    "model": profile["model"] if profile else values["model"],
                 },
-                "engines": draft_engines,
+                "modelOptions": deepcopy(
+                    profile["model_options"] if profile else model_options
+                ),
             }
         return result
 
@@ -328,7 +356,23 @@ class Settings:
             values["model"] = ""
         return self.adapter.provider_defaults(values)
 
-    def save(self, revision, connection_id, values, engines):
+    def model_defaults(self, connection_id, model):
+        state = self._read()
+        if connection_id != state["active"]:
+            raise ValueError("The active connection changed. Reopen Settings.")
+        return self.adapter.model_defaults.describe(model)
+
+    @staticmethod
+    def _clear_draft(state, connection_id):
+        profiles = (state["draft"] or {}).get("connections", {})
+        profiles.pop(connection_id, None)
+        state["draft"] = (
+            {"language": state["values"]["language"], "connections": profiles}
+            if profiles
+            else None
+        )
+
+    def save(self, revision, connection_id, values, model_options):
         state = self._read()
         self._revision(state, revision)
         if connection_id != state["active"]:
@@ -336,64 +380,35 @@ class Settings:
                 "The active connection changed. Review its preferences before saving."
             )
         connection = self._connection(state)
-        if not isinstance(values, dict) or not isinstance(values.get("model"), str):
-            raise ValueError("Enter a model ID.")
-        model = values["model"].strip()
-        candidate = (
-            {**values, "model": model or state["values"]["model"]}
-            if connection
-            else values
-        )
-        normalized, normalized_engines = self.adapter.validate_preferences(
-            candidate, engines
-        )
+        normalized = preferences.values(values, connection=connection is not None)
+        configured = preferences.model_options(model_options)
+        state["values"]["language"] = normalized["language"]
         if connection:
-            connection["model"] = model
-            normalized["model"] = state["values"]["model"]
-        for key in ("api", "API_PROVIDER", "organization"):
-            normalized[key] = state["values"][key]
-        state.update(values=normalized, engines=normalized_engines)
-        if state["draft"]:
-            models = state["draft"]["models"]
-            models.pop(connection_id, None)
-            state["draft"] = (
-                {"values": {}, "engines": normalized_engines, "models": models}
-                if models
-                else None
-            )
+            connection.update(model=normalized["model"], model_options=configured)
+        else:
+            state["values"]["model"] = normalized["model"]
+            state["model_options"] = configured
+        self._clear_draft(state, connection_id)
         self._write(state)
         return self.describe()
 
-    def draft(self, revision, connection_id, values, engines):
+    def draft(self, revision, connection_id, values, model_options):
         state = self._read()
         self._revision(state, revision)
-        if (
-            not isinstance(values, dict)
-            or not isinstance(engines, dict)
-            or connection_id != state["active"]
-        ):
+        if connection_id != state["active"]:
             raise ValueError(
                 "The active connection changed. Reopen Settings before editing its preferences."
             )
-        if (
-            set(values) - {field["key"] for field in self.metadata["fields"]}
-            or len(json.dumps([values, engines])) > 100000
-        ):
-            raise ValueError("Invalid preferences draft.")
-        schemas = self.metadata["engines"]
-        if set(engines) - schemas.keys() or any(
-            not isinstance(value, dict) or set(value) - schemas[name].keys()
-            for name, value in engines.items()
-        ):
-            raise ValueError("Unknown engine draft field.")
-        if not isinstance(values.get("model", ""), str):
-            raise ValueError("Enter a model ID.")
-        models = (state["draft"] or {}).get("models", {})
-        values = dict(values)
-        models[connection_id] = values.pop("model", self._values(state)["model"])
-        for key in ("api", "API_PROVIDER", "organization"):
-            values.pop(key, None)
-        state["draft"] = {"values": values, "engines": engines, "models": models}
+        preferences.values(values, draft=True)
+        preferences.model_options(model_options, draft=True)
+        if len(json.dumps([values, model_options])) > 100000:
+            raise ValueError("Preferences draft is too large.")
+        profiles = (state["draft"] or {}).get("connections", {})
+        profiles[connection_id] = {
+            "model": values["model"],
+            "model_options": model_options,
+        }
+        state["draft"] = {"language": values["language"], "connections": profiles}
         self._write(state, bump=False)
         return {"saved": True}
 
@@ -404,13 +419,7 @@ class Settings:
             raise ValueError(
                 "The active connection changed. Reopen Settings before reverting."
             )
-        models = (state["draft"] or {}).get("models", {})
-        models.pop(connection_id, None)
-        state["draft"] = (
-            {"values": {}, "engines": state["engines"], "models": models}
-            if models
-            else None
-        )
+        self._clear_draft(state, connection_id)
         self._write(state, bump=False)
         return self.describe()
 
@@ -525,6 +534,7 @@ class Settings:
             "secret": secret,
             "runtime_name": old["runtime_name"] if old else "connection-" + identity,
             "model": old["model"] if old and same_route else "",
+            "model_options": old["model_options"] if old and same_route else {},
             "check": old["check"] if unchanged else providers.unchecked(),
             "models": old["models"] if unchanged else [],
         }
@@ -537,7 +547,7 @@ class Settings:
             else [*state["connections"], record]
         )
         if old and not same_route and state["draft"]:
-            state["draft"]["models"].pop(identity, None)
+            state["draft"]["connections"].pop(identity, None)
         state["active"] = identity
         self._write(state)
         return self.describe()
@@ -637,6 +647,37 @@ class Settings:
                         "This connection's provider, server, or organization changed. Restore the saved run's original connection before resuming."
                     )
                 vault["keys"][key_name]["endpoint"] = frozen["api"]
+        self.adapter.manual.request_policy = None
+        if mode:
+            configured = (
+                active["model_options"] if active else state["model_options"]
+            ).get(values["model"], preferences.DEFAULT_OPTIONS)
+            custom = configured["pricing"] == "custom"
+            defaults = (
+                self.adapter.model_defaults.describe(values["model"])
+                if not custom
+                else {}
+            )
+            input_rate = configured["inputRate"] if custom else defaults["inputRate"]
+            output_rate = configured["outputRate"] if custom else defaults["outputRate"]
+            if input_rate is None or output_rate is None:
+                raise ValueError(
+                    "No price is available for this model. Enter custom rates in Settings before starting; use 0 for a free model."
+                )
+            entries = (
+                configured["entriesPerRequest"]
+                or preferences.DEFAULT_ENTRIES_PER_REQUEST
+            )
+            self.adapter.manual.request_policy = {
+                "version": 1,
+                "model": values["model"],
+                "entriesPerRequest": entries,
+                "inputRate": input_rate,
+                "outputRate": output_rate,
+                "source": "custom" if custom else defaults["source"],
+                "updatedAt": None if custom else defaults["updatedAt"],
+            }
+            values.update(batchsize=entries)
         self.adapter.install_settings(
-            state["revision"], values, state["engines"], vault
+            state["revision"], values, state["legacy"]["engines"], vault
         )

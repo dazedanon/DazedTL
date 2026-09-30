@@ -22,14 +22,16 @@ class ExistingBackend:
             if not (self.source / name).is_file():
                 raise ValueError("Select the preserved DazedMTLTool repository for the migration adapter.")
         sys.path.insert(0, str(self.source))
-        from desktop.backend.manual import ManualJobs
+        from .manual import manual_jobs
+        from .model_defaults import ModelDefaults
         from desktop.backend.operations import Operations
         from desktop.backend.workflow import Workflows
         from desktop.backend.settings import SettingsStore
 
         self.lock = threading.RLock()
         self._legacy_settings = SettingsStore(self.workspace, code_root=self.source)
-        self.manual = ManualJobs(self.workspace, self.lock, allow_providers=allow_providers)
+        self.manual = manual_jobs(self.source, self.workspace, self.lock, allow_providers)
+        self.model_defaults = ModelDefaults(self.source, self.workspace / "model-cache", allow_providers)
         self.operations = Operations(self.workspace, self.lock)
         self.workflows = Workflows(self.workspace, self.lock, self.operations, self.manual)
         self.allow_providers = allow_providers

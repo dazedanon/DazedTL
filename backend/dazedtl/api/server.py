@@ -121,12 +121,15 @@ class Application:
     def settings_get(self):
         return self.settings.describe()
 
-    def settings_save(self, revision, connection_id, values, engines):
+    def settings_save(self, revision, connection_id, values, model_options):
         self.guided.idle()
-        return self.settings.save(revision, connection_id, values, engines)
+        return self.settings.save(revision, connection_id, values, model_options)
 
-    def settings_draft(self, revision, connection_id, values, engines):
-        return self.settings.draft(revision, connection_id, values, engines)
+    def settings_draft(self, revision, connection_id, values, model_options):
+        return self.settings.draft(revision, connection_id, values, model_options)
+
+    def settings_model_defaults(self, connection_id, model):
+        return self.settings.model_defaults(connection_id, model)
 
     def settings_revert(self, revision, connection_id):
         return self.settings.revert(revision, connection_id)
@@ -166,6 +169,7 @@ def serve(args, diagnostics):
             )
         },
         "settings_draft": (app.settings_draft, lambda value, _params: value),
+        "settings_model_defaults": (app.settings_model_defaults, lambda value, _params: value),
         "guided_phase_select": (
             app.guided.phase_select,
             lambda value, params: views.guided(value, params["project_id"]),

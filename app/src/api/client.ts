@@ -39,30 +39,32 @@ export const api = {
     text: string,
   ) => request("guided_save_document", { project_id, name, revision, text }),
   settings: () => request("settings_get", {}),
+  modelDefaults: (connection_id: string, model: string) =>
+    request("settings_model_defaults", { connection_id, model }),
   revertSettings: ({ revision, activeConnectionId }: SettingsPayload) =>
     request("settings_revert", { revision, connection_id: activeConnectionId }),
   saveSettings: ({
     revision,
     values,
-    engines,
+    modelOptions,
     activeConnectionId,
   }: SettingsPayload) =>
     request("settings_save", {
       revision,
       values,
-      engines,
+      model_options: modelOptions,
       connection_id: activeConnectionId,
     }),
   settingsDraft: ({
     revision,
     values,
-    engines,
+    modelOptions,
     activeConnectionId,
   }: SettingsPayload) =>
     request("settings_draft", {
       revision,
       values,
-      engines,
+      model_options: modelOptions,
       connection_id: activeConnectionId,
     }),
   saveConnection: (revision: number, input: ConnectionInput) =>

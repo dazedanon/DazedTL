@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 4,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -67,6 +67,10 @@
     },
     "connection_check": {
       "refresh": false
+    },
+    "settings_model_defaults": {
+      "refresh": false,
+      "duringClose": false
     }
   }
 }
