@@ -39,6 +39,12 @@ Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries,
 so generic completion messages are handled consistently while useful detail remains visible.
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
+Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared
+action-column width, token-based gaps, wrapping text, and a stacked layout based on available
+container width. Rows grow with feedback rather than fixing heights or clipping content.
+Guided formatting and GameUpdate creation consume a preview immediately after the user's click;
+the same backup, project ownership, input validation, and one-use execution checks still apply.
+Other actions retain their existing review requirements.
 
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
 backend job references, phase selections and recovery data when adding workflow screens.

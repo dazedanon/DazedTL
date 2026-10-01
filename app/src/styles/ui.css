@@ -487,6 +487,13 @@ pre {
 .action-control > button {
   max-width: 100%;
 }
+.action-control-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.action-control > button > svg {
+  flex-shrink: 0;
+}
 .action-control-feedback {
   max-width: 100%;
 }
@@ -504,4 +511,38 @@ pre {
 }
 .actions:has(> .action-control) {
   align-items: flex-start;
+}
+
+.action-list {
+  container-type: inline-size;
+  display: grid;
+  gap: var(--space-4);
+}
+.action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--action-column-width));
+  align-items: start;
+  gap: var(--space-6);
+}
+.action-row-label {
+  min-width: 0;
+  padding-top: var(--space-2);
+  font-size: var(--font-control);
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.action-row > .action-control,
+.action-row > .action-control > button {
+  width: 100%;
+  max-width: 100%;
+}
+@container (max-width: 36rem) {
+  .action-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .action-row-label {
+    padding-top: 0;
+  }
 }

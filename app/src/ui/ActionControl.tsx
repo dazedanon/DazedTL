@@ -24,7 +24,7 @@ export function ActionControl({
       {!pending && !active && (failed
         ? <AlertCircle size={14} className="action-result-icon action-result-icon--error" aria-hidden="true" />
         : succeeded ? <Check size={14} className="action-result-icon action-result-icon--success" aria-hidden="true" /> : null)}
-      {label}
+      <span className="action-control-label">{label}</span>
     </Button>
     <div id={feedbackId} className="action-control-feedback">
       {pending ? <Feedback loading loadingText={pendingText} />

@@ -19,6 +19,7 @@ import { FileSelection } from "./FileSelection";
 import { EngineOptions } from "./EngineOptions";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
 import { ActionControl } from "../../ui/ActionControl";
+import { ActionList, ActionRow } from "../../ui/ActionList";
 
 const steps: { id: GuidedStep; label: string }[] = [
   { id: "prepare", label: "Prepare" }, { id: "context", label: "Context" },
@@ -181,12 +182,12 @@ function Workspace({ project, state, translation, settings, direct, openGuide, b
         </div>
       </Section>}
       <Section title="Prepare game files">
-        <p className="muted">Run these before establishing the original Git baseline. Each action shows a preview before changing files.</p>
-        <div className="guided-tasks">
-          <div><strong>1. Format game data</strong>{task("format_data", "Format JSON files", {}, !preserved || !state.files.length)}</div>
-          {state.hasPlugins && <div><strong>2. Format plugin configuration</strong>{task("format_plugins", "Format plugins.js", {}, !preserved)}</div>}
-          <div><strong>{state.hasPlugins ? "3" : "2"}. Install GameUpdate</strong>{task("gameupdate", "Create GameUpdate files", {}, !preserved)}</div>
-        </div>
+        <p className="muted">Run these before establishing the original Git baseline. Each action starts immediately and shows its progress below the button.</p>
+        <ActionList>
+          <ActionRow label="1. Format game data">{task("format_data", "Format JSON files", {}, !preserved || !state.files.length)}</ActionRow>
+          {state.hasPlugins && <ActionRow label="2. Format plugin configuration">{task("format_plugins", "Format plugins.js", {}, !preserved)}</ActionRow>}
+          <ActionRow label={`${state.hasPlugins ? "3" : "2"}. Install GameUpdate`}>{task("gameupdate", "Create GameUpdate files", {}, !preserved)}</ActionRow>
+        </ActionList>
       </Section>
       <Section title="Set up Git versioning" hint={translation.git?.configured ? "Configured" : "Original and translation branches"}>
         {translation.lifecycle.prepared_source?.available === false && <Message message="The prepared original backup is unavailable. Restore that backup before checkpointing changes that require it." />}

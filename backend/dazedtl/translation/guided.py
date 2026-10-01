@@ -270,7 +270,10 @@ class Guided:
             if action == "rewrap_apply":
                 result["rewrap"] = self.backend.guided_rewrap_review(native["id"], token)
             self.confirmations = {token: {"project_id": project_id, "action": action, "native": True}}
-            return {**result, "action": action, "paths": paths or result["options"].get("files", [])}
+            # Routine preparation uses the same one-use plan and execution checks,
+            # without asking the user to confirm the button they just clicked.
+            return {**result, "action": action, "paths": paths or result["options"].get("files", []),
+                    "confirmation": result["confirmation"] and action not in {"format_data", "format_plugins", "gameupdate"}}
         token = uuid.uuid4().hex
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,

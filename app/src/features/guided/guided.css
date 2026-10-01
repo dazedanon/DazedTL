@@ -162,20 +162,6 @@
 .guided-workspace .file-list small {
   margin-left: auto;
 }
-.guided-tasks {
-  display: grid;
-  gap: var(--space-3);
-}
-.guided-tasks > div {
-  display: flex;
-  gap: var(--space-4);
-  align-items: center;
-  justify-content: space-between;
-}
-.guided-tasks strong {
-  font-weight: 500;
-  font-size: var(--font-control);
-}
 .guided-save-bar, .guided-footer {
   display: flex;
   align-items: center;
@@ -204,16 +190,6 @@
 }
 .guided-context {
   margin-top: var(--space-6);
-}
-.guided-tasks > div {
-  align-items: flex-start;
-}
-.guided-tasks > div > strong {
-  padding-top: var(--space-2);
-}
-.guided-tasks .action-control {
-  align-items: flex-end;
-  max-width: 55%;
 }
 .guided-backup-location {
   display: grid;

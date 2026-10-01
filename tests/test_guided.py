@@ -63,6 +63,7 @@ class GuidedTests(unittest.TestCase):
 
     def test_submission_preview_rejects_other_owner_changed_inputs_and_repeated_use(self):
         preview = self.preview()
+        self.assertTrue(preview['confirmation'])
         other = self.projects.open({'source': str(self.root), 'engine': 'MVMZ'})
         with self.assertRaises(ValueError):
             self.guided.execute(other['id'], preview['token'])
@@ -104,10 +105,31 @@ class GuidedTests(unittest.TestCase):
     def test_new_runtime_file_after_git_preview_cannot_enter_the_baseline_unreviewed(self):
         self.backend.guided_runtime_files = lambda _: sorted(path.name for path in self.source.glob('*.json'))
         preview = self.guided.preview(self.identity, 'git_setup', options={'version': '1.0', 'untranslated': True})
+        self.assertTrue(preview['confirmation'])
         write_json(self.source / 'NewFile.json', [{'name': 'New scope'}])
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview['token'])
         self.translation.operation.assert_not_called()
+
+    def test_immediate_preparation_keeps_one_use_execution_and_backup_checks(self):
+        self.backend.workflows.preview = lambda _owner, action, options: {
+            'token': action + '-token', 'options': options, 'confirmation': True}
+        self.backend.workflows.execute = Mock(return_value={'id': 'native-operation'})
+        for action in ('format_data', 'format_plugins', 'gameupdate'):
+            with self.subTest(action=action):
+                preview = self.guided.preview(self.identity, action)
+                self.assertFalse(preview['confirmation'])
+                self.assertEqual(self.guided.execute(self.identity, preview['token'])['id'], 'native-operation')
+                self.backend.workflows.execute.assert_called_with(preview['token'])
+                with self.assertRaises(ValueError):
+                    self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.backend.workflows.execute.call_count, 3)
+        self.assertTrue(self.guided.preview(self.identity, 'playtest_install')['confirmation'])
+        preview = self.guided.preview(self.identity, 'format_data')
+        shutil.rmtree(self.source / '.dazedtl')
+        with self.assertRaises(ValueError):
+            self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.backend.workflows.execute.call_count, 3)
 
     def test_an_estimate_cannot_replace_an_interrupted_paid_run_reference(self):
         self.pending = {'id': 'provider-run', 'mode': 'batch', 'status': 'interrupted'}
