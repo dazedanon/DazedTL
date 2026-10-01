@@ -111,7 +111,8 @@ class TranslationEngine:
     def compile(self, source, options, plan, language):
         from util.len_translation import request_contexts
         from util.skills import ctx
-        batches = [{key: item for key, item in batch.items() if key not in {"constraints", "scene_context"}} for batch in plan["batches"]]
+        batches = [{key: item for key, item in batch.items()
+                    if key in {"id", "sources", "speakers", "source_context", "instruction_key"}} for batch in plan["batches"]]
         compiled = request_contexts(self.project(source, options), batches)
         for original, result in zip(plan["batches"], compiled):
             context = result["context"]
@@ -128,9 +129,10 @@ class TranslationEngine:
 
     def compiler_fingerprint(self):
         from util.len_api import _compiler_fingerprint
-        from dazedtl.translation import requests
+        from dazedtl.translation import requests, compilation
         return digest({"engine": _compiler_fingerprint(), "bridge": digest(Path(__file__).read_bytes()),
-                       "contract": digest(Path(requests.__file__).read_bytes())})
+                       "contract": digest(Path(requests.__file__).read_bytes()),
+                       "compilation": digest(Path(compilation.__file__).read_bytes())})
 
     def payload(self, request, configuration):
         from util.translation import buildClaudeRequest, buildOpenAIRequest

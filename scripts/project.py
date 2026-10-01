@@ -86,8 +86,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "plan-format":
-            result = {"complete": False, "inputs": [".dazedtl/len-method/work/source-units.json"], "batches": [{
+            result = {"version": 2, "complete": False, "inputs": [".dazedtl/len-method/work/source-units.json"], "batches": [{
                 "id": "scene-01", "sources": {"scene-01/line-1": "はい。"}, "speakers": {"scene-01/line-1": None},
+                "kinds": {"scene-01/line-1": "dialogue"}, "qa_notes": {},
                 "source_context": "", "scene_context": "", "constraints": {"scene-01/line-1": {"tokens": []}}}]}
         else:
             params = {"project_id": args.project}

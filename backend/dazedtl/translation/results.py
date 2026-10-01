@@ -67,6 +67,11 @@ class Results:
             value = self.get(request)
             for identity, source in request["sources"].items():
                 row = {"id": digest([request["id"], identity]), "batch": request["id"], "source_id": identity, "source": source}
+                context = request["context"]
+                if "line_kinds" in context:
+                    row.update(kind=context["line_kinds"][identity], speaker=context["speakers"][identity])
+                if identity in context.get("qa_notes", {}):
+                    row["qa_note"] = context["qa_notes"][identity]
                 if value:
                     row.update(translation=value["translations"][identity], translated_from_sha256=digest(source.encode("utf-8")),
                                request_sha256=request["fingerprint"])

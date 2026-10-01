@@ -19,6 +19,7 @@ from dazedtl.translation.files import project_path, read_json, verify_evidence
 from dazedtl.translation.results import Results
 from dazedtl.translation.operations import execute, require_baseline, lifecycle
 from dazedtl.translation.ownership import alive
+from dazedtl.translation.compilation import verify_compilation
 
 
 def run(workspace, legacy_root, identity, owner_pid, owner_token):
@@ -62,23 +63,18 @@ def run_locked(workspace, legacy_root, identity, store):
             if not store.authorized(job) or plan["configuration"]["mode"] not in {"live", "batch"}:
                 raise ValueError("This worker requires an approved API run.")
 
-            checked_context = False
+            checked_compiler = None
 
             def current():
-                nonlocal checked_context
+                nonlocal checked_compiler
                 project = ProjectWorkspace(plan["source"])
                 if scope(project.read()["options"]) != plan["scope_sha256"]:
                     raise ValueError("Project scope changed. Preserve these results and prepare a new remaining-work quote.")
                 verify_evidence(project.root, plan["evidence"])
                 engine.verify_bindings(project.root, plan["original_bindings"])
                 require_baseline(engine, project.root, plan["options"], lifecycle(workspace, job["project_id"]))
-                if engine.compiler_fingerprint() != plan["compiler"]:
-                    raise ValueError("The request compiler changed. Prepare a fresh remaining-work quote.")
-                if not checked_context:
-                    compiled, _compiler = engine.compile(project.root, plan["options"], read_json(project.artifact(plan["input_path"])), plan["configuration"]["language"])
-                    if [row["context"] for row in compiled] != [row["context"] for row in plan["requests"]]:
-                        raise ValueError("Shared guidance or references changed. Prepare a fresh remaining-work quote.")
-                    checked_context = True
+                if checked_compiler != engine.compiler_fingerprint():
+                    checked_compiler = verify_compilation(engine, plan)
 
             last_report = 0.0
 

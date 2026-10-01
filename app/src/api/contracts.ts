@@ -133,6 +133,7 @@ export interface TranslationJob {
     counts?: Record<string, number>;
   }[];
   issues: { id: string; state: string; message: string }[];
+  qa_requests?: { id: string; index: number; notes: number }[];
 }
 export interface TranslationProgress {
   updated_at: string | null;
@@ -204,7 +205,11 @@ export interface RequestPreview {
     sources: Record<string, string>;
     fingerprint: string;
     constraints: Record<string, unknown>;
-    context: Record<string, unknown>;
+    context: Record<string, unknown> & {
+      line_kinds?: Record<string, "dialogue" | "narration" | "ui" | "unknown">;
+      speakers?: Record<string, string | null>;
+      qa_notes?: Record<string, string>;
+    };
     params?: Record<string, unknown>;
   };
   result: {

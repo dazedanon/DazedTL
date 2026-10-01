@@ -68,6 +68,10 @@ source text and accepted outputs under Requests & results. Pausing a Batch run s
 Cancel provider batch requests remote cancellation and retains any completed results available from the provider.
 An uncertain submission is never retried automatically. Reconcile its provider job or review an uncertain Live request before preparing another quote.
 
+Request inspection shows each line's text type and known or unknown speaker. Unknown speakers are allowed;
+specific source ambiguities appear as review notes beside the translation, with links from the run to affected requests.
+Check those notes against the source before marking the request source-checked. A correction makes that review pending again.
+
 Source & versions exposes backups, reviewed checkpoints, local patch packaging, and official-update preview/apply/recovery.
 For a new official release, stage a separate copy and finish its engine-specific preparation before previewing the update.
 Ordinary MV/MZ writes preserve existing Japanese in _original. Rebasing source metadata after an update requires the exact current original-branch bytes and commit.

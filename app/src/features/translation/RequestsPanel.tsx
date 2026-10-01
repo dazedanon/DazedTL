@@ -11,6 +11,7 @@ import { flushDrafts } from "../../state/leaveGuards";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
+import { RequestLines } from "./RequestLines";
 
 const money = (value: number) => "$" + value.toFixed(4);
 export function RequestsPanel({ state }: { state: TranslationState }) {
@@ -177,6 +178,26 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 </ul>
               </details>
             )}
+            {!!job.qa_requests?.length && (
+              <details>
+                <summary>
+                  {job.qa_requests.length} requests have source review notes
+                </summary>
+                <ul className="translation-batch-list">
+                  {job.qa_requests.map((request) => (
+                    <li key={request.id}>
+                      {request.id} · {request.notes} notes{" "}
+                      <Button
+                        disabled={action.busy}
+                        onClick={() => inspect(job, request.index)}
+                      >
+                        Inspect source notes
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </article>
         ))}
       </Section>
@@ -262,27 +283,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
               Copy request
             </Button>
           </div>
-          <div className="translation-table-wrap">
-            <table className="translation-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Saved translation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(preview.request.sources).map(([id, source]) => (
-                  <tr key={id}>
-                    <td>
-                      <small>{id}</small>
-                      <p>{source}</p>
-                    </td>
-                    <td>{preview.result?.translations[id] || "Pending"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RequestLines preview={preview} />
           <details>
             <summary>Exact compiled context and provider payload</summary>
             <pre className="translation-json">
@@ -312,7 +313,9 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             >
               {preview.result.reviewed
                 ? "Source-checked review recorded"
-                : "Mark this request source-checked"}
+                : Object.keys(preview.request.context.qa_notes || {}).length
+                  ? "Mark request and flagged lines source-checked"
+                  : "Mark this request source-checked"}
             </Button>
           )}
           {jobs

@@ -78,6 +78,8 @@ class RunStore:
                "mode": plan.get("configuration", {}).get("mode"),
                "unit_counts": {row["id"]: len(row["sources"]) for row in plan.get("requests", [])},
                "fingerprints": {row["id"]: row["fingerprint"] for row in plan.get("requests", [])},
+               "qa_requests": [{"id": row["id"], "index": index, "notes": len(row["context"].get("qa_notes", {}))}
+                               for index, row in enumerate(plan.get("requests", [])) if row["context"].get("qa_notes")],
                "quote": quote, "approval_token": uuid.uuid4().hex if quote is not None else "",
                "approved": False, "batches": [], "result": None, "usage": {}}
         if states and all(item["state"] == "accepted" for item in states.values()):
@@ -147,6 +149,7 @@ class RunStore:
             "units": sum(job["unit_counts"].values()),
             "accepted_units": sum(count for identity, count in job["unit_counts"].items() if job["states"][identity]["state"] == "accepted"),
             "requests": len(job["states"]), "batches": [{key: chunk.get(key) for key in ("id", "state", "api_status", "counts", "cancel_error")} for chunk in job["batches"]],
+            "qa_requests": job.get("qa_requests", []),
             "stop_requested": self.stopped(job["id"]),
             "cancel_requested": self.cancel_requested(job["id"]),
             "issues": [{"id": key, **value} for key, value in job["states"].items() if value["state"] in {"failed", "uncertain"}],

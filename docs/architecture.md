@@ -71,6 +71,10 @@ The app controls its workers. External assistant activity is reported from saved
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates, and connection identity.
 Tracked game-source dependencies bind to their original-branch blobs; untracked source exports, project guidance and the plan file bind to their exact bytes.
 Both API transports consume the same logical request builder. Request IDs, speaker/scene context and protected tokens survive adapter conversion.
+Version-two source plans require per-line text types and explicit nullable speakers. Unknown speakers remain valid;
+only explicit source ambiguity notes create targeted review flags. Classification and notes enter the same context/fingerprint in every mode.
+Existing unversioned plans are accepted only when validating saved runs. A compiler update may resume them when
+the complete logical requests and provider payloads still match; frozen plans and approvals are never migrated in place.
 Accepted results are keyed by logical source/context rather than Japanese text alone. Location hashes do not change their identity.
 Explicit corrections retain history, require the current result hash, and invalidate affected review/injection/QA evidence.
 

@@ -255,8 +255,36 @@ class TranslationTests(unittest.TestCase):
         for relative in ("../outside.json", ".git/config", str(self.root / "outside.json")):
             with self.subTest(relative=relative), self.assertRaises(ValueError):
                 project_path(self.game, relative, exists=False)
-        plan = {"complete": True, "inputs": ["source.json"], "batches": [{"id": "one", "sources": {"line": "はい。"}, "speakers": {"other": None}}]}
+        plan = {"version": 2, "complete": True, "inputs": ["source.json"], "batches": [{
+            "id": "one", "sources": {"line": "はい。"}, "kinds": {"line": "dialogue"}, "speakers": {"other": None}}]}
         with self.assertRaises(ValueError):
             plan_input(plan)
         plan["batches"][0]["speakers"] = {"line": None}
         self.assertEqual(plan_input(plan), plan)
+
+    def test_line_classification_requires_explicit_speakers_but_unknown_is_valid(self):
+        batch = {"id": "scene", "sources": {"dialogue": "行った。", "narration": "夜が明けた。", "ui": "戻る", "other": "……"},
+                 "kinds": {"dialogue": "dialogue", "narration": "narration", "ui": "ui", "other": "unknown"},
+                 "speakers": {"dialogue": None, "narration": None, "ui": None, "other": None}}
+        plan = {"version": 2, "complete": True, "inputs": ["source.json"], "batches": [batch]}
+        self.assertEqual(plan_input(plan), plan)
+        original = {"user": "Japanese source", "request_sha256": "before"}
+        row = logical_request(batch, original)
+        self.assertEqual(original, {"user": "Japanese source", "request_sha256": "before"})
+        self.assertEqual(row["context"]["speakers"]["dialogue"], None)
+        self.assertEqual(row["context"]["qa_notes"], {})
+        job, _plan = self.run_record(requests=[row])
+        self.assertEqual(self.store.view(job)["qa_requests"], [])
+        for update in ({"speakers": None}, {"speakers": {}}, {"speakers": {**batch["speakers"], "dialogue": " "}},
+                       {"speakers": {**batch["speakers"], "ui": "Lili"}}, {"kinds": {}},
+                       {"kinds": {**batch["kinds"], "ui": "guess"}}, {"qa_notes": {"missing": "Who left?"}},
+                       {"qa_notes": {"dialogue": " "}}):
+            with self.subTest(update=update), self.assertRaises(ValueError):
+                plan_input({**plan, "batches": [{**batch, **update}]})
+        for field in ("kinds", "speakers"):
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                plan_input({**plan, "batches": [{key: value for key, value in batch.items() if key != field}]})
+        classified = logical_request({**batch, "kinds": {**batch["kinds"], "other": "dialogue"}}, original)
+        flagged = logical_request({**batch, "qa_notes": {"dialogue": "Check who left."}}, original)
+        self.assertNotEqual(row["fingerprint"], classified["fingerprint"])
+        self.assertNotEqual(row["fingerprint"], flagged["fingerprint"])

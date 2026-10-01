@@ -6,15 +6,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
-from dazedtl.settings.execution import worker_secret
+from dazedtl.settings.execution import worker_secret, configuration
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot
-from dazedtl.translation.files import digest, read_json
+from dazedtl.translation.files import digest, read_json, evidence
 from dazedtl.translation.operations import lifecycle_path, require_baseline
-from dazedtl.translation.project import ProjectWorkspace, DEFAULTS, WORK
+from dazedtl.translation.project import ProjectWorkspace, DEFAULTS, WORK, scope
+from dazedtl.translation.compilation import compile_requests
+from dazedtl.translation.requests import plan_input
 from dazedtl.translation.service import Translation
 from dazedtl.translation import delivery
 
@@ -90,12 +93,19 @@ class WorkflowTests(unittest.TestCase):
         self.engine = Engine(self.root)
         self.service = Translation(self.profile, self.projects, self.settings, self.engine)
         self.plan_path = WORK + "/work/requests.json"
-        write_json(self.game / self.plan_path, {"complete": True, "inputs": ["source.json"], "batches": [{
-            "id": "scene", "sources": {"line": "はい。"}, "speakers": {"line": "Lili"}, "source_context": "Previous exchange"}]})
+        write_json(self.game / self.plan_path, {"version": 2, "complete": True, "inputs": ["source.json"], "batches": [{
+            "id": "scene", "sources": {"line": "はい。"}, "kinds": {"line": "dialogue"},
+            "speakers": {"line": None}, "source_context": "Previous exchange"}]})
 
     def test_agent_receipt_review_and_mode_switch_keep_the_same_saved_work(self):
+        raw = read_json(self.game / self.plan_path)
+        note = "Check whether this answer affirms the visitor's question or the guard's."
+        raw["batches"][0]["qa_notes"] = {"line": note}
+        write_json(self.game / self.plan_path, raw)
         run = self.service.compile(self.identity, self.plan_path)
+        self.assertEqual(run["qa_requests"], [{"id": "scene", "index": 0, "notes": 1}])
         preview = self.service.request(self.identity, run["id"], 0)
+        self.assertEqual(preview["request"]["context"]["qa_notes"], {"line": note})
         receipt = WORK + "/work/result.json"
         write_json(self.game / receipt, {"request_sha256": preview["request"]["fingerprint"], "translations": {"line": "Yes."}})
         accepted = self.service.accept(self.identity, run["id"], "scene", receipt)
@@ -106,6 +116,10 @@ class WorkflowTests(unittest.TestCase):
         report["phases"].update(translation="complete", injection="complete", qa="complete", patch="complete")
         write_json(self.game / (WORK + "/progress-report.json"), report)
         self.service.review(self.identity, run["id"], "scene", preview["request"]["fingerprint"])
+        reviewed = self.service.request(self.identity, run["id"], 0)["result"]
+        self.assertIn("line", reviewed["reviewed"])
+        exported = read_json(self.game / (WORK + "/work/translation-units.json"))["units"][0]
+        self.assertEqual((exported["kind"], exported["speaker"], exported["qa_note"]), ("dialogue", None, note))
         self.assertEqual(self.engine.reports[-1]["phases"]["qa"], "complete")
         selected = self.project.read()
         self.service.save(self.identity, selected["revision"], {**selected["options"], "mode": "live"})
@@ -116,6 +130,51 @@ class WorkflowTests(unittest.TestCase):
         _job, frozen = self.service.jobs.store.load(reused["id"])
         self.assertNotIn("secret", frozen["configuration"])
         self.assertNotIn("fixture-private-value", json.dumps(frozen))
+        self.assertIn(note, frozen["requests"][0]["params"]["messages"][0]["content"])
+        write_json(self.game / receipt, {"request_sha256": preview["request"]["fingerprint"],
+                   "translations": {"line": "That's right."}, "replaces_sha256": reviewed["result_sha256"]})
+        self.service.accept(self.identity, reused["id"], "scene", receipt)
+        corrected = self.service.request(self.identity, reused["id"], 0)
+        self.assertNotIn("reviewed", corrected["result"])
+        self.assertEqual(corrected["request"]["context"]["qa_notes"]["line"], note)
+
+    def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(self):
+        raw = {"complete": True, "inputs": ["source.json"], "batches": [{"id": "scene", "sources": {"line": "はい。"}}]}
+        write_json(self.game / self.plan_path, raw)
+        self.assertEqual(plan_input(raw, allow_legacy=True), raw)
+        with self.assertRaises(ValueError):
+            self.service.compile(self.identity, self.plan_path)
+        selected = self.project.read()["options"]
+        cfg = configuration(self.settings, "live")
+        requests, _compiler = compile_requests(self.engine, self.game, selected, raw, cfg["language"])
+        for row in requests:
+            row["params"] = self.engine.payload(row, cfg)
+        frozen = {"version": 1, "kind": "translation", "source": str(self.game), "options": selected,
+                  "scope_sha256": scope(selected), "configuration": cfg, "requests": requests,
+                  "complete": True, "evidence": evidence(self.game, [self.plan_path, "source.json"]),
+                  "original_bindings": {}, "compiler": "previous-compiler", "input_path": self.plan_path, "batch_limits": None}
+        store = self.service.jobs.store
+        job = store.create(self.identity, frozen, {"cost": 1})
+        store.authorize(job)
+        folder = store.folder(job["id"])
+        original = {name: (folder / name).read_bytes() for name in ("plan.json", "authorization.json")}
+        self.service.validate_current(self.identity, frozen)
+        receipt = WORK + "/work/legacy-result.json"
+        write_json(self.game / receipt, {"request_sha256": requests[0]["fingerprint"], "translations": {"line": "Yes."}})
+        self.service.accept(self.identity, job["id"], "scene", receipt)
+        self.service.review(self.identity, job["id"], "scene", requests[0]["fingerprint"])
+        preview = self.service.request(self.identity, job["id"], 0)
+        self.assertEqual(preview["result"]["translations"], {"line": "Yes."})
+        self.assertNotIn("line_kinds", preview["request"]["context"])
+        self.assertEqual(original, {name: (folder / name).read_bytes() for name in original})
+        self.assertTrue(store.authorized(store.record(job["id"])))
+        self.assertEqual(store.view(store.record(job["id"]))["qa_requests"], [])
+        with patch.object(self.engine, "payload", return_value={"changed": "provider parameters"}), self.assertRaisesRegex(ValueError, "payload changed"):
+            self.service.validate_current(self.identity, frozen)
+        changed = deepcopy(requests)
+        changed[0]["context"]["system"] = "Changed guidance"
+        with patch.object(self.engine, "compile", return_value=(changed, "previous-compiler")), self.assertRaises(ValueError):
+            self.service.validate_current(self.identity, frozen)
 
     def test_changed_inputs_cannot_approve_or_bless_old_results(self):
         selected = self.project.read()

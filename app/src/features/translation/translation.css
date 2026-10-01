@@ -145,6 +145,18 @@
 .translation-table p {
   margin: 7px 0 0;
 }
+.translation-line-context {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+.translation-review-note {
+  padding: 10px 12px;
+  margin-top: 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface);
+  font-size: 12px;
+}
 .translation-json,
 .translation-report {
   white-space: pre-wrap;

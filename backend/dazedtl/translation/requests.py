@@ -8,9 +8,15 @@ import re
 from .files import digest, unique_object
 
 
-def plan_input(value):
-    if not isinstance(value, dict) or set(value) != {"complete", "inputs", "batches"} or type(value["complete"]) is not bool:
-        raise ValueError("A plan requires complete, inputs, and batches.")
+def plan_input(value, *, allow_legacy=False):
+    if not isinstance(value, dict):
+        raise ValueError("A source plan must be a JSON object.")
+    legacy = allow_legacy and "version" not in value
+    fields = {"complete", "inputs", "batches"} | (set() if legacy else {"version"})
+    if not legacy and (type(value.get("version")) is not int or value["version"] != 2):
+        raise ValueError("New source plans require version 2 with line kinds and explicit speakers. Use plan-format for an example.")
+    if set(value) != fields or type(value["complete"]) is not bool:
+        raise ValueError("A plan requires version, complete, inputs, and batches.")
     if not isinstance(value["inputs"], list) or not value["inputs"] or not all(isinstance(path, str) for path in value["inputs"]):
         raise ValueError("Bind the plan to its source and guidance files.")
     batches = value["batches"]
@@ -18,7 +24,10 @@ def plan_input(value):
         raise ValueError("The plan must contain at least one source batch.")
     identities = set()
     for batch in batches:
-        if not isinstance(batch, dict) or set(batch) - {"id", "sources", "speakers", "source_context", "scene_context", "instruction_key", "constraints"}:
+        allowed = {"id", "sources", "speakers", "source_context", "scene_context", "instruction_key", "constraints"}
+        if not legacy:
+            allowed |= {"kinds", "qa_notes"}
+        if not isinstance(batch, dict) or set(batch) - allowed:
             raise ValueError("Unknown batch fields. Keep injection metadata in the engine's source store.")
         name = batch.get("id")
         if not isinstance(name, str) or not name.strip() or len(name) > 240 or name in identities:
@@ -33,6 +42,24 @@ def plan_input(value):
         if "speakers" in batch and (not isinstance(batch["speakers"], dict) or set(batch["speakers"]) != set(sources)
                 or any(speaker is not None and (not isinstance(speaker, str) or "\n" in speaker) for speaker in batch["speakers"].values())):
             raise ValueError("Speaker metadata must match every source ID; use null when unknown.")
+        if not legacy:
+            kinds = batch.get("kinds")
+            if not isinstance(kinds, dict) or set(kinds) != set(sources) or any(
+                not isinstance(kind, str) or kind not in {"dialogue", "narration", "ui", "unknown"} for kind in kinds.values()
+            ):
+                raise ValueError("Classify every source ID as dialogue, narration, ui, or unknown.")
+            if "speakers" not in batch:
+                raise ValueError("Record a speaker for every source ID; null is valid for unknown or inapplicable speakers.")
+            for identity, speaker in batch["speakers"].items():
+                if speaker is not None and (not speaker.strip() or any(char in speaker for char in "\r\n\0")):
+                    raise ValueError("Speaker names must be nonempty single-line text; use null when unknown.")
+                if kinds[identity] == "ui" and speaker is not None:
+                    raise ValueError("UI text has no speaker; use null and keep character names in the source text.")
+            notes = batch.get("qa_notes", {})
+            if not isinstance(notes, dict) or set(notes) - set(sources) or any(
+                not isinstance(note, str) or not note.strip() or len(note) > 2000 or "\0" in note for note in notes.values()
+            ):
+                raise ValueError("QA notes must describe a concrete source ambiguity, keyed by source ID, in 1–2000 characters.")
         for key in ("source_context", "scene_context", "instruction_key"):
             if key in batch and not isinstance(batch[key], str):
                 raise ValueError("Batch context and instruction keys must be text.")
@@ -87,6 +114,22 @@ def result_value(request, result):
 
 
 def logical_request(batch, context):
+    if "kinds" in batch:
+        context = dict(context)
+        context.update(line_kinds=batch["kinds"], speakers=batch["speakers"], qa_notes=batch.get("qa_notes", {}))
+        context["user"] += (
+            "\n\nLine classification (context only; do not include it in the output):\n"
+            + json.dumps(batch["kinds"], ensure_ascii=False)
+            + "\nUnknown speakers are valid. Do not inherit a previous speaker or infer identity or gender from speech style. "
+            "Narration and UI need not have a speaker. Resolve the subject and addressee separately from the speaker, "
+            "using the surrounding Japanese in the same scene and event branch. Preserve source-supported ambiguity "
+            "and voice without inventing a character identity."
+        )
+        if context["qa_notes"]:
+            context["user"] += ("\nSource ambiguities for targeted review; these are uncertainties, not established facts:\n"
+                                + json.dumps(context["qa_notes"], ensure_ascii=False))
+        context.pop("request_sha256", None)
+        context["request_sha256"] = digest(context)
     value = {"id": batch["id"], "sources": batch["sources"], "context": context,
              "constraints": batch.get("constraints", {})}
     semantic = {key: item for key, item in context.items() if key not in {"context_sha256", "request_sha256"}}

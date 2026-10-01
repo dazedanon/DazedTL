@@ -29,19 +29,33 @@ The JSON object has these fields:
 
 | Field | Contract |
 | --- | --- |
+| version | 2 for new source plans. Existing saved runs with unversioned inputs remain readable and can resume when their frozen requests are unchanged. |
 | complete | True only when the selected scope's entire planned corpus has been independently audited. API quoting requires this. |
 | inputs | Unique project-relative source and guidance files. Use immutable source exports, not a store whose translation columns will change. |
 | batches | Ordered coherent batches, each with a stable unique id and an ID-to-Japanese sources object. |
 
-A batch can also have speakers with exactly the same source IDs and null for unknown speakers;
-source_context for preceding Japanese; scene_context for evidence-based scene and runtime-substitution notes;
+Every batch requires kinds and speakers, both with exactly the same IDs as sources.
+Classify each line as dialogue, narration, ui, or unknown when its text type is unresolved.
+Use an evidenced speaker name or null for unknown/inapplicable speakers; UI must use null.
+Narration may carry a known narrator's identity without turning it into spoken dialogue.
+Unknown speakers are valid and never generate review flags automatically. Do not inherit the previous speaker
+or infer identity/gender from speech style. Resolve subjects and addressees independently using the Japanese.
+
+A batch can also have source_context for preceding Japanese; scene_context for evidence-based scene and runtime-substitution notes;
 an instruction_key from the existing field templates; and constraints keyed by source ID.
 Supported constraints are tokens (protected literal strings), max_lines, and max_characters.
 Pixel fitting still belongs to the engine's actual renderer and font checks.
 
+Optional qa_notes maps source IDs to concise notes (1–2000 characters) about concrete ambiguities
+that could change meaning, gender, perspective or a plot fact. State what is uncertain and which source evidence needs checking.
+These notes reach all three modes as explicitly uncertain context, and appear beside the saved translations for targeted QA.
+An unknown speaker alone is not a reason to add a note. Source review records that the flagged lines were checked;
+it does not establish a hidden identity. Intentional ambiguity can remain in a source-checked translation.
+Corrections invalidate that review, while retaining the notes and previous result for another pass.
+
 Preserve occurrence identity and scene order. Do not deduplicate dialogue globally by Japanese text.
 Keep nameplate text separate from contextual speaker labels. If an exchange spans requests,
-include the necessary surrounding source and check continuity at the next review checkpoint.
+include the necessary surrounding source from the same scene/event branch and check continuity at the next review checkpoint.
 
 Compile using compile --input followed by the plan's game-relative path.
 The resulting run contains the complete shared system/game instructions, matched glossary and speaker guidance,
@@ -50,7 +64,9 @@ API requests also contain the exact provider payload and resolved connection/mod
 Request size and pricing use the saved model preferences; source content is never silently truncated.
 
 Tracked source files bind to their original-branch blobs so injecting English does not invalidate Japanese source identity.
-Other declared inputs bind to bytes. A changed source version, guidance, reference context, compiler or selected scope requires a new plan before new paid work.
+Other declared inputs bind to bytes. A changed source version, guidance, reference context or selected scope requires a new plan before new paid work.
+Compiler updates can resume saved runs only when rebuilding produces exactly the same logical requests and provider payloads.
+Compatibility checks never rewrite saved plans, result identities or spending approvals.
 Known provider jobs can still be reconciled against their frozen request set.
 
 ## Results and corrections
