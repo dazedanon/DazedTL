@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from contextlib import contextmanager, ExitStack
+import uuid
 
 from dazedtl.storage import write_json
 from . import backups
@@ -27,6 +28,45 @@ def lifecycle(workspace, project_id):
 
 def backup_path(workspace, project_id, source, identity):
     return backups.lookup(source, Path(workspace) / "backups" / project_id, identity)
+
+
+def reconcile_source_backup(workspace, project_id, source, state):
+    """Retire missing auxiliary records after a source backup has been saved."""
+    retired = {}
+    saved = state.get("workspace_backup")
+    if saved:
+        try:
+            backups.lookup(source, Path(saved["path"]).parent, saved["id"])
+        except backups.BackupMissing:
+            retired["workspace_backup"] = saved
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # Unreadable or damaged artifacts still need recovery, not cleanup.
+
+    identification = Path(workspace) / "translation/projects" / project_id / "engine.json"
+    try:
+        identified = read_json(identification)
+        paths = identified["evidence"]
+        if isinstance(paths, dict) and paths:
+            for name in paths:
+                try:
+                    project_path(source, name, exists=False).stat()
+                except FileNotFoundError:
+                    continue
+                break
+            else:
+                retired["engine"] = identified
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+    if not retired:
+        return
+    archive = Path(workspace) / "backups/stale-project-records" / project_id / uuid.uuid4().hex
+    write_json(archive / "records.json", {"version": 1, "source_backup": state["source_backup"]["id"], **retired})
+    if "workspace_backup" in retired:
+        state.pop("workspace_backup")
+        write_json(lifecycle_path(workspace, project_id), state)
+    if "engine" in retired and read_json(identification) == retired["engine"]:
+        identification.rename(archive / "engine.json")
 
 
 @contextmanager
@@ -171,6 +211,8 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     else:
         raise ValueError("Unknown project operation.")
     write_json(lifecycle_path(workspace, job["project_id"]), state)
+    if action == "backup_source":
+        reconcile_source_backup(workspace, job["project_id"], source, state)
     return result
 
 

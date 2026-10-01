@@ -106,6 +106,8 @@ Keep that backup directory together when moving the game. Existing full-copy bac
 Guided **Prepare** shows the exact saved location and an **Open backup folder** action.
 If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
 replacement saves the game's current files; it does not recover the deleted original.
+After a successful fresh source backup, references to deleted workspace backups and deleted engine
+investigations are archived automatically, clearing their stale warnings without a separate cleanup step.
 A local patch does not publish a repository.
 GameUpdate's public commit marker is included only when the existing updater checks can verify it against the configured tracked branch.
 

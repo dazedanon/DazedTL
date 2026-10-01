@@ -19,6 +19,10 @@ _ID = re.compile(r"[0-9a-f]{32}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 
 
+class BackupMissing(ValueError):
+    """No saved snapshot exists at any supported location."""
+
+
 def _cancel(stopped):
     if stopped():
         raise InterruptedError("Backup operation stopped; existing snapshots were retained.")
@@ -354,9 +358,12 @@ def lookup(game, legacy_root, identity):
         raise ValueError("Choose a saved backup ID.")
     for path in (_child(store_path(game), "snapshots/" + identity), _child(legacy_root, identity),
                  _child(legacy_root, "snapshots/" + identity)):
-        if path.exists():
-            return path
-    raise ValueError("The backup is unavailable. Its files were not changed.")
+        try:
+            path.stat()
+        except FileNotFoundError:
+            continue
+        return path
+    raise BackupMissing("The backup is unavailable. Its files were not changed.")
 
 
 def record_status(game, record, *, kind):

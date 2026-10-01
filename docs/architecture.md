@@ -126,6 +126,11 @@ that its files still exist. Resolved locations are shown in the UI; Electron ope
 as available by the backend. Full content hashes are still verified at restore and reuse boundaries.
 The managed store has its own writer lock. Content is verified before reuse/publication; source mutations abort
 capture. A failed capture removes only unpublished objects it created. Existing snapshots are never pruned.
+After a source backup is successfully saved, the operation reconciles profile references to a deleted
+workspace snapshot and engine investigation whose evidence files are all missing. It archives those
+records under profile `backups/stale-project-records` before retiring them. Read-only observations do
+not clear records. Existing or unreadable artifacts, prepared-original baselines, and run history stay
+intact; a failed or cancelled backup does not retire anything.
 
 Workspace capture excludes the entire .dazedtl/backups directory, including any pre-existing manual backups.
 Source capture excludes .git and .dazedtl. Arbitrary nested destinations remain forbidden. The v2 subdirectory

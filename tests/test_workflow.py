@@ -3,6 +3,7 @@
 from copy import deepcopy
 import json
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -241,6 +242,92 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(set(files), {"source.json"})
         with materialized(result["path"]) as (restored, _manifest):
             self.assertEqual(digest((restored / "source.json").read_bytes()), files["source.json"])
+
+    def test_fresh_source_backup_retires_deleted_workspace_and_investigation_records(self):
+        report = WORK + "/work/investigation.md"
+        (self.game / report).write_text("Engine investigation")
+        self.service.identify(self.identity, "MVMZ", report)
+        run = self.service.compile(self.identity, self.plan_path)
+        run_folder = self.service.jobs.store.folder(run['id'])
+        saved_run = {path.name: path.read_bytes() for path in run_folder.iterdir() if path.is_file()}
+        self.service.draft(self.identity, "options", {"revision": "saved", "options": DEFAULTS})
+        draft_path = self.service.draft_path(self.identity)
+        saved_draft = draft_path.read_bytes()
+        state = lifecycle(self.profile, self.identity)
+        state['prepared_source'] = state['source_backup']
+        state['git'] = {'original_commit': 'retained'}
+        state['workspace_backup'] = snapshot(self.game / '.dazedtl', store_path(self.game))
+        write_json(lifecycle_path(self.profile, self.identity), state)
+        engine_path = lifecycle_path(self.profile, self.identity).with_name('engine.json')
+        identified = read_json(engine_path)
+        shutil.rmtree(self.game / '.dazedtl')
+        result = execute(self.engine, self.profile, {'project_id': self.identity}, {
+            'source': str(self.game), 'options': DEFAULTS, 'action': 'backup_source',
+            'arguments': {}}, lambda: False)
+        current = lifecycle(self.profile, self.identity)
+        self.assertEqual(current, {**{key: value for key, value in state.items() if key != 'workspace_backup'}, 'source_backup': result})
+        self.assertFalse(engine_path.exists())
+        archive = next((self.profile / 'backups/stale-project-records' / self.identity).iterdir())
+        self.assertEqual(read_json(archive / 'records.json')['workspace_backup'], state['workspace_backup'])
+        self.assertEqual(read_json(archive / 'engine.json'), identified)
+        self.assertEqual(draft_path.read_bytes(), saved_draft)
+        self.assertEqual({path.name: path.read_bytes() for path in run_folder.iterdir() if path.is_file()}, saved_run)
+        # State no longer promotes these retired references to Overview warnings.
+        self.engine.detect = lambda _source: 'MVMZ'
+        self.engine.documents = lambda _source: {}
+        current = self.service.state(self.identity)
+        self.assertEqual(current['warnings'], [])
+        self.assertTrue(current['lifecycle']['source_backup']['available'])
+        execute(self.engine, self.profile, {'project_id': self.identity}, {
+            'source': str(self.game), 'options': DEFAULTS, 'action': 'backup_source',
+            'arguments': {}}, lambda: False)
+        self.assertEqual(len(list(archive.parent.iterdir())), 1)
+
+    def test_source_backup_preserves_existing_or_damaged_artifacts_and_prepared_baselines(self):
+        report = WORK + '/work/investigation.md'
+        (self.game / report).write_text('Engine investigation')
+        self.service.identify(self.identity, 'MVMZ', report)
+        state = lifecycle(self.profile, self.identity)
+        state['workspace_backup'] = snapshot(self.game / '.dazedtl', store_path(self.game))
+        state['prepared_source'] = {**state['source_backup'], 'id': 'e' * 32, 'path': str(self.root / 'missing-prepared')}
+        write_json(lifecycle_path(self.profile, self.identity), state)
+        engine_path = lifecycle_path(self.profile, self.identity).with_name('engine.json')
+        identified = engine_path.read_bytes()
+        for damaged in (False, True):
+            with self.subTest(damaged=damaged):
+                if damaged:
+                    (Path(state['workspace_backup']['path']) / 'manifest.json').write_text('damaged manifest')
+                    (self.game / report).write_text('Changed evidence still needs review')
+                execute(self.engine, self.profile, {'project_id': self.identity}, {
+                    'source': str(self.game), 'options': DEFAULTS, 'action': 'backup_source',
+                    'arguments': {}}, lambda: False)
+                current = lifecycle(self.profile, self.identity)
+                self.assertEqual(current['workspace_backup'], state['workspace_backup'])
+                self.assertEqual(current['prepared_source'], state['prepared_source'])
+                self.assertEqual(engine_path.read_bytes(), identified)
+                self.assertFalse((self.profile / 'backups/stale-project-records').exists())
+
+    def test_failed_or_cancelled_source_backup_retains_stale_records(self):
+        report = WORK + '/work/investigation.md'
+        (self.game / report).write_text('Engine investigation')
+        self.service.identify(self.identity, 'MVMZ', report)
+        state = lifecycle(self.profile, self.identity)
+        state['workspace_backup'] = snapshot(self.game / '.dazedtl', store_path(self.game))
+        state_path = lifecycle_path(self.profile, self.identity)
+        write_json(state_path, state)
+        engine_path = state_path.with_name('engine.json')
+        original = (state_path.read_bytes(), engine_path.read_bytes())
+        shutil.rmtree(self.game / '.dazedtl')
+        for cancelled in (True, False):
+            with self.subTest(cancelled=cancelled):
+                if not cancelled:
+                    (self.game / 'source.json').unlink()
+                with self.assertRaises(InterruptedError if cancelled else ValueError):
+                    execute(self.engine, self.profile, {'project_id': self.identity}, {
+                        'source': str(self.game), 'options': DEFAULTS, 'action': 'backup_source',
+                        'arguments': {}}, lambda: cancelled)
+                self.assertEqual((state_path.read_bytes(), engine_path.read_bytes()), original)
+                self.assertFalse((self.profile / 'backups/stale-project-records').exists())
 
     def test_checkpoints_use_temporary_verified_originals_and_reuse_workspace_backups(self):
         manifest_path = WORK + "/work/patch-files.json"
