@@ -177,9 +177,9 @@ export interface TranslationState extends ProjectOptions {
     asset_sync_pending: boolean;
   } | null;
   lifecycle: {
-    source_backup?: { id: string; path: string; files: number };
-    prepared_source?: { id: string; path: string; files: number };
-    workspace_backup?: { id: string; path: string; files: number };
+    source_backup?: BackupRecord;
+    prepared_source?: BackupRecord;
+    workspace_backup?: BackupRecord;
     checkpoint?: { commit: string; manifest: string };
     delivery?: {
       path: string;
@@ -194,7 +194,28 @@ export interface TranslationState extends ProjectOptions {
   statusText: string;
   handoff: string;
   providerEnabled: boolean;
+  connection: { name: string; model: string } | null;
   legacyAvailable: boolean;
+}
+export interface BackupRecord {
+  id: string;
+  path: string;
+  files: number;
+  bytes_total?: number;
+  bytes_added?: number;
+  bytes_reused?: number;
+  reused_snapshot?: boolean;
+}
+export interface BackupCatalog {
+  snapshots: {
+    id: string;
+    kind: "source" | "workspace";
+    created: string;
+    files: number;
+    version: number;
+    bytes_total: number | null;
+  }[];
+  warnings: string[];
 }
 export interface RequestPreview {
   run_id: string;
@@ -387,6 +408,10 @@ export interface RpcContract {
   translation_request: {
     request: { project_id: string; run_id: string; index: number };
     response: RequestPreview;
+  };
+  translation_backups: {
+    request: { project_id: string };
+    response: BackupCatalog;
   };
   translation_start: {
     request: { project_id: string; run_id: string; approval_token?: string };

@@ -191,9 +191,21 @@ function Workspace({
                   every mode.
                 </p>
                 {draft.value.options.mode !== "agent" && (
-                  <Button onClick={settings}>
-                    Choose connection and model
-                  </Button>
+                  <div className="translation-connection">
+                    <dl className="translation-facts" aria-label="Current API selection">
+                      <div>
+                        <dt>Connection</dt>
+                        <dd>{state.connection?.name || "Not selected"}</dd>
+                      </div>
+                      <div>
+                        <dt>Model</dt>
+                        <dd>{state.connection?.model || "Not selected"}</dd>
+                      </div>
+                    </dl>
+                    <Button onClick={settings}>
+                      Choose connection and model
+                    </Button>
+                  </div>
                 )}
                 <label>
                   Instructions for the translation agent

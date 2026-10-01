@@ -11,6 +11,16 @@ Its --help and operation --help describe available commands and operation argume
 The helper talks only to the profile's authenticated loopback endpoint and does not use a proxy or follow redirects.
 After reopening the app, the same invocation reads the new connection descriptor and resumes saved state.
 
+### Sandboxed connections
+
+A network sandbox can block loopback even when DazedTL is running. The generated starting prompt
+includes the permission and recovery procedure; the helper repeats it on connection failures.
+Use the assistant's normal permission flow for the helper and verify access with the read-only `state`
+command before diagnosing an app outage. A lost response may follow a completed action, so inspect
+saved state and runs before retrying a mutation or paid submission.
+
+### Saved state and setup
+
 Use state before starting. It reports the portable options, current Git and backup state, saved progress,
 pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
@@ -113,7 +123,15 @@ When an official source version changes, rebase_rpgmaker additionally requires t
 and source bytes identical to that original-branch file. It rebuilds metadata from that trusted source and retains Git history.
 Native formats use their existing source/injection sidecars and verified native reconstruction.
 
-Checkpoint uses the full reviewed runtime manifest, aligns original and the translation branch, and backs up the ignored workspace separately.
+Checkpoint uses the full reviewed runtime manifest, aligns original and the translation branch, and snapshots the ignored workspace in .dazedtl/backups/v2.
+Source, prepared-source and workspace snapshots reuse identical file content. The backup store never includes itself; an unchanged snapshot reuses its ID.
+Use backup_workspace for a recovery milestone without a patch commit. Do not create parallel full workspace copies or checkpoint ZIPs.
+Routine progress reports remain lightweight. Preserve older backups; no automatic cleanup or conversion is performed.
+The backup result reports bytes_total, bytes_added, bytes_reused and reused_snapshot. Packaging reuses matching saved content.
+Use backups to list local restore points and older profile backups. restore_backup takes backup_id and destination,
+which must name a new directory outside the game. It verifies content and never overwrites existing files.
+Snapshot IDs remain valid after moving the entire store with the game; engine source readers use temporary verified materialization.
+Standalone recovery without an app profile is documented in README.
 Package requires current reported QA and creates a local patch from reviewed Git files.
 It does not create remotes, push, or upload. The existing GameUpdate checks govern public commit stamping.
 

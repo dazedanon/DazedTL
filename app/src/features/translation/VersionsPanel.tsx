@@ -7,6 +7,7 @@ import { flushDrafts } from "../../state/leaveGuards";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
+import { BackupsPanel, BackupSummary } from "./BackupsPanel";
 
 export function VersionsPanel({
   project,
@@ -59,17 +60,13 @@ export function VersionsPanel({
           <div>
             <dt>Source backup</dt>
             <dd>
-              {state.lifecycle.source_backup
-                ? "Saved · " + state.lifecycle.source_backup.files + " files"
-                : "Required before preparation"}
+              <BackupSummary record={state.lifecycle.source_backup} fallback="Required before preparation" />
             </dd>
           </div>
           <div>
             <dt>Workspace backup</dt>
             <dd>
-              {state.lifecycle.workspace_backup
-                ? "Saved · " + state.lifecycle.workspace_backup.files + " files"
-                : "Not yet saved"}
+              <BackupSummary record={state.lifecycle.workspace_backup} fallback="Not yet saved" />
             </dd>
           </div>
         </dl>
@@ -163,6 +160,7 @@ export function VersionsPanel({
           </Button>
         </details>
       </Section>
+      <BackupsPanel state={state} />
       <Section title="Checkpoint and local delivery">
         <label>
           Complete runtime patch manifest

@@ -32,7 +32,13 @@ def call(workspace, method, params):
         with client.open(request, timeout=120) as response:
             value = json.load(response)
     except (OSError, urllib.error.URLError) as exc:
-        raise ValueError("DazedTL is unavailable. Keep saved work and reopen the app before resuming.") from exc
+        raise ValueError(
+            "The local DazedTL request failed. The app may still be running: a network sandbox can block "
+            "loopback (127.0.0.1). Use the assistant's normal permission flow for this helper, then retry "
+            "the read-only state command. Reopen DazedTL with this workspace only if it remains unreachable "
+            "with permitted access. Inspect saved state and runs before retrying any state-changing command; "
+            "the previous action may have reached the app."
+        ) from exc
     if not value.get("ok"):
         raise ValueError(value.get("error", "Project operation failed."))
     return value["value"]
@@ -45,6 +51,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("state")
     commands.add_parser("prepare")
+    commands.add_parser("backups", help="List local restore points and older profile backups")
     commands.add_parser("plan-format")
     identify = commands.add_parser("identify")
     identify.add_argument("--engine", required=True)

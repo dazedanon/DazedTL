@@ -4,6 +4,12 @@ from . import providers, preferences
 from dazedtl.translation.files import read_json
 
 
+def connection_summary(settings):
+    """Expose only the saved selection; drafts and credentials stay private."""
+    connection = settings._connection(settings._read())
+    return {key: connection[key] for key in ("name", "model")} if connection else None
+
+
 def configuration(settings, mode):
     state = settings._read()
     language = state["values"]["language"]

@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
-from dazedtl.settings.execution import worker_secret, configuration
+from dazedtl.settings.execution import worker_secret, configuration, connection_summary
 from dazedtl.storage import write_json
-from dazedtl.translation.backups import snapshot
+from dazedtl.translation.backups import snapshot, materialized, store_path
 from dazedtl.translation.files import digest, read_json, evidence
-from dazedtl.translation.operations import lifecycle_path, require_baseline
+from dazedtl.translation.operations import lifecycle_path, require_baseline, execute, lifecycle
 from dazedtl.translation.project import ProjectWorkspace, DEFAULTS, WORK, scope
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.requests import plan_input
@@ -78,9 +78,9 @@ class WorkflowTests(unittest.TestCase):
         self.identity = self.record["id"]
         self.project = ProjectWorkspace(self.game)
         self.project.save("new", {**DEFAULTS, "include_images": False})
-        backup = snapshot(self.game, self.profile / "backups" / self.identity, source_game=True)
+        backup = snapshot(self.game, store_path(self.game), source_game=True)
         write_json(lifecycle_path(self.profile, self.identity), {"version": 1, "source_backup": backup})
-        connection = {"id": "connection", "provider": "custom", "protocol": "openai", "endpoint": "https://provider.invalid/v1",
+        connection = {"id": "connection", "name": "Local provider", "provider": "custom", "protocol": "openai", "endpoint": "https://provider.invalid/v1",
                       "secret": "fixture-private-value", "keyless": False, "organization": "", "model": "fixture-model",
                       "model_options": {"fixture-model": {"pricing": "custom", "inputRate": 1, "outputRate": 2, "entriesPerRequest": 50}}}
         settings_data = {"version": 2, "revision": 1, "values": {"language": "English"}, "active": "connection", "connections": [connection]}
@@ -204,13 +204,22 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.compile(self.identity, self.plan_path)
 
-    def test_worker_credentials_cannot_silently_follow_a_changed_connection(self):
+    def test_current_selection_excludes_drafts_and_secrets_while_saved_runs_keep_their_route(self):
         selected = self.project.read()
         self.service.save(self.identity, selected["revision"], {**selected["options"], "mode": "live"})
         run = self.service.compile(self.identity, self.plan_path)
         _job, plan = self.service.jobs.store.load(run["id"])
         write_json(self.profile / "settings/settings.json", self.settings_data)
         self.assertEqual(worker_secret(self.profile, plan["configuration"]), "fixture-private-value")
+        self.settings_data["draft"] = {"connections": {"connection": {"model": "unsaved-model"}}}
+        self.assertEqual(connection_summary(self.settings), {"name": "Local provider", "model": "fixture-model"})
+        self.settings_data["connections"].append({**self.settings_data["connections"][0], "id": "second",
+                                                 "name": "Another provider", "model": "next-model"})
+        self.settings_data["active"] = "second"
+        self.assertEqual(connection_summary(self.settings), {"name": "Another provider", "model": "next-model"})
+        self.assertEqual(plan["configuration"]["connection_id"], "connection")
+        self.settings_data["active"] = ""
+        self.assertIsNone(connection_summary(self.settings))
         changed = deepcopy(self.settings_data)
         changed["connections"][0]["endpoint"] = "https://different.invalid/v1"
         write_json(self.profile / "settings/settings.json", changed)
@@ -225,7 +234,64 @@ class WorkflowTests(unittest.TestCase):
         result = snapshot(self.game, self.profile / "more-backups", source_game=True)
         files = read_json(Path(result["path"]) / "manifest.json")["files"]
         self.assertEqual(set(files), {"source.json"})
-        self.assertEqual(digest((Path(result["path"]) / "files/source.json").read_bytes()), files["source.json"])
+        with materialized(result["path"]) as (restored, _manifest):
+            self.assertEqual(digest((restored / "source.json").read_bytes()), files["source.json"])
+
+    def test_checkpoints_use_temporary_verified_originals_and_reuse_workspace_backups(self):
+        manifest_path = WORK + "/work/patch-files.json"
+        write_json(self.game / manifest_path, ["source.json"])
+        asset = self.game / "unchanged-asset.bin"
+        asset.write_bytes(b"original asset")
+        configured = [False]
+        original_status = self.engine.git_status
+        self.engine.git_status = lambda source, *args: {**original_status(source, *args),
+            "configured": configured[0], "translation_commit": "checkpoint"}
+        self.engine.audit_scope = lambda *_args: None
+        self.engine.runtime_paths = lambda manifest: list(manifest)
+        originals = []
+        def setup(_source, _options, _version, original, _untranslated):
+            folder = Path(original)
+            originals.append(folder)
+            self.assertEqual((folder / "unchanged-asset.bin").read_bytes(), b"original asset")
+            configured[0] = True
+            return self.engine.git_status(self.game)
+        self.engine.git_setup = setup
+        def git_scope(_source, _options, _manifest, original, _dry_run):
+            folder = Path(original)
+            originals.append(folder)
+            self.assertEqual(read_json(folder / "source.json"), {"line": "はい。"})
+            self.assertFalse((folder / "unchanged-asset.bin").exists())
+            return {"staged": 1}
+        self.engine.git_scope = git_scope
+        self.engine.commit = lambda *_args: "checkpoint"
+        self.engine.package = lambda *_args: {"path": str(self.root / "patch.zip")}
+        self.engine.detect = lambda _source: "Other engine"
+        job = {"project_id": self.identity, "id": "b" * 32}
+        def operation(action, **arguments):
+            return execute(self.engine, self.profile, job, {"source": str(self.game), "options": DEFAULTS,
+                "action": action, "arguments": arguments}, lambda: False)
+        operation("git_setup", version="1.0", untranslated=True, manifest=manifest_path)
+        self.assertTrue(all(not path.exists() for path in originals))
+        write_json(self.game / "source.json", {"line": "Yes."})
+        delivery.record(self.game, manifest_path, ["source.json"])
+        first = operation("checkpoint", manifest=manifest_path)
+        second = operation("checkpoint", manifest=manifest_path)
+        packaged = operation("package")
+        self.assertEqual(first["backup"]["id"], second["backup"]["id"])
+        self.assertEqual(second["backup"]["bytes_added"], 0)
+        self.assertEqual(packaged["backup"]["id"], first["backup"]["id"])
+        self.assertTrue(all(not path.exists() for path in originals))
+        self.assertTrue(self.service.backups(self.identity)["snapshots"])
+        restored = self.root / "recovered-work"
+        operation("restore_backup", backup_id=first["backup"]["id"], destination=str(restored))
+        self.assertEqual(read_json(restored / "len-method/work/patch-files.json"), ["source.json"])
+        self.assertFalse((restored / "backups").exists())
+        official = self.root / "new-official"
+        official.mkdir()
+        (official / "native.bin").write_bytes(b"new official bytes\r\n")
+        staged = operation("stage_update", official=str(official), version="1.1")
+        self.assertEqual((Path(staged["official"]) / "native.bin").read_bytes(), b"new official bytes\r\n")
+        self.assertTrue(lifecycle(self.profile, self.identity)["workspace_backup"]["reused_snapshot"])
 
     def test_runtime_changes_invalidate_delivery_even_if_qa_report_is_unchanged(self):
         path = WORK + "/work/patch-files.json"

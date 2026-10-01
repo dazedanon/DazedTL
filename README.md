@@ -78,8 +78,28 @@ Ordinary MV/MZ writes preserve existing Japanese in _original. Rebasing source m
 Native formats use their engine's source/injection sidecars. Keep the selected game available throughout the work.
 
 Working records and guidance stay in the game's ignored .dazedtl folder; Git tracks the runtime patch and matching originals.
-Source and workspace backups are retained separately in the app workspace. A local patch does not publish a repository.
+Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
+The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
+Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
+A local patch does not publish a repository.
 GameUpdate's public commit marker is included only when the existing updater checks can verify it against the configured tracked branch.
+
+In **Source & versions**, use **List restore points** to select a source or translation-workspace backup.
+Restore writes a verified copy into a new folder outside the game; existing folders are never overwritten.
+Source snapshots restore game files. Workspace snapshots restore the contents of .dazedtl, including guidance,
+accepted translations, custom tools and image work, but not the backup store itself.
+Connections, app-owned runs and their provider state remain in the app profile.
+
+If the app profile is unavailable, inspect and restore the portable store from this checkout:
+
+```bash
+python scripts/backups.py --game "/path/to/game" list
+python scripts/backups.py --game "/path/to/game" verify --id SNAPSHOT_ID
+python scripts/backups.py --game "/path/to/game" restore --id SNAPSHOT_ID --destination "/path/to/new-recovery-folder"
+```
+
+Add `--legacy-backups "/path/to/old/workspace/backups/PROJECT_ID"` before the command to include older full-copy backups.
+Do not edit the store's objects or remove snapshot files manually; several restore points can share the same content.
 
 Engine adapter authors and assistant integrations should use the [translation contract](docs/translation-contract.md).
 

@@ -1,7 +1,7 @@
 """Preparation and delivery compose preserved engine operations with backups."""
 
 from pathlib import Path
-import shutil
+from contextlib import contextmanager, ExitStack
 
 from dazedtl.storage import write_json
 from . import backups
@@ -17,19 +17,29 @@ def lifecycle(workspace, project_id):
     return read_json(path) if path.exists() else {"version": 1}
 
 
-def backup_files(workspace, project_id, identity):
-    if not isinstance(identity, str) or len(identity) != 32 or any(char not in "0123456789abcdef" for char in identity):
-        raise ValueError("Choose a registered backup.")
-    path = Path(workspace) / "backups" / project_id / identity
-    value = backups.manifest(path)
-    return path / "files", value
+def backup_path(workspace, project_id, source, identity):
+    return backups.lookup(source, Path(workspace) / "backups" / project_id, identity)
+
+
+@contextmanager
+def backup_files(workspace, project_id, source, identity, *, files=None, stopped=lambda: False):
+    path = backup_path(workspace, project_id, source, identity)
+    with backups.materialized(path, files=files, stopped=stopped) as restored:
+        yield restored
 
 
 def execute(engine, workspace, job, plan, stopped, progress=lambda _message: None):
+    with ExitStack() as resources:
+        return _execute(engine, workspace, job, plan, stopped, progress, resources)
+
+
+def _execute(engine, workspace, job, plan, stopped, progress, resources):
     source, options = Path(plan["source"]), plan["options"]
     arguments = plan["arguments"]
     state = lifecycle(workspace, job["project_id"])
-    destination = Path(workspace) / "backups" / job["project_id"]
+    destination = backups.store_path(source)
+    def restored(identity, files=None):
+        return resources.enter_context(backup_files(workspace, job["project_id"], source, identity, files=files, stopped=stopped))
     action = plan["action"]
     if action in {"backup_source", "backup_workspace"}:
         root = source if action == "backup_source" else source / ".dazedtl"
@@ -56,7 +66,7 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
             write_json(lifecycle_path(workspace, job["project_id"]), state)
         original = arguments.get("original", "")
         if not original and arguments.get("untranslated") and state.get("prepared_source"):
-            original = str(backup_files(workspace, job["project_id"], state["prepared_source"]["id"])[0])
+            original = str(restored(state["prepared_source"]["id"])[0])
         result = engine.git_setup(source, options, arguments["version"], original, arguments.get("untranslated") is True)
         state["git"] = {key: result.get(key) for key in ("original_commit", "translation_commit", "original_version", "translation_branch")}
         if arguments.get("manifest"):
@@ -66,7 +76,7 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
         output = project_path(source, arguments["output"], exists=False)
         staged = project_path(source, arguments["translated"])
         if arguments.get("backup_id"):
-            root, manifest = backup_files(workspace, job["project_id"], arguments["backup_id"])
+            root, manifest = restored(arguments["backup_id"], [arguments["source"]])
             original = project_path(root, arguments["source"])
             if manifest["files"].get(arguments["source"]) != digest(original.read_bytes()):
                 raise ValueError("The backup source bytes changed. Restore the matching original before injection.")
@@ -80,13 +90,14 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
     elif action == "checkpoint":
         require_baseline(engine, source, options, state)
         manifest = read_json(project_path(source, arguments["manifest"]))
-        original = str(backup_files(workspace, job["project_id"], state["prepared_source"]["id"])[0]) if state.get("prepared_source") else None
+        original = str(restored(state["prepared_source"]["id"], engine.runtime_paths(manifest))[0]) if state.get("prepared_source") else None
         engine.git_scope(source, options, manifest, original, True)
         result = engine.git_scope(source, options, manifest, original, False)
         result["commit"] = engine.commit(source, arguments.get("message", "translation: save reviewed patch"))
         state["checkpoint"] = {"commit": result["commit"], "manifest": arguments["manifest"]}
         state["runtime_manifest"] = arguments["manifest"]
         state["workspace_backup"] = backups.snapshot(source / ".dazedtl", destination, stopped=stopped)
+        result["backup"] = state["workspace_backup"]
     elif action == "package":
         require_baseline(engine, source, options, state)
         if not state.get("checkpoint"):
@@ -99,6 +110,7 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
         result = engine.package(source, options, manifest, Path(workspace) / "deliveries" / job["project_id"])
         state["delivery"] = result
         state["workspace_backup"] = backups.snapshot(source / ".dazedtl", destination, stopped=stopped)
+        result["backup"] = state["workspace_backup"]
     elif action == "stage_update":
         official = Path(arguments["official"]).expanduser().resolve(strict=True)
         if not official.is_dir() or official == source or official.is_relative_to(source) or source.is_relative_to(official):
@@ -107,7 +119,8 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
                                      progress=lambda count, path: progress("Preserved " + str(count) + " new-original files · " + path))
         staged = Path(workspace) / "translation/projects" / job["project_id"] / "incoming" / job["id"]
         progress("Creating an isolated working copy of the new original.")
-        shutil.copytree(Path(pristine["path"]) / "files", staged)
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        backups.restore(pristine["path"], staged, stopped=stopped)
         kind = engine.detect(staged)
         prepared = False
         if kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir():
@@ -115,6 +128,13 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
             prepared = True
         result = {"official": str(staged), "version": arguments["version"], "source_backup": pristine,
                   "engine": kind, "preparation_required": not prepared}
+    elif action == "restore_backup":
+        target = Path(arguments["destination"]).expanduser().absolute()
+        if target.resolve().is_relative_to(source) or source.is_relative_to(target.resolve()):
+            raise ValueError("Choose a new restore folder outside the selected game.")
+        path = backup_path(workspace, job["project_id"], source, arguments["backup_id"])
+        result = backups.restore(path, target, stopped=stopped,
+                                 progress=lambda count, name: progress("Verified " + str(count) + " restored files · " + name))
     elif action.startswith("version_"):
         operation = action.removeprefix("version_")
         require_baseline(engine, source, options, state, allow_pending=operation in {"continue", "abort"})
@@ -140,8 +160,10 @@ def execute(engine, workspace, job, plan, stopped, progress=lambda _message: Non
 def require_baseline(engine, source, options, state, *, allow_pending=False):
     if not state.get("source_backup"):
         raise ValueError("Preserve a recoverable source backup before translation.")
-    saved = backups.manifest(state["source_backup"]["path"], source)
-    if not saved.get("files") or not (Path(state["source_backup"]["path"]) / "files").is_dir():
+    record = state["source_backup"]
+    path = backups.lookup(source, Path(record["path"]).parent, record["id"])
+    saved = backups.verify(path, source=source, full=False)
+    if saved["kind"] != "source":
         raise ValueError("The source backup is unavailable. Restore it before continuing.")
     status = engine.git_status(source, options)
     if status.get("repo_root") != str(Path(source).resolve()):

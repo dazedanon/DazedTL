@@ -8,6 +8,7 @@
 - Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
 - Keep credentials, games, run files, logs, and caches outside the source tree.
 - Use `rg` for repository searches.
+- For project-helper connection failures, follow the [sandboxed connection guidance](docs/translation-contract.md#sandboxed-connections).
 
 ## Documentation
 

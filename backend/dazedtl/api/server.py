@@ -227,7 +227,7 @@ def serve(args, diagnostics):
             lambda value, _params: views.documents(value),
         ),
     }
-    for name in ("state", "save", "draft", "documents", "save_document", "prepare", "compile", "run", "request",
+    for name in ("state", "save", "draft", "documents", "save_document", "prepare", "backups", "compile", "run", "request",
                  "start", "stop", "accept", "review", "progress", "operation", "attach_batch", "resolve_uncertain", "identify", "legacy"):
         methods["translation_" + name] = (getattr(app.translation, name), lambda value, _params: value)
 

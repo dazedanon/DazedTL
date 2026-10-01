@@ -44,6 +44,18 @@
   flex-wrap: wrap;
   gap: 8px 24px;
 }
+.translation-connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0;
+}
+.translation-connection .translation-facts {
+  flex: 1 1 300px;
+  min-width: 0;
+  margin: 0;
+}
 .translation-workspace .translation-check {
   display: flex;
   flex-direction: row;
@@ -104,6 +116,11 @@
 .translation-facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+.translation-backup-storage {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
 }
 .translation-run {
   padding: 20px 0;

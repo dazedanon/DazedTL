@@ -7,7 +7,7 @@ import shlex
 import sys
 
 from dazedtl.storage import write_json, write_bytes
-from dazedtl.settings.execution import configuration
+from dazedtl.settings.execution import configuration, connection_summary
 from .files import digest, read_json, project_path, evidence, verify_evidence
 from .project import ProjectWorkspace, WORK, options, scope
 from .requests import plan_input, quote
@@ -15,12 +15,13 @@ from .compilation import compile_requests, verify_compilation
 from .results import Results
 from .operations import lifecycle, require_baseline
 from .jobs import Jobs
-from . import delivery
+from . import delivery, backups
 
 
 OPERATIONS = {
     "backup_source": ("Preserve source game", set()),
     "backup_workspace": ("Back up translation workspace", set()),
+    "restore_backup": ("Restore backup into a new folder", {"backup_id", "destination"}),
     "rpgmaker_prepare": ("Prepare RPG Maker files", {"data_path"}),
     "git_setup": ("Establish version baselines", {"version", "original", "untranslated", "manifest"}),
     "write_rpgmaker": ("Write source-preserving game JSON", {"source", "translated", "output", "backup_id"}),
@@ -167,6 +168,7 @@ class Translation:
                 "statusText": status.read_text(encoding="utf-8")[:250_000] if status.is_file() and status.stat().st_size <= 5_000_000 else "",
                 "handoff": handoff.read_text(encoding="utf-8") if handoff.is_file() and handoff.stat().st_size < 250_000 else "",
                 "providerEnabled": self.settings.adapter.allow_providers,
+                "connection": connection_summary(self.settings),
                 "legacyRun": ({key: value for key, value in self.legacy_record(project_id).items()
                                if key in {"id", "mode", "status", "phase", "message", "approval", "outputs"}}
                               if self.legacy_record(project_id) else None),
@@ -201,20 +203,24 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 {command} state
 {command} --help
 
-The helper prints structured JSON; never copy API keys into game files, prompts, or arguments. A disconnected app is a concrete pause: save local work, then resume with the same prompt when it is available. The app does not run the coding assistant itself.
+The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). A coding assistant's network sandbox can block that connection even while DazedTL is open. If loopback access is restricted, use the assistant's normal permission/escalation flow for this helper before running state (in Codex, sandbox_permissions="require_escalated" when required). Reuse valid permission already granted. A failed sandboxed connection does not mean the app is closed: retry the read-only state command with permitted access before asking the user to reopen DazedTL. If permission is denied or unavailable, report that restriction as the blocker.
+
+After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
 1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/answer/export; inspect its frozen approval before authorizing any additional submission. Preserve and review its exported results before importing matching receipts into the new request store.
-2. Before modifying runtime game files, run operation backup_source and wait for its saved job to complete. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare; Ace must first complete its reviewed decryption/conversion prerequisite. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
+2. Before modifying runtime game files, run operation backup_source and wait for its saved job to complete. Use the app backup operations for all source/workspace checkpoints. They keep a deduplicated store in .dazedtl/backups/v2, exclude .dazedtl/backups from workspace snapshots, and reuse unchanged files and snapshots. Do not create additional full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups; never manually edit or prune the managed store. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare; Ace must first complete its reviewed decryption/conversion prerequisite. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
 3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. The helper retains a second prepared-source snapshot for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists.
 4. Complete the shared setup investigation and independently audit the source inventory, including plugins/scripts, dynamic text, and images in scope. Keep glossary, context and voice guidance in their shared files; preserve user edits. Mark coverage provisional until the inventory is audited.
 5. Save a version-2 source-bound request plan using the format returned by plan-format. Classify every source ID in kinds as dialogue, narration, ui, or unknown when evidence cannot establish the text type. Supply a complete speakers map: use an evidenced name or null for unknown/inapplicable speakers; UI always has a null speaker. Never inherit the previous speaker or infer identity or gender from speech style. Unknown speakers are valid and do not block translation. Group coherent exchanges; include relevant Japanese from the same scene/event branch, scene/context notes and runtime substitution meanings, field instruction keys, and explicit engine-specific protected tokens/layout bounds. Resolve subjects and addressees separately from the speaker; preserve voice supported by the Japanese without inventing an identity. Add qa_notes keyed by source ID only for concrete uncertainty that could change meaning, gender, perspective or a plot fact. State the ambiguity and evidence to check; do not flag every unknown speaker or turn guesses into established facts. Declare immutable source exports as inputs, not a store whose translation fields change while you work. Tracked game-source files bind to original so ordinary English injection does not invalidate their source. Use compile --input <project-relative plan>. The helper supplies the same compiled context and validators in every mode. For API work, respect the configured request size and include source overlap when an exchange spans requests.
 6. Agent Translation: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. DazedTL makes no translation API calls in this mode. Follow the user's delegation instructions.
 7. Live/Batch API Translation: inspect the exact compiled request and quote. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. Poll run for status; resume saved jobs with start --run <id>. Never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
-8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Inspect each request's qa_notes and check flagged lines against surrounding source, relevant script branches or the installed scene. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Review accepted requests with review only after actually checking them and their flagged ambiguities against the source; fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.
+8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Inspect each request's qa_notes and check flagged lines against surrounding source, relevant script branches or the installed scene. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Review accepted requests with review only after actually checking them and their flagged ambiguities against the source; fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.
 9. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved or excluded content explicitly.
-10. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a separate workspace backup. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
+10. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
 
 For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Recompile only changed/new work with current source mappings; positional offsets alone are not stable across releases.
+
+Use backups to list restore points, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
 
 Finish the local delivery or record a concrete blocker and exact next action. Continue automatically across routine phases.
 
@@ -223,6 +229,10 @@ Additional project instructions:
 '''
         write_bytes(handoff_path := project_path(project.root, WORK + "/handoff.md", exists=False), handoff.encode("utf-8"))
         return {"handoff": handoff, "path": str(handoff_path)}
+
+    def backups(self, project_id):
+        _record, project = self.project(project_id)
+        return backups.catalog(project.root, self.workspace / "backups" / project_id)
 
     def compile(self, project_id, input_path):
         self.idle(project_id)
@@ -417,6 +427,7 @@ Additional project instructions:
         if action not in OPERATIONS or not isinstance(arguments, dict) or set(arguments) - OPERATIONS[action][1]:
             raise ValueError("Unknown operation or operation fields.")
         required = {
+            "restore_backup": {"backup_id", "destination"},
             "git_setup": {"version"}, "write_rpgmaker": {"source", "translated", "output"},
             "rebase_rpgmaker": {"source", "translated", "output", "expected_original_commit"},
             "checkpoint": {"manifest"}, "stage_update": {"official", "version"},

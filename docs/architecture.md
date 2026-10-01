@@ -29,7 +29,7 @@ Reserve cards for content requiring a distinct container.
 
 Project identity, execution mode, and visible screen are separate. Version-two registry migration keeps existing IDs, backend job references, phase selections, and recovery data.
 Portable workflow options live in the selected game's .dazedtl/len-method/workflow.json; the old Len project.json is imported without being overwritten.
-The app profile holds connections, recoverable drafts, run plans and receipts, and source/workspace backups. Source guidance remains in the established game files.
+The app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups. New source/workspace snapshots live in the game's .dazedtl/backups/v2 store. Source guidance remains in the established game files.
 `useApplication` supplies shared state through one observer; feature polling loops would introduce competing reads.
 The application provider supplies its API and browser event subscriptions; the observer owns response ordering and refresh scheduling.
 An open project stays observable while no app worker is active so external assistant reports become visible. Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
@@ -87,3 +87,21 @@ Git baselines and backup records gate new translation work. Reviewed runtime man
 The MV/MZ writer retains source metadata on ordinary corrections. The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
 Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules. New originals are staged separately for engine preparation.
 A local delivery packages only reviewed Git files. Public publication remains a separate action.
+
+## Backup storage
+
+Both agent operations and UI checkpoints use translation/backups.py. Each version-two snapshot is a complete
+path-to-content manifest with file sizes, permissions and empty directories; content-addressed objects are shared
+across original, prepared-source and workspace snapshots in the same game. No delta chain or live-file hardlinks
+are used. Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
+The managed store has its own writer lock. Content is verified before reuse/publication; source mutations abort
+capture. A failed capture removes only unpublished objects it created. Existing snapshots are never pruned.
+
+Workspace capture excludes the entire .dazedtl/backups directory, including any pre-existing manual backups.
+Source capture excludes .git and .dazedtl. Arbitrary nested destinations remain forbidden. The v2 subdirectory
+avoids repurposing existing backup folders. Older version-one full-copy snapshots remain supported by the reader.
+Engine operations obtain temporary verified normal files through materialized; patch checkpoints materialize
+only their runtime source paths. No expanded cache is retained. Restore verifies into a staging directory before
+publishing a new destination, refuses existing or overlapping targets, and reconstructs empty directories and file modes.
+The independent scripts/backups.py reader can recover a moved game without its former app profile. Restoring a
+workspace does not transplant connections, paid-job ownership or spending authorizations from another app profile.
