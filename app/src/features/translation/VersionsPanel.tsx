@@ -8,6 +8,7 @@ import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
 import { BackupsPanel, BackupSummary } from "./BackupsPanel";
+import { JobStatus } from "./JobStatus";
 
 export function VersionsPanel({
   project,
@@ -301,10 +302,7 @@ export function VersionsPanel({
           .filter((job) => job.kind === "operation")
           .map((job) => (
             <article className="translation-run" key={job.id}>
-              <strong>
-                {job.label} · {job.status.replaceAll("_", " ")}
-              </strong>
-              <p>{job.message}</p>
+              <JobStatus job={job} />
               {job.status === "running" && (
                 <Button
                   disabled={action.busy || job.stop_requested}

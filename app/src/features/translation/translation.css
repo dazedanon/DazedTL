@@ -129,6 +129,53 @@
 .translation-run:first-child {
   padding-top: 0;
 }
+.translation-job-status {
+  margin-bottom: 12px;
+}
+.translation-job-status:last-child {
+  margin-bottom: 0;
+}
+.translation-job-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.translation-job-heading strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.translation-job-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--font-small);
+  text-transform: capitalize;
+}
+.translation-job-state[data-state="running"],
+.translation-job-state[data-state="waiting"] {
+  color: var(--accent);
+}
+.translation-job-state[data-state="complete"] {
+  color: var(--color-success);
+}
+.translation-job-status p {
+  margin: 8px 0 0;
+}
+.translation-job-spinner {
+  animation: translation-job-spin 1s linear infinite;
+}
+@keyframes translation-job-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .translation-job-spinner {
+    animation: none;
+  }
+}
 .translation-quote {
   padding: 15px 18px;
   margin: 15px 0;

@@ -18,6 +18,7 @@ import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { RequestsPanel } from "./RequestsPanel";
 import { VersionsPanel } from "./VersionsPanel";
+import { JobStatus } from "./JobStatus";
 import "./translation.css";
 
 type View = "progress" | "context" | "requests" | "versions" | "legacy";
@@ -334,10 +335,7 @@ function Workspace({
             </Section>
             {latest && (
               <Section title="Latest app operation">
-                <strong>
-                  {latest.label} · {latest.status.replaceAll("_", " ")}
-                </strong>
-                <p>{latest.message}</p>
+                <JobStatus job={latest} />
                 {latest.kind === "translation" && (
                   <p>
                     {latest.accepted_units} / {latest.units} units saved
