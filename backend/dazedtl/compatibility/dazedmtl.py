@@ -24,7 +24,7 @@ class ExistingBackend:
         sys.path.insert(0, str(self.source))
         from .manual import manual_jobs
         from .model_defaults import ModelDefaults
-        from desktop.backend.operations import Operations
+        from .operations import workflow_operations
         from desktop.backend.workflow import Workflows
         from desktop.backend.settings import SettingsStore
 
@@ -32,7 +32,7 @@ class ExistingBackend:
         self._legacy_settings = SettingsStore(self.workspace, code_root=self.source)
         self.manual = manual_jobs(self.source, self.workspace, self.lock, allow_providers)
         self.model_defaults = ModelDefaults(self.source, self.workspace / "model-cache", allow_providers)
-        self.operations = Operations(self.workspace, self.lock)
+        self.operations = workflow_operations(self.source, self.workspace, self.lock)
         self.workflows = Workflows(self.workspace, self.lock, self.operations, self.manual)
         self.allow_providers = allow_providers
 
@@ -160,9 +160,28 @@ class ExistingBackend:
 
         if phase == "database":
             return [f["name"] for f in native["files"] if f["name"] in DB_FILES]
-        if phase == "dialogue":
+        if phase in {"dialogue", "variables", "advanced", "speakers"}:
             return [f["name"] for f in native["files"] if f["name"] in EVENT_FILES_EXACT or re.fullmatch(r"Map\d+\.json", f["name"])]
         raise ValueError("Choose a migrated translation phase.")
+
+    @staticmethod
+    def guided_guard(project, folder):
+        from .guided import guard
+        return guard(project, folder)
+
+    @staticmethod
+    def guided_runtime_files(source):
+        from .guided import runtime_files
+        return runtime_files(source)
+
+    def guided_rewrap_review(self, native_id, token):
+        from .guided import rewrap_review
+        return rewrap_review(self, native_id, token)
+
+    @staticmethod
+    def ace_available():
+        from .guided import ace_available
+        return ace_available()
 
     def close(self):
         self.operations.close()

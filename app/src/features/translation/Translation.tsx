@@ -18,7 +18,7 @@ import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { RequestsPanel } from "./RequestsPanel";
 import { VersionsPanel } from "./VersionsPanel";
-import { JobStatus } from "./JobStatus";
+import { JobStatus } from "../../ui/JobStatus";
 import "./translation.css";
 
 type View = "progress" | "context" | "requests" | "versions" | "legacy";

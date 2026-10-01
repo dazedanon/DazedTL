@@ -8,7 +8,7 @@ import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
 import { BackupsPanel, BackupSummary } from "./BackupsPanel";
-import { JobStatus } from "./JobStatus";
+import { JobStatus } from "../../ui/JobStatus";
 
 export function VersionsPanel({
   project,

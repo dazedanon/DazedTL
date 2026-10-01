@@ -5,7 +5,15 @@ from contextlib import contextmanager, ExitStack
 
 from dazedtl.storage import write_json
 from . import backups
-from .files import read_json, project_path, digest
+from .files import read_json, project_path, digest, evidence, verify_evidence
+
+
+def verify_guided_review(source, state):
+    review = state.get("guided_review")
+    if not review:
+        raise ValueError("Record your review and playtest of the current guided patch before packaging.")
+    verify_evidence(source, review["evidence"])
+    return review
 
 
 def lifecycle_path(workspace, project_id):
@@ -98,14 +106,25 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state["runtime_manifest"] = arguments["manifest"]
         state["workspace_backup"] = backups.snapshot(source / ".dazedtl", destination, stopped=stopped)
         result["backup"] = state["workspace_backup"]
-    elif action == "package":
+    elif action == "guided_review":
+        require_baseline(engine, source, options, state)
+        manifest = read_json(project_path(source, arguments["manifest"]))
+        state["guided_review"] = {"manifest": arguments["manifest"],
+                                  "evidence": evidence(source, list(dict.fromkeys([arguments["manifest"], *engine.runtime_paths(manifest), *manifest.get("inputs", [])])))}
+        result = {"reviewed_files": len(manifest["files"]), "message": "User review and playtest recorded for these exact files."}
+    elif action in {"package", "guided_package"}:
         require_baseline(engine, source, options, state)
         if not state.get("checkpoint"):
             raise ValueError("Checkpoint the reviewed runtime patch before packaging.")
         if engine.git_status(source, options)["translation_commit"] != state["checkpoint"]["commit"]:
             raise ValueError("The translation branch changed after its reviewed checkpoint. Checkpoint the current patch first.")
-        from .delivery import verify
-        verify(source, full=True)
+        if action == "guided_package":
+            review = verify_guided_review(source, state)
+            if review["manifest"] != state["checkpoint"]["manifest"]:
+                raise ValueError("Checkpoint the reviewed guided manifest before packaging.")
+        else:
+            from .delivery import verify
+            verify(source, full=True)
         manifest = read_json(project_path(source, state["checkpoint"]["manifest"]))
         result = engine.package(source, options, manifest, Path(workspace) / "deliveries" / job["project_id"])
         state["delivery"] = result

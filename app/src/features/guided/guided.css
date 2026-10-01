@@ -140,3 +140,68 @@
     font-size: 26px;
   }
 }
+
+.guided-workspace .steps {
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.guided-workspace .steps button {
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+.guided-workspace .steps button span {
+  width: 22px;
+  height: 22px;
+}
+.guided-workspace .toggle {
+  margin: var(--space-4) 0;
+}
+.guided-workspace .file-list label {
+  padding: var(--space-2) var(--space-1);
+}
+.guided-workspace .file-list small {
+  margin-left: auto;
+}
+.guided-tasks {
+  display: grid;
+  gap: var(--space-3);
+}
+.guided-tasks > div {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+}
+.guided-tasks strong {
+  font-weight: 500;
+  font-size: var(--font-control);
+}
+.guided-save-bar, .guided-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--line);
+}
+.guided-save-bar {
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.guided-footer {
+  justify-content: space-between;
+  margin-top: var(--space-6);
+}
+.guided-engine-options {
+  margin: var(--space-4) 0;
+}
+.guided-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+}
+.guided-workspace .guided-choices .toggle {
+  margin: 0;
+}
+.guided-context {
+  margin-top: var(--space-6);
+}

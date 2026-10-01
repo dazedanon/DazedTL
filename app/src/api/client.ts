@@ -2,7 +2,10 @@ import { request } from "./transport";
 import type {
   Screen,
   Phase,
-  RunMode,
+  GuidedOptions,
+  GuidedPreferences,
+  GuidedStep,
+  GuidedForm,
   Documents,
   SettingsPayload,
   ConnectionInput,
@@ -108,13 +111,19 @@ export const api = {
     request("guided_phase_select", { project_id, phase }),
   preview: (
     project_id: string,
-    action: "import" | "export_selected",
+    action: string,
     files?: string[],
-  ) => request("guided_preview", { project_id, action, files }),
+    options?: Record<string, unknown>,
+  ) => request("guided_preview", { project_id, action, files, options }),
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
-  start: (project_id: string, mode: RunMode) =>
-    request("guided_start", { project_id, mode }),
+  guided: {
+    form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
+    position: (project_id: string, step: GuidedStep) => request("guided_position", { project_id, step }),
+    draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
+    save: (project_id: string, revision: number, values: GuidedOptions) => request("guided_save_options", { project_id, revision, values }),
+    skill: (project_id: string, name: string) => request("guided_skill", { project_id, name }),
+  },
   answer: (project_id: string, token: string, approved: boolean) =>
     request("guided_answer", { project_id, token, approved }),
   stop: (project_id: string) => request("guided_stop", { project_id }),

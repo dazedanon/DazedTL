@@ -1,46 +1,28 @@
-import { useEffect, useRef, useState } from "react";
-import type { Project, RunMode } from "../../api/contracts";
-import { useApplication } from "../../app/ApplicationProvider";
-import { useAction } from "../../state/useAction";
-import { flushDrafts } from "../../state/leaveGuards";
+import { useEffect, useRef } from "react";
+import type { GuidedState } from "../../api/contracts";
+import { api } from "../../api/client";
+import { useDraft } from "../../state/useDraft";
 
-export function useGuidedWorkflow(project: Project) {
-  const application = useApplication();
-  const state =
-    application.snapshot?.guided?.projectId === project.id
-      ? application.snapshot.guided
-      : null;
-  const action = useAction({ after: application.refresh });
-  const initialized = useRef(state ? project.id : "");
-  const [stage, setStage] = useState(
-    state?.importedFiles.length ? "translate" : "files",
-  );
-  const [selected, setSelected] = useState<string[]>(state?.selection || []);
-  const [mode, setMode] = useState<RunMode>(
-    state?.provider.defaultMode || "estimate",
-  );
+export function useGuidedWorkflow(state: GuidedState, report: (error: unknown) => void) {
+  const saved = state.preferences;
+  const draft = useDraft("guided-options:" + state.projectId, {
+    initial: { saved, draft: state.optionsDraft || undefined },
+    persist: (value) => api.guided.draft(state.projectId, value),
+    report,
+  });
+  const observed = useRef(saved.revision);
   useEffect(() => {
-    if (!state || initialized.current === project.id) return;
-    initialized.current = project.id;
-    setSelected(state.selection);
-    setMode(state.provider.defaultMode);
-    setStage(state.importedFiles.length ? "translate" : "files");
-  }, [state, project.id]);
-  const move = (next: string) =>
-    action.run(async () => {
-      await flushDrafts();
-      setStage(next);
-    });
-  return {
-    state,
-    action,
-    stage,
-    selected,
-    setSelected,
-    mode,
-    setMode,
-    move,
-    refresh: application.refresh,
-    running: !!application.snapshot?.application.running,
+    if (observed.current !== saved.revision && !draft.dirty && !draft.committing) {
+      observed.current = saved.revision;
+      draft.session.adopt(saved);
+    }
+  }, [saved.revision, draft.dirty, draft.committing]);
+  const save = () => draft.session.commit(async (value) => ({
+    saved: await api.guided.save(state.projectId, value.revision, value.values),
+  }), (_before, current, result) => ({ ...current, revision: result.saved.revision }));
+  const discard = async () => {
+    await api.guided.draft(state.projectId, null);
+    draft.session.adopt(saved);
   };
+  return { ...draft, value: draft.value || saved, save, discard };
 }

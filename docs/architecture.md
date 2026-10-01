@@ -20,6 +20,15 @@ The adapter retains existing engine behavior while capabilities are extracted in
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
+Guided Workflow and Translate files compose the same file selection, preferences and phased runner.
+Their controller exposes specific engine actions through one-use, project-bound previews; source,
+selection, settings and runtime-scope changes invalidate the relevant preview. The preserved runner
+continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
+App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
+Guided review records the user's attestation against current runtime files (and Ace's JSON inputs),
+separately from Len's report-based QA evidence. Neither workflow's review completes the other's QA.
+The project helper cannot create a Guided user-review attestation or invoke Guided packaging;
+those operations are reachable only through the app's consumed Guided preview.
 
 ## UI and state decisions
 
@@ -27,7 +36,8 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
 Reserve cards for content requiring a distinct container.
 
-Project identity, execution mode, and visible screen are separate. Version-two registry migration keeps existing IDs, backend job references, phase selections, and recovery data.
+Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
+backend job references, phase selections and recovery data when adding workflow screens.
 Portable workflow options live in the selected game's .dazedtl/len-method/workflow.json; the old Len project.json is imported without being overwritten.
 The app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups. New source/workspace snapshots live in the game's .dazedtl/backups/v2 store. Source guidance remains in the established game files.
 `useApplication` supplies shared state through one observer; feature polling loops would introduce competing reads.
@@ -36,6 +46,9 @@ An open project stays observable while no app worker is active so external assis
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
+Guided engine options use the same draft session and retain the native revision check. Its step and
+setup-form recovery live alongside project records in the profile; navigation never starts an action.
+Opening Guided transfers any pending shared-context draft before linking the native workflow.
 Never retry writes automatically, since some actions submit paid work.
 
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
@@ -87,6 +100,10 @@ Git baselines and backup records gate new translation work. Reviewed runtime man
 The MV/MZ writer retains source metadata on ordinary corrections. The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
 Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules. New originals are staged separately for engine preparation.
 A local delivery packages only reviewed Git files. Public publication remains a separate action.
+Guided rewrap application also requires a matching completed scan. Ace's conversion workers stage
+bundled executables and the Wine prefix in the profile. Guided checkpoint manifests derive
+translation-only additions from the registered original and saved source inventory, retaining
+previously tracked runtime assets when switching workflows.
 
 ## Backup storage
 

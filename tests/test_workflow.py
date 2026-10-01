@@ -14,7 +14,7 @@ from dazedtl.settings.execution import worker_secret, configuration, connection_
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot, materialized, store_path
 from dazedtl.translation.files import digest, read_json, evidence
-from dazedtl.translation.operations import lifecycle_path, require_baseline, execute, lifecycle
+from dazedtl.translation.operations import lifecycle_path, require_baseline, execute, lifecycle, verify_guided_review
 from dazedtl.translation.project import ProjectWorkspace, DEFAULTS, WORK, scope
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.requests import plan_input
@@ -294,10 +294,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(lifecycle(self.profile, self.identity)["workspace_backup"]["reused_snapshot"])
 
     def test_runtime_changes_invalidate_delivery_even_if_qa_report_is_unchanged(self):
+        for action in ('guided_review', 'guided_package'):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                self.service.operation(self.identity, action, {})
         path = WORK + "/work/patch-files.json"
         write_json(self.game / path, ["source.json"])
         delivery.record(self.game, path, ["source.json"])
         delivery.verify(self.game, full=True)
+        self.engine.runtime_paths = lambda manifest: manifest['files']
+        guided_manifest = '.dazedtl/guided/runtime-manifest.json'
+        write_json(self.game / guided_manifest, {'files': ['source.json']})
+        execute(self.engine, self.profile, {'project_id': self.identity}, {
+            'source': str(self.game), 'options': DEFAULTS, 'action': 'guided_review',
+            'arguments': {'manifest': guided_manifest}}, lambda: False)
+        verify_guided_review(self.game, lifecycle(self.profile, self.identity))
         write_json(self.game / "source.json", {"line": "Changed after review"})
         with self.assertRaises(ValueError):
             delivery.verify(self.game, full=True)
+        with self.assertRaises(ValueError):
+            verify_guided_review(self.game, lifecycle(self.profile, self.identity))

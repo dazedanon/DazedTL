@@ -1,5 +1,5 @@
 import { Check, LoaderCircle } from "lucide-react";
-import type { TranslationJob } from "../../api/contracts";
+import type { TranslationJob } from "../api/contracts";
 
 export function JobStatus({
   job,
@@ -13,14 +13,14 @@ export function JobStatus({
     job.message.trim() === `${job.label} completed.`;
 
   return (
-    <div className="translation-job-status" role="status" aria-atomic="true">
-      <div className="translation-job-heading">
+    <div className="job-status-status" role="status" aria-atomic="true">
+      <div className="job-status-heading">
         <strong>{job.label}</strong>
-        <span className="translation-job-state" data-state={job.status}>
+        <span className="job-status-state" data-state={job.status}>
           {active ? (
             <LoaderCircle
               size={15}
-              className="translation-job-spinner"
+              className="job-status-spinner"
               aria-hidden="true"
             />
           ) : job.status === "complete" ? (

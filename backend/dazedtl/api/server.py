@@ -40,8 +40,7 @@ class Application:
             self.settings = Settings(self.workspace, self.backend)
         self.translation = Translation(self.workspace, self.projects, self.settings,
                                        TranslationEngine(legacy, self.workspace / "engine"))
-        self.guided = Guided(self.backend, self.projects, self.settings,
-                             extra_running=self.translation.jobs.running, before_write=self.translation.ready)
+        self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         self.translation.legacy_actions = {
             "resume": lambda identity: views.job(self.guided.resume(identity)),
             "stop": lambda identity: views.job(self.guided.stop(identity)),
@@ -127,8 +126,18 @@ class Application:
                 else:
                     project.update(status="Ready for project setup", detail="Choose a translation mode and prepare the starting prompt.")
                 project["attention"].extend(current["warnings"])
-                if current["legacyAvailable"]:
+                if project.get("backend_id"):
                     legacy = views.guided(self.guided.state(project["id"]), project["id"])
+                    run = legacy["run"]
+                    active_tool = next((job for job in legacy["operations"] if job["status"] == "running"), None)
+                    if active_tool:
+                        project.update(status=active_tool["label"], detail=active_tool["message"])
+                    elif run and run["status"] in {"running", "waiting"}:
+                        project.update(status="Guided run · " + run["status"], detail=run["message"])
+                    elif not current["jobs"] and not current["progress"]:
+                        project.update(status="Guided workflow ready", detail="Continue from " + legacy["step"] + ".")
+                elif project["engine"] in {"MVMZ", "ACE"} and not current["jobs"] and not current["progress"]:
+                    project.update(status="Ready for guided setup", detail="Preserve the original, prepare game files, and choose a translation scope.")
             except (ValueError, OSError) as exc:
                 error = str(exc)
                 project.update(status="Project needs attention", detail=error, next_label="Open translation")
@@ -150,6 +159,10 @@ class Application:
         return self.state()
 
     def navigate(self, screen):
+        if screen in {"guided", "manual"}:
+            if not self.projects.current:
+                raise ValueError("Open a game project first.")
+            self.guided.open(self.projects.current["id"])
         self.projects.navigate(screen)
         return self.state()
 
@@ -218,9 +231,11 @@ def serve(args, diagnostics):
                 getattr(app.guided, name),
                 lambda value, _params: views.job(value),
             )
-            for name in ("execute", "start", "answer", "stop", "resume")
+            for name in ("execute", "answer", "stop", "resume")
         },
         "guided_export": (app.guided.export, lambda value, _params: value),
+        **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
+           for name in ("position", "options_draft", "save_options", "skill", "form")},
         "guided_draft": (app.guided.draft, lambda value, _params: value),
         "guided_save_document": (
             app.guided.save_document,

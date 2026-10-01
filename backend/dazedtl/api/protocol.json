@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -34,9 +34,6 @@
       "refresh": false
     },
     "guided_execute": {
-      "refresh": true
-    },
-    "guided_start": {
       "refresh": true
     },
     "guided_answer": {
@@ -132,6 +129,23 @@
     },
     "translation_legacy": {
       "refresh": true
+    },
+    "guided_position": {
+      "refresh": true
+    },
+    "guided_options_draft": {
+      "refresh": false,
+      "duringClose": true
+    },
+    "guided_save_options": {
+      "refresh": true
+    },
+    "guided_skill": {
+      "refresh": false
+    },
+    "guided_form": {
+      "refresh": false,
+      "duringClose": true
     }
   }
 }

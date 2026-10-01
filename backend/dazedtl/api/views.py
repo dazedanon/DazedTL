@@ -25,7 +25,7 @@ def job(value):
     if value is None:
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
-                          'progress', 'log', 'estimate', 'outputs', 'approval'))
+                          'progress', 'log', 'estimate', 'outputs', 'approval', 'action', 'result'))
     result.setdefault('log', [])
     return result
 
@@ -35,6 +35,16 @@ def guided(value, project_id):
     return {
         'projectId': project_id,
         'source': native['source'],
+        'engine': native['engine'],
+        'dataPath': native['data'],
+        'encrypted': native['encrypted'],
+        'hasPlugins': bool(native['plugins']),
+        'aceAvailable': value['ace_available'],
+        'step': value['step'],
+        'form': value['form'],
+        'preferences': value['preferences'],
+        'optionsDraft': value['options_draft'],
+        'engineSchema': value['engine_schema'],
         'files': [pick(item, ('name', 'default', 'size')) for item in native['files']],
         'selection': native['selected'],
         'importedFiles': native['imported'],
@@ -62,8 +72,7 @@ def settings(value):
 
 
 def preview(value):
-    return {**pick(value, ('token', 'label', 'destination', 'files')),
-            'options': {'files': value['options'].get('files', [])}}
+    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions'))
 
 
 def error(exc):

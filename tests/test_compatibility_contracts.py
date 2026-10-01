@@ -4,15 +4,112 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 from types import ModuleType
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+import subprocess
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from dazedtl.compatibility.translation import TranslationEngine, ProviderFailure, provider_errors
 from dazedtl.translation.compilation import compile_requests
+from dazedtl.compatibility.manual import manual_jobs
+from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files
+from dazedtl.storage import write_json
+from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_guided_patch_proposal_keeps_previously_tracked_runtime_assets(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game = root/'game'
+            write_json(game/'data/Items.json', [None])
+            (game/'img').mkdir()
+            (game/'img/title.png').write_bytes(b'generated asset fixture')
+            (game/'README.md').write_text('Repository metadata')
+            preparation = ModuleType('util.project_preparation')
+            preparation.rpgmaker_layout = lambda _: {'engine': 'MVMZ', 'data_path': game/'data', 'plugins_js': None}
+            preparation.RPG_GAMEUPDATE_COPY_SKIP_NAMES = set()
+            paths = ModuleType('util.paths'); paths.PROJECT_ROOT = root/'engine'
+            scope = ModuleType('util.len_patch_scope'); scope.patch_manifest = lambda value: value
+            git = ModuleType('util.version_update.git_workflow')
+            git._run_git = lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout='img/title.png\0README.md\0')
+            with patch.dict(sys.modules, {module.__name__: module for module in (preparation, paths, scope, git)}):
+                self.assertEqual(runtime_files(game), ['data/Items.json', 'img/title.png'])
+
+    def test_ace_reported_error_is_failure_even_with_zero_exit_and_tools_use_profile_cache(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tool = root / 'engine/util/ace/offline/RV2JSON.exe'
+            tool.parent.mkdir(parents=True)
+            tool.write_bytes(b'fixture executable, never launched')
+            folder = root / 'profile/workflows/project'
+            folder.mkdir(parents=True)
+            paths = ModuleType('util.paths')
+            paths.PROJECT_ROOT = root / 'engine'
+            actions = ModuleType('desktop.backend.workflow_actions')
+            actions.validate_plan = lambda _plan: None
+            child = Mock(stdout=['\x1b[?25lERROR: Could not load scripts\x1b[?25h\n'])
+            child.wait.return_value = 0
+            process = Mock()
+            process.__enter__ = Mock(return_value=child)
+            process.__exit__ = Mock(return_value=False)
+            with patch.dict(sys.modules, {'util.paths': paths, 'desktop.backend.workflow_actions': actions}), \
+                 patch('dazedtl.compatibility.guided.ace_available', return_value=True), \
+                 patch('dazedtl.compatibility.guided.shutil.which', return_value='wine'), \
+                 patch('dazedtl.compatibility.guided.subprocess.Popen', return_value=process) as launch:
+                with self.assertRaisesRegex(ValueError, 'Could not load scripts'):
+                    run_ace({'action': 'ace_extract', 'folder': str(folder), 'project': {'source': str(root/'game')}}, lambda _line: None)
+                child.stdout = ['error: XDG_RUNTIME_DIR is invalid or not set\n', 'Dumping of 0 scripts done\n']
+                self.assertEqual(run_ace({'action': 'ace_extract', 'folder': str(folder), 'project': {'source': str(root/'game')}}, lambda _line: None), {'completed': 'ace_extract'})
+            self.assertEqual((root/'profile/tools/ace/RV2JSON.exe').read_bytes(), tool.read_bytes())
+            self.assertEqual(launch.call_args.kwargs['stdin'], subprocess.DEVNULL)
+            if sys.platform != 'win32':
+                self.assertEqual(launch.call_args.kwargs['env']['WINEPREFIX'], str(root/'profile/tools/ace/wine'))
+
+    def test_phased_worker_launcher_preserves_pipe_controls_and_isolates_the_child(self):
+        # The native runner failed before launch when PIPE was absent from its substituted namespace.
+        with TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            module = source / 'desktop/backend/manual.py'
+            module.parent.mkdir(parents=True)
+            module.write_text('''import subprocess, sys
+from pathlib import Path
+class ManualJobs:
+    def __init__(self, *args, **kwargs): pass
+    def launch(self):
+        return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), 'run'],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
+''')
+            with patch('subprocess.Popen') as launch:
+                controller = manual_jobs(source, source / 'profile', None, False)
+                controller.launch()
+                args, kwargs = launch.call_args
+                self.assertEqual(Path(args[0][2]).name, 'manual_worker.py')
+                self.assertNotEqual(Path(args[0][2]).parent, module.parent)
+                self.assertEqual((kwargs['stdin'], kwargs['stdout']), (subprocess.PIPE, subprocess.PIPE))
+                self.assertEqual(kwargs['env']['DAZEDTL_ENGINE_SOURCE'], str(source))
+                self.assertEqual(kwargs['env']['PYTHONDONTWRITEBYTECODE'], '1')
+
+    def test_rewrap_apply_requires_the_same_completed_scan_and_settings(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            plan = {'options': {'width': 50}, 'guard': {'data': 'reviewed'}}
+            path = root / 'scan/plan.json'
+            write_json(path, plan)
+            job = {'id': 'scan', 'project_id': 'game', 'action': 'rewrap_preview', 'status': 'complete',
+                   'created': 'today', 'result': {'changes_found': 1}, 'plan_hash': digest(path.read_bytes())}
+            backend = SimpleNamespace(operations=SimpleNamespace(root=root, jobs={'scan': job}),
+                                      workflows=SimpleNamespace(previews={'token': plan}))
+            self.assertEqual(rewrap_review(backend, 'game', 'token'), {'changes_found': 1})
+            for current in ({**plan, 'options': {'width': 60}}, {**plan, 'guard': {'data': 'changed'}}):
+                backend.workflows.previews['token'] = current
+                with self.assertRaises(ValueError):
+                    rewrap_review(backend, 'game', 'token')
+            with self.assertRaises(ValueError):
+                rewrap_review(backend, 'other-game', 'token')
+
     def test_line_metadata_reaches_both_provider_payloads_without_changing_the_legacy_batch_contract(self):
         package, context_module, skill_module, provider_module = (ModuleType(name) for name in
             ("util", "util.len_translation", "util.skills", "util.translation"))

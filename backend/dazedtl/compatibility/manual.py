@@ -37,7 +37,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
         }
         return subprocess.Popen(arguments, **kwargs)
 
-    native.subprocess = SimpleNamespace(Popen=launch)
+    native.subprocess = SimpleNamespace(Popen=launch, PIPE=subprocess.PIPE,
+                                        DEVNULL=subprocess.DEVNULL, run=subprocess.run)
 
     class ManualJobs(native.ManualJobs):
         request_policy = None

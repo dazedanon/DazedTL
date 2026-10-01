@@ -6,6 +6,8 @@ import {
   FolderOpen,
   ChevronDown,
   X,
+  ListChecks,
+  Files,
 } from "lucide-react";
 import { api } from "../api/client";
 import { flushDrafts } from "../state/leaveGuards";
@@ -16,6 +18,7 @@ import Overview from "../features/overview/Overview";
 import Settings from "../features/settings/Settings";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import Translation from "../features/translation/Translation";
+import { BackupsPanel } from "../features/translation/BackupsPanel";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
@@ -94,7 +97,12 @@ export default function App() {
               <House size={18} />
               Overview
             </Button>
-            {state?.project && (
+            {state?.project && <>
+              {[{ screen: "guided" as const, label: "Guided workflow", icon: ListChecks }, { screen: "manual" as const, label: "Translate files", icon: Files }].map(({ screen, label, icon: Icon }) =>
+                <Button key={screen} size="comfortable" aria-current={state.screen === screen ? "page" : undefined}
+                  disabled={action.busy || !["MVMZ", "ACE"].includes(state.project!.engine)} onClick={() => navigate(screen)}>
+                  <Icon size={18} />{label}
+                </Button>)}
               <Button
                 size="comfortable"
                 aria-current={
@@ -103,9 +111,9 @@ export default function App() {
                 onClick={() => navigate("translation")}
               >
                 <Route size={18} />
-                Translation
+                Len's method
               </Button>
-            )}
+            </>}
           </nav>
           <div className="sidebar-bottom">
             <DiagnosticsAction />
@@ -156,6 +164,10 @@ export default function App() {
             />
           ) : state.screen === "settings" ? (
             <Settings />
+          ) : state.project && (state.screen === "guided" || state.screen === "manual") ? (
+            <GuidedWorkflow key={state.project.id} project={state.project} direct={state.screen === "manual"}
+              settings={() => navigate("settings")} openGuide={() => navigate("guided")}
+              backups={application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} /> : null} />
           ) : state.project ? (
             <Translation
               key={state.project.id}
@@ -163,10 +175,7 @@ export default function App() {
               settings={() => navigate("settings")}
               legacy={
                 application.snapshot?.guided ? (
-                  <GuidedWorkflow
-                    project={state.project}
-                    settings={() => navigate("settings")}
-                  />
+                  <Button variant="primary" onClick={() => navigate("guided")}>Open guided workflow and saved runs</Button>
                 ) : null
               }
             />

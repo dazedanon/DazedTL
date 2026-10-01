@@ -9,7 +9,7 @@ import {
   FolderOpen,
   Settings2,
 } from "lucide-react";
-import type { AppState } from "../../api/contracts";
+import type { AppState, Screen } from "../../api/contracts";
 
 const engines: Record<string, string> = {
   MVMZ: "RPG Maker MV / MZ",
@@ -29,7 +29,7 @@ export default function Overview({
   busy: boolean;
   open: () => void;
   select: (id: string) => void;
-  go: (screen: "translation" | "settings") => void;
+  go: (screen: Screen) => void;
   report: (error: unknown) => void;
 }) {
   const project = state.project;
@@ -79,15 +79,19 @@ export default function Overview({
                     variant="primary"
                     disabled={busy || (!project.available && state.running)}
                     onClick={() =>
-                      project.available ? go("translation") : open()
+                      project.available ? go(["MVMZ", "ACE"].includes(project.engine) ? "guided" : "translation") : open()
                     }
                   >
-                    {project.next_label}
+                    {project.available && ["MVMZ", "ACE"].includes(project.engine) ? "Open guided workflow" : project.next_label}
                     <ArrowRight size={15} />
                   </Button>
                 </dd>
               </div>
             </dl>
+            {project.available && ["MVMZ", "ACE"].includes(project.engine) && <div className="actions">
+              <Button disabled={busy} onClick={() => go("manual")}>Translate selected files</Button>
+              <Button disabled={busy} onClick={() => go("translation")}>Open Len's method</Button>
+            </div>}
           </>
         ) : (
           <div className="overview-empty">

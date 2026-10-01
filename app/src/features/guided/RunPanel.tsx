@@ -48,7 +48,7 @@ export default function RunPanel({
   busy: boolean;
 }) {
   return (
-    <section className="card run-panel">
+    <section className="ui-section run-panel">
       <div className="section-heading">
         <h2>{job.mode === "estimate" ? "Cost estimate" : "Translation run"}</h2>
         <span className="badge">{job.status}</span>

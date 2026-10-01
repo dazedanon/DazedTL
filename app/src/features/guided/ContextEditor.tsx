@@ -20,7 +20,7 @@ export default function ContextEditor({
   const action = useAction({ after: application.refresh });
   const draft = useContextDraft(projectId, recovered, action.report);
   return (
-    <section className="card">
+    <section className="ui-section guided-context">
       <h2>Game context</h2>
       <p className="muted">
         These are the same glossary and game instructions used by the

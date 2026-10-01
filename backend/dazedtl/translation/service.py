@@ -36,6 +36,11 @@ OPERATIONS = {
     "version_handoff": ("Prepare post-update translation prompt", set()),
 }
 
+GUIDED_OPERATIONS = {
+    "guided_review": ("Record guided playtest review", {"manifest"}),
+    "guided_package": ("Package reviewed guided patch", set()),
+}
+
 
 class Translation:
     def __init__(self, workspace, projects, settings, engine, *, jobs=None):
@@ -422,15 +427,27 @@ Additional project instructions:
         return value
 
     def operation(self, project_id, action, arguments):
+        if action not in OPERATIONS:
+            raise ValueError("Choose an operation exposed by the project helper.")
+        return self._operation(project_id, action, arguments, OPERATIONS[action])
+
+    def guided_operation(self, project_id, action, arguments):
+        # Called only after the UI's one-use guided preview is consumed. This
+        # entrypoint is deliberately absent from the RPC/helper method table.
+        if action not in GUIDED_OPERATIONS:
+            raise ValueError("Unknown guided review operation.")
+        return self._operation(project_id, action, arguments, GUIDED_OPERATIONS[action])
+
+    def _operation(self, project_id, action, arguments, specification):
         self.idle(project_id)
         self.clean_drafts(project_id)
-        if action not in OPERATIONS or not isinstance(arguments, dict) or set(arguments) - OPERATIONS[action][1]:
+        if not isinstance(arguments, dict) or set(arguments) - specification[1]:
             raise ValueError("Unknown operation or operation fields.")
         required = {
             "restore_backup": {"backup_id", "destination"},
             "git_setup": {"version"}, "write_rpgmaker": {"source", "translated", "output"},
             "rebase_rpgmaker": {"source", "translated", "output", "expected_original_commit"},
-            "checkpoint": {"manifest"}, "stage_update": {"official", "version"},
+            "checkpoint": {"manifest"}, "guided_review": {"manifest"}, "stage_update": {"official", "version"},
             "version_preview": {"official", "version"}, "version_apply": {"preview_id"},
         }.get(action, set())
         if any(not isinstance(arguments.get(key), str) or not arguments[key].strip() for key in required):
@@ -443,6 +460,9 @@ Additional project instructions:
                 raise ValueError("Operation paths and labels must be bounded text.")
         _record, project = self.project(project_id)
         selected = project.read()["options"]
+        if action == "guided_package":
+            from .operations import verify_guided_review
+            verify_guided_review(project.root, lifecycle(self.workspace, project_id))
         if action == "version_apply":
             previous, preview = self.jobs.store.load(arguments.get("preview_id", ""), project_id)
             if previous["status"] != "complete" or preview.get("action") != "version_preview":
@@ -459,8 +479,11 @@ Additional project instructions:
             delivery.verify(project.root, full=True)
         self.settings.prepare_engine()
         plan = {"version": 1, "kind": "operation", "source": str(project.root), "options": selected,
-                "action": action, "arguments": arguments, "label": OPERATIONS[action][0]}
+                "action": action, "arguments": arguments, "label": specification[0]}
         bound = []
+        if action == "guided_review":
+            manifest = read_json(project_path(project.root, arguments["manifest"]))
+            bound.extend([*self.engine.runtime_paths(manifest), *manifest.get("inputs", [])])
         for key in ("manifest", "translated", "output", "source"):
             if arguments.get(key) and not (key == "source" and arguments.get("backup_id")):
                 path = project_path(project.root, arguments[key], exists=key != "output")

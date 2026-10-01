@@ -4,12 +4,21 @@ An Electron application migrating the existing DazedTL translation engine into a
 
 ## Current scope
 
-The Translation workspace follows Len's maintained engine skills, with shared project context,
+RPG Maker MV/MZ has a Guided Workflow with preparation, context, selected-file translation,
+application, layout review, and local patch packaging. **Translate files** opens the same
+selection and run controls directly. Guided translation offers Batch (recommended) and Live API;
+cost estimation is a separate action. Ace adds archive extraction, Sinflower RV2JSON conversion,
+and native repacking around those same JSON phases. Its bundled executables require Windows
+or Wine; executables and the Wine prefix are cached in the app profile. WOLF's guided workflow is deferred.
+
+Len's method follows the maintained engine skills, with shared project context,
 saved progress, inspectable requests, and Agent, Live API, and API Batch execution.
 Any game folder can be opened for investigation. Its engine-specific extraction, fitting,
 native reconstruction, and runtime QA remain the coding assistant's responsibility through the skills and tools.
-Existing phased RPG Maker jobs remain available for recovery in the same workspace.
-Real provider billing and native game playtesting still need validation; application distribution is pending.
+Existing phased RPG Maker jobs retain their recovery path in Guided Workflow. Resume an
+unfinished API run before starting another phase or estimate so its provider work stays attached.
+Real provider billing and native game playtesting still need validation;
+application distribution is pending. Guided image editing remains a separate assistant task.
 
 ## Development launch
 
@@ -50,14 +59,26 @@ Existing app-local settings are retained in backups during migration; connection
 
 **Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.
 Local diagnostic logs live under the profile's `diagnostics/` folder, capped at three 64 KiB files per process; credentials, request bodies, game text, and raw stderr are excluded.
-Future project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 2.
+Project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 3.
 To restore a project backup, close the app, retain the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
 
 See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.md) for contribution rules, and the [migration record](docs/migration.md) for historical provenance.
 
 ## Translate a game
 
-Open the game, select a translation mode, set the image scope and project instructions,
+Open an MV/MZ or Ace game and choose **Guided workflow**. Preserve the original before
+preparing game files, then review the runtime file list and game version for Git setup.
+Import the database and a small map selection, prepare and save context, and translate
+database names before dialogue. Batch pauses for cost approval before submission.
+Advanced text uses the existing variable-cache and audited script/plugin phases.
+
+Review accumulated outputs before applying them. Rewrap requires a completed scan with
+the same files and settings. Use the scoped QA/playtest tasks as needed, then record your
+review of the current scope, checkpoint it, and build a local patch ZIP. Review records
+bind to exact file bytes; later changes require another review. This records the user's
+review and playtest, not an automated claim that the game has passed QA.
+
+To use **Len's method**, select a translation mode, set the image scope and project instructions,
 then copy the starting prompt into a coding assistant with access to the game and engine checkout.
 Keep DazedTL open: the prompt's project helper uses the running app to save state and control its jobs.
 The same prompt resumes saved work. The app observes the assistant's saved reports; it does not host or keep that assistant running.

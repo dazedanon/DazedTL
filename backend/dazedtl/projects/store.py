@@ -8,8 +8,8 @@ import uuid
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
 METHODS = {"guided", "len", "translation"}
-SCREENS = {"overview", "translation", "settings"}
-SCHEMA_VERSION = 2
+SCREENS = {"overview", "translation", "guided", "manual", "settings"}
+SCHEMA_VERSION = 3
 def upgrade_v1(value):
     if not isinstance(value.get("projects"), list) or any(
         not isinstance(project, dict) or project.get("method") not in {"guided", "len"}
@@ -22,7 +22,13 @@ def upgrade_v1(value):
     return upgraded
 
 
-UPGRADES = {1: upgrade_v1}
+def upgrade_v2(value):
+    if value.get("screen") not in {"overview", "translation", "settings"}:
+        raise ValueError("Invalid version-two project registry.")
+    return deepcopy(value)
+
+
+UPGRADES = {1: upgrade_v1, 2: upgrade_v2}
 
 
 def validate(value):
@@ -127,7 +133,7 @@ class Projects:
     def navigate(self, screen):
         if screen not in SCREENS:
             raise ValueError("That page is not available.")
-        if screen == "translation" and not self.current:
+        if screen in {"translation", "guided", "manual"} and not self.current:
             raise ValueError("Open a game project first.")
         data = deepcopy(self.data)
         data["screen"] = screen

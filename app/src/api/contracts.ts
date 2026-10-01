@@ -1,4 +1,4 @@
-export type Screen = "overview" | "translation" | "settings";
+export type Screen = "overview" | "translation" | "guided" | "manual" | "settings";
 export interface Project {
   id: string;
   name: string;
@@ -38,17 +38,48 @@ export interface Job {
   log: string[];
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
+  action?: string;
+  result?: Record<string, unknown> | null;
   approval?: {
     token: string;
     kind: "batch" | "speakers";
     detail: Record<string, unknown>;
   };
 }
-export type Phase = "database" | "dialogue";
+export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
+export type GuidedStep = "prepare" | "context" | "translate" | "apply" | "layout" | "review";
+export type EngineValue = string | number | boolean | string[];
+export interface GuidedOptions {
+  selected: string[];
+  mode: "batch" | "translate";
+  engine_options: Record<string, EngineValue>;
+  widths: Record<"width" | "faceWidth" | "listWidth" | "noteWidth", number>;
+  phase1_comments: boolean;
+}
+export interface GuidedPreferences {
+  revision: number;
+  values: GuidedOptions;
+}
+export interface GuidedForm {
+  version: string;
+  original: string;
+  untranslated: boolean;
+  only_overflow: boolean;
+}
 export interface GuidedState {
   projectId: string;
   source: string;
+  engine: "MVMZ" | "ACE";
+  dataPath: string;
+  encrypted: string[];
+  hasPlugins: boolean;
+  aceAvailable: boolean;
+  step: GuidedStep;
+  form: GuidedForm;
+  preferences: GuidedPreferences;
+  optionsDraft: GuidedPreferences | null;
+  engineSchema: { key: string; label: string; type: string; choices?: string[]; min?: number; max?: number }[];
   files: { name: string; default?: boolean; size?: number }[];
   selection: string[];
   importedFiles: string[];
@@ -181,6 +212,7 @@ export interface TranslationState extends ProjectOptions {
     prepared_source?: BackupRecord;
     workspace_backup?: BackupRecord;
     checkpoint?: { commit: string; manifest: string };
+    guided_review?: { manifest: string; evidence: Record<string, string> };
     delivery?: {
       path: string;
       commit: string;
@@ -241,11 +273,16 @@ export interface RequestPreview {
 }
 
 export interface Preview {
+  additions?: string[];
   token: string;
   label: string;
   destination: string;
   files: number;
-  options: { files: string[] };
+  action: string;
+  paths: string[];
+  confirmation: boolean;
+  options: Record<string, unknown>;
+  rewrap?: { changes_found: number; overflow_skipped: number; previews: { file_name: string; locator: string; before: string; after: string }[] };
 }
 export interface PreferenceValues {
   language: string;
@@ -501,8 +538,9 @@ export interface RpcContract {
   guided_preview: {
     request: {
       project_id: string;
-      action: "import" | "export_selected";
+      action: string;
       files?: string[];
+      options?: Record<string, unknown>;
     };
     response: Preview;
   };
@@ -510,9 +548,25 @@ export interface RpcContract {
     request: { project_id: string; token: string };
     response: Job;
   };
-  guided_start: {
-    request: { project_id: string; mode: RunMode };
-    response: Job;
+  guided_position: {
+    request: { project_id: string; step: GuidedStep };
+    response: Saved;
+  };
+  guided_form: {
+    request: { project_id: string; value: GuidedForm };
+    response: Saved;
+  };
+  guided_save_options: {
+    request: { project_id: string; revision: number; values: GuidedOptions };
+    response: GuidedPreferences;
+  };
+  guided_options_draft: {
+    request: { project_id: string; value: GuidedPreferences | null };
+    response: Saved;
+  };
+  guided_skill: {
+    request: { project_id: string; name: string };
+    response: { text: string };
   };
   guided_answer: {
     request: { project_id: string; token: string; approved: boolean };
