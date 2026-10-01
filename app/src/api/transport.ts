@@ -21,9 +21,10 @@ declare global {
       call(version: number, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;
+      copyText(text: string): Promise<void>;
       chooseFolder(): Promise<string | null>;
       openFolder(
-        kind: "project" | "workspace" | "output",
+        kind: "project" | "workspace" | "projectWorkspace" | "output",
         path?: string,
       ): Promise<void>;
       onClose(handler: () => Promise<void>, cancelled: () => void): () => void;

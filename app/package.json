@@ -7,7 +7,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "build": "node ../scripts/build.mjs",
-    "start": "node ../scripts/start.mjs"
+    "start": "node ../scripts/start.mjs",
+    "test": "node ../scripts/test.mjs"
   },
   "dependencies": {
     "lucide-react": "1.48.0",

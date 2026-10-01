@@ -15,6 +15,7 @@ import { useApplication } from "./ApplicationProvider";
 import Overview from "../features/overview/Overview";
 import Settings from "../features/settings/Settings";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
+import Translation from "../features/translation/Translation";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
@@ -66,7 +67,7 @@ export default function App() {
             variant="quiet"
             className="current-project"
             onClick={() => setPicker(true)}
-            disabled={action.busy || state.running}
+            disabled={action.busy}
           >
             <FolderOpen size={17} />
             {state.project.name}
@@ -93,14 +94,16 @@ export default function App() {
               <House size={18} />
               Overview
             </Button>
-            {state?.project?.method === "guided" && (
+            {state?.project && (
               <Button
                 size="comfortable"
-                aria-current={state.screen === "guided" ? "page" : undefined}
-                onClick={() => navigate("guided")}
+                aria-current={
+                  state.screen === "translation" ? "page" : undefined
+                }
+                onClick={() => navigate("translation")}
               >
                 <Route size={18} />
-                Guided Workflow
+                Translation
               </Button>
             )}
           </nav>
@@ -154,10 +157,18 @@ export default function App() {
           ) : state.screen === "settings" ? (
             <Settings />
           ) : state.project ? (
-            <GuidedWorkflow
+            <Translation
               key={state.project.id}
               project={state.project}
               settings={() => navigate("settings")}
+              legacy={
+                application.snapshot?.guided ? (
+                  <GuidedWorkflow
+                    project={state.project}
+                    settings={() => navigate("settings")}
+                  />
+                ) : null
+              }
             />
           ) : null}
         </main>
@@ -184,7 +195,7 @@ export default function App() {
               <Button
                 size="comfortable"
                 key={project.id}
-                disabled={action.busy || state.running}
+                disabled={action.busy}
                 onClick={() => select(project.id)}
               >
                 <FolderOpen size={18} />

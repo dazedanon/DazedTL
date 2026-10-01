@@ -1,0 +1,174 @@
+.translation-workspace {
+  max-width: 1120px;
+}
+.translation-workspace fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.translation-workspace label {
+  display: block;
+  margin: 16px 0;
+}
+.translation-workspace label > input:not([type="checkbox"]),
+.translation-workspace label > select,
+.translation-workspace label > textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+.translation-workspace label > .actions {
+  margin-top: 6px;
+}
+.translation-workspace label > .actions > input {
+  flex: 1;
+  min-width: 180px;
+}
+.translation-workspace [role="tabpanel"] {
+  padding-top: 20px;
+}
+.translation-workspace textarea {
+  width: 100%;
+  resize: vertical;
+}
+.translation-workspace details {
+  margin: 18px 0;
+}
+.translation-workspace summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.translation-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.translation-workspace .translation-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+.translation-check input {
+  width: auto;
+  margin: 0;
+}
+.translation-phases {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.translation-phases > div {
+  display: flex;
+  flex-direction: column;
+  padding: 13px;
+  gap: 6px;
+  background: var(--surface);
+}
+.translation-phases span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.translation-phases strong {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.translation-phases [data-state="complete"] strong {
+  color: var(--accent);
+}
+.translation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin-top: 12px;
+}
+.translation-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 32px;
+}
+.translation-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.translation-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.translation-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.translation-run {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line);
+}
+.translation-run:first-child {
+  padding-top: 0;
+}
+.translation-quote {
+  padding: 15px 18px;
+  margin: 15px 0;
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+}
+.translation-quote p {
+  margin: 7px 0;
+}
+.translation-table-wrap {
+  overflow: auto;
+  margin: 18px 0;
+}
+.translation-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.translation-table th,
+.translation-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.translation-table small {
+  color: var(--muted);
+}
+.translation-table p {
+  margin: 7px 0 0;
+}
+.translation-json,
+.translation-report {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 480px;
+  overflow: auto;
+  font-size: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.translation-path {
+  overflow-wrap: anywhere;
+}
+.translation-notice {
+  color: var(--accent);
+  margin: 10px 0;
+}
+.translation-batch-list {
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .translation-phases {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

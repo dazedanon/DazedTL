@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -71,6 +71,64 @@
     "settings_model_defaults": {
       "refresh": false,
       "duringClose": false
+    },
+    "translation_state": {
+      "refresh": false
+    },
+    "translation_save": {
+      "refresh": true
+    },
+    "translation_draft": {
+      "refresh": false,
+      "duringClose": true
+    },
+    "translation_documents": {
+      "refresh": false
+    },
+    "translation_save_document": {
+      "refresh": true
+    },
+    "translation_prepare": {
+      "refresh": true
+    },
+    "translation_compile": {
+      "refresh": true
+    },
+    "translation_run": {
+      "refresh": false
+    },
+    "translation_request": {
+      "refresh": false
+    },
+    "translation_start": {
+      "refresh": true
+    },
+    "translation_stop": {
+      "refresh": true
+    },
+    "translation_accept": {
+      "refresh": true
+    },
+    "translation_review": {
+      "refresh": true
+    },
+    "translation_progress": {
+      "refresh": true
+    },
+    "translation_operation": {
+      "refresh": true
+    },
+    "translation_attach_batch": {
+      "refresh": true
+    },
+    "translation_resolve_uncertain": {
+      "refresh": true
+    },
+    "translation_identify": {
+      "refresh": true
+    },
+    "translation_legacy": {
+      "refresh": true
     }
   }
 }

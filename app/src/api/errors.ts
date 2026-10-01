@@ -6,11 +6,10 @@ export type ErrorCode =
   | "protocol"
   | "internal";
 export class ApiError extends Error {
-  constructor(
-    public readonly code: ErrorCode,
-    message: string,
-  ) {
+  readonly code: ErrorCode;
+  constructor(code: ErrorCode, message: string) {
     super(message);
+    this.code = code;
     this.name = "ApiError";
   }
 }

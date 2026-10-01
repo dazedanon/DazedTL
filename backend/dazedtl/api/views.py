@@ -8,13 +8,13 @@ def pick(value, names):
 def project(value):
     if value is None:
         return None
-    return pick(value, ('id', 'name', 'source', 'engine', 'method', 'phase', 'available',
+    return pick(value, ('id', 'name', 'source', 'engine', 'engine_label', 'method', 'phase', 'available',
                         'status', 'detail', 'next_label', 'attention'))
 
 
 def application(value):
     return {'project': project(value['project']), 'recent': [project(item) for item in value['recent']],
-            'screen': value['screen'], 'running': value['running'], 'provider_ready': value['provider_ready']}
+            'screen': value['screen'], 'running': value['running'], 'observing': value['observing'], 'provider_ready': value['provider_ready']}
 
 
 def documents(value):

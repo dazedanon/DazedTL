@@ -6,12 +6,99 @@ import type {
   Documents,
   SettingsPayload,
   ConnectionInput,
+  TranslationOptions,
 } from "./contracts";
 
 export const api = {
+  translation: {
+    resolve: (
+      project_id: string,
+      run_id: string,
+      batch_id: string,
+      request_sha256: string,
+    ) =>
+      request("translation_resolve_uncertain", {
+        project_id,
+        run_id,
+        batch_id,
+        request_sha256,
+        retry_reviewed: true,
+      }),
+    save: (project_id: string, revision: string, values: TranslationOptions) =>
+      request("translation_save", { project_id, revision, values }),
+    draft: (
+      project_id: string,
+      section: "options" | "documents",
+      value: unknown,
+    ) => request("translation_draft", { project_id, section, value }),
+    document: (
+      project_id: string,
+      name: string,
+      revision: string,
+      text: string,
+    ) =>
+      request("translation_save_document", {
+        project_id,
+        name,
+        revision,
+        text,
+      }),
+    prepare: (project_id: string) =>
+      request("translation_prepare", { project_id }),
+    compile: (project_id: string, input_path: string) =>
+      request("translation_compile", { project_id, input_path }),
+    request: (project_id: string, run_id: string, index: number) =>
+      request("translation_request", { project_id, run_id, index }),
+    start: (project_id: string, run_id: string, approval_token = "") =>
+      request("translation_start", { project_id, run_id, approval_token }),
+    stop: (project_id: string, run_id: string, cancel_provider = false) =>
+      request("translation_stop", { project_id, run_id, cancel_provider }),
+    accept: (
+      project_id: string,
+      run_id: string,
+      batch_id: string,
+      input_path: string,
+    ) =>
+      request("translation_accept", {
+        project_id,
+        run_id,
+        batch_id,
+        input_path,
+      }),
+    review: (
+      project_id: string,
+      run_id: string,
+      batch_id: string,
+      request_sha256: string,
+    ) =>
+      request("translation_review", {
+        project_id,
+        run_id,
+        batch_id,
+        request_sha256,
+      }),
+    operation: (
+      project_id: string,
+      action: string,
+      args: Record<string, unknown> = {},
+    ) =>
+      request("translation_operation", { project_id, action, arguments: args }),
+    attach: (
+      project_id: string,
+      run_id: string,
+      index: number,
+      provider_job_id: string,
+    ) =>
+      request("translation_attach_batch", {
+        project_id,
+        run_id,
+        index,
+        provider_job_id,
+      }),
+  },
+
   snapshot: () => request("workspace_snapshot", {}),
-  open: (source: string) =>
-    request("open_project", { source, method: "guided" }),
+  open: (source: string) => request("open_project", { source }),
   select: (project_id: string) => request("select_project", { project_id }),
   navigate: (screen: Screen) => request("navigate", { screen }),
   phase: (project_id: string, phase: Phase) =>

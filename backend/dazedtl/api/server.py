@@ -15,6 +15,11 @@ from dazedtl.storage import WorkspaceLock
 from dazedtl.diagnostics import Diagnostics
 from dazedtl.settings.store import Settings
 from dazedtl.translation.guided import Guided
+from dazedtl.translation.service import Translation
+from dazedtl.compatibility.translation import TranslationEngine
+from dazedtl.api.local import LocalAPI
+
+RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
 
 PROTOCOL = json.loads(
@@ -24,6 +29,7 @@ PROTOCOL = json.loads(
 
 class Application:
     def __init__(self, workspace, legacy, allow_providers):
+        self.closing = False
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.workspace_lock = WorkspaceLock(self.workspace)
@@ -32,12 +38,22 @@ class Application:
         self.backend = ExistingBackend(legacy, self.workspace / "engine", allow_providers)
         with self.backend.context():
             self.settings = Settings(self.workspace, self.backend)
-        self.guided = Guided(self.backend, self.projects, self.settings)
+        self.translation = Translation(self.workspace, self.projects, self.settings,
+                                       TranslationEngine(legacy, self.workspace / "engine"))
+        self.guided = Guided(self.backend, self.projects, self.settings,
+                             extra_running=self.translation.jobs.running, before_write=self.translation.ready)
+        self.translation.legacy_actions = {
+            "resume": lambda identity: views.job(self.guided.resume(identity)),
+            "stop": lambda identity: views.job(self.guided.stop(identity)),
+            "answer": lambda identity, token, approved: views.job(self.guided.answer(identity, token, approved)),
+            "export": self.guided.export,
+        }
 
     def state(self):
         value = self.projects.state()
         project = value["project"]
-        value.update(running=self.backend.running(), provider_ready=self.settings.ready())
+        value.update(running=self.backend.running() or self.translation.jobs.running(), provider_ready=self.settings.ready(),
+                     observing=bool(project))
         if project:
             project = dict(project)
             project.update(
@@ -54,7 +70,12 @@ class Application:
                     next_label="Open another game",
                 )
             elif project.get("backend_id"):
-                native = self.backend.workflows.state(project["backend_id"])
+                try:
+                    native = self.backend.workflows.state(project["backend_id"])
+                except (ValueError, OSError, KeyError):
+                    project.update(status="Saved phased work unavailable", detail="The saved job reference was retained for recovery.")
+                    value["project"] = project
+                    return value
                 job = native["manual_job"]
                 latest = native["jobs"][0] if native["jobs"] else None
                 if native["project"].get("imported"):
@@ -89,28 +110,42 @@ class Application:
 
     def snapshot(self):
         state = self.state()
-        project = state['project']
-        current = None
-        if state['screen'] == 'guided' and project and project['available']:
-            current = views.guided(self.guided.state(project['id']), project['id'])
-        return {'application': views.application(state), 'guided': current}
+        project = state["project"]
+        current = legacy = None
+        error = ""
+        if project and project["available"]:
+            try:
+                current = self.translation.state(project["id"])
+                project["next_label"] = "Open translation"
+                project["engine_label"] = current["engine"]
+                project["engine"] = self.translation.engine.detect(project["source"])
+                if current["jobs"]:
+                    job = current["jobs"][0]
+                    project.update(status=job["label"] + " · " + job["status"].replace("_", " "), detail=job["message"])
+                elif current["progress"] and current["progress"].get("phase"):
+                    project.update(status="Last reported: " + current["progress"]["phase"], detail=current["progress"].get("next_action", ""))
+                else:
+                    project.update(status="Ready for project setup", detail="Choose a translation mode and prepare the starting prompt.")
+                project["attention"].extend(current["warnings"])
+                if current["legacyAvailable"]:
+                    legacy = views.guided(self.guided.state(project["id"]), project["id"])
+            except (ValueError, OSError) as exc:
+                error = str(exc)
+                project.update(status="Project needs attention", detail=error, next_label="Open translation")
+        return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy}
 
-    def open_project(self, source, method="guided"):
-        self.guided.idle()
-        detected = self.backend.describe(source)
-        if method != "guided" or detected["engine"] != "MVMZ":
-            raise ValueError(
-                "This first migration includes Guided Workflow for RPG Maker MV/MZ. Continue using the current app for the other workflows."
-            )
-        self.settings.prepare_engine()
-        native = self.backend.workflows.open(detected["source"])["project"]
-        project = self.projects.open(detected, method)
-        project["backend_id"] = native["id"]
-        self.projects.save()
+    def open_project(self, source):
+        root = Path(source).expanduser().resolve(strict=True)
+        if not root.is_dir() or root == root.parent:
+            raise ValueError("Choose a game folder.")
+        for protected in (self.backend.source, self.workspace, Path(__file__).resolve().parents[3]):
+            if root.is_relative_to(protected) or protected.is_relative_to(root):
+                raise ValueError("Choose a game folder separate from application and workspace storage.")
+        detected = {"source": str(root), "engine": self.translation.engine.detect(root)}
+        self.projects.open(detected)
         return self.state()
 
     def select_project(self, project_id):
-        self.guided.idle()
         self.projects.select(project_id)
         return self.state()
 
@@ -192,8 +227,24 @@ def serve(args, diagnostics):
             lambda value, _params: views.documents(value),
         ),
     }
+    for name in ("state", "save", "draft", "documents", "save_document", "prepare", "compile", "run", "request",
+                 "start", "stop", "accept", "review", "progress", "operation", "attach_batch", "resolve_uncertain", "identify", "legacy"):
+        methods["translation_" + name] = (getattr(app.translation, name), lambda value, _params: value)
+
+    def dispatch(name, params):
+        if name not in methods:
+            raise ValueError("Unknown project operation.")
+        handler, present = methods[name]
+        if name == "connection_check":
+            return present(handler(**params), params)
+        with app.backend.context(), app.translation.engine.context():
+            if app.closing:
+                raise ValueError("The app is closing. Reopen it to resume saved project work.")
+            return present(handler(**params), params)
+
     if set(methods) != set(PROTOCOL["methods"]):
         raise RuntimeError("The application API does not match its protocol manifest.")
+    local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
     try:
         for line in sys.stdin:
             request = {}
@@ -211,7 +262,7 @@ def serve(args, diagnostics):
                             "message": "The application and backend versions do not match. Restart after updating.",
                         },
                     }
-                    print(json.dumps(response), flush=True)
+                    print(json.dumps(response), file=RPC_OUTPUT, flush=True)
                     continue
                 method = methods.get(request.get("method"))
                 if not method:
@@ -219,12 +270,7 @@ def serve(args, diagnostics):
                 params = request.get("params", {})
                 if not isinstance(params, dict):
                     raise ValueError("Application parameters must be an object.")
-                handler, present = method
-                if request.get("method") == "connection_check":
-                    result = present(handler(**params), params)
-                else:
-                    with app.backend.context():
-                        result = present(handler(**params), params)
+                result = dispatch(request["method"], params)
                 response = {
                     "id": request.get("id"),
                     "version": PROTOCOL["version"],
@@ -241,8 +287,11 @@ def serve(args, diagnostics):
                     "version": PROTOCOL["version"],
                     "error": views.error(exc),
                 }
-            print(json.dumps(response, ensure_ascii=False), flush=True)
+            print(json.dumps(response, ensure_ascii=False), file=RPC_OUTPUT, flush=True)
     finally:
+        app.closing = True
+        local.close()
+        app.translation.jobs.close()
         try:
             app.backend.close()
         finally:

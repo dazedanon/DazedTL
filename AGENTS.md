@@ -20,7 +20,7 @@
 
 ## Testing
 
-- Tests are paused by user request; do not add or run tests or substitute harnesses until the user resumes testing.
+- Automated testing is enabled. Run node scripts/test.mjs for foundation or shared behavior changes; use focused targets while iterating.
 - Builds, static checks, and visual review are allowed when relevant to the change.
 - Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
 - Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
@@ -28,12 +28,12 @@
 - Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior.
 - Keep tests hermetic with small generated or committed fixtures; no real providers, user games, credentials, or local workspace dependencies.
 - The full test suite has a hard 10-second wall-clock budget, including runner startup, fixtures, and teardown; builds and dependency installation are separate.
-- Once testing resumes, measure the full suite before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
+- Measure the full suite before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
 - If added coverage reaches the limit, report the overrun and present the same choices before proceeding with more tests.
 - Do not bypass the budget by silently deleting or skipping tests, splitting suites, weakening checks, or raising the limit.
 - Do not optimize for test counts or coverage percentages; report checks run, relevant runtime results, and unverified behavior.
 
-## First behaviors to protect when testing resumes
+## Foundation behaviors to protect
 
 - Draft edits survive navigation, save/close races, and recovery.
 - Project and run ownership remain correct through switching, interruption, and resume.

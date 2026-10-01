@@ -1,16 +1,28 @@
 """Game identity and translation method, independent of the visible screen."""
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import uuid
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
-METHODS = {"guided", "len"}
-SCREENS = {"overview", "guided", "settings"}
-SCHEMA_VERSION = 1
-# Register N -> N+1 transformations here when the persisted format changes.
-UPGRADES = {}
+METHODS = {"guided", "len", "translation"}
+SCREENS = {"overview", "translation", "settings"}
+SCHEMA_VERSION = 2
+def upgrade_v1(value):
+    if not isinstance(value.get("projects"), list) or any(
+        not isinstance(project, dict) or project.get("method") not in {"guided", "len"}
+        for project in value["projects"]
+    ) or value.get("screen") not in {"overview", "guided", "settings"}:
+        raise ValueError("Invalid version-one project registry.")
+    upgraded = deepcopy(value)
+    if upgraded["screen"] == "guided":
+        upgraded["screen"] = "translation"
+    return upgraded
+
+
+UPGRADES = {1: upgrade_v1}
 
 
 def validate(value):
@@ -59,24 +71,33 @@ class Projects:
         )
 
     def save(self):
-        validate(self.data)
-        write_json(self.path, self.data)
+        self._commit(self.data)
 
-    def get(self, project_id):
-        project = next((p for p in self.data["projects"] if p["id"] == project_id), None)
+    def _commit(self, data):
+        validate(data)
+        write_json(self.path, data)
+        self.data = data
+
+    @staticmethod
+    def _get(data, project_id):
+        project = next((p for p in data["projects"] if p["id"] == project_id), None)
         if not project:
             raise ValueError("Choose an available project.")
         return project
+
+    def get(self, project_id):
+        return self._get(self.data, project_id)
 
     @property
     def current(self):
         return self.get(self.data["current_id"]) if self.data["current_id"] else None
 
-    def open(self, detected, method):
+    def open(self, detected, method="translation"):
         if method not in METHODS:
-            raise ValueError("Choose Guided Workflow or Len’s Method.")
+            raise ValueError("Choose a supported translation project.")
         source = str(Path(detected["source"]).resolve())
-        project = next((p for p in self.data["projects"] if p["source"] == source), None)
+        data = deepcopy(self.data)
+        project = next((p for p in data["projects"] if p["source"] == source), None)
         if not project:
             project = {
                 "id": uuid.uuid4().hex,
@@ -87,27 +108,30 @@ class Projects:
                 "backend_id": "",
                 "phase": "database",
             }
-            self.data["projects"].append(project)
+            data["projects"].append(project)
         # Reopening a game does not infer a different method from the screen.
         project["engine"] = detected["engine"]
-        self.select(project["id"])
-        return project
+        return self._select(data, project)
 
     def select(self, project_id):
-        project = self.get(project_id)
+        data = deepcopy(self.data)
+        return self._select(data, self._get(data, project_id))
+
+    def _select(self, data, project):
         project["last_opened"] = datetime.now(timezone.utc).isoformat()
-        self.data["current_id"] = project_id
-        self.data["screen"] = "overview"
-        self.save()
+        data["current_id"] = project["id"]
+        data["screen"] = "overview"
+        self._commit(data)
         return project
 
     def navigate(self, screen):
         if screen not in SCREENS:
             raise ValueError("That page is not available.")
-        if screen == "guided" and (not self.current or self.current["method"] != "guided"):
-            raise ValueError("Open a Guided Workflow project first.")
-        self.data["screen"] = screen
-        self.save()
+        if screen == "translation" and not self.current:
+            raise ValueError("Open a game project first.")
+        data = deepcopy(self.data)
+        data["screen"] = screen
+        self._commit(data)
 
     def state(self):
         return {

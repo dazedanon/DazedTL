@@ -3,6 +3,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
   call: (version, method, params = {}) =>
     ipcRenderer.invoke("dazedtl:call", version, method, params),
   ready: () => ipcRenderer.invoke("dazedtl:ready"),
+  copyText: (text) => ipcRenderer.invoke("dazedtl:copy-text", text),
   copyDiagnostics: () => ipcRenderer.invoke("dazedtl:copy-diagnostics"),
   chooseFolder: () => ipcRenderer.invoke("dazedtl:choose-folder"),
   openFolder: (kind, target) =>

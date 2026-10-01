@@ -1,10 +1,11 @@
-export type Screen = "overview" | "guided" | "settings";
+export type Screen = "overview" | "translation" | "settings";
 export interface Project {
   id: string;
   name: string;
   source: string;
   engine: string;
-  method: "guided" | "len";
+  engine_label?: string;
+  method: "guided" | "len" | "translation";
   phase: string;
   available?: boolean;
   status?: string;
@@ -18,6 +19,7 @@ export interface AppState {
   screen: Screen;
   running: boolean;
   provider_ready: boolean;
+  observing: boolean;
 }
 export type Documents = Record<
   string,
@@ -69,7 +71,149 @@ export interface GuidedState {
 export interface WorkspaceSnapshot {
   application: AppState;
   guided: GuidedState | null;
+  translation: TranslationState | null;
+  translationError: string;
 }
+
+export interface TranslationOptions {
+  mode: "agent" | "live" | "batch";
+  instructions: string;
+  include_images: boolean;
+  include_glossary_base: boolean;
+  install_forge: boolean;
+}
+export interface ProjectOptions {
+  options: TranslationOptions;
+  revision: string;
+  initialized: boolean;
+}
+export interface TranslationQuote {
+  requests: number;
+  units: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+  live_cost: number;
+  batch_cost: number | null;
+  model: string;
+  provider: string;
+  basis: string;
+  rates: {
+    input: number;
+    output: number;
+    source: string;
+    batch_factor: number | null;
+  };
+}
+export interface TranslationJob {
+  id: string;
+  project_id: string;
+  kind: "translation" | "operation";
+  label: string;
+  status: string;
+  message: string;
+  created: string;
+  updated: string;
+  mode?: "agent" | "live" | "batch";
+  quote: TranslationQuote | null;
+  approval_token: string;
+  approved: boolean;
+  result: Record<string, unknown> | null;
+  usage: Record<string, number>;
+  counts: Record<string, number>;
+  units: number;
+  accepted_units: number;
+  requests: number;
+  stop_requested: boolean;
+  cancel_requested: boolean;
+  batches: {
+    id: string;
+    state: string;
+    api_status?: string;
+    counts?: Record<string, number>;
+  }[];
+  issues: { id: string; state: string; message: string }[];
+}
+export interface TranslationProgress {
+  updated_at: string | null;
+  phase: string | null;
+  phases: Record<string, string>;
+  metrics: Record<
+    "text" | "images",
+    {
+      total: number | null;
+      discovered?: number;
+      translated: number;
+      reviewed: number;
+    }
+  >;
+  warnings?: string[];
+  blocker: string;
+  next_action: string;
+}
+export interface TranslationState extends ProjectOptions {
+  engine: string;
+  legacyRun: Job | null;
+  projectId: string;
+  drafts: {
+    options: Pick<ProjectOptions, "options" | "revision"> | null;
+    documents: Documents;
+  };
+  documents: Documents;
+  progress: TranslationProgress | null;
+  git: {
+    configured: boolean;
+    original_exists: boolean;
+    translation_exists: boolean;
+    original_version: string | null;
+    translation_version: string | null;
+    original_commit: string | null;
+    translation_commit: string | null;
+    translation_branch: string | null;
+    current_branch: string | null;
+    worktree_clean: boolean;
+    pending_operations: string[];
+    asset_sync_pending: boolean;
+  } | null;
+  lifecycle: {
+    source_backup?: { id: string; path: string; files: number };
+    prepared_source?: { id: string; path: string; files: number };
+    workspace_backup?: { id: string; path: string; files: number };
+    checkpoint?: { commit: string; manifest: string };
+    delivery?: {
+      path: string;
+      commit: string;
+      game_version: string;
+      updater_stamp: boolean;
+    };
+  };
+  jobs: TranslationJob[];
+  active: boolean;
+  warnings: string[];
+  statusText: string;
+  handoff: string;
+  providerEnabled: boolean;
+  legacyAvailable: boolean;
+}
+export interface RequestPreview {
+  run_id: string;
+  index: number;
+  total: number;
+  request: {
+    id: string;
+    sources: Record<string, string>;
+    fingerprint: string;
+    constraints: Record<string, unknown>;
+    context: Record<string, unknown>;
+    params?: Record<string, unknown>;
+  };
+  result: {
+    translations: Record<string, string>;
+    result_sha256: string;
+    reviewed?: Record<string, string>;
+  } | null;
+}
+
 export interface Preview {
   token: string;
   label: string;
@@ -165,12 +309,134 @@ export interface ExportedFiles {
   files: number;
 }
 export interface RpcContract {
+  translation_identify: {
+    request: { project_id: string; engine: string; evidence_file: string };
+    response: Saved;
+  };
+  translation_legacy: {
+    request: {
+      project_id: string;
+      action: "resume" | "stop" | "answer" | "export";
+      token?: string;
+      approved?: boolean;
+    };
+    response: Job | ExportedFiles;
+  };
+
+  translation_resolve_uncertain: {
+    request: {
+      project_id: string;
+      run_id: string;
+      batch_id: string;
+      request_sha256: string;
+      retry_reviewed: boolean;
+    };
+    response: TranslationJob;
+  };
+
+  translation_state: {
+    request: { project_id: string };
+    response: TranslationState;
+  };
+  translation_save: {
+    request: {
+      project_id: string;
+      revision: string;
+      values: TranslationOptions;
+    };
+    response: ProjectOptions;
+  };
+  translation_draft: {
+    request: {
+      project_id: string;
+      section: "options" | "documents";
+      value: unknown;
+    };
+    response: Saved;
+  };
+  translation_documents: {
+    request: { project_id: string };
+    response: Documents;
+  };
+  translation_save_document: {
+    request: {
+      project_id: string;
+      name: string;
+      revision: string;
+      text: string;
+    };
+    response: Documents;
+  };
+  translation_prepare: {
+    request: { project_id: string };
+    response: { handoff: string; path: string };
+  };
+  translation_compile: {
+    request: { project_id: string; input_path: string };
+    response: TranslationJob;
+  };
+  translation_run: {
+    request: { project_id: string; run_id: string };
+    response: TranslationJob;
+  };
+  translation_request: {
+    request: { project_id: string; run_id: string; index: number };
+    response: RequestPreview;
+  };
+  translation_start: {
+    request: { project_id: string; run_id: string; approval_token?: string };
+    response: TranslationJob;
+  };
+  translation_stop: {
+    request: { project_id: string; run_id: string; cancel_provider?: boolean };
+    response: TranslationJob;
+  };
+  translation_accept: {
+    request: {
+      project_id: string;
+      run_id: string;
+      batch_id: string;
+      input_path: string;
+    };
+    response: TranslationJob;
+  };
+  translation_review: {
+    request: {
+      project_id: string;
+      run_id: string;
+      batch_id: string;
+      request_sha256: string;
+    };
+    response: Saved;
+  };
+  translation_progress: {
+    request: { project_id: string; input_path: string };
+    response: TranslationProgress;
+  };
+  translation_operation: {
+    request: {
+      project_id: string;
+      action: string;
+      arguments: Record<string, unknown>;
+    };
+    response: TranslationJob;
+  };
+  translation_attach_batch: {
+    request: {
+      project_id: string;
+      run_id: string;
+      index: number;
+      provider_job_id: string;
+    };
+    response: TranslationJob;
+  };
+
   workspace_snapshot: {
     request: Record<string, never>;
     response: WorkspaceSnapshot;
   };
   open_project: {
-    request: { source: string; method: "guided" };
+    request: { source: string };
     response: AppState;
   };
   select_project: { request: { project_id: string }; response: AppState };

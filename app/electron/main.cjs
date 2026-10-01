@@ -161,6 +161,12 @@ app.whenReady().then(() => {
     trusted(event);
     ready = true;
   });
+  ipcMain.handle("dazedtl:copy-text", (event, text) => {
+    trusted(event);
+    if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > 2_000_000)
+      throw new Error("Choose a bounded text artifact to copy.");
+    clipboard.writeText(text);
+  });
   ipcMain.handle("dazedtl:copy-diagnostics", (event) => {
     trusted(event);
     try {
@@ -195,6 +201,14 @@ app.whenReady().then(() => {
           : result?.project;
       if (selected?.source) currentSource = selected.source;
       if (method === "guided_export") outputs.add(result.path);
+      for (const job of result?.translation?.jobs || []) {
+        if (
+          job.kind === "operation" &&
+          job.status === "complete" &&
+          typeof job.result?.path === "string"
+        )
+          outputs.add(path.dirname(job.result.path));
+      }
       return { version: protocol.version, ok: true, value: result };
     } catch (error) {
       diagnostics.failure("desktop.error", error, {
@@ -224,12 +238,24 @@ app.whenReady().then(() => {
     const folder =
       kind === "project"
         ? currentSource
-        : kind === "workspace"
-          ? backend.workspace
-          : outputs.has(target)
-            ? target
-            : "";
-    if (!folder) throw new Error("Choose an available folder.");
+        : kind === "projectWorkspace" && currentSource
+          ? path.join(currentSource, ".dazedtl", "len-method")
+          : kind === "workspace"
+            ? backend.workspace
+            : outputs.has(target)
+              ? target
+              : "";
+    if (!folder || !fs.statSync(folder).isDirectory())
+      throw new Error("Choose an available folder.");
+    if (
+      kind === "projectWorkspace" &&
+      !fs
+        .realpathSync(folder)
+        .startsWith(fs.realpathSync(currentSource) + path.sep)
+    )
+      throw new Error(
+        "The project workspace must stay inside the selected game.",
+      );
     const error = await shell.openPath(folder);
     if (error) throw new Error(error);
   });

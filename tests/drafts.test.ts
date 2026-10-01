@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { DraftSession } from "../app/src/state/DraftSession.ts";
+import { flushDrafts, registerLeaveGuard } from "../app/src/state/leaveGuards.ts";
+
+const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
+const unexpected = (error: unknown) => { throw error; };
+
+test("navigation waits for the latest draft, including edits during a pending write", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = Promise.withResolvers<void>();
+  const writes: string[] = [];
+  const session = new DraftSession<string>(async (value) => {
+    writes.push(value);
+    if (writes.length === 1) await pending.promise;
+  }, unexpected);
+  session.adopt("saved", "recovered");
+  assert.equal(session.getSnapshot().dirty, true);
+  session.edit("first edit");
+  const unregister = registerLeaveGuard(session.flush);
+  t.after(unregister);
+  const leaving = flushDrafts();
+  await turn();
+  session.edit("latest edit");
+  pending.resolve();
+  await leaving;
+  assert.deepEqual(writes, ["first edit", "latest edit"]);
+  assert.equal(session.getSnapshot().value, "latest edit");
+  assert.equal(session.getSnapshot().dirty, true);
+  await session.dispose();
+});
+
+test("edits during an explicit save survive with the new saved revision", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  type Value = { text: string; revision: string };
+  const writes: Value[] = [];
+  const pending = Promise.withResolvers<{ saved: Value }>();
+  const session = new DraftSession<Value>(async (value) => { writes.push(value); }, unexpected);
+  session.adopt({ text: "saved", revision: "1" });
+  session.edit({ text: "first edit", revision: "1" });
+  const saving = session.commit(() => pending.promise,
+    (_before, current, result) => ({ ...current, revision: result.saved.revision }));
+  await turn();
+  assert.equal(session.getSnapshot().committing, true);
+  session.edit({ text: "newer edit", revision: "1" });
+  pending.resolve({ saved: { text: "first edit", revision: "2" } });
+  await saving;
+  assert.deepEqual(session.getSnapshot(), {
+    value: { text: "newer edit", revision: "2" }, dirty: true, committing: false,
+  });
+  assert.deepEqual(writes.at(-1), { text: "newer edit", revision: "2" });
+  await session.dispose();
+});
+
+test("a failed recovery write blocks leaving and remains retryable", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let fail = true;
+  const writes: string[] = [];
+  const session = new DraftSession<string>(async (value) => {
+    if (fail) throw new Error("No space");
+    writes.push(value);
+  }, unexpected);
+  session.adopt("saved");
+  session.edit("keep this edit");
+  const unregister = registerLeaveGuard(session.flush);
+  t.after(unregister);
+  await assert.rejects(flushDrafts(), /No space/);
+  assert.equal(session.getSnapshot().dirty, true);
+  assert.equal(session.getSnapshot().value, "keep this edit");
+  fail = false;
+  await flushDrafts();
+  assert.deepEqual(writes, ["keep this edit"]);
+  await session.dispose();
+});

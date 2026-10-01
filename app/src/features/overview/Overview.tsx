@@ -29,14 +29,14 @@ export default function Overview({
   busy: boolean;
   open: () => void;
   select: (id: string) => void;
-  go: (screen: "guided" | "settings") => void;
+  go: (screen: "translation" | "settings") => void;
   report: (error: unknown) => void;
 }) {
   const project = state.project;
   const recent = state.recent
     .filter((item) => item.id !== project?.id)
     .slice(0, 3);
-  const switchingDisabled = busy || state.running;
+  const switchingDisabled = busy;
   return (
     <PageLayout className="overview" aria-label="Project overview">
       <PageHeader title="Overview" divided />
@@ -46,16 +46,10 @@ export default function Overview({
             <h3 className="overview-project-name">{project.name}</h3>
             <dl className="overview-facts">
               <DetailRow label="Engine">
-                {engines[project.engine] || project.engine}
+                {project.engine_label ||
+                  engines[project.engine] ||
+                  project.engine}
               </DetailRow>
-              <div className="summary-row">
-                <dt>Method</dt>
-                <dd>
-                  {project.method === "guided"
-                    ? "Guided Workflow"
-                    : "Len’s Method"}
-                </dd>
-              </div>
               <div className="summary-row overview-wide">
                 <dt>Folder</dt>
                 <dd className="overview-folder">
@@ -84,7 +78,9 @@ export default function Overview({
                     type="button"
                     variant="primary"
                     disabled={busy || (!project.available && state.running)}
-                    onClick={() => (project.available ? go("guided") : open())}
+                    onClick={() =>
+                      project.available ? go("translation") : open()
+                    }
                   >
                     {project.next_label}
                     <ArrowRight size={15} />
@@ -145,12 +141,11 @@ export default function Overview({
             <Settings2 size={15} />
             Translation settings
           </Button>
-          {!state.provider_ready &&
-            (!project || project.method === "guided") && (
-              <span className="overview-setup-note">
-                Choose a connection and model for live or batch translation.
-              </span>
-            )}
+          {!state.provider_ready && (
+            <span className="overview-setup-note">
+              Choose a connection and model for live or batch translation.
+            </span>
+          )}
         </div>
       </Section>
       {!!recent.length && (

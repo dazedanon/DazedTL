@@ -6,12 +6,21 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { api } from "../api/client";
+import { onMutation } from "../api/transport";
 import { ApplicationStore } from "./applicationStore";
 import { flushDrafts } from "../state/leaveGuards";
 
 const Context = createContext<ApplicationStore | null>(null);
 export function ApplicationProvider({ children }: { children: ReactNode }) {
-  const [store] = useState(() => new ApplicationStore());
+  const [store] = useState(
+    () =>
+      new ApplicationStore({
+        snapshot: api.snapshot,
+        onMutation,
+        onStopped: (handler) => window.dazedtl.onStopped(handler),
+      }),
+  );
   useEffect(() => {
     store.start();
     const close = window.dazedtl.onClose(

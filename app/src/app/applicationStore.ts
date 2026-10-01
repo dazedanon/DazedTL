@@ -1,7 +1,11 @@
-import { api } from "../api/client";
-import { ApiError, messageOf } from "../api/errors";
-import { onMutation } from "../api/transport";
+import { ApiError, messageOf } from "../api/errors.ts";
 import type { WorkspaceSnapshot } from "../api/contracts";
+
+export interface ApplicationSource {
+  snapshot: () => Promise<WorkspaceSnapshot>;
+  onMutation: (handler: (phase: "begin" | "end") => void) => () => void;
+  onStopped: (handler: (message: string) => void) => () => void;
+}
 
 interface State {
   snapshot: WorkspaceSnapshot | null;
@@ -10,6 +14,10 @@ interface State {
 }
 /** One observer per window. Reads never overlap or replace a newer mutation. */
 export class ApplicationStore {
+  private source: ApplicationSource;
+  constructor(source: ApplicationSource) {
+    this.source = source;
+  }
   private value: State = { snapshot: null, error: "", stopped: false };
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -37,7 +45,7 @@ export class ApplicationStore {
   start() {
     if (this.started) return;
     this.started = true;
-    this.unwatch = onMutation((phase) => {
+    this.unwatch = this.source.onMutation((phase) => {
       clearTimeout(this.timer);
       if (phase === "begin") {
         this.epoch++;
@@ -51,7 +59,9 @@ export class ApplicationStore {
         }
       }
     });
-    this.unstopped = window.dazedtl.onStopped((message) => {
+    this.unstopped = this.source.onStopped((message) => {
+      // An outstanding successful response cannot revive a disconnected backend.
+      this.epoch++;
       clearTimeout(this.timer);
       this.publish({ ...this.value, error: message, stopped: true });
     });
@@ -79,9 +89,13 @@ export class ApplicationStore {
         this.started &&
         !this.value.stopped &&
         !this.value.error &&
-        this.value.snapshot?.application.running
+        (this.value.snapshot?.application.running ||
+          this.value.snapshot?.application.observing)
       )
-        this.timer = setTimeout(() => void this.refresh(), 500);
+        this.timer = setTimeout(
+          () => void this.refresh(),
+          this.value.snapshot?.application.running ? 500 : 2000,
+        );
     });
     return this.inFlight;
   };
@@ -94,7 +108,7 @@ export class ApplicationStore {
       const ticket = this.epoch;
       this.readingEpoch = ticket;
       try {
-        const snapshot = await api.snapshot();
+        const snapshot = await this.source.snapshot();
         if (ticket === this.epoch && !this.mutations && this.started)
           this.publish({ snapshot, error: "", stopped: false });
       } catch (error) {

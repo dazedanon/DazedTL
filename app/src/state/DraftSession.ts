@@ -21,11 +21,18 @@ export class DraftSession<T> {
   private queue = Promise.resolve();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private listeners = new Set<() => void>();
+  private persist: (value: T) => Promise<unknown>;
+  private report: (error: unknown) => void;
+  private fingerprint: (value: T) => string;
   constructor(
-    private persist: (value: T) => Promise<unknown>,
-    private report: (error: unknown) => void,
-    private fingerprint: (value: T) => string = JSON.stringify,
-  ) {}
+    persist: (value: T) => Promise<unknown>,
+    report: (error: unknown) => void,
+    fingerprint: (value: T) => string = JSON.stringify,
+  ) {
+    this.persist = persist;
+    this.report = report;
+    this.fingerprint = fingerprint;
+  }
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);

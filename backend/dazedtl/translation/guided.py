@@ -2,14 +2,16 @@
 
 
 class Guided:
-    def __init__(self, backend, projects, settings):
+    def __init__(self, backend, projects, settings, extra_running=lambda: False, before_write=lambda _project_id: None):
         self.backend = backend
         self.settings = settings
         self.projects = projects
         self.confirmations = {}
+        self.extra_running = extra_running
+        self.before_write = before_write
 
     def idle(self):
-        if self.backend.running():
+        if self.backend.running() or self.extra_running():
             raise ValueError("Finish or stop the current run before starting another action.")
 
     def record(self, project_id):
@@ -62,13 +64,16 @@ class Guided:
         else:
             raise ValueError("That guided action has not been migrated.")
         preview = self.backend.workflows.preview(native["id"], action, {"files": selected})
-        self.confirmations = {preview["token"]: project_id}
+        self.confirmations = {preview["token"]: (project_id, action)}
         return preview
 
     def execute(self, project_id, token):
         self.idle()
-        if self.confirmations.pop(token, None) != project_id:
+        confirmed = self.confirmations.pop(token, None)
+        if not confirmed or confirmed[0] != project_id:
             raise ValueError("The action changed. Review a new preview.")
+        if confirmed[1] == "export_selected":
+            self.before_write(project_id)
         return self.backend.workflows.execute(token)
 
     def start(self, project_id, mode):
@@ -76,6 +81,8 @@ class Guided:
         project, native = self.record(project_id)
         if mode not in {"estimate", "translate", "batch"}:
             raise ValueError("Choose an estimate, live translation, or batch translation.")
+        if mode != "estimate":
+            self.before_write(project_id)
         state = self.backend.workflows.state(native["id"])
         if state.get("draft", {}).get("documents"):
             raise ValueError("Save or discard the context drafts before translating.")
