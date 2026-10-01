@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { app, root, requireNode } from "./dependencies.mjs";
 
-requireNode();
+requireNode({ exact: true });
 const manifest = JSON.parse(
   fs.readFileSync(path.join(app, "package.json"), "utf8"),
 );
