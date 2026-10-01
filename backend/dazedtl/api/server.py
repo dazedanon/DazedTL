@@ -57,8 +57,8 @@ class Application:
             project = dict(project)
             project.update(
                 available=Path(project["source"]).is_dir(),
-                status="Ready for setup",
-                detail="Select the game files and review its context.",
+                status="Project open",
+                detail="Choose the next task for this project.",
                 next_label="Continue setup",
                 attention=[],
             )
@@ -79,7 +79,7 @@ class Application:
                 latest = native["jobs"][0] if native["jobs"] else None
                 if native["project"].get("imported"):
                     project.update(
-                        status="Ready to translate", detail="Your selected files and game context are ready.", next_label="Continue translation"
+                        status="Translation workspace ready", detail="Review the selected scope and saved guidance before starting a run.", next_label="Continue translation"
                     )
                 if native["project"].get("collection_error"):
                     project["attention"].append(native["project"]["collection_error"])
@@ -167,6 +167,8 @@ class Application:
             if not self.projects.current:
                 raise ValueError("Open a game project first.")
             self.guided.open(self.projects.current["id"])
+            if screen == "manual":
+                self.guided.position(self.projects.current["id"], "translate")
         self.projects.navigate(screen)
         return self.state()
 
@@ -235,7 +237,7 @@ def serve(args, diagnostics):
                 getattr(app.guided, name),
                 lambda value, _params: views.job(value),
             )
-            for name in ("execute", "answer", "stop", "resume")
+            for name in ("execute", "answer", "stop", "resume", "inspect")
         },
         "guided_export": (app.guided.export, lambda value, _params: value),
         **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)

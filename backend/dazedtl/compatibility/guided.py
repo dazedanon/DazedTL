@@ -7,11 +7,44 @@ import shutil
 import subprocess
 
 from dazedtl.translation.files import digest, read_json
+from dazedtl.storage import write_json
 
 
 def guard(project, folder):
     from desktop.backend.workflow_actions import action_guard
     return action_guard(project, folder)
+
+
+def phased_workflows(workspace, lock, operations, manual):
+    from desktop.backend.workflow import Workflows
+    class ScopedWorkflows(Workflows):
+        def _collect(self, project):
+            index = self.folder(project["id"]) / "source-inputs.json"
+            if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):
+                return  # Frozen work from an older source pass stays in its own run.
+            return super()._collect(project)
+    return ScopedWorkflows(workspace, lock, operations, manual)
+
+
+def apply_selected(plan, log):
+    from desktop.backend.workflow_actions import validate_plan, regular
+    from util.project_scanner import export_to_game
+    validate_plan(plan)
+    names = plan["options"]["files"]
+    if not names or set(names) - set(plan["guard"]["translated"] or {}) or set(names) - set(plan["guard"]["files"] or {}):
+        raise ValueError("The selected saved outputs changed. Review the files again.")
+    root, data, folder = Path(plan["project"]["source"]), Path(plan["project"]["data"]), Path(plan["folder"])
+    for name in names:
+        regular(root, data / name)
+        regular(folder, folder / "translated" / name)
+    log("Applying " + str(len(names)) + " reviewed files.")
+    count, errors = export_to_game(folder / "translated", data, filenames=names)
+    if errors:
+        raise ValueError("; ".join(errors))
+    receipt = folder / "applied-outputs.json"
+    previous = read_json(receipt).get("files", {}) if receipt.exists() else {}
+    write_json(receipt, {"version": 1, "files": {**previous, **{name: plan["guard"]["translated"][name] for name in names}}})
+    return {"files": count, "destination": str(data), "ace_packing_required": plan["project"]["engine"] == "ACE"}
 
 
 def rewrap_review(backend, native_id, token):

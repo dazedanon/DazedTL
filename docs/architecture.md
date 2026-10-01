@@ -20,7 +20,7 @@ The adapter retains existing engine behavior while capabilities are extracted in
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
-Guided Workflow and Translate files compose the same file selection, preferences and phased runner.
+The Translation workspace composes file selection, preferences and the preserved phased runner.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,
 selection, settings and runtime-scope changes invalidate the relevant preview. The preserved runner
 continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
@@ -32,6 +32,18 @@ those operations are reachable only through the app's consumed Guided preview.
 
 ## UI and state decisions
 
+### UX principles
+
+Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/)
+when designing and reviewing this tool. Make current state and the next useful action visible;
+use translation tasks and familiar language; offer clear exits and recovery; keep shared controls
+consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring
+memory; support both guided and experienced use; prioritize relevant actions; give errors a
+practical recovery path; and put concise help beside the task that needs it. Use these principles
+to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
+
+### Workflow and shared presentation
+
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
 Reserve cards for content requiring a distinct container.
@@ -42,9 +54,31 @@ Saved operation indexes carry their action identity so feedback can remain besid
 Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared
 action-column width, token-based gaps, wrapping text, and a stacked layout based on available
 container width. Rows grow with feedback rather than fixing heights or clipping content.
-Guided formatting and GameUpdate creation consume a preview immediately after the user's click;
+Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click;
 the same backup, project ownership, input validation, and one-use execution checks still apply.
-Other actions retain their existing review requirements.
+Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.
+
+Translation has Setup, Translate, and Test & release areas. Navigation never completes a task.
+Completed setup is summarized; recent activity holds saved history, while active work and required
+approval remain visible across areas. Assistant task controls describe the expected return and
+report only copied instructions or saved findings, never an external process inferred from a click.
+Output availability, application to runtime files, current user review, and checkpoint readiness
+are separate observations. Execution still rechecks source, review, and ownership evidence.
+Application receipts distinguish later fitting or QA edits from new outputs that have not been
+applied. New user-review records also bind the profile's working-source index and original blobs;
+refreshing or expanding a source pass invalidates that release evidence without rewriting old runs.
+
+The selected phase files bind each new run and each application preview. Working copies are
+prepared automatically without removing other phase work. The compatibility launcher filters
+the preserved phase's selected files, retaining its profiles, glossary, speakers, and frozen run format.
+New tracked inputs come from original-branch blobs. Ace exports bind to their native original blobs
+when available, so fitting or packing runtime translations does not create false source drift;
+untracked exports bind to source bytes.
+Source changes block new work until an explicit refresh archives affected working copies, outputs,
+and variable cache in profile source-history. Existing runs keep their original recovery records.
+Runs retired by that refresh cannot merge older results into the new pass; their frozen outputs
+remain inspectable and exportable under the original project owner.
+The former manual screen remains a compatibility route into Translate, preserving saved project identity.
 
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
 backend job references, phase selections and recovery data when adding workflow screens.
@@ -57,7 +91,7 @@ Backend disconnection invalidates pending reads so a late response cannot restor
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
 Guided engine options use the same draft session and retain the native revision check. Its step and
-setup-form recovery live alongside project records in the profile; navigation never starts an action.
+setup-form recovery live alongside project records in the profile.
 Opening Guided transfers any pending shared-context draft before linking the native workflow.
 Never retry writes automatically, since some actions submit paid work.
 

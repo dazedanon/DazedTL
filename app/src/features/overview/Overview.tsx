@@ -89,14 +89,13 @@ export default function Overview({
                       project.available ? go(["MVMZ", "ACE"].includes(project.engine) ? "guided" : "translation") : open()
                     }
                   >
-                    {project.available && ["MVMZ", "ACE"].includes(project.engine) ? "Open guided workflow" : project.next_label}
+                    {project.available && ["MVMZ", "ACE"].includes(project.engine) ? "Open Translation" : project.next_label}
                     <ArrowRight size={15} />
                   </Button>
                 </dd>
               </div>
             </dl>
             {project.available && ["MVMZ", "ACE"].includes(project.engine) && <div className="actions overview-workflow-actions">
-              <Button disabled={busy} onClick={() => go("manual")}>Translate selected files</Button>
               <Button disabled={busy} onClick={() => go("translation")}>Open Len's method</Button>
             </div>}
           </>

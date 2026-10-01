@@ -4,9 +4,10 @@ An Electron application migrating the existing DazedTL translation engine into a
 
 ## Current scope
 
-RPG Maker MV/MZ has a Guided Workflow with preparation, context, selected-file translation,
-application, layout review, and local patch packaging. **Translate files** opens the same
-selection and run controls directly. Guided translation offers Batch (recommended) and Live API;
+RPG Maker MV/MZ has a **Translation** workspace with **Setup**, **Translate**, and **Test & release**.
+Choose files once; the app prepares working copies and carries saved phase results forward.
+Each run and application review uses the selected scope. Completed operations are in **Recent activity**.
+Translation offers Batch when supported and Live API;
 cost estimation is a separate action. Ace adds archive extraction, Sinflower RV2JSON conversion,
 and native repacking around those same JSON phases. Its bundled executables require Windows
 or Wine; executables and the Wine prefix are cached in the app profile. WOLF's guided workflow is deferred.
@@ -15,7 +16,7 @@ Len's method follows the maintained engine skills, with shared project context,
 saved progress, inspectable requests, and Agent, Live API, and API Batch execution.
 Any game folder can be opened for investigation. Its engine-specific extraction, fitting,
 native reconstruction, and runtime QA remain the coding assistant's responsibility through the skills and tools.
-Existing phased RPG Maker jobs retain their recovery path in Guided Workflow. Resume an
+Existing phased RPG Maker jobs retain their recovery path in Translation. Resume an
 unfinished API run before starting another phase or estimate so its provider work stays attached.
 Real provider billing and native game playtesting still need validation;
 application distribution is pending. Guided image editing remains a separate assistant task.
@@ -103,7 +104,7 @@ Working records and guidance stay in the game's ignored .dazedtl folder; Git tra
 Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
 The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
 Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
-Guided **Prepare** shows the exact saved location and an **Open backup folder** action.
+**Translation → Setup** shows the exact saved location and an **Open backup folder** action.
 If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
 replacement saves the game's current files; it does not recover the deleted original.
 After a successful fresh source backup, references to deleted workspace backups and deleted engine

@@ -25,7 +25,7 @@ class ExistingBackend:
         from .manual import manual_jobs
         from .model_defaults import ModelDefaults
         from .operations import workflow_operations
-        from desktop.backend.workflow import Workflows
+        from .guided import phased_workflows
         from desktop.backend.settings import SettingsStore
 
         self.lock = threading.RLock()
@@ -33,7 +33,7 @@ class ExistingBackend:
         self.manual = manual_jobs(self.source, self.workspace, self.lock, allow_providers)
         self.model_defaults = ModelDefaults(self.source, self.workspace / "model-cache", allow_providers)
         self.operations = workflow_operations(self.source, self.workspace, self.lock)
-        self.workflows = Workflows(self.workspace, self.lock, self.operations, self.manual)
+        self.workflows = phased_workflows(self.workspace, self.lock, self.operations, self.manual)
         self.allow_providers = allow_providers
 
     @contextmanager
@@ -152,7 +152,10 @@ class ExistingBackend:
         path = self.manual.folder(identity) / "plan.json"
         if path.is_symlink() or not path.is_file():
             raise ValueError("The saved run configuration is unavailable.")
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != self.manual.jobs[identity]["plan_hash"]:
+            raise ValueError("The saved run configuration changed. Its original outputs remain retained.")
+        return json.loads(raw.decode("utf-8"))
 
     def phase_files(self, native, phase):
         from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT
@@ -177,6 +180,22 @@ class ExistingBackend:
     def guided_rewrap_review(self, native_id, token):
         from .guided import rewrap_review
         return rewrap_review(self, native_id, token)
+
+    def guided_phase(self, native_id, phase, files):
+        with self.manual.selected_workflow(native_id, files):
+            return self.workflows.phase(native_id, phase, True)
+
+    def guided_export_preview(self, native_id, files):
+        preview = self.workflows.preview(native_id, "export_selected", {})
+        self.workflows.previews[preview["token"]]["options"] = {"files": list(files)}
+        self.workflows.previews[preview["token"]]["label"] = "Apply selected saved outputs"
+        return {**preview, "label": "Apply selected saved outputs", "options": {"files": list(files)}, "files": len(files)}
+
+    def guided_refresh(self, native, files, sources):
+        folder = self.workflows.folder(native["id"])
+        return self.operations.start({"project_id": native["id"], "project": native,
+            "folder": str(folder), "action": "refresh_sources", "label": "Refresh selected source copies",
+            "options": {"files": files, "sources": sources, "retired": [native["manual_job"]] if native.get("manual_job") else []}, "guard": self.guided_guard(native, folder)})
 
     @staticmethod
     def ace_available():

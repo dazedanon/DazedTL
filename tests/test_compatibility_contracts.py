@@ -14,12 +14,33 @@ from unittest.mock import patch, Mock
 from dazedtl.compatibility.translation import TranslationEngine, ProviderFailure, provider_errors
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.compatibility.manual import manual_jobs
-from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files
+from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files, apply_selected, phased_workflows
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_apply_uses_reviewed_selection_even_when_other_outputs_are_prepared(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            plan = {'options': {'files': ['Items.json']}, 'folder': str(root/'work'),
+                    'project': {'source': str(root/'game'), 'data': str(root/'game/data'), 'engine': 'MVMZ'},
+                    'guard': {'files': {'Items.json': 'input', 'System.json': 'input'},
+                              'translated': {'Items.json': 'output', 'System.json': 'output'}}}
+            actions = ModuleType('desktop.backend.workflow_actions')
+            actions.validate_plan = Mock()
+            actions.regular = lambda _root, path: path
+            scanner = ModuleType('util.project_scanner')
+            scanner.export_to_game = Mock(return_value=(1, []))
+            with patch.dict(sys.modules, {actions.__name__: actions, scanner.__name__: scanner}):
+                self.assertEqual(apply_selected(plan, lambda _: None)['files'], 1)
+                self.assertEqual(scanner.export_to_game.call_args.kwargs['filenames'], ['Items.json'])
+                actions.validate_plan.assert_called_once_with(plan)
+                plan['options']['files'] = ['Missing.json']
+                with self.assertRaises(ValueError):
+                    apply_selected(plan, lambda _: None)
+                self.assertEqual(scanner.export_to_game.call_count, 1)
+
     def test_guided_patch_proposal_keeps_previously_tracked_runtime_assets(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -78,6 +99,7 @@ class CompatibilityContracts(unittest.TestCase):
 from pathlib import Path
 class ManualJobs:
     def __init__(self, *args, **kwargs): pass
+    def start(self, source, engine, files, *args, **kwargs): return files
     def launch(self):
         return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), 'run'],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
@@ -91,6 +113,27 @@ class ManualJobs:
                 self.assertEqual((kwargs['stdin'], kwargs['stdout']), (subprocess.PIPE, subprocess.PIPE))
                 self.assertEqual(kwargs['env']['DAZEDTL_ENGINE_SOURCE'], str(source))
                 self.assertEqual(kwargs['env']['PYTHONDONTWRITEBYTECODE'], '1')
+                # The preserved phase may find more files than the user checked.
+                # Filter only its new run, preserving its native phase setup.
+                with controller.selected_workflow('owner', ['Items.json']):
+                    self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json'], workflow={'id': 'owner'}), ['Items.json'])
+                    with self.assertRaises(ValueError):
+                        controller.start('work', 'engine', ['Items.json'], workflow={'id': 'another-owner'})
+                self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json']), ['Items.json', 'System.json'])
+            workflow = ModuleType('desktop.backend.workflow')
+            collected = []
+            class Workflows:
+                def __init__(self, workspace, *_): self.root = workspace
+                def folder(self, identity): return self.root/identity
+                def _collect(self, project): collected.append(project['manual_job'])
+            workflow.Workflows = Workflows
+            with patch.dict(sys.modules, {workflow.__name__: workflow}):
+                phases = phased_workflows(source/'phases', None, None, controller)
+                write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'retired_runs': ['older-source-run']})
+                phases._collect({'id': 'owner', 'manual_job': 'older-source-run'})
+                self.assertEqual(collected, [])
+                phases._collect({'id': 'owner', 'manual_job': 'current-source-run'})
+                self.assertEqual(collected, ['current-source-run'])
 
     def test_rewrap_apply_requires_the_same_completed_scan_and_settings(self):
         with TemporaryDirectory() as temporary:

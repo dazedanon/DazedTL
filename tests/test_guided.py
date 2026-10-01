@@ -11,8 +11,9 @@ from unittest.mock import Mock
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot, store_path
-from dazedtl.translation.files import evidence, read_json
+from dazedtl.translation.files import evidence, read_json, digest
 from dazedtl.translation.guided import Guided
+from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
 
 
@@ -31,7 +32,7 @@ class GuidedTests(unittest.TestCase):
         self.native = {'id': 'native', 'source': str(self.source), 'engine': 'MVMZ', 'revision': 0,
                        'selected': ['Items.json'], 'imported': ['Items.json'], 'mode': 'batch',
                        'engine_options': {}, 'widths': {'width': 50, 'faceWidth': 40, 'listWidth': 50, 'noteWidth': 50},
-                       'phase1_comments': False}
+                       'phase1_comments': False, 'data': str(self.source)}
         self.started = []
         self.pending = None
         self.folder = self.root / 'work'
@@ -43,16 +44,17 @@ class GuidedTests(unittest.TestCase):
             self.native['revision'] += 1
             return {'project': self.native}
         workflows = SimpleNamespace(projects={'native': self.native}, folder=lambda _: self.folder,
-            state=lambda _: {'project': self.native, 'manual_job': self.pending}, update=update,
+            state=lambda _: {'project': self.native, 'manual_job': self.pending}, update=update, save=Mock(),
             phase=lambda owner, phase, sync: self.started.append((owner, phase, sync)) or {'id': 'paid-run'})
         self.backend = SimpleNamespace(workflows=workflows, running=lambda: False,
             phase_files=lambda _native, _phase: ['Items.json'],
             guided_guard=lambda _native, _folder: evidence(self.source, ['Items.json']),
             guided_runtime_files=lambda _source: ['Items.json'])
+        self.backend.guided_phase = lambda owner, phase, files: self.backend.workflows.phase(owner, phase, True)
         self.settings_revision = 1
         self.settings = SimpleNamespace(prepare_engine=lambda **_kwargs: None, describe=lambda: {'revision': self.settings_revision})
         self.translation = SimpleNamespace(workspace=self.root / 'profile', jobs=SimpleNamespace(running=lambda: False),
-            engine=SimpleNamespace(source_bindings=lambda _source, _paths: {}),
+            engine=SimpleNamespace(source_bindings=lambda _source, _paths: {}, original_bytes=lambda *_args: b''),
             clean_drafts=lambda _: None, ready=Mock(), operation=Mock(return_value={'id': 'operation'}))
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         saved = snapshot(self.source, store_path(self.source), source_game=True)
@@ -83,7 +85,20 @@ class GuidedTests(unittest.TestCase):
                 mutate()
                 with self.assertRaises(ValueError):
                     self.guided.execute(self.identity, preview['token'])
+                write_json(self.source / 'Items.json', [{'name': '薬'}])
         self.assertEqual(len(self.started), 1)
+        self.native['manual_job'] = 'paid-run'
+        self.backend.manual = SimpleNamespace(export=Mock(return_value={'path': 'saved-output'}))
+        self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'native'}}
+        with self.assertRaises(ValueError):
+            self.guided.export(self.identity, 'other-project-run')
+        self.backend.manual.export.assert_not_called()
+        self.guided.export(self.identity, 'paid-run')
+        self.backend.manual.export.assert_called_once_with('paid-run')
+        self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'other-project'}}
+        with self.assertRaises(ValueError):
+            self.guided.export(self.identity, 'paid-run')
+        self.assertEqual(self.backend.manual.export.call_count, 1)
 
     def test_agent_modes_drafts_and_missing_backup_cannot_start_or_mutate(self):
         for mode in ('agent', 'offline', 'live', 'unknown'):
@@ -123,6 +138,11 @@ class GuidedTests(unittest.TestCase):
                 self.backend.workflows.execute.assert_called_with(preview['token'])
                 with self.assertRaises(ValueError):
                     self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.backend.workflows.execute.call_count, 3)
+        preview = self.guided.preview(self.identity, 'format_data')
+        self.settings_revision += 1
+        with self.assertRaises(ValueError):
+            self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.backend.workflows.execute.call_count, 3)
         self.assertTrue(self.guided.preview(self.identity, 'playtest_install')['confirmation'])
         preview = self.guided.preview(self.identity, 'format_data')
@@ -190,3 +210,83 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(refreshed['mode'], 'batch')
         self.assertEqual(self.record['backend_id'], 'native')
         self.assertEqual(read_json(self.guided.path(self.identity, 'draft')), pending)
+
+    def test_checked_scope_controls_the_next_run_and_expanding_it_keeps_phase_work(self):
+        write_json(self.source/'System.json', {'gameTitle': 'ゲーム'})
+        self.backend.phase_files = lambda _native, _phase: ['Items.json', 'System.json']
+        self.native['imported'] = ['Items.json', 'System.json']
+        write_json(self.folder/'files/System.json', {'gameTitle': 'Saved phase work'})
+        calls = []
+        self.backend.guided_phase = lambda owner, phase, files: calls.append(files) or {'id': 'run'}
+        preview = self.preview()
+        self.assertEqual(preview['paths'], ['Items.json'])
+        self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(calls, [['Items.json']])
+        self.assertEqual(read_json(self.folder/'files/System.json'), {'gameTitle': 'Saved phase work'})
+        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': '薬'}])
+        self.native['selected'] = []
+        with self.assertRaises(ValueError):
+            self.preview()
+        self.assertEqual(len(calls), 1)
+
+    def test_source_drift_blocks_new_work_and_refresh_preserves_previous_outputs(self):
+        inputs = self.guided.inputs(self.native)
+        inputs.prepare(['Items.json'])
+        write_json(self.folder/'translated/Items.json', [{'name': 'Potion'}])
+        write_json(self.folder/'files/Items.json', [{'name': 'Saved database phase'}])
+        write_json(self.source/'Items.json', [{'name': '新しい薬'}])
+        with self.assertRaises(ValueError):
+            self.preview()
+        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': 'Saved database phase'}])
+        refreshed = inputs.prepare(['Items.json'], refresh=True, expected=inputs.sources(['Items.json'], inputs.record()['inputs']), retired=['former-run'])
+        archive = Path(refreshed['archive'])
+        self.assertEqual(read_json(archive/'translated/Items.json'), [{'name': 'Potion'}])
+        self.assertEqual(read_json(archive/'files/Items.json'), [{'name': 'Saved database phase'}])
+        self.assertFalse((self.folder/'translated/Items.json').exists())
+        self.assertEqual(inputs.record()['retired_runs'], ['former-run'])
+        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': '新しい薬'}])
+        self.assertIsNotNone(self.preview()['token'])
+        with self.assertRaises(ValueError):
+            inputs.prepare(['Items.json'], refresh=True, expected={})
+
+    def test_original_blobs_seed_new_work_and_exact_applied_exports_are_not_source_drift(self):
+        write_json(self.source/'Items.json', [{'name': 'English runtime'}])
+        inputs = GuidedInputs(self.folder, self.source, self.source,
+                              lambda *_args: {'Items.json': 'original'}, lambda *_args: b'[{"name":"Japanese baseline"}]')
+        inputs.prepare(['Items.json'])
+        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': 'Japanese baseline'}])
+        self.assertEqual(inputs.status(['Items.json'])['changed'], [])
+        # Native Ace JSON exports do not live in Git; an exact applied output is
+        # still the same source identity, while unrelated edits require review.
+        self.guided.inputs(self.native).prepare(['Items.json'], refresh=True)
+        write_json(self.folder/'translated/Items.json', [{'name': 'Applied English'}])
+        (self.source/'Items.json').write_bytes((self.folder/'translated/Items.json').read_bytes())
+        self.assertEqual(self.guided.inputs(self.native).status(['Items.json'])['changed'], [])
+        write_json(self.source/'Items.json', [{'name': 'Changed export'}])
+        self.assertEqual(self.guided.inputs(self.native).status(['Items.json'])['changed'], ['Items.json'])
+        native_inputs = GuidedInputs(self.folder, self.source, self.source,
+                                     lambda *_: {'Data/Items.rvdata2': 'native-original'}, lambda *_: b'', native_exports=True)
+        native_inputs.prepare(['Items.json'], refresh=True)
+        write_json(self.source/'Items.json', [{'name': 'Fitted runtime English'}])
+        self.assertEqual(native_inputs.status(['Items.json'])['changed'], [])
+        native_inputs.bindings = lambda *_: {'Data/Items.rvdata2': 'new-native-original'}
+        self.assertEqual(native_inputs.status(['Items.json'])['changed'], ['Items.json'])
+
+    def test_fitting_does_not_request_reapplication_and_changed_review_or_missing_output_is_pending(self):
+        self.native['files'] = [{'name': 'Items.json'}]
+        write_json(self.source/'Items.json', [{'name': 'Applied English'}])
+        raw = (self.source/'Items.json').read_bytes()
+        write_json(self.folder/'translated/Items.json', [{'name': 'Applied English'}])
+        write_json(self.folder/'applied-outputs.json', {'version': 1, 'files': {'Items.json': digest(raw)}})
+        state = read_json(lifecycle_path(self.translation.workspace, self.identity))
+        state['guided_review'] = {'evidence': evidence(self.source, ['Items.json'])}
+        write_json(lifecycle_path(self.translation.workspace, self.identity), state)
+        first = self.guided.readiness(self.identity, self.native, {'jobs': []})
+        self.assertTrue(first['review_current'])
+        write_json(self.source/'Items.json', [{'name': 'Fitted\nEnglish'}])
+        changed = self.guided.readiness(self.identity, self.native, {'jobs': []})
+        self.assertEqual(changed['applied'], ['Items.json'])
+        self.assertEqual(changed['runtime_edited'], ['Items.json'])
+        self.assertFalse(changed['review_current'])
+        (self.folder/'translated/Items.json').unlink()
+        self.assertEqual(self.guided.readiness(self.identity, self.native, {'jobs': []})['outputs'], [])

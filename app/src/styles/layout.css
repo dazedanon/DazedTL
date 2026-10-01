@@ -37,6 +37,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.current-project > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.current-project > svg { flex-shrink: 0; }
 .connection {
   margin-left: auto;
   color: var(--muted);

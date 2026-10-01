@@ -25,7 +25,7 @@ def job(value):
     if value is None:
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
-                          'progress', 'log', 'estimate', 'outputs', 'approval', 'action', 'result', 'created', 'updated'))
+                          'progress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'approval', 'action', 'result', 'created', 'updated'))
     result.setdefault('log', [])
     return result
 
@@ -45,15 +45,18 @@ def guided(value, project_id):
         'preferences': value['preferences'],
         'optionsDraft': value['options_draft'],
         'engineSchema': value['engine_schema'],
-        'files': [pick(item, ('name', 'default', 'size')) for item in native['files']],
+        'files': [pick(item, ('name', 'default', 'size', 'group')) for item in native['files']],
         'selection': native['selected'],
         'importedFiles': native['imported'],
         'collectionError': native.get('collection_error', ''),
         'operations': [job(item) for item in value['jobs']],
         'run': job(value['manual_job']),
+        'runs': [job(item) for item in value['runs']],
         'activeJobId': value['active'] or None,
         'phase': value['phase'],
         'phaseFiles': value['phase_files'],
+        'sourceStatus': value['source_status'],
+        'readiness': value['readiness'],
         'documents': documents(value['documents']),
         'drafts': documents(value.get('draft', {}).get('documents', {})),
         'provider': {

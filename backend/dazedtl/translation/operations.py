@@ -9,11 +9,20 @@ from . import backups
 from .files import read_json, project_path, digest, evidence, verify_evidence
 
 
-def verify_guided_review(source, state):
+def verify_guided_review(source, state, workspace=None, engine=None):
     review = state.get("guided_review")
     if not review:
         raise ValueError("Record your review and playtest of the current guided patch before packaging.")
     verify_evidence(source, review["evidence"])
+    if review.get("source_inputs"):
+        if workspace is None:
+            raise ValueError("Verify this playtest review through its app workspace.")
+        from .guided_inputs import original_bindings
+        inputs = read_json(project_path(workspace, review["source_inputs"]))
+        if digest(inputs) != review["source_inputs_sha256"]:
+            raise ValueError("Working sources changed after playtest review. Review the current pass again.")
+        if engine is not None:
+            engine.verify_bindings(source, original_bindings(inputs))
     return review
 
 
@@ -149,6 +158,13 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         manifest = read_json(project_path(source, arguments["manifest"]))
         state["guided_review"] = {"manifest": arguments["manifest"],
                                   "evidence": evidence(source, list(dict.fromkeys([arguments["manifest"], *engine.runtime_paths(manifest), *manifest.get("inputs", [])])))}
+        if arguments.get("source_inputs"):
+            from .guided_inputs import original_bindings
+            inputs = read_json(project_path(workspace, arguments["source_inputs"]))
+            if digest(inputs) != arguments["source_inputs_sha256"]:
+                raise ValueError("Working sources changed. Review this pass again.")
+            engine.verify_bindings(source, original_bindings(inputs))
+            state["guided_review"].update(source_inputs=arguments["source_inputs"], source_inputs_sha256=arguments["source_inputs_sha256"])
         result = {"reviewed_files": len(manifest["files"]), "message": "User review and playtest recorded for these exact files."}
     elif action in {"package", "guided_package"}:
         require_baseline(engine, source, options, state)
@@ -157,7 +173,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         if engine.git_status(source, options)["translation_commit"] != state["checkpoint"]["commit"]:
             raise ValueError("The translation branch changed after its reviewed checkpoint. Checkpoint the current patch first.")
         if action == "guided_package":
-            review = verify_guided_review(source, state)
+            review = verify_guided_review(source, state, workspace, engine)
             if review["manifest"] != state["checkpoint"]["manifest"]:
                 raise ValueError("Checkpoint the reviewed guided manifest before packaging.")
         else:

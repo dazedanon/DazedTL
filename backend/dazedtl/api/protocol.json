@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -141,6 +141,9 @@
       "refresh": true
     },
     "guided_skill": {
+      "refresh": false
+    },
+    "guided_inspect": {
       "refresh": false
     },
     "guided_form": {

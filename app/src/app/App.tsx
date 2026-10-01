@@ -7,7 +7,6 @@ import {
   ChevronDown,
   X,
   ListChecks,
-  Files,
 } from "lucide-react";
 import { api } from "../api/client";
 import { flushDrafts } from "../state/leaveGuards";
@@ -19,6 +18,7 @@ import Settings from "../features/settings/Settings";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import Translation from "../features/translation/Translation";
 import { BackupsPanel } from "../features/translation/BackupsPanel";
+import { VersionsPanel } from "../features/translation/VersionsPanel";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
@@ -69,11 +69,12 @@ export default function App() {
             size="comfortable"
             variant="quiet"
             className="current-project"
+            title={state.project.name}
             onClick={() => setPicker(true)}
             disabled={action.busy}
           >
             <FolderOpen size={17} />
-            {state.project.name}
+            <span>{state.project.name}</span>
             <ChevronDown size={14} />
           </Button>
         )}
@@ -98,11 +99,10 @@ export default function App() {
               Overview
             </Button>
             {state?.project && <>
-              {[{ screen: "guided" as const, label: "Guided workflow", icon: ListChecks }, { screen: "manual" as const, label: "Translate files", icon: Files }].map(({ screen, label, icon: Icon }) =>
-                <Button key={screen} size="comfortable" aria-current={state.screen === screen ? "page" : undefined}
-                  disabled={action.busy || !["MVMZ", "ACE"].includes(state.project!.engine)} onClick={() => navigate(screen)}>
-                  <Icon size={18} />{label}
-                </Button>)}
+              <Button size="comfortable" aria-current={["guided", "manual"].includes(state.screen) ? "page" : undefined}
+                disabled={action.busy || !["MVMZ", "ACE"].includes(state.project.engine)} onClick={() => navigate("guided")}>
+                <ListChecks size={18} />Translation
+              </Button>
               <Button
                 size="comfortable"
                 aria-current={
@@ -165,9 +165,9 @@ export default function App() {
           ) : state.screen === "settings" ? (
             <Settings />
           ) : state.project && (state.screen === "guided" || state.screen === "manual") ? (
-            <GuidedWorkflow key={state.project.id} project={state.project} direct={state.screen === "manual"}
-              settings={() => navigate("settings")} openGuide={() => navigate("guided")}
-              backups={application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} /> : null} />
+            <GuidedWorkflow key={state.project.id} project={state.project} settings={() => navigate("settings")}
+              backups={application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} /> : null}
+              versions={application.snapshot?.translation ? <VersionsPanel project={state.project} state={application.snapshot.translation} /> : null} />
           ) : state.project ? (
             <Translation
               key={state.project.id}
@@ -175,7 +175,7 @@ export default function App() {
               settings={() => navigate("settings")}
               legacy={
                 application.snapshot?.guided ? (
-                  <Button variant="primary" onClick={() => navigate("guided")}>Open guided workflow and saved runs</Button>
+                  <Button variant="primary" onClick={() => navigate("guided")}>Open Translation and saved runs</Button>
                 ) : null
               }
             />

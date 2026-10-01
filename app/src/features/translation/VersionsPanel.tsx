@@ -32,7 +32,7 @@ export function VersionsPanel({
       await flushDrafts();
       await api.translation.operation(project.id, name, args);
     });
-  const disabled = action.busy || state.active;
+  const disabled = action.busy || state.active || !!application.snapshot?.application.running;
   const previews = state.jobs.filter(
     (job) =>
       job.kind === "operation" &&

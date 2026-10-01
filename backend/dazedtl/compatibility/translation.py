@@ -206,6 +206,13 @@ class TranslationEngine:
         if self.source_bindings(source, list(bindings)) != bindings:
             raise ValueError("The untranslated source baseline changed. Prepare a new request plan for this game version.")
 
+    def original_bytes(self, source, blob):
+        import re
+        if not isinstance(blob, str) or not re.fullmatch(r"[0-9a-f]{40,64}", blob):
+            raise ValueError("Choose a verified original source blob.")
+        return subprocess.run(["git", "-C", str(source), "cat-file", "blob", blob],
+                              check=True, capture_output=True, timeout=30).stdout
+
     def error_message(self, error):
         from util.version_update import GitWorkflowError
         if isinstance(error, (ValueError, OSError, GitWorkflowError, ProviderFailure)):

@@ -41,6 +41,7 @@ export interface Job {
   log: string[];
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
+  outputsAvailable?: boolean;
   action?: string;
   result?: Record<string, unknown> | null;
   approval?: {
@@ -83,15 +84,25 @@ export interface GuidedState {
   preferences: GuidedPreferences;
   optionsDraft: GuidedPreferences | null;
   engineSchema: { key: string; label: string; type: string; choices?: string[]; min?: number; max?: number }[];
-  files: { name: string; default?: boolean; size?: number }[];
+  files: { name: string; default?: boolean; size?: number; group: "database" | "dialogue" }[];
   selection: string[];
   importedFiles: string[];
   collectionError: string;
   operations: Job[];
   run: Job | null;
+  runs: Job[];
   activeJobId: string | null;
   phase: Phase;
   phaseFiles: string[];
+  sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
+  readiness: {
+    outputs: string[];
+    applied: string[];
+    runtime_edited: string[];
+    review_current: boolean;
+    layout_scan: string | null;
+    delivery_available: boolean;
+  };
   documents: Documents;
   drafts: Documents;
   provider: {
@@ -580,7 +591,8 @@ export interface RpcContract {
   };
   guided_stop: { request: { project_id: string }; response: Job };
   guided_resume: { request: { project_id: string }; response: Job };
-  guided_export: { request: { project_id: string }; response: ExportedFiles };
+  guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
+  guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_draft: {
     request: { project_id: string; documents: Documents };
     response: Saved;

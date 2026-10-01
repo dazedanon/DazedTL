@@ -400,6 +400,19 @@ class WorkflowTests(unittest.TestCase):
             'source': str(self.game), 'options': DEFAULTS, 'action': 'guided_review',
             'arguments': {'manifest': guided_manifest}}, lambda: False)
         verify_guided_review(self.game, lifecycle(self.profile, self.identity))
+        # A new source pass invalidates release review even when runtime bytes
+        # have not changed yet; it must not revive an earlier playtest attestation.
+        source_inputs = 'engine/workflows/guided/source-inputs.json'
+        inputs = {'version': 1, 'inputs': {}}
+        write_json(self.profile/source_inputs, inputs)
+        execute(self.engine, self.profile, {'project_id': self.identity}, {
+            'source': str(self.game), 'options': DEFAULTS, 'action': 'guided_review',
+            'arguments': {'manifest': guided_manifest, 'source_inputs': source_inputs,
+                          'source_inputs_sha256': digest(inputs)}}, lambda: False)
+        verify_guided_review(self.game, lifecycle(self.profile, self.identity), self.profile, self.engine)
+        write_json(self.profile/source_inputs, {**inputs, 'last_refresh': 'new-source-pass'})
+        with self.assertRaises(ValueError):
+            verify_guided_review(self.game, lifecycle(self.profile, self.identity), self.profile, self.engine)
         write_json(self.game / "source.json", {"line": "Changed after review"})
         with self.assertRaises(ValueError):
             delivery.verify(self.game, full=True)

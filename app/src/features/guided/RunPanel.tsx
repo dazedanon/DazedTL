@@ -1,5 +1,6 @@
 import { Button } from "../../ui/Button";
 import type { Job } from "../../api/contracts";
+import { Message } from "../../ui/Feedback";
 export function Estimate({ value }: { value: Record<string, unknown> }) {
   const fields = [
     ["requests", "Requests"],
@@ -37,6 +38,8 @@ export default function RunPanel({
   exportFiles,
   apply,
   busy,
+  error = "",
+  pendingKey = "",
 }: {
   job: Job;
   active: boolean;
@@ -46,6 +49,8 @@ export default function RunPanel({
   exportFiles: () => void;
   apply: () => void;
   busy: boolean;
+  error?: string;
+  pendingKey?: string;
 }) {
   return (
     <section className="ui-section run-panel">
@@ -54,6 +59,8 @@ export default function RunPanel({
         <span className="badge">{job.status}</span>
       </div>
       <p>{job.message}</p>
+      {job.files && <details><summary>{job.files.length} frozen {job.files.length === 1 ? "file" : "files"} · {job.model || "Saved model"}</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
+      {active && job.mode === "batch" && <p className="muted">Stopping local monitoring leaves submitted provider work attached to this saved run.</p>}
       {job.progress && (
         <>
           <progress
@@ -92,6 +99,7 @@ export default function RunPanel({
               size="comfortable"
               variant="primary"
               disabled={busy}
+              pending={pendingKey === "run:answer:true"}
               onClick={() => answer(true)}
             >
               {job.approval.kind === "batch"
@@ -101,6 +109,7 @@ export default function RunPanel({
             <Button
               size="comfortable"
               disabled={busy}
+              pending={pendingKey === "run:answer:false"}
               onClick={() => answer(false)}
             >
               Decline
@@ -110,8 +119,8 @@ export default function RunPanel({
       )}
       <div className="actions">
         {active ? (
-          <Button size="comfortable" disabled={busy} onClick={stop}>
-            Stop run
+          <Button size="comfortable" disabled={busy} pending={pendingKey === "run:stop"} onClick={stop}>
+            {job.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}
           </Button>
         ) : ["failed", "stopped", "interrupted", "canceled"].includes(
             job.status,
@@ -123,7 +132,7 @@ export default function RunPanel({
         {job.status === "complete" &&
           Object.keys(job.outputs || {}).length > 0 && (
             <>
-              <Button size="comfortable" onClick={exportFiles} disabled={busy}>
+              <Button size="comfortable" onClick={exportFiles} disabled={busy} pending={pendingKey === "run:export"}>
                 Save output copy
               </Button>
               <Button
@@ -132,11 +141,12 @@ export default function RunPanel({
                 onClick={apply}
                 disabled={busy}
               >
-                Apply translated files to game
+                Review & apply outputs
               </Button>
             </>
           )}
       </div>
+      <Message message={error} />
       {!!job.log?.length && (
         <details>
           <summary>Run log</summary>

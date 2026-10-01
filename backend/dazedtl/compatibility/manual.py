@@ -1,6 +1,7 @@
 """Keep the legacy job controller, with a local worker-launch boundary."""
 
 from copy import deepcopy
+from contextlib import contextmanager
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -42,6 +43,24 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
     class ManualJobs(native.ManualJobs):
         request_policy = None
+        workflow_selection = None
+
+        @contextmanager
+        def selected_workflow(self, identity, files):
+            previous = self.workflow_selection
+            self.workflow_selection = (identity, tuple(files))
+            try:
+                yield
+            finally:
+                self.workflow_selection = previous
+
+        def start(self, source, engine, files, *args, **kwargs):
+            if self.workflow_selection is not None:
+                identity, selected = self.workflow_selection
+                if (kwargs.get("workflow") or {}).get("id") != identity or set(selected) - set(files):
+                    raise ValueError("The selected files no longer match this project's phase.")
+                files = list(selected)
+            return super().start(source, engine, files, *args, **kwargs)
 
         def _snapshot_context(self, directory, plan, workspace=None):
             super()._snapshot_context(directory, plan, workspace)

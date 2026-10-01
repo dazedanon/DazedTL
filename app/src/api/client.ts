@@ -118,6 +118,7 @@ export const api = {
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
   guided: {
+    inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
     form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
     position: (project_id: string, step: GuidedStep) => request("guided_position", { project_id, step }),
     draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
@@ -128,7 +129,7 @@ export const api = {
     request("guided_answer", { project_id, token, approved }),
   stop: (project_id: string) => request("guided_stop", { project_id }),
   resume: (project_id: string) => request("guided_resume", { project_id }),
-  export: (project_id: string) => request("guided_export", { project_id }),
+  export: (project_id: string, run_id?: string) => request("guided_export", { project_id, run_id }),
   draft: (project_id: string, documents: Documents) =>
     request("guided_draft", { project_id, documents }),
   saveDocument: (

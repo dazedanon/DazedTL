@@ -166,7 +166,7 @@ pre {
 .modal ul {
   max-height: 240px;
   overflow: auto;
-  font-size: 13px;
+  font-size: var(--font-control);
   line-height: 1.8;
 }
 .modal .recents {
@@ -176,7 +176,7 @@ pre {
   font-size: 21px;
 }
 .modal p {
-  font-size: 13px;
+  font-size: var(--font-control);
 }
 .modal .path {
   padding: 10px;
@@ -233,13 +233,13 @@ pre {
   scrollbar-gutter: stable;
 }
 .ui-section > h2 {
-  font-size: 13px;
+  font-size: var(--font-control);
   font-weight: 650;
   margin: 0 0 14px;
 }
 .ui-section > h2 > span {
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--font-small);
   font-weight: 400;
   color: var(--muted);
   margin-left: 10px;
@@ -257,7 +257,7 @@ pre {
 .field-row > label,
 .field-label {
   display: block;
-  font-size: 13px;
+  font-size: var(--font-control);
   padding-top: 8px;
   line-height: 1.35;
   color: var(--color-label);
@@ -277,7 +277,7 @@ pre {
 }
 .field-control > small {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-small);
   margin-top: 5px;
   line-height: 1.5;
 }
@@ -351,6 +351,13 @@ pre {
 }
 .page-header--divided h1 {
   font-size: var(--font-page-title);
+}
+.page-header, .page-header--divided {
+  flex-wrap: wrap;
+}
+.page-header > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .ui-section {
   max-width: 880px;

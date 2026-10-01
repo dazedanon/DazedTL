@@ -37,7 +37,7 @@ OPERATIONS = {
 }
 
 GUIDED_OPERATIONS = {
-    "guided_review": ("Record guided playtest review", {"manifest"}),
+    "guided_review": ("Record guided playtest review", {"manifest", "source_inputs", "source_inputs_sha256"}),
     "guided_package": ("Package reviewed guided patch", set()),
 }
 
@@ -469,7 +469,7 @@ Additional project instructions:
         selected = project.read()["options"]
         if action == "guided_package":
             from .operations import verify_guided_review
-            verify_guided_review(project.root, lifecycle(self.workspace, project_id))
+            verify_guided_review(project.root, lifecycle(self.workspace, project_id), self.workspace, self.engine)
         if action == "version_apply":
             previous, preview = self.jobs.store.load(arguments.get("preview_id", ""), project_id)
             if previous["status"] != "complete" or preview.get("action") != "version_preview":
