@@ -238,6 +238,24 @@ class TranslationTests(unittest.TestCase):
             Runner(self.store, job["id"], provider, stale).step()
         self.assertEqual(provider.calls, 0)
 
+    def test_older_operation_indexes_gain_action_identity_without_rewriting_the_frozen_plan(self):
+        plan = {'version': 1, 'kind': 'operation', 'action': 'backup_source', 'source': str(self.game), 'label': 'Preserve source'}
+        job = self.store.create('project', plan)
+        del job['action']
+        self.store.save(job)
+        updated = job['updated']
+        plan_path = self.store.folder(job['id']) / 'plan.json'
+        before = plan_path.read_bytes()
+        restored = self.store.record(job['id'])
+        self.assertEqual(self.store.view(restored)['action'], 'backup_source')
+        self.assertEqual(restored['updated'], updated)
+        self.assertEqual(plan_path.read_bytes(), before)
+        del restored['action']
+        self.store.save(restored)
+        write_json(plan_path, {**plan, 'action': 'package'})
+        with self.assertRaises(ValueError):
+            self.store.record(job['id'])
+
     def test_portable_options_import_without_replacing_legacy_or_stale_edits(self):
         legacy = self.game / ".dazedtl/len-method/project.json"
         write_json(legacy, {"version": 3, "mode": "api", "include_images": False, "instructions": "Keep this", "install_forge": False})

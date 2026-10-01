@@ -205,3 +205,22 @@
 .guided-context {
   margin-top: var(--space-6);
 }
+.guided-tasks > div {
+  align-items: flex-start;
+}
+.guided-tasks > div > strong {
+  padding-top: var(--space-2);
+}
+.guided-tasks .action-control {
+  align-items: flex-end;
+  max-width: 55%;
+}
+.guided-backup-location {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  font-size: var(--font-control);
+}
+.guided-backup-location p {
+  margin: 0;
+}

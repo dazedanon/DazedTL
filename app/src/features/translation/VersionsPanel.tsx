@@ -91,7 +91,7 @@ export function VersionsPanel({
           </Button>
           {["MVMZ", "ACE"].includes(project.engine) && (
             <Button
-              disabled={disabled || !state.lifecycle.source_backup}
+              disabled={disabled || (!state.lifecycle.source_backup || state.lifecycle.source_backup.available === false)}
               onClick={() => operation("rpgmaker_prepare")}
             >
               Prepare RPG Maker files
@@ -146,7 +146,7 @@ export function VersionsPanel({
           </label>
           <Button
             disabled={
-              disabled || !version.trim() || !state.lifecycle.source_backup
+              disabled || !version.trim() || (!state.lifecycle.source_backup || state.lifecycle.source_backup.available === false)
             }
             onClick={() =>
               operation("git_setup", {

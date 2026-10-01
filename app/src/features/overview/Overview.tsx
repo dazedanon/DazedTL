@@ -2,6 +2,7 @@ import { DetailRow } from "../../ui/FieldRow";
 import { PageLayout, PageHeader } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { Button } from "../../ui/Button";
+import { JobStatus } from "../../ui/JobStatus";
 import {
   AlertCircle,
   ArrowRight,
@@ -71,8 +72,14 @@ export default function Overview({
                 <dt>Status</dt>
                 <dd>
                   <div className="overview-status-copy">
-                    <strong role="status">{project.status}</strong>
-                    {project.detail && <p>{project.detail}</p>}
+                    {project.operation ? (
+                      <JobStatus job={project.operation} />
+                    ) : (
+                      <>
+                        <strong role="status">{project.status}</strong>
+                        {project.detail && <p>{project.detail}</p>}
+                      </>
+                    )}
                   </div>
                   <Button
                     type="button"
@@ -88,7 +95,7 @@ export default function Overview({
                 </dd>
               </div>
             </dl>
-            {project.available && ["MVMZ", "ACE"].includes(project.engine) && <div className="actions">
+            {project.available && ["MVMZ", "ACE"].includes(project.engine) && <div className="actions overview-workflow-actions">
               <Button disabled={busy} onClick={() => go("manual")}>Translate selected files</Button>
               <Button disabled={busy} onClick={() => go("translation")}>Open Len's method</Button>
             </div>}

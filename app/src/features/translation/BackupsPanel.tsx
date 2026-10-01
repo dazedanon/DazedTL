@@ -6,6 +6,7 @@ import { useAction } from "../../state/useAction";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
+import { ActionControl } from "../../ui/ActionControl";
 
 const bytes = (value: number) =>
   value < 1024
@@ -18,6 +19,7 @@ const bytes = (value: number) =>
 
 export function BackupSummary({ record, fallback }: { record?: BackupRecord; fallback: string }) {
   if (!record) return <>{fallback}</>;
+  if (record.available === false) return <>Unavailable · {record.issue}</>;
   return (
     <>
       Saved · {record.files.toLocaleString()} files
@@ -40,23 +42,27 @@ export function BackupsPanel({ state }: { state: TranslationState }) {
   const selected = catalog?.snapshots.find((item) => item.id === identity);
   const restored = state.jobs.find((job) => job.status === "complete" && job.result?.restored === true);
   const disabled = state.active || action.busy;
+  const restoreJob = state.jobs.find((job) => job.action === "restore_backup");
   return (
     <Section title="Restore points">
       <p className="muted">
         Backups stay with this game in .dazedtl/backups. Unchanged files are stored once.
         Earlier full-copy backups remain available in the app workspace.
       </p>
-      <Message message={action.error} onDismiss={action.clear} />
-      <Button
+      <Message message={["list", "restore"].includes(action.key) ? "" : action.error} onDismiss={action.clear} />
+      <ActionControl
+        label={catalog ? "Refresh restore points" : "List restore points"}
+        pending={action.busy && action.key === "list"}
+        pendingText="Loading restore points…"
+        error={action.key === "list" ? action.error : ""}
+        notice={action.key === "list" ? action.notice : ""}
         disabled={disabled}
         onClick={() => action.run(async () => {
           const result = await api.translation.backups(state.projectId);
           setCatalog(result);
           setIdentity((current) => result.snapshots.some((item) => item.id === current) ? current : result.snapshots[0]?.id || "");
-        })}
-      >
-        {catalog ? "Refresh restore points" : "List restore points"}
-      </Button>
+        }, "Restore points loaded.", "list")}
+      />
       {catalog?.warnings.map((warning) => <p className="banner" key={warning}>{warning}</p>)}
       {catalog && !catalog.snapshots.length && <p>No saved backups found.</p>}
       {!!catalog?.snapshots.length && (
@@ -90,10 +96,10 @@ export function BackupsPanel({ state }: { state: TranslationState }) {
             Source backups contain game files; workspace backups contain the contents of .dazedtl.
             Existing folders are never overwritten.
           </p>
-          <Button disabled={disabled || !identity || !destination.trim()} onClick={() => action.run(() =>
-            api.translation.operation(state.projectId, "restore_backup", { backup_id: identity, destination }))}>
-            Restore verified copy
-          </Button>
+          <ActionControl label="Restore verified copy" disabled={disabled || !identity || !destination.trim()}
+            pending={action.busy && action.key === "restore"} pendingText="Starting restore…"
+            error={action.key === "restore" ? action.error : ""} job={restoreJob}
+            onClick={() => action.run(() => api.translation.operation(state.projectId, "restore_backup", { backup_id: identity, destination }), "", "restore")} />
         </>
       )}
       {typeof restored?.result?.path === "string" && <p className="translation-path">Restored copy: {restored.result.path}</p>}

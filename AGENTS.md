@@ -23,6 +23,8 @@
 
 - Automated testing is enabled. Run node scripts/test.mjs for foundation or shared behavior changes; use focused targets while iterating.
 - Builds, static checks, and visual review are allowed when relevant to the change.
+- During visual review, check text-to-action spacing and redundant status text at normal and minimum window sizes, including wrapped descriptions and completed-job messages.
+- Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.
 - Before adding a test, name the concrete failure it protects against and search for overlapping coverage.
 - Extend an existing case for a distinct risk when readable; use the cheapest level that reliably catches the failure.
 - Reserve application tests for a few critical user journeys; use direct tests for difficult parsing, reconciliation, and other isolated logic.

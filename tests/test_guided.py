@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+import shutil
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
@@ -10,7 +11,7 @@ from unittest.mock import Mock
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot, store_path
-from dazedtl.translation.files import evidence
+from dazedtl.translation.files import evidence, read_json
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.operations import lifecycle_path
 
@@ -116,6 +117,19 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.pending['id'], 'provider-run')
         self.assertEqual(self.started, [])
 
+    def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
+        with self.assertRaises(ValueError):
+            self.guided.preview(self.identity, 'backup_source')
+        previous = read_json(lifecycle_path(self.translation.workspace, self.identity))
+        shutil.rmtree(self.source / '.dazedtl')
+        with self.assertRaises(ValueError):
+            self.guided.preview(self.identity, 'format_data')
+        preview = self.guided.preview(self.identity, 'backup_source')
+        self.assertEqual(preview['destination'], str(self.source / '.dazedtl/backups/v2'))
+        self.guided.execute(self.identity, preview['token'])
+        self.translation.operation.assert_called_once_with(self.identity, 'backup_source', {})
+        self.assertEqual(read_json(lifecycle_path(self.translation.workspace, self.identity)), previous)
+
     def test_estimate_freezes_estimate_mode_without_changing_the_saved_api_choice(self):
         observed = []
         def phase(*_args):
@@ -153,5 +167,4 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(refreshed['selected'], ['Items.json'])
         self.assertEqual(refreshed['mode'], 'batch')
         self.assertEqual(self.record['backend_id'], 'native')
-        from dazedtl.translation.files import read_json
         self.assertEqual(read_json(self.guided.path(self.identity, 'draft')), pending)

@@ -120,7 +120,8 @@ class Application:
                 project["engine"] = self.translation.engine.detect(project["source"])
                 if current["jobs"]:
                     job = current["jobs"][0]
-                    project.update(status=job["label"] + " · " + job["status"].replace("_", " "), detail=job["message"])
+                    project.update(status=job["label"] + " · " + job["status"].replace("_", " "), detail=job["message"],
+                                   operation=views.pick(job, ("label", "status", "message")))
                 elif current["progress"] and current["progress"].get("phase"):
                     project.update(status="Last reported: " + current["progress"]["phase"], detail=current["progress"].get("next_action", ""))
                 else:
@@ -131,15 +132,18 @@ class Application:
                     run = legacy["run"]
                     active_tool = next((job for job in legacy["operations"] if job["status"] == "running"), None)
                     if active_tool:
-                        project.update(status=active_tool["label"], detail=active_tool["message"])
+                        project.update(status=active_tool["label"], detail=active_tool["message"],
+                                       operation=views.pick(active_tool, ("label", "status", "message")))
                     elif run and run["status"] in {"running", "waiting"}:
-                        project.update(status="Guided run · " + run["status"], detail=run["message"])
+                        project.update(status="Guided run · " + run["status"], detail=run["message"],
+                                       operation={"label": "Guided run", **views.pick(run, ("status", "message"))})
                     elif not current["jobs"] and not current["progress"]:
                         project.update(status="Guided workflow ready", detail="Continue from " + legacy["step"] + ".")
                 elif project["engine"] in {"MVMZ", "ACE"} and not current["jobs"] and not current["progress"]:
                     project.update(status="Ready for guided setup", detail="Preserve the original, prepare game files, and choose a translation scope.")
             except (ValueError, OSError) as exc:
                 error = str(exc)
+                project.pop("operation", None)
                 project.update(status="Project needs attention", detail=error, next_label="Open translation")
         return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy}
 

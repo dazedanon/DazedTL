@@ -24,7 +24,7 @@ declare global {
       copyText(text: string): Promise<void>;
       chooseFolder(): Promise<string | null>;
       openFolder(
-        kind: "project" | "workspace" | "projectWorkspace" | "output",
+        kind: "project" | "workspace" | "projectWorkspace" | "output" | "backup",
         path?: string,
       ): Promise<void>;
       onClose(handler: () => Promise<void>, cancelled: () => void): () => void;

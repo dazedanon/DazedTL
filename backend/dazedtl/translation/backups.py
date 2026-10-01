@@ -359,6 +359,22 @@ def lookup(game, legacy_root, identity):
     raise ValueError("The backup is unavailable. Its files were not changed.")
 
 
+def record_status(game, record, *, kind):
+    """Inspect saved references without recreating stores or hashing every blob."""
+    result = dict(record)
+    try:
+        location = lookup(game, Path(record["path"]).parent, record["id"])
+        result["path"] = str(location)
+        value = verify(location, source=game, full=False)
+        if value["kind"] != kind:
+            raise ValueError("The saved backup has the wrong content type.")
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        result.update(available=False, issue=str(exc) if isinstance(exc, ValueError) else "The saved backup could not be read.")
+    else:
+        result.update(available=True, issue="")
+    return result
+
+
 def catalog(game, legacy_root):
     rows, warnings = [], []
     for root in (store_path(game) / "snapshots", Path(legacy_root)):

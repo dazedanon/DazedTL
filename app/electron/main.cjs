@@ -17,6 +17,7 @@ if (process.env.DAZEDTL_NEXT_PROFILE)
 const protocol = require("../../backend/dazedtl/api/protocol.json");
 const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
+const backupFolders = new Set();
 let window,
   backend,
   diagnostics,
@@ -201,6 +202,14 @@ app.whenReady().then(() => {
           : result?.project;
       if (selected?.source) currentSource = selected.source;
       if (method === "guided_export") outputs.add(result.path);
+      if (method === "workspace_snapshot") {
+        backupFolders.clear();
+        for (const key of ["source_backup", "prepared_source", "workspace_backup"]) {
+          const backup = result?.translation?.lifecycle?.[key];
+          if (backup?.available === true && typeof backup.path === "string")
+            backupFolders.add(backup.path);
+        }
+      }
       for (const job of result?.translation?.jobs || []) {
         if (
           job.kind === "operation" &&
@@ -242,11 +251,15 @@ app.whenReady().then(() => {
           ? path.join(currentSource, ".dazedtl", "len-method")
           : kind === "workspace"
             ? backend.workspace
-            : outputs.has(target)
-              ? target
-              : "";
+            : kind === "backup"
+              ? (backupFolders.has(target) ? target : "")
+              : outputs.has(target)
+                ? target
+                : "";
     if (!folder || !fs.statSync(folder).isDirectory())
       throw new Error("Choose an available folder.");
+    if (kind === "backup" && fs.realpathSync(folder) !== path.resolve(folder))
+      throw new Error("The backup location changed. Refresh its status before opening it.");
     if (
       kind === "projectWorkspace" &&
       !fs

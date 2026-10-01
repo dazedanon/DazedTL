@@ -359,7 +359,7 @@ function Workspace({
               <dl className="translation-facts">
                 <div>
                   <dt>Source backup</dt>
-                  <dd>{state.lifecycle.source_backup ? "Saved" : "Pending"}</dd>
+                  <dd>{state.lifecycle.source_backup?.available === false ? "Unavailable" : state.lifecycle.source_backup ? "Saved" : "Pending"}</dd>
                 </div>
                 <div>
                   <dt>Original / translation branches</dt>

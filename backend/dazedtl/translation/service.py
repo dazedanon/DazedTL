@@ -158,6 +158,13 @@ class Translation:
         status = project_path(project.root, WORK + "/status.md", exists=False)
         identification = self.workspace / "translation/projects" / project_id / "engine.json"
         engine = self.engine.detect(project.root)
+        saved_lifecycle = lifecycle(self.workspace, project_id)
+        for key, kind in (("source_backup", "source"), ("prepared_source", "source"), ("workspace_backup", "workspace")):
+            if saved_lifecycle.get(key):
+                saved_lifecycle[key] = backups.record_status(project.root, saved_lifecycle[key], kind=kind)
+                if not saved_lifecycle[key]["available"]:
+                    title = {"source_backup": "Source backup", "prepared_source": "Prepared original backup", "workspace_backup": "Workspace backup"}[key]
+                    warnings.append(title + " is unavailable. " + saved_lifecycle[key]["issue"])
         if identification.is_file():
             identified = read_json(identification)
             try:
@@ -168,7 +175,7 @@ class Translation:
         return {"projectId": project_id, **selected, "drafts": self.drafts(project_id),
                 "engine": engine,
                 "documents": self.documents(project_id), "progress": progress, "git": git,
-                "lifecycle": lifecycle(self.workspace, project_id), "jobs": [self.jobs.store.view(job) for job in saved_jobs],
+                "lifecycle": saved_lifecycle, "jobs": [self.jobs.store.view(job) for job in saved_jobs],
                 "active": self.jobs.running(project_id), "warnings": warnings,
                 "statusText": status.read_text(encoding="utf-8")[:250_000] if status.is_file() and status.stat().st_size <= 5_000_000 else "",
                 "handoff": handoff.read_text(encoding="utf-8") if handoff.is_file() and handoff.stat().st_size < 250_000 else "",

@@ -9,7 +9,7 @@ def project(value):
     if value is None:
         return None
     return pick(value, ('id', 'name', 'source', 'engine', 'engine_label', 'method', 'phase', 'available',
-                        'status', 'detail', 'next_label', 'attention'))
+                        'status', 'detail', 'operation', 'next_label', 'attention'))
 
 
 def application(value):
@@ -25,7 +25,7 @@ def job(value):
     if value is None:
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
-                          'progress', 'log', 'estimate', 'outputs', 'approval', 'action', 'result'))
+                          'progress', 'log', 'estimate', 'outputs', 'approval', 'action', 'result', 'created', 'updated'))
     result.setdefault('log', [])
     return result
 

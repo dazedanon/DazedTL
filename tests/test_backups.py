@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from contextlib import nullcontext
 import os
+import shutil
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +28,21 @@ class BackupTests(unittest.TestCase):
 
     def objects(self):
         return {path.name: path.read_bytes() for path in (self.store / "objects").glob("*/*")}
+
+    def test_saved_reference_does_not_claim_missing_payloads_or_deleted_store_are_available(self):
+        saved = backups.snapshot(self.game, self.store, source_game=True)
+        before = dict(saved)
+        self.assertTrue(backups.record_status(self.game, saved, kind="source")["available"])
+        next((self.store / "objects").glob("*/*")).unlink()
+        self.assertFalse(backups.record_status(self.game, saved, kind="source")["available"])
+        backups.snapshot(self.game, self.store, source_game=True)
+        self.assertTrue(backups.record_status(self.game, saved, kind="source")["available"])
+        shutil.rmtree(self.work)
+        missing = backups.record_status(self.game, saved, kind="source")
+        self.assertFalse(missing["available"])
+        self.assertTrue(missing["issue"])
+        self.assertFalse(self.work.exists())
+        self.assertEqual(saved, before)
 
     def test_checkpoint_reuses_content_and_remains_independently_restorable_after_move(self):
         original = backups.snapshot(self.game, self.store, source_game=True)
@@ -53,6 +69,9 @@ class BackupTests(unittest.TestCase):
         self.assertEqual(changed["bytes_added"], (self.work / "translations.json").stat().st_size)
         moved = self.root / "moved-game"
         self.game.rename(moved)
+        available = backups.record_status(moved, first, kind="workspace")
+        self.assertTrue(available["available"])
+        self.assertTrue(Path(available["path"]).is_relative_to(moved))
         for identity, expected in ((first["id"], '{"line":"English"}'), (changed["id"], '{"line":"Corrected English"}')):
             with self.subTest(identity=identity):
                 saved = backups.lookup(moved, self.root / "absent-profile", identity)

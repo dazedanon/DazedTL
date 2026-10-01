@@ -203,6 +203,11 @@ class WorkflowTests(unittest.TestCase):
         (Path(state["source_backup"]["path"]) / "manifest.json").unlink()
         with self.assertRaises(ValueError):
             self.service.compile(self.identity, self.plan_path)
+        for action, arguments in (("rpgmaker_prepare", {}), ("git_setup", {"version": "1.0"})):
+            with self.subTest(action=action), self.assertRaises(ValueError):
+                execute(self.engine, self.profile, {"project_id": self.identity}, {
+                    "source": str(self.game), "options": DEFAULTS, "action": action,
+                    "arguments": arguments}, lambda: False)
 
     def test_current_selection_excludes_drafts_and_secrets_while_saved_runs_keep_their_route(self):
         selected = self.project.read()

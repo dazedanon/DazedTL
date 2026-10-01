@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import { LoaderCircle } from "lucide-react";
 type Props = ComponentProps<"button"> & {
   variant?: "default" | "primary" | "quiet" | "danger" | "link";
   size?: "compact" | "comfortable";
@@ -26,6 +27,7 @@ export function Button({
       disabled={disabled || pending}
       aria-busy={pending || undefined}
     >
+      {pending && <LoaderCircle size={14} className="ui-button-spinner" aria-hidden="true" />}
       {children}
     </button>
   );

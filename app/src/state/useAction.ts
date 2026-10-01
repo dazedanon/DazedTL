@@ -9,6 +9,7 @@ export function useAction({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [key, setKey] = useState("");
   const pending = useRef(false);
   const mounted = useRef(true);
   const afterRef = useRef(after);
@@ -19,24 +20,28 @@ export function useAction({
       mounted.current = false;
     };
   }, []);
-  const report = useCallback((value: unknown) => {
+  const report = useCallback((value: unknown, actionKey = "") => {
     if (mounted.current) {
+      setKey(actionKey);
       setError(messageOf(value));
       setNotice("");
     }
   }, []);
   const clear = useCallback(() => {
+    setKey("");
     setError("");
     setNotice("");
   }, []);
-  const succeed = useCallback((message: string) => {
+  const succeed = useCallback((message: string, actionKey = "") => {
+    setKey(actionKey);
     setError("");
     setNotice(message);
   }, []);
   const run = useCallback(
-    async <T>(task: () => Promise<T>, message = ""): Promise<Result<T>> => {
+    async <T>(task: () => Promise<T>, message = "", actionKey = ""): Promise<Result<T>> => {
       if (pending.current) return { ok: false };
       pending.current = true;
+      setKey(actionKey);
       setBusy(true);
       setError("");
       setNotice("");
@@ -46,7 +51,7 @@ export function useAction({
         if (mounted.current) setNotice(message);
         return { ok: true, value };
       } catch (error) {
-        report(error);
+        report(error, actionKey);
         return { ok: false };
       } finally {
         pending.current = false;
@@ -55,5 +60,5 @@ export function useAction({
     },
     [report],
   );
-  return { busy, error, notice, run, report, clear, succeed };
+  return { busy, error, notice, key, run, report, clear, succeed };
 }

@@ -63,6 +63,9 @@ main.overview-main {
 .overview-status button {
   flex-shrink: 0;
 }
+.overview-workflow-actions {
+  margin-top: var(--space-4);
+}
 .overview-empty {
   display: flex;
   align-items: center;

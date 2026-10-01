@@ -453,10 +453,16 @@ pre {
 .job-status-state[data-state="complete"] {
   color: var(--color-success);
 }
+.job-status-state[data-state="failed"],
+.job-status-state[data-state="needs_attention"],
+.job-status-state[data-state="interrupted"] {
+  color: var(--color-error-text);
+}
 .job-status-status p {
   margin: 8px 0 0;
 }
-.job-status-spinner {
+.job-status-spinner,
+.ui-button-spinner {
   animation: job-status-spin 1s linear infinite;
 }
 @keyframes job-status-spin {
@@ -465,7 +471,37 @@ pre {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .job-status-spinner {
+  .job-status-spinner,
+  .ui-button-spinner {
     animation: none;
   }
+}
+
+.action-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: min(100%, 360px);
+  min-width: 0;
+}
+.action-control > button {
+  max-width: 100%;
+}
+.action-control-feedback {
+  max-width: 100%;
+}
+.action-control-feedback:not(:empty) {
+  margin-top: var(--space-2);
+}
+.action-result-icon--success {
+  color: var(--color-success);
+}
+.action-result-icon--error {
+  color: var(--color-error-text);
+}
+.primary .action-result-icon {
+  color: currentColor;
+}
+.actions:has(> .action-control) {
+  align-items: flex-start;
 }

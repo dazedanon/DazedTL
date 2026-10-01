@@ -103,6 +103,9 @@ Working records and guidance stay in the game's ignored .dazedtl folder; Git tra
 Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
 The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
 Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
+Guided **Prepare** shows the exact saved location and an **Open backup folder** action.
+If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
+replacement saves the game's current files; it does not recover the deleted original.
 A local patch does not publish a repository.
 GameUpdate's public commit marker is included only when the existing updater checks can verify it against the configured tracked branch.
 

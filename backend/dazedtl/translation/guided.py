@@ -6,7 +6,7 @@ import uuid
 
 from dazedtl.storage import write_json
 from .files import read_json, project_path, evidence, verify_evidence
-from .operations import lifecycle
+from .operations import lifecycle, require_source_backup
 from . import backups
 
 STEPS = {"prepare", "context", "translate", "apply", "layout", "review"}
@@ -185,11 +185,7 @@ class Guided:
     def source_preserved(self, project_id):
         project, _ = self.record(project_id)
         state = lifecycle(self.translation.workspace, project_id)
-        saved = state.get("source_backup")
-        if not saved:
-            raise ValueError("Preserve the original game in Prepare before changing game files.")
-        path = backups.lookup(project["source"], Path(saved["path"]).parent, saved["id"])
-        backups.verify(path, source=project["source"], full=False)
+        require_source_backup(project["source"], state)
         return state
 
     def clean(self, project_id):
@@ -246,8 +242,10 @@ class Guided:
             allowed = {"version", "original", "untranslated"} if action == "git_setup" else {"reviewed", "playtested"} if action == "guided_review" else set()
             if set(options) - allowed:
                 raise ValueError("Unknown guided action option.")
-            if action == "backup_source" and lifecycle(self.translation.workspace, project_id).get("source_backup"):
-                raise ValueError("The original is already preserved. Use workspace backups for later milestones.")
+            if action == "backup_source":
+                saved = lifecycle(self.translation.workspace, project_id).get("source_backup")
+                if saved and backups.record_status(project["source"], saved, kind="source")["available"]:
+                    raise ValueError("The original is already preserved. Use workspace backups for later milestones.")
             if action in {"git_setup", "checkpoint", "guided_review"}:
                 paths = self.backend.guided_runtime_files(project["source"])
                 expected = evidence(project["source"], paths)
@@ -278,7 +276,8 @@ class Guided:
             "paths": paths, "evidence": expected, "manifest": manifest,
             "guard": self.backend.guided_guard(native, self.backend.workflows.folder(native["id"])),
             "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
-        return {"token": token, "action": action, "label": label, "destination": project["source"],
+        destination = str(backups.store_path(project["source"])) if action == "backup_source" else project["source"]
+        return {"token": token, "action": action, "label": label, "destination": destination,
                 "files": len(paths), "paths": paths, "options": options, "confirmation": True,
                 "additions": [name for name, row in manifest["files"].items() if row.get("original_sha256", "") is None] if manifest else []}
 

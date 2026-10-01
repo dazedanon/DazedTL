@@ -48,6 +48,13 @@ class RunStore:
             raise ValueError("The saved run index is incomplete.")
         if set(job["states"]) != set(job["unit_counts"]) or set(job["states"]) != set(job["fingerprints"]):
             raise ValueError("The saved run index no longer matches its request states.")
+        if job["kind"] == "operation" and "action" not in job:
+            plan = read_json(folder / "plan.json")
+            if not isinstance(plan, dict) or plan.get("version") != 1 or digest(plan) != job["plan_sha256"]:
+                raise ValueError("The saved operation plan changed.")
+            job["action"] = plan.get("action")
+            # Enrich older indexes once, retaining their original timestamps and plan.
+            write_json(folder / "job.json", job)
         return job
 
     def load(self, identity, project_id=None):
@@ -76,6 +83,7 @@ class RunStore:
                "kind": plan["kind"], "label": plan.get("label", "Translation"), "created": now(), "updated": now(),
                "status": "ready", "message": "Ready", "plan_sha256": digest(plan), "states": states,
                "mode": plan.get("configuration", {}).get("mode"),
+               "action": plan.get("action") if plan["kind"] == "operation" else None,
                "unit_counts": {row["id"]: len(row["sources"]) for row in plan.get("requests", [])},
                "fingerprints": {row["id"]: row["fingerprint"] for row in plan.get("requests", [])},
                "qa_requests": [{"id": row["id"], "index": index, "notes": len(row["context"].get("qa_notes", {}))}
@@ -144,7 +152,7 @@ class RunStore:
                   for state in ("pending", "sending", "queued", "accepted", "failed", "uncertain")}
         return {key: job[key] for key in ("id", "project_id", "kind", "label", "status", "message", "created", "updated",
                                          "quote", "approval_token", "approved", "result", "usage")} | {
-            "mode": job["mode"], "counts": counts,
+            "mode": job["mode"], "action": job.get("action"), "counts": counts,
             "approved": self.authorized(job),
             "units": sum(job["unit_counts"].values()),
             "accepted_units": sum(count for identity, count in job["unit_counts"].items() if job["states"][identity]["state"] == "accepted"),

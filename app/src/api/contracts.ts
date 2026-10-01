@@ -10,6 +10,7 @@ export interface Project {
   available?: boolean;
   status?: string;
   detail?: string;
+  operation?: Pick<TranslationJob, "label" | "status" | "message">;
   next_label?: string;
   attention?: string[];
 }
@@ -29,6 +30,8 @@ export interface Job {
   id: string;
   status: string;
   message: string;
+  created?: string;
+  updated?: string;
   label?: string;
   mode?: string;
   phase?: string;
@@ -140,6 +143,7 @@ export interface TranslationJob {
   id: string;
   project_id: string;
   kind: "translation" | "operation";
+  action?: string | null;
   label: string;
   status: string;
   message: string;
@@ -233,6 +237,8 @@ export interface BackupRecord {
   id: string;
   path: string;
   files: number;
+  available?: boolean;
+  issue?: string;
   bytes_total?: number;
   bytes_added?: number;
   bytes_reused?: number;

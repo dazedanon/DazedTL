@@ -55,14 +55,12 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                                   progress=lambda count, path: progress("Backed up " + str(count) + " files · " + path))
         state["source_backup" if action == "backup_source" else "workspace_backup"] = result
     elif action == "rpgmaker_prepare":
-        if not state.get("source_backup"):
-            raise ValueError("Preserve the selected source before preparing game files.")
+        require_source_backup(source, state)
         data = project_path(source, arguments["data_path"] + "/System.json").parent if arguments.get("data_path") else None
         result = engine.rpgmaker_prepare(source, options, data, log=progress)
         state["preparation"] = {"complete": True}
     elif action == "git_setup":
-        if not state.get("source_backup"):
-            raise ValueError("Create a source backup before establishing Git baselines.")
+        require_source_backup(source, state)
         current = engine.git_status(source, options)
         if not current["configured"]:
             if not arguments.get("manifest"):
@@ -176,7 +174,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     return result
 
 
-def require_baseline(engine, source, options, state, *, allow_pending=False):
+def require_source_backup(source, state):
     if not state.get("source_backup"):
         raise ValueError("Preserve a recoverable source backup before translation.")
     record = state["source_backup"]
@@ -184,6 +182,11 @@ def require_baseline(engine, source, options, state, *, allow_pending=False):
     saved = backups.verify(path, source=source, full=False)
     if saved["kind"] != "source":
         raise ValueError("The source backup is unavailable. Restore it before continuing.")
+    return saved
+
+
+def require_baseline(engine, source, options, state, *, allow_pending=False):
+    require_source_backup(source, state)
     status = engine.git_status(source, options)
     if status.get("repo_root") != str(Path(source).resolve()):
         raise ValueError("The selected game must own its version-tracking repository.")

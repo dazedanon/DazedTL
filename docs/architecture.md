@@ -35,6 +35,10 @@ those operations are reachable only through the app's consumed Guided preview.
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
 Reserve cards for content requiring a distinct container.
+Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview,
+so generic completion messages are handled consistently while useful detail remains visible.
+Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
+Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
 
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
 backend job references, phase selections and recovery data when adding workflow screens.
@@ -111,6 +115,9 @@ Both agent operations and UI checkpoints use translation/backups.py. Each versio
 path-to-content manifest with file sizes, permissions and empty directories; content-addressed objects are shared
 across original, prepared-source and workspace snapshots in the same game. No delta chain or live-file hardlinks
 are used. Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
+Backup presentation checks manifest and payload availability instead of treating a profile reference as proof
+that its files still exist. Resolved locations are shown in the UI; Electron opens only backup folders returned
+as available by the backend. Full content hashes are still verified at restore and reuse boundaries.
 The managed store has its own writer lock. Content is verified before reuse/publication; source mutations abort
 capture. A failed capture removes only unpublished objects it created. Existing snapshots are never pruned.
 
