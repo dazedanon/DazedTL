@@ -207,6 +207,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     { id: "gameupdate", title: "Create GameUpdate files", hint: "Add player patch support." }];
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
+  const aceNeedsExport = state.engine === "ACE" && !state.files.length;
   useEffect(() => {
     if (!baselineRun || action.busy || taskId !== "baseline") return;
     const saved = translation.jobs.find((item) => item.id === baselineRun);
@@ -244,18 +245,19 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         {!state.aceAvailable && <p className="muted">Native conversion requires Windows or Wine. Existing ace_json exports can be used.</p>}
         <ActionList><ActionRow label="Extract the encrypted archive when required.">{task("ace_decrypt", "Extract archive", {}, !preserved || !state.encrypted.length || !state.aceAvailable)}</ActionRow>
           <ActionRow label="Convert native game data for the JSON translation phases.">{task("ace_extract", "Convert to JSON", {}, !preserved || !state.aceAvailable)}</ActionRow></ActionList></>;
-      primary = advance(); break;
+      primary = aceNeedsExport ? <Button variant="primary" disabled>Continue to prepare game files</Button> : advance(); break;
     case "format":
-      content = <>{baseline && !preparationComplete ? <p className="guided-success">The version baseline is already saved. Preparation does not need to be repeated.</p> : <ol className="guided-preparation-list">{preparation.stages.map((item) => <li key={item.action}>
+      content = <>{aceNeedsExport && !baseline && <div className="guided-prerequisite"><strong>Convert Ace data first</strong><Button variant="link" onClick={() => stepTask("extract")}>Return to Ace extraction</Button></div>}
+        {baseline && !preparationComplete ? <p className="guided-success">The version baseline is already saved. Preparation does not need to be repeated.</p> : <ol className="guided-preparation-list">{preparation.stages.map((item) => <li key={item.action}>
         <span className={item.status === "complete" ? "guided-completed" : "muted"}>{item.status === "complete" ? <Check size={16} /> : item.status === "running" ? <LoaderCircle size={16} className="job-status-spinner" /> : "·"}</span>
         <div><strong>{item.label}</strong>{item.message && <small>{item.message}</small>}</div>
         <span className="guided-preparation-state">{item.status === "complete" ? "Done" : item.status === "pending" ? "Waiting" : item.status.replaceAll("_", " ")}</span>
       </li>)}</ol>}
         {preparation.configuration && <p className="muted">{preparation.configuration}</p>}
         {localOperation && <JobStatus compact job={{ ...localOperation, label: localOperation.label || "Current operation" }} />}
-        {!localOperation && !preparationComplete && operationJob("prepare_game") && !preparation.stages.some((item) => item.message) && <JobStatus compact job={{ ...operationJob("prepare_game")!, label: "Prepare game files" }} />}
+        {!localOperation && !preparationComplete && operationJob("prepare_game") && operationJob("prepare_game")!.status !== "complete" && !preparation.stages.some((item) => item.message) && <JobStatus compact job={{ ...operationJob("prepare_game")!, label: "Prepare game files" }} />}
         <Button variant="quiet" onClick={() => setPanel("preparation")}>Preparation tools</Button></>;
-      primary = preparationComplete || baseline ? advance() : task("prepare_game", preparationPending ? "Preparing game files…" : "Prepare game files", {}, !preserved, "primary");
+      primary = (preparationComplete || baseline) && !preparationPending ? advance() : task("prepare_game", preparationPending ? "Preparing game files…" : "Prepare game files", {}, !preserved || aceNeedsExport, "primary");
       secondary = localOperation && <Button disabled={action.busy} onClick={() => stopOperation(localOperation)}>Stop preparation</Button>; break;
     case "baseline":
       content = baseline ? <><p className="guided-success">Original version {translation.git?.original_version || "baseline"} is saved.</p><p className="muted">Next, discover the game’s speakers and prepare its translation context.</p></> : <>

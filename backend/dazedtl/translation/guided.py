@@ -429,6 +429,8 @@ class Guided:
             self.translation.ready(project_id)
         if action.startswith("ace_") and (native["engine"] != "ACE" or not self.backend.ace_available()):
             raise ValueError("Ace preparation requires Windows or Wine and the bundled Ace tools.")
+        if action in {"prepare_game", "format_data"}:
+            preparation.require_data(native)
         if action == "format_plugins" and native["engine"] == "ACE":
             raise ValueError("Ace does not use plugins.js.")
         if action in TOOL_ACTIONS | {"playtest_status"} and native["engine"] != "MVMZ":

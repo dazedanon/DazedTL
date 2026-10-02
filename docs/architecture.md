@@ -62,6 +62,7 @@ Saved operation indexes carry their action identity so feedback can remain besid
 Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared
 action-column width, token-based gaps, wrapping text, and a stacked layout based on available
 container width. Rows grow with feedback rather than fixing heights or clipping content.
+Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
 Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click;
 the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.

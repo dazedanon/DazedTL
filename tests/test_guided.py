@@ -321,6 +321,12 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.execute = Mock(return_value={'id': 'native-operation'})
         self.backend.guided_configure_tools = Mock()
         self.backend.guided_preparation_preview = self.backend.workflows.preview
+        data = self.native["data"]
+        self.native.update(engine="ACE", data=str(self.source / "ace_json"))
+        for action in ("prepare_game", "format_data"):
+            with self.assertRaisesRegex(ValueError, "Convert the native Ace data"):
+                self.guided.preview(self.identity, action)
+        self.native.update(engine="MVMZ", data=data)
         immediate = ('prepare_game', 'format_data', 'format_plugins', 'gameupdate', 'playtest_install', 'inspector_install', 'forge_install', 'playtest_apply')
         for action in immediate:
             with self.subTest(action=action):

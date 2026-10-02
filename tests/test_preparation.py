@@ -68,5 +68,18 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(called, ["format_data", "gameupdate"])
             self.assertTrue(result["complete"])
             self.assertIn("choose the patch repository", result["configuration"])
+            # A completed receipt cannot authorize preparation after its Ace export disappears.
+            native["engine"] = "ACE"
+            data = root / "game/data/Items.json"
+            original = data.read_bytes()
+            data.unlink()
+            self.assertFalse(preparation.state(native, root / "profile")["complete"])
+            before = list(called)
+            for action in ("prepare_game", "format_data"):
+                with self.assertRaisesRegex(ValueError, "Convert the native Ace data"):
+                    preparation.run({"action": action, "project": native, "folder": str(root / "profile")}, lambda _: None, execute, lambda *_: {})
+            self.assertEqual(called, before)
+            data.write_bytes(original)
+            self.assertTrue(preparation.state(native, root / "profile")["complete"])
             (root / "game/gameupdate/patch-config.txt").unlink()
             self.assertFalse(preparation.state(native, root / "profile")["complete"])

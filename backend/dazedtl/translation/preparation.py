@@ -13,6 +13,16 @@ def actions(native):
     return ["format_data", *(["format_plugins"] if native.get("plugins") else []), "gameupdate"]
 
 
+def has_data(native):
+    return any(path.is_file() for path in Path(native["data"]).glob("*.json"))
+
+
+def require_data(native):
+    if not has_data(native):
+        message = "Convert the native Ace data to JSON first, then return to preparation." if native.get("engine") == "ACE" else "No game JSON is available. Check the selected game's data folder before preparation."
+        raise ValueError(message)
+
+
 def fingerprint(native, observed=None):
     root, data = Path(native["source"]), Path(native["data"])
     paths = list(data.rglob("*.json"))
@@ -33,7 +43,7 @@ def fingerprint(native, observed=None):
 def state(native, folder, *, active=False, observed=None):
     path = project_path(folder, "preparation.json", exists=False)
     saved = read_json(path) if path.exists() else {}
-    valid = (saved.get("project_id") == native["id"] and saved.get("source") == native["source"]
+    valid = (has_data(native) and saved.get("project_id") == native["id"] and saved.get("source") == native["source"]
              and (active or saved.get("fingerprint") == fingerprint(native, observed)))
     stages = [{"action": name, "label": LABELS[name], "status": "pending", "message": ""} for name in actions(native)]
     if valid:
@@ -58,6 +68,8 @@ def configuration(native):
 
 def run(plan, log, execute, guard):
     native, folder = plan["project"], plan["folder"]
+    if plan["action"] in {"prepare_game", "format_data"}:
+        require_data(native)
     value = state(native, folder)
     selected = actions(native) if plan["action"] == "prepare_game" else [plan["action"]]
     path = project_path(folder, "preparation.json", exists=False)
