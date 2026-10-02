@@ -348,6 +348,15 @@ class Settings:
         connection = self._connection(self._read())
         return self._configured(connection) and bool(connection["model"].strip())
 
+    def guided_configuration(self, mode):
+        from .execution import configuration
+        state = self._read()
+        return {**configuration(self, mode), "engine_settings": self._values(state)}
+
+    def connection_summary(self):
+        from .execution import connection_summary
+        return connection_summary(self)
+
     def translation_defaults(self):
         state = self._read()
         values = self._values(state)

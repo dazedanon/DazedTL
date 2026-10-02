@@ -26,6 +26,11 @@ The Translation service owns project operations, request plans, accepted results
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
 The Translation workspace composes file selection, preferences and the preserved phased runner.
+Guided main text shares configuration while retaining independent database and event selections.
+Each phase retains its estimate beside the saved run, bound to source, scope, provider and pricing, guidance, and layout.
+Paid review requires that matching estimate and rechecks it before the one-use submission.
+Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
+Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,
 selection, settings and runtime-scope changes invalidate the relevant preview. The preserved runner
 continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.

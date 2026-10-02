@@ -55,7 +55,13 @@ class GuidedTests(unittest.TestCase):
         self.backend.describe = lambda _: dict(self.native)
         self.backend.guided_phase = lambda owner, phase, files: self.backend.workflows.phase(owner, phase, True)
         self.settings_revision = 1
-        self.settings = SimpleNamespace(prepare_engine=lambda **_kwargs: None, describe=lambda: {'revision': self.settings_revision})
+        self.configuration = {'model': 'fixture-model', 'endpoint': 'https://provider.invalid/v1', 'rates': {'input': 1, 'output': 2}, 'language': 'English'}
+        self.settings = SimpleNamespace(prepare_engine=lambda **_kwargs: None, describe=lambda: {'revision': self.settings_revision},
+            guided_configuration=lambda mode: {**deepcopy(self.configuration), 'mode': mode, 'revision': self.settings_revision},
+            connection_summary=lambda: {'name': 'Fixture connection'})
+        self.backend.manual = SimpleNamespace(jobs={}, folder=lambda identity: self.root / 'runs' / identity)
+        self.backend.saved_run_configuration = lambda identity: {'workflow': {'id': 'native', 'phase': self.guided.runs.records(self.identity)[identity]['phase']}}
+        self.backend.guided_run_context = lambda: {'system.md': 'fixture-context'}
         self.translation = SimpleNamespace(workspace=self.root / 'profile', jobs=SimpleNamespace(running=lambda: False),
             engine=SimpleNamespace(source_bindings=lambda _source, _paths: {}, original_bytes=lambda *_args: b''),
             clean_drafts=lambda _: None, ready=Mock(), operation=Mock(return_value={'id': 'operation'}))
@@ -65,6 +71,122 @@ class GuidedTests(unittest.TestCase):
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         saved = snapshot(self.source, store_path(self.source), source_game=True)
         write_json(lifecycle_path(self.translation.workspace, self.identity), {'version': 1, 'source_backup': saved})
+
+    def test_matching_estimates_survive_reopening_and_reject_each_changed_input(self):
+        with self.assertRaisesRegex(ValueError, 'current estimate'):
+            self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
+        identity = self.seed_estimate()
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        quote, _ = reopened.runs.quote(self.identity, self.native, 'database', 'batch')
+        self.assertTrue(quote['current'])
+        preview = reopened.preview(self.identity, 'start', options={'mode': 'batch'})
+        self.assertEqual(preview['estimate']['jobId'], identity)
+        self.assertEqual(preview['estimate']['value'], self.backend.manual.jobs[identity]['estimate'])
+        originals = deepcopy(self.native), deepcopy(self.configuration)
+        changes = [lambda: self.native['widths'].update(width=51),
+                   lambda: self.native['engine_options'].update(NAMES=True),
+                   lambda: self.native.update(phase1_comments=True),
+                   lambda: self.configuration.update(model='changed-model'),
+                   lambda: self.configuration.update(endpoint='https://changed.invalid/v1'),
+                   lambda: self.configuration['rates'].update(input=3),
+                   lambda: self.configuration.update(language='French')]
+        for change in changes:
+            change()
+            with self.subTest(change=change):
+                self.assertFalse(reopened.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+                with self.assertRaises(ValueError):
+                    reopened.preview(self.identity, 'start', options={'mode': 'batch'})
+            self.native.clear(); self.native.update(deepcopy(originals[0]))
+            self.configuration.clear(); self.configuration.update(deepcopy(originals[1]))
+        self.assertFalse(reopened.runs.quote(self.identity, self.native, 'database', 'translate')[0]['current'])
+        self.backend.guided_run_context = lambda: {'system.md': 'changed-context'}
+        self.assertFalse(reopened.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+        self.backend.guided_run_context = lambda: {'system.md': 'fixture-context'}
+        self.backend.guided_guard = lambda *_: {'glossary': 'changed-guidance'}
+        self.assertFalse(reopened.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+        self.backend.guided_guard = lambda *_: evidence(self.source, ['Items.json'])
+        write_json(self.source / 'Items.json', [{'name': '別'}])
+        self.assertFalse(reopened.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+        self.assertEqual(self.started, [])
+
+    def test_a_quote_cannot_start_after_pricing_or_runtime_context_changes_in_review(self):
+        preview = self.preview()
+        self.configuration['rates']['input'] = 3
+        with self.assertRaisesRegex(ValueError, 'estimate inputs changed'):
+            self.guided.execute(self.identity, preview['token'])
+        preview = self.preview()
+        self.backend.guided_run_context = lambda: {'system.md': 'new-system-prompt'}
+        with self.assertRaisesRegex(ValueError, 'estimate inputs changed'):
+            self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.started, [])
+
+    def test_independent_selection_and_refresh_do_not_reuse_a_retired_quote(self):
+        write_json(self.source / 'Map001.json', {'events': []})
+        self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json']
+        identity = self.seed_estimate()
+        self.native['selected'].append('Map001.json')
+        self.assertTrue(self.guided.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+        self.native['selected'].remove('Items.json')
+        self.assertFalse(self.guided.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+        self.native['selected'].append('Items.json')
+        write_json(self.folder / 'source-inputs.json', {'version': 1, 'inputs': {}, 'retired_runs': [identity]})
+        self.assertFalse(self.guided.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
+
+    def test_completed_phase_and_apply_status_require_that_runs_verified_outputs(self):
+        identity = 'completed-database'
+        output = [{'name': 'Fixture term'}]
+        raw = __import__('json').dumps(output).encode()
+        write_json(self.backend.manual.folder(identity) / 'translated/Items.json', output)
+        expected = digest((self.backend.manual.folder(identity) / 'translated/Items.json').read_bytes())
+        job = {'id': identity, 'mode': 'batch', 'status': 'complete', 'files': ['Items.json'], 'outputs': {'Items.json': expected}, 'log': []}
+        self.backend.manual.jobs[identity] = job
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        self.native['manual_job'] = identity
+        status = self.guided.runs.snapshot(self.identity, self.native, {'changed': [], 'retired': []})
+        self.assertTrue(status['phase_runs']['database']['scopeComplete'])
+        self.assertNotIn('dialogue', status['phase_runs'])
+        self.assertEqual(status['phase_runs']['database']['appliedOutputs'], [])
+        write_json(self.folder / 'applied-outputs.json', {'files': {'Items.json': expected}})
+        self.assertEqual(self.guided.run_view(identity)['appliedOutputs'], ['Items.json'])
+        write_json(self.backend.manual.folder(identity) / 'translated/Items.json', [{'name': 'Changed output'}])
+        self.assertFalse(self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs']['database']['scopeComplete'])
+
+    def test_comparisons_require_exact_usable_mappings_for_the_selected_event_scope(self):
+        self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json', 'Map002.json']
+        self.native['selected'] = ['Items.json', 'Map001.json']
+        self.native['engine_options'] = {'IGNORETLTEXT': True}
+        self.projects.get(self.identity)['phase'] = 'variables'
+        write_json(self.source / 'Map001.json', {'list': [{'code': 111, 'parameters': [12, '$gameVariables.value(1) === "日本語"']}]})
+        write_json(self.source / 'Map002.json', {'list': [{'code': 111, 'parameters': [12, '$gameVariables.value(1) === "別の語"']}]})
+        for mapping in ({}, {'日本語': '日本語'}, {'別の語': 'Other fixture'}):
+            write_json(self.folder / 'log/var_translation_map.json', mapping)
+            self.assertEqual(self.guided.runs.comparisons(self.native)['matches'], 0)
+            with self.assertRaisesRegex(ValueError, 'audited assignments'):
+                self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})
+        write_json(self.folder / 'log/var_translation_map.json', {'日本語': 'Fixture English'})
+        self.assertEqual(self.guided.runs.comparisons(self.native)['files'], ['Map001.json'])
+        self.seed_estimate('variables')
+        preview = self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
+        write_json(self.folder / 'log/var_translation_map.json', {'日本語': 'Changed fixture'})
+        with self.assertRaises(ValueError):
+            self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.started, [])
+
+    def test_apply_review_keeps_a_completed_scope_and_does_not_apply_another_phases_output(self):
+        write_json(self.source / 'System.json', {'gameTitle': 'Fixture'})
+        self.native['selected'] = ['Items.json', 'System.json']
+        self.backend.phase_files = lambda *_: ['Items.json', 'System.json']
+        write_json(self.folder / 'translated/Items.json', [{'name': 'Fixture output'}])
+        write_json(self.folder / 'translated/System.json', {'gameTitle': 'Other output'})
+        self.backend.workflows.preview = lambda *_: {'token': 'apply-preview', 'confirmation': True, 'options': {}}
+        self.backend.guided_export_preview = Mock(side_effect=lambda _owner, paths: self.backend.workflows.preview())
+        preview = self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+        self.assertEqual(preview['paths'], ['Items.json'])
+        self.backend.guided_export_preview.assert_called_once_with('native', ['Items.json'])
+        self.assertEqual(read_json(self.source / 'Items.json'), [{'name': '薬'}])
+        self.assertEqual(self.native['selected'], ['Items.json', 'System.json'])
+        with self.assertRaises(ValueError):
+            self.guided.preview(self.identity, 'export_selected', files=['Foreign.json'])
 
     def test_document_selection_migrates_review_positions_and_stays_with_its_project(self):
         self.backend.workflows.documents = lambda _: {"glossary": {}, "quirks": {}, "game": {}}
@@ -91,7 +213,18 @@ class GuidedTests(unittest.TestCase):
         other = self.projects.open({"source": str(self.root / "other-game"), "engine": "MVMZ"})
         self.assertFalse(self.guided.path(other["id"], "context-document").exists())
 
+    def seed_estimate(self, phase=None, mode='batch'):
+        phase = phase or self.projects.get(self.identity)['phase']
+        identity = 'estimate-' + str(len(self.guided.runs.records(self.identity)))
+        job = {'id': identity, 'mode': 'estimate', 'status': 'complete', 'model': 'fixture-model', 'log': [],
+               'files': self.guided.runs.files(self.native, phase), 'estimate': {'requests': 1, 'live_cost': .01, 'batch_cost': .005}, 'outputs': {}}
+        self.backend.manual.jobs[identity] = job
+        self.native.setdefault('collected', []).append(identity)
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, phase, mode))
+        return identity
+
     def preview(self):
+        self.seed_estimate()
         return self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
 
     def speaker_report(self):

@@ -157,6 +157,12 @@ class ExistingBackend:
             raise ValueError("The saved run configuration changed. Its original outputs remain retained.")
         return json.loads(raw.decode("utf-8"))
 
+    def guided_run_context(self):
+        from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
+        from dazedtl.translation.files import digest
+        return {path.name: digest(runtime_data_file(path, self.workspace).read_bytes())
+                for path in (PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH)}
+
     def phase_files(self, native, phase):
         from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT
         import re

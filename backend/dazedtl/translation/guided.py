@@ -11,6 +11,7 @@ from dazedtl.storage import write_json
 from .files import read_json, project_path, evidence, verify_evidence
 from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
+from .guided_runs import GuidedRuns
 from .files import digest
 from . import backups
 from . import speaker_setup, preparation, context_setup
@@ -42,6 +43,7 @@ class Guided:
         self.translation = translation
         self.confirmations = {}
         self.observed_files = {}
+        self.runs = GuidedRuns(self)
 
     def observed_digest(self, path):
         path = Path(path)
@@ -211,8 +213,16 @@ class Guided:
         job = dict(self.backend.manual.jobs[identity])
         try:
             folder = self.backend.manual.folder(identity) / "translated"
-            job["outputsAvailable"] = bool(job.get("outputs")) and all(project_path(folder, name).is_file() for name in job["outputs"])
-        except (OSError, ValueError):
+            job["outputsAvailable"] = bool(job.get("outputs")) and all(project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected for name, expected in job["outputs"].items())
+            plan = self.backend.saved_run_configuration(identity)
+            workflow = plan.get("workflow") or {}
+            job["logicalPhase"] = workflow.get("phase")
+            native = self.backend.workflows.projects.get(workflow.get("id"))
+            if native:
+                receipt = self.backend.workflows.folder(native["id"]) / "applied-outputs.json"
+                applied = read_json(receipt).get("files", {}) if receipt.exists() else {}
+                job["appliedOutputs"] = [name for name, expected in job.get("outputs", {}).items() if applied.get(name) == expected or self.observed_digest(project_path(native["data"], name)) == expected]
+        except (OSError, ValueError, KeyError):
             job["outputsAvailable"] = False
         if compact:
             job["log"] = []
@@ -354,7 +364,9 @@ class Guided:
         documents = context_setup.retained_documents(native["source"], self.backend.workflows.documents(native["id"]),
             value.get("draft", {}).get("documents", {}))
         return {
-            **value, "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
+            **value, **self.runs.snapshot(project_id, native, source_status),
+            "manual_job": self.run_view(value["manual_job"]["id"]) if value.get("manual_job") else None,
+            "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
             "form": self.saved_form(project_id),
@@ -370,7 +382,8 @@ class Guided:
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
             "runs": [self.run_view(identity, compact=True) for identity in self.owned_runs(native)[:30]
                      if identity in self.backend.manual.jobs],
-            "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready()},
+            "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready(),
+                         "connection": (self.settings.connection_summary() or {}).get("name", "No connection selected")},
         }
 
     def preparation(self, native):
@@ -480,6 +493,17 @@ class Guided:
             if value["project"].get("collection_error"):
                 raise ValueError(value["project"]["collection_error"])
             options["phase"] = phase
+            if phase == "variables" and not self.runs.comparisons(native)["matches"]:
+                raise ValueError("Translate the relevant audited assignments first. No saved mappings match the selected comparisons.")
+            run_inputs = None
+            quote = None
+            if mode != "speakers":
+                target_mode = self.preferences(native)["values"]["mode"] if mode == "estimate" else mode
+                matched, run_inputs = self.runs.quote(project_id, native, phase, target_mode)
+                if mode != "estimate":
+                    if not matched["current"]:
+                        raise ValueError("Calculate a current estimate for this phase, selection, and settings before reviewing translation.")
+                    quote = {"jobId": matched["job"]["id"], "fingerprint": run_inputs["fingerprint"], "value": matched["job"]["estimate"], "model": matched["job"].get("model", ""), "connection": (self.settings.connection_summary() or {}).get("name", "")}
             label = {"batch": "Prepare Batch translation", "translate": "Start Live API translation", "estimate": "Estimate selected phase", "speakers": "Collect speaker names"}[mode]
         elif action in SHARED_ACTIONS:
             label = SHARED_ACTIONS[action]
@@ -521,7 +545,13 @@ class Guided:
                 if value["project"].get("collection_error"):
                     raise ValueError(value["project"]["collection_error"])
                 folder = self.backend.workflows.folder(native["id"])
-                paths = [name for name in native["selected"] if (folder / "translated" / name).is_file()]
+                requested = native["selected"] if files is None else files
+                if (not isinstance(requested, list) or any(not isinstance(name, str) for name in requested)
+                        or len(set(requested)) != len(requested) or set(requested) - set(native["selected"])):
+                    raise ValueError("Choose saved outputs within the selected scope.")
+                paths = [name for name in requested if self.inputs(native).path("translated", name).is_file()]
+                if files is not None and paths != files:
+                    raise ValueError("The selected run outputs are no longer available. Review current outputs.")
                 if not paths:
                     raise ValueError("Complete and review a translation before applying its files.")
                 if self.inputs(native).status(paths)["changed"]:
@@ -557,10 +587,13 @@ class Guided:
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,
             "guard": self.backend.guided_guard(native, self.backend.workflows.folder(native["id"])),
-            "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
+            "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"],
+            "run_inputs": run_inputs if action == "start" else None, "estimate": quote if action == "start" else None}}
         destination = str(backups.store_path(project["source"])) if action == "backup_source" else options["output"] if action == "release_patch" else project["source"]
         return {"token": token, "action": action, "label": label, "destination": destination,
                 "files": len(paths), "paths": paths, "options": options,
+                "estimate": quote if action == "start" else None,
+                "run": {"model": quote["model"], "connection": quote["connection"], "mode": options["mode"]} if action == "start" and quote else None,
                 "confirmation": (bool(lifecycle(self.translation.workspace, project_id).get("source_backup")) if action == "backup_source"
                                  else not (action == "start" and options["mode"] == "estimate")),
                 "additions": [name for name, row in manifest["files"].items() if row.get("original_sha256", "") is None] if manifest else []}
@@ -599,7 +632,15 @@ class Guided:
             if git_identity(release_status) != options["git"]:
                 raise ValueError("Version tracking changed. Review the current patch scope again.")
         if action == "start":
-            return self._start(project_id, options["mode"], options["phase"], confirmed["paths"])
+            if confirmed["run_inputs"]:
+                current = self.runs.inputs(project_id, native, options["phase"], confirmed["run_inputs"]["mode"])
+                if current["fingerprint"] != confirmed["run_inputs"]["fingerprint"]:
+                    raise ValueError("The estimate inputs changed. Refresh the estimate and review this run again.")
+                if options["mode"] != "estimate":
+                    matched, _ = self.runs.quote(project_id, native, options["phase"], options["mode"])
+                    if not matched["current"] or matched["job"]["id"] != confirmed["estimate"]["jobId"]:
+                        raise ValueError("The matching estimate changed. Review a new preview.")
+            return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"])
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
             return self.backend.guided_refresh(native, confirmed["paths"], options["sources"])
@@ -647,7 +688,7 @@ class Guided:
                 or inputs.status(sorted(self.supported_files(native)))["changed"]):
             raise ValueError("Source work changed after review. Playtest and record the current pass again.")
 
-    def _start(self, project_id, mode, phase, files):
+    def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None):
         _, native = self.record(project_id)
         self.pending_run(self.backend.workflows.state(native["id"]))
         self.inputs(native).prepare(files)
@@ -658,7 +699,10 @@ class Guided:
         if mode != "speakers":
             self.backend.workflows.update(native["id"], native["revision"], {"mode": mode})
         try:
-            return self.backend.guided_phase(native["id"], phase, files)
+            job = self.backend.guided_phase(native["id"], phase, files)
+            if run_inputs:
+                self.runs.remember(project_id, job, run_inputs, estimate)
+            return {**job, "logicalPhase": phase}
         finally:
             if mode == "estimate":
                 current = self.backend.workflows.projects[native["id"]]

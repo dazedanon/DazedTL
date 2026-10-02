@@ -184,3 +184,9 @@ main.editor-main.guided-main { padding: 0; }
 
 .guided-guidance-badge { color: var(--color-warning); white-space: normal; }
 .guided-custom-guidance, .guided-guidance-blockers { margin-top: var(--space-4); }
+
+.guided-saved-context { margin: var(--space-4) 0; }
+.guided-translation-phase { border-top: 1px solid var(--line); padding: var(--space-4) 0; }
+.guided-translation-phase h3 { margin: 0 0 var(--space-3); }
+.guided-phase-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+.guided-preview-paths { list-style: none; padding: 0; margin: var(--space-2) 0; }

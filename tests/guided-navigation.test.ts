@@ -15,5 +15,11 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   state.run!.mode = "translate"; state.run!.phase = "complete"; state.phase = "database";
   assert.equal(runPhase(state), "database");
   assert.equal(runStage(state), "translate");
+  state.step = "translate"; state.task = "dialogue";
+  assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "main-text" });
+  state.task = "variables";
+  assert.deepEqual(initialPosition(state, translation), { step: "advanced", task: "variables" });
+  state.run!.logicalPhase = "dialogue"; state.phase = "advanced";
+  assert.equal(runPhase(state), "dialogue");
   assert.deepEqual(stagesFor("ACE").at(-1)!.tasks.map((task) => task.id), ["package"]);
 });

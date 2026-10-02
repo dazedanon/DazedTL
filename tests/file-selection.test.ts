@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuidedFile } from "../app/src/api/contracts.ts";
-import { filterFiles, selectFile, selectMatching, sortFiles } from "../app/src/features/guided/selection.ts";
+import { filterFiles, selectFile, selectMatching, sortFiles, retainOtherScope } from "../app/src/features/guided/selection.ts";
 
 test("large filtered scopes retain hidden checks and modifier ranges use the whole matching list", () => {
   // Protect against losing a different phase's selected files, and against
@@ -24,6 +24,8 @@ test("large filtered scopes retain hidden checks and modifier ranges use the who
   assert.equal(range.selected.length, 481);
   assert.equal(range.anchor, "Map20.json");
   assert.equal(range.selected.includes("Actors.json"), false);
+  assert.deepEqual(retainOtherScope(["Actors.json", "Map1.json"], sorted.filter((file) => file.group === "dialogue"), ["Map2.json"]), ["Actors.json", "Map2.json"]);
+  assert.deepEqual(retainOtherScope(["Actors.json", "Map1.json"], sorted.filter((file) => file.group === "database"), []), ["Map1.json"]);
   const added = selectFile(["Actors.json", "Map1.json"], maps, "Map500.json", "add-range", "Map20.json");
   assert.equal(added.selected.length, 483);
   assert.equal(selectFile(added.selected, maps, "Map500.json", "toggle", added.anchor).selected.length, 482);

@@ -42,6 +42,9 @@ export interface Job {
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
   outputsAvailable?: boolean;
+  logicalPhase?: Phase;
+  scopeComplete?: boolean;
+  appliedOutputs?: string[];
   action?: string;
   result?: Record<string, unknown> | null;
   approval?: {
@@ -124,6 +127,9 @@ export interface GuidedState {
   activeJobId: string | null;
   phase: Phase;
   phaseFiles: string[];
+  estimates: Partial<Record<Phase, { job: Job | null; current: boolean }>>;
+  phaseRuns: Partial<Record<Phase, Job>>;
+  comparisons: { matches: number; unmatched: number; files: string[]; message: string };
   sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
   readiness: {
     outputs: string[];
@@ -139,6 +145,7 @@ export interface GuidedState {
   artifacts: ReleaseArtifact[];
   references: { id: string; title: string }[];
   provider: {
+    connection: string;
     model: string;
     defaultMode: RunMode;
     batchSupported: boolean;
@@ -324,6 +331,8 @@ export interface RequestPreview {
 }
 
 export interface Preview {
+  run?: { model: string; connection: string; mode: string } | null;
+  estimate?: { jobId: string; fingerprint: string; value: Record<string, number> } | null;
   package?: { included: number; excluded: number };
   additions?: string[];
   token: string;

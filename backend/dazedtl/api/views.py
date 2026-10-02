@@ -25,7 +25,8 @@ def job(value):
     if value is None:
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
-                          'progress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'approval', 'action', 'result', 'created', 'updated'))
+                          'progress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'approval', 'action', 'result', 'created', 'updated',
+                          'logicalPhase', 'scopeComplete', 'appliedOutputs'))
     result.setdefault('log', [])
     return result
 
@@ -61,6 +62,9 @@ def guided(value, project_id):
         'activeJobId': value['active'] or None,
         'phase': value['phase'],
         'phaseFiles': value['phase_files'],
+        'estimates': {phase: {'job': job(quote['job']), 'current': quote['current']} for phase, quote in value['estimates'].items()},
+        'phaseRuns': {phase: job(run) for phase, run in value['phase_runs'].items()},
+        'comparisons': value['comparisons'],
         'sourceStatus': value['source_status'],
         'readiness': value['readiness'],
         'documents': documents(value['documents']),
@@ -70,6 +74,7 @@ def guided(value, project_id):
         'references': [pick(item, ('id', 'title')) for item in value.get('references', [])],
         'provider': {
             'model': value['provider']['model'],
+            'connection': value['provider']['connection'],
             'defaultMode': value['provider']['default_mode'],
             'batchSupported': value['provider']['batch_supported'],
             'ready': value['provider']['credential_ready'],
@@ -88,7 +93,7 @@ def settings(value):
 
 
 def preview(value):
-    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions', 'package'))
+    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions', 'package', 'estimate', 'run'))
 
 
 def error(exc):

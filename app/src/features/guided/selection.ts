@@ -21,6 +21,12 @@ export function filterFiles(files: GuidedFile[], group: FileGroup, query: string
   });
 }
 
+/** Change one phase's selection without replacing the other phase's checks. */
+export function retainOtherScope(selected: readonly string[], files: readonly GuidedFile[], names: readonly string[]) {
+  const scope = new Set(files.map((file) => file.name));
+  return [...selected.filter((name) => !scope.has(name)), ...names.filter((name) => scope.has(name))];
+}
+
 /** Checkmarks are the scope. Focus is never a second, highlight-only selection. */
 export function selectFile(
   selected: readonly string[], visible: readonly string[], target: string,
