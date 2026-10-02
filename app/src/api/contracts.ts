@@ -52,7 +52,7 @@ export interface Job {
 }
 export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
-export type GuidedStep = "prepare" | "context" | "translate" | "apply" | "layout" | "review";
+export type GuidedStep = "prepare" | "context" | "translate" | "advanced" | "apply" | "layout" | "review";
 export type EngineValue = string | number | boolean | string[];
 export interface GuidedOptions {
   selected: string[];
@@ -70,7 +70,16 @@ export interface GuidedForm {
   original: string;
   untranslated: boolean;
   only_overflow: boolean;
+  release: {
+    kind: "game" | "patch";
+    name: string;
+    directory: string;
+    tools: PlaytestOptions;
+  };
 }
+export interface PlaytestOptions { hotkey: string; forgeHotkey: string; uiScale: string; editorCmd: string }
+export interface ReleaseArtifact { id: string; kind: "game" | "patch"; path: string; folder: string; available: boolean; size: number }
+export interface GuidedFile { name: string; title?: string; default?: boolean; size?: number; group: "database" | "dialogue" }
 export interface GuidedState {
   projectId: string;
   source: string;
@@ -80,11 +89,12 @@ export interface GuidedState {
   hasPlugins: boolean;
   aceAvailable: boolean;
   step: GuidedStep;
+  task: string | null;
   form: GuidedForm;
   preferences: GuidedPreferences;
   optionsDraft: GuidedPreferences | null;
   engineSchema: { key: string; label: string; type: string; choices?: string[]; min?: number; max?: number }[];
-  files: { name: string; default?: boolean; size?: number; group: "database" | "dialogue" }[];
+  files: GuidedFile[];
   selection: string[];
   importedFiles: string[];
   collectionError: string;
@@ -105,6 +115,9 @@ export interface GuidedState {
   };
   documents: Documents;
   drafts: Documents;
+  tools: { inspector: { installed: boolean; present: boolean; message: string }; forge: { installed: boolean; present: boolean; message: string } } | null;
+  artifacts: ReleaseArtifact[];
+  references: { id: string; title: string }[];
   provider: {
     model: string;
     defaultMode: RunMode;
@@ -290,6 +303,7 @@ export interface RequestPreview {
 }
 
 export interface Preview {
+  package?: { included: number; excluded: number };
   additions?: string[];
   token: string;
   label: string;
@@ -566,7 +580,7 @@ export interface RpcContract {
     response: Job;
   };
   guided_position: {
-    request: { project_id: string; step: GuidedStep };
+    request: { project_id: string; step: GuidedStep; task?: string };
     response: Saved;
   };
   guided_form: {

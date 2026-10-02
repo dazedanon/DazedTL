@@ -17,6 +17,11 @@ The shell composes features; features use shared services without importing each
 Shared UI components do not import features or call the backend.
 The renderer is sandboxed and has no direct filesystem, process, or network access.
 The adapter retains existing engine behavior while capabilities are extracted incrementally.
+The Qt GUI in the sibling `DazedMTLTool` checkout is the reference for guided workflow
+ordering and behavior. The separate frozen `DazedMTLTool-engine` checkout supplies runtime
+compatibility code only; its retired Electron interface is not a UX reference.
+The default engine location is shared by the launcher and Electron backend through
+[engine-source.cjs](../app/electron/engine-source.cjs); see README for snapshot recovery.
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
@@ -25,10 +30,13 @@ Their controller exposes specific engine actions through one-use, project-bound 
 selection, settings and runtime-scope changes invalidate the relevant preview. The preserved runner
 continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
 App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
-Guided review records the user's attestation against current runtime files (and Ace's JSON inputs),
-separately from Len's report-based QA evidence. Neither workflow's review completes the other's QA.
-The project helper cannot create a Guided user-review attestation or invoke Guided packaging;
-those operations are reachable only through the app's consumed Guided preview.
+Guided release freezes the current runtime scope and original-source bindings through an app-only,
+one-use preview. Patch packaging saves its checkpoint and workspace restore point as part of the
+same operation. Clean game packaging reuses the Qt packager through the compatibility worker,
+verifies the source inventory and destination, and publishes a verified archive atomically.
+Neither operation manufactures a user-review record or completes Len's report-based QA.
+The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
+Legacy Guided review receipts remain readable for existing records.
 
 ## UI and state decisions
 
@@ -58,15 +66,25 @@ Formatting, GameUpdate creation, initial source backup, and local estimation con
 the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.
 
-Translation has Setup, Translate, and Test & release areas. Navigation never completes a task.
-Completed setup is summarized; recent activity holds saved history, while active work and required
+Translation follows the working Qt GUI's task dependencies through the tasks in
+[workflow.ts](../app/src/features/guided/workflow.ts). The app sidebar stays global; the local
+task rail becomes a stage strip when the workspace is narrow. One task occupies the editing
+body and its action footer stays outside the scroll region. Context preparation exposes name collection,
+the maintained setup task, guidance review, speaker recommendations and measured widths before
+the named database, dialogue and variable-cache actions. The comparison cache is distinct from
+auditing optional variable assignments, scripts and plugin commands. Advanced text starts with
+that audit and keeps each dependent range/filter beside its source; a phase with no enabled
+sources is skipped, and code 122 requires explicit audited IDs rather than a legacy fallback.
+New guided projects clear inherited advanced targets; existing projects and frozen runs retain
+their choices. Applying and testing a small scope is available before expanding translation.
+Navigation never completes a task. Prepared originals are summarized; recent activity holds saved history, while active work and required
 approval remain visible across areas. Assistant task controls describe the expected return and
 report only copied instructions or saved findings, never an external process inferred from a click.
-Output availability, application to runtime files, current user review, and checkpoint readiness
-are separate observations. Execution still rechecks source, review, and ownership evidence.
+Output availability, application to runtime files, assistant QA findings, and package availability
+are separate observations. Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been
-applied. New user-review records also bind the profile's working-source index and original blobs;
-refreshing or expanding a source pass invalidates that release evidence without rewriting old runs.
+applied. Release plans bind the profile's working-source index and original blobs;
+refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
 The selected phase files bind each new run and each application preview. Working copies are
 prepared automatically without removing other phase work. The compatibility launcher filters
@@ -78,7 +96,7 @@ Source changes block new work until an explicit refresh archives affected workin
 and variable cache in profile source-history. Existing runs keep their original recovery records.
 Runs retired by that refresh cannot merge older results into the new pass; their frozen outputs
 remain inspectable and exportable under the original project owner.
-The former manual screen remains a compatibility route into Translate, preserving saved project identity.
+The former manual screen remains a compatibility route into Translation, preserving saved project identity.
 
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
 backend job references, phase selections and recovery data when adding workflow screens.

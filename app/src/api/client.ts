@@ -120,7 +120,7 @@ export const api = {
   guided: {
     inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
     form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
-    position: (project_id: string, step: GuidedStep) => request("guided_position", { project_id, step }),
+    position: (project_id: string, step: GuidedStep, task?: string) => request("guided_position", { project_id, step, task }),
     draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
     save: (project_id: string, revision: number, values: GuidedOptions) => request("guided_save_options", { project_id, revision, values }),
     skill: (project_id: string, name: string) => request("guided_skill", { project_id, name }),

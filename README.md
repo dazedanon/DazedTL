@@ -4,9 +4,13 @@ An Electron application migrating the existing DazedTL translation engine into a
 
 ## Current scope
 
-RPG Maker MV/MZ has a **Translation** workspace with **Setup**, **Translate**, and **Test & release**.
-Choose files once; the app prepares working copies and carries saved phase results forward.
-Each run and application review uses the selected scope. Completed operations are in **Recent activity**.
+RPG Maker MV/MZ has a **Translation** workspace following the working Qt workflow:
+**Prepare → Names & context → Translate → Extra text → Apply & test → Release**.
+Each stage opens a focused task. The app sidebar stays in place; workflow navigation becomes
+compact in smaller windows. File selection supports search, groups, map names when available,
+and keyboard ranges across its virtualized list. Filtering preserves checked files.
+The app prepares working copies and carries saved phase results forward. Each run and
+application review uses the selected scope. Saved operations remain in **Activity**.
 Translation offers Batch when supported and Live API;
 cost estimation is a separate action. Ace adds archive extraction, Sinflower RV2JSON conversion,
 and native repacking around those same JSON phases. Its bundled executables require Windows
@@ -23,7 +27,12 @@ application distribution is pending. Guided image editing remains a separate ass
 
 ## Development launch
 
-Keep this checkout beside `DazedMTLTool`, which supplies engine source during migration.
+Keep this checkout beside `DazedMTLTool-engine`, the frozen Python compatibility source
+used during migration. The local snapshot is `b91bede1` on
+`codex/archive-electron-20261001` in the DazedMTLTool Git repository. Recreate it with
+`git -C ../DazedMTLTool worktree add --detach ../DazedMTLTool-engine b91bede1` if needed.
+The sibling `DazedMTLTool` checkout is restored to Qt and is the workflow reference;
+it does not supply the new app's runtime helpers.
 Use the Node and Python versions in [.node-version](.node-version) and [.python-version](.python-version), and the npm version in [app/package.json](app/package.json).
 Setup installs locked dependencies into this checkout's own `app/node_modules` and `.venv`.
 Launching, building, and testing also accept newer Node releases within the pinned major version.
@@ -42,7 +51,7 @@ Projects, credentials, and runs live in its workspace outside this checkout.
 
 | Optional environment variable | Purpose |
 | --- | --- |
-| `DAZEDTL_LEGACY_ROOT` | Preserved DazedMTLTool checkout |
+| `DAZEDTL_LEGACY_ROOT` | Override the frozen compatibility engine checkout |
 | `DAZEDTL_PYTHON` | Python executable with backend dependencies |
 | `DAZEDTL_NEXT_PROFILE` | Electron profile location |
 | `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
@@ -60,24 +69,33 @@ Existing app-local settings are retained in backups during migration; connection
 
 **Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.
 Local diagnostic logs live under the profile's `diagnostics/` folder, capped at three 64 KiB files per process; credentials, request bodies, game text, and raw stderr are excluded.
-Project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 3.
+Project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 4.
 To restore a project backup, close the app, retain the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
 
 See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.md) for contribution rules, and the [migration record](docs/migration.md) for historical provenance.
 
 ## Translate a game
 
-Open an MV/MZ or Ace game and choose **Guided workflow**. Preserve the original before
-preparing game files, then review the runtime file list and game version for Git setup.
-Import the database and a small map selection, prepare and save context, and translate
-database names before dialogue. Batch pauses for cost approval before submission.
-Advanced text uses the existing variable-cache and audited script/plugin phases.
+Open an MV/MZ or Ace game and choose **Translation**. Preserve the original, prepare
+runtime files, then review the file list and game version for Git setup.
+In **Names & context**, collect names, run the setup assistant task, and review/save the
+glossary, quirks, game instructions, speaker recommendations, and measured widths.
+In **Translate**, choose a database and small map scope, translate database names before
+dialogue, and build the variable comparison cache before advanced variable translation.
+Apply and playtest an early scene before expanding. Batch pauses for cost approval before submission.
+**Extra text** starts with the existing advanced-text audit. Enable only its confirmed
+codes, variable IDs, plugin handlers, and script patterns; skip the phase if none are needed.
 
 Review accumulated outputs before applying them. Rewrap requires a completed scan with
-the same files and settings. Use the scoped QA/playtest tasks as needed, then record your
-review of the current scope, checkpoint it, and build a local patch ZIP. Review records
-bind to exact file bytes; later changes require another review. This records the user's
-review and playtest, not an automated claim that the game has passed QA.
+the same files and settings. QA findings stay in **Apply & test**. **Release** installs or
+updates TL Inspector and Forge for MV/MZ, applies their settings, and builds a clean game
+or local patch ZIP. Packaging has no manual-review checklist. A patch scope preview is
+followed by its automatic local checkpoint and workspace backup; a clean game ZIP leaves
+the working game untouched. Destinations stay outside the game, app workspace and engine.
+Existing archives require replacement approval. Package contents and the finished archive
+are checked before the app offers its folder. These checks do not claim that the game passed QA.
+Configured public GameUpdate metadata retains the engine's clean-commit and upstream checks;
+the app does not publish or push automatically.
 
 To use **Len's method**, select a translation mode, set the image scope and project instructions,
 then copy the starting prompt into a coding assistant with access to the game and engine checkout.
@@ -104,7 +122,7 @@ Working records and guidance stay in the game's ignored .dazedtl folder; Git tra
 Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
 The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
 Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
-**Translation → Setup** shows the exact saved location and an **Open backup folder** action.
+**Translation → Prepare** shows the exact saved location and an **Open backup folder** action.
 If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
 replacement saves the game's current files; it does not recover the deleted original.
 After a successful fresh source backup, references to deleted workspace backups and deleted engine

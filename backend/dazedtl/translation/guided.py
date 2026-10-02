@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from pathlib import Path
+import re
 import uuid
 
 from dazedtl.storage import write_json
@@ -11,17 +12,22 @@ from .guided_inputs import GuidedInputs
 from .files import digest
 from . import backups
 
-STEPS = {"prepare", "context", "translate", "apply", "layout", "review"}
+STEPS = {"prepare", "context", "translate", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
+ADVANCED_CODES = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"}
 NATIVE_ACTIONS = {
     "import", "format_data", "format_plugins", "gameupdate", "export_selected",
     "ace_decrypt", "ace_extract", "ace_pack", "rewrap_preview", "rewrap_apply",
-    "qa_prepare", "qa_status", "playtest_install", "playtest_status",
+    "qa_prepare", "qa_status", "playtest_install", "playtest_status", "playtest_apply",
+    "inspector_install", "inspector_remove", "forge_install", "forge_remove", "editors", "release",
+    "reference_add", "reference_pair", "reference_remove", "reference_build", "images_status",
 }
+TOOL_ACTIONS = {"playtest_install", "playtest_apply", "inspector_install", "inspector_remove", "forge_install", "forge_remove"}
 SHARED_ACTIONS = {
     "backup_source": "Preserve original game", "git_setup": "Set up Git versioning",
     "checkpoint": "Save reviewed patch in Git", "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
+    "release_patch": "Build local patch ZIP",
     "refresh_sources": "Review source refresh",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
@@ -80,7 +86,14 @@ class Guided:
             raise ValueError("Guided translation supports RPG Maker MV/MZ and VX Ace. Use Len's method for other engines.")
         self.settings.prepare_engine()
         pending = self.translation.drafts(project_id)["documents"]
+        existing = set(self.backend.workflows.projects)
         native = self.backend.workflows.open(project["source"])["project"]
+        if native["id"] not in existing:
+            # Another game's optional text targets are not an audit of this game.
+            # Retain existing project choices and all frozen runs when reopening.
+            options = {**native["engine_options"], **dict.fromkeys(ADVANCED_CODES, False),
+                       "CODE122_VAR_RANGES": "", "ENABLED_PLUGINS_357": [], "ENABLED_PATTERNS_355655": []}
+            native = self.backend.workflows.update(native["id"], native["revision"], {"engine_options": options})["project"]
         if pending:
             self.backend.workflows.draft(native["id"], {"documents": pending})
         # Persist registry ownership before publishing it in memory.
@@ -92,21 +105,72 @@ class Guided:
         self.projects.get(project_id)
         return self.translation.workspace / "translation/projects" / project_id / ("guided-" + name + ".json")
 
-    def position(self, project_id, step):
+    def position(self, project_id, step, task=None):
         self.record(project_id)
         if step not in STEPS:
             raise ValueError("Choose a guided step.")
-        write_json(self.path(project_id, "position"), {"step": step})
+        if task is not None and (not isinstance(task, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,59}", task)):
+            raise ValueError("Choose a guided task.")
+        write_json(self.path(project_id, "position"), {"step": step, "task": task})
         return {"saved": True}
 
     def form(self, project_id, value):
         self.record(project_id)
-        if (not isinstance(value, dict) or set(value) != {"version", "original", "untranslated", "only_overflow"}
+        value = self.form_value(project_id, value)
+        write_json(self.path(project_id, "form"), value)
+        return {"saved": True}
+
+    def form_value(self, project_id, value):
+        if (not isinstance(value, dict) or set(value) not in ({"version", "original", "untranslated", "only_overflow"},
+                                                              {"version", "original", "untranslated", "only_overflow", "release"})
                 or any(not isinstance(value[key], str) or len(value[key]) > 10000 or "\0" in value[key] for key in ("version", "original"))
                 or any(type(value[key]) is not bool for key in ("untranslated", "only_overflow"))):
             raise ValueError("Invalid guided form values.")
-        write_json(self.path(project_id, "form"), value)
-        return {"saved": True}
+        return {**value, "release": self.validate_release_form(value.get("release", self.release_defaults(project_id)))}
+
+    def release_defaults(self, project_id):
+        source = Path(self.projects.get(project_id)["source"])
+        return {"kind": "game", "name": source.name + "-public.zip", "directory": str(source.parent),
+                "tools": {"hotkey": "F9", "forgeHotkey": "F10", "uiScale": "auto", "editorCmd": "auto"}}
+
+    @staticmethod
+    def validate_release_form(value):
+        if (not isinstance(value, dict) or set(value) != {"kind", "name", "directory", "tools"}
+                or not isinstance(value["kind"], str) or value["kind"] not in {"game", "patch"}
+                or any(not isinstance(value[key], str) or len(value[key]) > 10000 or "\0" in value[key] for key in ("name", "directory"))):
+            raise ValueError("Invalid release options.")
+        tools = value["tools"]
+        if (not isinstance(tools, dict) or set(tools) != {"hotkey", "forgeHotkey", "uiScale", "editorCmd"}
+                or any(not isinstance(item, str) or len(item) > 4096 or any(char in item for char in ("\0", "\r", "\n")) for item in tools.values())
+                or tools["uiScale"] not in {"auto", "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5"}):
+            raise ValueError("Choose valid playtest tool settings.")
+        return deepcopy(value)
+
+    def saved_form(self, project_id):
+        path = self.path(project_id, "form")
+        saved = read_json(path) if path.exists() else {}
+        if not isinstance(saved, dict):
+            raise ValueError("The saved Guided form is invalid. Its original file was retained.")
+        return self.form_value(project_id, {"version": "", "original": "", "untranslated": False, "only_overflow": True, **saved})
+
+    def release_artifacts(self, project_id, jobs):
+        from .release import available
+        values = [(job["id"], job.get("result") or {}) for job in jobs if job["action"] == "release" and job["status"] == "complete"]
+        state = lifecycle(self.translation.workspace, project_id)
+        if state.get("guided_release"):
+            values.insert(0, ("patch", state["guided_release"]))
+        if state.get("delivery") and not any(value.get("path") == state["delivery"].get("path") for _, value in values):
+            from .release import stamp
+            legacy = {**state["delivery"], "kind": "patch"}
+            try:
+                legacy["stamp"] = stamp(legacy["path"])
+                legacy["size"] = legacy["stamp"][2]
+            except (OSError, ValueError, KeyError):
+                pass
+            values.append(("previous-patch", legacy))
+        return [{"id": identity, "kind": value.get("kind", "game"), "path": value["path"],
+                 "folder": str(Path(value["path"]).parent), "size": value.get("size", 0), "available": available(value)}
+                for identity, value in values if isinstance(value.get("path"), str)][:10]
 
     def preferences(self, native):
         mode = native["mode"] if native["mode"] in {"batch", "translate"} else "batch"
@@ -257,6 +321,10 @@ class Guided:
         database = set(self.backend.phase_files(native, "database"))
         for row in native["files"]:
             row["group"] = "database" if row["name"] in database else "dialogue"
+        titles = self.backend.guided_titles(native)
+        for row in native["files"]:
+            if titles.get(row["name"]):
+                row["title"] = titles[row["name"]]
         inputs = self.inputs(native)
         source_status = inputs.status([row["name"] for row in native["files"]], self.observed_digest)
         source_status["retired"] = inputs.record().get("retired_runs", [])
@@ -267,11 +335,13 @@ class Guided:
             self.backend.workflows.save(self.backend.workflows.projects[native["id"]])
         position = self.path(project_id, "position")
         draft = self.path(project_id, "draft")
-        form = self.path(project_id, "form")
+        saved_position = read_json(position) if position.exists() else {}
         return {
-            **value, "step": read_json(position)["step"] if position.exists() else "prepare",
+            **value, "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
-            "form": read_json(form) if form.exists() else {"version": "", "original": "", "untranslated": False, "only_overflow": True},
+            "form": self.saved_form(project_id),
+            "tools": self.backend.guided_tools(native),
+            "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
             "documents": self.backend.workflows.documents(native["id"]), "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
@@ -296,6 +366,17 @@ class Guided:
         state = lifecycle(self.translation.workspace, project_id)
         require_source_backup(project["source"], state)
         return state
+
+    def release_ready(self, project_id, native, value):
+        status = self.translation.ready(project_id)
+        self.pending_run(value)
+        source_status = self.inputs(native).status(sorted(self.supported_files(native)))
+        if source_status["changed"]:
+            raise ValueError("Review changed sources before packaging this pass.")
+        readiness = self.readiness(project_id, native, value, source_status)
+        if set(readiness["outputs"]).intersection(native["selected"]) - set(readiness["applied"]):
+            raise ValueError("Apply the selected saved outputs to the game before packaging them.")
+        return status
 
     def clean(self, project_id):
         self.translation.clean_drafts(project_id)
@@ -322,12 +403,16 @@ class Guided:
         value = self.backend.workflows.state(native["id"])
         if action != "backup_source":
             self.source_preserved(project_id)
-        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"}:
+        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
         if action.startswith("ace_") and (native["engine"] != "ACE" or not self.backend.ace_available()):
             raise ValueError("Ace preparation requires Windows or Wine and the bundled Ace tools.")
         if action == "format_plugins" and native["engine"] == "ACE":
             raise ValueError("Ace does not use plugins.js.")
+        if action in TOOL_ACTIONS | {"playtest_status"} and native["engine"] != "MVMZ":
+            raise ValueError("TL Inspector and Forge support RPG Maker MV/MZ games.")
+        if action in {"release", "release_patch"}:
+            release_status = self.release_ready(project_id, native, value)
         paths = []
         expected = None
         manifest = None
@@ -339,6 +424,12 @@ class Guided:
             phase = "speakers" if mode == "speakers" else project["phase"]
             if phase == "speakers" and mode != "speakers":
                 raise ValueError("Choose a translation phase first.")
+            if phase == "advanced":
+                settings = native["engine_options"]
+                if not any(settings.get(key) is True for key in ADVANCED_CODES):
+                    raise ValueError("Audit advanced text and enable only confirmed player-visible sources, or skip this phase.")
+                if settings.get("CODE122") is True and not settings.get("CODE122_VAR_RANGES", "").strip():
+                    raise ValueError("Enter the variable IDs confirmed by the audit before translating variables (122).")
             paths = [name for name in self.backend.phase_files(native, phase) if name in native["selected"]]
             if not paths:
                 raise ValueError("Select game files belonging to this phase first.")
@@ -350,7 +441,7 @@ class Guided:
             label = {"batch": "Prepare Batch translation", "translate": "Start Live API translation", "estimate": "Estimate selected phase", "speakers": "Collect speaker names"}[mode]
         elif action in SHARED_ACTIONS:
             label = SHARED_ACTIONS[action]
-            allowed = {"version", "original", "untranslated"} if action == "git_setup" else {"reviewed", "playtested"} if action == "guided_review" else set()
+            allowed = {"version", "original", "untranslated"} if action == "git_setup" else {"reviewed", "playtested"} if action == "guided_review" else {"output"} if action == "release_patch" else set()
             if set(options) - allowed:
                 raise ValueError("Unknown guided action option.")
             if action == "backup_source":
@@ -364,10 +455,15 @@ class Guided:
                     raise ValueError("Select supported files to refresh.")
                 paths = files
                 options = {"sources": self.inputs(native).sources(paths, self.inputs(native).record()["inputs"])}
-            if action in {"git_setup", "checkpoint", "guided_review"}:
+            if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
                 paths = self.backend.guided_runtime_files(project["source"])
                 expected = evidence(project["source"], paths)
                 manifest = self.patch_manifest(project_id, paths, action)
+            if action == "release_patch":
+                from .release import destination, output_hash, git_identity
+                output = destination(project["source"], self.translation.workspace, self.backend.source, options.get("output"))
+                options = {"output": str(output), "output_hash": output_hash(output),
+                           "source_inputs_sha256": digest(self.inputs(native).record()), "git": git_identity(release_status)}
             if action == "guided_review" and (options.get("reviewed") is not True or options.get("playtested") is not True):
                 raise ValueError("Review the translated scope and playtest it before recording release readiness.")
             if action == "guided_review":
@@ -390,23 +486,36 @@ class Guided:
                     raise ValueError("Review changed sources and refresh their working copies before applying older outputs.")
                 self.inputs(native).prepare(paths)
                 options = {"files": paths}
+            if action == "release":
+                from .release import destination
+                if set(options) != {"output"}:
+                    raise ValueError("Choose the release destination.")
+                options["output"] = str(destination(project["source"], self.translation.workspace, self.backend.source, options["output"]))
             result = (self.backend.guided_export_preview(native["id"], paths) if action == "export_selected"
                       else self.backend.workflows.preview(native["id"], action, options))
             token = result["token"]
+            if action in TOOL_ACTIONS:
+                configured = self.saved_form(project_id)["release"]["tools"]
+                if not configured["hotkey"].strip() or not configured["forgeHotkey"].strip():
+                    raise ValueError("Choose hotkeys for the playtest tools.")
+                self.backend.guided_configure_tools(token, configured)
+            if action == "release":
+                result.update(self.backend.guided_release_preview(token))
             if action == "rewrap_apply":
                 result["rewrap"] = self.backend.guided_rewrap_review(native["id"], token)
             self.confirmations = {token: {"project_id": project_id, "action": action, "native": True,
                 "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
             # Routine preparation uses the same one-use plan and execution checks,
             # without asking the user to confirm the button they just clicked.
-            return {**result, "action": action, "paths": paths or result["options"].get("files", []),
-                    "confirmation": result["confirmation"] and action not in {"format_data", "format_plugins", "gameupdate"}}
+            return {**result, "action": action, "paths": paths or result.get("paths") or result["options"].get("files", []),
+                    "confirmation": (bool(result.get("overwrite")) if action == "release" else result["confirmation"] and action not in {
+                        "format_data", "format_plugins", "gameupdate", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
         token = uuid.uuid4().hex
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,
             "guard": self.backend.guided_guard(native, self.backend.workflows.folder(native["id"])),
             "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
-        destination = str(backups.store_path(project["source"])) if action == "backup_source" else project["source"]
+        destination = str(backups.store_path(project["source"])) if action == "backup_source" else options["output"] if action == "release_patch" else project["source"]
         return {"token": token, "action": action, "label": label, "destination": destination,
                 "files": len(paths), "paths": paths, "options": options,
                 "confirmation": (bool(lifecycle(self.translation.workspace, project_id).get("source_backup")) if action == "backup_source"
@@ -424,8 +533,10 @@ class Guided:
         action = confirmed["action"]
         if action != "backup_source":
             self.source_preserved(project_id)
-        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"}:
+        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
+        if action in {"release", "release_patch"}:
+            release_status = self.release_ready(project_id, native, self.backend.workflows.state(native["id"]))
         if confirmed.get("native"):
             if (confirmed["revision"] != native["revision"] or confirmed["phase"] != project["phase"]
                     or confirmed["settings_revision"] != self.settings.describe()["revision"]):
@@ -440,16 +551,36 @@ class Guided:
             if self.backend.guided_runtime_files(project["source"]) != confirmed["paths"]:
                 raise ValueError("The runtime file list changed. Review the complete patch again.")
         options = confirmed["options"]
+        if action == "release_patch":
+            from .release import git_identity
+            if git_identity(release_status) != options["git"]:
+                raise ValueError("Version tracking changed. Review the current patch scope again.")
         if action == "start":
             return self._start(project_id, options["mode"], options["phase"], confirmed["paths"])
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
             return self.backend.guided_refresh(native, confirmed["paths"], options["sources"])
-        if action in {"git_setup", "checkpoint", "guided_review"}:
+        if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
             if confirmed["manifest"] != self.patch_manifest(project_id, confirmed["paths"], action):
                 raise ValueError("The original or runtime scope changed. Review the patch again.")
             write_json(project_path(project["source"], MANIFEST, exists=False), confirmed["manifest"])
             options = {**options, "manifest": MANIFEST}
+        if action == "release_patch":
+            from .release import output_hash
+            inputs = self.inputs(native)
+            current = inputs.record()
+            if digest(current) != options["source_inputs_sha256"] or output_hash(options["output"]) != options["output_hash"]:
+                raise ValueError("The source pass or release destination changed. Review a new package preview.")
+            if not inputs.index.exists():
+                write_json(inputs.index, current)
+            payload = {"version": 1, "project_id": project_id, "source": project["source"],
+                       "manifest": MANIFEST, "evidence": evidence(project["source"], [MANIFEST, *confirmed["paths"], *confirmed["manifest"].get("inputs", [])]),
+                       "source_inputs": inputs.index.relative_to(self.translation.workspace).as_posix(),
+                       "source_inputs_sha256": digest(current), "git": options["git"], "output": options["output"], "output_hash": options["output_hash"]}
+            path = self.path(project_id, "release-" + uuid.uuid4().hex)
+            write_json(path, payload)
+            return self.translation.guided_operation(project_id, "release_patch", {
+                "plan": path.relative_to(self.translation.workspace).as_posix(), "sha256": digest(payload)})
         if action == "guided_review":
             inputs = self.inputs(native)
             current = inputs.record()
@@ -491,7 +622,7 @@ class Guided:
     def skill(self, project_id, name):
         self.clean(project_id)
         project, native = self.record(project_id)
-        if name not in {"setup", "advanced", "wrap", "plugins", "walkthrough"}:
+        if name not in {"setup", "advanced", "wrap", "plugins", "walkthrough", "investigation"}:
             raise ValueError("Choose a task-specific helper.")
         text = self.backend.workflows.skill(native["id"], name)
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}

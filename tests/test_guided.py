@@ -63,6 +63,24 @@ class GuidedTests(unittest.TestCase):
     def preview(self):
         return self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
 
+    def test_existing_forms_gain_release_defaults_without_rewriting_user_values(self):
+        previous = {'version': '1.00', 'original': '/original', 'untranslated': False, 'only_overflow': False}
+        path = self.guided.path(self.identity, 'form')
+        write_json(path, previous)
+        raw = path.read_bytes()
+        value = self.guided.saved_form(self.identity)
+        self.assertEqual({key: value[key] for key in previous}, previous)
+        self.assertEqual(value['release']['kind'], 'game')
+        self.assertEqual(path.read_bytes(), raw)
+        value['release']['tools']['forgeHotkey'] = 'F8'
+        self.guided.form(self.identity, value)
+        self.assertEqual(self.guided.saved_form(self.identity), value)
+        write_json(path, {**value, 'release': None})
+        invalid = path.read_bytes()
+        with self.assertRaises(ValueError):
+            self.guided.saved_form(self.identity)
+        self.assertEqual(path.read_bytes(), invalid)
+
     def test_submission_preview_rejects_other_owner_changed_inputs_and_repeated_use(self):
         preview = self.preview()
         self.assertTrue(preview['confirmation'])
@@ -130,7 +148,9 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.preview = lambda _owner, action, options: {
             'token': action + '-token', 'options': options, 'confirmation': True}
         self.backend.workflows.execute = Mock(return_value={'id': 'native-operation'})
-        for action in ('format_data', 'format_plugins', 'gameupdate'):
+        self.backend.guided_configure_tools = Mock()
+        immediate = ('format_data', 'format_plugins', 'gameupdate', 'playtest_install', 'inspector_install', 'forge_install', 'playtest_apply')
+        for action in immediate:
             with self.subTest(action=action):
                 preview = self.guided.preview(self.identity, action)
                 self.assertFalse(preview['confirmation'])
@@ -138,18 +158,19 @@ class GuidedTests(unittest.TestCase):
                 self.backend.workflows.execute.assert_called_with(preview['token'])
                 with self.assertRaises(ValueError):
                     self.guided.execute(self.identity, preview['token'])
-        self.assertEqual(self.backend.workflows.execute.call_count, 3)
+        self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
+        self.backend.guided_configure_tools.assert_called_with('playtest_apply-token', self.guided.release_defaults(self.identity)['tools'])
         preview = self.guided.preview(self.identity, 'format_data')
         self.settings_revision += 1
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview['token'])
-        self.assertEqual(self.backend.workflows.execute.call_count, 3)
-        self.assertTrue(self.guided.preview(self.identity, 'playtest_install')['confirmation'])
+        self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
+        self.assertTrue(self.guided.preview(self.identity, 'inspector_remove')['confirmation'])
         preview = self.guided.preview(self.identity, 'format_data')
         shutil.rmtree(self.source / '.dazedtl')
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview['token'])
-        self.assertEqual(self.backend.workflows.execute.call_count, 3)
+        self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
 
     def test_an_estimate_cannot_replace_an_interrupted_paid_run_reference(self):
         self.pending = {'id': 'provider-run', 'mode': 'batch', 'status': 'interrupted'}
@@ -158,6 +179,49 @@ class GuidedTests(unittest.TestCase):
                 self.guided.preview(self.identity, 'start', options={'mode': mode})
         self.assertEqual(self.pending['id'], 'provider-run')
         self.assertEqual(self.started, [])
+
+    def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
+        # An empty selection wastes paid work; a blank 122 range silently uses
+        # the engine's legacy min/max IDs, which may belong to another game.
+        self.projects.get(self.identity)['phase'] = 'advanced'
+        for options in ({}, {'CODE122': True}, {'CODE122': True, 'CODE122_VAR_RANGES': ' '}):
+            self.native['engine_options'] = options
+            for mode in ('batch', 'translate', 'estimate'):
+                with self.subTest(options=options, mode=mode), self.assertRaises(ValueError):
+                    self.guided.preview(self.identity, 'start', options={'mode': mode})
+        self.assertEqual(self.started, [])
+        for options in ({'CODE122': True, 'CODE122_VAR_RANGES': '5,10-18,42'}, {'CODE357': True}):
+            self.native['engine_options'] = options
+            preview = self.preview()
+            self.guided.execute(self.identity, preview['token'])
+        self.assertEqual(self.started, [('native', 'advanced', True)] * 2)
+
+    def test_new_games_do_not_inherit_another_games_advanced_targets(self):
+        self.record.pop('backend_id')
+        self.backend.workflows.projects.clear()
+        self.native['engine_options'] = {'CODE122': True, 'CODE357': True, 'CODE122_VAR_RANGES': '17,26',
+            'ENABLED_PLUGINS_357': ['TextPicture'], 'ENABLED_PATTERNS_355655': ['gameVariables.setValue'], 'FIXTEXTWRAP': True}
+        self.translation.drafts = lambda _: {'documents': {}}
+        self.backend.describe = lambda source: {'source': source, 'engine': 'MVMZ'}
+        def open_workflow(_source):
+            self.backend.workflows.projects['native'] = self.native
+            return {'project': self.native}
+        self.backend.workflows.open = open_workflow
+        self.guided.open(self.identity)
+        options = self.native['engine_options']
+        self.assertFalse(options['CODE122'])
+        self.assertFalse(options['CODE357'])
+        self.assertEqual(options['CODE122_VAR_RANGES'], '')
+        self.assertEqual(options['ENABLED_PLUGINS_357'], [])
+        self.assertEqual(options['ENABLED_PATTERNS_355655'], [])
+        self.assertTrue(options['FIXTEXTWRAP'])
+        # Reopening a game retains its own reviewed choices and saved run.
+        options.update(CODE122=True, CODE122_VAR_RANGES='5,10-18')
+        self.native['manual_job'] = 'existing-run'
+        self.guided.open(self.identity)
+        self.assertTrue(self.native['engine_options']['CODE122'])
+        self.assertEqual(self.native['engine_options']['CODE122_VAR_RANGES'], '5,10-18')
+        self.assertEqual(self.native['manual_job'], 'existing-run')
 
     def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
         with self.assertRaises(ValueError):

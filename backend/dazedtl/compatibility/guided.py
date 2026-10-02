@@ -5,9 +5,74 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
-from dazedtl.translation.files import digest, read_json
+from dazedtl.translation.files import digest, read_json, project_path
 from dazedtl.storage import write_json
+
+
+def file_titles(native):
+    """Optional map names enrich selection without changing translation inputs."""
+    path = Path(native["data"]) / "MapInfos.json"
+    try:
+        if path.is_symlink() or path.stat().st_size > 8_000_000:
+            return {}
+        value = read_json(path)
+        values = value if isinstance(value, list) else value.values() if isinstance(value, dict) else []
+        result = {}
+        for row in values:
+            if isinstance(row, dict) and type(row.get("id")) is int and isinstance(row.get("name"), str):
+                result[row["id"]] = row["name"][:1000]
+        return {row["name"]: result.get(int(match.group(1)), "") for row in native["files"]
+                if (match := re.fullmatch(r"Map(\d+)\.json", row["name"], flags=re.IGNORECASE))}
+    except (OSError, ValueError, UnicodeError):
+        return {}
+
+
+def tools_state(native):
+    if native["engine"] != "MVMZ":
+        return None
+    from util.tl_inspector import installer as inspector
+    from util.forge import installer as forge
+    result = {}
+    for key, module in (("inspector", inspector), ("forge", forge)):
+        try:
+            value = module.status(Path(native["source"]))
+        except (OSError, UnicodeError):
+            result[key] = {"installed": False, "present": False, "message": "Tool status unavailable"}
+            continue
+        # An orphaned plugin file or registration is not a working installation.
+        result[key] = {"installed": bool(value.get("plugin_file") and value.get("declared")),
+                       "present": bool(value.get("installed")), "message": str(value.get("message", ""))}
+    return result
+
+
+def release_scope(source):
+    from util.release_package import _iter_release_files
+    files, excluded = _iter_release_files(Path(source))
+    return {relative.as_posix(): [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+            for path, relative in files for stat in [project_path(source, relative.as_posix()).stat()]}, excluded
+
+
+def run_release(plan, log):
+    from desktop.backend.workflow_actions import validate_plan
+    from util.release_package import create_release_zip
+    from dazedtl.translation.release import destination, publish
+    validate_plan(plan)
+    source = Path(plan["project"]["source"])
+    workspace = Path(plan["folder"]).parents[1]
+    output = destination(source, workspace, os.environ["DAZEDTL_ENGINE_SOURCE"], plan["options"]["output"])
+    expected = plan["release_scope"]
+    if release_scope(source)[0] != expected:
+        raise ValueError("The package contents changed. Build a new release preview.")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".dazedtl-release-", dir=output.parent) as temporary:
+        staged = Path(temporary) / output.name
+        result = create_release_zip(source, staged, progress=lambda current, total, name: log(f"{current}/{total} · {name}"))
+        if release_scope(source)[0] != expected:
+            raise ValueError("The game changed during packaging. Its partial archive was discarded.")
+        saved = publish(staged, output, plan["output_hash"], stopped=getattr(log, "stopped", lambda: False))
+    return {**saved, "kind": "game", "files": result.files_added, "excluded": result.excluded_entries}
 
 
 def guard(project, folder):

@@ -9,7 +9,7 @@ from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
 METHODS = {"guided", "len", "translation"}
 SCREENS = {"overview", "translation", "guided", "manual", "settings"}
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 def upgrade_v1(value):
     if not isinstance(value.get("projects"), list) or any(
         not isinstance(project, dict) or project.get("method") not in {"guided", "len"}
@@ -28,7 +28,13 @@ def upgrade_v2(value):
     return deepcopy(value)
 
 
-UPGRADES = {1: upgrade_v1, 2: upgrade_v2}
+def upgrade_v3(value):
+    # Older clients cannot validate the expanded per-game Guided forms. Keep
+    # registry identity/run links intact; form readers supply missing defaults.
+    return deepcopy(value)
+
+
+UPGRADES = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3}
 
 
 def validate(value):

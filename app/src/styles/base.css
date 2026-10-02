@@ -63,6 +63,7 @@ input[type="checkbox"] {
   accent-color: var(--accent);
   width: 16px;
   height: 16px;
+  padding: 0;
 }
 textarea {
   display: block;

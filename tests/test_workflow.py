@@ -372,6 +372,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(first["backup"]["id"], second["backup"]["id"])
         self.assertEqual(second["backup"]["bytes_added"], 0)
         self.assertEqual(packaged["backup"]["id"], first["backup"]["id"])
+        # A Guided checkpoint must not reuse a different Len QA manifest.
+        other_manifest = WORK + "/work/other-patch.json"
+        write_json(self.game / other_manifest, ["source.json"])
+        operation("checkpoint", manifest=other_manifest)
+        with self.assertRaisesRegex(ValueError, "current checkpoint scope"):
+            operation("package")
+        (self.game / other_manifest).unlink()
+        operation("checkpoint", manifest=manifest_path)
         self.assertTrue(all(not path.exists() for path in originals))
         self.assertTrue(self.service.backups(self.identity)["snapshots"])
         restored = self.root / "recovered-work"
@@ -386,7 +394,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(lifecycle(self.profile, self.identity)["workspace_backup"]["reused_snapshot"])
 
     def test_runtime_changes_invalidate_delivery_even_if_qa_report_is_unchanged(self):
-        for action in ('guided_review', 'guided_package'):
+        for action in ('guided_review', 'guided_package', 'release_patch'):
             with self.subTest(action=action), self.assertRaises(ValueError):
                 self.service.operation(self.identity, action, {})
         path = WORK + "/work/patch-files.json"

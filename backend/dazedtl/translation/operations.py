@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from contextlib import contextmanager, ExitStack
+import tempfile
 import uuid
 
 from dazedtl.storage import write_json
@@ -97,6 +98,18 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     destination = backups.store_path(source)
     def restored(identity, files=None):
         return resources.enter_context(backup_files(workspace, job["project_id"], source, identity, files=files, stopped=stopped))
+
+    def checkpoint(manifest_path, message):
+        manifest = read_json(project_path(source, manifest_path))
+        original = str(restored(state["prepared_source"]["id"], engine.runtime_paths(manifest))[0]) if state.get("prepared_source") else None
+        engine.git_scope(source, options, manifest, original, True)
+        result = engine.git_scope(source, options, manifest, original, False)
+        result["commit"] = engine.commit(source, message)
+        state["checkpoint"] = {"commit": result["commit"], "manifest": manifest_path}
+        state["runtime_manifest"] = manifest_path
+        state["workspace_backup"] = backups.snapshot(source / ".dazedtl", destination, stopped=stopped)
+        result["backup"] = state["workspace_backup"]
+        return result
     action = plan["action"]
     if action in {"backup_source", "backup_workspace"}:
         root = source if action == "backup_source" else source / ".dazedtl"
@@ -144,15 +157,44 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state.pop("delivery", None)
     elif action == "checkpoint":
         require_baseline(engine, source, options, state)
-        manifest = read_json(project_path(source, arguments["manifest"]))
-        original = str(restored(state["prepared_source"]["id"], engine.runtime_paths(manifest))[0]) if state.get("prepared_source") else None
-        engine.git_scope(source, options, manifest, original, True)
-        result = engine.git_scope(source, options, manifest, original, False)
-        result["commit"] = engine.commit(source, arguments.get("message", "translation: save reviewed patch"))
-        state["checkpoint"] = {"commit": result["commit"], "manifest": arguments["manifest"]}
-        state["runtime_manifest"] = arguments["manifest"]
-        state["workspace_backup"] = backups.snapshot(source / ".dazedtl", destination, stopped=stopped)
-        result["backup"] = state["workspace_backup"]
+        result = checkpoint(arguments["manifest"], arguments.get("message", "translation: save reviewed patch"))
+    elif action == "release_patch":
+        from .guided_inputs import original_bindings
+        from .release import destination as release_destination, output_hash, publish, git_identity
+        initial_git = require_baseline(engine, source, options, state)
+        payload = read_json(project_path(workspace, arguments["plan"]))
+        if (digest(payload) != arguments["sha256"] or payload["version"] != 1
+                or payload["project_id"] != job["project_id"] or Path(payload["source"]) != source):
+            raise ValueError("The release plan changed or belongs to another game.")
+        if git_identity(initial_git) != payload["git"]:
+            raise ValueError("Version tracking changed after the package preview.")
+        inputs = read_json(project_path(workspace, payload["source_inputs"]))
+        if digest(inputs) != payload["source_inputs_sha256"]:
+            raise ValueError("Working sources changed before packaging. Review the current scope.")
+        engine.verify_bindings(source, original_bindings(inputs))
+        verify_evidence(source, payload["evidence"])
+        output = release_destination(source, workspace, engine.source, payload["output"])
+        if output_hash(output) != payload["output_hash"]:
+            raise ValueError("The release destination changed. Review the output again.")
+        progress("Saving the package scope and workspace restore point.")
+        checkpoint(payload["manifest"], "translation: prepare release patch")
+        package_git = git_identity(engine.git_status(source, options))
+        if package_git["translation_commit"] != state["checkpoint"]["commit"]:
+            raise ValueError("The translation branch changed while checkpointing the release.")
+        write_json(lifecycle_path(workspace, job["project_id"]), state)
+        verify_evidence(source, payload["evidence"])
+        if stopped():
+            raise InterruptedError("Release stopped. Its local checkpoint and backup were retained.")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".dazedtl-patch-", dir=output.parent) as temporary:
+            manifest = read_json(project_path(source, payload["manifest"]))
+            packaged = engine.package(source, options, manifest, Path(temporary))
+            verify_evidence(source, payload["evidence"])
+            if (git_identity(engine.git_status(source, options)) != package_git
+                    or digest(read_json(project_path(workspace, payload["source_inputs"]))) != payload["source_inputs_sha256"]):
+                raise ValueError("Version tracking or the source pass changed during packaging.")
+            result = {**packaged, **publish(packaged["path"], output, payload["output_hash"], stopped=stopped), "kind": "patch"}
+        state["guided_release"] = result
     elif action == "guided_review":
         require_baseline(engine, source, options, state)
         manifest = read_json(project_path(source, arguments["manifest"]))
@@ -178,7 +220,9 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 raise ValueError("Checkpoint the reviewed guided manifest before packaging.")
         else:
             from .delivery import verify
-            verify(source, full=True)
+            proof = verify(source, full=True)
+            if state["checkpoint"]["manifest"] not in proof["files"]:
+                raise ValueError("Record QA for the current checkpoint scope before packaging with Len's method.")
         manifest = read_json(project_path(source, state["checkpoint"]["manifest"]))
         result = engine.package(source, options, manifest, Path(workspace) / "deliveries" / job["project_id"])
         state["delivery"] = result

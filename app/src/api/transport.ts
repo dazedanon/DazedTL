@@ -23,6 +23,7 @@ declare global {
       copyDiagnostics(): Promise<void>;
       copyText(text: string): Promise<void>;
       chooseFolder(): Promise<string | null>;
+      chooseEditor(): Promise<string | null>;
       openFolder(
         kind: "project" | "workspace" | "projectWorkspace" | "output" | "backup",
         path?: string,

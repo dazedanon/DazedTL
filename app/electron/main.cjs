@@ -209,6 +209,10 @@ app.whenReady().then(() => {
           if (backup?.available === true && typeof backup.path === "string")
             backupFolders.add(backup.path);
         }
+        for (const artifact of result?.guided?.artifacts || []) {
+          if (artifact.available === true && typeof artifact.folder === "string")
+            outputs.add(artifact.folder);
+        }
       }
       for (const job of result?.translation?.jobs || []) {
         if (
@@ -237,8 +241,15 @@ app.whenReady().then(() => {
   ipcMain.handle("dazedtl:choose-folder", async (event) => {
     trusted(event);
     const selected = await dialog.showOpenDialog(window, {
-      title: "Choose a game folder",
+      title: "Choose a folder",
       properties: ["openDirectory"],
+    });
+    return selected.canceled ? null : selected.filePaths[0];
+  });
+  ipcMain.handle("dazedtl:choose-editor", async (event) => {
+    trusted(event);
+    const selected = await dialog.showOpenDialog(window, {
+      title: "Choose a code editor", properties: ["openFile"],
     });
     return selected.canceled ? null : selected.filePaths[0];
   });

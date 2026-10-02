@@ -10,12 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 source = Path(os.environ["DAZEDTL_ENGINE_SOURCE"])
 sys.path.insert(0, str(source))
 from desktop.backend import workflow_actions
-from dazedtl.compatibility.guided import run_ace, apply_selected
+from dazedtl.compatibility.guided import run_ace, apply_selected, run_release
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
 def run_action(plan, log):
+    if plan["action"] == "release":
+        return run_release(plan, log)
     if plan["action"] == "export_selected":
         return apply_selected(plan, log)
     if plan["action"] == "refresh_sources":

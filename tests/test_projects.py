@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from dazedtl.projects.store import Projects
+from dazedtl.projects.store import Projects, SCHEMA_VERSION
 
 
 class ProjectTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class ProjectTests(unittest.TestCase):
         self.assertNotEqual(second["id"], identity)
         self.projects.select(identity)
         restored = Projects(self.root)
-        self.assertEqual(restored.data["version"], 3)
+        self.assertEqual(restored.data["version"], SCHEMA_VERSION)
         self.assertEqual(len(restored.data["projects"]), 2)
         self.assertEqual(restored.current["id"], identity)
         self.assertEqual(restored.current["backend_id"], "saved-job-owner")

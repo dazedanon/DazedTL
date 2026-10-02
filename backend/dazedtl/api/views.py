@@ -41,11 +41,12 @@ def guided(value, project_id):
         'hasPlugins': bool(native['plugins']),
         'aceAvailable': value['ace_available'],
         'step': value['step'],
+        'task': value['task'],
         'form': value['form'],
         'preferences': value['preferences'],
         'optionsDraft': value['options_draft'],
         'engineSchema': value['engine_schema'],
-        'files': [pick(item, ('name', 'default', 'size', 'group')) for item in native['files']],
+        'files': [pick(item, ('name', 'title', 'default', 'size', 'group')) for item in native['files']],
         'selection': native['selected'],
         'importedFiles': native['imported'],
         'collectionError': native.get('collection_error', ''),
@@ -59,6 +60,9 @@ def guided(value, project_id):
         'readiness': value['readiness'],
         'documents': documents(value['documents']),
         'drafts': documents(value.get('draft', {}).get('documents', {})),
+        'tools': value['tools'],
+        'artifacts': value['artifacts'],
+        'references': [pick(item, ('id', 'title')) for item in value.get('references', [])],
         'provider': {
             'model': value['provider']['model'],
             'defaultMode': value['provider']['default_mode'],
@@ -75,7 +79,7 @@ def settings(value):
 
 
 def preview(value):
-    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions'))
+    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions', 'package'))
 
 
 def error(exc):

@@ -265,9 +265,12 @@ pre {
 .field-control {
   min-width: 0;
 }
-.field-control > input,
+.field-control > input:not([type="checkbox"]),
 .field-control > select {
   width: min(100%, 380px);
+}
+.field-control > input[type="checkbox"] {
+  margin: 8px 0 0;
 }
 .field-control > select {
   max-width: 280px;
@@ -284,6 +287,7 @@ pre {
 .action-bar {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -293,8 +297,13 @@ pre {
 }
 .action-bar-actions {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: flex-end;
+  align-items: flex-start;
   gap: 8px;
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 .feedback {
   display: flex;
@@ -413,7 +422,17 @@ pre {
   flex: 1;
   min-height: 0;
 }
-.field-control input,
+.virtual-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+}
+.document-editor--focused { width: 100%; }
+.document-editor--focused .ui-tabs { flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-3); }
+.document-editor--focused textarea { width: 100%; min-height: 12em; resize: vertical; }
+.field-control input:not([type="checkbox"]),
 .field-control select {
   font-size: var(--font-control);
   padding: 7px 10px;

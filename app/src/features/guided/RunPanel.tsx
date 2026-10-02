@@ -40,6 +40,7 @@ export default function RunPanel({
   busy,
   error = "",
   pendingKey = "",
+  hideTitle = false,
 }: {
   job: Job;
   active: boolean;
@@ -47,15 +48,16 @@ export default function RunPanel({
   resume: () => void;
   answer: (approved: boolean) => void;
   exportFiles: () => void;
-  apply: () => void;
+  apply?: () => void;
   busy: boolean;
   error?: string;
   pendingKey?: string;
+  hideTitle?: boolean;
 }) {
   return (
     <section className="ui-section run-panel">
       <div className="section-heading">
-        <h2>{job.mode === "estimate" ? "Cost estimate" : "Translation run"}</h2>
+        {!hideTitle && <h2>{job.mode === "estimate" ? "Cost estimate" : "Translation run"}</h2>}
         <span className="badge">{job.status}</span>
       </div>
       <p>{job.message}</p>
@@ -125,7 +127,7 @@ export default function RunPanel({
         ) : ["failed", "stopped", "interrupted", "canceled"].includes(
             job.status,
           ) ? (
-          <Button size="comfortable" disabled={busy} onClick={resume}>
+          <Button variant="primary" size="comfortable" disabled={busy} onClick={resume}>
             Resume saved run
           </Button>
         ) : null}
@@ -135,14 +137,14 @@ export default function RunPanel({
               <Button size="comfortable" onClick={exportFiles} disabled={busy} pending={pendingKey === "run:export"}>
                 Save output copy
               </Button>
-              <Button
+              {apply && <Button
                 size="comfortable"
                 variant="primary"
                 onClick={apply}
                 disabled={busy}
               >
                 Review & apply outputs
-              </Button>
+              </Button>}
             </>
           )}
       </div>

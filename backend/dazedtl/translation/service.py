@@ -39,6 +39,7 @@ OPERATIONS = {
 GUIDED_OPERATIONS = {
     "guided_review": ("Record guided playtest review", {"manifest", "source_inputs", "source_inputs_sha256"}),
     "guided_package": ("Package reviewed guided patch", set()),
+    "release_patch": ("Build local patch ZIP", {"plan", "sha256"}),
 }
 
 
@@ -456,6 +457,7 @@ Additional project instructions:
             "rebase_rpgmaker": {"source", "translated", "output", "expected_original_commit"},
             "checkpoint": {"manifest"}, "guided_review": {"manifest"}, "stage_update": {"official", "version"},
             "version_preview": {"official", "version"}, "version_apply": {"preview_id"},
+            "release_patch": {"plan", "sha256"},
         }.get(action, set())
         if any(not isinstance(arguments.get(key), str) or not arguments[key].strip() for key in required):
             raise ValueError("Required operation arguments: " + ", ".join(sorted(required)))

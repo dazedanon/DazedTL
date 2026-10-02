@@ -129,7 +129,9 @@ export default function App() {
         </aside>
         <main
           className={
-            state?.screen === "settings"
+            state?.screen === "guided" || state?.screen === "manual"
+              ? "editor-main guided-main"
+              : state?.screen === "settings"
               ? "editor-main"
               : state?.screen === "overview"
                 ? "overview-main"
@@ -167,7 +169,7 @@ export default function App() {
           ) : state.project && (state.screen === "guided" || state.screen === "manual") ? (
             <GuidedWorkflow key={state.project.id} project={state.project} settings={() => navigate("settings")}
               backups={application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} /> : null}
-              versions={application.snapshot?.translation ? <VersionsPanel project={state.project} state={application.snapshot.translation} /> : null} />
+              versions={application.snapshot?.translation ? <VersionsPanel guided project={state.project} state={application.snapshot.translation} /> : null} />
           ) : state.project ? (
             <Translation
               key={state.project.id}

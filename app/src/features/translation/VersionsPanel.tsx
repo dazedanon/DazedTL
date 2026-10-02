@@ -13,9 +13,11 @@ import { JobStatus } from "../../ui/JobStatus";
 export function VersionsPanel({
   project,
   state,
+  guided = false,
 }: {
   project: Project;
   state: TranslationState;
+  guided?: boolean;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.refresh });
@@ -89,7 +91,7 @@ export function VersionsPanel({
           >
             Back up translation workspace
           </Button>
-          {["MVMZ", "ACE"].includes(project.engine) && (
+          {!guided && ["MVMZ", "ACE"].includes(project.engine) && (
             <Button
               disabled={disabled || (!state.lifecycle.source_backup || state.lifecycle.source_backup.available === false)}
               onClick={() => operation("rpgmaker_prepare")}
@@ -98,7 +100,7 @@ export function VersionsPanel({
             </Button>
           )}
         </div>
-        <details>
+        {!guided && <details>
           <summary>Establish or reuse Git baselines</summary>
           <div className="form-grid">
             <label>
@@ -159,10 +161,10 @@ export function VersionsPanel({
           >
             Establish baselines
           </Button>
-        </details>
+        </details>}
       </Section>
       <BackupsPanel state={state} />
-      <Section title="Checkpoint and local delivery">
+      {!guided && <Section title="Checkpoint and local delivery">
         <label>
           Complete runtime patch manifest
           <input
@@ -196,7 +198,7 @@ export function VersionsPanel({
             {state.lifecycle.delivery.game_version}
           </p>
         )}
-      </Section>
+      </Section>}
       <Section title="Update to a new game release">
         <p className="muted">
           Preview the official changes against the recorded original and

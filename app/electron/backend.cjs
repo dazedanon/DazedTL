@@ -3,11 +3,11 @@ const { createInterface } = require("node:readline");
 const path = require("node:path");
 const fs = require("node:fs");
 const protocol = require("../../backend/dazedtl/api/protocol.json");
+const { engineSource } = require("./engine-source.cjs");
 
 class Backend {
   constructor(root, profile, onStopped, diagnostics) {
-    const legacy =
-      process.env.DAZEDTL_LEGACY_ROOT || path.resolve(root, "../DazedMTLTool");
+    const legacy = engineSource(root);
     const python =
       process.env.DAZEDTL_PYTHON ||
       path.join(

@@ -5,6 +5,7 @@
 - Preserve existing user changes and the sibling DazedMTLTool repository.
 - Keep changes focused; preserve engine parsing, context, and translation behavior during migration.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
+- Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
 - Use the [UX principles](docs/architecture.md#ux-principles) as the ongoing design and review guide for this tool.
 - Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
 - Keep credentials, games, run files, logs, and caches outside the source tree.

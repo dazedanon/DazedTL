@@ -177,6 +177,27 @@ class ExistingBackend:
         from .guided import runtime_files
         return runtime_files(source)
 
+    @staticmethod
+    def guided_titles(native):
+        from .guided import file_titles
+        return file_titles(native)
+
+    @staticmethod
+    def guided_tools(native):
+        from .guided import tools_state
+        return tools_state(native)
+
+    def guided_configure_tools(self, token, options):
+        self.workflows.previews[token]["options"]["playtest"] = {**options, "workspaceFolder": "auto"}
+
+    def guided_release_preview(self, token):
+        from .guided import release_scope
+        plan = self.workflows.previews[token]
+        paths, excluded = release_scope(plan["project"]["source"])
+        plan["release_scope"] = paths
+        return {"files": len(paths), "paths": sorted(paths), "package": {"included": len(paths), "excluded": excluded},
+                "confirmation": plan["output_hash"] is not None}
+
     def guided_rewrap_review(self, native_id, token):
         from .guided import rewrap_review
         return rewrap_review(self, native_id, token)

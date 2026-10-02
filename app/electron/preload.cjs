@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
   copyText: (text) => ipcRenderer.invoke("dazedtl:copy-text", text),
   copyDiagnostics: () => ipcRenderer.invoke("dazedtl:copy-diagnostics"),
   chooseFolder: () => ipcRenderer.invoke("dazedtl:choose-folder"),
+  chooseEditor: () => ipcRenderer.invoke("dazedtl:choose-editor"),
   openFolder: (kind, target) =>
     ipcRenderer.invoke("dazedtl:open-folder", kind, target),
   onClose: (handler, cancelled) => {
