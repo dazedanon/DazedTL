@@ -1,5 +1,5 @@
 {
-  "version": 14,
+  "version": 15,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -160,6 +160,22 @@
       "refresh": false
     },
     "guided_context_review": {
+      "refresh": true
+    },
+    "guided_event_text_request": {
+      "refresh": false
+    },
+    "guided_event_text_review": {
+      "refresh": true
+    },
+    "guided_event_text_view": {
+      "refresh": true
+    },
+    "guided_event_text_picker": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "guided_comparisons_review": {
       "refresh": true
     }
   }

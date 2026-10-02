@@ -15,7 +15,7 @@ from dazedtl.translation.files import evidence, read_json, digest
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
-from dazedtl.translation import speaker_setup, preparation, context_setup
+from dazedtl.translation import speaker_setup, preparation, context_setup, event_text
 
 
 class GuidedTests(unittest.TestCase):
@@ -51,6 +51,22 @@ class GuidedTests(unittest.TestCase):
             phase_files=lambda _native, _phase: ['Items.json'],
             guided_guard=lambda _native, _folder: evidence(self.source, ['Items.json']),
             guided_runtime_files=lambda _source: ['Items.json'])
+        choices = {'CODE357': ['TextPicture', 'QuestSystem'], 'CODE355655': ['var text', 'gameVariables.setValue']}
+        self.catalog = {'fingerprint': 'fixture-definitions', 'source': 'fixture-parser.py', 'controls': [
+            {'key': key, 'label': key, 'coverage': 'Installed fixture coverage.', 'selector': event_text.SELECTORS.get(key),
+             'choices': [{'id': name, 'group': 'Fixture entries', 'details': name} for name in choices.get(key, [])],
+             'builtins': ['BuiltinPlugin'] if key == 'CODE357' else ['AddCmnt('] if key == 'CODE355655' else []}
+            for key in event_text.CODES]}
+        self.backend.guided_event_text_catalog = lambda: deepcopy(self.catalog)
+        def validate_event_options(values):
+            if set(values) - set(event_text.FIELDS): raise ValueError('Unknown setting')
+            for key, value in values.items():
+                if key in event_text.CODES and type(value) is not bool: raise ValueError('Invalid boolean')
+                if key == 'CODE122_VAR_RANGES' and not isinstance(value, str): raise ValueError('Invalid ranges')
+                for code, selector in event_text.SELECTORS.items():
+                    if key == selector and (not isinstance(value, list) or any(item not in choices[code] for item in value)): raise ValueError('Unknown registry identifier')
+            return deepcopy(values)
+        self.backend.guided_event_text_options = validate_event_options
         self.backend.operations = SimpleNamespace(jobs={}, start=Mock())
         self.backend.describe = lambda _: dict(self.native)
         self.backend.guided_phase = lambda owner, phase, files: self.backend.workflows.phase(owner, phase, True)
@@ -164,13 +180,24 @@ class GuidedTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'audited assignments'):
                 self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})
         write_json(self.folder / 'log/var_translation_map.json', {'日本語': 'Fixture English'})
-        self.assertEqual(self.guided.runs.comparisons(self.native)['files'], ['Map001.json'])
+        comparisons = self.guided.runs.comparisons(self.native)
+        self.assertEqual(comparisons['files'], ['Map001.json'])
+        self.assertEqual(comparisons['status'], 'review_needed')
+        self.assertEqual(comparisons['rows'][0]['variables'], ['1'])
+        with self.assertRaisesRegex(ValueError, 'Review every matched'):
+            self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})
+        self.guided.comparisons_review(self.identity, comparisons['fingerprint'], True)
+        self.assertEqual(self.guided.runs.comparisons(self.native)['status'], 'ready')
         self.seed_estimate('variables')
         preview = self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
         write_json(self.folder / 'log/var_translation_map.json', {'日本語': 'Changed fixture'})
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.started, [])
+        write_json(self.folder / 'log/var_translation_map.json', {'日本語': 7})
+        self.assertEqual(self.guided.runs.comparisons(self.native)['status'], 'recovery_needed')
+        write_json(self.folder / 'log/var_translation_map.json', {})
+        self.assertEqual(self.guided.runs.comparisons(self.native)['status'], 'not_needed')
 
     def test_apply_review_keeps_a_completed_scope_and_does_not_apply_another_phases_output(self):
         write_json(self.source / 'System.json', {'gameTitle': 'Fixture'})
@@ -526,11 +553,113 @@ class GuidedTests(unittest.TestCase):
                 with self.subTest(options=options, mode=mode), self.assertRaises(ValueError):
                     self.guided.preview(self.identity, 'start', options={'mode': mode})
         self.assertEqual(self.started, [])
-        for options in ({'CODE122': True, 'CODE122_VAR_RANGES': '5,10-18,42'}, {'CODE357': True}):
+        for options in ({'CODE122': True, 'CODE122_VAR_RANGES': '5,10-18,42'}, {'CODE357': True, 'ENABLED_PLUGINS_357': ['TextPicture']}):
             self.native['engine_options'] = options
+            current = self.guided.event_text.status(self.identity, self.native)
+            with self.assertRaises(ValueError):
+                self.guided.event_text_review(self.identity, self.native['revision'], current['binding'], None)
+            self.guided.event_text_review(self.identity, self.native['revision'], current['binding'], None, 'Explicit fixture-only coverage review', True)
             preview = self.preview()
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.started, [('native', 'advanced', True)] * 2)
+
+    def event_report(self):
+        write_json(self.source / 'Map001.json', {'list': [{'code': 357, 'parameters': ['TextPicture', 'show', '', {'text': '表示'}]}]})
+        self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json']
+        self.native['selected'] = ['Items.json', 'Map001.json']
+        request = self.guided.event_text.request(self.identity, self.native)
+        report = {key: request[key] for key in ('version', 'request_id', 'project_id', 'engine', 'fingerprint')}
+        ref = {'file': 'Map001.json', 'sha256': request['dependencies']['Map001.json'], 'location': 'event 1, page 1, command 1'}
+        report['sources'] = {key: {'decision': 'skip', 'confidence': 'high', 'coverage': 'none', 'reason': 'Fixture inspected; no safe display use.',
+            'targets': '' if key == 'CODE122' else [], 'observations': [], 'exclusions': [], 'evidence': [ref]} for key in event_text.CODES}
+        report['sources']['CODE357'].update(decision='enable', coverage='safe', targets=['TextPicture'], observations=['TextPicture show: text is displayed.'])
+        write_json(self.source / event_text.REPORT, report)
+        return request, report
+
+    def test_event_findings_stage_exact_selectors_and_bind_review_to_sources_and_definitions(self):
+        # Prevent recommendations silently enabling settings, selector swaps,
+        # stale source approvals, and old reports configuring a new request.
+        request, report = self.event_report()
+        self.assertEqual(self.guided.event_text.request(self.identity, self.native)['request_id'], request['request_id'])
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertEqual(findings['status'], 'ready')
+        self.assertEqual(self.native['engine_options'], {})
+        self.assertEqual(findings['recommended']['ENABLED_PLUGINS_357'], ['TextPicture'])
+        self.assertEqual(findings['recommended']['ENABLED_PATTERNS_355655'], [])
+        self.native['engine_options'] = findings['recommended']
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.guided.event_text_review(self.identity, 0, findings['binding'], findings['reportId'])
+        review = self.guided.event_text.require(self.identity, self.native)
+        self.assertEqual(review['settings']['ENABLED_PLUGINS_357'], ['TextPicture'])
+        self.native['engine_options']['AUTONAMEPOPUP101'] = True
+        with self.assertRaises(ValueError): self.guided.event_text.require(self.identity, self.native)
+        self.native['engine_options'].pop('AUTONAMEPOPUP101')
+        self.assertTrue(self.guided.event_text.status(self.identity, self.native)['accepted'])
+        self.projects.get(self.identity)['phase'] = 'advanced'
+        quote = self.preview()
+        self.catalog['fingerprint'] = 'changed-installed-parser'
+        self.assertEqual(self.guided.event_text.status(self.identity, self.native)['status'], 'stale')
+        with self.assertRaises(ValueError): self.guided.execute(self.identity, quote['token'])
+        self.assertEqual(self.started, [])
+        self.catalog['fingerprint'] = 'fixture-definitions'
+        write_json(self.source / 'Map001.json', {'list': []})
+        self.assertEqual(self.guided.event_text.status(self.identity, self.native)['status'], 'stale')
+        self.assertEqual(self.native['selected'], ['Items.json', 'Map001.json'])
+        plugin = self.source / 'js/plugins/Display.js'
+        plugin.parent.mkdir(parents=True)
+        plugin.write_text('original display implementation')
+        relative = 'js/plugins/Display.js'
+        self.translation.engine.source_bindings = lambda _root, paths: {relative: 'original-plugin-blob'} if relative in paths else {}
+        self.translation.engine.original_bytes = lambda *_args: b'original display implementation'
+        before = self.guided.event_text.context(self.identity, self.native, self.catalog)
+        plugin.write_text('modified logic implementation')
+        after = self.guided.event_text.context(self.identity, self.native, self.catalog)
+        self.assertEqual(before['dependencies'][relative], after['dependencies'][relative])
+        self.assertNotEqual(before['fingerprint'], after['fingerprint'])
+
+    def test_event_findings_reject_foreign_partial_unknown_targets_and_keep_mixed_coverage_off(self):
+        _, report = self.event_report()
+        for mutate, status in ((lambda r: r.update(project_id='foreign'), 'stale'),
+                               (lambda r: r['sources'].pop('CODE356'), 'invalid'),
+                               (lambda r: r['sources']['CODE357'].update(targets=['mock-placeholder']), 'invalid'),
+                               (lambda r: r['sources']['CODE356'].update(targets=['D_TEXT']), 'invalid')):
+            value = deepcopy(report); mutate(value); write_json(self.source / event_text.REPORT, value)
+            with self.subTest(status=status):
+                self.assertEqual(self.guided.event_text.status(self.identity, self.native)['status'], status)
+        report['sources']['CODE357'].update(coverage='mixed', exclusions=['Same handler also consumes an internal key.'])
+        write_json(self.source / event_text.REPORT, report)
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertEqual(findings['status'], 'ready')
+        self.assertFalse(findings['recommended']['CODE357'])
+        self.native['engine_options'] = {**findings['recommended'], 'CODE357': True, 'ENABLED_PLUGINS_357': ['TextPicture']}
+        current = self.guided.event_text.status(self.identity, self.native)
+        with self.assertRaises(ValueError): self.guided.event_text_review(self.identity, 0, current['binding'], current['reportId'])
+        self.guided.event_text_review(self.identity, 0, current['binding'], current['reportId'], 'User-reviewed mixed fixture coverage', True)
+        self.assertEqual(self.guided.event_text.require(self.identity, self.native)['manual'], ['CODE357'])
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.assertEqual(reopened.event_text.status(self.identity, self.native)['manualReason'], 'User-reviewed mixed fixture coverage')
+        self.native['engine_options']['ENABLED_PLUGINS_357'] = ['not-installed']
+        with self.assertRaises(ValueError): reopened.event_text.require(self.identity, self.native)
+
+    def test_empty_registry_selection_needs_effective_builtin_coverage_and_picker_is_project_owned(self):
+        # Empty filters must not authorize meaningless runs; built-in coverage
+        # is explicit and cannot be mistaken for per-handler isolation.
+        self.event_report()
+        self.native['engine_options'] = {'CODE357': True, 'ENABLED_PLUGINS_357': []}
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertTrue(findings['errors'])
+        with self.assertRaises(ValueError): self.guided.event_text_review(self.identity, 0, findings['binding'], findings['reportId'], 'Manual', True)
+        write_json(self.source / 'Map001.json', {'list': [{'code': 357, 'parameters': ['BuiltinPlugin', 'show', '', {'text': '表示'}]}]})
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertEqual(findings['builtinHits']['CODE357'], ['BuiltinPlugin'])
+        self.assertEqual(findings['errors'], [])
+        draft = {'key': 'ENABLED_PLUGINS_357', 'selected': ['TextPicture', 'QuestSystem'], 'baseline': [], 'query': 'hidden', 'filter': 'selected'}
+        self.guided.event_text_picker(self.identity, draft)
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.assertEqual(reopened.event_text.status(self.identity, self.native)['picker'], draft)
+        self.guided.event_text_picker(self.identity, None)
+        self.assertIsNone(reopened.event_text.status(self.identity, self.native)['picker'])
+        with self.assertRaises(ValueError): self.guided.event_text_picker(self.identity, {**draft, 'key': 'ENABLED_PLUGINS_356'})
 
     def test_new_games_do_not_inherit_another_games_advanced_targets(self):
         self.record.pop('backend_id')

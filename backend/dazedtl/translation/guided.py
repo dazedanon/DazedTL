@@ -12,6 +12,7 @@ from .files import read_json, project_path, evidence, verify_evidence
 from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
 from .guided_runs import GuidedRuns
+from .event_text import EventText
 from .files import digest
 from . import backups
 from . import speaker_setup, preparation, context_setup
@@ -44,6 +45,7 @@ class Guided:
         self.confirmations = {}
         self.observed_files = {}
         self.runs = GuidedRuns(self)
+        self.event_text = EventText(self)
 
     def observed_digest(self, path):
         path = Path(path)
@@ -217,6 +219,9 @@ class Guided:
             plan = self.backend.saved_run_configuration(identity)
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
+            project = next((item for item in self.projects.data["projects"] if item.get("backend_id") == workflow.get("id")), None)
+            if project:
+                job["eventTextReview"] = self.runs.records(project["id"]).get(identity, {}).get("review")
             native = self.backend.workflows.projects.get(workflow.get("id"))
             if native:
                 receipt = self.backend.workflows.folder(native["id"]) / "applied-outputs.json"
@@ -374,6 +379,7 @@ class Guided:
             "speaker_setup": self.speaker_findings(project_id, native),
             "speaker_scan": self.speakers(project_id),
             "context_setup": self.context_status(project_id),
+            "event_text": self.event_text.status(project_id, native),
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
@@ -493,8 +499,14 @@ class Guided:
             if value["project"].get("collection_error"):
                 raise ValueError(value["project"]["collection_error"])
             options["phase"] = phase
-            if phase == "variables" and not self.runs.comparisons(native)["matches"]:
-                raise ValueError("Translate the relevant audited assignments first. No saved mappings match the selected comparisons.")
+            if phase == "variables":
+                comparisons = self.runs.comparisons(native)
+                if not comparisons["matches"]:
+                    raise ValueError("Translate the relevant audited assignments first. No saved mappings match the selected comparisons. " + comparisons["message"])
+                if comparisons["status"] != "ready":
+                    raise ValueError("Review every matched literal and its variable uses before updating comparisons.")
+            if phase == "advanced":
+                self.event_text.require(project_id, native)
             run_inputs = None
             quote = None
             if mode != "speakers":
@@ -713,6 +725,11 @@ class Guided:
         project, native = self.record(project_id)
         if name not in {"setup", "advanced", "wrap", "plugins", "walkthrough", "investigation"}:
             raise ValueError("Choose a task-specific helper.")
+        if name == "advanced":
+            request = self.event_text.request(project_id, native)
+            command = shlex.join([sys.executable, "-B", str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
+                                  "--workspace", str(self.translation.workspace), "--project", project_id, "event-text"])
+            return {"text": self.event_text.instructions(request, command)}
         text = self.backend.workflows.skill(native["id"], name)
         if name == "setup":
             schema = self.backend.workflows.state(native["id"])["engine_schema"]
@@ -726,6 +743,29 @@ class Guided:
         if name == "wrap":
             text += "\nFor optional remeasurement, retain the existing game guidance and speaker findings. If a current verified .dazedtl/guided/context-findings.json exists, update only its layout widths/reason/source evidence with the new measurements. Otherwise report the measured values for manual review. Do not invent a completed context investigation or execute translation.\n"
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}
+
+    def event_text_request(self, project_id):
+        _, native = self.record(project_id)
+        path = self.path(project_id, "event-text-request")
+        return {"request": read_json(path) if path.exists() else None, "findings": self.event_text.status(project_id, native)}
+
+    def event_text_review(self, project_id, revision, binding, report_id=None, manual_reason="", risk_accepted=False):
+        return self.event_text.review(project_id, revision, binding, report_id, manual_reason, risk_accepted)
+
+    def event_text_view(self, project_id, view):
+        return self.event_text.view(project_id, view)
+
+    def event_text_picker(self, project_id, value):
+        return self.event_text.picker(project_id, value)
+
+    def comparisons_review(self, project_id, fingerprint, accepted):
+        self.idle()
+        _, native = self.record(project_id)
+        current = self.runs.comparisons(native)
+        if accepted is not True or not current["matches"] or current["fingerprint"] != fingerprint:
+            raise ValueError("The saved mappings or selected comparison uses changed. Review them again.")
+        write_json(self.path(project_id, "comparisons-review"), {"fingerprint": fingerprint, "accepted": True})
+        return {"saved": True}
 
     def context_status(self, project_id):
         _, native = self.record(project_id)

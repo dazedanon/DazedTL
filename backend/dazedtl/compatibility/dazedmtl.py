@@ -71,6 +71,14 @@ class ExistingBackend:
 
         return validate_values(values), validate_engine_options(engines, self.source)
 
+    def guided_event_text_catalog(self):
+        from .event_text import catalog
+        return catalog(self.source)
+
+    def guided_event_text_options(self, values):
+        from .event_text import validate_options
+        return validate_options(values, self.source)
+
     def import_settings(self):
         """Read and retain the previous app-local settings before making a cache."""
         files = {}

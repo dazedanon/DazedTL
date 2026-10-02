@@ -62,6 +62,10 @@ export default function RunPanel({
       </div>
       <p>{job.message}</p>
       {job.files && <details><summary>{job.files.length} frozen {job.files.length === 1 ? "file" : "files"} · {job.model || "Saved model"}</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
+      {job.eventTextReview && <details><summary>Saved event text review</summary>
+        <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
+        {job.eventTextReview.settings && <dl>{Object.entries(job.eventTextReview.settings).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value)}</dd></div>)}</dl>}
+      </details>}
       {active && job.mode === "batch" && <p className="muted">Stopping local monitoring leaves submitted provider work attached to this saved run.</p>}
       {job.progress && (
         <>

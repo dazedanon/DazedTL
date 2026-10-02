@@ -25,7 +25,7 @@ def job(value):
     if value is None:
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
-                          'progress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'approval', 'action', 'result', 'created', 'updated',
+                          'progress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'eventTextReview', 'approval', 'action', 'result', 'created', 'updated',
                           'logicalPhase', 'scopeComplete', 'appliedOutputs'))
     result.setdefault('log', [])
     return result
@@ -51,6 +51,7 @@ def guided(value, project_id):
         'speakerSetup': value['speaker_setup'],
         'speakerScan': speaker_scan(value['speaker_scan']),
         'contextSetup': value['context_setup'],
+        'eventText': value['event_text'],
         'engineSchema': value['engine_schema'],
         'files': [pick(item, ('name', 'title', 'default', 'size', 'group')) for item in native['files']],
         'selection': native['selected'],

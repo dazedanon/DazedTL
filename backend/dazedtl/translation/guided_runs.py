@@ -47,9 +47,16 @@ class GuidedRuns:
                  "options": native["engine_options"], "layout": native["widths"],
                  "comments": native["phase1_comments"], "context": context,
                  "runtime_context": self.guided.backend.guided_run_context()}
+        review = None
+        if phase == "advanced":
+            review = self.guided.event_text.require(project_id, native)
+            value["event_text_review"] = review
         if phase == "variables":
             value["variables"] = self.cache(native)[1]
-        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode}
+            comparisons = self.comparisons(native)
+            value["comparison_review"] = comparisons["status"]
+            review = {"fingerprint": comparisons["fingerprint"], "status": comparisons["status"], "literalBased": True}
+        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review}
 
     def cache(self, native):
         path = self.guided.backend.workflows.folder(native["id"]) / "log/var_translation_map.json"
@@ -68,7 +75,7 @@ class GuidedRuns:
             names = self.files(native, "variables")
             inputs = self.guided.inputs(native)
             sources = inputs.sources(names, inputs.record()["inputs"], self.guided.observed_digest)
-            matched, missing, files = 0, 0, []
+            matched, missing, files, rows, working = 0, 0, [], [], {}
             import json
             def commands(value):
                 if isinstance(value, list):
@@ -82,7 +89,9 @@ class GuidedRuns:
                             yield from commands(item)
             for name in names:
                 count = 0
-                for command in commands(json.loads(self.working_bytes(native, name, sources[name]).decode("utf-8-sig"))):
+                raw = self.working_bytes(native, name, sources[name])
+                working[name] = digest(raw)
+                for command_index, command in enumerate(commands(json.loads(raw.decode("utf-8-sig")))):
                     for parameter in command.get("parameters", []):
                         if not isinstance(parameter, str) or "$gameVariables" not in parameter:
                             continue
@@ -92,14 +101,23 @@ class GuidedRuns:
                             if literal in cache:
                                 matched += 1
                                 count += 1
+                                rows.append({"file": name, "location": "code 111 occurrence " + str(command_index + 1),
+                                             "literal": literal, "translation": cache[literal],
+                                             "variables": sorted(set(re.findall(r"\$gameVariables\.value\(\s*(\d+)\s*\)", parameter)))})
                             else:
                                 missing += 1
                 if count:
                     files.append(name)
-            return {"matches": matched, "unmatched": missing, "files": files,
-                    "message": "Saved assignment translations can update matching comparisons." if matched else "No usable saved mappings match this event selection. This step is not needed."}
+            fingerprint = digest({"cache": cache, "working": working, "ignore": native["engine_options"].get("IGNORETLTEXT", True)})
+            owner = next((item for item in self.guided.projects.data["projects"] if item.get("backend_id") == native["id"]), None)
+            receipt_path = self.guided.path(owner["id"], "comparisons-review") if owner else None
+            receipt = read_json(receipt_path) if receipt_path and receipt_path.exists() else {}
+            reviewed = receipt.get("fingerprint") == fingerprint and receipt.get("accepted") is True
+            return {"matches": matched, "unmatched": missing, "files": files, "rows": rows, "fingerprint": fingerprint,
+                    "status": "not_needed" if not matched else "ready" if reviewed else "review_needed",
+                    "message": "Literal mappings match selected comparisons. Review all affected variable uses; mappings are not restricted by variable ID." if matched else "No usable saved mappings match this event selection. Comparison update is not needed."}
         except (OSError, ValueError, UnicodeError) as exc:
-            return {"matches": 0, "unmatched": 0, "files": [], "message": str(exc)}
+            return {"matches": 0, "unmatched": 0, "files": [], "rows": [], "fingerprint": None, "status": "recovery_needed", "message": str(exc)}
 
     def remember(self, project_id, job, inputs, estimate=None):
         records = self.records(project_id)

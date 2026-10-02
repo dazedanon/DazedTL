@@ -119,6 +119,11 @@ export const api = {
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
   guided: {
+    eventTextRequest: (project_id: string) => request("guided_event_text_request", { project_id }),
+    eventTextReview: (project_id: string, revision: number, binding: string | null, report_id: string | null, manual_reason: string, risk_accepted: boolean) => request("guided_event_text_review", { project_id, revision, binding, report_id, manual_reason, risk_accepted }),
+    eventTextView: (project_id: string, view: import("./contracts").EventTextState["view"]) => request("guided_event_text_view", { project_id, view }),
+    eventTextPicker: (project_id: string, value: import("./contracts").EventTextState["picker"]) => request("guided_event_text_picker", { project_id, value }),
+    comparisonsReview: (project_id: string, fingerprint: string | null, accepted: boolean) => request("guided_comparisons_review", { project_id, fingerprint, accepted }),
     applySpeakers: (project_id: string, revision: number, report_id: string, reset = false) => request("guided_apply_speakers", { project_id, revision, report_id, reset }),
     inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
     form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),

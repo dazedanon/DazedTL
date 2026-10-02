@@ -16,12 +16,7 @@ export const workflow: WorkflowStage[] = [
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
     { id: "main-text", title: "Translate main text", description: "Choose any subset in either row. Estimate and review each run before it starts." },
-  ]},
-  { id: "advanced", title: "Extra text", short: "Extra text", tasks: [
-    { id: "audit", title: "Audit extra text", description: "Inspect unusual text sources before enabling variables, scripts, or plugin commands." },
-    { id: "sources", title: "Review safe sources", description: "Keep each source and its audited IDs, handlers, or patterns together. Leave SKIP and NONE sources off." },
-    { id: "advanced-run", title: "Translate audited text", description: "Translate only the sources confirmed by the audit. Skip this phase if none are needed." },
-    { id: "variables", title: "Update comparisons", description: "Use saved assignment translations to update matching variable comparisons." },
+    { id: "other-event-text", title: "Other event text", description: "Variables, plugin commands, scripts, and labels." },
   ]},
   { id: "apply", title: "Apply & test", short: "Apply & test", tasks: [
     { id: "plugins", title: "Plugin & image text", description: "Inspect player-visible text outside the main JSON phases and retain any excluded scope." },
@@ -40,7 +35,7 @@ export function stagesFor(engine: GuidedState["engine"]) {
   return workflow.map((stage) => ({ ...stage, tasks: stage.tasks.filter((task) => !task.engine || task.engine === engine) }));
 }
 export function runStage(state: GuidedState): GuidedStep {
-  return state.run?.mode === "speakers" ? "context" : ["advanced", "variables"].includes(runPhase(state)) ? "advanced" : "translate";
+  return state.run?.mode === "speakers" ? "context" : "translate";
 }
 export function runPhase(state: GuidedState): Phase {
   // Native job.phase also carries progress states such as batch_approval/poll.
@@ -53,9 +48,10 @@ export function unfinishedRun(state: GuidedState) {
 }
 export function initialPosition(state: GuidedState, translation: TranslationState) {
   const stages = stagesFor(state.engine);
-  const step = state.step === "layout" ? "apply" : state.step === "translate" && state.phase === "advanced" ? "advanced" : state.step;
+  const step = state.step === "layout" ? "apply" : state.step === "advanced" ? "translate" : state.step;
+  if (state.task === "run") return { step: runStage(state), task: "run" };
+  if (["audit", "sources", "advanced-run", "variables"].includes(state.task || "") || state.step === "advanced") return { step: "translate" as const, task: "other-event-text" };
   if (state.step === "translate" && ["scope", "database", "dialogue"].includes(state.task || "")) return { step: "translate" as const, task: "main-text" };
-  if (state.task === "variables") return { step: "advanced" as const, task: "variables" };
   const saved = stages.find((stage) => stage.id === step)!;
   if (step === "context" && state.task === "glossary") return { step, task: "guidance" };
   if (step === "context" && state.task === "setup") return { step, task: "names" };

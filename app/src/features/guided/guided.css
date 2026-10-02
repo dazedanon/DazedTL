@@ -190,3 +190,27 @@ main.editor-main.guided-main { padding: 0; }
 .guided-translation-phase h3 { margin: 0 0 var(--space-3); }
 .guided-phase-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
 .guided-preview-paths { list-style: none; padding: 0; margin: var(--space-2) 0; }
+
+.event-text-source { border-top: 1px solid var(--line); padding: var(--space-4) 0; min-width: 0; overflow-wrap: anywhere; }
+.event-text-source h3, .event-text-source .toggle { margin: 0 0 var(--space-2); }
+.event-text-source p { margin: var(--space-2) 0; }
+.event-text-source details { margin-top: var(--space-3); }
+.event-text-decision { display: block; color: var(--muted); margin-top: var(--space-1); font-size: var(--font-small); }
+.event-text-risk { border-left: 2px solid var(--color-warning); padding: var(--space-3); }
+.event-text-risk textarea { display: block; width: 100%; min-height: 5em; margin-top: var(--space-2); }
+.event-text-picker { height: min(820px, calc(100dvh - var(--space-8))); }
+.event-text-picker-controls { padding: var(--space-3) var(--space-5); flex-shrink: 0; }
+.event-text-picker-controls p { margin: 0 0 var(--space-2); }
+.event-text-picker-controls input { width: 100%; margin: var(--space-3) 0; }
+.event-text-picker-filters { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.event-text-picker-filters [aria-pressed="true"] { background: var(--color-navigation-selected); color: var(--color-navigation-text); }
+.event-text-picker .event-text-picker-list { overflow: auto; min-height: 0; flex: 1; padding: var(--space-2) var(--space-5); }
+.event-text-picker-list h3 { color: var(--muted); font-size: var(--font-small); margin: var(--space-3) 0; }
+.event-text-picker-row { padding: var(--space-2) 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: baseline; }
+.event-text-picker-row .toggle { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.event-text-picker-row details { margin: 0; max-width: 38em; overflow-wrap: anywhere; }
+.event-text-picker-row summary { margin-bottom: 0; }
+.event-text-picker-controls details { margin: var(--space-3) 0; }
+.event-text-picker-controls summary { margin-bottom: 0; }
+.event-text-picker-row details[open] { grid-column: 1 / -1; }
+@media (max-width: 700px) { .event-text-picker-row { grid-template-columns: minmax(0, 1fr); } }

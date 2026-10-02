@@ -45,6 +45,7 @@ export interface Job {
   logicalPhase?: Phase;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
+  eventTextReview?: { manual?: string[]; reason?: string; binding?: string; reportId?: string | null; fingerprint?: string; literalBased?: boolean; settings?: Record<string, EngineValue> } | null;
   action?: string;
   result?: Record<string, unknown> | null;
   approval?: {
@@ -98,7 +99,23 @@ export interface ContextSetup {
   layout: { widths: GuidedOptions["widths"]; reason: string; evidence: { file: string; sha256: string; location: string }[] } | null;
   layoutStatus: "defaults" | "saved"; layoutRevision: string;
 }
+export interface EventTextRow {
+  key: string; label: string; coverage: string; selector: "ENABLED_PLUGINS_357" | "ENABLED_PATTERNS_355655" | null;
+  choices: { id: string; group: string; details: string }[]; builtins: string[];
+  decision: "enable" | "skip" | "review"; confidence: "high" | "medium" | "low"; coverageStatus: string;
+  reason: string; targets: string | string[]; observations: string[]; exclusions: string[];
+  evidence: { file: string; sha256: string; location: string }[];
+}
+export interface EventTextState {
+  status: "missing" | "waiting" | "ready" | "stale" | "invalid"; message: string; reportId: string | null;
+  fingerprint: string | null; requestId: string | null; binding: string | null;
+  recommended: Record<string, EngineValue>; rows: EventTextRow[]; builtinHits: Record<string, string[]>;
+  accepted: boolean; errors: string[]; enabled: string[]; manual: string[]; manualReason: string; previousManualReason: string;
+  view: "audit" | "sources" | "advanced-run" | "variables";
+  picker: { key: "ENABLED_PLUGINS_357" | "ENABLED_PATTERNS_355655"; selected: string[]; baseline: string[]; query: string; filter: "all" | "selected" | "recommended" } | null;
+}
 export interface GuidedState {
+  eventText: EventTextState;
   contextDocument: string;
   contextSetup: ContextSetup;
   speakerSetup: SpeakerSetup;
@@ -129,7 +146,8 @@ export interface GuidedState {
   phaseFiles: string[];
   estimates: Partial<Record<Phase, { job: Job | null; current: boolean }>>;
   phaseRuns: Partial<Record<Phase, Job>>;
-  comparisons: { matches: number; unmatched: number; files: string[]; message: string };
+  comparisons: { matches: number; unmatched: number; files: string[]; message: string; status: "not_needed" | "review_needed" | "ready" | "recovery_needed"; fingerprint: string | null;
+    rows: { file: string; location: string; literal: string; translation: string; variables: string[] }[] };
   sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
   readiness: {
     outputs: string[];
@@ -630,6 +648,11 @@ export interface RpcContract {
     request: { project_id: string; value: GuidedPreferences | null };
     response: Saved;
   };
+  guided_event_text_request: { request: { project_id: string }; response: { request: Record<string, unknown> | null; findings: EventTextState } };
+  guided_event_text_review: { request: { project_id: string; revision: number; binding: string | null; report_id: string | null; manual_reason: string; risk_accepted: boolean }; response: Saved };
+  guided_event_text_view: { request: { project_id: string; view: EventTextState["view"] }; response: Saved };
+  guided_event_text_picker: { request: { project_id: string; value: EventTextState["picker"] }; response: Saved };
+  guided_comparisons_review: { request: { project_id: string; fingerprint: string | null; accepted: boolean }; response: Saved };
   guided_context_status: { request: { project_id: string }; response: ContextSetup };
   guided_context_review: { request: { project_id: string; name: string; revision: string; choice: "empty" | "review" | "layout" }; response: Saved };
   guided_skill: {

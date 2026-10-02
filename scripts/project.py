@@ -54,6 +54,7 @@ def main():
     commands.add_parser("backups", help="List local restore points and older profile backups")
     speakers = commands.add_parser("speakers", help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls")
     speakers.add_argument("--scan", action="store_true")
+    commands.add_parser("event-text", help="Read the current Other event text investigation request and validated findings")
     commands.add_parser("context", help="Read verified context investigation results and current document revisions")
     commands.add_parser("plan-format")
     identify = commands.add_parser("identify")
@@ -123,6 +124,8 @@ def main():
                 params.update(index=args.index, provider_job_id=args.provider_job)
             if args.command == "identify":
                 params.update(engine=args.engine, evidence_file=args.evidence)
+            if args.command == "event-text":
+                method = "guided_event_text_request"
             if args.command == "context":
                 method = "guided_context_status"
             if args.command == "speakers":

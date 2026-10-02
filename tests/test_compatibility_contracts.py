@@ -21,6 +21,37 @@ from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_event_text_catalog_excludes_dictionary_keys_but_retains_coarse_handlers(self):
+        from dazedtl.compatibility.event_text import catalog
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "modules").mkdir()
+            (root / "modules/rpgmakermvmz.py").write_text("""
+HEADER_MAPPINGS_357 = {"Case/Plugin": (["message"], "font")}
+PATTERNS_355655 = {"gameVariables.setValue": ("text(.+)", False)}
+def parse(codeList, i, headerString, jaString):
+    if codeList[i]["code"] == 357 and CODE357:
+        if headerString == "BuiltIn" and len(codeList[i]["parameters"]) > 3:
+            pass
+        if "SelectedPlugin" in headerString and "SelectedPlugin" in ENABLED_PLUGINS_357:
+            pass
+    if codeList[i]["code"] == 355 and CODE355655:
+        if "_Text" in jaString and codeList[i]["code"] == 355:
+            pass
+    if codeList[i]["code"] == 356 and CODE356:
+        if "MessageCommand" in jaString:
+            pass
+        if "AlwaysCheckedChoice":
+            pass
+""")
+            rows = {row["key"]: row for row in catalog(root)["controls"]}
+            self.assertEqual(rows["CODE357"]["builtins"], ["BuiltIn"])
+            self.assertEqual(rows["CODE355655"]["builtins"], ["_Text"])
+            self.assertEqual(rows["CODE356"]["builtins"], ["AlwaysCheckedChoice", "MessageCommand"])
+            self.assertEqual(rows["CODE357"]["choices"][0]["id"], "Case/Plugin")
+            self.assertIn("message", rows["CODE357"]["choices"][0]["details"])
+            self.assertEqual(rows["CODE356"]["choices"], [])
+
     def test_preparation_preview_keeps_native_guards_and_public_configuration(self):
         from dazedtl.compatibility.dazedmtl import ExistingBackend
         backend = ExistingBackend.__new__(ExistingBackend)

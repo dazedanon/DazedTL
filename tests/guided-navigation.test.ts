@@ -7,7 +7,7 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   const translation = { lifecycle: { source_backup: { available: true } }, git: { configured: true } } as TranslationState;
   const state = { engine: "MVMZ", step: "prepare", task: null, phase: "advanced", run: { mode: "batch", phase: "batch_approval", status: "waiting" } } as GuidedState;
   assert.equal(runPhase(state), "advanced");
-  assert.deepEqual(initialPosition(state, translation), { step: "advanced", task: "run" });
+  assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "run" });
   state.run!.mode = "speakers";
   assert.deepEqual(initialPosition(state, translation), { step: "context", task: "run" });
   state.step = "context"; state.task = "glossary";
@@ -18,8 +18,15 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   state.step = "translate"; state.task = "dialogue";
   assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "main-text" });
   state.task = "variables";
-  assert.deepEqual(initialPosition(state, translation), { step: "advanced", task: "variables" });
+  assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "other-event-text" });
   state.run!.logicalPhase = "dialogue"; state.phase = "advanced";
   assert.equal(runPhase(state), "dialogue");
+  state.task = "main-text";
+  assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "main-text" });
+  for (const task of ["audit", "sources", "advanced-run", "variables"]) {
+    state.step = "advanced"; state.task = task;
+    assert.deepEqual(initialPosition(state, translation), { step: "translate", task: "other-event-text" });
+  }
+  assert.deepEqual(stagesFor("MVMZ").find((stage) => stage.id === "translate")!.tasks.map((task) => task.id), ["main-text", "other-event-text"]);
   assert.deepEqual(stagesFor("ACE").at(-1)!.tasks.map((task) => task.id), ["package"]);
 });
