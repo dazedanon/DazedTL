@@ -240,8 +240,9 @@ def serve(args, diagnostics):
             for name in ("execute", "answer", "stop", "resume", "inspect")
         },
         "guided_export": (app.guided.export, lambda value, _params: value),
+        "translation_speakers": (app.guided.speakers, lambda value, _params: views.speaker_scan(value)),
         **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
-           for name in ("position", "options_draft", "save_options", "skill", "form")},
+           for name in ("position", "options_draft", "save_options", "apply_speakers", "skill", "form")},
         "guided_draft": (app.guided.draft, lambda value, _params: value),
         "guided_save_document": (
             app.guided.save_document,

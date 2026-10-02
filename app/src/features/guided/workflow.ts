@@ -10,11 +10,10 @@ export const workflow: WorkflowStage[] = [
     { id: "baseline", title: "Save version baseline", description: "Choose which original game version translations and patches belong to." },
   ]},
   { id: "context", title: "Names & context", short: "Context", tasks: [
-    { id: "names", title: "Collect character names", description: "Collect likely speaker names before preparing the glossary and game guidance." },
-    { id: "setup", title: "Investigate the game", description: "Your coding assistant prepares terminology, voices, speaker recommendations, and measured line widths." },
+    { id: "names", title: "Speakers & game context", description: "One agent task: identify speaker formats, scan names locally, then use those names to investigate the glossary and game context." },
     { id: "glossary", title: "Review the glossary", description: "Keep recurring names and terms consistent before translating dialogue." },
     { id: "guidance", title: "Review voice & context", description: "Preserve tone, recurring jokes, and facts the translator should know." },
-    { id: "speakers", title: "Speakers & line widths", description: "Apply only the speaker rules and widths confirmed by the setup report." },
+    { id: "speakers", title: "Speakers & line widths", description: "Inspect the configured speaker rules and enter the measured line widths." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
     { id: "scope", title: "Choose a test scope", description: "Start with database text and an early scene. Apply and playtest it before expanding the translation." },
@@ -58,6 +57,7 @@ export function initialPosition(state: GuidedState, translation: TranslationStat
   const stages = stagesFor(state.engine);
   const step = state.step === "layout" ? "apply" : state.step === "translate" && state.phase === "advanced" ? "advanced" : state.step;
   const saved = stages.find((stage) => stage.id === step)!;
+  if (step === "context" && state.task === "setup") return { step, task: "names" };
   if (state.task === "run") return { step: runStage(state), task: "run" };
   if (saved?.tasks.some((task) => task.id === state.task)) return { step, task: state.task! };
   const preserved = translation.lifecycle.source_backup && translation.lifecycle.source_backup.available !== false;

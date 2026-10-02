@@ -3,6 +3,8 @@
 from copy import deepcopy
 from pathlib import Path
 import re
+import shlex
+import sys
 import uuid
 
 from dazedtl.storage import write_json
@@ -11,6 +13,7 @@ from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
 from .files import digest
 from . import backups
+from . import speaker_setup
 
 STEPS = {"prepare", "context", "translate", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
@@ -93,6 +96,7 @@ class Guided:
             # Retain existing project choices and all frozen runs when reopening.
             options = {**native["engine_options"], **dict.fromkeys(ADVANCED_CODES, False),
                        "CODE122_VAR_RANGES": "", "ENABLED_PLUGINS_357": [], "ENABLED_PATTERNS_355655": []}
+            options.update({key: False for key in speaker_setup.KEYS if type(options.get(key)) is bool})
             native = self.backend.workflows.update(native["id"], native["revision"], {"engine_options": options})["project"]
         if pending:
             self.backend.workflows.draft(native["id"], {"documents": pending})
@@ -340,6 +344,8 @@ class Guided:
             **value, "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
             "form": self.saved_form(project_id),
+            "speaker_setup": self.speaker_findings(project_id, native),
+            "speaker_scan": self.speakers(project_id),
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
@@ -380,6 +386,9 @@ class Guided:
 
     def clean(self, project_id):
         self.translation.clean_drafts(project_id)
+        self.clean_options(project_id)
+
+    def clean_options(self, project_id):
         path = self.path(project_id, "draft")
         if path.exists() and read_json(path) is not None:
             raise ValueError("Save or discard guided options before running an action.")
@@ -625,7 +634,83 @@ class Guided:
         if name not in {"setup", "advanced", "wrap", "plugins", "walkthrough", "investigation"}:
             raise ValueError("Choose a task-specific helper.")
         text = self.backend.workflows.skill(native["id"], name)
+        if name == "setup":
+            schema = self.backend.workflows.state(native["id"])["engine_schema"]
+            request = speaker_setup.request(self.path(project_id, "speaker-request"), project_id, native, schema)
+            command = shlex.join([sys.executable, "-B", str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
+                                  "--workspace", str(self.translation.workspace), "--project", project_id, "speakers"])
+            text = speaker_setup.instructions(request, command) + "\n## Glossary and context investigation (after the local speaker scan)\n" + text
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}
+
+    def speaker_findings(self, project_id, native=None):
+        if native is None:
+            _, native = self.record(project_id)
+        return speaker_setup.inspect(self.path(project_id, "speaker-request"), native, project_id, self.observed_digest)
+
+    def apply_speakers(self, project_id, revision, report_id, reset=False):
+        self.idle()
+        self.clean_options(project_id)
+        _, native = self.record(project_id)
+        if type(revision) is not int or type(reset) is not bool or native["revision"] != revision:
+            raise ValueError("The guided project changed. Reload before applying speaker findings.")
+        findings = self.speaker_findings(project_id, native)
+        if not report_id or findings["reportId"] != report_id or findings["status"] not in {"ready", "applied"}:
+            raise ValueError(findings["message"])
+        if findings["status"] == "applied" and not reset:
+            return self.preferences(native)
+        options, receipt = speaker_setup.configured(self.path(project_id, "speaker-request"), native, findings, reset=reset)
+        updated = self.backend.workflows.apply_speaker_settings(native["id"], revision, options, receipt)
+        return self.preferences(updated)
+
+    @staticmethod
+    def speaker_configuration(native):
+        return digest({"engine_options": native["engine_options"], "phase1_comments": native["phase1_comments"]})
+
+    def speakers(self, project_id, scan=False):
+        if type(scan) is not bool:
+            raise ValueError("Choose whether to run the local speaker scan.")
+        _, native = self.record(project_id)
+        if scan:
+            self.clean_options(project_id)
+            findings = self.speaker_findings(project_id, native)
+            existing = self.speakers(project_id)
+            if findings["status"] == "applied" and (existing["current"] or existing["job"] and existing["job"]["status"] == "running"):
+                return existing
+            self.idle()
+            self.open(project_id)
+            _, native = self.record(project_id)
+            if findings["status"] not in {"ready", "applied"}:
+                raise ValueError("Identify speaker formats and save their evidence before running the speaker scan.")
+            self.apply_speakers(project_id, native["revision"], findings["reportId"])
+            _, native = self.record(project_id)
+            files = self.backend.phase_files(native, "speakers")
+            if not files:
+                raise ValueError("Prepare the game’s event JSON before scanning speakers.")
+            self.backend.operations.start({"project_id": native["id"], "project": deepcopy(native),
+                "folder": str(self.backend.workflows.folder(native["id"])), "action": "speaker_scan", "label": "Scan speaker names",
+                "guard": self.backend.guided_guard(native, self.backend.workflows.folder(native["id"])),
+                "options": {"files": files, "configuration": self.speaker_configuration(native), "reportId": findings["reportId"]}})
+        jobs = sorted((job for job in self.backend.operations.jobs.values() if job["project_id"] == native["id"] and job["action"] == "speaker_scan"), key=lambda job: job["created"], reverse=True)
+        job = jobs[0] if jobs else None
+        result = job.get("result") or {} if job else {}
+        current = bool(job and job["status"] == "complete" and result.get("configuration") == self.speaker_configuration(native)
+                       and result.get("reportId") == native.get("guided_speakers", {}).get("reportId")
+                       and result.get("reportId") == self.speaker_findings(project_id, native)["reportId"])
+        if current:
+            try:
+                root = Path(native["source"])
+                data = Path(native["data"])
+                data_relative = data.relative_to(root)
+                inventory = {path.relative_to(root).as_posix() for path in data.iterdir() if path.is_file() and path.suffix.lower() == ".json"}
+                scanned = {name for name in result.get("source_inputs", {}) if Path(name).parent == data_relative and Path(name).suffix.lower() == ".json"}
+                current = (self.observed_digest(project_path(native["source"], ".dazedtl/guided/speakers.json")) == result.get("artifact_sha256")
+                           and inventory == scanned and bool(scanned)
+                           and all(self.observed_digest(project_path(native["source"], name)) == sha for name, sha in result["source_inputs"].items()))
+            except (OSError, ValueError):
+                current = False
+        return {"job": job, "current": current, "names": result.get("names", []) if current else [],
+                "actorNames": result.get("actor_names", {}) if current else {}, "variableActorIds": result.get("variable_actor_ids", {}) if current else {}, "files": result.get("files", 0),
+                "path": str(Path(native["source"]) / ".dazedtl/guided/speakers.json") if current else None}
 
     def job(self, project_id):
         _, native = self.record(project_id)

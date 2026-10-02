@@ -83,6 +83,19 @@ def guard(project, folder):
 def phased_workflows(workspace, lock, operations, manual):
     from desktop.backend.workflow import Workflows
     class ScopedWorkflows(Workflows):
+        def apply_speaker_settings(self, identity, revision, options, receipt):
+            from util.engine_options import validate_engine_options
+            project = self.projects[identity]
+            if project["revision"] != revision:
+                raise ValueError("The guided project changed. Reload its findings before applying them.")
+            validated = validate_engine_options({"rpgmakermvmz": options})["rpgmakermvmz"]
+            updated = {**project, "engine_options": {**project["engine_options"], **validated},
+                       "revision": revision + 1, "guided_speakers": receipt}
+            # Preferences and the consumed report travel in one atomic write.
+            self.save(updated)
+            self.projects[identity] = updated
+            return updated
+
         def _collect(self, project):
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):

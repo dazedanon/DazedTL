@@ -52,6 +52,8 @@ def main():
     commands.add_parser("state")
     commands.add_parser("prepare")
     commands.add_parser("backups", help="List local restore points and older profile backups")
+    speakers = commands.add_parser("speakers", help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls")
+    speakers.add_argument("--scan", action="store_true")
     commands.add_parser("plan-format")
     identify = commands.add_parser("identify")
     identify.add_argument("--engine", required=True)
@@ -120,6 +122,8 @@ def main():
                 params.update(index=args.index, provider_job_id=args.provider_job)
             if args.command == "identify":
                 params.update(engine=args.engine, evidence_file=args.evidence)
+            if args.command == "speakers":
+                params["scan"] = args.scan
             if args.command == "legacy":
                 params.update(action=args.action, token=args.token, approved=args.approved)
             if args.command == "operation":

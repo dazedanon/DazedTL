@@ -16,6 +16,9 @@ from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
 def run_action(plan, log):
+    if plan["action"] == "speaker_scan":
+        from dazedtl.compatibility.speaker_scan import run_scan
+        return run_scan(plan, log)
     if plan["action"] == "release":
         return run_release(plan, log)
     if plan["action"] == "export_selected":

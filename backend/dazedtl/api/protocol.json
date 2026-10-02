@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 11,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -141,7 +141,13 @@
       "refresh": true
     },
     "guided_skill": {
-      "refresh": false
+      "refresh": true
+    },
+    "guided_apply_speakers": {
+      "refresh": true
+    },
+    "translation_speakers": {
+      "refresh": true
     },
     "guided_inspect": {
       "refresh": false

@@ -14,6 +14,7 @@ import type {
 
 export const api = {
   translation: {
+    speakers: (project_id: string, scan = false) => request("translation_speakers", { project_id, scan }),
     resolve: (
       project_id: string,
       run_id: string,
@@ -118,6 +119,7 @@ export const api = {
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
   guided: {
+    applySpeakers: (project_id: string, revision: number, report_id: string, reset = false) => request("guided_apply_speakers", { project_id, revision, report_id, reset }),
     inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
     form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
     position: (project_id: string, step: GuidedStep, task?: string) => request("guided_position", { project_id, step, task }),

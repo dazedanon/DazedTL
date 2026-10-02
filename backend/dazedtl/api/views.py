@@ -45,6 +45,8 @@ def guided(value, project_id):
         'form': value['form'],
         'preferences': value['preferences'],
         'optionsDraft': value['options_draft'],
+        'speakerSetup': value['speaker_setup'],
+        'speakerScan': speaker_scan(value['speaker_scan']),
         'engineSchema': value['engine_schema'],
         'files': [pick(item, ('name', 'title', 'default', 'size', 'group')) for item in native['files']],
         'selection': native['selected'],
@@ -71,6 +73,10 @@ def guided(value, project_id):
             'enabled': value['allow_providers'],
         },
     }
+
+
+def speaker_scan(value):
+    return {**value, 'job': job(value['job'])}
 
 
 def settings(value):

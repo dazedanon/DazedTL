@@ -10,12 +10,14 @@ export function FieldRow({
   help,
   error,
   children,
+  wide = false,
 }: {
   id: string;
   label: string;
   help?: string;
   error?: string;
   children: (props: ControlProps) => ReactNode;
+  wide?: boolean;
 }) {
   const description =
     [help && `${id}-help`, error && `${id}-error`].filter(Boolean).join(" ") ||
@@ -23,7 +25,7 @@ export function FieldRow({
   return (
     <div className="field-row">
       <label htmlFor={id}>{label}</label>
-      <div className="field-control">
+      <div className={`field-control${wide ? " field-control--wide" : ""}`}>
         {children({
           id,
           "aria-describedby": description,

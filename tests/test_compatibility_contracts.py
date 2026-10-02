@@ -15,11 +15,26 @@ from dazedtl.compatibility.translation import TranslationEngine, ProviderFailure
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.compatibility.manual import manual_jobs
 from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files, apply_selected, phased_workflows
+from dazedtl.compatibility.speaker_scan import collect as collect_speakers
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_speaker_scan_rejects_partial_parser_results_without_finalizing_names(self):
+        engine = SimpleNamespace(SPEAKER_COLLECTED=[], MISMATCH=[], resetSpeakerState=Mock(), setSpeakerParseMode=Mock(),
+                                 finalizeSpeakerParse=Mock(side_effect=AssertionError('Must not translate names')))
+        engine.openFiles = lambda name: ({}, [0, 0], ValueError('broken JSON') if name == 'bad.json' else None)
+        def handle(name, _estimate):
+            engine.openFiles(name)
+            engine.SPEAKER_COLLECTED.extend(['リーナ', 'リーナ'])
+        engine.handleMVMZ = handle
+        self.assertEqual(collect_speakers(engine, ['good.json'], lambda _: None), ['リーナ'])
+        with self.assertRaisesRegex(ValueError, 'bad.json'):
+            collect_speakers(engine, ['good.json', 'bad.json'], lambda _: None)
+        engine.setSpeakerParseMode.assert_called_with(False)
+        engine.finalizeSpeakerParse.assert_not_called()
+
     def test_apply_uses_reviewed_selection_even_when_other_outputs_are_prepared(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -80,7 +80,17 @@ export interface GuidedForm {
 export interface PlaytestOptions { hotkey: string; forgeHotkey: string; uiScale: string; editorCmd: string }
 export interface ReleaseArtifact { id: string; kind: "game" | "patch"; path: string; folder: string; available: boolean; size: number }
 export interface GuidedFile { name: string; title?: string; default?: boolean; size?: number; group: "database" | "dialogue" }
+export interface SpeakerSetup {
+  status: "missing" | "waiting" | "invalid" | "stale" | "ready" | "applied";
+  message: string;
+  reportId: string | null;
+  overrides: string[];
+  rules: { key: string; label: string; decision: "enable" | "skip"; confidence: "high" | "medium" | "low"; reason: string;
+    evidence: { file: string; sha256: string; location: string }[] }[];
+}
 export interface GuidedState {
+  speakerSetup: SpeakerSetup;
+  speakerScan: SpeakerScan;
   projectId: string;
   source: string;
   engine: "MVMZ" | "ACE";
@@ -126,6 +136,7 @@ export interface GuidedState {
     enabled: boolean;
   };
 }
+export interface SpeakerScan { job: Job | null; current: boolean; names: string[]; actorNames: Record<string, string>; variableActorIds: Record<string, number>; files: number; path: string | null }
 export interface WorkspaceSnapshot {
   application: AppState;
   guided: GuidedState | null;
@@ -403,6 +414,7 @@ export interface ExportedFiles {
   files: number;
 }
 export interface RpcContract {
+  translation_speakers: { request: { project_id: string; scan: boolean }; response: SpeakerScan };
   translation_identify: {
     request: { project_id: string; engine: string; evidence_file: string };
     response: Saved;
@@ -589,6 +601,10 @@ export interface RpcContract {
   };
   guided_save_options: {
     request: { project_id: string; revision: number; values: GuidedOptions };
+    response: GuidedPreferences;
+  };
+  guided_apply_speakers: {
+    request: { project_id: string; revision: number; report_id: string; reset: boolean };
     response: GuidedPreferences;
   };
   guided_options_draft: {

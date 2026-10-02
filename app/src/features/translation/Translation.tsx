@@ -83,7 +83,7 @@ function Workspace({
     { id: "progress", label: "Progress" },
     { id: "context", label: "Context" },
     { id: "requests", label: "Requests & results" },
-    { id: "versions", label: "Source & versions" },
+    { id: "versions", label: "Game updates" },
     ...(legacy
       ? [{ id: "legacy" as const, label: "Existing phased work" }]
       : []),

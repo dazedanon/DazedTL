@@ -78,8 +78,12 @@ See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.
 
 Open an MV/MZ or Ace game and choose **Translation**. Preserve the original, prepare
 runtime files, then review the file list and game version for Git setup.
-In **Names & context**, collect names, run the setup assistant task, and review/save the
-glossary, quirks, game instructions, speaker recommendations, and measured widths.
+In **Names & context**, copy the combined **speaker & context task** into your coding assistant.
+It identifies speaker formats, runs the local name scanner with evidenced rules, then uses the
+names and actor/variable lookups to investigate the glossary, characters, voice and game context.
+The scanner makes no API requests. Optional API name translation remains in the discovery tools.
+Review/save the resulting guidance and measured widths. **View findings** explains each speaker
+rule; **Adjust manually** retains your overrides. Re-copy the task when upgrading from older setup prompts.
 In **Translate**, choose a database and small map scope, translate database names before
 dialogue, and build the variable comparison cache before advanced variable translation.
 Apply and playtest an early scene before expanding. Batch pauses for cost approval before submission.
@@ -113,8 +117,9 @@ Request inspection shows each line's text type and known or unknown speaker. Unk
 specific source ambiguities appear as review notes beside the translation, with links from the run to affected requests.
 Check those notes against the source before marking the request source-checked. A correction makes that review pending again.
 
-Source & versions exposes backups, reviewed checkpoints, local patch packaging, and official-update preview/apply/recovery.
-For a new official release, stage a separate copy and finish its engine-specific preparation before previewing the update.
+For a new official release, **Game updates** stages a separate copy for comparison. Finish its
+engine-specific preparation before previewing the update. Len's manual checkpoint and patch
+controls remain under **Advanced setup & patch tools**.
 Ordinary MV/MZ writes preserve existing Japanese in _original. Rebasing source metadata after an update requires the exact current original-branch bytes and commit.
 Native formats use their engine's source/injection sidecars. Keep the selected game available throughout the work.
 
@@ -122,7 +127,10 @@ Working records and guidance stay in the game's ignored .dazedtl folder; Git tra
 Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
 The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
 Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
-**Translation → Prepare** shows the exact saved location and an **Open backup folder** action.
+**Translation → Project tools → Backups & recovery** keeps backup locations and recovery choices
+outside the guided steps. Choose game files or translation project files before selecting a saved
+copy. **Project tools → Game updates** is for carrying a translation to a newer official release;
+it guides preparation, comparison, and application separately from file recovery.
 If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
 replacement saves the game's current files; it does not recover the deleted original.
 After a successful fresh source backup, references to deleted workspace backups and deleted engine
@@ -130,7 +138,7 @@ investigations are archived automatically, clearing their stale warnings without
 A local patch does not publish a repository.
 GameUpdate's public commit marker is included only when the existing updater checks can verify it against the configured tracked branch.
 
-In **Source & versions**, use **List restore points** to select a source or translation-workspace backup.
+In **Backups & recovery**, choose **Recover files…**, then select game files or translation project files and a saved copy.
 Restore writes a verified copy into a new folder outside the game; existing folders are never overwritten.
 Source snapshots restore game files. Workspace snapshots restore the contents of .dazedtl, including guidance,
 accepted translations, custom tools and image work, but not the backup store itself.

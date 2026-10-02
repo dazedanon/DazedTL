@@ -38,7 +38,7 @@ summary:focus-visible {
 .badge {
   padding: 4px 9px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--color-badge-text);
   background: var(--color-badge);
 }
@@ -275,6 +275,8 @@ pre {
 .field-control > select {
   max-width: 280px;
 }
+.field-control--wide > input:not([type="checkbox"]), .field-control--wide > select { width: 100%; max-width: none; }
+.action-bar-slot { display: contents; }
 .field-control > .short-control {
   width: 120px;
 }

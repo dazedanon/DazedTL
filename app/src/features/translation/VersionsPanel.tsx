@@ -7,346 +7,110 @@ import { flushDrafts } from "../../state/leaveGuards";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
-import { BackupsPanel, BackupSummary } from "./BackupsPanel";
+import { ActionList, ActionRow } from "../../ui/ActionList";
+import { ActionControl } from "../../ui/ActionControl";
+import { BackupsPanel } from "./BackupsPanel";
 import { JobStatus } from "../../ui/JobStatus";
+import { FieldRow } from "../../ui/FieldRow";
+import { ActionSlot } from "../../ui/ActionSlot";
+import { VersionChanges } from "./VersionChanges";
+import { VersionTools } from "./VersionTools";
+import { versionSession } from "./versionState";
 
-export function VersionsPanel({
-  project,
-  state,
-  guided = false,
-}: {
-  project: Project;
-  state: TranslationState;
-  guided?: boolean;
+export function VersionsPanel({ project, state, guided = false, onBackups, onPrepare, onCheckpoint, actionTarget }: {
+  project: Project; state: TranslationState; guided?: boolean;
+  onBackups?: () => void; onPrepare?: () => void; onCheckpoint?: () => void;
+  actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.refresh });
-  const [version, setVersion] = useState(state.git?.original_version || "");
-  const [manifest, setManifest] = useState(
-    ".dazedtl/len-method/work/patch-files.json",
-  );
-  const [untranslated, setUntranslated] = useState(false);
-  const [original, setOriginal] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const [official, setOfficial] = useState("");
   const [nextVersion, setNextVersion] = useState("");
-  const operation = (name: string, args: Record<string, unknown> = {}) =>
-    action.run(async () => {
-      await flushDrafts();
-      await api.translation.operation(project.id, name, args);
-    });
+  const [advanced, setAdvanced] = useState(false);
+  const [dismissedAttempt, setDismissedAttempt] = useState<string | undefined>();
+  const session = versionSession(state.jobs, state.git);
   const disabled = action.busy || state.active || !!application.snapshot?.application.running;
-  const previews = state.jobs.filter(
-    (job) =>
-      job.kind === "operation" &&
-      job.status === "complete" &&
-      job.result?.proposed_tree,
-  );
-  return (
-    <>
-      <Message message={action.error} onDismiss={action.clear} />
-      <Section title="Source and version tracking">
-        <dl className="translation-facts">
-          <div>
-            <dt>Source game version</dt>
-            <dd>{state.git?.original_version || "Not recorded"}</dd>
-          </div>
-          <div>
-            <dt>Translation branch</dt>
-            <dd>{state.git?.translation_branch || "Not established"}</dd>
-          </div>
-          <div>
-            <dt>Translation commit</dt>
-            <dd>
-              {state.git?.translation_commit?.slice(0, 12) || "No checkpoint"}
-            </dd>
-          </div>
-          <div>
-            <dt>Source backup</dt>
-            <dd>
-              <BackupSummary record={state.lifecycle.source_backup} fallback="Required before preparation" />
-            </dd>
-          </div>
-          <div>
-            <dt>Workspace backup</dt>
-            <dd>
-              <BackupSummary record={state.lifecycle.workspace_backup} fallback="Not yet saved" />
-            </dd>
-          </div>
-        </dl>
-        <p className="muted">
-          The original branch holds untranslated patch files. Translation work
-          goes on the registered translation branch. Glossary, working stores,
-          and QA records have separate backups.
-        </p>
-        <div className="actions">
-          <Button
-            disabled={disabled}
-            onClick={() => operation("backup_source")}
-          >
-            Back up source game
-          </Button>
-          <Button
-            disabled={disabled || !state.initialized}
-            onClick={() => operation("backup_workspace")}
-          >
-            Back up translation workspace
-          </Button>
-          {!guided && ["MVMZ", "ACE"].includes(project.engine) && (
-            <Button
-              disabled={disabled || (!state.lifecycle.source_backup || state.lifecycle.source_backup.available === false)}
-              onClick={() => operation("rpgmaker_prepare")}
-            >
-              Prepare RPG Maker files
-            </Button>
-          )}
-        </div>
-        {!guided && <details>
-          <summary>Establish or reuse Git baselines</summary>
-          <div className="form-grid">
-            <label>
-              Source game version
-              <input
-                value={version}
-                onChange={(event) => setVersion(event.target.value)}
-                placeholder="For example, 1.00"
-              />
-            </label>
-            <label>
-              Runtime patch manifest, relative to the game
-              <input
-                value={manifest}
-                onChange={(event) => setManifest(event.target.value)}
-              />
-            </label>
-          </div>
-          <label className="translation-check">
-            <input
-              type="checkbox"
-              checked={untranslated}
-              onChange={(event) => setUntranslated(event.target.checked)}
-            />
-            The selected folder has been checked and is untranslated.
-          </label>
-          <label>
-            Separate matching original, if needed
-            <div className="actions">
-              <input
-                value={original}
-                onChange={(event) => setOriginal(event.target.value)}
-              />
-              <Button
-                onClick={() =>
-                  action.run(async () => {
-                    const path = await window.dazedtl.chooseFolder();
-                    if (path) setOriginal(path);
-                  })
-                }
-              >
-                Browse
-              </Button>
-            </div>
-          </label>
-          <Button
-            disabled={
-              disabled || !version.trim() || (!state.lifecycle.source_backup || state.lifecycle.source_backup.available === false)
-            }
-            onClick={() =>
-              operation("git_setup", {
-                version,
-                manifest,
-                untranslated,
-                original,
-              })
-            }
-          >
-            Establish baselines
-          </Button>
-        </details>}
-      </Section>
-      <BackupsPanel state={state} />
-      {!guided && <Section title="Checkpoint and local delivery">
-        <label>
-          Complete runtime patch manifest
-          <input
-            value={manifest}
-            onChange={(event) => setManifest(event.target.value)}
-          />
-        </label>
-        <div className="actions">
-          <Button
-            disabled={disabled || !state.git?.configured}
-            onClick={() => operation("checkpoint", { manifest })}
-          >
-            Checkpoint reviewed patch
-          </Button>
-          <Button
-            disabled={
-              disabled ||
-              !state.lifecycle.checkpoint ||
-              state.progress?.phases.qa !== "complete"
-            }
-            onClick={() => operation("package")}
-          >
-            Build local patch
-          </Button>
-        </div>
-        {state.lifecycle.delivery && (
-          <p className="translation-path">
-            {state.lifecycle.delivery.path}
-            <br />
-            Commit {state.lifecycle.delivery.commit.slice(0, 12)} · game{" "}
-            {state.lifecycle.delivery.game_version}
-          </p>
-        )}
-      </Section>}
-      <Section title="Update to a new game release">
-        <p className="muted">
-          Preview the official changes against the recorded original and
-          translation. Resolve conflicts before resuming translation.
-        </p>
-        <label>
-          New official game folder
-          <div className="actions">
-            <input
-              value={official}
-              onChange={(event) => setOfficial(event.target.value)}
-            />
-            <Button
-              onClick={() =>
-                action.run(async () => {
-                  const path = await window.dazedtl.chooseFolder();
-                  if (path) setOfficial(path);
-                })
-              }
-            >
-              Browse
-            </Button>
-          </div>
-        </label>
-        <label>
-          New game version
-          <input
-            value={nextVersion}
-            onChange={(event) => setNextVersion(event.target.value)}
-          />
-        </label>
-        <Button
-          disabled={
-            disabled || !official || !nextVersion || !state.git?.configured
-          }
-          onClick={() =>
-            operation("stage_update", { official, version: nextVersion })
-          }
-        >
-          Stage and prepare new original
-        </Button>
-        <p className="footnote">
-          Preview a copy prepared through the same engine-specific route as the
-          current baseline. The selected official folder stays unchanged.
-        </p>
-        <Button
-          disabled={
-            disabled || !official || !nextVersion || !state.git?.configured
-          }
-          onClick={() =>
-            operation("version_preview", { official, version: nextVersion })
-          }
-        >
-          Preview official update
-        </Button>
-        {previews.map((job) => (
-          <details key={job.id}>
-            <summary>
-              Preview · {new Date(job.created).toLocaleString()}
-            </summary>
-            <pre className="translation-json">
-              {JSON.stringify(job.result, null, 2)}
-            </pre>
-            <Button
-              disabled={disabled}
-              onClick={() => operation("version_apply", { preview_id: job.id })}
-            >
-              Apply this reviewed update
-            </Button>
-          </details>
-        ))}
-        {!!state.git?.pending_operations.length && (
-          <div className="actions">
-            <Button
-              disabled={disabled}
-              onClick={() => operation("version_continue")}
-            >
-              Continue resolved update
-            </Button>
-            <Button
-              disabled={disabled}
-              onClick={() => operation("version_abort")}
-            >
-              Abort update
-            </Button>
-          </div>
-        )}
-        <Button
-          disabled={disabled || !state.git?.configured}
-          onClick={() => operation("version_handoff")}
-        >
-          Prepare post-update instructions
-        </Button>
-      </Section>
-      <Section title="Saved operations">
-        {!state.jobs.some((job) => job.kind === "operation") && (
-          <p className="muted">
-            The starting prompt will perform these steps and report its saved
-            checkpoints.
-          </p>
-        )}
-        {state.jobs
-          .filter((job) => job.kind === "operation")
-          .map((job) => (
-            <article className="translation-run" key={job.id}>
-              <JobStatus job={job} />
-              {job.status === "running" && (
-                <Button
-                  disabled={action.busy || job.stop_requested}
-                  onClick={() =>
-                    action.run(() => api.translation.stop(project.id, job.id))
-                  }
-                >
-                  Stop at checkpoint
-                </Button>
-              )}
-              {typeof job.result?.prompt === "string" && (
-                <Button
-                  onClick={() =>
-                    action.run(() =>
-                      window.dazedtl.copyText(String(job.result!.prompt)),
-                    )
-                  }
-                >
-                  Copy update instructions
-                </Button>
-              )}
-              {typeof job.result?.official === "string" && (
-                <Button
-                  onClick={() => {
-                    setOfficial(String(job.result!.official));
-                    setNextVersion(String(job.result!.version));
-                  }}
-                >
-                  Use staged original for preview
-                </Button>
-              )}
-              {job.result && (
-                <details>
-                  <summary>Saved evidence and paths</summary>
-                  <pre className="translation-json">
-                    {JSON.stringify(job.result, null, 2)}
-                  </pre>
-                </details>
-              )}
-            </article>
-          ))}
-      </Section>
-    </>
-  );
+  const pending = !!state.git?.pending_operations.length;
+  const assetsPending = !!state.git?.asset_sync_pending;
+  const active = session.latest && ["ready", "running", "waiting"].includes(session.latest.status) ? session.latest : null;
+  const stage = !choosing && session.stage?.status === "complete" ? session.stage : null;
+  const preview = !choosing ? session.preview : undefined;
+  const done = !choosing && session.finished;
+  const aborted = !choosing && session.aborted;
+  const resultVersion = String(preview?.result?.version || stage?.result?.version || "");
+  const operation = (name: string, args: Record<string, unknown> = {}) => action.run(async () => {
+    await flushDrafts();
+    await api.translation.operation(project.id, name, args);
+    if (name === "stage_update") setChoosing(false);
+  }, "", name);
+  const browse = (choose: (path: string) => void) => action.run(async () => {
+    const path = await window.dazedtl.chooseFolder();
+    if (path) choose(path);
+  }, "", "folder");
+  const control = (name: string, label: string, args: Record<string, unknown> = {}, blocked = false, primary = false) =>
+    <ActionControl label={label} variant={primary ? "primary" : "default"} disabled={disabled || blocked}
+      pending={action.busy && action.key === name} pendingText="Starting…" error={action.key === name ? action.error : ""}
+      job={(!choosing || action.key === name) ? state.jobs.find((job) => job.action === name) : undefined}
+      onClick={() => operation(name, args)} />;
+  const chooseNew = () => { setChoosing(true); setDismissedAttempt(undefined); action.clear(); };
+  const configured = !!state.git?.configured;
+  if (recovery) return <><Button variant="quiet" onClick={() => setRecovery(false)}>Back to game updates</Button><BackupsPanel state={state} actionTarget={actionTarget} /></>;
+  return <div className="version-panel">
+    <p className="version-purpose">Use this page when the developer releases a newer version of the game and you want to carry your translation forward.</p>
+    <div className="version-current"><span>Current game version</span><strong>{state.git?.original_version || "Not recorded yet"}</strong></div>
+    {action.key === "folder" && <Message message={action.error} onDismiss={action.clear} />}
+    {!configured ? <Section title="Finish preparation first"><p>Record the original game version before bringing in an update.</p>
+      <ActionSlot target={actionTarget}>{onPrepare ? <Button variant="primary" onClick={onPrepare}>Go to version baseline</Button> : <Button onClick={() => setAdvanced(true)}>Set up version tracking</Button>}</ActionSlot>
+    </Section> : pending || assetsPending ? <Section title="Finish the interrupted update">
+      {pending ? <><p>Remaining conflicts can be resolved using the official game’s files. Affected translated text may need translating again.</p>
+        <ActionSlot target={actionTarget}>{control("version_continue", "Use official files & continue", {}, false, true)}{control("version_abort", "Cancel update & restore translation")}</ActionSlot></>
+        : <p className="banner">The file update finished, but game assets still need recovery. Ask your coding assistant to finish asset synchronization in this game folder before starting another update.</p>}
+      {session.latest && <details><summary>Recovery details</summary><JobStatus job={session.latest} /><pre className="translation-json">{JSON.stringify(session.latest.result, null, 2)}</pre></details>}
+    </Section> : active ? <Section title={active.action === "stage_update" ? "Preparing the new release" : active.action === "version_preview" ? "Comparing game versions" : "Updating the game"}>
+      <JobStatus job={active} /><ActionSlot target={actionTarget}><ActionControl label="Stop at a safe point" disabled={action.busy || active.stop_requested}
+        pending={action.busy && action.key === "stop-update"} pendingText="Requesting stop…" error={action.key === "stop-update" ? action.error : ""}
+        onClick={() => action.run(() => api.translation.stop(project.id, active.id), "Stop requested.", "stop-update")} /></ActionSlot>
+    </Section> : done ? <Section title="Game version updated">
+      <p>Continue by having your coding assistant identify new or changed text and preserve translations that still apply.</p>
+      <ActionSlot target={actionTarget}>{session.handoff ? <ActionControl label="Copy post-update task" disabled={disabled} pending={action.busy && action.key === "copy-update"}
+        pendingText="Copying…" error={action.key === "copy-update" ? action.error : ""} notice={action.key === "copy-update" ? action.notice : ""}
+        onClick={() => action.run(() => window.dazedtl.copyText(String(session.handoff!.result!.prompt)), "Task copied. Run it in your coding assistant.", "copy-update")} />
+        : control("version_handoff", "Prepare post-update task", {}, false, true)}
+      <Button variant="quiet" disabled={disabled} onClick={chooseNew}>Start another game update</Button></ActionSlot>
+    </Section> : preview && !session.stale ? <Section title={`Review update to ${resultVersion}`}>
+      <p>Review how this release affects the working game before applying it.</p><VersionChanges value={preview.result!} />
+      <ActionSlot target={actionTarget}>{control("version_apply", `Apply update to ${resultVersion}`, { preview_id: preview.id }, false, true)}<Button variant="quiet" disabled={disabled} onClick={chooseNew}>Choose a different release</Button></ActionSlot>
+    </Section> : stage || preview && session.stale ? <Section title={`Compare with version ${resultVersion}`}>
+      <p>The new release was copied for preparation. Preview its changes before updating the working game.</p>
+      {stage?.result?.preparation_required === true && <p className="banner">This engine needs assistant preparation. Prepare the copied game through the same engine-specific process used for the current original, then preview the changes.</p>}
+      {session.stale && <p className="banner">The current game changed after the last comparison. Preview it again before applying the update.</p>}
+      <details><summary>Release used for comparison</summary><p className="translation-path">{String(stage?.result?.official || preview?.result?.source_root)}</p></details>
+      <ActionSlot target={actionTarget}>{control("version_preview", "Preview changes", { official: stage?.result?.official || preview?.result?.source_root, version: resultVersion }, !state.git?.worktree_clean, true)}<Button variant="quiet" disabled={disabled} onClick={chooseNew}>Choose a different release</Button></ActionSlot>
+    </Section> : choosing || session.stage && ["failed", "needs_attention", "interrupted", "stopped"].includes(session.stage.status) && session.stage.id !== dismissedAttempt ? <Section title="Choose the new official release">
+      <p>Choose an extracted, complete release from the game’s developer. The app prepares a separate copy for comparison.</p>
+      <fieldset className="version-form" disabled={disabled}>
+        <FieldRow id="update-official-folder" label="New official game folder">{(props) => <div className="version-folder"><input {...props} value={official} onChange={(event) => setOfficial(event.target.value)} /><Button onClick={() => browse(setOfficial)}>Choose folder</Button></div>}</FieldRow>
+        <label>New game version<input value={nextVersion} onChange={(event) => setNextVersion(event.target.value)} placeholder="For example, 1.10" /></label>
+      </fieldset>
+      <ActionSlot target={actionTarget}>{control("stage_update", "Prepare new release", { official, version: nextVersion }, !official.trim() || !nextVersion.trim(), true)}<Button variant="quiet" disabled={disabled} onClick={() => { setChoosing(false); setDismissedAttempt(session.stage?.id); }}>Cancel</Button></ActionSlot>
+    </Section> : <Section title="Update this translation">
+      <p>{aborted ? "The update was canceled. Choose another release when you’re ready." : "Keep translating this version until you have a newer official release to import."}</p>
+      <ActionSlot target={actionTarget}><Button variant="primary" disabled={disabled} onClick={chooseNew}>Start game update</Button></ActionSlot>
+    </Section>}
+    {configured && !state.git?.worktree_clean && !pending && !assetsPending && <ActionList><ActionRow label={<><strong>Save current translation changes first</strong><small>The version comparison requires your reviewed game edits to be saved in Git.</small></>}>
+      <Button disabled={disabled} onClick={() => onCheckpoint ? onCheckpoint() : setAdvanced(true)}>Review translation checkpoint</Button>
+    </ActionRow></ActionList>}
+    <details><summary>Version tracking details</summary><dl className="translation-facts">
+      <div><dt>Translation branch</dt><dd>{state.git?.translation_branch || "Not established"}</dd></div>
+      <div><dt>Saved translation commit</dt><dd>{state.git?.translation_commit?.slice(0, 12) || "Not saved yet"}</dd></div>
+    </dl></details>
+    {!guided && <details open={advanced} onToggle={(event) => setAdvanced(event.currentTarget.open)}><summary>Advanced setup & patch tools</summary><VersionTools state={state} disabled={disabled} browse={browse} control={control} /></details>}
+    <Button variant="quiet" disabled={action.busy} onClick={() => onBackups ? onBackups() : setRecovery(true)}>Backups & recovery</Button>
+    {!!session.history.length && <details><summary>Update history ({session.history.length})</summary>{session.history.map((job) => <article className="translation-run" key={job.id}>
+      <JobStatus job={job} /><time className="muted" dateTime={job.created}>{new Date(job.created).toLocaleString()}</time>
+      {job.result && <details><summary>Saved details</summary><pre className="translation-json">{JSON.stringify(job.result, null, 2)}</pre></details>}
+    </article>)}</details>}
+  </div>;
 }

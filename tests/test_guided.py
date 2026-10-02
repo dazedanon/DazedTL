@@ -15,6 +15,7 @@ from dazedtl.translation.files import evidence, read_json, digest
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
+from dazedtl.translation import speaker_setup
 
 
 class GuidedTests(unittest.TestCase):
@@ -50,6 +51,8 @@ class GuidedTests(unittest.TestCase):
             phase_files=lambda _native, _phase: ['Items.json'],
             guided_guard=lambda _native, _folder: evidence(self.source, ['Items.json']),
             guided_runtime_files=lambda _source: ['Items.json'])
+        self.backend.operations = SimpleNamespace(jobs={}, start=Mock())
+        self.backend.describe = lambda _: dict(self.native)
         self.backend.guided_phase = lambda owner, phase, files: self.backend.workflows.phase(owner, phase, True)
         self.settings_revision = 1
         self.settings = SimpleNamespace(prepare_engine=lambda **_kwargs: None, describe=lambda: {'revision': self.settings_revision})
@@ -62,6 +65,149 @@ class GuidedTests(unittest.TestCase):
 
     def preview(self):
         return self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
+
+    def speaker_report(self):
+        schema = [{'key': key, 'label': key, 'type': 'boolean'} for key in speaker_setup.KEYS[1:5]]
+        self.backend.workflows.state = lambda _: {'project': self.native, 'manual_job': self.pending, 'engine_schema': schema}
+        self.backend.workflows.skill = lambda *_: 'Investigate this game.'
+        def apply(_identity, revision, options, receipt):
+            self.assertEqual(revision, self.native['revision'])
+            self.native.update(engine_options=options, guided_speakers=receipt, revision=revision + 1)
+            return self.native
+        self.backend.workflows.apply_speaker_settings = Mock(side_effect=apply)
+        self.guided.skill(self.identity, 'setup')
+        request = read_json(self.guided.path(self.identity, 'speaker-request'))
+        report = {key: request[key] for key in ('version', 'request_id', 'project_id', 'engine')}
+        report['rules'] = {field['key']: {'decision': 'skip', 'confidence': 'high', 'reason': 'No supported pattern in the inspected corpus.',
+            'evidence': [{'file': 'Items.json', 'sha256': evidence(self.source, ['Items.json'])['Items.json'], 'location': 'item 0, name'}]}
+            for field in schema}
+        return report
+
+    def test_speaker_findings_require_current_complete_evidence_and_never_start_paid_work(self):
+        report = self.speaker_report()
+        path = self.source / speaker_setup.REPORT
+        self.assertEqual(self.guided.speaker_findings(self.identity)['status'], 'waiting')
+        self.guided.skill(self.identity, 'setup')
+        self.assertEqual(read_json(self.guided.path(self.identity, 'speaker-request'))['request_id'], report['request_id'])
+        with self.assertRaises(ValueError):
+            self.guided.speakers(self.identity, scan=True)
+        for change, status in (('owner', 'waiting'), ('request', 'waiting'), ('missing', 'invalid'),
+                               ('unknown', 'invalid'), ('evidence', 'invalid'), ('stale', 'stale'), ('escape', 'invalid')):
+            value = deepcopy(report)
+            rule = value['rules']['INLINE401SPEAKERS']
+            if change == 'owner': value['project_id'] = 'other-game'
+            if change == 'request': value['request_id'] = 'older-task'
+            if change == 'missing': value['rules'].pop('FACENAME101')
+            if change == 'unknown': value['rules']['CODE122'] = deepcopy(rule)
+            if change == 'evidence': rule['evidence'] = []
+            if change == 'stale': rule['evidence'][0]['sha256'] = '0' * 64
+            if change == 'escape': rule['evidence'][0]['file'] = '../Items.json'
+            write_json(path, value)
+            with self.subTest(change=change):
+                self.assertEqual(self.guided.speaker_findings(self.identity)['status'], status)
+                with self.assertRaises(ValueError):
+                    self.guided.apply_speakers(self.identity, self.native['revision'], digest(value))
+        self.backend.workflows.apply_speaker_settings.assert_not_called()
+        report['rules']['INLINE401SPEAKERS'].update(decision='enable', confidence='high')
+        report['rules']['FIRSTLINESPEAKERS'].update(decision='enable', confidence='medium')
+        write_json(path, report)
+        draft = self.guided.preferences(self.native)
+        self.guided.options_draft(self.identity, draft)
+        with self.assertRaises(ValueError):
+            self.guided.apply_speakers(self.identity, 0, digest(report))
+        self.guided.options_draft(self.identity, None)
+        self.backend.running = lambda: True
+        with self.assertRaises(ValueError):
+            self.guided.apply_speakers(self.identity, 0, digest(report))
+        self.backend.running = lambda: False
+        saved = self.guided.apply_speakers(self.identity, 0, digest(report))
+        self.assertTrue(saved['values']['engine_options']['INLINE401SPEAKERS'])
+        self.assertFalse(saved['values']['engine_options']['FIRSTLINESPEAKERS'])
+        self.assertEqual(self.guided.speaker_findings(self.identity)['status'], 'applied')
+        self.assertEqual(self.started, [])
+        self.assertTrue(self.guided.preview(self.identity, 'start', options={'mode': 'speakers'})['confirmation'])
+        # An amended finding can turn off an earlier automatic recommendation;
+        # its earlier application must not be misidentified as a manual edit.
+        report['rules']['INLINE401SPEAKERS']['decision'] = 'skip'
+        write_json(path, report)
+        self.guided.apply_speakers(self.identity, 1, digest(report))
+        self.assertFalse(self.native['engine_options']['INLINE401SPEAKERS'])
+        self.assertEqual(self.guided.speaker_findings(self.identity)['overrides'], [])
+
+    def test_local_speaker_scan_keeps_project_ownership_and_reuses_only_current_results(self):
+        report = self.speaker_report()
+        write_json(self.source / speaker_setup.REPORT, report)
+        # A dormant API run must neither block this local task nor be resumed,
+        # canceled, or detached by applying rules and scanning new names.
+        self.pending = {'id': 'saved-api-run', 'mode': 'batch', 'status': 'interrupted',
+                        'provider_job': 'retained-provider-job', 'approval': {'token': 'retained-approval'}}
+        self.native['manual_job'] = self.pending['id']
+        preserved = deepcopy(self.pending)
+        def start(plan):
+            self.assertEqual(plan['project_id'], 'native')
+            self.assertEqual(plan['options']['files'], ['Items.json'])
+            result = {'names': ['リーナ', '\\N[1]'], 'files': 1, 'source_inputs': evidence(self.source, ['Items.json']),
+                      'configuration': plan['options']['configuration'], 'reportId': plan['options']['reportId']}
+            artifact = self.source / '.dazedtl/guided/speakers.json'
+            write_json(artifact, result)
+            result['artifact_sha256'] = digest(artifact.read_bytes())
+            self.backend.operations.jobs['scan'] = {'id': 'scan', 'action': 'speaker_scan', 'project_id': 'native',
+                'created': '2026-01-01', 'status': 'complete', 'result': result, 'message': 'Scanned', 'log': []}
+        self.backend.operations.start.side_effect = start
+        self.backend.running = lambda: True
+        with self.assertRaises(ValueError): self.guided.speakers(self.identity, scan=True)
+        self.backend.operations.start.assert_not_called()
+        self.backend.running = lambda: False
+        value = self.guided.speakers(self.identity, scan=True)
+        self.assertTrue(value['current'])
+        self.assertEqual(value['names'], ['リーナ', '\\N[1]'])
+        self.guided.speakers(self.identity, scan=True)
+        self.assertEqual(self.backend.operations.start.call_count, 1)
+        self.assertEqual(self.started, [])
+        self.assertEqual(self.pending, preserved)
+        self.assertEqual(self.native['manual_job'], preserved['id'])
+        with self.assertRaises(ValueError): self.preview()
+        other = self.projects.open({'source': str(self.root), 'engine': 'MVMZ'})
+        with self.assertRaises(ValueError): self.guided.speakers(other['id'], scan=True)
+        self.native['engine_options']['FIRSTLINESPEAKERS'] = True
+        self.assertFalse(self.guided.speakers(self.identity)['current'])
+        self.native['engine_options']['FIRSTLINESPEAKERS'] = False
+        artifact = self.source / '.dazedtl/guided/speakers.json'
+        artifact.unlink()
+        self.assertFalse(self.guided.speakers(self.identity)['current'])
+        self.guided.speakers(self.identity, scan=True)
+        write_json(self.source / 'NewPluginData.JSON', {'events': []})
+        self.assertFalse(self.guided.speakers(self.identity)['current'])
+        (self.source / 'NewPluginData.JSON').unlink()
+        write_json(self.source / 'Items.json', [{'name': 'changed'}])
+        self.assertFalse(self.guided.speakers(self.identity)['current'])
+
+    def test_speaker_application_preserves_overrides_and_recovered_preferences_across_new_findings(self):
+        report = self.speaker_report()
+        report['rules']['INLINE401SPEAKERS'].update(decision='enable', confidence='high')
+        write_json(self.source / speaker_setup.REPORT, report)
+        # An edit made after copying setup belongs to the user, including an enable.
+        self.native['engine_options']['FACENAME101'] = True
+        self.guided.apply_speakers(self.identity, 0, digest(report))
+        self.assertTrue(self.native['engine_options']['FACENAME101'])
+        self.native['engine_options']['INLINE401SPEAKERS'] = False
+        # Repeated observation/application cannot reset a subsequent manual edit.
+        self.guided.apply_speakers(self.identity, 1, digest(report))
+        self.assertFalse(self.native['engine_options']['INLINE401SPEAKERS'])
+        self.assertEqual(self.backend.workflows.apply_speaker_settings.call_count, 1)
+        report = self.speaker_report()
+        report['rules']['INLINE401SPEAKERS'].update(decision='enable', confidence='high')
+        write_json(self.source / speaker_setup.REPORT, report)
+        self.guided.apply_speakers(self.identity, 1, digest(report))
+        self.assertFalse(self.native['engine_options']['INLINE401SPEAKERS'])
+        self.assertTrue(self.native['engine_options']['FACENAME101'])
+        self.guided.apply_speakers(self.identity, 2, digest(report), reset=True)
+        self.assertTrue(self.native['engine_options']['INLINE401SPEAKERS'])
+        self.assertFalse(self.native['engine_options']['FACENAME101'])
+        # Translation can subsequently alter runtime files without erasing the finding.
+        write_json(self.source / 'Items.json', [{'name': 'Medicine'}])
+        self.assertEqual(self.guided.speaker_findings(self.identity)['status'], 'applied')
+        self.assertEqual(self.started, [])
 
     def test_existing_forms_gain_release_defaults_without_rewriting_user_values(self):
         previous = {'version': '1.00', 'original': '/original', 'untranslated': False, 'only_overflow': False}

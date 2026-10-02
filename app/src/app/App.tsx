@@ -168,8 +168,8 @@ export default function App() {
             <Settings />
           ) : state.project && (state.screen === "guided" || state.screen === "manual") ? (
             <GuidedWorkflow key={state.project.id} project={state.project} settings={() => navigate("settings")}
-              backups={application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} /> : null}
-              versions={application.snapshot?.translation ? <VersionsPanel guided project={state.project} state={application.snapshot.translation} /> : null} />
+              backups={(target) => application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} actionTarget={target} /> : null}
+              versions={(actions) => application.snapshot?.translation ? <VersionsPanel guided project={state.project!} state={application.snapshot.translation} onBackups={actions.backups} onPrepare={actions.prepare} onCheckpoint={actions.checkpoint} actionTarget={actions.target} /> : null} />
           ) : state.project ? (
             <Translation
               key={state.project.id}

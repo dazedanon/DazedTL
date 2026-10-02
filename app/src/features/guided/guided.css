@@ -121,6 +121,13 @@ main.editor-main.guided-main { padding: 0; }
 .file-browser-counts { display: block; color: var(--muted); font-size: var(--font-small); margin-top: var(--space-1); }
 .file-browser-selection > p { flex-basis: 100%; margin: 0; }
 .file-browser-source-warning { color: var(--color-warning); }
+.guided-speaker-findings { display: grid; gap: var(--space-4); }
+.guided-speaker-findings section { display: grid; gap: var(--space-2); }
+.guided-speaker-findings > p, .guided-speaker-findings section :is(h3, p, details) { margin: 0; }
+.guided-speaker-findings section + section { border-top: 1px solid var(--line); padding-top: var(--space-4); }
+.guided-speaker-findings h3 { font-size: var(--font-body); }
+.guided-speaker-findings li { overflow-wrap: anywhere; margin-block: var(--space-2); }
+.guided-name-list { display: flex; flex-direction: column; height: min(16em, 35dvh); margin-block: var(--space-3); }
 @container guided (max-width: 62em) {
   .guided-layout { display: flex; flex-direction: column; }
   .guided-task-nav { display: none; }
