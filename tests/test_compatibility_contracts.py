@@ -13,7 +13,7 @@ from unittest.mock import patch, Mock
 
 from dazedtl.compatibility.translation import TranslationEngine, ProviderFailure, provider_errors
 from dazedtl.translation.compilation import compile_requests
-from dazedtl.compatibility.manual import manual_jobs
+from dazedtl.compatibility.manual import manual_jobs, canceled_before_submission, DECLINED_SPEAKERS
 from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files, apply_selected, phased_workflows
 from dazedtl.compatibility.speaker_scan import collect as collect_speakers
 from dazedtl.storage import write_json
@@ -21,6 +21,74 @@ from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(self):
+        # The native worker reports several failures with the same canceled message.
+        # Only its explicit no-submission evidence can retire a first declined run.
+        from copy import deepcopy
+        import threading
+        with TemporaryDirectory() as temporary:
+            source = Path(temporary)
+            folder = source / 'profile/manual/jobs/fixture'
+            plan = {'mode': 'batch'}
+            write_json(folder / 'plan.json', plan)
+            write_json(folder / 'attempt.json', {'resume': False, 'batch_resume_state': None})
+            job = {'id': 'fixture', 'status': 'failed', 'mode': 'batch', 'phase': 'preparing',
+                   'message': 'Speaker translation canceled', 'log': [DECLINED_SPEAKERS],
+                   'outputs': {}, 'completed': [], 'errors': {}, 'mismatches': {},
+                   'plan_hash': digest((folder / 'plan.json').read_bytes())}
+            self.assertTrue(canceled_before_submission(job, folder))
+            for changes in ({'log': []}, {'phase': 'consume'}, {'outputs': {'Items.json': 'receipt'}},
+                            {'completed': ['Items.json']}, {'errors': {'Items.json': 'Parse failure'}},
+                            {'batch_root': '/fixture/paid-queue'}, {'batch_detail': {'id': 'provider-id'}},
+                            {'plan_hash': 'changed'}):
+                self.assertFalse(canceled_before_submission({**job, **changes}, folder))
+            write_json(folder / 'attempt.json', {'resume': True, 'batch_resume_state': None})
+            self.assertFalse(canceled_before_submission(job, folder))
+            write_json(folder / 'attempt.json', {'resume': False, 'batch_resume_state': None})
+            write_json(folder / 'log/batch_state.json', {'status': 'submitted', 'id': 'retained'})
+            self.assertFalse(canceled_before_submission(job, folder))
+            (folder / 'log/batch_state.json').unlink()
+            write_json(folder / 'job.json', job)
+            module = source / 'desktop/backend/manual.py'
+            module.parent.mkdir(parents=True)
+            module.write_text('''import json, threading
+from pathlib import Path
+class ManualJobs:
+    def __init__(self, workspace, lock, **kwargs):
+        self.root = Path(workspace)/'manual'
+        self.lock = lock
+        self.stopping = threading.Event()
+        self.jobs = {}
+        self.load_saved()
+    def folder(self, identity): return self.root/'jobs'/identity
+    def load_saved(self):
+        self.jobs['fixture'] = json.loads((self.folder('fixture')/'job.json').read_text())
+    def _event(self, job, event):
+        job.update(status='canceled' if job['phase']=='canceled' else 'complete' if event['args'][0] else 'failed', message=event['args'][1])
+    def _launch(self, job, resume): job['status'] = 'running'
+''')
+            controller = manual_jobs(source, source/'profile', threading.RLock(), False)
+            self.assertEqual(controller.jobs['fixture']['status'], 'canceled')
+            self.assertEqual(json.loads((folder/'job.json').read_text()), job)
+            # Retry must not inherit canceled phase and hide a subsequent paid failure.
+            retry = deepcopy(controller.jobs['fixture'])
+            controller._launch(retry, True)
+            self.assertEqual(retry['phase'], 'preparing')
+            write_json(folder/'attempt.json', {'resume': True, 'batch_resume_state': None})
+            controller._event(retry, {'event': 'finished', 'args': [False, 'Speaker translation canceled']})
+            self.assertEqual(retry['status'], 'failed')
+            self.assertEqual(retry['log'], job['log'])
+            # Fresh explicit decline is canceled; a failure after payment keeps outputs.
+            write_json(folder/'attempt.json', {'resume': False, 'batch_resume_state': None})
+            fresh = {**deepcopy(job), 'status': 'running'}
+            controller._event(fresh, {'event': 'finished', 'args': [False, 'Speaker translation canceled']})
+            self.assertEqual(fresh['status'], 'canceled')
+            paid = {**deepcopy(job), 'status': 'running', 'outputs': {'Items.json': 'kept'}}
+            controller._event(paid, {'event': 'finished', 'args': [False, 'Speaker translation canceled']})
+            self.assertEqual((paid['status'], paid['outputs']), ('failed', {'Items.json': 'kept'}))
+            controller._event(paid, {'event': 'finished', 'args': [True, 'Completed']})
+            self.assertEqual((paid['status'], paid['outputs']), ('complete', {'Items.json': 'kept'}))
+
     def test_event_text_catalog_excludes_dictionary_keys_but_retains_coarse_handlers(self):
         from dazedtl.compatibility.event_text import catalog
         with TemporaryDirectory() as directory:

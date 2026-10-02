@@ -108,6 +108,10 @@ body and its action footer stays outside the scroll region. One copied setup tas
 speaker formats, runs local name collection, then uses those results for the glossary/context
 investigation. Guidance review and layout settings follow before
 the named database and dialogue actions.
+Explicitly declined speaker preflight is interpreted as canceled only with verified first-attempt, no-submission evidence and no saved outputs or queue artifacts.
+Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
+Other failed, stopped and interrupted paid runs keep their project recovery guard and receipts.
+Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
 Translate task 2, Other event text, retains investigation, source review, translation and comparison views within one task.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
 Findings stage recommendations; applying supported settings and reviewing their actual coverage remain explicit user actions.

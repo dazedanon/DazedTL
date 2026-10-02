@@ -289,10 +289,16 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const quote = currentEstimate(target);
     const previousQuote = state.estimates[target]?.job;
     const blocked = !baseline || !!changed.length || unfinished || !files.length;
+    const estimateBlock = !baseline ? "Preserve the original source and save the version baseline first."
+      : changed.length ? "Save your changed guidance before calculating an estimate."
+      : unfinished ? "Recover the unfinished API run before calculating another estimate. Its saved provider work is retained."
+      : !files.length ? "Choose files for this phase before calculating an estimate."
+      : !state.provider.model ? "Choose a connection and model before calculating an estimate." : "";
     return <section className="guided-translation-phase" aria-label={phaseLabels[target]}>
       <h3>{phaseLabels[target]}</h3>
       <ActionList><ActionRow label={<><strong>{fileCount(files.length)} selected</strong><small>{target === "database" ? "Names, descriptions, and interface terms." : "Maps, common events, and troop events."}</small></>}><Button disabled={disabled} onClick={() => chooseFiles(target)}>{target === "database" ? "Change database files" : "Change event files"}</Button></ActionRow>
       <ActionRow label={<><strong>{quote?.status === "complete" ? "Current estimate" : previousQuote ? "Estimate needs refreshing" : "Estimate needed"}</strong><small>{quote ? "Retained for this selection and saved settings. An estimate is not a spending cap." : "Calculate an estimate before reviewing this run."}</small></>}>{task("start", previousQuote ? "Refresh estimate" : "Calculate estimate", { mode: "estimate", phase: target }, blocked || !state.provider.model)}</ActionRow></ActionList>
+      {estimateBlock && <p className="muted">{estimateBlock}</p>}
       {quote?.estimate && <Estimate value={quote.estimate} />}
       {current && <p className={current.scopeComplete ? "guided-success" : "muted"}>{current.scopeComplete ? "Completed for current selection" : `Saved run: ${current.status}`}{current.scopeComplete && <> · {Object.keys(current.outputs || {}).every((name) => current.appliedOutputs?.includes(name)) ? "Output applied" : "Output ready to apply"}</>}</p>}
       <div className="guided-phase-actions">{current && <Button disabled={action.busy} onClick={() => inspect(current)}>View result</Button>}{task("start", target === "database" ? "Review database translation" : "Review dialogue translation", { mode, phase: target }, blocked || !paidModeReady || !quote || !state.provider.ready || !state.provider.enabled)}
@@ -368,7 +374,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <ol className="guided-preparation-list">
           <li><span>{["ready", "applied"].includes(findings.status) ? <Check size={16} /> : "1"}</span><div><strong>Identify speaker formats</strong><small>{["ready", "applied"].includes(findings.status) ? "Speaker-format guidance saved." : "Check names, variables, faces and plugins before scanning."}</small></div><span className="guided-preparation-state">{["ready", "applied"].includes(findings.status) ? "Saved" : findings.status === "invalid" || findings.status === "stale" ? "Needs attention" : "Waiting"}</span></li>
           <li><span>{scan.current && !scanOptionsDirty ? <Check size={16} /> : "2"}</span><div><strong>Scan speaker names</strong><small>{scan.current && !scanOptionsDirty ? `${scan.names.length} nameplates found across ${scan.files} event files.` : "The local parser collects names using the confirmed formats."}</small></div><span className="guided-preparation-state">{scan.current && !scanOptionsDirty ? "Saved" : scan.job?.status === "running" ? "Scanning" : scan.job ? "Needs attention" : "Waiting"}</span></li>
-          <li><span>{discoveryReady ? <Check size={16} /> : "3"}</span><div><strong>Save glossary & context</strong><small>{discovery.message}</small></div><span className="guided-preparation-state">{discoveryReady ? "Ready" : ["stale", "invalid"].includes(discovery.status) ? "Needs attention" : "Waiting"}</span></li>
+          <li><span>{discoveryReady ? <Check size={16} /> : "3"}</span><div><strong>Save glossary & context</strong><small>{discovery.message}</small></div><span className="guided-preparation-state">{discoveryReady ? "Saved" : ["stale", "invalid"].includes(discovery.status) ? "Needs attention" : "Waiting"}</span></li>
         </ol>
         {scan.job && scan.job.status !== "complete" && <JobStatus job={{ ...scan.job, label: "Local speaker scan" }} />}
         {["invalid", "stale"].includes(findings.status) && <Message message={findings.message} />}

@@ -127,6 +127,13 @@ def instructions(value, command):
     return f"""
 ## Save the complete investigation result
 
+Keep this investigation focused on speaker formats, reusable glossary/context, and measured UI layout.
+Reuse verified current findings and inspect only the source needed to resolve missing or stale evidence.
+For layout, prioritize System resolution/font settings and the relevant window/plugin code.
+Inspect font metrics, window skins, portrait or other image dimensions only when they establish an actual
+text area's geometry. Skip unrelated artwork, image inventories, broad OCR and image text translation;
+those belong to the separate Images stage. Do not edit images or execute the game here.
+
 After the local speaker scan, finish the glossary, voice, game context and width investigation.
 Keep the shared glossary's category headers and `source (translation)` entry format; character notes stay on that entry's line.
 Do not convert it to a Markdown table or JSON. Preserve existing spellings unless the source justifies a correction.

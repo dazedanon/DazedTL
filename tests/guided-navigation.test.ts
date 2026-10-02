@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuidedState, TranslationState } from "../app/src/api/contracts.ts";
-import { initialPosition, runPhase, runStage, stagesFor } from "../app/src/features/guided/workflow.ts";
+import { initialPosition, runPhase, runStage, stagesFor, unfinishedRun } from "../app/src/features/guided/workflow.ts";
 
 test("saved runs choose their owning task instead of obsolete Prepare or native progress labels", () => {
   const translation = { lifecycle: { source_backup: { available: true } }, git: { configured: true } } as TranslationState;
@@ -36,4 +36,12 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   state.step = "images"; state.task = "images";
   assert.deepEqual(initialPosition(state, translation), { step: "images", task: "images" });
   assert.equal(stagesFor("MVMZ").findIndex((stage) => stage.id === "images"), stagesFor("MVMZ").findIndex((stage) => stage.id === "plugins") + 1);
+  for (const status of ["failed", "stopped", "interrupted", "running", "waiting"]) {
+    state.run!.status = status;
+    assert.equal(unfinishedRun(state), true);
+  }
+  for (const status of ["complete", "canceled"]) {
+    state.run!.status = status;
+    assert.equal(unfinishedRun(state), false);
+  }
 });

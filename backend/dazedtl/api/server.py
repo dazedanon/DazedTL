@@ -106,6 +106,8 @@ class Application:
                         project.update(
                             status="Estimate ready" if job["mode"] == "estimate" else "Translation ready", detail="", next_label="Review results"
                         )
+                    elif job["status"] == "canceled":
+                        project.update(status="Translation workspace ready", detail="Review scope and guidance before starting a run.", next_label="Continue translation")
                     else:
                         project.update(status="Run needs attention", detail="", next_label="Review run")
                         project["attention"].append(job["message"])

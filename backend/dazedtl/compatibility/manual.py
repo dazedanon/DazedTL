@@ -3,10 +3,50 @@
 from copy import deepcopy
 from contextlib import contextmanager
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
+
+
+SPEAKER_CANCELLATION = "Speaker translation canceled"
+DECLINED_SPEAKERS = "No unresolved speakers were sent, and the translation run did not start."
+
+
+def canceled_before_submission(job, directory, *, finishing=False):
+    """Recognize an explicit declined preflight, never a generic worker failure."""
+    logs=job.get("log")
+    if (job.get("status") not in ({"running", "waiting"} if finishing else {"failed"})
+            or job.get("mode") not in {"batch", "translate"}
+            or job.get("phase") != "preparing"
+            or job.get("message") != SPEAKER_CANCELLATION
+            or not isinstance(logs,list) or not all(isinstance(line,str) for line in logs)
+            or not any(DECLINED_SPEAKERS in line for line in logs)
+            or any(job.get(key) for key in ("completed", "outputs", "errors", "mismatches",
+                                          "batch_root", "batch_recovery", "batch_detail", "approval"))):
+        return False
+    try:
+        if directory.is_symlink() or any((directory/name).is_symlink() for name in ("translated","log")):
+            return False
+        plan_path, attempt_path = directory / "plan.json", directory / "attempt.json"
+        if plan_path.is_symlink() or attempt_path.is_symlink():
+            return False
+        raw = plan_path.read_bytes()
+        plan, attempt = json.loads(raw), json.loads(attempt_path.read_bytes())
+        if (hashlib.sha256(raw).hexdigest() != job.get("plan_hash")
+                or plan.get("mode") != job["mode"] or plan.get("batch_link")
+                or attempt.get("resume") is not False or attempt.get("batch_resume_state") is not None):
+            return False
+        # Even an unexpected queued request or output keeps its recovery guard.
+        if any(path.is_file() or path.is_symlink() for path in (directory / "translated").rglob("*")):
+            return False
+        if any((directory / "log").glob("batch*")):
+            return False
+    except (OSError, ValueError, TypeError):
+        return False
+    return True
 
 
 def manual_jobs(source, workspace, lock, allow_providers):
@@ -44,6 +84,29 @@ def manual_jobs(source, workspace, lock, allow_providers):
     class ManualJobs(native.ManualJobs):
         request_policy = None
         workflow_selection = None
+
+        def load_saved(self):
+            super().load_saved()
+            for job in self.jobs.values():
+                if canceled_before_submission(job, self.folder(job["id"])):
+                    # Interpret the historical defect without rewriting saved user records.
+                    job.update(status="canceled", phase="canceled", approval=None)
+
+        def _event(self, job, event):
+            with self.lock:
+                args = event.get("args", [])
+                if (event.get("event") == "finished" and len(args) >= 2
+                        and args[0] is False and args[1] == SPEAKER_CANCELLATION
+                        and not self.stopping.is_set()):
+                    current = {**job, "message": SPEAKER_CANCELLATION}
+                    if canceled_before_submission(current, self.folder(job["id"]), finishing=True):
+                        job["phase"] = "canceled"
+                return super()._event(job, event)
+
+        def _launch(self, job, resume):
+            if job.get("phase") == "canceled":
+                job["phase"] = "preparing"
+            return super()._launch(job, resume)
 
         @contextmanager
         def selected_workflow(self, identity, files):

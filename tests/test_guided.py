@@ -536,12 +536,15 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
 
     def test_an_estimate_cannot_replace_an_interrupted_paid_run_reference(self):
-        self.pending = {'id': 'provider-run', 'mode': 'batch', 'status': 'interrupted'}
-        for mode in ('batch', 'translate', 'estimate', 'speakers'):
-            with self.subTest(mode=mode), self.assertRaises(ValueError):
-                self.guided.preview(self.identity, 'start', options={'mode': mode})
+        for status in ('failed', 'stopped', 'interrupted', 'running', 'waiting'):
+            self.pending = {'id': 'provider-run', 'mode': 'batch', 'status': status}
+            for mode in ('batch', 'translate', 'estimate', 'speakers'):
+                with self.subTest(status=status, mode=mode), self.assertRaises(ValueError):
+                    self.guided.preview(self.identity, 'start', options={'mode': mode})
         self.assertEqual(self.pending['id'], 'provider-run')
         self.assertEqual(self.started, [])
+        for status in ('complete', 'canceled'):
+            self.guided.pending_run({'manual_job': {**self.pending, 'status': status}})
 
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses
