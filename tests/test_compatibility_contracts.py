@@ -21,6 +21,21 @@ from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_preparation_preview_keeps_native_guards_and_public_configuration(self):
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
+        backend = ExistingBackend.__new__(ExistingBackend)
+        plans = {}
+        def preview(owner, action, options):
+            self.assertEqual((owner, action, options), ("fixture", "prepare", {}))
+            plans["token"] = {"action": action, "label": "Prepare game files", "guard": {"data": "source-hash"},
+                              "options": {"public_settings": {"gameUpdateUsername": "fixture"}}}
+            return {"token": "token", "options": plans["token"]["options"]}
+        backend.workflows = SimpleNamespace(previews=plans, preview=preview)
+        result = backend.guided_preparation_preview("fixture", "prepare_game", {})
+        self.assertEqual(plans["token"]["action"], "prepare_game")
+        self.assertEqual(plans["token"]["guard"], {"data": "source-hash"})
+        self.assertEqual(result["options"]["public_settings"]["gameUpdateUsername"], "fixture")
+
     def test_speaker_scan_rejects_partial_parser_results_without_finalizing_names(self):
         engine = SimpleNamespace(SPEAKER_COLLECTED=[], MISMATCH=[], resetSpeakerState=Mock(), setSpeakerParseMode=Mock(),
                                  finalizeSpeakerParse=Mock(side_effect=AssertionError('Must not translate names')))

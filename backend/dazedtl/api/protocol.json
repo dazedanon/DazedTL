@@ -1,5 +1,5 @@
 {
-  "version": 11,
+  "version": 12,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,

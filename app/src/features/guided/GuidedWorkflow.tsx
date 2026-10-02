@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { FolderOpen } from "lucide-react";
+import { Check, FolderOpen, LoaderCircle } from "lucide-react";
 import { api } from "../../api/client";
 import type { GuidedForm, GuidedOptions, GuidedState, GuidedStep, Job, Phase, Preview, Project, TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
@@ -73,6 +73,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [estimateScope, setEstimateScope] = useState<{ id: string; phase: Phase } | null>(null);
   const [documentName, setDocumentName] = useState("quirks");
   const [output, setOutput] = useState("");
+  const [baselineRun, setBaselineRun] = useState<string | null>(null);
+  const [baselineNotice, setBaselineNotice] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); headingRef.current?.focus({ preventScroll: true }); }, [taskId, position.step]);
@@ -100,6 +102,15 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const estimate = job?.mode === "estimate" && job.id === estimateScope?.id && phase === estimateScope.phase && !changed.length && !draft.dirty && !(state.sourceStatus.retired || []).includes(job.id) && job.model === state.provider.model && job.files?.length === phaseFiles.length && job.files.every((name) => phaseFiles.some((file) => file.name === name)) ? job : null;
   const activity = projectActivity(state, translation);
   const activeOperation = activity.find((item) => ["ready", "running", "waiting"].includes(item.status));
+  const localOperation = !panel && activeOperation && (
+    taskId === "backup" && activeOperation.action === "backup_source" ||
+    taskId === "format" && ["prepare_game", "format_data", "format_plugins", "gameupdate"].includes(activeOperation.action || "")) ? activeOperation : null;
+  const backupPending = taskId === "backup" && (!!localOperation || action.busy && action.key === "backup_source");
+  const preparationPending = taskId === "format" && (!!localOperation || action.busy && action.key === "prepare_game");
+  const stopOperation = (current: Job) => action.run(async () => {
+    if (state.operations.some((item) => item.id === current.id)) await api.stop(project.id);
+    else await api.translation.stop(project.id, current.id);
+  }, "", "stop-operation");
   const qaTask = activity.find((item) => item.action === "qa_prepare" && typeof item.result?.handoff === "string");
   const qaJob = activity.find((item) => ["qa_prepare", "qa_status"].includes(item.action || "") && item.status === "complete");
   const qaStatus = qaJob?.result?.status && typeof qaJob.result.status === "object" ? qaJob.result.status as Record<string, unknown> : null;
@@ -139,6 +150,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const result = await api.execute(project.id, value.token);
     setStarted((previous) => ({ ...previous, [actionKey(value.action, value.options)]: result }));
     setPreview(null);
+    if (value.action === "git_setup") setBaselineRun(result.id);
     if (value.action === "start") {
       if (value.options.mode === "estimate") setEstimateScope({ id: result.id, phase: value.options.phase as Phase });
       else await navigate(value.options.mode === "speakers" ? "context" : value.options.phase === "advanced" ? "advanced" : "translate", "run");
@@ -155,6 +167,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const recorded = name === "start" ? options.mode === "estimate" ? estimate || undefined : undefined : operationJob(name, options);
     const current = name === "backup_source" && recorded?.status === "complete" ? undefined : recorded;
     const active = current && ["ready", "running", "waiting"].includes(current.status);
+    const localFeedback = !panel && (taskId === "backup" && name === "backup_source" || taskId === "format" && name === "prepare_game");
+    if (localFeedback) return <Button variant={variant} pending={!!active || action.busy && action.key === actionKey(name, options)} disabled={disabled || blocked} onClick={() => review(name, options, files)}>{label}</Button>;
+    if (localOperation?.action === name) return <Button variant={variant} pending disabled>{label}</Button>;
     return <ActionControl label={label} disabled={disabled || blocked} variant={variant}
       {...feedback(actionKey(name, options), active ? current.message || "Working…" : name === "start" && options.mode === "estimate" ? "Estimating selected files…" : "Preparing action…")}
       pending={action.busy && action.key === actionKey(name, options) || !!active}
@@ -190,9 +205,19 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const formatActions = [{ id: "format_data", title: "Format game data", hint: "Prepare the JSON used by the translation phases." },
     ...(state.hasPlugins ? [{ id: "format_plugins", title: "Format plugins.js", hint: "Prepare the game’s plugin configuration." }] : []),
     { id: "gameupdate", title: "Create GameUpdate files", hint: "Add player patch support." }];
-  const nextPreparation = formatActions.find((item) => operationJob(item.id)?.status !== "complete");
+  const preparation = state.preparation;
+  const preparationComplete = preparation.complete;
+  useEffect(() => {
+    if (!baselineRun || action.busy || taskId !== "baseline") return;
+    const saved = translation.jobs.find((item) => item.id === baselineRun);
+    if (saved?.status === "complete" && baseline) {
+      setBaselineRun(null);
+      setBaselineNotice(`Version ${translation.git?.original_version || "baseline"} saved. Prepare complete.`);
+      void move("context", "names");
+    } else if (saved && ["failed", "stopped", "interrupted", "canceled"].includes(saved.status)) setBaselineRun(null);
+  }, [baselineRun, translation.jobs, baseline, taskId, action.busy]);
   const completed = new Set<string>([...(preserved ? ["backup"] : []), ...(baseline ? ["baseline"] : []), ...(applied ? ["apply"] : []),
-    ...(!nextPreparation ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
+    ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
   const speakerStatus = <ActionList><ActionRow label={<><strong>{speakersConfigured ? "Speaker detection configured" : "Speaker investigation"}</strong><small>{
     speakerAction.busy ? "" : findings.status === "ready" && (draft.dirty || state.optionsDraft) ? "Save or discard your option edits to apply the findings."
       : findings.status === "missing" && taskId === "names" ? "The agent checks formats before scanning names."
@@ -206,12 +231,14 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   switch (taskId) {
     case "backup":
-      content = <>{sourceBackup ? <div className="guided-backup-location"><strong>{preserved ? `${sourceBackup.files.toLocaleString()} original files preserved` : "Original backup unavailable"}</strong>
+      content = <>{sourceBackup ? <div className="guided-backup-location"><strong className={preserved ? "guided-success" : ""}>{preserved ? `${sourceBackup.files.toLocaleString()} original files preserved` : "Original backup unavailable"}</strong>
         {!preserved && <Message message={sourceBackup.issue || "A replacement saves the current game; it cannot recover the missing original."} />}
-        {preserved && <p className="muted">The original game is protected. Continue with preparation.</p>}</div>
-        : <p className="muted">The first backup stores this game’s original files before preparation begins.</p>}
+        {preserved && <Button variant="link" onClick={() => setPanel("backups")}>Backups & recovery</Button>}</div>
+        : <p className="muted">A recovery copy will be saved inside this game’s folder.</p>}
+        {!preserved && operationJob("backup_source") && <JobStatus compact job={{ ...operationJob("backup_source")!, label: "Back up original game" }} />}
         {sourceBackup && !preserved && <Button onClick={() => setPanel("backups")}>Recover a saved backup</Button>}</>;
-      primary = preserved ? advance() : task("backup_source", sourceBackup ? "Back up current game" : "Back up original game", {}, false, "primary"); break;
+      primary = preserved ? advance() : task("backup_source", backupPending ? "Backing up…" : sourceBackup ? "Back up current game" : "Back up original game", {}, false, "primary");
+      secondary = localOperation && <Button disabled={action.busy} onClick={() => stopOperation(localOperation)}>Stop backup</Button>; break;
     case "extract":
       content = <><p>{state.encrypted.length ? "An encrypted archive was found." : "No encrypted archive found."} {state.files.length ? "Converted JSON is available." : "Convert native Ace data to JSON before translation."}</p>
         {!state.aceAvailable && <p className="muted">Native conversion requires Windows or Wine. Existing ace_json exports can be used.</p>}
@@ -219,15 +246,29 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <ActionRow label="Convert native game data for the JSON translation phases.">{task("ace_extract", "Convert to JSON", {}, !preserved || !state.aceAvailable)}</ActionRow></ActionList></>;
       primary = advance(); break;
     case "format":
-      content = <><ol className="guided-preparation-list">{formatActions.map((item) => { const result = operationJob(item.id); return <li key={item.id}><span className={result?.status === "complete" ? "guided-completed" : "muted"}>{result?.status === "complete" ? "✓" : nextPreparation?.id === item.id ? "→" : "·"}</span><div><strong>{item.title}</strong><small>{item.hint}</small></div></li>; })}</ol>
+      content = <>{baseline && !preparationComplete ? <p className="guided-success">The version baseline is already saved. Preparation does not need to be repeated.</p> : <ol className="guided-preparation-list">{preparation.stages.map((item) => <li key={item.action}>
+        <span className={item.status === "complete" ? "guided-completed" : "muted"}>{item.status === "complete" ? <Check size={16} /> : item.status === "running" ? <LoaderCircle size={16} className="job-status-spinner" /> : "·"}</span>
+        <div><strong>{item.label}</strong>{item.message && <small>{item.message}</small>}</div>
+        <span className="guided-preparation-state">{item.status === "complete" ? "Done" : item.status === "pending" ? "Waiting" : item.status.replaceAll("_", " ")}</span>
+      </li>)}</ol>}
+        {preparation.configuration && <p className="muted">{preparation.configuration}</p>}
+        {localOperation && <JobStatus compact job={{ ...localOperation, label: localOperation.label || "Current operation" }} />}
+        {!localOperation && !preparationComplete && operationJob("prepare_game") && !preparation.stages.some((item) => item.message) && <JobStatus compact job={{ ...operationJob("prepare_game")!, label: "Prepare game files" }} />}
         <Button variant="quiet" onClick={() => setPanel("preparation")}>Preparation tools</Button></>;
-      primary = nextPreparation && !baseline ? task(nextPreparation.id, nextPreparation.title, {}, !preserved, "primary") : advance(); break;
+      primary = preparationComplete || baseline ? advance() : task("prepare_game", preparationPending ? "Preparing game files…" : "Prepare game files", {}, !preserved, "primary");
+      secondary = localOperation && <Button disabled={action.busy} onClick={() => stopOperation(localOperation)}>Stop preparation</Button>; break;
     case "baseline":
-      content = baseline ? <><p className="guided-success">Original version {translation.git?.original_version || "baseline"} is saved.</p><p className="muted">Next, discover the game’s speakers and prepare its translation context.</p></> : <fieldset disabled={disabled}>
-        <FieldRow id="guided-version" label="Game version">{(props) => <input {...props} value={fields.version} placeholder="1.00" onChange={(event) => editForm("version", event.target.value)} />}</FieldRow>
-        <label className="toggle"><input type="checkbox" checked={fields.untranslated} onChange={(event) => editForm("untranslated", event.target.checked)} />This game is untranslated; use it as the original baseline.</label>
-        {!fields.untranslated && <FieldRow id="guided-original" label="Matching original" help="Choose the prepared original matching this already-translated game.">{(props) => <div className="guided-folder-field"><input {...props} value={fields.original} onChange={(event) => editForm("original", event.target.value)} /><Button onClick={() => chooseFolder("original")}>Choose folder</Button></div>}</FieldRow>}</fieldset>;
-      primary = baseline ? advance("Continue to names & context") : task("git_setup", "Review version baseline", { version: fields.version, original: fields.original, untranslated: fields.untranslated }, !preserved || !fields.version.trim() || !fields.untranslated && !fields.original, "primary"); break;
+      content = baseline ? <><p className="guided-success">Original version {translation.git?.original_version || "baseline"} is saved.</p><p className="muted">Next, discover the game’s speakers and prepare its translation context.</p></> : <>
+        {!preparationComplete && <div className="guided-prerequisite"><strong>Complete game preparation first</strong><Button variant="link" onClick={() => stepTask("format")}>Return to preparation</Button></div>}
+        <fieldset disabled={disabled}>
+          <FieldRow id="guided-version" label="Game version">{(props) => <input {...props} value={fields.version} placeholder="e.g. 1.2.3" onChange={(event) => editForm("version", event.target.value)} />}</FieldRow>
+          <fieldset className="guided-baseline-choice"><legend>Translation state</legend>
+            <label><input type="radio" name="baseline-source" checked={fields.untranslated === true} onChange={() => editForm("untranslated", true)} />This game is untranslated</label>
+            <label><input type="radio" name="baseline-source" checked={fields.untranslated === false} onChange={() => editForm("untranslated", false)} />This game already contains translations</label>
+          </fieldset>
+          {fields.untranslated === false && <FieldRow id="guided-original" label="Matching original folder" help="Choose the prepared original matching this already-translated game.">{(props) => <div className="guided-folder-field"><input {...props} value={fields.original} placeholder="Select matching original game folder" onChange={(event) => editForm("original", event.target.value)} /><Button onClick={() => chooseFolder("original")}>Browse…</Button></div>}</FieldRow>}
+        </fieldset></>;
+      primary = baseline ? advance("Continue to names & context") : task("git_setup", "Review version baseline", { version: fields.version, original: fields.untranslated ? "" : fields.original, untranslated: fields.untranslated }, !preserved || !preparationComplete || fields.untranslated === null || !fields.version.trim() || !fields.untranslated && !fields.original.trim(), "primary"); break;
     case "names":
       content = <><ol className="guided-preparation-list">
         <li><span>{["ready", "applied"].includes(findings.status) ? "✓" : "1"}</span><div><strong>Identify speaker formats</strong><small>The agent checks name tags, first lines, variables and plugins, then saves rules supported by evidence.</small></div></li>
@@ -355,17 +396,18 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <WorkflowNavigation stages={stages} step={position.step} task={taskId} completed={completed} disabled={action.busy} move={move} />
       <div className="guided-task-workspace">
         {unfinished && taskId !== "run" && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => move(runStage(state), "run")}>Open saved run</Button></div>}
-        {activeOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => action.run(async () => { if (state.operations.some((item) => item.id === activeOperation.id)) await api.stop(project.id); else await api.translation.stop(project.id, activeOperation.id); }, "", "stop-operation")}>Stop operation</Button></div>}
+        {activeOperation && !localOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
         <PageBody ref={bodyRef} className="guided-task-body">
           <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
             <h2 ref={headingRef} tabIndex={-1}>{selectedTask?.title || "Saved translation run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}</div>
           <Message message={!preview && (!feedbackKeys.has(action.key) && !(taskId === "run" && action.key.startsWith("run:"))) ? action.error : ""} onDismiss={action.clear} />
           <Message message={state.collectionError} />
           {changed.length > 0 && ["translate", "advanced", "apply", "review"].includes(position.step) && <div className="guided-source-alert"><p>{fileCount(changed.length)} have changed sources. Review them before new work.</p>{task("refresh_sources", "Review source refresh", {}, unfinished || !baseline, "default", changed)}</div>}
+          {baselineNotice && taskId === "names" && <p className="guided-success" role="status">{baselineNotice}</p>}
           {content}
           {output && <p className="path">Output copy: {output} <Button onClick={() => action.run(() => window.dazedtl.openFolder("output", output))}>Open folder</Button></p>}
         </PageBody>
-        <ActionBar feedback={<div className="guided-footer-context">{previous && <Button variant="quiet" disabled={action.busy} onClick={() => stepTask(previous.id)}>Back</Button>}<span>{draft.dirty ? "Options retained for recovery" : preserved ? "Original preserved" : "Start by preserving the original"}</span></div>}>
+        <ActionBar feedback={<div className="guided-footer-context">{previous && <Button variant="quiet" disabled={action.busy} onClick={() => stepTask(previous.id)}>Back</Button>}<span className={backupPending || preparationPending ? "guided-prepare-feedback" : undefined}>{backupPending ? "Backup in progress" : preparationPending ? "Preparation in progress" : taskId === "format" && (preparationComplete || baseline) ? "Game files prepared" : draft.dirty ? "Options retained for recovery" : preserved ? "Original preserved" : "Start by preserving the original"}</span></div>}>
           {secondary}{primary}
         </ActionBar>
       </div>
@@ -388,7 +430,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         {panel === "widths" && <>{widths}{copyTask("wrap", "Copy width-measurement task")}</>}
         {panel === "options" && <><EngineOptions state={state} values={values.engine_options} keys={["IGNORETLTEXT", "PRESERVEORIGINAL", "FIXTEXTWRAP", "BRFLAG", "TLSYSTEMVARIABLES", "TLSYSTEMSWITCHES"]} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
           <Section title="Start a new source pass"><p className="muted">Refresh archives selected working copies, outputs, and variable cache. Frozen runs retain their original records.</p>{task("refresh_sources", "Review selected source refresh", {}, !baseline || unfinished || !values.selected.length, "default", values.selected)}</Section></>}
-        {panel === "preparation" && <ActionList>{formatActions.map((item) => <ActionRow key={item.id} label={item.hint}>{task(item.id, item.title, {}, !preserved)}</ActionRow>)}</ActionList>}
+        {panel === "preparation" && <ActionList>{formatActions.map((item) => <ActionRow key={item.id} label={item.hint}>{task(item.id, (item.id === "gameupdate" ? "Recreate GameUpdate files" : "Rerun " + item.title.toLowerCase()), {}, !preserved)}</ActionRow>)}</ActionList>}
         {panel === "tools" && <><p className="muted">Settings are saved with this project. Install/update a plugin or apply settings to use them in the game.</p><fieldset disabled={disabled}><div className="guided-widths">{([["hotkey", "TL Inspector hotkey"], ["forgeHotkey", "Forge hotkey"]] as const).map(([key, label]) => <label key={key}>{label}<input value={release.tools[key]} onChange={(event) => editRelease("tools", { ...release.tools, [key]: event.target.value })} /></label>)}</div>
           <FieldRow id="guided-tool-scale" label="Overlay scale">{(props) => <select {...props} value={release.tools.uiScale} onChange={(event) => editRelease("tools", { ...release.tools, uiScale: event.target.value })}>{["auto", "1", "1.25", "1.5", "1.75", "2", "2.25", "2.5"].map((value) => <option key={value} value={value}>{value === "auto" ? "Automatic" : Number(value) * 100 + "%"}</option>)}</select>}</FieldRow>
           <FieldRow id="guided-tool-editor" label="Source editor" help="Use auto for detection, or choose the editor executable.">{(props) => <div className="guided-folder-field"><input {...props} value={release.tools.editorCmd} onChange={(event) => editRelease("tools", { ...release.tools, editorCmd: event.target.value })} /><Button onClick={() => action.run(async () => { const path = await window.dazedtl.chooseEditor(); if (path) editRelease("tools", { ...release.tools, editorCmd: path }); }, "", "choose-editor")}>Choose editor</Button></div>}</FieldRow></fieldset>
@@ -407,12 +449,14 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}
       {inspected.status === "complete" && Object.keys(inspected.outputs || {}).length > 0 && <ActionControl label="Save this run’s output copy" disabled={action.busy || inspected.outputsAvailable === false} {...feedback("run:export", "Saving output copy…")} onClick={() => action.run(async () => setOutput((await api.export(project.id, inspected.id)).path), "Output copy saved.", "run:export")} />}
       <Button onClick={() => setInspected(null)}>Close</Button></Modal>}
-    {preview && <Modal label="Review translation action" className="guided-sheet" dismissible={!action.busy} onDismiss={() => setPreview(null)}><header className="guided-sheet-heading"><h2>{preview.label}</h2></header><div className="guided-sheet-body">
-      <p className="path">{preview.destination}</p>{preview.action === "start" && <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>}
-      {!!preview.paths.length && <><p>{fileCount(preview.files || preview.paths.length)} in this action</p><div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Files in this action" empty={null}>{(name) => <div className="guided-preview-path">{name}</div>}</VirtualList></div></>}
+    {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : "Review translation action"} className={`guided-sheet${preview.action === "git_setup" ? " guided-baseline-review" : ""}`} dismissible={!action.busy} onDismiss={() => setPreview(null)}><header className="guided-sheet-heading"><h2>{preview.label}</h2></header><div className="guided-sheet-body">
+      {preview.action === "git_setup" ? <><p>Check the version, original source and runtime files before saving.</p>
+        <dl className="guided-baseline-summary"><div><dt>Game version</dt><dd>{String(preview.options.version)}</dd></div>
+          <div><dt>Original source</dt><dd>{preview.options.untranslated ? `This untranslated game, after preparation: ${preview.destination}` : String(preview.options.original)}</dd></div></dl>
+      </> : <p className="path">{preview.destination}</p>}{preview.action === "start" && <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>}
+      {!!preview.paths.length && <><p>{fileCount(preview.files || preview.paths.length)} {preview.action === "git_setup" ? "in this baseline" : "in this action"}</p><div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Files in this action" empty={null}>{(name) => <div className="guided-preview-path">{name}</div>}</VirtualList></div></>}
       {preview.package && <p>{preview.package.included.toLocaleString()} runtime files included · {preview.package.excluded.toLocaleString()} tool/private entries omitted.</p>}
       {!!preview.additions?.length && <p>{preview.additions.length} files are additions to the original baseline.</p>}
-      {preview.action === "git_setup" && <p>Version {String(preview.options.version)} · {preview.options.untranslated ? "Use the selected untranslated game as the original." : "Matching original: " + String(preview.options.original)}</p>}
       {preview.action === "backup_source" && sourceBackup?.available === false && <p>This saves current files. It cannot recover the missing original.</p>}
       {preview.action === "refresh_sources" && <p>Archive these files’ working copies, outputs, and variable cache before refreshing from the original source. Frozen provider runs remain retained.</p>}
       {preview.action === "export_selected" && <p>Apply accumulated translated outputs to these runtime files.</p>}
@@ -421,8 +465,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && <p>{state.provider.model} · {preview.options.mode === "batch" ? "Prepare this scope for a separate Batch cost approval. Speaker translation can request its own approval." : "API requests may incur charges using this run’s frozen settings."}</p>}
       {paid && preview.options.phase === "advanced" && <><p>Audited sources: {enabledCodes.join(", ")}</p>{values.engine_options.CODE122 === true && <p>Variable IDs: {String(values.engine_options.CODE122_VAR_RANGES)}</p>}{values.engine_options.CODE357 === true && <p>Plugin handlers: {(values.engine_options.ENABLED_PLUGINS_357 as string[] || []).join(", ") || "None"}</p>}{values.engine_options.CODE355655 === true && <p>Script patterns: {(values.engine_options.ENABLED_PATTERNS_355655 as string[] || []).join(", ") || "None"}</p>}</>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
-      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
-        {paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? "Build release ZIP" : "Run this action"}</Button></ActionBar></Modal>}
+      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>{preview.action === "git_setup" ? "Back" : "Cancel"}</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
+        {preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? "Build release ZIP" : "Run this action"}</Button></ActionBar></Modal>}
     {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(false)}><h2>Resume the saved run?</h2><p>Continue its frozen files, context, and provider settings. Remaining requests may incur charges.</p><Message message={action.error} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(false)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id); setResume(false); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
   </PageLayout>;
 }

@@ -6,8 +6,8 @@ export const workflow: WorkflowStage[] = [
   { id: "prepare", title: "Prepare", short: "Prepare", tasks: [
     { id: "backup", title: "Protect the original", description: "Save a recoverable original before any game files change." },
     { id: "extract", title: "Extract Ace data", description: "Extract encrypted data if needed, then convert the native files to JSON.", engine: "ACE" },
-    { id: "format", title: "Prepare game files", description: "Format the runtime files and add GameUpdate support before establishing the original version." },
-    { id: "baseline", title: "Save version baseline", description: "Choose which original game version translations and patches belong to." },
+    { id: "format", title: "Prepare game files", description: "Run the required preparation stages in order." },
+    { id: "baseline", title: "Save version baseline", description: "Record this prepared version so future game updates can be compared and merged." },
   ]},
   { id: "context", title: "Names & context", short: "Context", tasks: [
     { id: "names", title: "Speakers & game context", description: "One agent task: identify speaker formats, scan names locally, then use those names to investigate the glossary and game context." },

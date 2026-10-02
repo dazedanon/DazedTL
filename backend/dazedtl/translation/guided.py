@@ -13,13 +13,13 @@ from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
 from .files import digest
 from . import backups
-from . import speaker_setup
+from . import speaker_setup, preparation
 
 STEPS = {"prepare", "context", "translate", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
 ADVANCED_CODES = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"}
 NATIVE_ACTIONS = {
-    "import", "format_data", "format_plugins", "gameupdate", "export_selected",
+    "prepare_game", "import", "format_data", "format_plugins", "gameupdate", "export_selected",
     "ace_decrypt", "ace_extract", "ace_pack", "rewrap_preview", "rewrap_apply",
     "qa_prepare", "qa_status", "playtest_install", "playtest_status", "playtest_apply",
     "inspector_install", "inspector_remove", "forge_install", "forge_remove", "editors", "release",
@@ -27,7 +27,7 @@ NATIVE_ACTIONS = {
 }
 TOOL_ACTIONS = {"playtest_install", "playtest_apply", "inspector_install", "inspector_remove", "forge_install", "forge_remove"}
 SHARED_ACTIONS = {
-    "backup_source": "Preserve original game", "git_setup": "Set up Git versioning",
+    "backup_source": "Preserve original game", "git_setup": "Review version baseline",
     "checkpoint": "Save reviewed patch in Git", "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
@@ -128,7 +128,8 @@ class Guided:
         if (not isinstance(value, dict) or set(value) not in ({"version", "original", "untranslated", "only_overflow"},
                                                               {"version", "original", "untranslated", "only_overflow", "release"})
                 or any(not isinstance(value[key], str) or len(value[key]) > 10000 or "\0" in value[key] for key in ("version", "original"))
-                or any(type(value[key]) is not bool for key in ("untranslated", "only_overflow"))):
+                or value.get("untranslated") is not None and type(value["untranslated"]) is not bool
+                or type(value.get("only_overflow")) is not bool):
             raise ValueError("Invalid guided form values.")
         return {**value, "release": self.validate_release_form(value.get("release", self.release_defaults(project_id)))}
 
@@ -155,7 +156,7 @@ class Guided:
         saved = read_json(path) if path.exists() else {}
         if not isinstance(saved, dict):
             raise ValueError("The saved Guided form is invalid. Its original file was retained.")
-        return self.form_value(project_id, {"version": "", "original": "", "untranslated": False, "only_overflow": True, **saved})
+        return self.form_value(project_id, {"version": "", "original": "", "untranslated": None, "only_overflow": True, **saved})
 
     def release_artifacts(self, project_id, jobs):
         from .release import available
@@ -344,6 +345,7 @@ class Guided:
             **value, "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
             "form": self.saved_form(project_id),
+            "preparation": self.preparation(native),
             "speaker_setup": self.speaker_findings(project_id, native),
             "speaker_scan": self.speakers(project_id),
             "tools": self.backend.guided_tools(native),
@@ -356,6 +358,17 @@ class Guided:
                      if identity in self.backend.manual.jobs],
             "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready()},
         }
+
+    def preparation(self, native):
+        active = any(job.get("project_id") == native["id"] and job.get("action") in {"prepare_game", *preparation.LABELS}
+                     and job.get("status") in {"ready", "running", "waiting"} for job in self.backend.operations.jobs.values())
+        return preparation.state(native, self.backend.workflows.folder(native["id"]), active=active, observed=self.observed_digest)
+
+    def require_preparation(self, project_id, native):
+        _, project = self.translation.project(project_id)
+        options = project.read()["options"]
+        if not self.translation.engine.git_status(project.root, options)["configured"] and not self.preparation(native)["complete"]:
+            raise ValueError("Complete game preparation first. Return to preparation before saving a new baseline.")
 
     def phase_select(self, project_id, phase):
         self.idle()
@@ -422,6 +435,10 @@ class Guided:
             raise ValueError("TL Inspector and Forge support RPG Maker MV/MZ games.")
         if action in {"release", "release_patch"}:
             release_status = self.release_ready(project_id, native, value)
+        if action == "git_setup":
+            self.require_preparation(project_id, native)
+            if type(options.get("untranslated")) is not bool:
+                raise ValueError("Choose whether this game is untranslated or already contains translations.")
         paths = []
         expected = None
         manifest = None
@@ -501,6 +518,7 @@ class Guided:
                     raise ValueError("Choose the release destination.")
                 options["output"] = str(destination(project["source"], self.translation.workspace, self.backend.source, options["output"]))
             result = (self.backend.guided_export_preview(native["id"], paths) if action == "export_selected"
+                      else self.backend.guided_preparation_preview(native["id"], action, options) if action == "prepare_game"
                       else self.backend.workflows.preview(native["id"], action, options))
             token = result["token"]
             if action in TOOL_ACTIONS:
@@ -518,7 +536,7 @@ class Guided:
             # without asking the user to confirm the button they just clicked.
             return {**result, "action": action, "paths": paths or result.get("paths") or result["options"].get("files", []),
                     "confirmation": (bool(result.get("overwrite")) if action == "release" else result["confirmation"] and action not in {
-                        "format_data", "format_plugins", "gameupdate", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
+                        "prepare_game", "format_data", "format_plugins", "gameupdate", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
         token = uuid.uuid4().hex
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,
@@ -569,6 +587,8 @@ class Guided:
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
             return self.backend.guided_refresh(native, confirmed["paths"], options["sources"])
+        if action == "git_setup":
+            self.require_preparation(project_id, native)
         if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
             if confirmed["manifest"] != self.patch_manifest(project_id, confirmed["paths"], action):
                 raise ValueError("The original or runtime scope changed. Review the patch again.")

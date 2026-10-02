@@ -68,7 +68,7 @@ export interface GuidedPreferences {
 export interface GuidedForm {
   version: string;
   original: string;
-  untranslated: boolean;
+  untranslated: boolean | null;
   only_overflow: boolean;
   release: {
     kind: "game" | "patch";
@@ -101,6 +101,7 @@ export interface GuidedState {
   step: GuidedStep;
   task: string | null;
   form: GuidedForm;
+  preparation: { complete: boolean; configuration: string; stages: { action: string; label: string; status: string; message: string }[] };
   preferences: GuidedPreferences;
   optionsDraft: GuidedPreferences | null;
   engineSchema: { key: string; label: string; type: string; choices?: string[]; min?: number; max?: number }[];

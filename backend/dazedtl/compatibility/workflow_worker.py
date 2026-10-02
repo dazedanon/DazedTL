@@ -16,6 +16,10 @@ from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
 def run_action(plan, log):
+    if plan["action"] in {"prepare_game", "format_data", "format_plugins", "gameupdate"}:
+        from dazedtl.translation.preparation import run
+        workflow_actions.validate_plan(plan)
+        return run(plan, log, original, workflow_actions.action_guard)
     if plan["action"] == "speaker_scan":
         from dazedtl.compatibility.speaker_scan import run_scan
         return run_scan(plan, log)

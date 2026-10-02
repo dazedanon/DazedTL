@@ -43,6 +43,7 @@ def guided(value, project_id):
         'step': value['step'],
         'task': value['task'],
         'form': value['form'],
+        'preparation': value['preparation'],
         'preferences': value['preferences'],
         'optionsDraft': value['options_draft'],
         'speakerSetup': value['speaker_setup'],

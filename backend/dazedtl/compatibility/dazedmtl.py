@@ -187,6 +187,13 @@ class ExistingBackend:
         from .guided import tools_state
         return tools_state(native)
 
+    def guided_preparation_preview(self, native_id, action, options):
+        result = self.workflows.preview(native_id, "prepare" if action == "prepare_game" else action, options)
+        plan = self.workflows.previews[result["token"]]
+        plan["action"] = action
+        plan["label"] = "Prepare game files" if action == "prepare_game" else plan["label"]
+        return {**result, "label": plan["label"]}
+
     def guided_configure_tools(self, token, options):
         self.workflows.previews[token]["options"]["playtest"] = {**options, "workspaceFolder": "auto"}
 

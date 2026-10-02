@@ -91,6 +91,12 @@ do not block speaker setup or local scanning and retain their frozen settings an
 The shared observer reports scanner results; manual overrides survive new findings
 until explicitly reset. Saved findings describe the investigated source; translating runtime files
 does not erase that record. New projects also clear inherited optional speaker rules.
+Prepare retains the untouched backup, one stoppable file-preparation action, and a reviewed version baseline as separate tasks.
+The preparation worker records each completed stage against the current prepared files, stops on failure or cancellation, and resumes remaining stages without repeating current completed work.
+Individual preparation tools update the same receipts; GameUpdate file installation does not imply a tested delivery configuration.
+New baselines require current preparation evidence at preview and execution; existing Git baselines remain usable without historical preparation receipts.
+The explicit untranslated/original-source choice and version are retained in the Guided form.
+Saving a reviewed baseline continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
 Their primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the host dialog's footer while content scrolls.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git

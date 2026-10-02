@@ -15,7 +15,7 @@ from dazedtl.translation.files import evidence, read_json, digest
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
-from dazedtl.translation import speaker_setup
+from dazedtl.translation import speaker_setup, preparation
 
 
 class GuidedTests(unittest.TestCase):
@@ -59,6 +59,9 @@ class GuidedTests(unittest.TestCase):
         self.translation = SimpleNamespace(workspace=self.root / 'profile', jobs=SimpleNamespace(running=lambda: False),
             engine=SimpleNamespace(source_bindings=lambda _source, _paths: {}, original_bytes=lambda *_args: b''),
             clean_drafts=lambda _: None, ready=Mock(), operation=Mock(return_value={'id': 'operation'}))
+        self.git_configured = False
+        self.translation.project = lambda _: (self.record, SimpleNamespace(root=self.source, read=lambda: {"options": {}}))
+        self.translation.engine.git_status = lambda *_: {"configured": self.git_configured}
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         saved = snapshot(self.source, store_path(self.source), source_game=True)
         write_json(lifecycle_path(self.translation.workspace, self.identity), {'version': 1, 'source_backup': saved})
@@ -281,7 +284,29 @@ class GuidedTests(unittest.TestCase):
             self.guided.preview(self.identity, 'format_data')
         self.assertEqual(self.started, [])
 
+    def complete_preparation(self):
+        return preparation.run({"action": "prepare_game", "project": self.native, "folder": str(self.folder)},
+                               lambda _: None, lambda *_: {"files": 1}, lambda *_: {})
+
+    def test_baseline_needs_current_preparation_but_reuses_existing_baselines(self):
+        options = {"version": "1.0", "untranslated": True}
+        with self.assertRaisesRegex(ValueError, "Complete game preparation first"):
+            self.guided.preview(self.identity, "git_setup", options=options)
+        self.complete_preparation()
+        preview = self.guided.preview(self.identity, "git_setup", options=options)
+        # Receipt loss after review also blocks execution.
+        (self.folder / "preparation.json").unlink()
+        with self.assertRaisesRegex(ValueError, "Complete game preparation first"):
+            self.guided.execute(self.identity, preview["token"])
+        self.translation.operation.assert_not_called()
+        self.git_configured = True
+        self.assertTrue(self.guided.preview(self.identity, "git_setup", options=options)["confirmation"])
+        self.assertIsNone(self.guided.saved_form(self.identity)["untranslated"])
+        with self.assertRaisesRegex(ValueError, "Choose whether"):
+            self.guided.preview(self.identity, "git_setup", options={"version": "1.0"})
+
     def test_new_runtime_file_after_git_preview_cannot_enter_the_baseline_unreviewed(self):
+        self.complete_preparation()
         self.backend.guided_runtime_files = lambda _: sorted(path.name for path in self.source.glob('*.json'))
         preview = self.guided.preview(self.identity, 'git_setup', options={'version': '1.0', 'untranslated': True})
         self.assertTrue(preview['confirmation'])
@@ -295,7 +320,8 @@ class GuidedTests(unittest.TestCase):
             'token': action + '-token', 'options': options, 'confirmation': True}
         self.backend.workflows.execute = Mock(return_value={'id': 'native-operation'})
         self.backend.guided_configure_tools = Mock()
-        immediate = ('format_data', 'format_plugins', 'gameupdate', 'playtest_install', 'inspector_install', 'forge_install', 'playtest_apply')
+        self.backend.guided_preparation_preview = self.backend.workflows.preview
+        immediate = ('prepare_game', 'format_data', 'format_plugins', 'gameupdate', 'playtest_install', 'inspector_install', 'forge_install', 'playtest_apply')
         for action in immediate:
             with self.subTest(action=action):
                 preview = self.guided.preview(self.identity, action)
