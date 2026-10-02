@@ -44,6 +44,16 @@ The project helper cannot invoke Guided packaging; its separate QA requirements 
 Legacy Guided review receipts remain readable for existing records.
 
 Guided Plugin text and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
+The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
+An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
+Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated.
+Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected; saved assistant usage evidence still requires human meaning and in-game fit review.
+Dynamic configuration, malformed data, uncertain occurrences and unsupported Ace publication remain explicit blockers.
+Only independently investigated static plugin-loaded JSON dependencies enter this scope; ordinary event and database files retain their existing text phase.
+The clipboard task edits owned working copies, while runtime Apply stays behind an app-only, one-use exact-file preview.
+Request hashes and publication journals retain authority in the app profile, with candidate freezing, verified backups, failure rollback, restart reconciliation and another review for restore.
+Filtering and recommendations preserve occurrence overrides, and bounded renderer reads share the application observer and serialized drafts.
+
 The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
 Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.

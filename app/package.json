@@ -11,6 +11,7 @@
     "test": "node ../scripts/test.mjs"
   },
   "dependencies": {
+    "acorn": "8.15.0",
     "lucide-react": "1.48.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

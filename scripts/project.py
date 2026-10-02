@@ -51,6 +51,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("state")
     commands.add_parser("images", help="Read the selected project's indexed images, scoped handoffs and saved reports")
+    commands.add_parser("plugins", help="Read the selected project's plugin workspace and scoped handoff paths")
     commands.add_parser("prepare")
     commands.add_parser("backups", help="List local restore points and older profile backups")
     speakers = commands.add_parser("speakers", help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls")
@@ -107,6 +108,8 @@ def main():
             method = "translation_" + args.command.replace("-", "_")
             if args.command == "images":
                 method = "images_state"
+            if args.command == "plugins":
+                method = "plugins_state"
             if hasattr(args, "run"):
                 params["run_id"] = args.run
             if args.command in {"compile", "progress", "accept"}:

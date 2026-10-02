@@ -1,4 +1,5 @@
 import type { ImageActionResult, ImageDraft, ImageList, ImageManagerState, ImagePixels } from "./imageContracts";
+import type { PluginActionResult, PluginDetail, PluginList, PluginState, PluginView } from "./pluginContracts";
 import type { ImageEditorActionResult, ImageEditorSave, ImageEditorState, ImageNativeTranslationActionResult, ImageNativeTranslationPreview, ImageNativeTranslationState } from "./imageEditorContracts";
 
 export type Screen = "overview" | "translation" | "guided" | "manual" | "settings";
@@ -182,6 +183,8 @@ export interface WorkspaceSnapshot {
   translationError: string;
   images?: ImageManagerState | null;
   imagesError?: string;
+  plugins?: PluginState | null;
+  pluginsError?: string;
 }
 
 export interface TranslationOptions {
@@ -457,6 +460,11 @@ export interface ExportedFiles {
 }
 export interface RpcContract {
   images_state: { request: { project_id: string }; response: ImageManagerState };
+  plugins_state: {request:{project_id:string};response:PluginState};
+  plugins_list: {request:{project_id:string;query?:string;filter?:string;selected_only?:boolean;offset?:number;limit?:number};response:PluginList};
+  plugins_detail: {request:{project_id:string;file:string};response:PluginDetail};
+  plugins_update: {request:{project_id:string;revision:string;changes:{view:Partial<PluginView>}};response:PluginState};
+  plugins_action: {request:{project_id:string;action:string;options?:Record<string,unknown>};response:PluginActionResult};
   images_list: { request: { project_id: string; query?: string; folder?: string; filter?: string; offset?: number; limit?: number; selected_only?: boolean; asset_id?: string }; response: ImageList };
   images_update: { request: { project_id: string; revision: string; changes: Partial<ImageDraft> }; response: ImageManagerState };
   images_action: { request: { project_id: string; action: string; options?: Record<string, unknown> }; response: ImageActionResult };

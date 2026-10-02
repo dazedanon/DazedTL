@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, FolderOpen, LoaderCircle } from "lucide-react";
 import { api } from "../../api/client";
 import type { GuidedForm, GuidedOptions, GuidedState, GuidedStep, Job, Phase, Preview, Project, TranslationState } from "../../api/contracts";
@@ -38,6 +38,7 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { imagesApi } from "../../api/images";
 import { GuidedImages, type ImageEntryMode } from "./GuidedImages";
+const PluginWorkspace = lazy(() => import("../plugins/PluginWorkspace").then(module => ({ default: module.PluginWorkspace })));
 
 const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME101", "AUTONAMEPOPUP101", "SPEAKERS408"];
 const advanced = ["CODE122", "CODE122_VAR_RANGES", "CODE357", "ENABLED_PLUGINS_357", "CODE355655", "ENABLED_PATTERNS_355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"];
@@ -78,6 +79,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [imageView, setImageView] = useState<ImageEntryMode | null>(null);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [utilityActions, setUtilityActions] = useState<HTMLDivElement | null>(null);
+  const [pluginFooter, setPluginFooter] = useState<HTMLDivElement | null>(null);
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -422,9 +424,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       primary = enabledCodes.length ? <Button variant="primary" disabled={disabled || !!sourceErrors(state.eventText, values.engine_options).length || !eventFiles.length} onClick={reviewSources}>Review source choices</Button> : <Button variant="primary" disabled={disabled} onClick={skipEventText}>Continue without other event text</Button>;
       secondary = state.eventText.accepted && !draft.dirty && enabledCodes.length ? <Button disabled={disabled} onClick={() => stepTask("advanced-run")}>Continue to translation</Button> : null; break;
     case "plugins":
-      content = <><ActionList><ActionRow label={<><strong>{state.engine === "ACE" ? "Ruby script text" : "Plugin files"}</strong><small>Inspect and translate player-visible text outside the JSON phases.</small></>}>{copyTask("plugins", "Copy " + (state.engine === "ACE" ? "Ruby" : "plugin-file") + " task")}</ActionRow></ActionList>
-        <p className="muted">Event plugin commands stay in Other event text.</p></>;
-      primary = advance(); break;
+      content = <Suspense fallback={<p role="status">Loading plugin workspace…</p>}><PluginWorkspace key={project.id} projectId={project.id} observed={application.snapshot?.plugins} error={application.snapshot?.pluginsError}
+        footerTarget={pluginFooter} beforeAction={flushDrafts} disabled={disabled} continueControl={advance("Continue to Images",undefined,"quiet")} /></Suspense>;
+      primary = undefined; break;
     case "images":
       content = <GuidedImages state={application.snapshot?.images || null} error={application.snapshot?.imagesError || ""} busy={disabled}
         open={(mode) => { void action.run(async () => { await flushDrafts(); setImageView(mode); }, "", "images:open"); }}
@@ -503,8 +505,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <div className="guided-task-workspace">
         {unfinished && taskId !== "run" && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => move(runStage(state), "run")}>Open saved run</Button></div>}
         {activeOperation && !localOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
-        <PageBody ref={bodyRef} className="guided-task-body">
-          <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
+        <PageBody ref={bodyRef} className={`guided-task-body${taskId === "plugins" ? " plugin-task-body" : ""}`}>
+          <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskId === "plugins" ? "" : taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
             <h2 ref={headingRef} tabIndex={-1}>{selectedTask?.title || phaseLabels[runPhase(state)] + " run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}{taskId === "other-event-text" && <p className="muted">{{audit: "Investigation", sources: "Findings & source choices", "advanced-run": "Translation", variables: "Comparison updates"}[state.eventText.view]}</p>}</div>
           <Message message={!preview && (!feedbackKeys.has(action.key) && !(taskId === "run" && action.key.startsWith("run:"))) ? action.error : ""} onDismiss={action.clear} />
           <Message message={state.collectionError} />
@@ -513,9 +515,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {content}
           {output && <p className="path">Output copy: {output} <Button onClick={() => action.run(() => window.dazedtl.openFolder("output", output))}>Open folder</Button></p>}
         </PageBody>
-        <ActionBar feedback={<div className="guided-footer-context">{previous && <Button variant="quiet" disabled={action.busy} onClick={() => stepTask(previous.id)}>Back</Button>}<span className={backupPending || preparationPending ? "guided-prepare-feedback" : undefined}>{backupPending ? "Backup in progress" : preparationPending ? "Preparation in progress" : taskId === "format" && (preparationComplete || baseline) ? "Game files prepared" : draft.dirty ? "Options retained for recovery" : preserved ? "Original preserved" : "Start by preserving the original"}</span></div>}>
+        {taskId === "plugins" ? <div className="plugin-host-footer" ref={setPluginFooter} /> : <ActionBar feedback={<div className="guided-footer-context">{previous && <Button variant="quiet" disabled={action.busy} onClick={() => stepTask(previous.id)}>Back</Button>}<span className={backupPending || preparationPending ? "guided-prepare-feedback" : undefined}>{backupPending ? "Backup in progress" : preparationPending ? "Preparation in progress" : taskId === "format" && (preparationComplete || baseline) ? "Game files prepared" : draft.dirty ? "Options retained for recovery" : preserved ? "Original preserved" : "Start by preserving the original"}</span></div>}>
           {secondary}{primary}
-        </ActionBar>
+        </ActionBar>}
       </div>
     </div>
     {panel && <Modal label={panel === "files" ? "Choose files for this pass" : panel === "tasks" ? "Translation tasks" : "Translation options"} className="guided-sheet" dismissible={!action.busy} onDismiss={closePanel}>

@@ -21,6 +21,7 @@ from dazedtl.api.local import LocalAPI
 from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
+from dazedtl.plugins import PluginService
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
@@ -45,6 +46,7 @@ class Application:
                                        TranslationEngine(legacy, self.workspace / "engine"))
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         self.images = ImageService(self.projects, self.translation, self.settings, self.backend)
+        self.plugins = PluginService(self.projects, self.translation, self.backend)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.legacy_actions = {
@@ -157,8 +159,14 @@ class Application:
                 images = self.images.state(project["id"])
             except (ValueError, OSError) as exc:
                 image_error = str(exc)
+        plugins, plugin_error = None, ""
+        if project and project["available"]:
+            try:
+                plugins = self.plugins.state(project["id"])
+            except (ValueError, OSError) as exc:
+                plugin_error = str(exc)
         return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy,
-                "images": images, "imagesError": image_error}
+                "images": images, "imagesError": image_error, "plugins": plugins, "pluginsError": plugin_error}
 
     def open_project(self, source):
         root = Path(source).expanduser().resolve(strict=True)
@@ -267,6 +275,8 @@ def serve(args, diagnostics):
         methods["translation_" + name] = (getattr(app.translation, name), lambda value, _params: value)
     for name in ("state", "list", "update", "action", "preview"):
         methods["images_" + name] = (getattr(app.images, name), lambda value, _params: value)
+    for name in ("state", "list", "detail", "update", "action"):
+        methods["plugins_" + name] = (getattr(app.plugins, name), lambda value, _params: value)
     for name in ("state", "save", "action"):
         methods["images_editor_" + name] = (getattr(app.image_editor, name), lambda value, _params: value)
     for name in ("state", "preview", "start", "action"):

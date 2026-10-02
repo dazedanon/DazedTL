@@ -1,5 +1,5 @@
 {
-  "version": 16,
+  "version": 17,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -214,6 +214,21 @@
       "refresh": true
     },
     "images_editor_translation_action": {
+      "refresh": true
+    },
+    "plugins_state": {
+      "refresh": false
+    },
+    "plugins_list": {
+      "refresh": false
+    },
+    "plugins_detail": {
+      "refresh": false
+    },
+    "plugins_update": {
+      "refresh": true
+    },
+    "plugins_action": {
       "refresh": true
     }
   }

@@ -1,19 +1,6 @@
 import { request } from "./transport";
 import type { ImageDraft } from "./imageContracts";
-
-function readQueue(limit: number) {
-  let active = 0;
-  const waiting: (() => void)[] = [];
-  const pump = () => { while (active < limit && waiting.length) waiting.shift()!(); };
-  return <T>(task: () => Promise<T>, current: () => boolean = () => true): Promise<T> => new Promise((resolve, reject) => {
-    waiting.push(() => {
-      if (!current()) { reject(new Error("Image read cancelled.")); pump(); return; }
-      active++;
-      void task().then(resolve, reject).finally(() => { active--; pump(); });
-    });
-    pump();
-  });
-}
+import { readQueue } from "./readQueue";
 const metadataRead = readQueue(2);
 const pixelRead = readQueue(4);
 
