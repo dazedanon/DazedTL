@@ -155,6 +155,10 @@ class PluginTests(unittest.TestCase):
         restore=self.service.action(self.identity,'preview_restore',{'receipt':result['receipt']['id']})['preview']
         self.service.action(self.identity,'restore',{'token':restore['token']})
         self.assertTrue(all((self.game/path).read_bytes()==raw for path,raw in before.items()))
+        copies={path:deepcopy(row['prepared']) for path,row in self.service.load(self.identity)['files'].items() if row.get('prepared')}
+        self.service.action(self.identity,'translation_task')
+        self.assertEqual(self.service.state(self.identity)['counts']['ready'],0)
+        self.assertEqual(copies,{path:row['prepared'] for path,row in self.service.load(self.identity)['files'].items() if row.get('prepared')})
         self.service.action(self.identity,'clear')
         self.assertEqual(self.service.state(self.identity)['counts']['ready'],0)
         self.assertEqual(self.service.action(self.identity,'preview_apply')['preview']['files'],[])

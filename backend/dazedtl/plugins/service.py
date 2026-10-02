@@ -260,6 +260,8 @@ class PluginService:
                 ids=sorted(item['id'] for item in row['occurrences'] if item['id'] in value['selection'])
                 if result and ids and ids!=result['selection']:
                     row['result']={**result,'status':'needs_revision','reason':'Text selection changed; copy a new translation task and refresh its results.','checks':{}}
+                if result and result.get('requestId')!=value['requests'].get('translation',{}).get('requestId'):
+                    row['result']={**result,'status':'needs_revision','reason':'Saved results belong to an earlier task; refresh the current task report. Existing working copies are retained.','checks':{}}
             except (OSError,ValueError) as exc: row['issue']=str(exc)
 
     def state(self, project_id):
