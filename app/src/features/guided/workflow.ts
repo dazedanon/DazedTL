@@ -10,10 +10,10 @@ export const workflow: WorkflowStage[] = [
     { id: "baseline", title: "Save version baseline", description: "Record this prepared version so future game updates can be compared and merged." },
   ]},
   { id: "context", title: "Names & context", short: "Context", tasks: [
-    { id: "names", title: "Speakers & game context", description: "One agent task: identify speaker formats, scan names locally, then use those names to investigate the glossary and game context." },
-    { id: "glossary", title: "Review the glossary", description: "Keep recurring names and terms consistent before translating dialogue." },
-    { id: "guidance", title: "Review voice & context", description: "Preserve tone, recurring jokes, and facts the translator should know." },
-    { id: "speakers", title: "Speakers & line widths", description: "Inspect the configured speaker rules and enter the measured line widths." },
+    { id: "names", title: "Speakers & game context", description: "Discover how speakers are named, then save reusable guidance." },
+    { id: "glossary", title: "Review the glossary", description: "Review character names, places and recurring terms." },
+    { id: "guidance", title: "Review voice & context", description: "Review the voice and setting used during translation." },
+    { id: "speakers", title: "Review layout settings", description: "Set character limits for the game’s text areas." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
     { id: "scope", title: "Choose a test scope", description: "Start with database text and an early scene. Apply and playtest it before expanding the translation." },

@@ -125,6 +125,8 @@ export const api = {
     position: (project_id: string, step: GuidedStep, task?: string) => request("guided_position", { project_id, step, task }),
     draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
     save: (project_id: string, revision: number, values: GuidedOptions) => request("guided_save_options", { project_id, revision, values }),
+    context: (project_id: string) => request("guided_context_status", { project_id }),
+    reviewContext: (project_id: string, name: string, revision: string, choice: "empty" | "review" | "layout") => request("guided_context_review", { project_id, name, revision, choice }),
     skill: (project_id: string, name: string) => request("guided_skill", { project_id, name }),
   },
   answer: (project_id: string, token: string, approved: boolean) =>

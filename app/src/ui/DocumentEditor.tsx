@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Documents } from "../api/contracts";
 import { Button } from "./Button";
 import { Tabs } from "./Tabs";
@@ -22,6 +22,7 @@ export function DocumentEditor({
   select,
   focused = false,
   showActions = true,
+  before,
 }: {
   documents: Documents;
   drafts: Documents;
@@ -34,6 +35,7 @@ export function DocumentEditor({
   select?: (name: string) => void;
   focused?: boolean;
   showActions?: boolean;
+  before?: (name: string) => ReactNode;
 }) {
   const [current, setName] = useState("glossary");
   const available = (names || [...new Set([...Object.keys(documents), ...Object.keys(drafts)])]).filter((name) => documents[name] || drafts[name]);
@@ -59,6 +61,7 @@ export function DocumentEditor({
         <div className="document-editor-content" role={focused && available.length > 1 ? "tabpanel" : undefined}
           id={focused ? `guidance-documents-panel-${name}` : undefined}
           aria-labelledby={focused && available.length > 1 ? `guidance-documents-tab-${name}` : undefined}>
+          {before?.(name)}
           <textarea
             aria-label={focused ? title(name) + " text" : "Game context text"}
             rows={focused ? 9 : 16}

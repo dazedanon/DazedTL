@@ -97,3 +97,15 @@ test("speaker findings merge without losing file, width, or rule edits made duri
   assert.equal(onlySpeakerSettingsChanged(before, { ...changed, values: { ...changed.values, selected: ["Map003.json"] } }, ["INLINE401SPEAKERS"]), false);
   await session.dispose();
 });
+
+test("resolving a disk conflict preserves text and rejects a newer unseen saved revision", async () => {
+  const { resolveDocumentDraft } = await import("../app/src/state/documentDrafts.ts");
+  const draft = { glossary: { text: "# Terms\n薬 (Potion) - keep notes.", revision: "old" } };
+  const saved = { text: "different saved text", revision: "seen" };
+  const rebased = resolveDocumentDraft(draft, "glossary", saved, "seen", "draft");
+  assert.equal(rebased.glossary.text, draft.glossary.text);
+  assert.equal(rebased.glossary.revision, "seen");
+  assert.equal(draft.glossary.revision, "old");
+  assert.deepEqual(resolveDocumentDraft(draft, "glossary", saved, "seen", "saved"), {});
+  assert.throws(() => resolveDocumentDraft(draft, "glossary", { ...saved, revision: "unseen" }, "seen", "draft"), /changed again/);
+});

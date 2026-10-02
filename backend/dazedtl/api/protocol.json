@@ -1,5 +1,5 @@
 {
-  "version": 12,
+  "version": 13,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -155,6 +155,12 @@
     "guided_form": {
       "refresh": false,
       "duringClose": true
+    },
+    "guided_context_status": {
+      "refresh": false
+    },
+    "guided_context_review": {
+      "refresh": true
     }
   }
 }

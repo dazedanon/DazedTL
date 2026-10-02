@@ -88,7 +88,15 @@ export interface SpeakerSetup {
   rules: { key: string; label: string; decision: "enable" | "skip"; confidence: "high" | "medium" | "low"; reason: string;
     evidence: { file: string; sha256: string; location: string }[] }[];
 }
+export interface ContextSetup {
+  status: "missing" | "waiting" | "ready" | "stale" | "invalid"; message: string; requestId: string | null;
+  speakerReportId: string | null; referencesSha256: string; scanSha256: string | null; revisions: Record<string, string>;
+  documents: Record<string, { exists: boolean; reviewed: boolean; needsReview: boolean; intentionalEmpty: boolean }>;
+  layout: { widths: GuidedOptions["widths"]; reason: string; evidence: { file: string; sha256: string; location: string }[] } | null;
+  layoutStatus: "defaults" | "saved"; layoutRevision: string;
+}
 export interface GuidedState {
+  contextSetup: ContextSetup;
   speakerSetup: SpeakerSetup;
   speakerScan: SpeakerScan;
   projectId: string;
@@ -612,6 +620,8 @@ export interface RpcContract {
     request: { project_id: string; value: GuidedPreferences | null };
     response: Saved;
   };
+  guided_context_status: { request: { project_id: string }; response: ContextSetup };
+  guided_context_review: { request: { project_id: string; name: string; revision: string; choice: "empty" | "review" | "layout" }; response: Saved };
   guided_skill: {
     request: { project_id: string; name: string };
     response: { text: string };

@@ -26,6 +26,7 @@ import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
 import { initialPosition, runPhase, runStage, stagesFor, unfinishedRun } from "./workflow";
 import { WorkflowNavigation } from "./WorkflowNavigation";
+import { GuidanceReview } from "./GuidanceReview";
 import { SpeakerFindings } from "./SpeakerFindings";
 
 const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME101", "AUTONAMEPOPUP101", "SPEAKERS408"];
@@ -87,6 +88,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const findings = state.speakerSetup;
   const speakersConfigured = findings.status === "applied";
   const scan = state.speakerScan;
+  const discovery = state.contextSetup;
+  const scanOptionsDirty = JSON.stringify(values.engine_options) !== JSON.stringify(state.preferences.values.engine_options) || values.phase1_comments !== state.preferences.values.phase1_comments;
+  const discoveryReady = discovery.status === "ready" && !scanOptionsDirty && !Object.keys(context.drafts).length;
   const changed = state.sourceStatus.changed;
   const selectedFiles = new Set(values.selected);
   const eventFiles = state.files.filter((file) => file.group === "dialogue" && selectedFiles.has(file.name));
@@ -177,7 +181,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       onClick={() => review(name, options, files)} />;
   };
   const copyTask = (name: string, label: string, variant: "default" | "primary" | "quiet" = "default") => <ActionControl label={label} variant={variant} disabled={disabled} {...feedback("copy:" + name, "Copying…")}
-    onClick={() => action.run(async () => { await save(); await window.dazedtl.copyText((await api.guided.skill(project.id, name)).text); }, "Task copied. Return to its saved results when your assistant finishes.", "copy:" + name)} />;
+    onClick={() => action.run(async () => { await save(); await window.dazedtl.copyText((await api.guided.skill(project.id, name)).text); }, name === "setup" ? "" : "Task copied. Return to its saved results when your assistant finishes.", "copy:" + name)} />;
   const inspect = (item: Job) => {
     setHistory(false); setInspected(item);
     void action.run(async () => { const saved = await api.guided.inspect(project.id, item.id); setInspected((current) => current?.id === item.id ? saved : current); }, "", "inspect:" + item.id);
@@ -188,10 +192,23 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const folder = await window.dazedtl.chooseFolder();
     if (folder) key === "original" ? editForm("original", folder) : editRelease("directory", folder);
   }, "", "folder:" + key);
+  const savedNames = taskId === "glossary" ? ["glossary"] : ["quirks", "game", ...[...new Set([...Object.keys(state.documents), ...Object.keys(context.drafts)])].filter((name) => name.startsWith("custom:"))];
   const saveDocuments = (names: string[], target = next()) => action.run(async () => {
-    for (const name of names) await context.save(name);
+    for (const name of names) {
+      const saved = await context.save(name);
+      await api.guided.reviewContext(project.id, name, saved[name]?.revision || state.documents[name].revision, discovery.documents[name]?.intentionalEmpty && !(context.drafts[name] || state.documents[name]).text.trim() ? "empty" : "review");
+    }
     if (target) { const owner = stages.find((item) => item.tasks.some((entry) => entry.id === target.id))!; await navigate(owner.id, target.id); }
   }, "Guidance saved.", "context:save");
+  const keepEmpty = (name: string) => action.run(async () => {
+    const text = (context.drafts[name] || state.documents[name]).text;
+    if (text.trim()) throw new Error("Clear the document before choosing to keep it empty.");
+    if (!context.drafts[name]) context.edit(name, "", state.documents[name].revision);
+    const saved = await context.save(name);
+    await api.guided.reviewContext(project.id, name, saved[name].revision, "empty");
+  }, "Empty guidance kept intentionally.", "context:empty");
+  const contextConflict = savedNames.some((name) => context.drafts[name] && context.drafts[name].revision !== state.documents[name]?.revision);
+  const contextEmpty = savedNames.some((name) => !(context.drafts[name] || state.documents[name])?.text.trim() && !discovery.documents[name]?.intentionalEmpty);
   const layoutOptions = { files: layoutFiles, widths: values.widths, categories: ["dialogue", "face_dialogue", "list", "notes"], codes: "401,405", max_rows: 4, protect_rows: true, over_limit: fields.only_overflow };
   const widths = <fieldset disabled={disabled} className="guided-widths">{([["width", "Dialogue"], ["faceWidth", "With portrait"], ["listWidth", "List / help"], ["noteWidth", "Notes"]] as const).map(([key, label]) =>
     <label key={key}>{label}<input aria-label={label + " width in characters"} type="number" min={20} max={key === "faceWidth" ? values.widths.width : 300} value={values.widths[key]}
@@ -201,7 +218,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     <Button aria-pressed={mode === "translate"} disabled={disabled} onClick={() => edit("mode", "translate")}>Live API</Button>
     {state.provider.batchSupported && <Button aria-pressed={mode === "batch"} disabled={disabled} onClick={() => edit("mode", "batch")}>Batch API</Button>}
     </div>{!state.provider.ready && <p className="muted">Configure a connection before paid translation.</p>}{!state.provider.enabled && <p className="muted">Provider execution is disabled for this launch. Local estimates are available.</p>}</div>;
-  const savedNames = taskId === "glossary" ? ["glossary"] : ["quirks", "game", ...[...new Set([...Object.keys(state.documents), ...Object.keys(context.drafts)])].filter((name) => name.startsWith("custom:"))];
   const formatActions = [{ id: "format_data", title: "Format game data", hint: "Prepare the JSON used by the translation phases." },
     ...(state.hasPlugins ? [{ id: "format_plugins", title: "Format plugins.js", hint: "Prepare the game’s plugin configuration." }] : []),
     { id: "gameupdate", title: "Create GameUpdate files", hint: "Add player patch support." }];
@@ -218,7 +234,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     } else if (saved && ["failed", "stopped", "interrupted", "canceled"].includes(saved.status)) setBaselineRun(null);
   }, [baselineRun, translation.jobs, baseline, taskId, action.busy]);
   const completed = new Set<string>([...(preserved ? ["backup"] : []), ...(baseline ? ["baseline"] : []), ...(applied ? ["apply"] : []),
-    ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
+    ...(discoveryReady ? ["names"] : []), ...(["glossary", "guidance"].filter((task) => (task === "glossary" ? ["glossary"] : ["quirks", "game"]).every((name) => discovery.documents[name]?.reviewed && !context.drafts[name]))), ...(discovery.layoutStatus === "saved" && !draft.dirty ? ["speakers"] : []), ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
   const speakerStatus = <ActionList><ActionRow label={<><strong>{speakersConfigured ? "Speaker detection configured" : "Speaker investigation"}</strong><small>{
     speakerAction.busy ? "" : findings.status === "ready" && (draft.dirty || state.optionsDraft) ? "Save or discard your option edits to apply the findings."
       : findings.status === "missing" && taskId === "names" ? "The agent checks formats before scanning names."
@@ -272,38 +288,42 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         </fieldset></>;
       primary = baseline ? advance("Continue to names & context") : task("git_setup", "Review version baseline", { version: fields.version, original: fields.untranslated ? "" : fields.original, untranslated: fields.untranslated }, !preserved || !preparationComplete || fields.untranslated === null || !fields.version.trim() || !fields.untranslated && !fields.original.trim(), "primary"); break;
     case "names":
-      content = <><ol className="guided-preparation-list">
-        <li><span>{["ready", "applied"].includes(findings.status) ? "✓" : "1"}</span><div><strong>Identify speaker formats</strong><small>The agent checks name tags, first lines, variables and plugins, then saves rules supported by evidence.</small></div></li>
-        <li><span>{scan.current ? "✓" : "2"}</span><div><strong>Scan speaker names</strong><small>{scan.current ? `${scan.names.length} nameplates found across ${scan.files} event files; ${Object.keys(scan.actorNames).length} actor names supplied for reference.` : "The local parser uses those rules to collect names. No API calls or name translation."}</small></div></li>
-        <li><span>3</span><div><strong>Investigate glossary & context</strong><small>The agent uses the discovered names as extra evidence for terminology, characters, voice and game guidance.</small></div></li>
-      </ol>
-        <p className="muted">Paste the task into your coding assistant with this game’s folder open. It completes all three parts in order.</p>
-        {scan.job && <JobStatus job={{ ...scan.job, label: scan.job.label || "Local speaker scan" }} />}
-        {["invalid", "stale"].includes(findings.status) && <Message message={findings.message} />}
-        <details><summary>Discovery results & tools</summary>{speakerStatus}
+      content = <><ActionList><ActionRow label={<><strong>Reference translations</strong><small>Optional · {state.references.length ? `${state.references.length} registered` : "None added"}</small></>}><Button disabled={disabled} onClick={() => setPanel("references")}>Manage references</Button></ActionRow></ActionList>
+        <details className="guided-discovery-settings"><summary>Discovery settings & results</summary>
+          <p className="muted">Discovery examines all event files. Choose displayed comment text before copying the task.</p>
+          <label className="toggle"><input type="checkbox" disabled={disabled} checked={values.phase1_comments} onChange={(event) => edit("phase1_comments", event.target.checked)} />Include displayed comment text (408)</label>
+          {speakerStatus}<Button variant="quiet" disabled={disabled} onClick={() => setPanel("speakers")}>Adjust speaker formats manually</Button>
           <ActionControl label={scan.job ? "Refresh name scan" : "Run local name scan"} disabled={disabled || !["ready", "applied"].includes(findings.status)}
             {...feedback("speaker-scan", "Starting local scan…")} onClick={() => action.run(async () => { await save(); await api.translation.speakers(project.id, true); }, "", "speaker-scan")} />
-          {scan.current && <div className="guided-name-list"><VirtualList items={scan.names} itemKey={pathKey} label="Discovered source speaker names" empty={<p>No names matched the confirmed formats. The agent should account for this in its investigation.</p>}>
-            {(name) => <p className="guided-preview-path">{name}</p>}
-          </VirtualList></div>}
-          {!scan.current && scan.job?.status === "complete" && <p className="muted">The source files or speaker rules changed. Refresh the scan before using its names.</p>}
-          <details><summary>Optional API name translation</summary>{fileSummary(eventFiles.length)}{connection}<p className="muted">Creates provisional translated names using the API. The local discovery task does not require this.</p>
-            {task("start", "Review paid name translation", { mode: "speakers" }, !baseline || unfinished || !eventFiles.length || !state.provider.ready || !state.provider.enabled)}
-          </details>
+          {scan.current && <div className="guided-name-list"><VirtualList items={scan.names} itemKey={pathKey} label="Discovered source speaker names" empty={<p>No names matched the confirmed formats. Account for this in the investigation.</p>}>{(name) => <p className="guided-preview-path">{name}</p>}</VirtualList></div>}
+          {(!scan.current || scanOptionsDirty) && scan.job?.status === "complete" && <p className="guided-status-warning">Name scan needs refreshing. Saved guidance is retained for review.</p>}
+          <details><summary>Optional API name translation</summary>{fileSummary(eventFiles.length)}{connection}<p className="muted">Creates provisional translated names using the API. Discovery does not require this.</p>{task("start", "Review paid name translation", { mode: "speakers" }, !baseline || unfinished || !eventFiles.length || !state.provider.ready || !state.provider.enabled)}</details>
         </details>
-        <div className="guided-utilities"><Button variant="quiet" onClick={() => setPanel("references")}>Reference translations</Button>
-          <ActionControl label="Reload saved guidance" variant="quiet" disabled={disabled} {...feedback("reload-guidance", "Reloading…")} onClick={() => action.run(() => application.refresh(), "Saved guidance reloaded; your drafts are retained.", "reload-guidance")} /></div></>;
-      primary = scan.current ? advance("Review saved glossary") : copyTask("setup", "Copy speaker & context task", "primary");
-      secondary = scan.current ? copyTask("setup", "Copy task again", "quiet") : null; break;
+        <ol className="guided-preparation-list">
+          <li><span>{["ready", "applied"].includes(findings.status) ? <Check size={16} /> : "1"}</span><div><strong>Identify speaker formats</strong><small>{["ready", "applied"].includes(findings.status) ? "Speaker-format guidance saved." : "Check names, variables, faces and plugins before scanning."}</small></div><span className="guided-preparation-state">{["ready", "applied"].includes(findings.status) ? "Saved" : findings.status === "invalid" || findings.status === "stale" ? "Needs attention" : "Waiting"}</span></li>
+          <li><span>{scan.current && !scanOptionsDirty ? <Check size={16} /> : "2"}</span><div><strong>Scan speaker names</strong><small>{scan.current && !scanOptionsDirty ? `${scan.names.length} nameplates found across ${scan.files} event files.` : "The local parser collects names using the confirmed formats."}</small></div><span className="guided-preparation-state">{scan.current && !scanOptionsDirty ? "Saved" : scan.job?.status === "running" ? "Scanning" : scan.job ? "Needs attention" : "Waiting"}</span></li>
+          <li><span>{discoveryReady ? <Check size={16} /> : "3"}</span><div><strong>Save glossary & context</strong><small>{discovery.message}</small></div><span className="guided-preparation-state">{discoveryReady ? "Ready" : ["stale", "invalid"].includes(discovery.status) ? "Needs attention" : "Waiting"}</span></li>
+        </ol>
+        {scan.job && scan.job.status !== "complete" && <JobStatus job={{ ...scan.job, label: "Local speaker scan" }} />}
+        {["invalid", "stale"].includes(findings.status) && <Message message={findings.message} />}
+        {discovery.requestId && !discoveryReady && <p className="muted">Task copied. Waiting for saved results.</p>}
+        <div className="guided-utilities">{discovery.requestId && copyTask("setup", "Copy task again", "quiet")}
+          {Object.values(discovery.documents).some((document) => document.exists) && <Button variant="quiet" disabled={disabled} onClick={() => stepTask("glossary")}>Use existing guidance</Button>}</div>
+        {Object.values(discovery.documents).some((document) => document.exists) && <p className="muted">Skip new discovery and review the saved files.</p>}</>;
+      primary = discoveryReady ? advance("Review saved glossary") : discovery.requestId ? <ActionControl label="Check saved results" variant="primary" disabled={disabled} {...feedback("context:check", "Checking saved results…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id); if (current.status !== "ready") throw new Error(current.message); }, "All saved investigation results verified.", "context:check")} /> : copyTask("setup", "Copy speaker & context task", "primary"); break;
     case "glossary": case "guidance":
-      content = <><DocumentEditor documents={state.documents} drafts={context.drafts} edit={context.edit} disabled={disabled}
-        names={savedNames} selectedName={taskId === "glossary" ? "glossary" : documentName} select={setDocumentName} focused showActions={false} save={context.save} discard={context.discard} /><div className="guided-utilities"><ActionControl label="Reload saved guidance" disabled={disabled} {...feedback("reload-guidance", "Reloading…")} onClick={() => action.run(() => application.refresh(), "Saved guidance reloaded; your drafts are retained.", "reload-guidance")} /></div></>;
-      primary = <ActionControl label={savedNames.some((name) => context.drafts[name]) ? "Save & continue" : "Continue"} variant="primary" disabled={disabled} {...feedback("context:save", "Saving guidance…")} onClick={() => saveDocuments(savedNames)} />;
+      content = <><GuidanceReview documents={state.documents} context={context} setup={discovery} names={savedNames} selectedName={taskId === "glossary" ? "glossary" : documentName} select={setDocumentName} disabled={disabled}
+        returnToDiscovery={() => stepTask("names")} keepEmpty={keepEmpty} busy={action.busy ? action.key : ""} run={(operation) => action.run(operation, "", "context:resolve")} />
+        <div className="guided-utilities"><ActionControl label="Reload saved guidance" variant="quiet" disabled={disabled} {...feedback("reload-guidance", "Reloading…")} onClick={() => action.run(() => application.refresh(), "Saved guidance reloaded; your drafts are retained.", "reload-guidance")} /></div></>;
+      primary = <ActionControl label={savedNames.some((name) => context.drafts[name]) ? "Save & continue" : taskId === "glossary" ? "Continue to voice & context" : "Continue to layout settings"} variant="primary" disabled={disabled || contextConflict || contextEmpty} {...feedback("context:save", "Saving guidance…")} onClick={() => saveDocuments(savedNames)} />;
       secondary = savedNames.some((name) => context.drafts[name]) && <ActionControl label="Discard edits" disabled={disabled} {...feedback("context:discard", "Discarding…")} onClick={() => action.run(async () => { for (const name of savedNames) await context.discard(name); }, "Edits discarded.", "context:discard")} />; break;
     case "speakers":
-      content = <>{speakerStatus}<Section title="Measured widths" hint="Characters">{widths}</Section>
-        <label className="toggle"><input type="checkbox" disabled={disabled} checked={values.phase1_comments} onChange={(event) => edit("phase1_comments", event.target.checked)} />Include displayed comment continuations (408)</label>{copyTask("wrap", "Copy width-measurement task")}</>;
-      primary = <ActionControl label="Save setup & choose scope" variant="primary" disabled={disabled} {...feedback("save-options", "Saving setup…")} onClick={() => action.run(async () => { await save(); await navigate("translate", "scope"); }, "", "save-options")} />; break;
+      content = <div className="guided-layout-review"><strong className={discovery.layout ? "guided-success" : ""}>{draft.dirty ? "Unsaved edits" : discovery.layout ? "Recommendations available" : discovery.layoutStatus === "saved" ? "Saved project values" : "Defaults - not measured for this game"}</strong>
+        <Section title="Character limits" hint="Characters">{widths}</Section>
+        {discovery.layout && <><Button disabled={disabled} onClick={() => edit("widths", { ...discovery.layout!.widths })}>Use recommendations</Button><details><summary>Evidence & exceptions</summary><p>{discovery.layout.reason}</p><ul>{discovery.layout.evidence.map((ref, index) => <li key={index}><span className="path">{ref.file}</span>: {ref.location}</li>)}</ul></details></>}
+        {copyTask("wrap", discovery.layout ? "Copy remeasurement task" : "Copy width-measurement task", "quiet")}
+        <p className="muted">Optional · get fresh evidence before changing these values.</p></div>;
+      primary = <ActionControl label={discovery.layoutStatus === "defaults" && !draft.dirty && !discovery.layout ? "Use current defaults & choose scope" : "Save layout & choose scope"} variant="primary" disabled={disabled} {...feedback("save-options", "Saving layout…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id); await api.guided.reviewContext(project.id, "layout", current.layoutRevision, "layout"); await navigate("translate", "scope"); }, "", "save-options")} />; break;
     case "scope":
       content = <>{fileSummary()}<dl className="guided-scope-summary"><div><dt>Database & interface</dt><dd>{fileCount(databaseFiles.length)}</dd></div><div><dt>Dialogue & choices</dt><dd>{fileCount(eventFiles.length)}</dd></div></dl>
         <p className="muted">For a first pass, choose a small database and map scope. Saved results carry forward when you expand it.</p><Button variant="quiet" onClick={() => setPanel("options")}>Engine options & source refresh</Button></>;
@@ -423,12 +443,12 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <ActionRow label={<><strong>Save or recover files</strong><small>Manage backups and recover an earlier copy when you need one.</small></>}><Button onClick={() => setPanel("backups")}>Backups & recovery</Button></ActionRow>
         </ActionList>}
         {panel === "backups" && backups?.(utilityActions)}{panel === "versions" && versions?.({ backups: () => setPanel("backups"), prepare: () => stepTask("baseline"), checkpoint: () => { setPanel(null); void review("checkpoint"); }, target: utilityActions })}
-        {panel === "speakers" && (speakersConfigured ? <><SpeakerFindings findings={findings} values={values.engine_options} />
-          <details><summary>Adjust manually</summary><p className="muted">Your overrides are retained. Recollect names after changing detection.</p>
+        {panel === "speakers" && <>{speakersConfigured ? <SpeakerFindings findings={findings} values={values.engine_options} /> : speakerStatus}
+          <details open={!speakersConfigured}><summary>Adjust manually</summary><p className="muted">Your overrides are retained. Recollect names after changing detection.</p>
             <EngineOptions state={state} values={values.engine_options} keys={speakers} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
             {!!findings.overrides.length && <ActionControl label="Use investigation recommendations" disabled={disabled || draft.dirty || !!state.optionsDraft} pending={speakerAction.busy} pendingText="Applying rules…" error={speakerAction.error} notice={speakerAction.notice}
               onClick={() => speakerAction.run(() => draft.applySpeakers(true), "Investigation recommendations restored.", "apply")} />}
-          </details></> : speakerStatus)}
+          </details></>}
         {panel === "widths" && <>{widths}{copyTask("wrap", "Copy width-measurement task")}</>}
         {panel === "options" && <><EngineOptions state={state} values={values.engine_options} keys={["IGNORETLTEXT", "PRESERVEORIGINAL", "FIXTEXTWRAP", "BRFLAG", "TLSYSTEMVARIABLES", "TLSYSTEMSWITCHES"]} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
           <Section title="Start a new source pass"><p className="muted">Refresh archives selected working copies, outputs, and variable cache. Frozen runs retain their original records.</p>{task("refresh_sources", "Review selected source refresh", {}, !baseline || unfinished || !values.selected.length, "default", values.selected)}</Section></>}

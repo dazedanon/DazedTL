@@ -72,7 +72,7 @@ Translation follows the working Qt GUI's task dependencies through the tasks in
 task rail becomes a stage strip when the workspace is narrow. One task occupies the editing
 body and its action footer stays outside the scroll region. One copied setup task identifies
 speaker formats, runs local name collection, then uses those results for the glossary/context
-investigation. Guidance review and measured widths follow before
+investigation. Guidance review and layout settings follow before
 the named database, dialogue and variable-cache actions. The comparison cache is distinct from
 auditing optional variable assignments, scripts and plugin commands. Advanced text starts with
 that audit and keeps each dependent range/filter beside its source; a phase with no enabled
@@ -90,8 +90,14 @@ investigation. Preferences and the consumed report are saved atomically through 
 boundary. Pending option drafts and actively running workers defer application; dormant API runs
 do not block speaker setup or local scanning and retain their frozen settings and receipts.
 The shared observer reports scanner results; manual overrides survive new findings
-until explicitly reset. Saved findings describe the investigated source; translating runtime files
-does not erase that record. New projects also clear inherited optional speaker rules.
+until explicitly reset.
+Names and context completion requires a request-bound context report, a current local name scan, and matching saved document revisions.
+Document existence alone does not verify an investigation; existing guidance can be reviewed independently.
+Empty guidance requires an explicit retained choice, and disk changes beneath a draft require comparison before a guarded replacement or rebase.
+The shared plain-text editor retains glossary category headers, source (translation) entries and same-line notes; engine parsing and per-batch selection remain unchanged.
+Layout recommendations reuse the first investigation’s source evidence; defaults are identified separately and remeasurement remains optional.
+Saved findings describe the investigated source; translating runtime files does not erase that record.
+New projects also clear inherited optional speaker rules.
 Prepare retains the untouched backup, one stoppable file-preparation action, and a reviewed version baseline as separate tasks.
 The preparation worker records each completed stage against the current prepared files, stops on failure or cancellation, and resumes remaining stages without repeating current completed work.
 Individual preparation tools update the same receipts; GameUpdate file installation does not imply a tested delivery configuration.

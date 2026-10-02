@@ -13,7 +13,7 @@ from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
 from .files import digest
 from . import backups
-from . import speaker_setup, preparation
+from . import speaker_setup, preparation, context_setup
 
 STEPS = {"prepare", "context", "translate", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
@@ -348,6 +348,7 @@ class Guided:
             "preparation": self.preparation(native),
             "speaker_setup": self.speaker_findings(project_id, native),
             "speaker_scan": self.speakers(project_id),
+            "context_setup": self.context_status(project_id),
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
@@ -661,8 +662,30 @@ class Guided:
             request = speaker_setup.request(self.path(project_id, "speaker-request"), project_id, native, schema)
             command = shlex.join([sys.executable, "-B", str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
                                   "--workspace", str(self.translation.workspace), "--project", project_id, "speakers"])
+            context_request = context_setup.request(self.path(project_id, "context-request"), project_id, request)
+            context_command = command.removesuffix("speakers") + "context"
+            text += context_setup.instructions(context_request, context_command)
             text = speaker_setup.instructions(request, command) + "\n## Glossary and context investigation (after the local speaker scan)\n" + text
+        if name == "wrap":
+            text += "\nFor optional remeasurement, retain the existing game guidance and speaker findings. If a current verified .dazedtl/guided/context-findings.json exists, update only its layout widths/reason/source evidence with the new measurements. Otherwise report the measured values for manual review. Do not invent a completed context investigation or execute translation.\n"
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}
+
+    def context_status(self, project_id):
+        _, native = self.record(project_id)
+        return context_setup.inspect(self.path(project_id, "context-request"), self.path(project_id, "context-review"),
+                                     native, project_id, self.backend.workflows.documents(native["id"]),
+                                     self.speaker_findings(project_id, native), self.speakers(project_id), self.observed_digest,
+                                     self.backend.workflows.state(native["id"]).get("references", []))
+
+    def context_review(self, project_id, name, revision, choice):
+        self.idle()
+        _, native = self.record(project_id)
+        documents = self.backend.workflows.documents(native["id"])
+        if choice == "review" and name in documents and not documents[name]["text"].strip():
+            if not self.context_status(project_id)["documents"][name]["intentionalEmpty"]:
+                raise ValueError("Choose whether to keep this document empty before continuing.")
+            choice = "empty"
+        return context_setup.review(self.path(project_id, "context-review"), documents, native, name, revision, choice)
 
     def speaker_findings(self, project_id, native=None):
         if native is None:

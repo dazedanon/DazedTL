@@ -48,6 +48,7 @@ def guided(value, project_id):
         'optionsDraft': value['options_draft'],
         'speakerSetup': value['speaker_setup'],
         'speakerScan': speaker_scan(value['speaker_scan']),
+        'contextSetup': value['context_setup'],
         'engineSchema': value['engine_schema'],
         'files': [pick(item, ('name', 'title', 'default', 'size', 'group')) for item in native['files']],
         'selection': native['selected'],
