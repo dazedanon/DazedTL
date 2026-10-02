@@ -1,3 +1,6 @@
+import type { ImageActionResult, ImageDraft, ImageList, ImageManagerState, ImagePixels } from "./imageContracts";
+import type { ImageEditorActionResult, ImageEditorSave, ImageEditorState, ImageNativeTranslationActionResult, ImageNativeTranslationPreview, ImageNativeTranslationState } from "./imageEditorContracts";
+
 export type Screen = "overview" | "translation" | "guided" | "manual" | "settings";
 export interface Project {
   id: string;
@@ -56,7 +59,7 @@ export interface Job {
 }
 export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
-export type GuidedStep = "prepare" | "context" | "translate" | "advanced" | "apply" | "layout" | "review";
+export type GuidedStep = "prepare" | "context" | "translate" | "plugins" | "images" | "advanced" | "apply" | "layout" | "review";
 export type EngineValue = string | number | boolean | string[];
 export interface GuidedOptions {
   selected: string[];
@@ -177,6 +180,8 @@ export interface WorkspaceSnapshot {
   guided: GuidedState | null;
   translation: TranslationState | null;
   translationError: string;
+  images?: ImageManagerState | null;
+  imagesError?: string;
 }
 
 export interface TranslationOptions {
@@ -451,6 +456,18 @@ export interface ExportedFiles {
   files: number;
 }
 export interface RpcContract {
+  images_state: { request: { project_id: string }; response: ImageManagerState };
+  images_list: { request: { project_id: string; query?: string; folder?: string; filter?: string; offset?: number; limit?: number; selected_only?: boolean; asset_id?: string }; response: ImageList };
+  images_update: { request: { project_id: string; revision: string; changes: Partial<ImageDraft> }; response: ImageManagerState };
+  images_action: { request: { project_id: string; action: string; options?: Record<string, unknown> }; response: ImageActionResult };
+  images_preview: { request: { project_id: string; asset_id: string; variant?: "source" | "original" | "candidate"; size?: number }; response: ImagePixels };
+  images_editor_state: { request: { project_id: string; asset_ids?: string[] }; response: ImageEditorState };
+  images_editor_save: { request: { project_id: string; revision: string; images: ImageEditorSave[]; asset_ids?: string[] }; response: ImageEditorState };
+  images_editor_action: { request: { project_id: string; revision: string; action: string; asset_ids: string[]; arguments?: Record<string, unknown> }; response: ImageEditorActionResult };
+  images_editor_translation_state: { request: { project_id: string }; response: ImageNativeTranslationState };
+  images_editor_translation_preview: { request: { project_id: string; mode: "estimate" | "translate" | "batch" }; response: ImageNativeTranslationPreview };
+  images_editor_translation_start: { request: { project_id: string; token: string; approved?: boolean }; response: ImageNativeTranslationState };
+  images_editor_translation_action: { request: { project_id: string; run_id: string; action: string; arguments?: Record<string, unknown> }; response: ImageNativeTranslationActionResult };
   translation_speakers: { request: { project_id: string; scan: boolean }; response: SpeakerScan };
   translation_identify: {
     request: { project_id: string; engine: string; evidence_file: string };

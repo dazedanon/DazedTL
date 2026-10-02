@@ -5,7 +5,7 @@ An Electron application migrating the existing DazedTL translation engine into a
 ## Current scope
 
 RPG Maker MV/MZ has a **Translation** workspace following the working Qt workflow:
-**Prepare → Names & context → Translate → Extra text → Apply & test → Release**.
+**Prepare → Names & context → Translate → Plugin text → Images → Apply & test → Release**.
 Each stage opens a focused task. The app sidebar stays in place; workflow navigation becomes
 compact in smaller windows. File selection supports search, groups, map names when available,
 and keyboard ranges across its virtualized list. Filtering preserves checked files.
@@ -23,7 +23,14 @@ native reconstruction, and runtime QA remain the coding assistant's responsibili
 Existing phased RPG Maker jobs retain their recovery path in Translation. Resume an
 unfinished API run before starting another phase or estimate so its provider work stays attached.
 Real provider billing and native game playtesting still need validation;
-application distribution is pending. Guided image editing remains a separate assistant task.
+application distribution is pending.
+
+Images opens a shared project Image Manager with retained selection, scoped discovery and editing tasks, and saved assistant reports.
+The assistant identifies relevant images before selected copies are made editable; **Choose images myself** bypasses discovery.
+Copying a task uses the clipboard and does not dispatch an assistant or start provider work.
+The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
+Ace archive extraction is separate.
+The optional text editor retains boxes, source text and translations, supports installed local OCR, and uses the existing estimate and approval process for native Image Text runs.
 
 ## Development launch
 

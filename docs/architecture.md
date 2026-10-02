@@ -43,6 +43,25 @@ Neither operation manufactures a user-review record or completes Len's report-ba
 The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
 Legacy Guided review receipts remain readable for existing records.
 
+Guided Plugin text and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
+The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
+Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
+Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
+Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
+Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
+Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
+Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
+Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
+Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.
+Preserved originals and durable receipts support reviewed restore without removing editable copies or editor work.
+The authenticated project helper exposes read-only image state, listing and previews; image application remains an app review.
+Clipboard handoffs never claim an external assistant is running.
+
+The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
+Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
+Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
+Import revalidates the exported source scope and copies targets only; rendering still requires structural validation and image review before runtime application.
+
 ## UI and state decisions
 
 ### UX principles

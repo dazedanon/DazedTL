@@ -17,7 +17,7 @@ from .files import digest
 from . import backups
 from . import speaker_setup, preparation, context_setup
 
-STEPS = {"prepare", "context", "translate", "advanced", "apply", "layout", "review"}
+STEPS = {"prepare", "context", "translate", "plugins", "images", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
 ADVANCED_CODES = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"}
 NATIVE_ACTIONS = {
@@ -36,6 +36,16 @@ SHARED_ACTIONS = {
     "refresh_sources": "Review source refresh",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
+
+
+def retained_position(value):
+    """Keep older plugin/image locations when their formerly combined phase splits."""
+    value = dict(value)
+    if value.get("task") == "plugins":
+        value["step"] = "plugins"
+    elif value.get("task") in {"images", "image-text", "image-manager"}:
+        value.update(step="images", task="images")
+    return value
 
 
 class Guided:
@@ -124,12 +134,13 @@ class Guided:
         if document is not None and (not isinstance(document, str) or document not in documents):
             raise ValueError("Choose an existing guidance document.")
         position_path = self.path(project_id, "position")
-        previous = read_json(position_path) if position_path.exists() else {}
+        previous = retained_position(read_json(position_path)) if position_path.exists() else {}
         document_path = self.path(project_id, "context-document")
         if document is not None or not document_path.exists():
             choice = document or context_setup.selected_document(document_path, previous, documents)
             write_json(document_path, {"name": choice})
-        write_json(position_path, {"step": step, "task": task})
+        positions = {**previous.get("positions", {}), step: task}
+        write_json(position_path, {**previous, "step": step, "task": task, "positions": positions})
         return {"saved": True}
 
     def form(self, project_id, value):
@@ -365,7 +376,7 @@ class Guided:
             self.backend.workflows.save(self.backend.workflows.projects[native["id"]])
         position = self.path(project_id, "position")
         draft = self.path(project_id, "draft")
-        saved_position = read_json(position) if position.exists() else {}
+        saved_position = retained_position(read_json(position)) if position.exists() else {}
         documents = context_setup.retained_documents(native["source"], self.backend.workflows.documents(native["id"]),
             value.get("draft", {}).get("documents", {}))
         return {

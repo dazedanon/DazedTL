@@ -1,5 +1,5 @@
 {
-  "version": 15,
+  "version": 16,
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -176,6 +176,44 @@
       "duringClose": true
     },
     "guided_comparisons_review": {
+      "refresh": true
+    },
+    "images_state": {
+      "refresh": false
+    },
+    "images_list": {
+      "refresh": false
+    },
+    "images_preview": {
+      "refresh": false
+    },
+    "images_update": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "images_action": {
+      "refresh": true
+    },
+    "images_editor_state": {
+      "refresh": false
+    },
+    "images_editor_save": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "images_editor_action": {
+      "refresh": true
+    },
+    "images_editor_translation_state": {
+      "refresh": false
+    },
+    "images_editor_translation_preview": {
+      "refresh": false
+    },
+    "images_editor_translation_start": {
+      "refresh": true
+    },
+    "images_editor_translation_action": {
       "refresh": true
     }
   }

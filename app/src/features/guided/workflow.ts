@@ -18,8 +18,13 @@ export const workflow: WorkflowStage[] = [
     { id: "main-text", title: "Translate main text", description: "Choose any subset in either row. Estimate and review each run before it starts." },
     { id: "other-event-text", title: "Other event text", description: "Variables, plugin commands, scripts, and labels." },
   ]},
+  { id: "plugins", title: "Plugin text", short: "Plugin text", tasks: [
+    { id: "plugins", title: "Plugin text", description: "Inspect player-visible text in plugin files and retain any excluded scope." },
+  ]},
+  { id: "images", title: "Images", short: "Images", tasks: [
+    { id: "images", title: "Images", description: "Find relevant images, edit selected copies, and apply reviewed results." },
+  ]},
   { id: "apply", title: "Apply & test", short: "Apply & test", tasks: [
-    { id: "plugins", title: "Plugin & image text", description: "Inspect player-visible text outside the main JSON phases and retain any excluded scope." },
     { id: "apply", title: "Apply selected outputs", description: "Review which runtime files will receive saved translations." },
     { id: "fitting", title: "Fit text to windows", description: "Scan using the saved widths, then review proposed fitting changes." },
     { id: "playtest", title: "Playtest this scope", description: "Check an early scene in the game before expanding the scope." },
@@ -48,6 +53,8 @@ export function unfinishedRun(state: GuidedState) {
 }
 export function initialPosition(state: GuidedState, translation: TranslationState) {
   const stages = stagesFor(state.engine);
+  if (state.task === "plugins") return { step: "plugins" as const, task: "plugins" };
+  if (["images", "image-text", "image-manager"].includes(state.task || "")) return { step: "images" as const, task: "images" };
   const step = state.step === "layout" ? "apply" : state.step === "advanced" ? "translate" : state.step;
   if (state.task === "run") return { step: runStage(state), task: "run" };
   if (["audit", "sources", "advanced-run", "variables"].includes(state.task || "") || state.step === "advanced") return { step: "translate" as const, task: "other-event-text" };

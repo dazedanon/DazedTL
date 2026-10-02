@@ -29,4 +29,11 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   }
   assert.deepEqual(stagesFor("MVMZ").find((stage) => stage.id === "translate")!.tasks.map((task) => task.id), ["main-text", "other-event-text"]);
   assert.deepEqual(stagesFor("ACE").at(-1)!.tasks.map((task) => task.id), ["package"]);
+  state.step = "apply"; state.task = "plugins";
+  assert.deepEqual(initialPosition(state, translation), { step: "plugins", task: "plugins" });
+  state.task = "image-manager";
+  assert.deepEqual(initialPosition(state, translation), { step: "images", task: "images" });
+  state.step = "images"; state.task = "images";
+  assert.deepEqual(initialPosition(state, translation), { step: "images", task: "images" });
+  assert.equal(stagesFor("MVMZ").findIndex((stage) => stage.id === "images"), stagesFor("MVMZ").findIndex((stage) => stage.id === "plugins") + 1);
 });

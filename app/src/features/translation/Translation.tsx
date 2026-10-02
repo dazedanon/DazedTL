@@ -20,6 +20,8 @@ import { RequestsPanel } from "./RequestsPanel";
 import { VersionsPanel } from "./VersionsPanel";
 import { JobStatus } from "../../ui/JobStatus";
 import "./translation.css";
+import { ImageManager } from "../images/ImageManager";
+import { ImageTextEditor } from "../images/ImageTextEditor";
 
 type View = "progress" | "context" | "requests" | "versions" | "legacy";
 const labels: Record<string, string> = {
@@ -79,6 +81,8 @@ function Workspace({
   const action = useAction({ after: application.refresh });
   const draft = useProjectOptions(state, action.report);
   const [view, setView] = useState<View>("progress");
+  const [imageManager, setImageManager] = useState(false);
+  const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const tabs: Tab<View>[] = [
     { id: "progress", label: "Progress" },
     { id: "context", label: "Context" },
@@ -107,6 +111,11 @@ function Workspace({
   const progress = state.progress;
   const text = progress?.metrics.text;
   const latest = state.jobs[0];
+  if (imageManager) {
+    if (editorAssets) return <ImageTextEditor projectId={project.id} assetIds={editorAssets} observationKey={application.snapshot} onClose={() => setEditorAssets(null)} />;
+    return <ImageManager projectId={project.id} observed={application.snapshot?.images} backLabel="Back to Len’s method"
+      onClose={() => setImageManager(false)} onOpenEditor={setEditorAssets} />;
+  }
   return (
     <PageLayout
       className="translation-workspace"
@@ -127,6 +136,7 @@ function Workspace({
               <FolderOpen size={16} />
               Workspace
             </Button>
+            <Button disabled={disabled} onClick={() => action.run(async () => { await flushDrafts(); setImageManager(true); })}>Image Manager</Button>
             <Button variant="primary" disabled={disabled} onClick={copy}>
               <Clipboard size={16} />
               {draft.dirty

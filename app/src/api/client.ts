@@ -1,4 +1,6 @@
 import { request } from "./transport";
+import type { ImageEditorSave } from "./imageEditorContracts";
+import { imagesApi } from "./images";
 import type {
   Screen,
   Phase,
@@ -13,6 +15,16 @@ import type {
 } from "./contracts";
 
 export const api = {
+  images: {
+    ...imagesApi,
+    editorState: (project_id: string, asset_ids: string[] = []) => request("images_editor_state", { project_id, asset_ids }),
+    editorSave: (project_id: string, revision: string, images: ImageEditorSave[], asset_ids: string[] = []) => request("images_editor_save", { project_id, revision, images, asset_ids }),
+    editorAction: (project_id: string, revision: string, action: string, asset_ids: string[], args: Record<string, unknown> = {}) => request("images_editor_action", { project_id, revision, action, asset_ids, arguments: args }),
+    editorTranslationState: (project_id: string) => request("images_editor_translation_state", { project_id }),
+    editorTranslationPreview: (project_id: string, mode: "estimate" | "translate" | "batch") => request("images_editor_translation_preview", { project_id, mode }),
+    editorTranslationStart: (project_id: string, token: string, approved = false) => request("images_editor_translation_start", { project_id, token, approved }),
+    editorTranslationAction: (project_id: string, run_id: string, action: string, args: Record<string, unknown> = {}) => request("images_editor_translation_action", { project_id, run_id, action, arguments: args }),
+  },
   translation: {
     speakers: (project_id: string, scan = false) => request("translation_speakers", { project_id, scan }),
     resolve: (

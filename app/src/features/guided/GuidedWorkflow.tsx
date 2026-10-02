@@ -34,6 +34,10 @@ import { EventTextSources } from "./EventTextSources";
 import { EventTextPicker } from "./EventTextPicker";
 import { EventTextReview, type SourceReview } from "./EventTextReview";
 import { sourceErrors, type SelectorKey, type SourcePickerDraft } from "./eventTextSelection";
+import { ImageManager } from "../images/ImageManager";
+import { ImageTextEditor } from "../images/ImageTextEditor";
+import { imagesApi } from "../../api/images";
+import { GuidedImages, type ImageEntryMode } from "./GuidedImages";
 
 const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME101", "AUTONAMEPOPUP101", "SPEAKERS408"];
 const advanced = ["CODE122", "CODE122_VAR_RANGES", "CODE357", "ENABLED_PLUGINS_357", "CODE355655", "ENABLED_PATTERNS_355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"];
@@ -71,6 +75,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const taskView = taskId === "other-event-text" ? state.eventText.view : taskId;
   const taskIndex = stage.tasks.findIndex((item) => item.id === taskId);
   const [panel, setPanel] = useState<Panel>(null);
+  const [imageView, setImageView] = useState<ImageEntryMode | null>(null);
+  const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [utilityActions, setUtilityActions] = useState<HTMLDivElement | null>(null);
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(null);
@@ -274,7 +280,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     } else if (saved && ["failed", "stopped", "interrupted", "canceled"].includes(saved.status)) setBaselineRun(null);
   }, [baselineRun, translation.jobs, baseline, taskId, action.busy]);
   const applyRun = (current: Job) => <Button variant="primary" disabled={disabled || !current.outputsAvailable || !baseline} onClick={() => review("export_selected", {}, Object.keys(current.outputs || {}))}>Apply translated output</Button>;
-  const nextRun = (current: Job) => <Button disabled={action.busy} onClick={() => { if (current.logicalPhase === "database") { void move("translate", "main-text").then(() => requestAnimationFrame(() => bodyRef.current?.querySelector('section[aria-label="Dialogue & choices"]')?.scrollIntoView({ block: "start" }))); return; } stepTask( current.logicalPhase === "dialogue" ? "audit" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "variables" : "plugins"); }}>{current.logicalPhase === "database" ? "Continue to dialogue" : current.logicalPhase === "dialogue" ? "Continue to other event text" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "Update comparisons" : "Continue to plugin & image text"}</Button>;
+  const nextRun = (current: Job) => <Button disabled={action.busy} onClick={() => { if (current.logicalPhase === "database") { void move("translate", "main-text").then(() => requestAnimationFrame(() => bodyRef.current?.querySelector('section[aria-label="Dialogue & choices"]')?.scrollIntoView({ block: "start" }))); return; } stepTask( current.logicalPhase === "dialogue" ? "audit" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "variables" : "plugins"); }}>{current.logicalPhase === "database" ? "Continue to dialogue" : current.logicalPhase === "dialogue" ? "Continue to other event text" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "Update comparisons" : "Continue to plugin text"}</Button>;
   const phaseRow = (target: "database" | "dialogue") => {
     const files = target === "database" ? databaseFiles : eventFiles;
     const current = state.phaseRuns[target];
@@ -399,7 +405,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <div className="guided-utilities"><Button variant="quiet" onClick={() => stepTask("guidance")}>Guidance</Button><Button variant="quiet" onClick={() => setPanel("options")}>Engine options</Button></div></>;
       primary = task("start", mode === "batch" ? "Review Batch preparation" : "Review translation", { mode, phase }, !baseline || !phaseFiles.length || !!changed.length || unfinished || !state.provider.ready || !state.provider.enabled || !paidModeReady || !estimate || phase === "advanced" && !advancedReady || phase === "variables" && state.comparisons.status !== "ready", "primary");
       if (state.phaseRuns[phase]?.scopeComplete) content = <>{content}<div className="guided-utilities">{primary}</div></>;
-      secondary = state.phaseRuns[phase]?.scopeComplete ? <Button disabled={disabled} onClick={() => phase === "advanced" ? skipEventText() : stepTask("plugins")}>{phase === "advanced" && state.comparisons.status !== "not_needed" ? "Review comparisons" : "Continue to plugin & image text"}</Button> : <Button disabled={disabled} onClick={() => stepTask(phase === "advanced" ? "sources" : "advanced-run")}>Back to {phase === "advanced" ? "source choices" : "translation"}</Button>;
+      secondary = state.phaseRuns[phase]?.scopeComplete ? <Button disabled={disabled} onClick={() => phase === "advanced" ? skipEventText() : stepTask("plugins")}>{phase === "advanced" && state.comparisons.status !== "not_needed" ? "Review comparisons" : "Continue to plugin text"}</Button> : <Button disabled={disabled} onClick={() => stepTask(phase === "advanced" ? "sources" : "advanced-run")}>Back to {phase === "advanced" ? "source choices" : "translation"}</Button>;
       if (state.phaseRuns[phase]?.scopeComplete) primary = applyRun(state.phaseRuns[phase]!);
       break;
     case "audit":
@@ -416,11 +422,15 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       primary = enabledCodes.length ? <Button variant="primary" disabled={disabled || !!sourceErrors(state.eventText, values.engine_options).length || !eventFiles.length} onClick={reviewSources}>Review source choices</Button> : <Button variant="primary" disabled={disabled} onClick={skipEventText}>Continue without other event text</Button>;
       secondary = state.eventText.accepted && !draft.dirty && enabledCodes.length ? <Button disabled={disabled} onClick={() => stepTask("advanced-run")}>Continue to translation</Button> : null; break;
     case "plugins":
-      content = <><ActionList><ActionRow label={<><strong>{state.engine === "ACE" ? "Ruby script text" : "Plugin text"}</strong><small>Inspect and translate player-visible text outside the JSON phases.</small></>}>{copyTask("plugins", "Copy " + (state.engine === "ACE" ? "Ruby" : "plugin") + " task")}</ActionRow>
-        {state.engine === "MVMZ" && <ActionRow label={<><strong>Image text</strong><small>Check the editable image workspace before continuing image work with your assistant.</small></>}>{task("images_status", "Inspect image readiness", {}, !baseline)}</ActionRow>}</ActionList>
-        {operationJob("images_status")?.result && <Button variant="quiet" onClick={() => inspect(operationJob("images_status")!)}>View image readiness details</Button>}
-        <p className="muted">Image editing remains an assistant task. Check menu graphics and retain any excluded scope with the game’s guidance.</p></>;
+      content = <><ActionList><ActionRow label={<><strong>{state.engine === "ACE" ? "Ruby script text" : "Plugin files"}</strong><small>Inspect and translate player-visible text outside the JSON phases.</small></>}>{copyTask("plugins", "Copy " + (state.engine === "ACE" ? "Ruby" : "plugin-file") + " task")}</ActionRow></ActionList>
+        <p className="muted">Event plugin commands stay in Other event text.</p></>;
       primary = advance(); break;
+    case "images":
+      content = <GuidedImages state={application.snapshot?.images || null} error={application.snapshot?.imagesError || ""} busy={disabled}
+        open={(mode) => { void action.run(async () => { await flushDrafts(); setImageView(mode); }, "", "images:open"); }}
+        copy={() => { void action.run(async () => { await flushDrafts(); const result = await imagesApi.action(project.id, "edit_task"); if (!result.text) throw new Error("The image task is unavailable."); await window.dazedtl.copyText(result.text); }, "Image task copied. Paste it into your coding assistant.", "images:copy"); }}
+        refresh={() => { void action.run(() => imagesApi.action(project.id, "refresh_results"), "Saved image results refreshed.", "images:refresh"); }} />;
+      primary = advance("Continue to text Apply"); break;
     case "apply":
       content = <>{fileSummary(outputFiles.length)}<dl className="guided-scope-summary"><div><dt>Saved outputs</dt><dd>{outputFiles.length ? `${fileCount(outputFiles.length)} available` : "No selected outputs available"}</dd></div>
         <div><dt>Applied to game</dt><dd>{applied ? state.readiness.runtime_edited.some((name) => outputFiles.includes(name)) ? "Applied · later game edits retained" : "Matches saved outputs" : "Ready for application review"}</dd></div></dl>
@@ -480,6 +490,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const paid = preview?.action === "start" && preview.options.mode !== "estimate";
   const reviewEstimateCurrent = !paid || preview?.options.mode === "speakers" || !!preview?.estimate && currentEstimate(preview.options.phase as Phase)?.id === preview.estimate.jobId;
   const savePanel = (label = "Save & close") => <ActionControl label={label} variant="primary" disabled={disabled} {...feedback("save-options", "Saving…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "Options saved.", "save-options")} />;
+  if (imageView && taskId === "images") {
+    if (editorAssets) return <ImageTextEditor projectId={project.id} assetIds={editorAssets} observationKey={application.snapshot} onClose={() => setEditorAssets(null)} />;
+    return <ImageManager projectId={project.id} initialMode={imageView} observed={application.snapshot?.images}
+      onClose={() => setImageView(null)} onOpenEditor={(ids, mode) => { setImageView(mode || imageView); setEditorAssets(ids); }} />;
+  }
   return <PageLayout variant="editor" className="guided-workspace" aria-label="Translation workspace">
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
       actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button variant="quiet" onClick={() => setHistory(true)}>Activity</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />

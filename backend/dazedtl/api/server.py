@@ -18,6 +18,9 @@ from dazedtl.translation.guided import Guided
 from dazedtl.translation.service import Translation
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.api.local import LocalAPI
+from dazedtl.images import ImageService
+from dazedtl.images.editor import ImageEditor
+from dazedtl.images.native_translation import ImageNativeTranslation
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
@@ -41,6 +44,9 @@ class Application:
         self.translation = Translation(self.workspace, self.projects, self.settings,
                                        TranslationEngine(legacy, self.workspace / "engine"))
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.images = ImageService(self.projects, self.translation, self.settings, self.backend)
+        self.image_editor = ImageEditor(self.images)
+        self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.legacy_actions = {
             "resume": lambda identity: views.job(self.guided.resume(identity)),
             "stop": lambda identity: views.job(self.guided.stop(identity)),
@@ -145,7 +151,14 @@ class Application:
                 error = str(exc)
                 project.pop("operation", None)
                 project.update(status="Project needs attention", detail=error, next_label="Open translation")
-        return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy}
+        images, image_error = None, ""
+        if project and project["available"]:
+            try:
+                images = self.images.state(project["id"])
+            except (ValueError, OSError) as exc:
+                image_error = str(exc)
+        return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy,
+                "images": images, "imagesError": image_error}
 
     def open_project(self, source):
         root = Path(source).expanduser().resolve(strict=True)
@@ -252,6 +265,12 @@ def serve(args, diagnostics):
     for name in ("state", "save", "draft", "documents", "save_document", "prepare", "backups", "compile", "run", "request",
                  "start", "stop", "accept", "review", "progress", "operation", "attach_batch", "resolve_uncertain", "identify", "legacy"):
         methods["translation_" + name] = (getattr(app.translation, name), lambda value, _params: value)
+    for name in ("state", "list", "update", "action", "preview"):
+        methods["images_" + name] = (getattr(app.images, name), lambda value, _params: value)
+    for name in ("state", "save", "action"):
+        methods["images_editor_" + name] = (getattr(app.image_editor, name), lambda value, _params: value)
+    for name in ("state", "preview", "start", "action"):
+        methods["images_editor_translation_" + name] = (getattr(app.image_native, name), lambda value, _params: value)
 
     def dispatch(name, params):
         if name not in methods:
@@ -314,6 +333,7 @@ def serve(args, diagnostics):
         app.closing = True
         local.close()
         app.translation.jobs.close()
+        app.images.close()
         try:
             app.backend.close()
         finally:
