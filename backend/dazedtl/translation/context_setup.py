@@ -13,6 +13,23 @@ WIDTHS = ("width", "faceWidth", "listWidth", "noteWidth")
 DEFAULT_WIDTHS = dict(zip(WIDTHS, (60, 50, 100, 75)))
 
 
+def retained_documents(source, documents, drafts):
+    """Keep missing custom files addressable while their recovery drafts exist."""
+    for name in drafts:
+        if name.startswith("custom:") and name not in documents:
+            path = project_path(source, ".dazedtl/skills/" + name.removeprefix("custom:") + ".md", exists=False)
+            documents[name] = {"text": "", "revision": digest(b""), "path": str(path)}
+    return documents
+
+
+def selected_document(path, position, documents):
+    value = read_json(path) if path.exists() else {}
+    name = value.get("name") if isinstance(value, dict) else None
+    if name in documents:
+        return name
+    return "quirks" if position.get("task") == "guidance" and "quirks" in documents else "glossary"
+
+
 def request(path, project_id, speaker_request):
     previous = read_json(path) if path.exists() else {}
     if previous.get("project_id") == project_id and previous.get("speaker_request_id") == speaker_request["request_id"]:

@@ -11,8 +11,7 @@ export const workflow: WorkflowStage[] = [
   ]},
   { id: "context", title: "Names & context", short: "Context", tasks: [
     { id: "names", title: "Speakers & game context", description: "Discover how speakers are named, then save reusable guidance." },
-    { id: "glossary", title: "Review the glossary", description: "Review character names, places and recurring terms." },
-    { id: "guidance", title: "Review voice & context", description: "Review the voice and setting used during translation." },
+    { id: "guidance", title: "Review translation guidance", description: "Review names, terminology, translation style and game background." },
     { id: "speakers", title: "Review layout settings", description: "Set character limits for the game’s text areas." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
@@ -57,6 +56,7 @@ export function initialPosition(state: GuidedState, translation: TranslationStat
   const stages = stagesFor(state.engine);
   const step = state.step === "layout" ? "apply" : state.step === "translate" && state.phase === "advanced" ? "advanced" : state.step;
   const saved = stages.find((stage) => stage.id === step)!;
+  if (step === "context" && state.task === "glossary") return { step, task: "guidance" };
   if (step === "context" && state.task === "setup") return { step, task: "names" };
   if (state.task === "run") return { step: runStage(state), task: "run" };
   if (saved?.tasks.some((task) => task.id === state.task)) return { step, task: state.task! };

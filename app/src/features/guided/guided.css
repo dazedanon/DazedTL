@@ -181,3 +181,6 @@ main.editor-main.guided-main { padding: 0; }
 .guided-layout-review { display: grid; gap: var(--space-4); }
 .guided-layout-review > :is(button, .action-control) { justify-self: start; }
 .guided-layout-review > p { margin: 0; }
+
+.guided-guidance-badge { color: var(--color-warning); white-space: normal; }
+.guided-custom-guidance, .guided-guidance-blockers { margin-top: var(--space-4); }

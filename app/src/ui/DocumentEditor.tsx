@@ -23,6 +23,9 @@ export function DocumentEditor({
   focused = false,
   showActions = true,
   before,
+  tabNames,
+  tabLabel,
+  titles,
 }: {
   documents: Documents;
   drafts: Documents;
@@ -36,7 +39,11 @@ export function DocumentEditor({
   focused?: boolean;
   showActions?: boolean;
   before?: (name: string) => ReactNode;
+  tabNames?: string[];
+  tabLabel?: (name: string) => ReactNode;
+  titles?: Record<string, string>;
 }) {
+  const labelFor = (name: string) => titles?.[name] || title(name);
   const [current, setName] = useState("glossary");
   const available = (names || [...new Set([...Object.keys(documents), ...Object.keys(drafts)])]).filter((name) => documents[name] || drafts[name]);
   const preferred = selectedName || current;
@@ -45,13 +52,13 @@ export function DocumentEditor({
   return (
     <fieldset disabled={disabled} className={focused ? "document-editor document-editor--focused" : "document-editor"}>
       {focused ? available.length > 1 && <Tabs id="guidance-documents" label="Guidance documents" value={name}
-        items={available.map((key) => ({ id: key, label: title(key) + (drafts[key] ? " · Draft" : "") }))}
+        items={available.filter((key) => !tabNames || tabNames.includes(key)).map((key) => ({ id: key, label: tabLabel ? tabLabel(key) : labelFor(key) + (drafts[key] ? " · Draft" : "") }))}
         onChange={select || setName} disabled={disabled} /> : <label>
         Document
         <select value={name} onChange={(event) => (select || setName)(event.target.value)}>
           {available.map((key) => (
             <option key={key} value={key}>
-              {title(key)}
+              {labelFor(key)}
               {drafts[key] ? " · Draft" : ""}
             </option>
           ))}
@@ -63,7 +70,7 @@ export function DocumentEditor({
           aria-labelledby={focused && available.length > 1 ? `guidance-documents-tab-${name}` : undefined}>
           {before?.(name)}
           <textarea
-            aria-label={focused ? title(name) + " text" : "Game context text"}
+            aria-label={focused ? labelFor(name) + " text" : "Game context text"}
             rows={focused ? 9 : 16}
             spellCheck={false}
             value={document.text}

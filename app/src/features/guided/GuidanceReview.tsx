@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { ContextSetup, Documents } from "../../api/contracts";
+import { ActionList, ActionRow } from "../../ui/ActionList";
+import { coreGuidance, guidanceBlockers, guidanceStatus, guidanceTitle } from "./guidanceReview";
 import { Button } from "../../ui/Button";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import type { useContextDraft } from "./useContextDraft";
@@ -9,8 +11,12 @@ export function GuidanceReview({ documents, context, setup, names, selectedName,
     selectedName: string; select: (name: string) => void; disabled: boolean; returnToDiscovery: () => void;
     keepEmpty: (name: string) => void; busy: string; run: (operation: () => Promise<unknown>) => void }) {
   const [comparison, setComparison] = useState<{ name: string; saved: Documents[string] } | null>(null);
-  return <DocumentEditor documents={documents} drafts={context.drafts} edit={context.edit} disabled={disabled}
-    names={names} selectedName={selectedName} select={select} focused showActions={false} save={context.save} discard={context.discard}
+  const custom = names.filter((name) => name.startsWith("custom:"));
+  const hiddenBlockers = guidanceBlockers(names, documents, context.drafts, setup).filter((name) => name !== selectedName);
+  return <><DocumentEditor documents={documents} drafts={context.drafts} edit={context.edit} disabled={disabled}
+    names={names} tabNames={[...coreGuidance, ...(selectedName.startsWith("custom:") ? [selectedName] : [])]} titles={{ quirks: "Style & quirks" }}
+    tabLabel={(name) => { const status = guidanceStatus(name, documents, context.drafts, setup); return <>{guidanceTitle(name)}{status !== "Saved" && <span className="badge guided-guidance-badge">{status}</span>}</>; }}
+    selectedName={selectedName} select={select} focused showActions={false} save={context.save} discard={context.discard}
     before={(name) => {
       const saved = documents[name], draft = context.drafts[name], status = setup.documents[name];
       const conflict = !!draft && draft.revision !== saved.revision;
@@ -36,5 +42,9 @@ export function GuidanceReview({ documents, context, setup, names, selectedName,
         {empty && !intentional && !conflict && <div className="guided-empty-guidance"><p className="muted">Create guidance in discovery, or continue intentionally empty.</p><div className="actions"><Button onClick={returnToDiscovery}>Return to discovery</Button><Button pending={busy === "context:empty"} onClick={() => keepEmpty(name)}>{name === "glossary" ? "Keep glossary empty" : "Keep this document empty"}</Button></div></div>}
         {name === "glossary" && <p className="muted guided-glossary-hint">Keep category headers and source (translation) entries; notes stay on the same line.</p>}
       </>;
-    }} />;
+    }} />
+    {!!custom.length && <details className="guided-custom-guidance"><summary>Custom guidance (optional)</summary><ActionList>{custom.map((name) => <ActionRow key={name} label={<><strong>{guidanceTitle(name)}</strong><small>{guidanceStatus(name, documents, context.drafts, setup)}</small></>}><Button disabled={disabled} variant="quiet" onClick={() => select(name)}>Open guidance</Button></ActionRow>)}</ActionList></details>}
+    {!!hiddenBlockers.length && <div className="guided-guidance-blockers" role="status"><ActionList>{hiddenBlockers.map((name) => <ActionRow key={name} label={<><strong>{guidanceTitle(name)} {guidanceStatus(name, documents, context.drafts, setup) === "Conflict" ? "has a conflict" : "needs a choice"}</strong></>}><Button variant="link" disabled={disabled} onClick={() => select(name)}>Open {guidanceTitle(name)}</Button></ActionRow>)}</ActionList></div>}
+  </>;
+
 }

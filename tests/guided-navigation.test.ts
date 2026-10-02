@@ -11,7 +11,7 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   state.run!.mode = "speakers";
   assert.deepEqual(initialPosition(state, translation), { step: "context", task: "run" });
   state.step = "context"; state.task = "glossary";
-  assert.deepEqual(initialPosition(state, translation), { step: "context", task: "glossary" });
+  assert.deepEqual(initialPosition(state, translation), { step: "context", task: "guidance" });
   state.run!.mode = "translate"; state.run!.phase = "complete"; state.phase = "database";
   assert.equal(runPhase(state), "database");
   assert.equal(runStage(state), "translate");

@@ -96,6 +96,7 @@ export interface ContextSetup {
   layoutStatus: "defaults" | "saved"; layoutRevision: string;
 }
 export interface GuidedState {
+  contextDocument: string;
   contextSetup: ContextSetup;
   speakerSetup: SpeakerSetup;
   speakerScan: SpeakerScan;
@@ -601,7 +602,7 @@ export interface RpcContract {
     response: Job;
   };
   guided_position: {
-    request: { project_id: string; step: GuidedStep; task?: string };
+    request: { project_id: string; step: GuidedStep; task?: string; document?: string };
     response: Saved;
   };
   guided_form: {

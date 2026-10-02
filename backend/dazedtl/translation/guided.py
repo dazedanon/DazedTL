@@ -109,13 +109,23 @@ class Guided:
         self.projects.get(project_id)
         return self.translation.workspace / "translation/projects" / project_id / ("guided-" + name + ".json")
 
-    def position(self, project_id, step, task=None):
-        self.record(project_id)
+    def position(self, project_id, step, task=None, document=None):
+        _, native = self.record(project_id)
         if step not in STEPS:
             raise ValueError("Choose a guided step.")
         if task is not None and (not isinstance(task, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,59}", task)):
             raise ValueError("Choose a guided task.")
-        write_json(self.path(project_id, "position"), {"step": step, "task": task})
+        documents = context_setup.retained_documents(native["source"], self.backend.workflows.documents(native["id"]),
+            self.backend.workflows.state(native["id"]).get("draft", {}).get("documents", {}))
+        if document is not None and (not isinstance(document, str) or document not in documents):
+            raise ValueError("Choose an existing guidance document.")
+        position_path = self.path(project_id, "position")
+        previous = read_json(position_path) if position_path.exists() else {}
+        document_path = self.path(project_id, "context-document")
+        if document is not None or not document_path.exists():
+            choice = document or context_setup.selected_document(document_path, previous, documents)
+            write_json(document_path, {"name": choice})
+        write_json(position_path, {"step": step, "task": task})
         return {"saved": True}
 
     def form(self, project_id, value):
@@ -341,8 +351,11 @@ class Guided:
         position = self.path(project_id, "position")
         draft = self.path(project_id, "draft")
         saved_position = read_json(position) if position.exists() else {}
+        documents = context_setup.retained_documents(native["source"], self.backend.workflows.documents(native["id"]),
+            value.get("draft", {}).get("documents", {}))
         return {
             **value, "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
+            "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
             "form": self.saved_form(project_id),
             "preparation": self.preparation(native),
@@ -352,7 +365,7 @@ class Guided:
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
-            "documents": self.backend.workflows.documents(native["id"]), "phase": project["phase"],
+            "documents": documents, "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
             "runs": [self.run_view(identity, compact=True) for identity in self.owned_runs(native)[:30]

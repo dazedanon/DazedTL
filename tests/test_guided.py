@@ -15,7 +15,7 @@ from dazedtl.translation.files import evidence, read_json, digest
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
-from dazedtl.translation import speaker_setup, preparation
+from dazedtl.translation import speaker_setup, preparation, context_setup
 
 
 class GuidedTests(unittest.TestCase):
@@ -65,6 +65,31 @@ class GuidedTests(unittest.TestCase):
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         saved = snapshot(self.source, store_path(self.source), source_game=True)
         write_json(lifecycle_path(self.translation.workspace, self.identity), {'version': 1, 'source_backup': saved})
+
+    def test_document_selection_migrates_review_positions_and_stays_with_its_project(self):
+        self.backend.workflows.documents = lambda _: {"glossary": {}, "quirks": {}, "game": {}}
+        position = self.guided.path(self.identity, "position")
+        selected = self.guided.path(self.identity, "context-document")
+        write_json(position, {"step": "context", "task": "guidance"})
+        self.guided.position(self.identity, "context", "guidance")
+        self.assertEqual(read_json(selected), {"name": "quirks"})
+        self.guided.position(self.identity, "context", "guidance", "game")
+        self.guided.position(self.identity, "context", "speakers")
+        self.assertEqual(read_json(selected), {"name": "game"})
+        with self.assertRaises(ValueError):
+            self.guided.position(self.identity, "context", "guidance", "foreign-document")
+        selected.unlink()
+        write_json(position, {"step": "context", "task": "glossary"})
+        self.guided.position(self.identity, "context", "guidance")
+        self.assertEqual(read_json(selected), {"name": "glossary"})
+        self.backend.workflows.state = lambda _: {"draft": {"documents": {"custom:notes": {"text": "Retained draft", "revision": "previous"}}}}
+        self.guided.position(self.identity, "context", "guidance", "custom:notes")
+        self.assertEqual(read_json(selected), {"name": "custom:notes"})
+        recovered = context_setup.retained_documents(self.source, {}, {"custom:notes": {}})
+        self.assertEqual(recovered["custom:notes"]["revision"], digest(b""))
+        self.assertEqual(recovered["custom:notes"]["text"], "")
+        other = self.projects.open({"source": str(self.root / "other-game"), "engine": "MVMZ"})
+        self.assertFalse(self.guided.path(other["id"], "context-document").exists())
 
     def preview(self):
         return self.guided.preview(self.identity, 'start', options={'mode': 'batch'})

@@ -93,6 +93,10 @@ The shared observer reports scanner results; manual overrides survive new findin
 until explicitly reset.
 Names and context completion requires a request-bound context report, a current local name scan, and matching saved document revisions.
 Document existence alone does not verify an investigation; existing guidance can be reviewed independently.
+One review task keeps glossary, translation style/quirks and game context in separate tabs, with custom guidance available separately.
+The selected tab is retained per project, and legacy glossary/voice review positions open the corresponding tab.
+Missing custom files remain addressable while their recovery drafts exist.
+Switching tabs retains edits without completing review; continuing validates the complete set and reports successful writes if a later document save fails.
 Empty guidance requires an explicit retained choice, and disk changes beneath a draft require comparison before a guarded replacement or rebase.
 The shared plain-text editor retains glossary category headers, source (translation) entries and same-line notes; engine parsing and per-batch selection remain unchanged.
 Layout recommendations reuse the first investigation’s source evidence; defaults are identified separately and remeasurement remains optional.
