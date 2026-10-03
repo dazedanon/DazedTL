@@ -45,7 +45,9 @@ Other Batch actions likewise begin local preparation immediately and retain the 
 The fresh Batch speaker check validates unresolved names against frozen files and current glossary before collection; it retains its separate approval if names need translation.
 Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
 Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
-The request inspector uses source/context, response/error and exact JSON tabs.
+The request inspector keeps model, line count and token limit beside its source/context, response/error and exact JSON tabs.
+Full request parameters and strict schemas stay in Exact JSON; independently scrollable source and context panes keep retained content readable without pushing the tabs below the fold.
+Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
 All project-owned runs remain in History automatically, including failed and canceled runs. The native pointer is not the ownership registry.
 Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.

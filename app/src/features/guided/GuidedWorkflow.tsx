@@ -107,6 +107,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [baselineNotice, setBaselineNotice] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const historyControl = useRef<HTMLButtonElement>(null);
+  const inspectorReturnFocus = useRef<HTMLElement | null>(null);
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); headingRef.current?.focus({ preventScroll: true }); }, [taskId, taskView, position.step]);
   const running = !!application.snapshot?.application.running;
   const disabled = action.busy || speakerAction.busy || draft.committing || context.committing;
@@ -245,6 +247,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const copyTask = (name: string, label: string, variant: "default" | "primary" | "quiet" = "default") => <ActionControl label={label} variant={variant} disabled={disabled} {...feedback("copy:" + name, "Copying…")}
     onClick={() => action.run(async () => { await save(); await window.dazedtl.copyText((await api.guided.skill(project.id, name)).text); }, name === "setup" ? "" : "Task copied. Return to its saved results when your assistant finishes.", "copy:" + name)} />;
   const inspect = (item: Job) => {
+    const current = document.activeElement;
+    inspectorReturnFocus.current = current instanceof HTMLElement && !current.closest("dialog[open]") ? current : historyControl.current;
     setHistory(false); setInspected(item);
     void action.run(async () => { const saved = await api.guided.inspect(project.id, item.id); setInspected((current) => current?.id === item.id ? saved : current); }, "", "inspect:" + item.id);
   };
@@ -548,7 +552,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   }
   return <PageLayout variant="editor" className={`guided-workspace${taskId === "main-text" ? " translate-redesign" : ""}`} aria-label="Translation workspace">
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
-      actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button variant="quiet" onClick={() => setHistory(true)}>History</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
+      actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button ref={historyControl} variant="quiet" onClick={() => setHistory(true)}>History</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
     <div className="guided-layout">
       <WorkflowNavigation stages={stages} step={position.step} completed={completed} disabled={action.busy} move={move} taskFor={stage => taskForStage(state, stage)} />
       <div className="guided-task-workspace">
@@ -611,11 +615,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panel === "files" ? <><Button disabled={action.busy} onClick={closePanel}>Cancel</Button><ActionControl label={`Use ${fileCount(pickerSelected.length)}`} variant="primary" disabled={disabled} {...feedback("files:save", "Saving selection…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "File selection saved.", "files:save")} /></> : <><Button disabled={action.busy} onClick={() => setPanel(null)}>Close</Button><div ref={setUtilityActions} className="action-bar-slot" />{["speakers", "widths", "options", "tools"].includes(panel) && (panel !== "speakers" || draft.dirty) && <>{draft.dirty && <ActionControl label="Discard engine options" disabled={disabled} {...feedback("discard-options", "Discarding…")} onClick={() => action.run(draft.discard, "Engine options restored.", "discard-options")} />}{savePanel()}</>}</>}</ActionBar>
     </Modal>}
     {history && <Modal label="Recent activity" onDismiss={() => setHistory(false)}><h2>Recent activity</h2><ActivityHistory state={state} translation={translation} inspect={inspect} /><Button onClick={() => setHistory(false)}>Close</Button></Modal>}
-    {inspected && <Modal label="Request inspector" className="request-inspector-sheet" onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? "Requests" : inspected.label || "Saved activity"}</h2><Button onClick={() => setInspected(null)}>Close</Button></div>
+    {inspected && <Modal label="Request inspector" className="request-inspector-sheet" returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? "Requests" : inspected.label || "Saved activity"}</h2><Button onClick={() => setInspected(null)}>Close</Button></div>
       {inspected.keptForHistory && <p>Kept failed run. Its original parameters, requests, and provider history are unchanged. This record does not resume the run.</p>}
       <ProcessPanel compact job={inspected} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
         readProvider={() => api.guided.providerDetails(project.id, inspected.id)} />
-      {inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}
+      {!inspected.process && inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}
       {!inspected.process && !!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}
