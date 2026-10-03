@@ -42,6 +42,7 @@ class GuidedRuns:
                    if key not in {"data", "files", "translated", "variables"}}
         value = {"version": 1, "project": project_id, "phase": phase, "mode": mode,
                  "source": sources, "source_pass": inputs.record().get("last_refresh"), "files": names,
+                 "fresh_start": native.get("kept_failed_runs", {}),
                  "working": {name: digest(self.working_bytes(native, name, sources[name])) for name in names},
                  "configuration": self.guided.settings.guided_configuration(mode),
                  "options": native["engine_options"], "layout": native["widths"],

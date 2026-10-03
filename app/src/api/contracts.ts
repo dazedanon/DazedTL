@@ -50,6 +50,7 @@ export interface Job {
   scopeComplete?: boolean;
   appliedOutputs?: string[];
   process?: RunProcess;
+  keptForHistory?: boolean;
   eventTextReview?: { manual?: string[]; reason?: string; binding?: string; reportId?: string | null; fingerprint?: string; literalBased?: boolean; settings?: Record<string, EngineValue> } | null;
   action?: string;
   result?: Record<string, unknown> | null;
@@ -64,6 +65,7 @@ export interface RunProcess {
   received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
   failed?: number; retryBlocked?: boolean; nextAction?: string;
   uncertain?: number; duplicateSubmissions?: number;
+  freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
   batches?: { id: string; status: string; counts: Record<string, number>; errors?: Record<string, string>[] }[];
   errors: string[]; usage?: Record<string, number> | null;

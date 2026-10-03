@@ -27,13 +27,16 @@ export function ActivityHistory({ state, translation, inspect }: {
 }) {
   const rows = [...projectActivity(state, translation), ...state.runs].sort((a, b) =>
     Date.parse(b.updated || b.created || "") - Date.parse(a.updated || a.created || ""));
-  return <div className="guided-history">
-    {!rows.length && <p className="muted">No saved activity for this project yet.</p>}
-    <ActionList>{rows.slice(0, 12).map((job) => <ActionRow key={job.id} label={<div>
+  const kept = rows.filter(job => job.keptForHistory);
+  const list = (jobs: Job[]) => <ActionList>{jobs.map((job) => <ActionRow key={job.id} label={<div>
       <JobStatus job={{ ...job, label: job.label || (job.mode === "estimate" ? "Cost estimate" : "Translation run") }} />
       {job.updated && <time className="muted" dateTime={job.updated}>{new Date(job.updated).toLocaleString()}</time>}
       {job.files && <p className="muted">{job.files.length} {job.files.length === 1 ? "file" : "files"} · {job.model || "Saved model"} · {job.mode}</p>}
       {operationSummary(job) && <p className="path">{operationSummary(job)}</p>}
-    </div>}><ActionControl label="View details" variant="quiet" onClick={() => inspect(job)} /></ActionRow>)}</ActionList>
+    </div>}><ActionControl label="View details" variant="quiet" onClick={() => inspect(job)} /></ActionRow>)}</ActionList>;
+  return <div className="guided-history">
+    {!rows.length && <p className="muted">No saved activity for this project yet.</p>}
+    {!!kept.length && <section aria-label="Kept failed runs"><h3>Kept failed runs</h3>{list(kept)}</section>}
+    {list(rows.filter(job => !job.keptForHistory).slice(0, 12))}
   </div>;
 }

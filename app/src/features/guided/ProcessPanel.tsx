@@ -55,7 +55,7 @@ export function ProcessPanel({ job, readPayload, readProvider }: {
     {!!process.uncertain && <p>{process.uncertain} requests have uncertain submission. Check the provider before retrying.</p>}
     {!!process.duplicateSubmissions && <p>{process.duplicateSubmissions} request entries appear in multiple provider Batches. Check those jobs before submitting more work.</p>}
     {!!errors.length && <div className="process-errors">{errors.slice(0, 3).map(message => <p key={message}>{message}</p>)}</div>}
-    {(process.failed || job.status === "failed" || job.status === "interrupted") && <p>{process.nextAction}</p>}
+    {!job.keptForHistory && (process.failed || job.status === "failed" || job.status === "interrupted") && <p>{process.nextAction}</p>}
     <div className="actions">
       {readPayload && <Button disabled={!!busy || process.prepared === 0} pending={busy === "payload"} onClick={() => load(payload?.index || 0)}>Inspect payloads</Button>}
       {!!batches.length && readProvider && <Button disabled={!!busy} pending={busy === "provider"} onClick={refreshProvider}>Read latest Batch details</Button>}

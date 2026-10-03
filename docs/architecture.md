@@ -40,6 +40,10 @@ Actor-substitution calls and note calls retain their original boundaries.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
+An explicit local recovery review can keep a fully rejected failed Batch in Activity and release its project slot for a fresh estimate.
+Eligibility requires matching saved submission manifests and terminal rejection counts with no successful, pending, canceled, expired, or locally received results; uncertain and partial-success work remains attached for reconciliation.
+The one-use review rechecks the evidence before atomically saving project ownership, and leaves the old run folder, working outputs, source selection, and guidance unchanged.
+Keeping a failed run invalidates prior estimates; a new run gets its own frozen policy, identity, and cost approval.
 Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,

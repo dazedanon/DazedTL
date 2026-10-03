@@ -12,9 +12,60 @@ from unittest.mock import Mock, patch
 from dazedtl.compatibility import state_requests, process_view
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
+from dazedtl.translation.files import digest
 
 
 class ProcessTests(unittest.TestCase):
+    def test_fresh_start_requires_complete_terminal_rejection_receipts(self):
+        # A failed worker is not proof of no provider work. Protect missing,
+        # pending, partial-success, conflicting, and duplicate submission evidence.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            plan = {'mode': 'batch'}
+            write_json(root/'plan.json', plan)
+            job = {'mode': 'batch', 'status': 'failed', 'plan_hash': digest((root/'plan.json').read_bytes())}
+            queue = {'one': {'payload': '{"Line1":"防御"}', 'params': {}, 'provider':'openai'},
+                     'two': {'payload': '{"Line1":"毒"}', 'params': {}, 'provider':'openai'}}
+            batch = {'id':'batch-generated', 'provider':'openai', 'api_status':'completed',
+                     'custom_ids':{'req-1':'one'}, 'request_counts':{'processing':0,'succeeded':0,'errored':1,'canceled':0,'expired':0}}
+            state = {'status':'partially_submitted','batches':[{'id':batch['id'],'custom_ids':batch['custom_ids']}]}
+            write_json(root/'log/batch_requests.json', queue)
+            write_json(root/'log/batch_history.json', {'batches':[batch]})
+            write_json(root/'log/batch_state.json', state)
+            baseline = {path:path.read_bytes() for path in root.rglob('*') if path.is_file()}
+            proof = process_view.fresh_start(root, job)
+            self.assertTrue(proof['eligible']); self.assertEqual((proof['failed'],proof['remaining']),(1,1))
+            changes = [lambda b,s,j: b.update(api_status='in_progress'),
+                       lambda b,s,j: b.update(provider='unknown'),
+                       lambda b,s,j: b['request_counts'].update(succeeded=1),
+                       lambda b,s,j: b['request_counts'].update(processing=1),
+                       lambda b,s,j: b['request_counts'].pop('succeeded'),
+                       lambda b,s,j: b['request_counts'].update(errored=True),
+                       lambda b,s,j: b.update(output_file_id='file-success'),
+                       lambda b,s,j: s.update(status='submission_uncertain'),
+                       lambda b,s,j: s['batches'].append({'id':'unknown','custom_ids':{'unknown':'two'}}),
+                       lambda b,s,j: s['batches'][0].update(custom_ids={'req-1':'two'}),
+                       lambda b,s,j: j.update(status='interrupted'),
+                       lambda b,s,j: j.update(status='running'),
+                       lambda b,s,j: j.update(completed=['States.json']),
+                       lambda b,s,j: j.update(outputs={'States.json':{}}),
+                       lambda b,s,j: j.update(approval={'token':'pending'})]
+            for change in changes:
+                b,s,j=deepcopy(batch),deepcopy(state),deepcopy(job); change(b,s,j)
+                write_json(root/'log/batch_history.json', {'batches':[b]});write_json(root/'log/batch_state.json',s)
+                self.assertFalse(process_view.fresh_start(root,j)['eligible'], change)
+            for path,raw in baseline.items():path.write_bytes(raw)
+            write_json(root/'log/batch_results.json',{'one':{'text':'Paid result'}})
+            self.assertFalse(process_view.fresh_start(root,job)['eligible'])
+            (root/'log/batch_results.json').unlink()
+            duplicate=deepcopy(batch);duplicate['id']='batch-duplicate'
+            write_json(root/'log/batch_history.json',{'batches':[batch,duplicate]})
+            write_json(root/'log/batch_state.json',{**state,'batches':[*state['batches'],{'id':duplicate['id'],'custom_ids':duplicate['custom_ids']}]})
+            self.assertFalse(process_view.fresh_start(root,job)['eligible'])
+            for path,raw in baseline.items():path.write_bytes(raw)
+            self.assertEqual(process_view.fresh_start(root,job),proof)
+            self.assertEqual({path:path.read_bytes() for path in baseline},baseline)
+
     def test_state_coalescing_preserves_fields_controls_originals_and_saved_consume_mapping(self):
         # Protect the 45 calls / 112 fields -> 8 compatible calls case, including
         # exact writer association, glossary separation and no duplicate consume.

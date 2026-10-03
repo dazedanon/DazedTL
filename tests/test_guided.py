@@ -562,6 +562,64 @@ class GuidedTests(unittest.TestCase):
         for status in ('complete', 'canceled'):
             self.guided.pending_run({'manual_job': {**self.pending, 'status': status}})
 
+    def test_keep_rejected_run_preserves_history_and_requires_a_fresh_quote(self):
+        # Preserve failed evidence and ownership while releasing only the local
+        # slot. Changed evidence, reused clicks, and stale paid reviews must fail.
+        old_quote = self.seed_estimate()
+        identity = 'rejected-fixture'
+        root = self.backend.manual.folder(identity)
+        plan = {'mode':'batch','workflow':{'id':'native','phase':'database'}}
+        write_json(root/'plan.json',plan)
+        job = {'id':identity,'mode':'batch','status':'failed','phase':'failed','files':['Items.json'],'log':[],
+               'model':'fixture-model','completed':[],'outputs':{},'plan_hash':digest((root/'plan.json').read_bytes())}
+        self.backend.manual.jobs[identity]=job
+        self.native['manual_job']=identity
+        self.guided.runs.remember(self.identity,job,self.guided.runs.inputs(self.identity,self.native,'database','batch'))
+        params={'model':'fixture-model','messages':[],'temperature':0,'frequency_penalty':.05}
+        write_json(root/'job.json',job)
+        write_json(root/'log/batch_requests.json',{'one':{'provider':'openai','params':params,'payload':'{"Line1":"薬"}'}})
+        batch={'id':'batch-fixture','provider':'openai','api_status':'completed','custom_ids':{'req-1':'one'},
+               'request_counts':{'processing':0,'succeeded':0,'errored':1,'canceled':0,'expired':0}}
+        write_json(root/'log/batch_history.json',{'batches':[batch]})
+        write_json(root/'log/batch_state.json',{'status':'submitted','batches':[{'id':batch['id'],'custom_ids':batch['custom_ids']}]})
+        write_json(self.folder/'translated/Items.json',[{'name':'Retained working output'}])
+        self.backend.workflows.state=lambda _: {'project':self.backend.workflows.projects['native'],
+            'manual_job':self.backend.manual.jobs.get(self.backend.workflows.projects['native'].get('manual_job'))}
+        self.backend.workflows.save.side_effect=lambda value:write_json(self.folder/'project.json',value)
+        preserved={path:path.read_bytes() for path in [*(path for path in root.rglob('*') if path.is_file()),self.folder/'translated/Items.json',self.source/'Items.json']}
+        frozen=deepcopy(self.native)
+        review=self.guided.preview(self.identity,'keep_failed_run',options={'run_id':identity})
+        self.assertTrue(review['confirmation']);self.assertEqual(self.native,frozen)
+        reopened=Guided(self.backend,self.projects,self.settings,self.translation)
+        with self.assertRaisesRegex(ValueError,'new preview'):reopened.execute(self.identity,review['token'])
+        self.assertEqual(self.native,frozen)
+        changed=deepcopy(batch);changed['request_counts']['succeeded']=1
+        write_json(root/'log/batch_history.json',{'batches':[changed]})
+        with self.assertRaisesRegex(ValueError,'evidence changed'):self.guided.execute(self.identity,review['token'])
+        self.assertEqual(self.native,frozen)
+        write_json(root/'log/batch_history.json',{'batches':[batch]})
+        review=self.guided.preview(self.identity,'keep_failed_run',options={'run_id':identity})
+        result=self.guided.execute(self.identity,review['token'])
+        self.assertEqual(result['status'],'complete')
+        with self.assertRaisesRegex(ValueError,'new preview'):self.guided.execute(self.identity,review['token'])
+        self.native=self.backend.workflows.projects['native']
+        self.assertEqual(self.native['manual_job'],'')
+        self.assertIn(identity,self.guided.owned_runs(self.native))
+        self.assertTrue(self.guided.inspect(self.identity,identity)['keptForHistory'])
+        self.assertEqual({key:self.native[key] for key in frozen if key not in {'manual_job','revision'}},
+                         {key:frozen[key] for key in frozen if key not in {'manual_job','revision'}})
+        self.assertEqual({path:path.read_bytes() for path in preserved},preserved)
+        self.assertFalse(self.guided.runs.quote(self.identity,self.native,'database','batch')[0]['current'])
+        with self.assertRaisesRegex(ValueError,'current estimate'):self.guided.preview(self.identity,'start',options={'mode':'batch'})
+        self.assertFalse(self.guided.preview(self.identity,'start',options={'mode':'estimate'})['confirmation'])
+        self.seed_estimate()
+        fresh=self.guided.preview(self.identity,'start',options={'mode':'batch'})
+        self.assertTrue(fresh['confirmation']);self.assertNotEqual(fresh['estimate']['jobId'],old_quote)
+        self.backend.workflows.projects['native']=read_json(self.folder/'project.json')
+        restarted=Guided(self.backend,self.projects,self.settings,self.translation)
+        self.assertIn(identity,restarted.owned_runs(self.backend.workflows.projects['native']))
+        self.assertEqual(self.started,[])
+
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses
         # the engine's legacy min/max IDs, which may belong to another game.

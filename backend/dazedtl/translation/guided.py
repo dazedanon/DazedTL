@@ -34,6 +34,7 @@ SHARED_ACTIONS = {
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
     "refresh_sources": "Review source refresh",
+    "keep_failed_run": "Keep failed run and start fresh",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 
@@ -240,10 +241,13 @@ class Guided:
 
     def owned_runs(self, native):
         return list(dict.fromkeys([native.get("manual_job"), *reversed(native.get("collected", [])),
+                                   *reversed(native.get("kept_failed_runs", {})),
                                    *self.inputs(native).record().get("retired_runs", [])]))
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
+        job["keptForHistory"] = any(identity in project.get("kept_failed_runs", {})
+                                    for project in self.backend.workflows.projects.values())
         try:
             folder = self.backend.manual.folder(identity) / "translated"
             job["outputsAvailable"] = bool(job.get("outputs")) and all(project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected for name, expected in job["outputs"].items())
@@ -442,7 +446,8 @@ class Guided:
             "documents": documents, "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
-            "runs": [self.run_view(identity, compact=True) for identity in self.owned_runs(native)[:30]
+            "runs": [self.run_view(identity, compact=True) for identity in dict.fromkeys([
+                         *self.owned_runs(native)[:30], *native.get("kept_failed_runs", {})])
                      if identity in self.backend.manual.jobs],
             "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready(),
                          "connection": (self.settings.connection_summary() or {}).get("name", "No connection selected")},
@@ -592,8 +597,20 @@ class Guided:
         elif action in SHARED_ACTIONS:
             label = SHARED_ACTIONS[action]
             allowed = {"version", "original", "untranslated"} if action == "git_setup" else {"reviewed", "playtested"} if action == "guided_review" else {"output"} if action == "release_patch" else set()
+            if action == "keep_failed_run":
+                allowed = {"run_id"}
             if set(options) - allowed:
                 raise ValueError("Unknown guided action option.")
+            if action == "keep_failed_run":
+                identity = options.get("run_id")
+                if not isinstance(identity, str) or identity != native.get("manual_job") or identity not in self.backend.manual.jobs:
+                    raise ValueError("Choose the attached failed run. It was not changed.")
+                from dazedtl.compatibility.process_view import fresh_start
+                recovery = fresh_start(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
+                if not recovery["eligible"]:
+                    raise ValueError(recovery["reason"])
+                options = {"run_id": identity, "fingerprint": recovery["fingerprint"],
+                           "failed": recovery["failed"], "remaining": recovery["remaining"]}
             if action == "backup_source":
                 saved = lifecycle(self.translation.workspace, project_id).get("source_backup")
                 if saved and backups.record_status(project["source"], saved, kind="source")["available"]:
@@ -701,7 +718,7 @@ class Guided:
         project, native = self.record(project_id)
         self.confirmations.pop(token)
         action = confirmed["action"]
-        if action != "backup_source":
+        if action not in {"backup_source", "keep_failed_run"}:
             self.source_preserved(project_id)
         if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
@@ -725,6 +742,20 @@ class Guided:
             if self.release_paths(project_id, project["source"], action) != confirmed["paths"]:
                 raise ValueError("The runtime file list changed. Review the complete patch again.")
         options = confirmed["options"]
+        if action == "keep_failed_run":
+            identity = options["run_id"]
+            if identity != native.get("manual_job") or identity not in self.backend.manual.jobs:
+                raise ValueError("The attached run changed. Review it again.")
+            from dazedtl.compatibility.process_view import fresh_start
+            recovery = fresh_start(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
+            if not recovery["eligible"] or recovery["fingerprint"] != options["fingerprint"]:
+                raise ValueError("Provider evidence changed. Reconcile the run and review it again.")
+            updated = {**deepcopy(native), "manual_job": "", "revision": native["revision"] + 1,
+                       "kept_failed_runs": {**native.get("kept_failed_runs", {}), identity: {"fingerprint": options["fingerprint"]}}}
+            self.backend.workflows.save(updated)
+            self.backend.workflows.projects[native["id"]] = updated
+            return {"id": identity, "status": "complete", "action": action,
+                    "message": "Failed run kept in Activity. Calculate a fresh estimate before reviewing a new run."}
         if action == "release_patch":
             from .release import git_identity
             if git_identity(release_status) != options["git"]:

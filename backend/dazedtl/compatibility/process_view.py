@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sqlite3
 
-from dazedtl.translation.files import read_json
+from dazedtl.translation.files import digest, read_json
 
 
 @lru_cache(maxsize=8)
@@ -90,6 +90,59 @@ def source_values(params):
     return None
 
 
+def fresh_start(root, job):
+    """Require positive terminal rejection receipts, never infer from failure."""
+    protected = {'eligible': False, 'reason': 'Reconcile saved provider work before starting fresh. Its outcome is not fully rejected and accounted for.'}
+    if job.get('mode') != 'batch' or job.get('status') != 'failed' or job.get('approval'):
+        return protected
+    try:
+        path = Path(root) / 'plan.json'
+        if path.is_symlink() or digest(path.read_bytes()) != job.get('plan_hash'):
+            return protected
+        plan = read_json(path)
+        if plan.get('batch_link') or job.get('batch_root'):
+            return protected
+        requests = queue(root)
+        history = saved(root, 'batch_history.json')
+        state = saved(root, 'batch_state.json')
+        results = saved(root, 'batch_results.json')
+        batches = history.get('batches', [])
+        manifests = state.get('batches', [])
+        if (not requests or not batches or not manifests or
+                state.get('status') not in {'submitted', 'partially_submitted'} or
+                job.get('completed') or job.get('outputs') or results.get('results', results)):
+            return protected
+        if (any(not isinstance(row, dict) or not row.get('id') or not row.get('custom_ids') for row in [*batches, *manifests]) or
+                len({row['id'] for row in batches}) != len(batches) or
+                len({row['id'] for row in manifests}) != len(manifests) or
+                {row['id']: row['custom_ids'] for row in batches} != {row['id']: row['custom_ids'] for row in manifests}):
+            return protected
+        submitted = []
+        for batch in batches:
+            counts = batch.get('request_counts', {})
+            if (batch.get('provider') not in {'openai', 'anthropic', 'gemini'} or
+                    batch.get('api_status') != ('ended' if batch.get('provider') == 'anthropic' else 'completed') or
+                    any(type(counts.get(key)) is not int or counts[key] != 0
+                        for key in ('processing', 'succeeded', 'canceled', 'expired')) or
+                    type(counts.get('errored')) is not int or counts['errored'] != len(batch['custom_ids']) or
+                    batch.get('output_file_id')):
+                return protected
+            submitted.extend(batch['custom_ids'].values())
+        if len(set(submitted)) != len(submitted) or set(submitted) - set(requests):
+            return protected
+        connection = ledger(root)
+        if connection is not None:
+            with closing(connection):
+                if connection.execute('SELECT COUNT(*) FROM requests').fetchone()[0]:
+                    return protected
+        proof = digest({'job': job, 'plan': plan, 'requests': requests, 'history': history, 'state': state, 'results': results})
+        return {'eligible': True, 'fingerprint': proof, 'failed': len(submitted),
+                'remaining': len(requests)-len(submitted),
+                'reason': 'Saved provider receipts confirm that every submitted request was rejected, with no successful or pending responses.'}
+    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+        return protected
+
+
 def summary(root, job):
     requests = queue(root)
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
@@ -105,6 +158,7 @@ def summary(root, job):
     validated = None
     usage = None
     uncertain = 0
+    recovery = fresh_start(root, job) if job.get('mode') == 'batch' else None
     with_connection = ledger(root)
     if with_connection is not None:
         with closing(with_connection) as connection:
@@ -133,8 +187,11 @@ def summary(root, job):
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': [{'id': batch['id'], 'status': batch.get('api_status', 'unknown'), 'counts': batch.get('request_counts', {})} for batch in batches],
             'errors': list(dict.fromkeys(errors)), 'usage': usage,
+            'freshStart': recovery,
             'retryBlocked': failed > 0 or uncertain > 0, 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
-            'nextAction': 'Prepare a fresh estimate for corrected requests. The submitted queue is preserved; it has not been retried.' if failed else
+            'nextAction': ('Choose Keep failed run and start fresh, then calculate a new estimate. The submitted queue stays in Activity.'
+                           if recovery and recovery['eligible'] else recovery['reason'] if recovery else
+                           'Prepare a fresh estimate for corrected requests. The submitted queue is preserved; it has not been retried.') if failed else
                           'Check provider status before retrying an uncertain request. Resuming a saved run can submit remaining work.'}
 
 

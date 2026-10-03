@@ -23,6 +23,7 @@ import { EngineOptions } from "./EngineOptions";
 import { FileSelection } from "./FileSelection";
 import { retainOtherScope } from "./selection";
 import RunPanel, { Estimate } from "./RunPanel";
+import { ProcessPanel } from "./ProcessPanel";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
 import { initialPosition, runPhase, runStage, stagesFor, taskForStage, unfinishedRun } from "./workflow";
@@ -212,6 +213,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     if (value.action === "start") {
       if (value.options.mode !== "estimate") await navigate(value.options.mode === "speakers" ? "context" : "translate", "run");
     }
+    if (value.action === "keep_failed_run") await navigate("translate", "main-text");
   };
   const review = (name: string, options: Record<string, unknown> = {}, files?: string[], inspectOnly = false) => action.run(async () => {
     await save();
@@ -509,9 +511,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       primary = task(releaseAction, release.kind === "game" ? "Build clean game ZIP" : "Review & build patch ZIP", { output: releasePath },
         !baseline || unfinished || !release.directory.trim() || !release.name.trim() || /[\\/]/.test(release.name) || !state.acePacking.current || !!state.readiness.unapplied.length, "primary"); break;
     default:
-      content = job ? <RunPanel projectId={project.id} hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy}
+      content = job ? <RunPanel projectId={project.id} hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy || running && job.status === "failed"}
         pendingKey={action.busy ? action.key : ""} error={action.key.startsWith("run:") ? action.error : ""}
         stop={() => action.run(() => api.stop(project.id), "", "run:stop")} resume={() => setResume(true)} answer={(approved) => action.run(() => api.answer(project.id, job.approval!.token, approved), "", "run:answer:" + approved)}
+        keepFailed={() => review("keep_failed_run", { run_id: job.id })}
         exportFiles={() => action.run(async () => setOutput((await api.export(project.id)).path), "Output copy saved.", "run:export")} /> : <p className="muted">No saved translation run is available for this game.</p>;
       primary = job?.status === "complete" && job.mode !== "estimate"
         ? job.mode === "speakers" ? <Button variant="primary" onClick={() => stepTask("guidance")}>Review translation guidance</Button> : nextRun(job)
@@ -589,6 +592,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     </Modal>}
     {history && <Modal label="Recent activity" onDismiss={() => setHistory(false)}><h2>Recent activity</h2><ActivityHistory state={state} translation={translation} inspect={inspect} /><Button onClick={() => setHistory(false)}>Close</Button></Modal>}
     {inspected && <Modal label="Activity details" onDismiss={() => setInspected(null)}><h2>{inspected.label || "Saved activity"}</h2><JobStatus job={{ ...inspected, label: inspected.label || "Saved activity" }} />
+      {inspected.keptForHistory && <p>Kept failed run. Its original parameters, requests, and provider history are unchanged. This record does not resume the run.</p>}
+      <ProcessPanel job={inspected} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
+        readProvider={() => api.guided.providerDetails(project.id, inspected.id)} />
       {inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}
@@ -605,6 +611,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {!!preview.additions?.length && <p>{preview.additions.length} files are additions to the original baseline.</p>}
       {preview.action === "backup_source" && sourceBackup?.available === false && <p>This saves current files. It cannot recover the missing original.</p>}
       {preview.action === "refresh_sources" && <p>Archive these files’ working copies, outputs, and variable cache before refreshing from the original source. Frozen provider runs remain retained.</p>}
+      {preview.action === "keep_failed_run" && <><p>{String(preview.options.failed)} submitted requests were rejected; {String(preview.options.remaining)} requests remain unsubmitted.</p>
+        <p>Keep the failed run in Activity with its original payloads, queue, errors, and receipts. Your selected files, saved glossary, context, and working outputs stay available.</p>
+        <p>This releases the local run slot. It does not submit, retry, or cancel provider work. Calculate a fresh estimate and review a new run before any paid submission.</p></>}
       {preview.action === "export_selected" && <p>Apply accumulated translated outputs to these runtime files.</p>}
       {preview.action === "runtime_restore" && <p>Return these files to the preserved bytes from before the chosen batch. Review the current and restored text below before continuing.</p>}
       {preview.publication && <><p>The whole batch is checked before publication. Exact before/after backups are retained; failure attempts rollback. Restore requires another review and rejects newer conflicting edits.</p>{preview.publication.map(row => <details className="text-publication" key={row.path}><summary>{row.path} · {row.size.toLocaleString()} bytes{row.later_edits ? " · Replaces later game edits" : ""}</summary><p className="path">{row.destination}</p><small>Current SHA-256 {row.before}<br />Candidate SHA-256 {row.after}</small><strong>Runtime changes{row.truncated ? " (diff exceeds 16,000 characters)" : ""}</strong><pre>{row.diff || "Runtime bytes already match this candidate."}</pre><details><summary>JSON context</summary><strong>Current runtime JSON (first 16,000 characters)</strong><pre>{row.before_text}</pre><strong>Reviewed replacement JSON (first 16,000 characters)</strong><pre>{row.after_text}</pre></details></details>)}</>}
@@ -617,7 +626,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && preview.options.phase === "variables" && <p>Reviewed literal-based updates apply to all matching quoted literals in the selected code-111 expressions. Unmatched literals remain unchanged.</p>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
-        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
+        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "keep_failed_run" ? "Keep failed run and start fresh" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
       await api.guided.eventTextReview(project.id, sourceReview.revision, sourceReview.state.binding, sourceReview.state.reportId, reason, accepted);
