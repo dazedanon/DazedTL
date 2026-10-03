@@ -298,6 +298,7 @@ pre {
   border-top: 1px solid var(--line);
 }
 .action-bar-actions {
+  margin-inline-start: auto;
   display: flex;
   flex-wrap: wrap;
   min-width: 0;

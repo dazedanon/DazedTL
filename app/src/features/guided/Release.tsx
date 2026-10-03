@@ -1,0 +1,55 @@
+import type { ReactNode } from "react";
+import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
+import { ActionList, ActionRow } from "../../ui/ActionList";
+import { Button } from "../../ui/Button";
+import { Message } from "../../ui/Feedback";
+import { Section } from "../../ui/Section";
+import { VirtualList } from "../../ui/VirtualList";
+
+type Options = GuidedForm["release"];
+const pathKey = (path: string) => path;
+const size = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+export function ReleaseContent({ value, edit, disabled, chooseFolder, inspect, assets, artifact, open, packing }: {
+  value: Options; edit: (change: Partial<Options>) => void; disabled: boolean; chooseFolder: () => void;
+  inspect: ReactNode; assets: () => void; artifact?: ReleaseArtifact; open: ReactNode; packing?: ReactNode;
+}) {
+  const kind = value.kind;
+  return <>
+    <fieldset disabled={disabled}>
+      <div className="release-types" role="group" aria-label="Package type">
+        {([['game', 'Clean game ZIP', 'Complete game folder, ready to extract and play.'], ['patch', 'Patch ZIP', 'Runtime patch for the matching original version.']] as const).map(([key, label, hint]) =>
+          <Button key={key} aria-pressed={kind === key} onClick={() => edit({ kind: key, name: value.names[key], names: { ...value.names, [kind]: value.name } })}><strong>{label}</strong><small>{hint}</small></Button>)}
+      </div>
+      <div className="guided-package-fields"><label>Archive name<input value={value.name} onChange={event => edit({ name: event.target.value, names: { ...value.names, [kind]: event.target.value } })} /></label>
+        <label>Save in<div className="guided-folder-field"><input aria-label="Save in" value={value.directory} onChange={event => edit({ directory: event.target.value })} /><Button onClick={chooseFolder}>Choose folder</Button></div></label></div>
+    </fieldset>
+    {/[\\/]/.test(value.name) && <Message message="Use a filename without folder separators. Choose the destination in Save in." />}
+    {packing && <Section title="Native Ace data">{packing}</Section>}
+    <ActionList><ActionRow label={<><strong>Archive contents</strong><small>{kind === "game" ? "Current runtime data, plugins, assets and player documentation." : "Reviewed runtime files and applied images for the matching original game."}</small></>}>{inspect}</ActionRow>
+      {kind === "patch" && <ActionRow label={<><strong>Additional images & fonts</strong><small>Applied images and tracked assets are included automatically. Add other player assets by exact path.</small></>}><Button disabled={disabled} onClick={assets}>Edit runtime assets</Button></ActionRow>}
+    </ActionList>
+    <p className="muted release-note">Known private and translator files are excluded. Inspect contents if you have added other local material to the game.</p>
+    {artifact && <section className="guided-artifact"><ActionList><ActionRow label={<><strong>Last saved {kind === "game" ? "game" : "patch"} ZIP</strong><small>{artifact.size === null ? "Size unavailable" : size(artifact.size)}{artifact.saved ? ` · Saved ${new Date(artifact.saved).toLocaleString()}` : ""} · {artifact.available ? "Available on disk" : "Unavailable or changed on disk"}</small></>}>{open}</ActionRow></ActionList>
+      <p className="path">{artifact.path}</p><p className="muted release-note">This is the last build. Later game edits are included only when you build again.</p></section>}
+    <p className="muted release-note">Build a local ZIP. Publishing stays separate. {kind === "patch" && "Build also saves the reviewed scope as a local checkpoint."}</p>
+  </>;
+}
+
+export function ReleaseReview({ preview, inspectOnly, busy, editAssets }: { preview: Preview; inspectOnly: boolean; busy: boolean; editAssets: () => void }) {
+  const patch = preview.action === "release_patch";
+  return <div className="release-review">
+    {patch && <p>For the matching original game{preview.game_version ? `, version ${preview.game_version}` : ""}. Extract over that game.</p>}
+    {preview.overwrite && <div className="release-overwrite"><strong>{inspectOnly ? "An archive already exists here" : "Replace an existing ZIP"}</strong><p className="path">{preview.destination}</p><small>The previous ZIP stays in place until the new archive is complete.</small></div>}
+    {!preview.overwrite && <p className="path">{preview.destination}</p>}
+    <ActionList><ActionRow label={<strong>{preview.paths.length.toLocaleString()} runtime files</strong>}>{patch && <Button disabled={busy} onClick={editAssets}>Edit runtime assets</Button>}</ActionRow></ActionList>
+    <div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Archive runtime files" empty={<p>No runtime files included.</p>}>{name => <div className="guided-preview-path">{name}</div>}</VirtualList></div>
+    {!!preview.package?.generated?.length && <details><summary>Archive additions and repository metadata</summary><ul>{preview.package.generated.map(name => <li className="guided-preview-path" key={name}>{name}</li>)}</ul></details>}
+    <details><summary>Excluded files and folders ({preview.package?.exclusions?.length || 0})</summary>
+      <div className="release-exclusions">{preview.package?.exclusions?.map(row => <p key={row.path}><span className="guided-preview-path">{row.path}</span><small>{row.reason}</small></p>)}</div>
+      {!preview.package?.exclusions?.length && <p>No selected entries were excluded.</p>}
+    </details>
+    <p className="muted">{preview.package?.updater}</p>
+    {patch && <p className="muted">Build also saves the reviewed scope as a local checkpoint. No publication.</p>}
+  </div>;
+}

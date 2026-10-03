@@ -82,12 +82,14 @@ export interface GuidedForm {
   release: {
     kind: "game" | "patch";
     name: string;
+    names: { game: string; patch: string };
+    assets: string[];
     directory: string;
     tools: PlaytestOptions;
   };
 }
 export interface PlaytestOptions { hotkey: string; forgeHotkey: string; uiScale: string; editorCmd: string }
-export interface ReleaseArtifact { id: string; kind: "game" | "patch"; path: string; folder: string; available: boolean; size: number }
+export interface ReleaseArtifact { id: string; kind: "game" | "patch"; path: string; folder: string; available: boolean; size: number | null; saved: string | null }
 export interface GuidedFile { name: string; title?: string; default?: boolean; size?: number; group: "database" | "dialogue" }
 export interface SpeakerSetup {
   status: "missing" | "waiting" | "invalid" | "stale" | "ready" | "applied";
@@ -170,6 +172,7 @@ export interface GuidedState {
   drafts: Documents;
   tools: { inspector: { installed: boolean; present: boolean; message: string }; forge: { installed: boolean; present: boolean; message: string } } | null;
   artifacts: ReleaseArtifact[];
+  acePacking: { required: boolean; current: boolean; message: string };
   references: { id: string; title: string }[];
   provider: {
     connection: string;
@@ -365,7 +368,9 @@ export interface Preview {
   publication?: { path: string; destination: string; before: string; after: string; size: number; later_edits: boolean; diff: string; truncated: boolean; before_text: string; after_text: string }[];
   run?: { model: string; connection: string; mode: string } | null;
   estimate?: { jobId: string; fingerprint: string; value: Record<string, number> } | null;
-  package?: { included: number; excluded: number };
+  package?: { included: number; excluded: number; exclusions?: { path: string; reason: string }[]; updater?: string; generated?: string[] };
+  overwrite?: boolean;
+  game_version?: string;
   additions?: string[];
   token: string;
   label: string;

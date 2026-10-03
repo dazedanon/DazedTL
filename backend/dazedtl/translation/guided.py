@@ -174,15 +174,27 @@ class Guided:
 
     def release_defaults(self, project_id):
         source = Path(self.projects.get(project_id)["source"])
-        return {"kind": "game", "name": source.name + "-public.zip", "directory": str(source.parent),
-                "tools": {"hotkey": "F9", "forgeHotkey": "F10", "uiScale": "auto", "editorCmd": "auto"}}
+        return {"kind": "game", "name": source.name + "-game.zip", "names": {"game": source.name + "-game.zip", "patch": source.name + "-patch.zip"},
+                "assets": [], "directory": str(source.parent), "tools": {"hotkey": "F9", "forgeHotkey": "F10", "uiScale": "auto", "editorCmd": "auto"}}
 
     @staticmethod
     def validate_release_form(value):
-        if (not isinstance(value, dict) or set(value) != {"kind", "name", "directory", "tools"}
+        if isinstance(value, dict) and isinstance(value.get('name'), str):
+            value = deepcopy(value)
+            stem = Path(value.get('name', 'game.zip')).stem.removesuffix('-public').removesuffix('-game').removesuffix('-patch')
+            value.setdefault('names', {'game': stem + '-game.zip', 'patch': stem + '-patch.zip'})
+            value.setdefault('assets', [])
+        if (not isinstance(value, dict) or set(value) != {"kind", "name", "names", "assets", "directory", "tools"}
                 or not isinstance(value["kind"], str) or value["kind"] not in {"game", "patch"}
                 or any(not isinstance(value[key], str) or len(value[key]) > 10000 or "\0" in value[key] for key in ("name", "directory"))):
             raise ValueError("Invalid release options.")
+        if (not isinstance(value['names'], dict) or set(value['names']) != {'game', 'patch'}
+                or any(not isinstance(name, str) or len(name) > 10000 or '\0' in name for name in value['names'].values())
+                or not isinstance(value['assets'], list) or len(value['assets']) > 2000
+                or any(not isinstance(name, str) or len(name) > 2000 for name in value['assets'])
+                or len(set(value['assets'])) != len(value['assets'])):
+            raise ValueError('Invalid retained archive names or runtime assets.')
+        value['names'][value['kind']] = value['name']
         tools = value["tools"]
         if (not isinstance(tools, dict) or set(tools) != {"hotkey", "forgeHotkey", "uiScale", "editorCmd"}
                 or any(not isinstance(item, str) or len(item) > 4096 or any(char in item for char in ("\0", "\r", "\n")) for item in tools.values())
@@ -204,16 +216,10 @@ class Guided:
         if state.get("guided_release"):
             values.insert(0, ("patch", state["guided_release"]))
         if state.get("delivery") and not any(value.get("path") == state["delivery"].get("path") for _, value in values):
-            from .release import stamp
-            legacy = {**state["delivery"], "kind": "patch"}
-            try:
-                legacy["stamp"] = stamp(legacy["path"])
-                legacy["size"] = legacy["stamp"][2]
-            except (OSError, ValueError, KeyError):
-                pass
+            legacy = {**state['delivery'], 'kind': 'patch'}
             values.append(("previous-patch", legacy))
         return [{"id": identity, "kind": value.get("kind", "game"), "path": value["path"],
-                 "folder": str(Path(value["path"]).parent), "size": value.get("size", 0), "available": available(value)}
+                 "folder": str(Path(value["path"]).parent), "size": value.get("size"), "saved": value.get('saved'), "available": available(value)}
                 for identity, value in values if isinstance(value.get("path"), str)][:10]
 
     def preferences(self, native):
@@ -409,6 +415,7 @@ class Guided:
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
             "ace_available": self.backend.ace_available(),
+            "ace_packing": self.ace_packing(native),
             "documents": documents, "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
@@ -445,6 +452,18 @@ class Guided:
         require_source_backup(project["source"], state)
         return state
 
+    def ace_packing(self, native):
+        from .release import packing_state
+        return packing_state(native, self.backend.workflows.folder(native['id']))
+
+    def release_paths(self, project_id, source, action):
+        from .release import runtime_asset
+        paths = set(self.backend.guided_runtime_files(source))
+        paths.update(runtime_asset(source, name) for name in self.saved_form(project_id)['release']['assets'])
+        if action == 'release_patch':
+            paths.discard('gameupdate/patch-config.txt')
+        return sorted(paths)
+
     def release_ready(self, project_id, native, value):
         status = self.translation.ready(project_id)
         self.pending_run(value)
@@ -454,6 +473,8 @@ class Guided:
         readiness = self.readiness(project_id, native, value, source_status)
         if set(readiness["outputs"]).intersection(native["selected"]) - set(readiness["applied"]):
             raise ValueError("Apply the selected saved outputs to the game before packaging them.")
+        if not self.ace_packing(native)['current']:
+            raise ValueError(self.ace_packing(native)['message'])
         return status
 
     def clean(self, project_id):
@@ -489,7 +510,7 @@ class Guided:
         if action in {"rewrap_apply", "qa_apply", "runtime_restore"} and self.inputs(native).status(sorted(self.supported_files(native)))["changed"]:
             raise ValueError("Original sources changed. Review source changes before replacing runtime text.")
         if action.startswith("ace_") and (native["engine"] != "ACE" or not self.backend.ace_available()):
-            raise ValueError("Ace preparation requires Windows or Wine and the bundled Ace tools.")
+            raise ValueError("Ace preparation requires a supported Windows environment and the bundled Ace tools.")
         if action in {"prepare_game", "format_data"}:
             preparation.require_data(native)
         if action == "format_plugins" and native["engine"] == "ACE":
@@ -562,9 +583,9 @@ class Guided:
                 paths = files
                 options = {"sources": self.inputs(native).sources(paths, self.inputs(native).record()["inputs"])}
             if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
-                paths = self.backend.guided_runtime_files(project["source"])
-                expected = evidence(project["source"], paths)
+                paths = self.release_paths(project_id, project["source"], action)
                 manifest = self.patch_manifest(project_id, paths, action)
+                expected = evidence(project["source"], [*paths, *manifest['inputs']])
             if action == "release_patch":
                 from .release import destination, output_hash, git_identity
                 output = destination(project["source"], self.translation.workspace, self.backend.source, options.get("output"))
@@ -639,6 +660,13 @@ class Guided:
                 "run": {"model": quote["model"], "connection": quote["connection"], "mode": options["mode"]} if action == "start" and quote else None,
                 "confirmation": (bool(lifecycle(self.translation.workspace, project_id).get("source_backup")) if action == "backup_source"
                                  else not (action == "start" and options["mode"] == "estimate")),
+                "package": {"included": len(paths), "excluded": int((Path(project['source']) / 'gameupdate/patch-config.txt').is_file()),
+                            "exclusions": [{'path': 'gameupdate/patch-config.txt', 'reason': 'GameUpdate disabled in this local patch; publication is separate'}]
+                                if (Path(project['source']) / 'gameupdate/patch-config.txt').is_file() else [],
+                            "updater": 'GameUpdate configuration is omitted from local patches. Publishing is separate.',
+                            "generated": ['.gitignore', '.gitattributes', 'README.md']} if action == 'release_patch' else None,
+                "overwrite": bool(options.get('output_hash')) if action == 'release_patch' else False,
+                "game_version": release_status.get('original_version') if action == 'release_patch' else None,
                 "additions": [name for name, row in manifest["files"].items() if row.get("original_sha256", "") is None] if manifest else []}
 
     def execute(self, project_id, token):
@@ -662,6 +690,8 @@ class Guided:
             if (confirmed["revision"] != native["revision"] or confirmed["phase"] != project["phase"]
                     or confirmed["settings_revision"] != self.settings.describe()["revision"]):
                 raise ValueError("The selection or settings changed. Review the action again.")
+            if action == 'release':
+                self.backend.guided_release_validate(token)
             return self.backend.workflows.execute(token)
         if (confirmed["guard"] != self.backend.guided_guard(native, self.backend.workflows.folder(native["id"]))
                 or confirmed["revision"] != native["revision"] or confirmed["phase"] != project["phase"]
@@ -669,7 +699,7 @@ class Guided:
             raise ValueError("The game, selection, or settings changed. Review the action again.")
         if confirmed["evidence"]:
             verify_evidence(project["source"], confirmed["evidence"])
-            if self.backend.guided_runtime_files(project["source"]) != confirmed["paths"]:
+            if self.release_paths(project_id, project["source"], action) != confirmed["paths"]:
                 raise ValueError("The runtime file list changed. Review the complete patch again.")
         options = confirmed["options"]
         if action == "release_patch":

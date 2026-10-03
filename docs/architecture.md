@@ -37,8 +37,13 @@ continues to own parsing, speaker preparation, phase profiles, glossary collecti
 App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
 Guided release freezes the current runtime scope and original-source bindings through an app-only,
 one-use preview. Patch packaging saves its checkpoint and workspace restore point as part of the
-same operation. Clean game packaging reuses the Qt packager through the compatibility worker,
-verifies the source inventory and destination, and publishes a verified archive atomically.
+same operation.
+The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material, and verifies the source and destination before atomically replacing a ZIP.
+Guided patches add current applied-image receipts and explicitly reviewed image/font paths to the runtime scope.
+Local patches omit GameUpdate configuration; clean ZIPs include it only with the frozen engine's verified public commit stamp.
+Player updater scripts remain included but cannot update an unstamped local build without configuration.
+Archive availability describes the saved ZIP on disk, never freshness against later game edits.
+Archive names and additional asset choices are retained per project, with separate game and patch names.
 Neither operation manufactures a user-review record or completes Len's report-based QA.
 The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
 Legacy Guided review receipts remain readable for existing records.
@@ -253,7 +258,9 @@ The MV/MZ writer retains source metadata on ordinary corrections. The explicit r
 Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules. New originals are staged separately for engine preparation.
 A local delivery packages only reviewed Git files. Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan. Ace's conversion workers stage
-bundled executables and the Wine prefix in the profile. Guided checkpoint manifests derive
+bundled executables in the profile and expose native execution only on Windows.
+Ace Release requires a packing receipt bound to every current JSON input and its corresponding native output; fitting, QA or native edits invalidate it.
+Guided checkpoint manifests derive
 translation-only additions from the registered original and saved source inventory, retaining
 previously tracked runtime assets when switching workflows.
 

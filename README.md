@@ -11,10 +11,11 @@ compact in smaller windows. File selection supports search, groups, map names wh
 and keyboard ranges across its virtualized list. Filtering preserves checked files.
 The app prepares working copies and carries saved phase results forward. Each run and
 application review uses the selected scope. Saved operations remain in **Activity**.
-Translation offers Batch when supported and Live API;
-cost estimation is a separate action. Ace adds archive extraction, Sinflower RV2JSON conversion,
-and native repacking around those same JSON phases. Its bundled executables require Windows
-or Wine; executables and the Wine prefix are cached in the app profile. WOLF's guided workflow is deferred.
+Translation offers Batch when supported and Live API; cost estimation is a separate action.
+Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
+Its bundled executables require Windows for native conversion and are cached in the app profile.
+Release verifies saved packing evidence against current JSON and native bytes.
+WOLF's guided workflow is deferred.
 
 Len's method follows the maintained engine skills, with shared project context,
 saved progress, inspectable requests, and Agent, Live API, and API Batch execution.

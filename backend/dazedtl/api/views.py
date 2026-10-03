@@ -40,7 +40,7 @@ def guided(value, project_id):
         'dataPath': native['data'],
         'encrypted': native['encrypted'],
         'hasPlugins': bool(native['plugins']),
-        'aceAvailable': value['ace_available'],
+        'aceAvailable': value['ace_available'], 'acePacking': value['ace_packing'],
         'step': value['step'],
         'task': value['task'],
         'contextDocument': value['context_document'],
@@ -94,7 +94,7 @@ def settings(value):
 
 
 def preview(value):
-    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'publication', 'additions', 'package', 'estimate', 'run'))
+    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'publication', 'additions', 'package', 'overwrite', 'game_version', 'estimate', 'run'))
 
 
 def error(exc):

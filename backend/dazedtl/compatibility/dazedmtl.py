@@ -214,10 +214,21 @@ class ExistingBackend:
     def guided_release_preview(self, token):
         from .guided import release_scope
         plan = self.workflows.previews[token]
-        paths, excluded = release_scope(plan["project"]["source"])
-        plan["release_scope"] = paths
-        return {"files": len(paths), "paths": sorted(paths), "package": {"included": len(paths), "excluded": excluded},
-                "confirmation": plan["output_hash"] is not None}
+        scope = release_scope(plan["project"]["source"])
+        plan["release_scope"] = scope
+        return {"label": "Build clean game ZIP", "files": len(scope["files"]), "paths": sorted(scope["files"]),
+                "package": {"included": len(scope["files"]) + bool(scope["updater_stamp"]),
+                            "excluded": len(scope["exclusions"]), "exclusions": scope["exclusions"],
+                            "updater": "Verified public GameUpdate version included." if scope["updater_stamp"] else
+                            "GameUpdate configuration is omitted until a matching public version is verified.",
+                            "generated": ['gameupdate/previous_patch_sha.txt'] if scope['updater_stamp'] else []},
+                "overwrite": plan["output_hash"] is not None, "confirmation": plan["output_hash"] is not None}
+
+    def guided_release_validate(self, token):
+        from .guided import release_scope
+        plan = self.workflows.previews.get(token)
+        if not plan or release_scope(plan['project']['source']) != plan['release_scope']:
+            raise ValueError('The archive contents or public version changed. Inspect and build again.')
 
     def guided_rewrap_review(self, native_id, token):
         from .guided import rewrap_review

@@ -329,7 +329,7 @@ class TranslationEngine:
         output = destination / (status["translation_commit"] + ".zip")
         temporary = output.with_suffix(".zip.tmp")
         try:
-            patch_sha = _release_patch_sha(source)
+            patch_sha = _release_patch_sha(source) if "gameupdate/patch-config.txt" in allowed else None
         except ReleasePackageError:
             # Local delivery does not require publishing a remote branch.
             patch_sha = None

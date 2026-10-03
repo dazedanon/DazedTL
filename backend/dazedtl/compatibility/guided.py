@@ -48,31 +48,39 @@ def tools_state(native):
 
 
 def release_scope(source):
-    from util.release_package import _iter_release_files
-    files, excluded = _iter_release_files(Path(source))
-    return {relative.as_posix(): [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
-            for path, relative in files for stat in [project_path(source, relative.as_posix()).stat()]}, excluded
+    from util.release_package import _release_patch_sha, ReleasePackageError
+    from dazedtl.translation.release import inventory
+    try:
+        public_version = _release_patch_sha(Path(source))
+    except ReleasePackageError:
+        public_version = None
+    return inventory(source, public_version)
 
 
 def run_release(plan, log):
     from desktop.backend.workflow_actions import validate_plan
-    from util.release_package import create_release_zip
-    from dazedtl.translation.release import destination, publish
+    from dazedtl.translation.release import destination, publish, write_archive, packing_state
     validate_plan(plan)
     source = Path(plan["project"]["source"])
     workspace = Path(plan["folder"]).parents[1]
     output = destination(source, workspace, os.environ["DAZEDTL_ENGINE_SOURCE"], plan["options"]["output"])
     expected = plan["release_scope"]
-    if release_scope(source)[0] != expected:
-        raise ValueError("The package contents changed. Build a new release preview.")
+    if not packing_state(plan["project"], plan["folder"])["current"]:
+        raise ValueError("Pack and verify current Ace data before packaging.")
+    if release_scope(source) != expected:
+        raise ValueError("The package contents or public version changed. Build a new release preview.")
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".dazedtl-release-", dir=output.parent) as temporary:
         staged = Path(temporary) / output.name
-        result = create_release_zip(source, staged, progress=lambda current, total, name: log(f"{current}/{total} · {name}"))
-        if release_scope(source)[0] != expected:
-            raise ValueError("The game changed during packaging. Its partial archive was discarded.")
+        write_archive(source, staged, expected, log)
+        validate_plan(plan)
+        if not packing_state(plan["project"], plan["folder"])["current"]:
+            raise ValueError("Ace packing evidence changed during packaging. Its partial archive was discarded.")
+        if release_scope(source) != expected:
+            raise ValueError("The game or public version changed during packaging. Its partial archive was discarded.")
         saved = publish(staged, output, plan["output_hash"], stopped=getattr(log, "stopped", lambda: False))
-    return {**saved, "kind": "game", "files": result.files_added, "excluded": result.excluded_entries}
+    return {**saved, "kind": "game", "files": len(expected["files"]) + bool(expected["updater_stamp"]),
+            "excluded": len(expected["exclusions"]), "updater_stamp": bool(expected["updater_stamp"])}
 
 
 def guard(project, folder):
@@ -143,6 +151,7 @@ def rewrap_review(backend, native_id, token):
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
     from util.project_preparation import rpgmaker_layout, RPG_GAMEUPDATE_COPY_SKIP_NAMES
+    from dazedtl.translation.release import exclusion, applied_assets
     from util.paths import PROJECT_ROOT
     from util.len_patch_scope import patch_manifest
     from util.version_update.git_workflow import _run_git
@@ -170,13 +179,15 @@ def runtime_files(source):
                 path = root / relative
                 if path.is_file():
                     paths.append(path)
-    names = sorted({path.relative_to(root).as_posix() for path in paths})
+    paths.extend(project_path(root, relative) for relative in applied_assets(root))
+    names = sorted({path.relative_to(root).as_posix() for path in paths
+                    if not exclusion(path.relative_to(root).as_posix())})
     patch_manifest(names)
     return names
 
 
 def ace_available():
-    return os.name == "nt" or bool(shutil.which("wine") and shutil.which("winepath"))
+    return os.name == "nt"
 
 
 def run_ace(plan, log):
@@ -185,9 +196,14 @@ def run_ace(plan, log):
     from desktop.backend.workflow_actions import validate_plan
     validate_plan(plan)
     if not ace_available():
-        raise ValueError("Ace conversion requires Windows or Wine. Convert the game on Windows, then reopen the game root with its ace_json export here.")
+        raise ValueError("Native Ace conversion is available on Windows. Use an explicitly supported Windows environment to pack and verify this game.")
     action = plan["action"]
     root = Path(plan["project"]["source"])
+    from dazedtl.translation.release import packing_inputs
+    from dazedtl.translation.files import evidence
+    inputs = packing_inputs(plan['project']) if action == 'ace_pack' else None
+    outputs = [(Path('Data') / (Path(name).stem + '.rvdata2')).as_posix() for name in inputs] if inputs else []
+    before = {name: (root / name).stat().st_mtime_ns for name in outputs if (root / name).is_file()}
     name = "RPGMakerDecrypter-cli.exe" if action == "ace_decrypt" else "RV2JSON.exe"
     source = PROJECT_ROOT / "util/ace/offline" / name
     if not source.is_file():
@@ -198,22 +214,15 @@ def run_ace(plan, log):
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, destination)
     environment = dict(os.environ)
-    if os.name != "nt":
-        environment.update(WINEPREFIX=str(destination.parent / "wine"), WINEDEBUG="-all")
     arguments = [str(destination)]
     if action == "ace_decrypt":
         archives = sorted(root.glob("Game.rgss*"))
         if not archives:
             raise ValueError("No Game.rgss archive needs extraction.")
         archive = str(archives[0])
-        if os.name != "nt":
-            archive = subprocess.run([shutil.which("winepath"), "-w", archive], check=True, capture_output=True, text=True,
-                                     env=environment).stdout.strip()
         arguments.append(archive)
     else:
         arguments.append("-c" if action == "ace_extract" else "-u")
-    if os.name != "nt":
-        arguments.insert(0, shutil.which("wine"))
     log("Running " + name)
     errors = []
     with subprocess.Popen(arguments, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -222,8 +231,6 @@ def run_ace(plan, log):
             for line in child.stdout:
                 message = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line).strip()
                 # RV2JSON uses these prefixes even when returning exit code 0.
-                # Wine/Mesa may emit lowercase environment diagnostics without
-                # preventing the console converter from completing.
                 if re.match(r"^(?:Error|ERROR):", message):
                     errors.append(message)
                 if message:
@@ -233,4 +240,13 @@ def run_ace(plan, log):
         except BaseException:
             child.terminate()
             raise
+    if action == 'ace_pack':
+        if inputs != packing_inputs(plan['project']):
+            raise ValueError('Ace JSON changed during packing. No current packing receipt was saved.')
+        for name in outputs:
+            path = project_path(root, name)
+            if path.read_bytes()[:2] != b'\x04\x08' or path.stat().st_mtime_ns == before.get(name):
+                raise ValueError('Ace packing did not produce fresh native data: ' + name)
+        receipt = {'source': str(root), 'inputs': inputs, 'outputs': evidence(root, outputs)}
+        write_json(Path(plan['folder']) / 'ace-packing.json', receipt)
     return {"completed": action}

@@ -207,7 +207,6 @@ def parse(codeList, i, headerString, jaString):
             process.__exit__ = Mock(return_value=False)
             with patch.dict(sys.modules, {'util.paths': paths, 'desktop.backend.workflow_actions': actions}), \
                  patch('dazedtl.compatibility.guided.ace_available', return_value=True), \
-                 patch('dazedtl.compatibility.guided.shutil.which', return_value='wine'), \
                  patch('dazedtl.compatibility.guided.subprocess.Popen', return_value=process) as launch:
                 with self.assertRaisesRegex(ValueError, 'Could not load scripts'):
                     run_ace({'action': 'ace_extract', 'folder': str(folder), 'project': {'source': str(root/'game')}}, lambda _line: None)
@@ -215,8 +214,26 @@ def parse(codeList, i, headerString, jaString):
                 self.assertEqual(run_ace({'action': 'ace_extract', 'folder': str(folder), 'project': {'source': str(root/'game')}}, lambda _line: None), {'completed': 'ace_extract'})
             self.assertEqual((root/'profile/tools/ace/RV2JSON.exe').read_bytes(), tool.read_bytes())
             self.assertEqual(launch.call_args.kwargs['stdin'], subprocess.DEVNULL)
-            if sys.platform != 'win32':
-                self.assertEqual(launch.call_args.kwargs['env']['WINEPREFIX'], str(root/'profile/tools/ace/wine'))
+            self.assertEqual(launch.call_args.args[0][0], str(root/'profile/tools/ace/RV2JSON.exe'))
+            from dazedtl.translation.release import packing_state
+            write_json(root/'game/ace_json/Items.json', [{'name': 'generated translation'}])
+            native = {'source': str(root/'game'), 'data': str(root/'game/ace_json'), 'engine': 'ACE'}
+            packed = {'action': 'ace_pack', 'folder': str(folder), 'project': native}
+            with patch.dict(sys.modules, {'util.paths': paths, 'desktop.backend.workflow_actions': actions}), \
+                 patch('dazedtl.compatibility.guided.ace_available', return_value=True), \
+                 patch('dazedtl.compatibility.guided.subprocess.Popen', return_value=process) as conversion:
+                child.stdout = []
+                with self.assertRaises(ValueError):
+                    run_ace(packed, lambda _: None)
+                self.assertFalse(packing_state(native, folder)['current'])
+                def generated_conversion(*_args, **_kwargs):
+                    output = root/'game/Data/Items.rvdata2'
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_bytes(bytes([4, 8]) + b'generated conversion fixture')
+                    return process
+                conversion.side_effect = generated_conversion
+                self.assertEqual(run_ace(packed, lambda _: None), {'completed': 'ace_pack'})
+                self.assertTrue(packing_state(native, folder)['current'])
 
     def test_phased_worker_launcher_preserves_pipe_controls_and_isolates_the_child(self):
         # The native runner failed before launch when PIPE was absent from its substituted namespace.

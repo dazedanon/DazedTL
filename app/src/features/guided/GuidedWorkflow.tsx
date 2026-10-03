@@ -38,6 +38,7 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { imagesApi } from "../../api/images";
 import { GuidedImages, type ImageEntryMode } from "./GuidedImages";
+import { ReleaseContent, ReleaseReview } from "./Release";
 const PluginWorkspace = lazy(() => import("../plugins/PluginWorkspace").then(module => ({ default: module.PluginWorkspace })));
 
 const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME101", "AUTONAMEPOPUP101", "SPEAKERS408"];
@@ -49,7 +50,7 @@ const jobTime = (job: { updated?: string; created?: string }) => Date.parse(job.
 const fileCount = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 const pathKey = (name: string) => name;
 const publicationLabels: Record<string, string> = { rewrap_apply: "Text fitting", qa_apply: "QA corrections", runtime_restore: "Text restore", export_selected: "Text Apply" };
-type Panel = "tasks" | "files" | "backups" | "versions" | "speakers" | "widths" | "options" | "tools" | "project-tools" | "references" | "preparation" | "exclusions" | null;
+type Panel = "tasks" | "files" | "backups" | "versions" | "speakers" | "widths" | "options" | "tools" | "project-tools" | "references" | "preparation" | "exclusions" | "release-assets" | null;
 type Props = { project: Project; settings: () => void; backups?: (target: HTMLElement | null) => ReactNode;
   versions?: (actions: { backups: () => void; prepare: () => void; checkpoint: () => void; target: HTMLElement | null }) => ReactNode };
 
@@ -84,6 +85,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [inspectRelease, setInspectRelease] = useState(false);
   const [resume, setResume] = useState(false);
   const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
@@ -152,7 +154,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const releaseAction = release.kind === "game" ? "release" : "release_patch";
   const releasePath = release.directory.replace(/[\\/]+$/, "") + "/" + release.name;
   const artifact = state.artifacts.find((item) => item.kind === release.kind);
-  const currentArtifact = artifact?.path.replaceAll("\\", "/") === releasePath.replaceAll("\\", "/");
   const feedbackKeys = new Set<string>();
 
   const edit = <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => draft.session.edit((current) => ({ ...current, values: { ...current.values, [key]: value } }));
@@ -216,6 +217,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     await save();
     const { phase, ...requestOptions } = options;
     if (name === "start" && phase) await api.phase(project.id, phase as Phase);
+    setInspectRelease(inspectOnly && ["release", "release_patch"].includes(name));
     const result = await api.preview(project.id, name, files, requestOptions);
     if (!result.confirmation && !inspectOnly) await execute(result); else setPreview(result);
   }, "", actionKey(name, options));
@@ -490,16 +492,20 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       primary = <Button onClick={() => textView("apply")}>Back to Apply & Fitting</Button>; secondary = releaseButton; break;
     }
     case "package":
-      content = <><fieldset disabled={disabled}><div className="guided-mode" role="group" aria-label="Package type">{([['game', 'Clean game ZIP'], ['patch', 'Patch ZIP']] as const).map(([kind, label]) => <Button key={kind} aria-pressed={release.kind === kind} onClick={() => editRelease("kind", kind)}>{label}</Button>)}</div>
-        <div className="guided-package-fields"><label>Archive name<input value={release.name} onChange={(event) => editRelease("name", event.target.value)} /></label><label>Save in<div className="guided-folder-field"><input aria-label="Save in" value={release.directory} onChange={(event) => editRelease("directory", event.target.value)} /><Button onClick={() => chooseFolder("release")}>Choose folder</Button></div></label></div></fieldset>
-        {/[\\/]/.test(release.name) && <Message message="Use a filename without folder separators. Choose the destination in Save in." />}
-        {state.engine === "ACE" && <Section title="Native Ace data"><p className="muted">Pack the latest JSON into native game data before packaging, including after fitting or QA edits.</p>{task("ace_pack", "Review native Ace packing", {}, !baseline || !state.aceAvailable || !state.files.length)}</Section>}
-        <ActionList><ActionRow label={<><strong>Included</strong><small>{release.kind === "game" ? "Game runtime, translated data, plugins, assets and GameUpdate." : "The current runtime patch against the matching original version."}</small></>}><ActionControl label="View package scope" disabled={disabled || !release.directory || !release.name} {...feedback("package:inspect", "Reading package scope…")}
-          onClick={() => action.run(async () => { await save(); setPreview(await api.preview(project.id, releaseAction, undefined, { output: releasePath })); }, "", "package:inspect")} /></ActionRow>
-        <ActionRow label={<><strong>Omitted</strong><small>Saves, logs, caches, backups, private configuration and translator files.</small></>}><Button variant="quiet" onClick={() => setPanel("exclusions")}>View exclusions</Button></ActionRow></ActionList>
-        {artifact && <div className="guided-artifact"><strong>{artifact.available ? currentArtifact ? "Saved archive available" : "Previous release available" : "Saved archive unavailable"}</strong><span className="path">{artifact.path}</span><ActionControl label="Open release folder" disabled={!artifact.available || action.busy} {...feedback("open-release", "Opening…")} onClick={() => action.run(() => window.dazedtl.openFolder("output", artifact.folder), "Release folder opened.", "open-release")} /></div>}
-        <p className="muted">Packaging creates a local ZIP. {release.kind === "patch" ? "The reviewed runtime scope is checkpointed as part of the build." : "The working game stays untouched."} Publishing is separate.</p></>;
-      primary = task(releaseAction, release.kind === "game" ? "Build clean game ZIP" : "Review & build patch ZIP", { output: releasePath }, !baseline || unfinished || !release.directory.trim() || !release.name.trim() || /[\\/]/.test(release.name), "primary"); break;
+      content = <ReleaseContent value={release} disabled={disabled} artifact={artifact}
+        edit={change => form.session.edit(current => ({ ...current, release: { ...current.release, ...change } }))}
+        chooseFolder={() => chooseFolder("release")} assets={() => setPanel("release-assets")}
+        inspect={<ActionControl label="View files & exclusions" disabled={disabled || !release.directory || !release.name}
+          {...feedback("package:inspect", "Reading archive contents…")} onClick={() => action.run(async () => {
+            await save(); setInspectRelease(true); setPreview(await api.preview(project.id, releaseAction, undefined, { output: releasePath }));
+          }, "", "package:inspect")} />}
+        open={<ActionControl label="Open release folder" disabled={!artifact?.available || action.busy} {...feedback("open-release", "Opening…")}
+          onClick={() => action.run(() => window.dazedtl.openFolder("output", artifact!.folder), "Release folder opened.", "open-release")} />}
+        packing={state.engine === "ACE" ? <><p className="muted">{state.acePacking.message}</p>
+          {!state.aceAvailable && !state.acePacking.current && <p>Native packing requires a supported Windows environment.</p>}
+          {task("ace_pack", state.acePacking.current ? "Review native packing again" : "Review native Ace packing", {}, !baseline || !state.aceAvailable || !state.files.length)}</> : undefined} />;
+      primary = task(releaseAction, release.kind === "game" ? "Build clean game ZIP" : "Review & build patch ZIP", { output: releasePath },
+        !baseline || unfinished || !release.directory.trim() || !release.name.trim() || /[\\/]/.test(release.name) || !state.acePacking.current, "primary"); break;
     default:
       content = job ? <RunPanel hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy}
         pendingKey={action.busy ? action.key : ""} error={action.key.startsWith("run:") ? action.error : ""}
@@ -545,7 +551,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       </div>
     </div>
     {panel && <Modal label={panel === "files" ? "Choose files for this pass" : panel === "tasks" ? "Translation tasks" : "Translation options"} className="guided-sheet" dismissible={!action.busy} onDismiss={closePanel}>
-      <header className="guided-sheet-heading"><h2>{{ tasks: "Translation tasks", files: "Choose files for this pass", backups: "Backups & recovery", versions: "Game updates", speakers: "Speaker detection", widths: "Measured line widths", options: "Engine options & source refresh", tools: "Configure playtest tools", "project-tools": "Project tools", references: "Reference translations", preparation: "Preparation tools", exclusions: "Release exclusions" }[panel]}</h2></header>
+      <header className="guided-sheet-heading"><h2>{{ tasks: "Translation tasks", files: "Choose files for this pass", backups: "Backups & recovery", versions: "Game updates", speakers: "Speaker detection", widths: "Measured line widths", options: "Engine options & source refresh", tools: "Configure playtest tools", "project-tools": "Project tools", references: "Reference translations", preparation: "Preparation tools", exclusions: "Release exclusions", "release-assets": "Additional runtime assets" }[panel]}</h2></header>
       {panel === "files" ? <FileSelection state={{ ...state, files: pickerFiles }} selected={pickerSelected} change={(names) => edit("selected", fileScope ? retainOtherScope(values.selected, pickerFiles, names) : names)} disabled={disabled} /> : <div className="guided-sheet-body">
         {panel === "tasks" && <div className="guided-all-tasks">{stages.map((item) => <section key={item.id}><h3>{item.title}</h3>{item.tasks.map((entry) => <Button key={entry.id} variant="quiet" onClick={() => move(item.id, entry.id)}>{entry.title}</Button>)}</section>)}</div>}
         {panel === "project-tools" && <ActionList>
@@ -569,7 +575,13 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {task("editors", "Find installed editors")}{operationJob("editors")?.result && <pre>{JSON.stringify(operationJob("editors")!.result, null, 2)}</pre>}
           <Section title="Installed plugins">{task("playtest_apply", "Apply settings to game", {}, !baseline || !state.tools?.inspector.installed && !state.tools?.forge.installed)}</Section></>}
         {panel === "references" && <ReferenceTools state={state} disabled={disabled} action={action} save={save} review={review} />}
-        {panel === "exclusions" && <><p>The clean game archive omits translator work, private configuration, caches, local saves, logs, backup files and temporary files.</p><ul><li>.dazedtl and version-control metadata</li><li>Local save folders and save files</li><li>.env files and editor configuration</li><li>Translator guidance, working exports and tool scripts</li><li>Backups, caches and temporary files</li></ul><p>Player GameUpdate files remain included. Packaging never deletes these files from the working game.</p></>}
+        {panel === "release-assets" && <><p>Applied images and tracked runtime assets are already included. Add other player images or fonts by exact game-relative path, one per line.</p>
+          <label>Image and font paths<textarea rows={7} value={release.assets.join("\n")} disabled={disabled}
+            onChange={event => editRelease("assets", event.target.value.split("\n"))} /></label>
+          <p className="muted">Use img/ or fonts/, including www/ layouts. Private files, missing files and symbolic links are rejected. Build reviews the exact current bytes.</p>
+          <ActionControl label="Save runtime assets" variant="primary" disabled={disabled} {...feedback("release-assets:save", "Saving…")}
+            onClick={() => action.run(async () => { const names = release.assets.map(name => name.trim()).filter(Boolean); editRelease("assets", [...new Set(names)]); await flushDrafts(); await save(); setPanel(null); }, "Runtime assets retained.", "release-assets:save")} /></>}
+
       </div>}
       <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panel === "files" ? <><Button disabled={action.busy} onClick={closePanel}>Cancel</Button><ActionControl label={`Use ${fileCount(pickerSelected.length)}`} variant="primary" disabled={disabled} {...feedback("files:save", "Saving selection…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "File selection saved.", "files:save")} /></> : <><Button disabled={action.busy} onClick={() => setPanel(null)}>Close</Button><div ref={setUtilityActions} className="action-bar-slot" />{["speakers", "widths", "options", "tools"].includes(panel) && (panel !== "speakers" || draft.dirty) && <>{draft.dirty && <ActionControl label="Discard engine options" disabled={disabled} {...feedback("discard-options", "Discarding…")} onClick={() => action.run(draft.discard, "Engine options restored.", "discard-options")} />}{savePanel()}</>}</>}</ActionBar>
     </Modal>}
@@ -581,21 +593,19 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}
       {inspected.status === "complete" && Object.keys(inspected.outputs || {}).length > 0 && <ActionControl label="Save this run’s output copy" disabled={action.busy || inspected.outputsAvailable === false} {...feedback("run:export", "Saving output copy…")} onClick={() => action.run(async () => setOutput((await api.export(project.id, inspected.id)).path), "Output copy saved.", "run:export")} />}
       <Button onClick={() => setInspected(null)}>Close</Button></Modal>}
-    {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : "Review translation action"} className={`guided-sheet${preview.action === "git_setup" ? " guided-baseline-review" : ""}`} dismissible={!action.busy} onDismiss={() => setPreview(null)}><header className="guided-sheet-heading"><h2>{preview.label}</h2></header><div className="guided-sheet-body">
+    {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : preview.action === "release_patch" ? inspectRelease ? "Archive contents" : "Review patch ZIP" : preview.action === "release" ? inspectRelease ? "Archive contents" : "Replace game ZIP" : "Review translation action"} className={`guided-sheet${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`} dismissible={!action.busy} onDismiss={() => setPreview(null)}><header className="guided-sheet-heading"><h2>{["release", "release_patch"].includes(preview.action) ? inspectRelease ? "Archive contents" : preview.action === "release_patch" ? "Review patch ZIP" : "Replace game ZIP" : preview.label}</h2></header><div className="guided-sheet-body">
+      {["release", "release_patch"].includes(preview.action) && <ReleaseReview preview={preview} inspectOnly={inspectRelease} busy={action.busy} editAssets={() => { setPreview(null); setPanel("release-assets"); }} />}
       {preview.action === "git_setup" ? <><p>Check the version, original source and runtime files before saving.</p>
         <dl className="guided-baseline-summary"><div><dt>Game version</dt><dd>{String(preview.options.version)}</dd></div>
           <div><dt>Original source</dt><dd>{preview.options.untranslated ? `This untranslated game, after preparation: ${preview.destination}` : String(preview.options.original)}</dd></div></dl>
-      </> : <p className="path">{preview.destination}</p>}{preview.action === "start" && <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>}
-      {!!preview.paths.length && <><p>{fileCount(preview.files || preview.paths.length)} {preview.action === "git_setup" ? "in this baseline" : "in this action"}</p>{preview.paths.length <= 8 ? <ul className="guided-preview-paths" aria-label="Files in this action">{preview.paths.map((name) => <li key={name} className="guided-preview-path">{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Files in this action" empty={null}>{(name) => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}</>}
-      {preview.package && <p>{preview.package.included.toLocaleString()} runtime files included · {preview.package.excluded.toLocaleString()} tool/private entries omitted.</p>}
+      </> : !["release", "release_patch"].includes(preview.action) && <p className="path">{preview.destination}</p>}{preview.action === "start" && <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>}
+      {!["release", "release_patch"].includes(preview.action) && !!preview.paths.length && <><p>{fileCount(preview.files || preview.paths.length)} {preview.action === "git_setup" ? "in this baseline" : "in this action"}</p>{preview.paths.length <= 8 ? <ul className="guided-preview-paths" aria-label="Files in this action">{preview.paths.map((name) => <li key={name} className="guided-preview-path">{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Files in this action" empty={null}>{(name) => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}</>}
       {!!preview.additions?.length && <p>{preview.additions.length} files are additions to the original baseline.</p>}
       {preview.action === "backup_source" && sourceBackup?.available === false && <p>This saves current files. It cannot recover the missing original.</p>}
       {preview.action === "refresh_sources" && <p>Archive these files’ working copies, outputs, and variable cache before refreshing from the original source. Frozen provider runs remain retained.</p>}
       {preview.action === "export_selected" && <p>Apply accumulated translated outputs to these runtime files.</p>}
       {preview.action === "runtime_restore" && <p>Return these files to the preserved bytes from before the chosen batch. Review the current and restored text below before continuing.</p>}
       {preview.publication && <><p>The whole batch is checked before publication. Exact before/after backups are retained; failure attempts rollback. Restore requires another review and rejects newer conflicting edits.</p>{preview.publication.map(row => <details className="text-publication" key={row.path}><summary>{row.path} · {row.size.toLocaleString()} bytes{row.later_edits ? " · Replaces later game edits" : ""}</summary><p className="path">{row.destination}</p><small>Current SHA-256 {row.before}<br />Candidate SHA-256 {row.after}</small><strong>Runtime changes{row.truncated ? " (diff exceeds 16,000 characters)" : ""}</strong><pre>{row.diff || "Runtime bytes already match this candidate."}</pre><details><summary>JSON context</summary><strong>Current runtime JSON (first 16,000 characters)</strong><pre>{row.before_text}</pre><strong>Reviewed replacement JSON (first 16,000 characters)</strong><pre>{row.after_text}</pre></details></details>)}</>}
-      {preview.action === "release" && preview.confirmation && <p>Replace the existing archive at this destination after the new ZIP passes verification.</p>}
-      {preview.action === "release_patch" && <p>Use this runtime scope to create a local checkpoint and patch archive. Source, ownership, scope, and destination are checked again before execution.</p>}
       {paid && preview.estimate && <section aria-label={reviewEstimateCurrent ? "Matching estimate" : "Previous estimate"}><h3>{reviewEstimateCurrent ? "Matching estimate" : "Previous estimate"}</h3><Estimate value={preview.estimate.value} /><p className="muted">{reviewEstimateCurrent ? "Selection, source, pricing, guidance, and layout match this estimate." : "This quote was calculated before the reviewed inputs changed."}</p></section>}
       {paid && !reviewEstimateCurrent && <div role="alert"><p>Estimate needs refreshing. Reviewed inputs changed.</p><Button disabled={disabled} onClick={() => { const target = preview.options.phase; setPreview(null); void review("start", { mode: "estimate", phase: target }); }}>Refresh estimate</Button></div>}
       {paid && <p>{preview.run?.connection || state.provider.connection} · {preview.run?.model || state.provider.model} · {preview.options.mode === "batch" ? "Prepare this scope for a separate Batch cost approval. Speaker translation can request its own approval." : "API requests may incur charges using this run’s frozen settings."}</p>}
@@ -604,8 +614,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && preview.options.phase === "advanced" && values.engine_options.AUTONAMEPOPUP101 === true && <p>Saved AutoNamePopup handling also processes supported actor-name changes independently of source 320.</p>}
       {paid && preview.options.phase === "variables" && <p>Reviewed literal-based updates apply to all matching quoted literals in the selected code-111 expressions. Unmatched literals remain unchanged.</p>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
-      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>{preview.action === "git_setup" ? "Back" : "Cancel"}</Button><Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
-        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? "Build release ZIP" : "Run this action"}</Button></ActionBar></Modal>}
+      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
+        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
       await api.guided.eventTextReview(project.id, sourceReview.revision, sourceReview.state.binding, sourceReview.state.reportId, reason, accepted);
