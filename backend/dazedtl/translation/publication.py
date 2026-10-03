@@ -20,6 +20,16 @@ def records(folder):
     return sorted(rows, key=lambda row: row["created"], reverse=True)
 
 
+def history(folder):
+    """Project completed restore effects without changing preserved receipts."""
+    rows = records(folder)
+    restored = set()
+    for row in rows:
+        if row["id"] not in restored and row["state"] == "complete" and row.get("restores"):
+            restored.add(row["restores"])
+    return [{**row, "state": "restored"} if row["id"] in restored else row for row in rows]
+
+
 def receipt_hash(folder):
     path = Path(folder) / "applied-outputs.json"
     if path.is_symlink():

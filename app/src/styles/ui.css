@@ -312,7 +312,7 @@ pre {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--muted);
   line-height: 1.5;
   overflow-wrap: anywhere;

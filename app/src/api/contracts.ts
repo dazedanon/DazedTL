@@ -155,7 +155,7 @@ export interface GuidedState {
     rows: { file: string; location: string; literal: string; translation: string; variables: string[] }[] };
   sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
   readiness: {
-    publications: { id: string; kind: string; state: string; files: string[] }[];
+    publications: { id: string; kind: string; state: string; files: string[]; recovery_errors: string[] }[];
     qa: { current: boolean; task?: string; status: Record<string, unknown>; message: string;
       findings: { id: string; source?: string; live?: string; current?: string; correction?: string; reason?: string; evidence?: string; note?: string; category?: string; classification?: string; identity?: string }[];
       corrections: { finding_id: string; file: string; expected: string; replacement: string; identity: string }[] };

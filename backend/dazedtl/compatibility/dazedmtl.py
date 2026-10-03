@@ -234,10 +234,10 @@ class ExistingBackend:
         return {**result, "label": plan["label"], "options": options, **self.guided_text_publication(result["token"])}
 
     def guided_text_state(self, native, focus="release"):
-        from dazedtl.translation.publication import records
+        from dazedtl.translation.publication import history
         from .text import qa_state
         folder = self.workflows.folder(native["id"])
-        recent = [row for row in records(folder) if row["state"] in {"complete", "publishing", "recovery_needed"}]
+        recent = [row for row in history(folder) if row["state"] in {"complete", "restored", "publishing", "recovery_needed"}]
         qa = {"current": False, "status": {}, "findings": [], "corrections": [], "message": "No QA task prepared for this focus."}
         try:
             if (folder / ("text-qa-" + focus + ".json")).exists():
@@ -245,7 +245,7 @@ class ExistingBackend:
                 qa = qa_state(plan)
         except (ValueError, OSError, KeyError) as exc:
             qa = {"current": False, "status": {}, "findings": [], "corrections": [], "message": str(exc)}
-        return {"qa": qa, "publications": [{"id": row["id"], "kind": row["kind"], "state": row["state"], "files": [item["path"] for item in row["files"]]} for row in recent[:10]]}
+        return {"qa": qa, "publications": [{"id": row["id"], "kind": row["kind"], "state": row["state"], "files": [item["path"] for item in row["files"]], "recovery_errors": row.get("recovery_errors", [])} for row in recent[:10]]}
 
     def guided_phase(self, native_id, phase, files):
         with self.manual.selected_workflow(native_id, files):
