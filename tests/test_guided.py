@@ -48,6 +48,8 @@ class GuidedTests(unittest.TestCase):
             state=lambda _: {'project': self.native, 'manual_job': self.pending}, update=update, save=Mock(),
             phase=lambda owner, phase, sync: self.started.append((owner, phase, sync)) or {'id': 'paid-run'})
         self.backend = SimpleNamespace(workflows=workflows, running=lambda: False,
+            guided_text_state=lambda *_: {"publications": [], "qa": {}},
+            guided_text_publication=lambda *_: {},
             phase_files=lambda _native, _phase: ['Items.json'],
             guided_guard=lambda _native, _folder: evidence(self.source, ['Items.json']),
             guided_runtime_files=lambda _source: ['Items.json'])

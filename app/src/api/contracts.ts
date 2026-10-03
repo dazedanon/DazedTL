@@ -78,6 +78,7 @@ export interface GuidedForm {
   original: string;
   untranslated: boolean | null;
   only_overflow: boolean;
+  text: { view: "apply" | "fitting" | "qa" | "tools"; categories: string[]; codes: string; max_rows: number; protect_rows: boolean; focus: string; findings_task: string; findings: string[] };
   release: {
     kind: "game" | "patch";
     name: string;
@@ -154,6 +155,10 @@ export interface GuidedState {
     rows: { file: string; location: string; literal: string; translation: string; variables: string[] }[] };
   sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
   readiness: {
+    publications: { id: string; kind: string; state: string; files: string[] }[];
+    qa: { current: boolean; task?: string; status: Record<string, unknown>; message: string;
+      findings: { id: string; source?: string; live?: string; current?: string; correction?: string; reason?: string; evidence?: string; note?: string; category?: string; classification?: string; identity?: string }[];
+      corrections: { finding_id: string; file: string; expected: string; replacement: string; identity: string }[] };
     outputs: string[];
     applied: string[];
     runtime_edited: string[];
@@ -357,6 +362,7 @@ export interface RequestPreview {
 }
 
 export interface Preview {
+  publication?: { path: string; destination: string; before: string; after: string; size: number; later_edits: boolean; diff: string; truncated: boolean; before_text: string; after_text: string }[];
   run?: { model: string; connection: string; mode: string } | null;
   estimate?: { jobId: string; fingerprint: string; value: Record<string, number> } | null;
   package?: { included: number; excluded: number };
@@ -369,7 +375,7 @@ export interface Preview {
   paths: string[];
   confirmation: boolean;
   options: Record<string, unknown>;
-  rewrap?: { changes_found: number; overflow_skipped: number; previews: { file_name: string; locator: string; before: string; after: string }[] };
+  rewrap?: { changes_found: number; overflow_skipped: number; previews: { file_name: string; locator: string; before: string; after: string; rows?: number; overflow?: boolean }[] };
 }
 export interface PreferenceValues {
   language: string;

@@ -16,6 +16,12 @@ from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
 def run_action(plan, log):
+    if plan.get("publication"):
+        from dazedtl.compatibility.text import run_publication
+        return run_publication(plan, log)
+    if plan["action"] in {"qa_prepare", "qa_status"}:
+        from dazedtl.compatibility.text import run_qa
+        return run_qa(plan, log)
     if plan["action"] in {"prepare_game", "format_data", "format_plugins", "gameupdate"}:
         from dazedtl.translation.preparation import run
         workflow_actions.validate_plan(plan)

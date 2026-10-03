@@ -164,6 +164,17 @@ Application receipts distinguish later fitting or QA edits from new outputs that
 applied. Release plans bind the profile's working-source index and original blobs;
 refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
+Apply and Fitting share one Guided workspace with retained file choices and fitting settings.
+The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.
+The compatibility worker reuses the engine fitter on disposable copies, then preflights and publishes the whole batch with verified backups and rollback attempts.
+Interrupted publication retains exact authorized before/after hashes for another reviewed restore; conflicting newer runtime edits are retained.
+Reapplying saved translations discloses replacement of later runtime edits, independently of output availability.
+Optional text QA retains the engine's project-scoped discovery inventory and findings, bound to current runtime text and original-source context.
+Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
+Chosen corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before app-reviewed Apply.
+The clipboard task stops before runtime publication.
+QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
+
 The selected phase files bind each new run and each application preview. Working copies are
 prepared automatically without removing other phase work. The compatibility launcher filters
 the preserved phase's selected files, retaining its profiles, glossary, speakers, and frozen run format.

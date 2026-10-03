@@ -35,6 +35,10 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   assert.deepEqual(initialPosition(state, translation), { step: "images", task: "images" });
   state.step = "images"; state.task = "images";
   assert.deepEqual(initialPosition(state, translation), { step: "images", task: "images" });
+  for (const task of ["fitting", "playtest", "qa", "tools"]) {
+    state.task = task;
+    assert.deepEqual(initialPosition(state, translation), { step: "apply", task: "apply" });
+  }
   assert.equal(stagesFor("MVMZ").findIndex((stage) => stage.id === "images"), stagesFor("MVMZ").findIndex((stage) => stage.id === "plugins") + 1);
   for (const status of ["failed", "stopped", "interrupted", "running", "waiting"]) {
     state.run!.status = status;

@@ -44,7 +44,7 @@ const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME10
 const advanced = ["CODE122", "CODE122_VAR_RANGES", "CODE357", "ENABLED_PLUGINS_357", "CODE355655", "ENABLED_PATTERNS_355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"];
 const advancedCodes = advanced.filter((key) => key.startsWith("CODE") && key !== "CODE122_VAR_RANGES");
 const phaseLabels: Record<Phase, string> = { database: "Database & interface", dialogue: "Dialogue & choices", variables: "Update comparisons", advanced: "Other event text", speakers: "Optional name translation" };
-const actionKey = (name: string, options: Record<string, unknown> = {}) => name === "start" ? `start:${options.mode}:${options.phase || "speakers"}` : name;
+const actionKey = (name: string, options: Record<string, unknown> = {}) => name === "start" ? `start:${options.mode}:${options.phase || "speakers"}` : name === "runtime_restore" ? `runtime_restore:${options.publication}` : name;
 const jobTime = (job: { updated?: string; created?: string }) => Date.parse(job.updated || job.created || "") || 0;
 const fileCount = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 const pathKey = (name: string) => name;
@@ -73,7 +73,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const stage = stages.find((item) => item.id === position.step)!;
   const selectedTask = stage.tasks.find((item) => item.id === position.task);
   const taskId = selectedTask?.id || "run";
-  const taskView = taskId === "other-event-text" ? state.eventText.view : taskId;
+  const taskView = taskId === "other-event-text" ? state.eventText.view : taskId === "apply" ? fields.text.view : taskId;
   const taskIndex = stage.tasks.findIndex((item) => item.id === taskId);
   const [panel, setPanel] = useState<Panel>(null);
   const [imageView, setImageView] = useState<ImageEntryMode | null>(null);
@@ -142,9 +142,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     if (state.operations.some((item) => item.id === current.id)) await api.stop(project.id);
     else await api.translation.stop(project.id, current.id);
   }, "", "stop-operation");
-  const qaTask = activity.find((item) => item.action === "qa_prepare" && typeof item.result?.handoff === "string");
+  const qaTask = state.readiness.qa.current ? activity.find((item) => item.action === "qa_prepare" && item.result?.task === state.readiness.qa.task && typeof item.result?.handoff === "string") : undefined;
   const qaJob = activity.find((item) => ["qa_prepare", "qa_status"].includes(item.action || "") && item.status === "complete");
-  const qaStatus = qaJob?.result?.status && typeof qaJob.result.status === "object" ? qaJob.result.status as Record<string, unknown> : null;
+  const qa = state.readiness.qa;
+  const chosenFindings = fields.text.findings_task === qa.task ? fields.text.findings : [];
+  const qaStatus = qa.status;
   const release = fields.release;
   const releaseAction = release.kind === "game" ? "release" : "release_patch";
   const releasePath = release.directory.replace(/[\\/]+$/, "") + "/" + release.name;
@@ -155,6 +157,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const edit = <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => draft.session.edit((current) => ({ ...current, values: { ...current.values, [key]: value } }));
   const editForm = <K extends keyof GuidedForm>(key: K, value: GuidedForm[K]) => form.session.edit((current) => ({ ...current, [key]: value }));
   const editRelease = <K extends keyof GuidedForm["release"]>(key: K, value: GuidedForm["release"][K]) => form.session.edit((current) => ({ ...current, release: { ...current.release, [key]: value } }));
+  const editText = <K extends keyof GuidedForm["text"]>(key: K, value: GuidedForm["text"][K]) => form.session.edit((current) => ({ ...current, text: { ...current.text, [key]: value } }));
   const save = async () => { await flushDrafts(); if (draft.dirty || state.optionsDraft) await draft.save(); };
   const navigate = async (step: GuidedStep, task: string) => { await flushDrafts(); await api.guided.position(project.id, step, task); };
   const move = (step: GuidedStep, task: string) => action.run(async () => { await navigate(step, task); setPanel(null); }, "", "position");
@@ -192,7 +195,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   };
   const operationJob = (name: string, options: Record<string, unknown> = {}): Job | undefined => {
     const recorded: Job[] = name === "start" ? state.run && state.run.mode === options.mode ? [state.run] : [] : [
-      ...state.operations.filter((item) => item.action === name),
+      ...state.operations.filter((item) => item.action === name && (name !== "runtime_restore" || item.result?.restored === options.publication)),
       ...translation.jobs.filter((item) => item.kind === "operation" && item.action === name).map((item) => ({ id: item.id, action: item.action || undefined, label: item.label, status: item.status, message: item.message, created: item.created, updated: item.updated, result: item.result, log: [] })),
     ];
     const acknowledged = started[actionKey(name, options)];
@@ -219,13 +222,16 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const recorded = name === "start" ? options.mode === "estimate" ? state.estimates[options.phase as Phase]?.job || undefined : undefined : operationJob(name, options);
     const current = name === "backup_source" && recorded?.status === "complete" ? undefined : recorded;
     const active = current && ["ready", "running", "waiting"].includes(current.status);
+    const publicationReview = ["export_selected", "rewrap_apply", "qa_apply"].includes(name);
+    const qaOperation = ["qa_prepare", "qa_status"].includes(name);
+    const display = current?.status === "complete" && (publicationReview || qaOperation && (!qa.current || current.result?.task !== qa.task)) ? undefined : current;
     const localFeedback = !panel && (taskId === "backup" && name === "backup_source" || taskId === "format" && name === "prepare_game");
     if (localFeedback) return <Button variant={variant} pending={!!active || action.busy && action.key === actionKey(name, options)} disabled={disabled || blocked} onClick={() => review(name, options, files)}>{label}</Button>;
     if (localOperation?.action === name) return <Button variant={variant} pending disabled>{label}</Button>;
     return <ActionControl label={label} disabled={disabled || blocked} variant={variant}
       {...feedback(actionKey(name, options), active ? current.message || "Working…" : name === "start" && options.mode === "estimate" ? "Estimating selected files…" : "Preparing action…")}
       pending={action.busy && action.key === actionKey(name, options) || !!active}
-      job={current && !active ? options.mode === "estimate" && current.status === "complete" ? { ...current, message: "" } : current : undefined}
+      job={display && !active ? display.status === "complete" && (options.mode === "estimate" || qaOperation) ? { ...display, message: "" } : display : undefined}
       onClick={() => review(name, options, files)} />;
   };
   const copyTask = (name: string, label: string, variant: "default" | "primary" | "quiet" = "default") => <ActionControl label={label} variant={variant} disabled={disabled} {...feedback("copy:" + name, "Copying…")}
@@ -257,7 +263,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     await api.guided.reviewContext(project.id, name, saved[name].revision, "empty");
   }, "Empty guidance kept intentionally.", "context:empty");
   const contextBlockers = guidanceBlockers(savedNames, state.documents, context.drafts, discovery);
-  const layoutOptions = { files: layoutFiles, widths: values.widths, categories: ["dialogue", "face_dialogue", "list", "notes"], codes: "401,405", max_rows: 4, protect_rows: true, over_limit: fields.only_overflow };
+  const layoutOptions = { files: layoutFiles, widths: values.widths, categories: fields.text.categories, codes: fields.text.codes, max_rows: fields.text.max_rows, protect_rows: fields.text.protect_rows, over_limit: fields.only_overflow };
+  const fitting = activity.find((item) => item.id === state.readiness.layout_scan)?.result as Preview["rewrap"] | undefined;
+  const fittingSettingsSaved = fields.only_overflow === state.form.only_overflow && ["categories", "codes", "max_rows", "protect_rows"].every(key => JSON.stringify(fields.text[key as keyof GuidedForm["text"]]) === JSON.stringify(state.form.text[key as keyof GuidedForm["text"]]));
+  const textView = (view: GuidedForm["text"]["view"]) => action.run(async () => { editText("view", view); await flushDrafts(); }, "", "text:view");
+  const releaseButton = <Button variant="quiet" disabled={action.busy || form.committing} onClick={() => stepTask("package")}>Continue to Release</Button>;
   const widths = <fieldset disabled={disabled} className="guided-widths">{([["width", "Dialogue"], ["faceWidth", "With portrait"], ["listWidth", "List / help"], ["noteWidth", "Notes"]] as const).map(([key, label]) =>
     <label key={key}>{label}<input aria-label={label + " width in characters"} type="number" min={20} max={key === "faceWidth" ? values.widths.width : 300} value={values.widths[key]}
       onChange={(event) => edit("widths", { ...values.widths, [key]: Number(event.target.value) })} /></label>)}</fieldset>;
@@ -442,35 +452,41 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     case "apply":
       content = <>{fileSummary(outputFiles.length)}<dl className="guided-scope-summary"><div><dt>Saved outputs</dt><dd>{outputFiles.length ? `${fileCount(outputFiles.length)} available` : "No selected outputs available"}</dd></div>
         <div><dt>Applied to game</dt><dd>{applied ? state.readiness.runtime_edited.some((name) => outputFiles.includes(name)) ? "Applied · later game edits retained" : "Matches saved outputs" : "Ready for application review"}</dd></div></dl>
-        {state.engine === "ACE" && <><p className="muted">Pack the latest JSON into native data before each playtest, including after fitting and QA edits.</p>{task("ace_pack", "Review native Ace packing", {}, !baseline || !state.aceAvailable || !state.files.length)}</>}</>;
-      primary = applied ? advance("Check text fitting") : task("export_selected", "Review files to apply", {}, !baseline || !outputFiles.length || !!changed.length, "primary");
-      secondary = applied && task("export_selected", "Apply outputs again", {}, !baseline || !outputFiles.length || !!changed.length); break;
+        <p className="muted">Only selected files with saved outputs are included. Review exact destinations and replacements before Apply.</p>
+        {!!state.readiness.runtime_edited.filter(name => outputFiles.includes(name)).length && <p>Later game edits are retained. Applying the saved output again replaces those edits after review.</p>}
+        <ActionList>{state.readiness.publications.filter((row, index) => index === 0 || row.state !== "complete").map((row) => <ActionRow key={row.id} label={<><strong>{row.kind === "rewrap_apply" ? "Text fitting" : row.kind === "qa_apply" ? "QA corrections" : row.kind === "runtime_restore" ? "Text restore" : "Text Apply"} · {row.state === "publishing" ? "Interrupted publication" : row.state.replaceAll("_", " ")}</strong><small>{row.files.join(", ")}</small></>}>{task("runtime_restore", "Review restore", { publication: row.id }, !baseline)}</ActionRow>)}</ActionList>
+        {state.readiness.publications.length > 1 && <details><summary>Earlier text batches</summary><ActionList>{state.readiness.publications.slice(1).filter(row => row.state === "complete").map(row => <ActionRow key={row.id} label={<><strong>{row.kind.replaceAll("_", " ")}</strong><small>{row.files.join(", ")}</small></>}>{task("runtime_restore", "Review restore", { publication: row.id }, !baseline)}</ActionRow>)}</ActionList></details>}
+        {state.engine === "ACE" && <><p className="muted">Pack the latest JSON into native data before opening the game, including after fitting and QA edits.</p>{task("ace_pack", "Review native Ace packing", {}, !baseline || !state.aceAvailable || !state.files.length)}</>}</>;
+      primary = task("export_selected", applied ? "Review Apply again" : "Review Apply", {}, !baseline || !outputFiles.length || !!changed.length, "primary", outputFiles);
+      secondary = releaseButton; break;
     case "fitting":
       content = <><ActionList><ActionRow label={<><strong>Saved widths</strong><small>Dialogue {values.widths.width} · portrait {values.widths.faceWidth} · list {values.widths.listWidth} · notes {values.widths.noteWidth}</small></>}><Button disabled={disabled} onClick={() => setPanel("widths")}>Edit widths</Button></ActionRow></ActionList>
         <label className="toggle"><input type="checkbox" disabled={disabled} checked={fields.only_overflow} onChange={(event) => editForm("only_overflow", event.target.checked)} />Only rewrap text over its width limit</label>
-        <p className="muted">Scan {fileCount(layoutFiles.length)} in the current scope. Protected control codes and original text stay intact.</p>
-        {state.readiness.layout_scan && <p className="guided-success">A matching scan is available for review.</p>}</>;
-      primary = state.readiness.layout_scan && !draft.dirty ? task("rewrap_apply", "Review fitting changes", layoutOptions, !baseline || !layoutFiles.length, "primary") : task("rewrap_preview", "Scan text fitting", layoutOptions, !baseline || !layoutFiles.length, "primary");
-      secondary = advance("Continue to playtest", undefined, "quiet"); break;
-    case "playtest":
-      content = <><p>Play through the opening scene and menus. Check speaker names, choices, recurring terms, and text layout.</p><ActionList><ActionRow label="Open the working game and launch its executable."><Button onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}>Open game folder</Button></ActionRow>
-        {state.engine === "MVMZ" && <ActionRow label="TL Inspector and Forge are available from Release."><Button onClick={() => stepTask("tools")}>Manage playtest tools</Button></ActionRow>}</ActionList>
-        {state.engine === "ACE" && task("ace_pack", "Pack latest Ace data", {}, !baseline || !state.aceAvailable || !state.files.length)}</>;
-      primary = <Button variant="primary" onClick={() => stepTask("main-text")}>Return to expand translation</Button>; secondary = advance("Open text QA", undefined, "quiet"); break;
+        {fileSummary(layoutFiles.length)}
+        <details><summary>Fitting coverage and row protection</summary><fieldset disabled={disabled} className="text-fitting-settings"><legend>Included text areas</legend>{([["dialogue", "Dialogue"], ["face_dialogue", "Dialogue with portrait"], ["list", "List and help descriptions"], ["notes", "Supported note patterns"]] as const).map(([key, label]) => <label className="toggle" key={key}><input type="checkbox" checked={fields.text.categories.includes(key)} onChange={event => editText("categories", event.target.checked ? [...fields.text.categories, key] : fields.text.categories.filter(value => value !== key))} />{label}</label>)}
+          <label>Event codes<input value={fields.text.codes} onChange={event => editText("codes", event.target.value)} /></label><small>Supported: 122, 324, 325, 357, 401, 405. Choices (102), custom windows and arbitrary plugin text are outside this fitter.</small>
+          <label className="toggle"><input type="checkbox" checked={fields.text.protect_rows} onChange={event => editText("protect_rows", event.target.checked)} />Skip protected messages that exceed the row limit</label><label>Protected row limit<input type="number" min={1} max={100} value={fields.text.max_rows} onChange={event => editText("max_rows", Number(event.target.value))} /></label></fieldset></details>
+        <p className="muted">Scans current runtime files. Apply translations first to fit the translated text. Widths count characters; they do not measure rendered fonts, substitutions or window height.</p>
+        {fitting && <section className="text-fit-results"><h3>Saved fitting scan</h3><ActionList><ActionRow label={<p>Eligible changes: {fitting.changes_found - fitting.overflow_skipped} · Protected overflows skipped: {fitting.overflow_skipped}</p>}>{task("rewrap_preview", "Scan again", layoutOptions, !baseline || !layoutFiles.length)}</ActionRow></ActionList>{fitting.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}{row.overflow && fields.text.protect_rows ? ` · Skipped: ${row.rows} rows exceed the protected limit` : ""}</summary><strong>Current</strong><pre>{row.before}</pre><strong>Proposed</strong><pre>{row.after}</pre></details>)}</section>}</>;
+      primary = state.readiness.layout_scan && !draft.dirty && fittingSettingsSaved && !!fitting && fitting.changes_found > fitting.overflow_skipped ? task("rewrap_apply", "Review fitting Apply", layoutOptions, !baseline || !layoutFiles.length, "primary") : task("rewrap_preview", "Scan text fitting", layoutOptions, !baseline || !layoutFiles.length || !fields.text.categories.length, "primary");
+      secondary = releaseButton; break;
     case "qa":
-      content = <><ActionList><ActionRow label="Prepare or resume the saved text-QA task for this release scope.">{task("qa_prepare", "Prepare text QA task", { focus: "release" }, !baseline)}</ActionRow>
+      content = <><p>Optional text QA. Prepare a saved task, copy it to your assistant, then refresh actual findings. Release remains available.</p><label>QA focus<select value={fields.text.focus} disabled={disabled} onChange={event => { editText("focus", event.target.value); editText("findings", []); }}>{[["release", "Full game text"], ["database", "Database"], ["dialogue", "Dialogue"], ["risky-codes", "Risky event codes"]].map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><ActionList><ActionRow label="Prepare or resume QA for current runtime text.">{task("qa_prepare", "Prepare text QA task", { focus: fields.text.focus }, !baseline)}</ActionRow>
         {qaTask && <ActionRow label="Paste the prepared task into your coding assistant."><ActionControl label="Copy prepared QA task" disabled={disabled} {...feedback("copy:qa", "Copying…")} onClick={() => action.run(() => window.dazedtl.copyText(String(qaTask.result!.handoff)), "QA task copied. Return to its saved findings when your assistant finishes.", "copy:qa")} /></ActionRow>}
-        <ActionRow label="Read the saved reports after the assistant finishes.">{task("qa_status", "Refresh QA findings", { focus: "release" }, !baseline)}</ActionRow>
+        <ActionRow label="Read saved reports without starting an assistant.">{task("qa_status", "Refresh QA findings", { focus: fields.text.focus }, !baseline)}</ActionRow>
         <ActionRow label="Optional investigation of recurring jokes, callbacks, and terminology.">{copyTask("investigation", "Copy investigation task")}</ActionRow></ActionList>
-        {qaStatus && <div className="guided-qa-status"><strong>Reported stage: {String(qaStatus.stage || "Task prepared").replaceAll("_", " ")}</strong>{qaJob && <Button variant="quiet" onClick={() => inspect(qaJob)}>View saved findings</Button>}</div>}</>;
-      primary = advance("Continue to release"); break;
+        <p className={qa.current ? "muted" : "guided-source-alert"}>{qa.message}</p>
+        {!!qaStatus.stage && <div className="guided-qa-status"><strong>Saved discovery stage: {String(qaStatus.stage).replaceAll("_", " ")}</strong>{["mechanical", "screen", "deep"].map(key => { const counts = qaStatus[key] as Record<string, number> | undefined; return counts && <p key={key}>{key === "screen" ? "Text screening" : key === "mechanical" ? "Mechanical inventory" : "Deep text review"} · {counts.accepted ?? counts.checked ?? 0} / {counts.total ?? 0}{counts.unresolved ? ` · ${counts.unresolved} unresolved` : ""}</p>; })}<small>Discovery completion describes these saved reports. It does not certify the current game as QA passed.</small>{qaJob && <Button variant="quiet" onClick={() => inspect(qaJob)}>View saved report details</Button>}</div>}
+        <section className="text-qa-results"><h3>Findings and corrections</h3>{!qa.findings.length && <p className="muted">No saved findings returned.</p>}{qa.findings.map(row => <details key={row.id}><summary>{row.id} · {row.classification || row.category || row.identity || "Saved finding"}</summary><strong>Original source</strong><pre>{row.source || "Source evidence is in the saved task."}</pre><strong>Current translation</strong><pre>{row.current || row.live}</pre><p>{row.reason || row.evidence || row.note}</p></details>)}
+          {qa.corrections.map((row, index) => <div className="text-qa-correction" key={row.finding_id + index}><label className="toggle"><input type="checkbox" disabled={disabled || !qa.current} checked={chosenFindings.includes(row.finding_id)} onChange={event => { editText("findings_task", qa.task || ""); editText("findings", event.target.checked ? [...new Set([...chosenFindings, row.finding_id])] : chosenFindings.filter(id => id !== row.finding_id)); }} />{row.finding_id} · {row.file}</label><strong>Before</strong><pre>{row.expected}</pre><strong>Chosen correction</strong><pre>{row.replacement}</pre></div>)}</section></>;
+      primary = task("qa_apply", "Review chosen corrections", { focus: fields.text.focus, task: fields.text.findings_task, findings: chosenFindings }, !baseline || !qa.current || !chosenFindings.length, "primary"); secondary = releaseButton; break;
     case "tools": {
       const both = state.tools?.inspector.installed && state.tools.forge.installed;
       content = <><ActionList>{([['inspector', 'TL Inspector', 'Open source context from the game.'], ['forge', 'Forge', 'Edit text with the in-game overlay.']] as const).map(([key, label, description]) => <ActionRow key={key} label={<><strong>{label} <span className={state.tools?.[key].installed ? "guided-completed" : "muted"}>· {state.tools?.[key].message || "Status unavailable"}</span></strong><small>{description}</small></>}>
         <div className="guided-tool-actions">{task(key + "_install", state.tools?.[key].installed ? "Update" : "Install", {}, !baseline)}{state.tools?.[key].present && task(key + "_remove", "Remove", {}, !baseline)}</div></ActionRow>)}
         <ActionRow label={<><strong>Tool settings</strong><small>Saved: Inspector {release.tools.hotkey} · Forge {release.tools.forgeHotkey} · scale {release.tools.uiScale === "auto" ? "Auto" : Number(release.tools.uiScale) * 100 + "%"}</small></>}><Button disabled={disabled} onClick={() => setPanel("tools")}>Configure tools</Button></ActionRow>
         <ActionRow label="Create a portable player walkthrough with your coding assistant.">{copyTask("walkthrough", "Copy walkthrough task")}</ActionRow></ActionList></>;
-      primary = both ? advance("Continue to packaging") : task("playtest_install", "Install both plugins", {}, !baseline, "primary"); secondary = !both && advance("Continue to packaging", undefined, "quiet"); break;
+      primary = <Button onClick={() => textView("apply")}>Back to Apply & Fitting</Button>; secondary = releaseButton; break;
     }
     case "package":
       content = <><fieldset disabled={disabled}><div className="guided-mode" role="group" aria-label="Package type">{([['game', 'Clean game ZIP'], ['patch', 'Patch ZIP']] as const).map(([kind, label]) => <Button key={kind} aria-pressed={release.kind === kind} onClick={() => editRelease("kind", kind)}>{label}</Button>)}</div>
@@ -513,11 +529,12 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         {activeOperation && !localOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
         <PageBody ref={bodyRef} className={`guided-task-body${taskId === "plugins" ? " plugin-task-body" : ""}`}>
           <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskId === "plugins" ? "" : taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
-            <h2 ref={headingRef} tabIndex={-1}>{selectedTask?.title || phaseLabels[runPhase(state)] + " run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}{taskId === "other-event-text" && <p className="muted">{{audit: "Investigation", sources: "Findings & source choices", "advanced-run": "Translation", variables: "Comparison updates"}[state.eventText.view]}</p>}</div>
+            <h2 ref={headingRef} tabIndex={-1}>{taskId === "apply" && taskView === "qa" ? "Text QA · optional" : taskId === "apply" && taskView === "tools" ? "Game tools · optional" : selectedTask?.title || phaseLabels[runPhase(state)] + " run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}{taskId === "other-event-text" && <p className="muted">{{audit: "Investigation", sources: "Findings & source choices", "advanced-run": "Translation", variables: "Comparison updates"}[state.eventText.view]}</p>}</div>
           <Message message={!preview && (!feedbackKeys.has(action.key) && !(taskId === "run" && action.key.startsWith("run:"))) ? action.error : ""} onDismiss={action.clear} />
           <Message message={state.collectionError} />
           {changed.length > 0 && ["translate", "advanced", "apply", "review"].includes(position.step) && <div className="guided-source-alert"><p>{fileCount(changed.length)} have changed sources. Review them before new work.</p>{task("refresh_sources", "Review source refresh", {}, unfinished || !baseline, "default", changed)}</div>}
           {baselineNotice && taskId === "names" && <p className="guided-success" role="status">{baselineNotice}</p>}
+          {taskId === "apply" && <div className="text-workspace-nav"><div role="group" aria-label="Apply and Fitting views">{(["apply", "fitting"] as const).map(view => <Button key={view} aria-pressed={taskView === view} disabled={disabled} onClick={() => textView(view)}>{view === "apply" ? "Apply" : "Fitting"}</Button>)}</div><div className="actions"><Button variant="quiet" aria-pressed={taskView === "qa"} disabled={disabled} onClick={() => textView("qa")}>Text QA · optional</Button>{state.engine === "MVMZ" && <Button variant="quiet" aria-pressed={taskView === "tools"} disabled={disabled} onClick={() => textView("tools")}>Tools · optional</Button>}</div></div>}
           {content}
           {output && <p className="path">Output copy: {output} <Button onClick={() => action.run(() => window.dazedtl.openFolder("output", output))}>Open folder</Button></p>}
         </PageBody>
@@ -574,6 +591,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {preview.action === "backup_source" && sourceBackup?.available === false && <p>This saves current files. It cannot recover the missing original.</p>}
       {preview.action === "refresh_sources" && <p>Archive these files’ working copies, outputs, and variable cache before refreshing from the original source. Frozen provider runs remain retained.</p>}
       {preview.action === "export_selected" && <p>Apply accumulated translated outputs to these runtime files.</p>}
+      {preview.publication && <><p>The whole batch is checked before publication. Exact before/after backups are retained; failure attempts rollback. Restore requires another review and rejects newer conflicting edits.</p>{preview.publication.map(row => <details className="text-publication" key={row.path}><summary>{row.path} · {row.size.toLocaleString()} bytes{row.later_edits ? " · Replaces later game edits" : ""}</summary><p className="path">{row.destination}</p><small>Current SHA-256 {row.before}<br />Candidate SHA-256 {row.after}</small><strong>Runtime changes{row.truncated ? " (diff exceeds 16,000 characters)" : ""}</strong><pre>{row.diff || "Runtime bytes already match this candidate."}</pre><details><summary>JSON context</summary><strong>Current runtime JSON (first 16,000 characters)</strong><pre>{row.before_text}</pre><strong>Reviewed replacement JSON (first 16,000 characters)</strong><pre>{row.after_text}</pre></details></details>)}</>}
       {preview.action === "release" && preview.confirmation && <p>Replace the existing archive at this destination after the new ZIP passes verification.</p>}
       {preview.action === "release_patch" && <p>Use this runtime scope to create a local checkpoint and patch archive. Source, ownership, scope, and destination are checked again before execution.</p>}
       {paid && preview.estimate && <section aria-label={reviewEstimateCurrent ? "Matching estimate" : "Previous estimate"}><h3>{reviewEstimateCurrent ? "Matching estimate" : "Previous estimate"}</h3><Estimate value={preview.estimate.value} /><p className="muted">{reviewEstimateCurrent ? "Selection, source, pricing, guidance, and layout match this estimate." : "This quote was calculated before the reviewed inputs changed."}</p></section>}
@@ -585,7 +603,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && preview.options.phase === "variables" && <p>Reviewed literal-based updates apply to all matching quoted literals in the selected code-111 expressions. Unmatched literals remain unchanged.</p>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setPreview(null)}>{preview.action === "git_setup" ? "Back" : "Cancel"}</Button><Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
-        {preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? "Build release ZIP" : "Run this action"}</Button></ActionBar></Modal>}
+        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Archive and refresh sources" : ["release", "release_patch"].includes(preview.action) ? "Build release ZIP" : "Run this action"}</Button></ActionBar></Modal>}
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
       await api.guided.eventTextReview(project.id, sourceReview.revision, sourceReview.state.binding, sourceReview.state.reportId, reason, accepted);

@@ -23,7 +23,7 @@ ADVANCED_CODES = {"CODE122", "CODE357", "CODE355655", "CODE657", "CODE356", "COD
 NATIVE_ACTIONS = {
     "prepare_game", "import", "format_data", "format_plugins", "gameupdate", "export_selected",
     "ace_decrypt", "ace_extract", "ace_pack", "rewrap_preview", "rewrap_apply",
-    "qa_prepare", "qa_status", "playtest_install", "playtest_status", "playtest_apply",
+    "qa_prepare", "qa_status", "qa_apply", "runtime_restore", "playtest_install", "playtest_status", "playtest_apply",
     "inspector_install", "inspector_remove", "forge_install", "forge_remove", "editors", "release",
     "reference_add", "reference_pair", "reference_remove", "reference_build", "images_status",
 }
@@ -45,6 +45,8 @@ def retained_position(value):
         value["step"] = "plugins"
     elif value.get("task") in {"images", "image-text", "image-manager"}:
         value.update(step="images", task="images")
+    elif value.get("task") in {"fitting", "playtest", "qa"}:
+        value.update(step="apply", task="apply")
     return value
 
 
@@ -150,13 +152,25 @@ class Guided:
         return {"saved": True}
 
     def form_value(self, project_id, value):
-        if (not isinstance(value, dict) or set(value) not in ({"version", "original", "untranslated", "only_overflow"},
-                                                              {"version", "original", "untranslated", "only_overflow", "release"})
+        if (not isinstance(value, dict) or set(value) - {"version", "original", "untranslated", "only_overflow", "release", "text"}
+                or {"version", "original", "untranslated", "only_overflow"} - set(value)
                 or any(not isinstance(value[key], str) or len(value[key]) > 10000 or "\0" in value[key] for key in ("version", "original"))
                 or value.get("untranslated") is not None and type(value["untranslated"]) is not bool
                 or type(value.get("only_overflow")) is not bool):
             raise ValueError("Invalid guided form values.")
-        return {**value, "release": self.validate_release_form(value.get("release", self.release_defaults(project_id)))}
+        text = value.get("text", {"view": "apply", "categories": ["dialogue", "face_dialogue", "list", "notes"], "codes": "401,405", "max_rows": 4, "protect_rows": True, "focus": "release", "findings": []})
+        if isinstance(text, dict):
+            text = {"findings_task": "", **text}
+        if (not isinstance(text, dict) or set(text) != {"view", "categories", "codes", "max_rows", "protect_rows", "focus", "findings_task", "findings"}
+                or text["view"] not in {"apply", "fitting", "qa", "tools"}
+                or not isinstance(text["categories"], list) or any(item not in {"dialogue", "face_dialogue", "list", "notes"} for item in text["categories"])
+                or not isinstance(text["codes"], str) or len(text["codes"]) > 100
+                or type(text["max_rows"]) is not int or not 1 <= text["max_rows"] <= 100 or type(text["protect_rows"]) is not bool
+                or text["focus"] not in {"release", "database", "dialogue", "risky-codes"}
+                or not isinstance(text["findings_task"], str) or len(text["findings_task"]) > 10000
+                or not isinstance(text["findings"], list) or any(not isinstance(item, str) or len(item) > 200 for item in text["findings"])):
+            raise ValueError("Invalid fitting or optional QA choices.")
+        return {**value, "text": deepcopy(text), "release": self.validate_release_form(value.get("release", self.release_defaults(project_id)))}
 
     def release_defaults(self, project_id):
         source = Path(self.projects.get(project_id)["source"])
@@ -287,14 +301,15 @@ class Guided:
             except (OSError, ValueError):
                 plan = {}
             configured = plan.get("options", {})
-            form_path = self.path(project_id, "form")
-            only_overflow = read_json(form_path).get("only_overflow", True) if form_path.exists() else True
+            form = self.saved_form(project_id)
+            only_overflow = form["only_overflow"]
             selected_layout = [row["name"] for row in native["files"] if row["name"] in native["selected"]]
             if (configured.get("files") != selected_layout or configured.get("widths") != native["widths"]
                     or configured.get("over_limit") != only_overflow
+                    or any(configured.get(key) != form["text"][key] for key in ("categories", "codes", "max_rows", "protect_rows"))
                     or any(self.observed_digest(Path(native["data"]) / name) != plan.get("guard", {}).get("data", {}).get(name) for name in selected_layout)):
                 scan = None
-        return {"outputs": outputs, "applied": applied, "runtime_edited": edited, "review_current": current,
+        return {**self.backend.guided_text_state(native, self.saved_form(project_id)["text"]["focus"]), "outputs": outputs, "applied": applied, "runtime_edited": edited, "review_current": current,
                 "layout_scan": scan["id"] if scan else None,
                 "delivery_available": bool(state.get("delivery") and Path(state["delivery"]["path"]).is_file())}
 
@@ -469,8 +484,10 @@ class Guided:
         value = self.backend.workflows.state(native["id"])
         if action != "backup_source":
             self.source_preserved(project_id)
-        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
+        if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
+        if action in {"rewrap_apply", "qa_apply", "runtime_restore"} and self.inputs(native).status(sorted(self.supported_files(native)))["changed"]:
+            raise ValueError("Original sources changed. Review source changes before replacing runtime text.")
         if action.startswith("ace_") and (native["engine"] != "ACE" or not self.backend.ace_available()):
             raise ValueError("Ace preparation requires Windows or Wine and the bundled Ace tools.")
         if action in {"prepare_game", "format_data"}:
@@ -586,7 +603,8 @@ class Guided:
                 if set(options) != {"output"}:
                     raise ValueError("Choose the release destination.")
                 options["output"] = str(destination(project["source"], self.translation.workspace, self.backend.source, options["output"]))
-            result = (self.backend.guided_export_preview(native["id"], paths) if action == "export_selected"
+            result = (self.backend.guided_text_preview(native["id"], action, options) if action in {"runtime_restore", "qa_apply"}
+                      else self.backend.guided_export_preview(native["id"], paths) if action == "export_selected"
                       else self.backend.guided_preparation_preview(native["id"], action, options) if action == "prepare_game"
                       else self.backend.workflows.preview(native["id"], action, options))
             token = result["token"]
@@ -599,13 +617,15 @@ class Guided:
                 result.update(self.backend.guided_release_preview(token))
             if action == "rewrap_apply":
                 result["rewrap"] = self.backend.guided_rewrap_review(native["id"], token)
+            if action in {"export_selected", "rewrap_apply"}:
+                result.update(self.backend.guided_text_publication(token))
             self.confirmations = {token: {"project_id": project_id, "action": action, "native": True,
                 "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
             # Routine preparation uses the same one-use plan and execution checks,
             # without asking the user to confirm the button they just clicked.
             return {**result, "action": action, "paths": paths or result.get("paths") or result["options"].get("files", []),
                     "confirmation": (bool(result.get("overwrite")) if action == "release" else result["confirmation"] and action not in {
-                        "prepare_game", "format_data", "format_plugins", "gameupdate", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
+                        "prepare_game", "format_data", "format_plugins", "gameupdate", "qa_prepare", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
         token = uuid.uuid4().hex
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,
@@ -632,8 +652,10 @@ class Guided:
         action = confirmed["action"]
         if action != "backup_source":
             self.source_preserved(project_id)
-        if action in {"start", "export_selected", "rewrap_apply", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
+        if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
+        if action in {"export_selected", "rewrap_apply", "qa_apply", "runtime_restore"} and self.inputs(native).status(sorted(self.supported_files(native)))["changed"]:
+            raise ValueError("Original sources changed after review. Review current sources first.")
         if action in {"release", "release_patch"}:
             release_status = self.release_ready(project_id, native, self.backend.workflows.state(native["id"]))
         if confirmed.get("native"):

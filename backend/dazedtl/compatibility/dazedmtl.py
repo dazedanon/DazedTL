@@ -223,6 +223,30 @@ class ExistingBackend:
         from .guided import rewrap_review
         return rewrap_review(self, native_id, token)
 
+    def guided_text_publication(self, token):
+        from .text import prepare_publication
+        return prepare_publication(self.workflows.previews[token])
+
+    def guided_text_preview(self, native_id, action, options):
+        result = self.workflows.preview(native_id, "export_selected", {})
+        plan = self.workflows.previews[result["token"]]
+        plan.update(action=action, options=options, label="Restore reviewed text batch" if action == "runtime_restore" else "Apply chosen QA corrections")
+        return {**result, "label": plan["label"], "options": options, **self.guided_text_publication(result["token"])}
+
+    def guided_text_state(self, native, focus="release"):
+        from dazedtl.translation.publication import records
+        from .text import qa_state
+        folder = self.workflows.folder(native["id"])
+        recent = [row for row in records(folder) if row["state"] in {"complete", "publishing", "recovery_needed"}]
+        qa = {"current": False, "status": {}, "findings": [], "corrections": [], "message": "No QA task prepared for this focus."}
+        try:
+            if (folder / ("text-qa-" + focus + ".json")).exists():
+                plan = {"project_id": native["id"], "project": native, "folder": str(folder), "guard": self.guided_guard(native, folder), "options": {"focus": focus}}
+                qa = qa_state(plan)
+        except (ValueError, OSError, KeyError) as exc:
+            qa = {"current": False, "status": {}, "findings": [], "corrections": [], "message": str(exc)}
+        return {"qa": qa, "publications": [{"id": row["id"], "kind": row["kind"], "state": row["state"], "files": [item["path"] for item in row["files"]]} for row in recent[:10]]}
+
     def guided_phase(self, native_id, phase, files):
         with self.manual.selected_workflow(native_id, files):
             return self.workflows.phase(native_id, phase, True)

@@ -24,14 +24,10 @@ export const workflow: WorkflowStage[] = [
   { id: "images", title: "Images", short: "Images", tasks: [
     { id: "images", title: "Images", description: "Find relevant images, edit selected copies, and apply reviewed results." },
   ]},
-  { id: "apply", title: "Apply & test", short: "Apply & test", tasks: [
-    { id: "apply", title: "Apply selected outputs", description: "Review which runtime files will receive saved translations." },
-    { id: "fitting", title: "Fit text to windows", description: "Scan using the saved widths, then review proposed fitting changes." },
-    { id: "playtest", title: "Playtest this scope", description: "Check an early scene in the game before expanding the scope." },
-    { id: "qa", title: "Text QA findings", description: "Prepare or resume the assistant’s QA task, then inspect its saved findings." },
+  { id: "apply", title: "Apply & Fitting", short: "Apply & Fitting", tasks: [
+    { id: "apply", title: "Apply & Fitting", description: "Apply a selected scope, then inspect its text fitting. QA and game tools are optional." },
   ]},
   { id: "review", title: "Release", short: "Release", tasks: [
-    { id: "tools", title: "Playtest tools", description: "Install and configure TL Inspector and Forge for in-game inspection and editing.", engine: "MVMZ" },
     { id: "package", title: "Build release ZIP", description: "Create a clean game or patch archive outside the working game folder." },
   ]},
 ];
@@ -53,6 +49,7 @@ export function unfinishedRun(state: GuidedState) {
 }
 export function initialPosition(state: GuidedState, translation: TranslationState) {
   const stages = stagesFor(state.engine);
+  if (["fitting", "playtest", "qa", "tools"].includes(state.task || "")) return { step: "apply" as const, task: "apply" };
   if (state.task === "plugins") return { step: "plugins" as const, task: "plugins" };
   if (["images", "image-text", "image-manager"].includes(state.task || "")) return { step: "images" as const, task: "images" };
   const step = state.step === "layout" ? "apply" : state.step === "advanced" ? "translate" : state.step;

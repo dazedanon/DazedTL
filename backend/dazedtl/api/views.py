@@ -94,7 +94,7 @@ def settings(value):
 
 
 def preview(value):
-    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'additions', 'package', 'estimate', 'run'))
+    return pick(value, ('token', 'action', 'label', 'destination', 'files', 'paths', 'options', 'confirmation', 'rewrap', 'publication', 'additions', 'package', 'estimate', 'run'))
 
 
 def error(exc):
