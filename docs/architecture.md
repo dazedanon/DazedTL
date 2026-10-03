@@ -113,6 +113,8 @@ body and its action footer stays outside the scroll region. One copied setup tas
 speaker formats, runs local name collection, then uses those results for the glossary/context
 investigation. Guidance review and layout settings follow before
 the named database and dialogue actions.
+Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
+Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
 Explicitly declined speaker preflight is interpreted as canceled only with verified first-attempt, no-submission evidence and no saved outputs or queue artifacts.
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project recovery guard and receipts.

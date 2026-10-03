@@ -47,6 +47,11 @@ export function runPhase(state: GuidedState): Phase {
 export function unfinishedRun(state: GuidedState) {
   return !!state.run && ["batch", "translate", "speakers"].includes(state.run.mode || "") && !["complete", "canceled"].includes(state.run.status);
 }
+export function taskForStage(state: GuidedState, stage: WorkflowStage) {
+  const task = state.positions?.[stage.id];
+  if (task === "run" && state.run && runStage(state) === stage.id) return task;
+  return stage.tasks.find((item) => item.id === task)?.id || stage.tasks[0].id;
+}
 export function initialPosition(state: GuidedState, translation: TranslationState) {
   const stages = stagesFor(state.engine);
   if (["fitting", "playtest", "qa", "tools"].includes(state.task || "")) return { step: "apply" as const, task: "apply" };

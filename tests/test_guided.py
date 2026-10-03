@@ -216,6 +216,19 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.native['selected'], ['Items.json', 'System.json'])
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, 'export_selected', files=['Foreign.json'])
+        self.native['files'] = [{'name': 'Items.json'}, {'name': 'System.json'}]
+        state = {'jobs': []}
+        self.assertEqual(self.guided.readiness(self.identity, self.native, state)['unapplied'], ['Items.json', 'System.json'])
+        with self.assertRaisesRegex(ValueError, 'Apply the selected saved outputs'):
+            self.guided.release_ready(self.identity, self.native, state)
+        write_json(self.folder / 'applied-outputs.json', {'files': {'Items.json': digest((self.folder / 'translated/Items.json').read_bytes())}})
+        self.native['selected'] = ['Items.json']
+        self.assertEqual(self.guided.readiness(self.identity, self.native, state)['unapplied'], [])
+        self.assertIs(self.guided.release_ready(self.identity, self.native, state), self.translation.ready.return_value)
+        write_json(self.folder / 'translated/Items.json', [{'name': 'Newer saved output'}])
+        self.assertEqual(self.guided.readiness(self.identity, self.native, state)['unapplied'], ['Items.json'])
+        with self.assertRaisesRegex(ValueError, 'Apply the selected saved outputs'):
+            self.guided.release_ready(self.identity, self.native, state)
 
     def test_document_selection_migrates_review_positions_and_stays_with_its_project(self):
         self.backend.workflows.documents = lambda _: {"glossary": {}, "quirks": {}, "game": {}}

@@ -315,7 +315,8 @@ class Guided:
                     or any(configured.get(key) != form["text"][key] for key in ("categories", "codes", "max_rows", "protect_rows"))
                     or any(self.observed_digest(Path(native["data"]) / name) != plan.get("guard", {}).get("data", {}).get(name) for name in selected_layout)):
                 scan = None
-        return {**self.backend.guided_text_state(native, self.saved_form(project_id)["text"]["focus"]), "outputs": outputs, "applied": applied, "runtime_edited": edited, "review_current": current,
+        return {**self.backend.guided_text_state(native, self.saved_form(project_id)["text"]["focus"]), "outputs": outputs, "applied": applied,
+                "unapplied": sorted(set(outputs).intersection(native["selected"]) - set(applied)), "runtime_edited": edited, "review_current": current,
                 "layout_scan": scan["id"] if scan else None,
                 "delivery_available": bool(state.get("delivery") and Path(state["delivery"]["path"]).is_file())}
 
@@ -404,6 +405,7 @@ class Guided:
             **value, **self.runs.snapshot(project_id, native, source_status),
             "manual_job": self.run_view(value["manual_job"]["id"]) if value.get("manual_job") else None,
             "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
+            "positions": saved_position.get("positions", {}) if isinstance(saved_position.get("positions", {}), dict) else {},
             "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
             "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
             "form": self.saved_form(project_id),
@@ -471,7 +473,7 @@ class Guided:
         if source_status["changed"]:
             raise ValueError("Review changed sources before packaging this pass.")
         readiness = self.readiness(project_id, native, value, source_status)
-        if set(readiness["outputs"]).intersection(native["selected"]) - set(readiness["applied"]):
+        if readiness["unapplied"]:
             raise ValueError("Apply the selected saved outputs to the game before packaging them.")
         if not self.ace_packing(native)['current']:
             raise ValueError(self.ace_packing(native)['message'])

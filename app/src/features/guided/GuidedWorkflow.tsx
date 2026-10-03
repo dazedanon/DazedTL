@@ -25,7 +25,7 @@ import { retainOtherScope } from "./selection";
 import RunPanel, { Estimate } from "./RunPanel";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
-import { initialPosition, runPhase, runStage, stagesFor, unfinishedRun } from "./workflow";
+import { initialPosition, runPhase, runStage, stagesFor, taskForStage, unfinishedRun } from "./workflow";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { guidanceBlockers, guidanceNames, guidanceTitle, saveGuidanceSet } from "./guidanceReview";
 import { GuidanceReview } from "./GuidanceReview";
@@ -303,7 +303,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const previousQuote = state.estimates[target]?.job;
     const blocked = !baseline || !!changed.length || unfinished || !files.length;
     const estimateBlock = !baseline ? "Preserve the original source and save the version baseline first."
-      : changed.length ? "Save your changed guidance before calculating an estimate."
+      : changed.length ? "Review changed original sources and refresh their working copies before calculating an estimate."
       : unfinished ? "Recover the unfinished API run before calculating another estimate. Its saved provider work is retained."
       : !files.length ? "Choose files for this phase before calculating an estimate."
       : !state.provider.model ? "Choose a connection and model before calculating an estimate." : "";
@@ -343,7 +343,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       secondary = localOperation && <Button disabled={action.busy} onClick={() => stopOperation(localOperation)}>Stop backup</Button>; break;
     case "extract":
       content = <><p>{state.encrypted.length ? "An encrypted archive was found." : "No encrypted archive found."} {state.files.length ? "Converted JSON is available." : "Convert native Ace data to JSON before translation."}</p>
-        {!state.aceAvailable && <p className="muted">Native conversion requires Windows or Wine. Existing ace_json exports can be used.</p>}
+        {!state.aceAvailable && <p className="muted">Native conversion requires a supported Windows environment. Existing ace_json exports can be used.</p>}
         <ActionList><ActionRow label="Extract the encrypted archive when required.">{task("ace_decrypt", "Extract archive", {}, !preserved || !state.encrypted.length || !state.aceAvailable)}</ActionRow>
           <ActionRow label="Convert native game data for the JSON translation phases.">{task("ace_extract", "Convert to JSON", {}, !preserved || !state.aceAvailable)}</ActionRow></ActionList></>;
       primary = aceNeedsExport ? <Button variant="primary" disabled>Continue to prepare game files</Button> : advance(); break;
@@ -453,8 +453,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         refresh={() => { void action.run(() => imagesApi.action(project.id, "refresh_results"), "Saved image results refreshed.", "images:refresh"); }} />;
       primary = advance("Continue to text Apply"); break;
     case "apply":
-      content = <>{fileSummary(outputFiles.length)}<dl className="guided-scope-summary"><div><dt>Saved outputs</dt><dd>{outputFiles.length ? `${fileCount(outputFiles.length)} available` : "No selected outputs available"}</dd></div>
-        <div><dt>Applied to game</dt><dd>{applied ? state.readiness.runtime_edited.some((name) => outputFiles.includes(name)) ? "Applied · later game edits retained" : "Matches saved outputs" : "Ready for application review"}</dd></div></dl>
+      content = <>{fileSummary()}<dl className="guided-scope-summary"><div><dt>Saved outputs</dt><dd>{outputFiles.length ? `${fileCount(outputFiles.length)} available` : "No selected outputs available"}</dd></div>
+        <div><dt>Applied to game</dt><dd>{!outputFiles.length ? "No outputs ready to apply" : applied ? state.readiness.runtime_edited.some((name) => outputFiles.includes(name)) ? "Applied · later game edits retained" : "Matches saved outputs" : "Ready for application review"}</dd></div></dl>
         <p className="muted">Only selected files with saved outputs are included. Review exact destinations and replacements before Apply.</p>
         {!!state.readiness.runtime_edited.filter(name => outputFiles.includes(name)).length && <p>Later game edits are retained. Applying the saved output again replaces those edits after review.</p>}
         <ActionList>{state.readiness.publications.filter((row, index) => index === 0 || ["publishing", "recovery_needed"].includes(row.state)).map((row) => <ActionRow key={row.id} label={<><strong>{publicationLabels[row.kind] || "Text Apply"} · {row.state === "publishing" ? "Interrupted publication" : row.state === "recovery_needed" ? "Rollback needs recovery" : row.state.replaceAll("_", " ")}</strong><small>{row.files.join(", ")}</small>{["publishing", "recovery_needed"].includes(row.state) && <><small>{row.state === "publishing" ? "This batch did not finish. Some runtime files may contain the reviewed replacement." : "This batch failed, and rollback could not finish."} Preserved bytes are retained. Review restore to return this batch to its previous state; newer conflicting edits are kept.</small>{!!row.recovery_errors.length && <details><summary>Saved recovery errors</summary><ul>{row.recovery_errors.map((message, index) => <li key={index}>{message}</li>)}</ul></details>}</>}</>}>{row.state !== "restored" && task("runtime_restore", "Review restore", { publication: row.id }, !baseline)}</ActionRow>)}</ActionList>
@@ -493,9 +493,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     }
     case "package":
       content = <ReleaseContent value={release} disabled={disabled} artifact={artifact}
+        unapplied={state.readiness.unapplied} apply={<ActionControl label="Open Apply" disabled={disabled} {...feedback("release:apply", "Opening Apply…")}
+          onClick={() => action.run(async () => { editText("view", "apply"); await navigate("apply", "apply"); }, "", "release:apply")} />}
         edit={change => form.session.edit(current => ({ ...current, release: { ...current.release, ...change } }))}
         chooseFolder={() => chooseFolder("release")} assets={() => setPanel("release-assets")}
-        inspect={<ActionControl label="View files & exclusions" disabled={disabled || !release.directory || !release.name}
+        inspect={<ActionControl label="View files & exclusions" disabled={disabled || !release.directory || !release.name || !!state.readiness.unapplied.length}
           {...feedback("package:inspect", "Reading archive contents…")} onClick={() => action.run(async () => {
             await save(); setInspectRelease(true); setPreview(await api.preview(project.id, releaseAction, undefined, { output: releasePath }));
           }, "", "package:inspect")} />}
@@ -505,7 +507,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {!state.aceAvailable && !state.acePacking.current && <p>Native packing requires a supported Windows environment.</p>}
           {task("ace_pack", state.acePacking.current ? "Review native packing again" : "Review native Ace packing", {}, !baseline || !state.aceAvailable || !state.files.length)}</> : undefined} />;
       primary = task(releaseAction, release.kind === "game" ? "Build clean game ZIP" : "Review & build patch ZIP", { output: releasePath },
-        !baseline || unfinished || !release.directory.trim() || !release.name.trim() || /[\\/]/.test(release.name) || !state.acePacking.current, "primary"); break;
+        !baseline || unfinished || !release.directory.trim() || !release.name.trim() || /[\\/]/.test(release.name) || !state.acePacking.current || !!state.readiness.unapplied.length, "primary"); break;
     default:
       content = job ? <RunPanel hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy}
         pendingKey={action.busy ? action.key : ""} error={action.key.startsWith("run:") ? action.error : ""}
@@ -530,7 +532,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
       actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button variant="quiet" onClick={() => setHistory(true)}>Activity</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
     <div className="guided-layout">
-      <WorkflowNavigation stages={stages} step={position.step} task={taskId} completed={completed} disabled={action.busy} move={move} />
+      <WorkflowNavigation stages={stages} step={position.step} task={taskId} completed={completed} disabled={action.busy} move={move} taskFor={stage => taskForStage(state, stage)} />
       <div className="guided-task-workspace">
         {unfinished && taskId !== "run" && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => move(runStage(state), "run")}>Open saved run</Button></div>}
         {activeOperation && !localOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}

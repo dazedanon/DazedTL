@@ -136,6 +136,7 @@ export interface GuidedState {
   aceAvailable: boolean;
   step: GuidedStep;
   task: string | null;
+  positions: Partial<Record<GuidedStep, string | null>>;
   form: GuidedForm;
   preparation: { complete: boolean; configuration: string; stages: { action: string; label: string; status: string; message: string }[] };
   preferences: GuidedPreferences;
@@ -163,6 +164,7 @@ export interface GuidedState {
       corrections: { finding_id: string; file: string; expected: string; replacement: string; identity: string }[] };
     outputs: string[];
     applied: string[];
+    unapplied: string[];
     runtime_edited: string[];
     review_current: boolean;
     layout_scan: string | null;

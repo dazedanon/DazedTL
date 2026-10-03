@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuidedState, TranslationState } from "../app/src/api/contracts.ts";
-import { initialPosition, runPhase, runStage, stagesFor, unfinishedRun } from "../app/src/features/guided/workflow.ts";
+import { initialPosition, runPhase, runStage, stagesFor, taskForStage, unfinishedRun } from "../app/src/features/guided/workflow.ts";
 
 test("saved runs choose their owning task instead of obsolete Prepare or native progress labels", () => {
   const translation = { lifecycle: { source_backup: { available: true } }, git: { configured: true } } as TranslationState;
@@ -48,4 +48,26 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
     state.run!.status = status;
     assert.equal(unfinishedRun(state), false);
   }
+});
+
+test("phase navigation restores an available task and falls back for removed or differently owned tasks", () => {
+  const state = { engine: "MVMZ", positions: { context: "speakers", prepare: "extract", translate: "run" }, run: { mode: "translate" } } as GuidedState;
+  const stages = stagesFor(state.engine);
+  const context = stages.find(stage => stage.id === "context")!;
+  assert.equal(taskForStage(state, context), "speakers");
+  assert.equal(taskForStage(state, stages[0]), "backup");
+  assert.equal(taskForStage(state, stages.find(stage => stage.id === "translate")!), "run");
+  state.positions.context = "no-longer-available";
+  assert.equal(taskForStage(state, context), "names");
+  state.positions.context = "run";
+  assert.equal(taskForStage(state, context), "names");
+  state.run!.mode = "speakers";
+  assert.equal(taskForStage(state, context), "run");
+  state.run = null;
+  assert.equal(taskForStage(state, context), "names");
+  state.positions = {};
+  assert.equal(taskForStage(state, context), "names");
+  state.step = "context"; state.task = "no-longer-available";
+  assert.deepEqual(initialPosition(state, { lifecycle: {}, git: {} } as TranslationState), { step: "prepare", task: "backup" });
+  assert.deepEqual(initialPosition(state, { lifecycle: { source_backup: { available: true } } } as TranslationState), { step: "context", task: "names" });
 });

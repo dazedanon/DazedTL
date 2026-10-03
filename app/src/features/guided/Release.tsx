@@ -10,9 +10,10 @@ type Options = GuidedForm["release"];
 const pathKey = (path: string) => path;
 const size = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-export function ReleaseContent({ value, edit, disabled, chooseFolder, inspect, assets, artifact, open, packing }: {
+export function ReleaseContent({ value, edit, disabled, chooseFolder, inspect, assets, artifact, open, packing, unapplied, apply }: {
   value: Options; edit: (change: Partial<Options>) => void; disabled: boolean; chooseFolder: () => void;
   inspect: ReactNode; assets: () => void; artifact?: ReleaseArtifact; open: ReactNode; packing?: ReactNode;
+  unapplied: string[]; apply: ReactNode;
 }) {
   const kind = value.kind;
   return <>
@@ -25,6 +26,11 @@ export function ReleaseContent({ value, edit, disabled, chooseFolder, inspect, a
         <label>Save in<div className="guided-folder-field"><input aria-label="Save in" value={value.directory} onChange={event => edit({ directory: event.target.value })} /><Button onClick={chooseFolder}>Choose folder</Button></div></label></div>
     </fieldset>
     {/[\\/]/.test(value.name) && <Message message="Use a filename without folder separators. Choose the destination in Save in." />}
+    {!!unapplied.length && <Section title="Apply saved outputs before building">
+      <ActionList><ActionRow label={<><strong>{unapplied.length.toLocaleString()} selected {unapplied.length === 1 ? "output needs" : "outputs need"} Apply</strong><small>Apply these saved outputs to the game before building a ZIP.</small></>}>{apply}</ActionRow></ActionList>
+      {unapplied.length <= 8 ? <ul className="guided-preview-paths" aria-label="Outputs awaiting Apply">{unapplied.map(name => <li className="guided-preview-path" key={name}>{name}</li>)}</ul>
+        : <div className="guided-preview-files"><VirtualList items={unapplied} itemKey={pathKey} label="Outputs awaiting Apply" empty={null}>{name => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}
+    </Section>}
     {packing && <Section title="Native Ace data">{packing}</Section>}
     <ActionList><ActionRow label={<><strong>Archive contents</strong><small>{kind === "game" ? "Current runtime data, plugins, assets and player documentation." : "Reviewed runtime files and applied images for the matching original game."}</small></>}>{inspect}</ActionRow>
       {kind === "patch" && <ActionRow label={<><strong>Additional images & fonts</strong><small>Applied images and tracked assets are included automatically. Add other player assets by exact path.</small></>}><Button disabled={disabled} onClick={assets}>Edit runtime assets</Button></ActionRow>}

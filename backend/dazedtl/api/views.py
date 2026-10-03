@@ -43,6 +43,7 @@ def guided(value, project_id):
         'aceAvailable': value['ace_available'], 'acePacking': value['ace_packing'],
         'step': value['step'],
         'task': value['task'],
+        'positions': value['positions'],
         'contextDocument': value['context_document'],
         'form': value['form'],
         'preparation': value['preparation'],
