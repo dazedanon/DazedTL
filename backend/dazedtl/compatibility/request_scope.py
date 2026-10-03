@@ -49,14 +49,14 @@ def requests(root, job):
         outcomes = {}
         for batch in batches:
             mapping = batch.get('custom_ids', {})
-            counts = batch.get('request_counts', {})
+            counts = batch.get('request_counts') or {}
             rejected = (batch.get('api_status') in {'completed', 'ended', 'cancelled', 'canceled', 'expired'}
                         and manifests.get(batch.get('id')) == mapping
                         and all(type(counts.get(key)) is int and counts[key] == 0
                                 for key in ('processing', 'succeeded'))
                         and sum(counts.get(key, 0) for key in ('errored', 'canceled', 'expired')) == len(mapping))
             for custom, key in mapping.items():
-                error = next((row for row in batch.get('provider_errors', []) if row.get('custom_id') == custom), None)
+                error = next((row for row in (batch.get('provider_errors') or []) if row.get('custom_id') == custom), None)
                 # Multiple submissions retain the strictest known outcome.
                 outcome = 'received' if key in results else 'failed' if rejected or error else 'uncertain'
                 if outcomes.get(key) != 'uncertain':

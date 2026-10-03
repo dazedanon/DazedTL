@@ -174,6 +174,17 @@ class ProcessTests(unittest.TestCase):
                      'b': {'payload': '{"Line1":"毒"}', 'params': {'model': 'fixture', 'messages': []}, 'provider': 'openai'}}
             write_json(root/'log/batch_requests.json', {'a': queue['a']})
             write_json(root/'log/batch_requests.json.parts/fragment.json', {'b': queue['b']})
+            # A newly accepted Batch has null counts/errors while validating.
+            # Its screen refresh and saved payload must stay readable, and
+            # unknown work must remain protected from another submission.
+            write_json(root/'log/batch_history.json', {'batches': [{'id': 'batch-fixture', 'custom_ids': {'req-000000': 'a'},
+                        'api_status': 'in_progress', 'request_counts': None, 'provider_errors': None}]})
+            pending = process_view.summary(root, {'mode': 'batch', 'status': 'running'})
+            self.assertEqual((pending['failed'], pending['errors'], pending['batches'][0]['counts']), (0, [], {}))
+            self.assertTrue(pending['retryBlocked'])
+            provider = SimpleNamespace(_openai_batch_body=lambda _provider, params: params)
+            with patch.dict('sys.modules', {'util.batch_providers': provider}):
+                self.assertEqual(process_view.payload(root, 0)['state'], 'uncertain')
             write_json(root/'log/batch_history.json', {'batches': [{'id': 'batch-fixture', 'custom_ids': {'req-000000': 'a'},
                         'api_status': 'completed', 'request_counts': {'errored': 1}, 'provider_errors': [{'message': 'Unsupported temperature'}]}]})
             frozen = (root/'log/batch_requests.json').read_bytes()

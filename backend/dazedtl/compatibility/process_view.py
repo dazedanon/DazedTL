@@ -151,8 +151,8 @@ def summary(root, job):
     results = saved(evidence_root(root), 'batch_results.json')
     if 'results' in results:
         results = results['results']
-    failed = sum(batch.get('request_counts', {}).get('errored', 0) for batch in batches)
-    errors = [clean_message(error.get('message')) for batch in batches for error in batch.get('provider_errors', []) if error.get('message')]
+    failed = sum((batch.get('request_counts') or {}).get('errored') or 0 for batch in batches)
+    errors = [clean_message(error.get('message')) for batch in batches for error in (batch.get('provider_errors') or []) if error.get('message')]
     received = len(results)
     prepared = len(requests)
     validated = None
@@ -188,7 +188,7 @@ def summary(root, job):
             'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or with_connection else None,
             'validated': validated, 'validatedFiles': len(job.get('completed', [])),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
-            'batches': [{'id': batch['id'], 'status': batch.get('api_status', 'unknown'), 'counts': batch.get('request_counts', {})} for batch in batches],
+            'batches': [{'id': batch['id'], 'status': batch.get('api_status') or 'unknown', 'counts': batch.get('request_counts') or {}} for batch in batches],
             'errors': list(dict.fromkeys(errors)), 'usage': usage,
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
             'retryBlocked': bool(uncertain or any(row['state'] == 'received' for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
@@ -220,7 +220,7 @@ def payload(root, index):
         from util.batch_providers import _openai_batch_body
         params = _openai_batch_body(entry.get('provider', 'openai'), entry['params']) if entry.get('provider') != 'anthropic' else entry['params']
         exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
-        error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in batch.get('provider_errors', [])
+        error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in (batch.get('provider_errors') or [])
                       if error.get('custom_id') == custom_id), None)
         return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': error,
                 'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
