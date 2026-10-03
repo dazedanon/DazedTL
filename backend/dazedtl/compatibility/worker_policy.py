@@ -83,10 +83,10 @@ def install():
         # Long-running batches must retain these rates after the normal cache TTL.
         translation._load_litellm_pricing = lambda: prices
         record = None
-        if policy.get("generationParameters") and plan.get("mode") in {"translate", "offline"}:
-            evidence = Evidence(root, plan["mode"])
+        if policy.get("generationParameters") and plan.get('mode') in {'estimate', 'batch', 'translate', 'offline'}:
+            evidence = Evidence(root, plan["mode"], plan)
             evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
-            record = evidence.prepared
+            record = evidence.record
         configure_builders(translation, policy.get("generationParameters"), record)
         configure_states(plan, grouping_root, policy)
         return result

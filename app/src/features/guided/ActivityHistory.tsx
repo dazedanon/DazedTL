@@ -2,6 +2,8 @@ import type { Job, TranslationState, GuidedState } from "../../api/contracts";
 import { JobStatus } from "../../ui/JobStatus";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionControl } from "../../ui/ActionControl";
+import { useState } from "react";
+import { Button } from "../../ui/Button";
 
 export function operationSummary(job: Job): string {
   const result = job.result;
@@ -25,6 +27,7 @@ export function projectActivity(state: GuidedState, translation: TranslationStat
 export function ActivityHistory({ state, translation, inspect }: {
   state: GuidedState; translation: TranslationState; inspect: (job: Job) => void;
 }) {
+  const [visible, setVisible] = useState(12);
   const rows = [...projectActivity(state, translation), ...state.runs].sort((a, b) =>
     Date.parse(b.updated || b.created || "") - Date.parse(a.updated || a.created || ""));
   const kept = rows.filter(job => job.keptForHistory);
@@ -37,6 +40,7 @@ export function ActivityHistory({ state, translation, inspect }: {
   return <div className="guided-history">
     {!rows.length && <p className="muted">No saved activity for this project yet.</p>}
     {!!kept.length && <section aria-label="Kept failed runs"><h3>Kept failed runs</h3>{list(kept)}</section>}
-    {list(rows.filter(job => !job.keptForHistory).slice(0, 12))}
+    {list(rows.filter(job => !job.keptForHistory).slice(0, visible))}
+    {rows.filter(job => !job.keptForHistory).length > visible && <Button onClick={() => setVisible(count => count + 12)}>Show older activity</Button>}
   </div>;
 }

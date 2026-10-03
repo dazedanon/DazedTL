@@ -1,6 +1,8 @@
 """Persist estimate identity and scope-specific state beside frozen native runs."""
 
 from pathlib import Path
+from contextlib import closing
+import json
 import re
 
 from dazedtl.storage import write_json
@@ -42,7 +44,6 @@ class GuidedRuns:
                    if key not in {"data", "files", "translated", "variables"}}
         value = {"version": 1, "project": project_id, "phase": phase, "mode": mode,
                  "source": sources, "source_pass": inputs.record().get("last_refresh"), "files": names,
-                 "fresh_start": native.get("kept_failed_runs", {}),
                  "working": {name: digest(self.working_bytes(native, name, sources[name])) for name in names},
                  "configuration": self.guided.settings.guided_configuration(mode),
                  "options": native["engine_options"], "layout": native["widths"],
@@ -124,6 +125,27 @@ class GuidedRuns:
         records = self.records(project_id)
         records[job["id"]] = {**inputs, "estimate": estimate}
         write_json(self.guided.path(project_id, "runs"), {"version": 1, "runs": records})
+
+    def continuation(self, project_id, native, inputs):
+        from dazedtl.compatibility.process_view import ledger
+        result = {}
+        for identity, record in self.records(project_id).items():
+            if record['phase'] != inputs['phase'] or record['source'] != inputs['source']:
+                continue
+            if identity not in self.guided.backend.manual.jobs:
+                continue
+            connection = ledger(self.guided.backend.manual.folder(identity))
+            if connection is None:
+                continue
+            with closing(connection):
+                if not connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='validated_items'").fetchone():
+                    continue
+                for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
+                    row = {'source': source, 'response': json.loads(response)}
+                    if key in result and row != result[key]:
+                        raise ValueError('Saved validated responses conflict. Review this source in History.')
+                    result[key] = row
+        return result
 
     def quote(self, project_id, native, phase, mode, *, guard=None):
         inputs = self.inputs(project_id, native, phase, mode, guard=guard)

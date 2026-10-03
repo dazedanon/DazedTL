@@ -108,7 +108,42 @@ def phased_workflows(workspace, lock, operations, manual):
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):
                 return  # Frozen work from an older source pass stays in its own run.
-            return super()._collect(project)
+            super()._collect(project)
+            # Native collection only follows one completed run. Preserve verified
+            # completed files from older or partly failed runs as well, without
+            # overwriting a newer working copy or merging changed guidance.
+            collected = project.setdefault('dazedtl_collected_outputs', {})
+            retired = read_json(index).get('retired_runs', []) if index.exists() else []
+            changed = False
+            for identity, job in self.manual.jobs.items():
+                if identity in retired or job.get('mode') == 'estimate' or not job.get('outputs'):
+                    continue
+                source = self.manual.folder(identity)
+                try:
+                    plan_path = source / 'plan.json'
+                    plan = read_json(plan_path)
+                    if digest(plan_path.read_bytes()) != job['plan_hash'] or (plan.get('workflow') or {}).get('id') != project['id']:
+                        continue
+                    before = {row['name']: row['sha256'] for row in plan['files']}
+                    for name, expected in job['outputs'].items():
+                        marker = identity + ':' + name
+                        if collected.get(marker) == expected:
+                            continue
+                        output = project_path(source / 'translated', name)
+                        working = project_path(self.folder(project['id']) / 'files', name)
+                        destination = project_path(self.folder(project['id']) / 'translated', name, exists=False)
+                        if digest(output.read_bytes()) != expected or digest(working.read_bytes()) not in {before.get(name), expected}:
+                            continue
+                        if destination.exists() and digest(destination.read_bytes()) not in {before.get(name), expected}:
+                            continue
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(output, destination)
+                        collected[marker] = expected
+                        changed = True
+                except (OSError, ValueError, KeyError):
+                    continue
+            if changed:
+                self.save(project)
     return ScopedWorkflows(workspace, lock, operations, manual)
 
 

@@ -15,7 +15,7 @@ export const workflow: WorkflowStage[] = [
     { id: "speakers", title: "Review layout settings", description: "Set character limits for the game’s text areas." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
-    { id: "main-text", title: "Translate main text", description: "Choose any subset in either row. Estimate and review each run before it starts." },
+    { id: "main-text", title: "Translate main text", description: "Prepare remaining work and review its cost before submitting." },
     { id: "other-event-text", title: "Other event text", description: "Variables, plugin commands, scripts, and labels." },
   ]},
   { id: "plugins", title: "Plugin text", short: "Plugin text", tasks: [
@@ -45,7 +45,7 @@ export function runPhase(state: GuidedState): Phase {
     ? state.run!.phase as Phase : state.phase;
 }
 export function unfinishedRun(state: GuidedState) {
-  return !!state.run && ["batch", "translate", "speakers"].includes(state.run.mode || "") && !["complete", "canceled"].includes(state.run.status);
+  return !!state.run && ["batch", "translate", "speakers"].includes(state.run.mode || "") && ["running", "waiting"].includes(state.run.status);
 }
 export function taskForStage(state: GuidedState, stage: WorkflowStage) {
   const task = state.positions?.[stage.id];
@@ -58,13 +58,13 @@ export function initialPosition(state: GuidedState, translation: TranslationStat
   if (state.task === "plugins") return { step: "plugins" as const, task: "plugins" };
   if (["images", "image-text", "image-manager"].includes(state.task || "")) return { step: "images" as const, task: "images" };
   const step = state.step === "layout" ? "apply" : state.step === "advanced" ? "translate" : state.step;
-  if (state.task === "run") return { step: runStage(state), task: "run" };
+  if (state.task === "run") return { step: runStage(state), task: ["database", "dialogue"].includes(runPhase(state)) && state.run?.mode !== "speakers" ? "main-text" : "run" };
   if (["audit", "sources", "advanced-run", "variables"].includes(state.task || "") || state.step === "advanced") return { step: "translate" as const, task: "other-event-text" };
   if (state.step === "translate" && ["scope", "database", "dialogue"].includes(state.task || "")) return { step: "translate" as const, task: "main-text" };
   const saved = stages.find((stage) => stage.id === step)!;
   if (step === "context" && state.task === "glossary") return { step, task: "guidance" };
   if (step === "context" && state.task === "setup") return { step, task: "names" };
-  if (state.task === "run") return { step: runStage(state), task: "run" };
+  if (state.task === "run") return { step: runStage(state), task: ["database", "dialogue"].includes(runPhase(state)) && state.run?.mode !== "speakers" ? "main-text" : "run" };
   if (saved?.tasks.some((task) => task.id === state.task)) return { step, task: state.task! };
   const preserved = translation.lifecycle.source_backup && translation.lifecycle.source_backup.available !== false;
   if (!preserved) return { step: "prepare" as const, task: "backup" };

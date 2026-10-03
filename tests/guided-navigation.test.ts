@@ -42,7 +42,7 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
   assert.equal(stagesFor("MVMZ").findIndex((stage) => stage.id === "images"), stagesFor("MVMZ").findIndex((stage) => stage.id === "plugins") + 1);
   for (const status of ["failed", "stopped", "interrupted", "running", "waiting"]) {
     state.run!.status = status;
-    assert.equal(unfinishedRun(state), true);
+    assert.equal(unfinishedRun(state), ["running", "waiting"].includes(status));
   }
   for (const status of ["complete", "canceled"]) {
     state.run!.status = status;

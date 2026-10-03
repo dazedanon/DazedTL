@@ -44,7 +44,6 @@ export default function RunPanel({
   pendingKey = "",
   hideTitle = false,
   projectId,
-  keepFailed,
 }: {
   job: Job;
   active: boolean;
@@ -58,7 +57,6 @@ export default function RunPanel({
   pendingKey?: string;
   hideTitle?: boolean;
   projectId?: string;
-  keepFailed?: () => void;
 }) {
   return (
     <section className="ui-section run-panel">
@@ -132,9 +130,6 @@ export default function RunPanel({
         </div>
       )}
       <div className="actions">
-        {job.mode === "batch" && job.status === "failed" && !job.keptForHistory && keepFailed &&
-          <Button size="comfortable" disabled={busy || !job.process?.freshStart?.eligible}
-            pending={busy && pendingKey.startsWith("keep_failed_run")} onClick={keepFailed}>Keep failed run and start fresh</Button>}
         {active ? (
           <Button size="comfortable" disabled={busy} pending={pendingKey === "run:stop"} onClick={stop}>
             {job.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}
@@ -142,8 +137,8 @@ export default function RunPanel({
         ) : ["failed", "stopped", "interrupted", "canceled"].includes(
             job.status,
           ) ? (
-          <Button variant="primary" size="comfortable" disabled={busy || job.process?.retryBlocked} onClick={resume}>
-            Resume saved run
+          <Button size="comfortable" disabled={busy || job.process?.retryBlocked} onClick={resume}>
+            Resume with saved settings
           </Button>
         ) : null}
         {job.status === "complete" &&
@@ -163,10 +158,6 @@ export default function RunPanel({
             </>
           )}
       </div>
-      {job.mode === "batch" && job.status === "failed" && !job.keptForHistory && keepFailed &&
-        <p className="muted">{job.process?.freshStart?.eligible
-          ? "Keep this rejected run in Activity, then calculate a fresh estimate. New translation needs its own cost review."
-          : job.process?.freshStart?.reason || "Reconcile provider outcomes before starting fresh."}</p>}
       <Message message={error} />
       {!!job.log?.length && (
         <details>

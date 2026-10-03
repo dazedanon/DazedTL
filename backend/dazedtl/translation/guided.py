@@ -34,7 +34,6 @@ SHARED_ACTIONS = {
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
     "refresh_sources": "Review source refresh",
-    "keep_failed_run": "Keep failed run and start fresh",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 
@@ -240,7 +239,18 @@ class Guided:
                             native_exports=native["engine"] == "ACE")
 
     def owned_runs(self, native):
-        return list(dict.fromkeys([native.get("manual_job"), *reversed(native.get("collected", [])),
+        owner = next((item for item in self.projects.data['projects'] if item.get('backend_id') == native['id']), None)
+        recorded = list(self.runs.records(owner['id'])) if owner else []
+        # Older runs may precede the registry. Their frozen workflow ownership is
+        # authoritative, even after an estimate replaces the native pointer.
+        historical = []
+        for identity in getattr(getattr(self.backend, 'manual', None), 'jobs', {}):
+            try:
+                if (self.backend.saved_run_configuration(identity).get('workflow') or {}).get('id') == native['id']:
+                    historical.append(identity)
+            except (OSError, ValueError, KeyError):
+                pass
+        return list(dict.fromkeys([native.get("manual_job"), *reversed(recorded), *reversed(historical), *reversed(native.get("collected", [])),
                                    *reversed(native.get("kept_failed_runs", {})),
                                    *self.inputs(native).record().get("retired_runs", [])]))
 
@@ -390,7 +400,6 @@ class Guided:
             raise ValueError("Invalid guided options.")
 
     def save_options(self, project_id, revision, values):
-        self.idle()
         _, native = self.record(project_id)
         self.validate_options(values)
         if set(values["selected"]) - self.supported_files(native):
@@ -426,9 +435,12 @@ class Guided:
         saved_position = retained_position(read_json(position)) if position.exists() else {}
         documents = context_setup.retained_documents(native["source"], self.backend.workflows.documents(native["id"]),
             value.get("draft", {}).get("documents", {}))
+        paid = [self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
+                if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate']
+        current_run = next((job for job in paid if job['status'] in {'running', 'waiting'}), paid[0] if paid else None)
         return {
             **value, **self.runs.snapshot(project_id, native, source_status),
-            "manual_job": self.run_view(value["manual_job"]["id"]) if value.get("manual_job") else None,
+            "manual_job": self.run_view(current_run['id']) if current_run else None,
             "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "positions": saved_position.get("positions", {}) if isinstance(saved_position.get("positions", {}), dict) else {},
             "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
@@ -447,7 +459,7 @@ class Guided:
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
             "runs": [self.run_view(identity, compact=True) for identity in dict.fromkeys([
-                         *self.owned_runs(native)[:30], *native.get("kept_failed_runs", {})])
+                         *self.owned_runs(native), *native.get("kept_failed_runs", {})])
                      if identity in self.backend.manual.jobs],
             "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready(),
                          "connection": (self.settings.connection_summary() or {}).get("name", "No connection selected")},
@@ -465,7 +477,6 @@ class Guided:
             raise ValueError("Complete game preparation first. Return to preparation before saving a new baseline.")
 
     def phase_select(self, project_id, phase):
-        self.idle()
         project, native = self.record(project_id)
         if phase not in PHASES:
             raise ValueError("Choose a supported RPG Maker phase.")
@@ -517,11 +528,24 @@ class Guided:
     @staticmethod
     def pending_run(value):
         job = value.get("manual_job")
-        if job and job.get("mode") in {"batch", "translate", "speakers"} and job["status"] not in {"complete", "canceled"}:
-            raise ValueError("Resume the unfinished API run before starting another phase or estimate. Its saved provider work must stay attached to this project.")
+        if job and job.get('status') in {'running', 'waiting'}:
+            raise ValueError('Wait for the active worker before changing runtime files.')
+
+    def protect_submission(self, native, quote):
+        from dazedtl.compatibility.request_scope import overlap
+        current = quote['jobId']
+        job = self.run_view(current, compact=True)
+        previous = [(self.backend.manual.folder(identity), self.run_view(identity, compact=True))
+                    for identity in self.owned_runs(native)
+                    if identity and identity != current and identity in self.backend.manual.jobs]
+        matches = overlap(self.backend.manual.folder(current), job, previous)
+        if matches:
+            raise ValueError('Paid submission overlaps ' + str(len(matches)) + ' saved active or unresolved source requests. '
+                             'Review their responses in History before sending that scope again. Settings and local estimates remain available.')
 
     def preview(self, project_id, action, files=None, options=None):
-        self.idle()
+        if action != 'start':
+            self.idle()
         project, native = self.record(project_id)
         self.clean(project_id)
         options = {} if options is None else deepcopy(options)
@@ -555,7 +579,6 @@ class Guided:
         expected = None
         manifest = None
         if action == "start":
-            self.pending_run(value)
             if set(options) != {"mode"} or options["mode"] not in {"batch", "translate", "estimate", "speakers"}:
                 raise ValueError("Choose Batch, Live API, a cost estimate, or speaker collection.")
             mode = options["mode"]
@@ -593,24 +616,13 @@ class Guided:
                     if not matched["current"]:
                         raise ValueError("Calculate a current estimate for this phase, selection, and settings before reviewing translation.")
                     quote = {"jobId": matched["job"]["id"], "fingerprint": run_inputs["fingerprint"], "value": matched["job"]["estimate"], "model": matched["job"].get("model", ""), "connection": (self.settings.connection_summary() or {}).get("name", "")}
+                    self.protect_submission(native, quote)
             label = {"batch": "Prepare Batch translation", "translate": "Start Live API translation", "estimate": "Estimate selected phase", "speakers": "Collect speaker names"}[mode]
         elif action in SHARED_ACTIONS:
             label = SHARED_ACTIONS[action]
             allowed = {"version", "original", "untranslated"} if action == "git_setup" else {"reviewed", "playtested"} if action == "guided_review" else {"output"} if action == "release_patch" else set()
-            if action == "keep_failed_run":
-                allowed = {"run_id"}
             if set(options) - allowed:
                 raise ValueError("Unknown guided action option.")
-            if action == "keep_failed_run":
-                identity = options.get("run_id")
-                if not isinstance(identity, str) or identity != native.get("manual_job") or identity not in self.backend.manual.jobs:
-                    raise ValueError("Choose the attached failed run. It was not changed.")
-                from dazedtl.compatibility.process_view import fresh_start
-                recovery = fresh_start(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
-                if not recovery["eligible"]:
-                    raise ValueError(recovery["reason"])
-                options = {"run_id": identity, "fingerprint": recovery["fingerprint"],
-                           "failed": recovery["failed"], "remaining": recovery["remaining"]}
             if action == "backup_source":
                 saved = lifecycle(self.translation.workspace, project_id).get("source_backup")
                 if saved and backups.record_status(project["source"], saved, kind="source")["available"]:
@@ -710,7 +722,6 @@ class Guided:
                 "additions": [name for name, row in manifest["files"].items() if row.get("original_sha256", "") is None] if manifest else []}
 
     def execute(self, project_id, token):
-        self.idle()
         confirmed = self.confirmations.get(token)
         if not confirmed or confirmed["project_id"] != project_id:
             raise ValueError("The action changed. Review a new preview.")
@@ -718,7 +729,9 @@ class Guided:
         project, native = self.record(project_id)
         self.confirmations.pop(token)
         action = confirmed["action"]
-        if action not in {"backup_source", "keep_failed_run"}:
+        if action != 'start':
+            self.idle()
+        if action != "backup_source":
             self.source_preserved(project_id)
         if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
@@ -742,20 +755,6 @@ class Guided:
             if self.release_paths(project_id, project["source"], action) != confirmed["paths"]:
                 raise ValueError("The runtime file list changed. Review the complete patch again.")
         options = confirmed["options"]
-        if action == "keep_failed_run":
-            identity = options["run_id"]
-            if identity != native.get("manual_job") or identity not in self.backend.manual.jobs:
-                raise ValueError("The attached run changed. Review it again.")
-            from dazedtl.compatibility.process_view import fresh_start
-            recovery = fresh_start(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
-            if not recovery["eligible"] or recovery["fingerprint"] != options["fingerprint"]:
-                raise ValueError("Provider evidence changed. Reconcile the run and review it again.")
-            updated = {**deepcopy(native), "manual_job": "", "revision": native["revision"] + 1,
-                       "kept_failed_runs": {**native.get("kept_failed_runs", {}), identity: {"fingerprint": options["fingerprint"]}}}
-            self.backend.workflows.save(updated)
-            self.backend.workflows.projects[native["id"]] = updated
-            return {"id": identity, "status": "complete", "action": action,
-                    "message": "Failed run kept in Activity. Calculate a fresh estimate before reviewing a new run."}
         if action == "release_patch":
             from .release import git_identity
             if git_identity(release_status) != options["git"]:
@@ -769,6 +768,7 @@ class Guided:
                     matched, _ = self.runs.quote(project_id, native, options["phase"], options["mode"])
                     if not matched["current"] or matched["job"]["id"] != confirmed["estimate"]["jobId"]:
                         raise ValueError("The matching estimate changed. Review a new preview.")
+                    self.protect_submission(native, confirmed['estimate'])
             return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"])
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
@@ -819,11 +819,13 @@ class Guided:
 
     def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None):
         _, native = self.record(project_id)
-        self.pending_run(self.backend.workflows.state(native["id"]))
         self.inputs(native).prepare(files)
         native["imported"] = list(dict.fromkeys([*native["imported"], *files]))
         self.backend.workflows.save(native)
         self.settings.prepare_engine(mode=mode)
+        self.backend.manual.continuation = self.runs.continuation(project_id, native, run_inputs) if run_inputs else {}
+        from dazedtl.compatibility.request_scope import requests
+        self.backend.manual.reserved_sources = list(requests(self.backend.manual.folder(estimate['jobId']), self.run_view(estimate['jobId']))) if estimate else []
         previous_mode = self.preferences(native)["values"]["mode"]
         if mode != "speakers":
             self.backend.workflows.update(native["id"], native["revision"], {"mode": mode})
@@ -833,6 +835,8 @@ class Guided:
                 self.runs.remember(project_id, job, run_inputs, estimate)
             return {**job, "logicalPhase": phase}
         finally:
+            self.backend.manual.continuation = None
+            self.backend.manual.reserved_sources = None
             if mode == "estimate":
                 current = self.backend.workflows.projects[native["id"]]
                 self.backend.workflows.update(native["id"], current["revision"], {"mode": previous_mode})
@@ -973,16 +977,35 @@ class Guided:
 
     def job(self, project_id):
         _, native = self.record(project_id)
-        identity = native.get("manual_job")
+        active = next((identity for identity in self.owned_runs(native)
+                       if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate'
+                       and self.backend.manual.jobs[identity].get('status') in {'running', 'waiting'}), None)
+        identity = active or native.get("manual_job")
         if not identity or identity not in self.backend.manual.jobs:
             raise ValueError("There is no translation run for this project.")
         return self.backend.manual.jobs[identity]
 
     def answer(self, project_id, token, approved):
-        return self.backend.manual.answer(self.job(project_id)["id"], token, approved)
-
-    def stop(self, project_id):
         _, native = self.record(project_id)
+        job = next((self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
+                    if identity in self.backend.manual.jobs and (self.backend.manual.jobs[identity].get('approval') or {}).get('token') == token), None)
+        if not job:
+            raise ValueError('This approval is no longer pending. Refresh the run.')
+        if approved:
+            self.protect_submission(native, {'jobId': job['id']})
+            if job.get('mode') == 'batch':
+                # Persist intent before signaling the native worker, closing the
+                # gap between approval and its first provider manifest write.
+                job['dazedtl_submission_intent'] = True
+                self.backend.manual.save(job)
+        return self.backend.manual.answer(job['id'], token, approved)
+
+    def stop(self, project_id, run_id=None):
+        _, native = self.record(project_id)
+        if run_id is not None:
+            if run_id not in self.owned_runs(native):
+                raise ValueError('Choose a run owned by this project.')
+            return self.backend.manual.stop(run_id)
         operation = self.backend.operations.jobs.get(self.backend.operations.active)
         if operation and operation["project_id"] == native["id"]:
             return self.backend.operations.stop(operation["id"])
@@ -1010,7 +1033,6 @@ class Guided:
         return self.backend.workflows.draft(native["id"], {**current, "documents": documents})
 
     def save_document(self, project_id, name, revision, text):
-        self.idle()
         _, native = self.record(project_id)
         result = self.backend.workflows.document_save(native["id"], name, revision, text)
         draft = self.backend.workflows.state(native["id"]).get("draft", {})

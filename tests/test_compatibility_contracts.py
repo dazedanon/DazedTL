@@ -299,11 +299,17 @@ def parse(codeList, i, headerString, jaString):
             source = Path(temporary)
             module = source / 'desktop/backend/manual.py'
             module.parent.mkdir(parents=True)
-            module.write_text('''import subprocess, sys
+            module.write_text('''import subprocess, sys, threading
 from pathlib import Path
 class ManualJobs:
-    def __init__(self, *args, **kwargs): pass
-    def start(self, source, engine, files, *args, **kwargs): return files
+    def __init__(self, workspace, lock, **kwargs):
+        self.workspace = workspace
+        self.root = workspace/'manual'
+        self.lock = threading.RLock()
+        self.jobs, self.worker, self.process, self.active = {}, None, None, ''
+        self.allow_providers = False
+    def running(self): return False
+    def start(self, source, engine, files, *args, **kwargs): return {'id': str(len(files)), 'files': files}
     def launch(self):
         return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), 'run'],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
@@ -320,14 +326,14 @@ class ManualJobs:
                 # The preserved phase may find more files than the user checked.
                 # Filter only its new run, preserving its native phase setup.
                 with controller.selected_workflow('owner', ['Items.json']):
-                    self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json'], workflow={'id': 'owner'}), ['Items.json'])
+                    self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json'], workflow={'id': 'owner'})['files'], ['Items.json'])
                     with self.assertRaises(ValueError):
                         controller.start('work', 'engine', ['Items.json'], workflow={'id': 'another-owner'})
-                self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json']), ['Items.json', 'System.json'])
+                self.assertEqual(controller.start('work', 'engine', ['Items.json', 'System.json'])['files'], ['Items.json', 'System.json'])
             workflow = ModuleType('desktop.backend.workflow')
             collected = []
             class Workflows:
-                def __init__(self, workspace, *_): self.root = workspace
+                def __init__(self, workspace, *args): self.root, self.manual = workspace, SimpleNamespace(jobs={})
                 def folder(self, identity): return self.root/identity
                 def _collect(self, project): collected.append(project['manual_job'])
             workflow.Workflows = Workflows

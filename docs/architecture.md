@@ -40,10 +40,12 @@ Actor-substitution calls and note calls retain their original boundaries.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
-An explicit local recovery review can keep a fully rejected failed Batch in Activity and release its project slot for a fresh estimate.
-Eligibility requires matching saved submission manifests and terminal rejection counts with no successful, pending, canceled, expired, or locally received results; uncertain and partial-success work remains attached for reconciliation.
-The one-use review rechecks the evidence before atomically saving project ownership, and leaves the old run folder, working outputs, source selection, and guidance unchanged.
-Keeping a failed run invalidates prior estimates; a new run gets its own frozen policy, identity, and cost approval.
+Guided Translate has one primary action: prepare a local estimate for remaining source work, then review its cost. The request inspector uses source/context, response/error and exact JSON tabs.
+All project-owned runs remain in History automatically, including failed and canceled runs. The native pointer is not the ownership registry.
+Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.
+New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
+Source identity currently treats repeated identical strings within one file and phase as aliases. Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase. Interrupted old Live runs without request evidence protect only their shared file/phase scope; their send outcomes cannot be reconstructed locally.
+Provider monitoring and new runs have independent isolated workers. The cost approval rechecks other saved request receipts under the API lock before sending. Existing saved-run resumes retain their frozen settings and require explicit review; the default continuation is Translate.
 Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,

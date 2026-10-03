@@ -150,7 +150,7 @@ export const api = {
   },
   answer: (project_id: string, token: string, approved: boolean) =>
     request("guided_answer", { project_id, token, approved }),
-  stop: (project_id: string) => request("guided_stop", { project_id }),
+  stop: (project_id: string, run_id?: string) => request("guided_stop", { project_id, ...(run_id ? { run_id } : {}) }),
   resume: (project_id: string) => request("guided_resume", { project_id }),
   export: (project_id: string, run_id?: string) => request("guided_export", { project_id, run_id }),
   draft: (project_id: string, documents: Documents) =>

@@ -158,8 +158,7 @@ def summary(root, job):
     validated = None
     usage = None
     uncertain = 0
-    recovery = fresh_start(root, job) if job.get('mode') == 'batch' else None
-    with_connection = ledger(root)
+    with_connection = ledger(root) if not requests else None
     if with_connection is not None:
         with closing(with_connection) as connection:
             rows = connection.execute('SELECT state,usage,error FROM requests').fetchall()
@@ -168,7 +167,8 @@ def summary(root, job):
         validated = sum(state == 'validated' for state, _, _ in rows)
         failed = sum(state == 'failed' for state, _, _ in rows)
         interrupted = job.get('status') in {'failed', 'stopped', 'interrupted', 'canceled'}
-        uncertain = sum(state == 'uncertain' or (interrupted and state in {'prepared', 'received'})
+        has_intent = 'sources' in {row[1] for row in ledger_columns(root)}
+        uncertain = sum(state in {'submitted', 'uncertain'} or (interrupted and not has_intent and state == 'prepared')
                         for state, _, _ in rows)
         errors += [clean_message(json.loads(error).get('message') or 'Provider response unavailable; submission may be uncertain.') for _, _, error in rows if error]
         usages = [json.loads(value) for _, value, _ in rows if value]
@@ -178,6 +178,9 @@ def summary(root, job):
         usages = [batch['usage'] for batch in batches if batch.get('usage') is not None]
         if usages:
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('input_tokens', 'output_tokens')}
+    from .request_scope import requests as source_requests
+    items = list(source_requests(root, job))
+    uncertain = max(uncertain, sum(row['state'] in {'submitted', 'uncertain'} for row in items))
     return {'mode': job.get('mode'), 'prepared': prepared,
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
@@ -187,12 +190,17 @@ def summary(root, job):
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': [{'id': batch['id'], 'status': batch.get('api_status', 'unknown'), 'counts': batch.get('request_counts', {})} for batch in batches],
             'errors': list(dict.fromkeys(errors)), 'usage': usage,
-            'freshStart': recovery,
-            'retryBlocked': failed > 0 or uncertain > 0, 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
-            'nextAction': ('Choose Keep failed run and start fresh, then calculate a new estimate. The submitted queue stays in Activity.'
-                           if recovery and recovery['eligible'] else recovery['reason'] if recovery else
-                           'Prepare a fresh estimate for corrected requests. The submitted queue is preserved; it has not been retried.') if failed else
-                          'Check provider status before retrying an uncertain request. Resuming a saved run can submit remaining work.'}
+            'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
+            'retryBlocked': bool(uncertain or any(row['state'] == 'received' for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
+            'nextAction': 'Use Translate for remaining work with current settings. All saved requests and verified results remain in History.'}
+
+
+def ledger_columns(root):
+    connection = ledger(root)
+    if connection is None:
+        return []
+    with closing(connection):
+        return connection.execute('PRAGMA table_info(requests)').fetchall()
 
 
 def payload(root, index):
@@ -205,12 +213,16 @@ def payload(root, index):
             raise ValueError('This request is no longer available.')
         key = keys[index]
         entry = requests[key]
+        from .request_scope import requests as source_requests
+        row = next(item for item in source_requests(root, {}) if item['index'] == index)
         custom_id = next((custom for batch in saved(evidence_root(root), 'batch_history.json').get('batches', [])
                           for custom, value in batch.get('custom_ids', {}).items() if value == key), None)
         from util.batch_providers import _openai_batch_body
         params = _openai_batch_body(entry.get('provider', 'openai'), entry['params']) if entry.get('provider') != 'anthropic' else entry['params']
         exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
-        return {'index': index, 'total': len(keys), 'state': 'submitted' if custom_id else 'queued',
+        error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in batch.get('provider_errors', [])
+                      if error.get('custom_id') == custom_id), None)
+        return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': error,
                 'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
                 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
                 'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact}
@@ -219,14 +231,16 @@ def payload(root, index):
         raise ValueError('Exact payloads were not recorded for this older Live run.')
     with closing(connection):
         total = connection.execute('SELECT COUNT(*) FROM requests').fetchone()[0]
-        row = connection.execute('SELECT params,state,error FROM requests ORDER BY id LIMIT 1 OFFSET ?', (index,)).fetchone()
+        has_response = 'response' in {item[1] for item in connection.execute('PRAGMA table_info(requests)')}
+        row = connection.execute('SELECT params,state,error' + (',response' if has_response else '') + ' FROM requests ORDER BY id LIMIT 1 OFFSET ?', (index,)).fetchone()
     if row is None:
         raise ValueError('This request is no longer available.')
     params = json.loads(row[0])
     return {'index': index, 'total': total, 'state': row[1], 'source': source_values(params),
             'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
             'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
-            'error': json.loads(row[2]) if row[2] else None}
+            'error': json.loads(row[2]) if row[2] else None,
+            'response': json.loads(row[3]) if has_response and row[3] else None}
 
 
 def provider_details(root):

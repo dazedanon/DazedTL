@@ -65,6 +65,7 @@ export interface RunProcess {
   received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
   failed?: number; retryBlocked?: boolean; nextAction?: string;
   uncertain?: number; duplicateSubmissions?: number;
+  requests?: { index: number; state: string; file?: string | null; sourceItems: number }[];
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
   batches?: { id: string; status: string; counts: Record<string, number>; errors?: Record<string, string>[] }[];
@@ -72,7 +73,7 @@ export interface RunProcess {
 }
 export interface RunPayload {
   index: number; total: number; state: string; source: Record<string, string> | null;
-  context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown;
+  context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;
 }
 export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
@@ -717,7 +718,7 @@ export interface RpcContract {
     request: { project_id: string; token: string; approved: boolean };
     response: Job;
   };
-  guided_stop: { request: { project_id: string }; response: Job };
+  guided_stop: { request: { project_id: string; run_id?: string }; response: Job };
   guided_resume: { request: { project_id: string }; response: Job };
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };

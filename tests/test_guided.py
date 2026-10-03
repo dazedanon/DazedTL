@@ -370,7 +370,7 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.started, [])
         self.assertEqual(self.pending, preserved)
         self.assertEqual(self.native['manual_job'], preserved['id'])
-        with self.assertRaises(ValueError): self.preview()
+        self.assertTrue(self.preview()["confirmation"])
         other = self.projects.open({'source': str(self.root), 'engine': 'MVMZ'})
         with self.assertRaises(ValueError): self.guided.speakers(other['id'], scan=True)
         self.native['engine_options']['FIRSTLINESPEAKERS'] = True
@@ -551,74 +551,45 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
 
-    def test_an_estimate_cannot_replace_an_interrupted_paid_run_reference(self):
-        for status in ('failed', 'stopped', 'interrupted', 'running', 'waiting'):
-            self.pending = {'id': 'provider-run', 'mode': 'batch', 'status': status}
-            for mode in ('batch', 'translate', 'estimate', 'speakers'):
-                with self.subTest(status=status, mode=mode), self.assertRaises(ValueError):
-                    self.guided.preview(self.identity, 'start', options={'mode': mode})
-        self.assertEqual(self.pending['id'], 'provider-run')
-        self.assertEqual(self.started, [])
-        for status in ('complete', 'canceled'):
-            self.guided.pending_run({'manual_job': {**self.pending, 'status': status}})
-
-    def test_keep_rejected_run_preserves_history_and_requires_a_fresh_quote(self):
-        # Preserve failed evidence and ownership while releasing only the local
-        # slot. Changed evidence, reused clicks, and stale paid reviews must fail.
-        old_quote = self.seed_estimate()
+    def test_estimates_retain_rejected_history_and_paid_reviews_recheck_source_overlap(self):
+        # Reproduce old-format all-rejected history, then change a receipt to
+        # unresolved success between cost review and execution. No provider calls.
+        estimate_id = self.seed_estimate()
+        estimate_root = self.backend.manual.folder(estimate_id)
+        queued = {'one': {'provider': 'openai', 'params': {}, 'payload': '{"Line1":"薬"}'}}
+        write_json(estimate_root/'log/estimate_requests.json', queued)
         identity = 'rejected-fixture'
         root = self.backend.manual.folder(identity)
-        plan = {'mode':'batch','workflow':{'id':'native','phase':'database'}}
-        write_json(root/'plan.json',plan)
-        job = {'id':identity,'mode':'batch','status':'failed','phase':'failed','files':['Items.json'],'log':[],
-               'model':'fixture-model','completed':[],'outputs':{},'plan_hash':digest((root/'plan.json').read_bytes())}
-        self.backend.manual.jobs[identity]=job
-        self.native['manual_job']=identity
-        self.guided.runs.remember(self.identity,job,self.guided.runs.inputs(self.identity,self.native,'database','batch'))
-        params={'model':'fixture-model','messages':[],'temperature':0,'frequency_penalty':.05}
-        write_json(root/'job.json',job)
-        write_json(root/'log/batch_requests.json',{'one':{'provider':'openai','params':params,'payload':'{"Line1":"薬"}'}})
-        batch={'id':'batch-fixture','provider':'openai','api_status':'completed','custom_ids':{'req-1':'one'},
-               'request_counts':{'processing':0,'succeeded':0,'errored':1,'canceled':0,'expired':0}}
-        write_json(root/'log/batch_history.json',{'batches':[batch]})
-        write_json(root/'log/batch_state.json',{'status':'submitted','batches':[{'id':batch['id'],'custom_ids':batch['custom_ids']}]})
-        write_json(self.folder/'translated/Items.json',[{'name':'Retained working output'}])
-        self.backend.workflows.state=lambda _: {'project':self.backend.workflows.projects['native'],
-            'manual_job':self.backend.manual.jobs.get(self.backend.workflows.projects['native'].get('manual_job'))}
-        self.backend.workflows.save.side_effect=lambda value:write_json(self.folder/'project.json',value)
-        preserved={path:path.read_bytes() for path in [*(path for path in root.rglob('*') if path.is_file()),self.folder/'translated/Items.json',self.source/'Items.json']}
-        frozen=deepcopy(self.native)
-        review=self.guided.preview(self.identity,'keep_failed_run',options={'run_id':identity})
-        self.assertTrue(review['confirmation']);self.assertEqual(self.native,frozen)
-        reopened=Guided(self.backend,self.projects,self.settings,self.translation)
-        with self.assertRaisesRegex(ValueError,'new preview'):reopened.execute(self.identity,review['token'])
-        self.assertEqual(self.native,frozen)
-        changed=deepcopy(batch);changed['request_counts']['succeeded']=1
-        write_json(root/'log/batch_history.json',{'batches':[changed]})
-        with self.assertRaisesRegex(ValueError,'evidence changed'):self.guided.execute(self.identity,review['token'])
-        self.assertEqual(self.native,frozen)
-        write_json(root/'log/batch_history.json',{'batches':[batch]})
-        review=self.guided.preview(self.identity,'keep_failed_run',options={'run_id':identity})
-        result=self.guided.execute(self.identity,review['token'])
-        self.assertEqual(result['status'],'complete')
-        with self.assertRaisesRegex(ValueError,'new preview'):self.guided.execute(self.identity,review['token'])
-        self.native=self.backend.workflows.projects['native']
-        self.assertEqual(self.native['manual_job'],'')
-        self.assertIn(identity,self.guided.owned_runs(self.native))
-        self.assertTrue(self.guided.inspect(self.identity,identity)['keptForHistory'])
-        self.assertEqual({key:self.native[key] for key in frozen if key not in {'manual_job','revision'}},
-                         {key:frozen[key] for key in frozen if key not in {'manual_job','revision'}})
-        self.assertEqual({path:path.read_bytes() for path in preserved},preserved)
-        self.assertFalse(self.guided.runs.quote(self.identity,self.native,'database','batch')[0]['current'])
-        with self.assertRaisesRegex(ValueError,'current estimate'):self.guided.preview(self.identity,'start',options={'mode':'batch'})
-        self.assertFalse(self.guided.preview(self.identity,'start',options={'mode':'estimate'})['confirmation'])
-        self.seed_estimate()
-        fresh=self.guided.preview(self.identity,'start',options={'mode':'batch'})
-        self.assertTrue(fresh['confirmation']);self.assertNotEqual(fresh['estimate']['jobId'],old_quote)
-        self.backend.workflows.projects['native']=read_json(self.folder/'project.json')
-        restarted=Guided(self.backend,self.projects,self.settings,self.translation)
-        self.assertIn(identity,restarted.owned_runs(self.backend.workflows.projects['native']))
-        self.assertEqual(self.started,[])
+        write_json(root/'plan.json', {'mode': 'batch', 'workflow': {'id': 'native', 'phase': 'database'}})
+        job = {'id': identity, 'mode': 'batch', 'status': 'failed', 'files': ['Items.json'], 'log': [],
+               'completed': [], 'outputs': {}, 'plan_hash': digest((root/'plan.json').read_bytes())}
+        self.backend.manual.jobs[identity] = job
+        self.native['manual_job'] = identity
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        write_json(root/'log/batch_requests.json', queued)
+        batch = {'id': 'batch-fixture', 'api_status': 'completed', 'custom_ids': {'req-1': 'one'},
+                 'request_counts': {'processing': 0, 'succeeded': 0, 'errored': 1, 'canceled': 0, 'expired': 0}}
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        write_json(root/'log/batch_state.json', {'status': 'submitted', 'batches': [{'id': batch['id'], 'custom_ids': batch['custom_ids']}]})
+        frozen = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        self.assertFalse(self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['confirmation'])
+        review = self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
+        self.assertTrue(review['confirmation'])
+        changed = deepcopy(batch); changed['request_counts'].update(errored=0, succeeded=1)
+        write_json(root/'log/batch_history.json', {'batches': [changed]})
+        with self.assertRaisesRegex(ValueError, 'overlaps'):
+            self.guided.execute(self.identity, review['token'])
+        with self.assertRaisesRegex(ValueError, 'new preview'):
+            self.guided.execute(self.identity, review['token'])
+        self.assertFalse(self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['confirmation'])
+        # Disjoint source text in the same file remains eligible.
+        write_json(estimate_root/'log/estimate_requests.json', {'two': {**queued['one'], 'payload': '{"Line1":"別の文章"}'}})
+        self.assertTrue(self.guided.preview(self.identity, 'start', options={'mode': 'batch'})['confirmation'])
+        for path, raw in frozen.items(): path.write_bytes(raw)
+        self.guided.execute(self.identity, self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['token'])
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.assertIn(identity, reopened.owned_runs(self.native))
+        self.assertEqual({path: path.read_bytes() for path in frozen}, frozen)
 
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses

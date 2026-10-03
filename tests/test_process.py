@@ -9,7 +9,7 @@ from types import ModuleType
 import unittest
 from unittest.mock import Mock, patch
 
-from dazedtl.compatibility import state_requests, process_view
+from dazedtl.compatibility import state_requests, process_view, request_scope
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
@@ -65,6 +65,29 @@ class ProcessTests(unittest.TestCase):
             for path,raw in baseline.items():path.write_bytes(raw)
             self.assertEqual(process_view.fresh_start(root,job),proof)
             self.assertEqual({path:path.read_bytes() for path in baseline},baseline)
+
+    def test_source_overlap_survives_new_chunking_and_protects_approval_send_gap(self):
+        # Protect duplicated payment when a second review arrives before the
+        # first approved Batch has written its remote manifest. Model/chunk IDs
+        # do not identify the logical source, and disjoint fields stay usable.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary); old, new = root/'old', root/'new'
+            a, b = request_scope.identities('Items.json', 'database', ['薬', '毒'])
+            row = lambda text, keys: {'payload': json.dumps({'Line1': text}), 'params': {}, 'provider': 'openai',
+                                     'dazedtl_sources': keys, 'dazedtl_file': 'Items.json'}
+            write_json(old/'log/batch_requests.json', {'old-hash': row('薬', [a])})
+            write_json(old/'log/batch_state.json', {'status': 'queued'})
+            write_json(new/'log/estimate_requests.json', {'different-model-hash': row('薬', [a])})
+            job = {'id': 'old', 'mode': 'batch', 'files': ['Items.json'], 'logicalPhase': 'database', 'status': 'running'}
+            estimate = {**job, 'id': 'new', 'mode': 'estimate'}
+            self.assertFalse(request_scope.overlap(new, estimate, [(old, job)]))
+            job['dazedtl_submission_intent'] = True
+            self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
+            write_json(new/'log/estimate_requests.json', {'different-group': row('毒', [b])})
+            self.assertFalse(request_scope.overlap(new, estimate, [(old, job)]))
+            job['logicalPhase'] = 'dialogue'
+            write_json(new/'log/estimate_requests.json', {'different-group': row('薬', [a])})
+            self.assertFalse(request_scope.overlap(new, estimate, [(old, job)]))
 
     def test_state_coalescing_preserves_fields_controls_originals_and_saved_consume_mapping(self):
         # Protect the 45 calls / 112 fields -> 8 compatible calls case, including
@@ -156,7 +179,7 @@ class ProcessTests(unittest.TestCase):
             frozen = (root/'log/batch_requests.json').read_bytes()
             value = process_view.summary(root, {'mode': 'batch', 'completed': [], 'appliedOutputs': []})
             self.assertEqual((value['prepared'], value['submitted'], value['remaining'], value['received'], value['failed']), (2, 1, 1, 0, 1))
-            self.assertTrue(value['retryBlocked'])
+            self.assertTrue(value['retryBlocked'])  # Missing manifest/count proof remains unresolved.
             self.assertIsNone(value['usage'])
             provider = SimpleNamespace(_openai_batch_body=lambda _provider, params: params)
             with patch.dict('sys.modules', {'util.batch_providers': provider}):
@@ -201,11 +224,15 @@ class ProcessTests(unittest.TestCase):
             interrupted = lambda: process_view.summary(temporary, {'mode': 'translate', 'status': 'interrupted'})
             # A stopped worker may have sent its last payload before receiving or
             # validating it. The saved run must not offer an unguarded retry.
+            self.assertFalse(interrupted()['retryBlocked'])
+            self.assertEqual(interrupted()['uncertain'], 0)
+            evidence.update('submitted')
             self.assertTrue(interrupted()['retryBlocked'])
             self.assertEqual(interrupted()['uncertain'], 1)
             evidence.update('received', {'prompt_tokens': 12, 'completion_tokens': 3, 'total_tokens': 15})
             self.assertEqual((summary()['received'], summary()['validated']), (1, 0))
             self.assertTrue(interrupted()['retryBlocked'])
+            self.assertEqual(interrupted()['uncertain'], 0)
             self.assertEqual(summary()['usage']['total_tokens'], 15)
             evidence.update('validated', {'prompt_tokens': 12, 'completion_tokens': 3, 'total_tokens': 15})
             self.assertEqual(summary()['validated'], 1)

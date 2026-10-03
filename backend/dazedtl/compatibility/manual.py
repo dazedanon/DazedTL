@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 
 
@@ -83,7 +84,44 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
     class ManualJobs(native.ManualJobs):
         request_policy = None
+        continuation = None
+        reserved_sources = None
         workflow_selection = None
+        controllers = None
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.controllers = {}
+
+        def running(self):
+            return any(item.running() for item in self.controllers.values()) if self.controllers is not None else super().running()
+
+        def controller(self, identity):
+            if identity not in self.controllers:
+                item = object.__new__(ManualJobs)
+                item.workspace, item.root, item.lock, item.allow_providers = self.workspace, self.root, self.lock, self.allow_providers
+                item.jobs, item.worker, item.process = self.jobs, None, None
+                item.stopping, item.active = threading.Event(), ''
+                self.controllers[identity] = item
+            return self.controllers[identity]
+
+        def answer(self, identity, token, approved):
+            return self.controller(identity).answer(identity, token, approved) if self.controllers is not None else super().answer(identity, token, approved)
+
+        def stop(self, identity):
+            return self.controller(identity).stop(identity) if self.controllers is not None else super().stop(identity)
+
+        def resume(self, identity):
+            return self.controller(identity).resume(identity) if self.controllers is not None else super().resume(identity)
+
+        def resume_batch(self, identity, recovery):
+            return self.controller(identity).resume_batch(identity, recovery) if self.controllers is not None else super().resume_batch(identity, recovery)
+
+        def close(self):
+            if self.controllers is None:
+                return super().close()
+            for item in self.controllers.values():
+                item.close()
 
         def load_saved(self):
             super().load_saved()
@@ -118,6 +156,17 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 self.workflow_selection = previous
 
         def start(self, source, engine, files, *args, **kwargs):
+            if self.controllers is not None:
+                with self.lock:
+                    item = self.controller('preparing')
+                    if item.running():
+                        raise ValueError('A run is being prepared. Wait for its saved workspace.')
+                    item.request_policy, item.workflow_selection, item.continuation = self.request_policy, self.workflow_selection, self.continuation
+                    item.reserved_sources = self.reserved_sources
+                    result = item.start(source, engine, files, *args, **kwargs)
+                    self.controllers[result['id']] = self.controllers.pop('preparing')
+                    self.active = result['id']
+                    return result
             if self.workflow_selection is not None:
                 identity, selected = self.workflow_selection
                 if (kwargs.get("workflow") or {}).get("id") != identity or set(selected) - set(files):
@@ -127,6 +176,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
         def _snapshot_context(self, directory, plan, workspace=None):
             super()._snapshot_context(directory, plan, workspace)
+            if self.continuation:
+                plan['dazedtl_continuation'] = deepcopy(self.continuation)
+            if self.reserved_sources:
+                plan['dazedtl_reserved_sources'] = deepcopy(self.reserved_sources)
             if self.request_policy is not None:
                 if self.request_policy["model"] != plan["settings"]["model"]:
                     raise ValueError(
