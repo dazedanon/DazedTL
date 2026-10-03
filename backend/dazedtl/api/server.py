@@ -263,6 +263,8 @@ def serve(args, diagnostics):
             for name in ("execute", "answer", "stop", "resume", "inspect")
         },
         "guided_export": (app.guided.export, lambda value, _params: value),
+        "guided_payload": (app.guided.payload, lambda value, _params: value),
+        "guided_provider_details": (app.guided.provider_details, lambda value, _params: value),
         "translation_speakers": (app.guided.speakers, lambda value, _params: views.speaker_scan(value)),
         **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
            for name in ("position", "options_draft", "save_options", "apply_speakers", "skill", "form", "context_status", "context_review", "event_text_request", "event_text_review", "event_text_view", "event_text_picker", "comparisons_review")},

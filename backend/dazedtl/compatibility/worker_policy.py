@@ -1,11 +1,25 @@
-"""Restore frozen base rates through the native engine's pricing-cache boundary."""
+"""Restore frozen rates and generation parameters in private native workers."""
 
 import json
 import math
 from pathlib import Path
 import time
+import sys
 
 from dazedtl.storage import write_json
+from dazedtl.settings.preferences import GENERATION_PARAMETERS
+from .request_parameters import configure_builders
+from . import state_requests
+from .run_evidence import Evidence
+
+
+def configure_states(plan, root, policy):
+    module = sys.modules.get("modules.rpgmakermvmz")
+    if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
+        if policy and policy.get("stateGrouping") == state_requests.POLICY:
+            state_requests.configure(module, sys.modules["util.translation"], root, policy["entriesPerRequest"])
+        else:
+            state_requests.restore(module)
 
 
 def install():
@@ -16,12 +30,25 @@ def install():
     def prepare(root):
         plan = json.loads((Path(root) / "plan.json").read_text(encoding="utf-8"))
         policy = plan.get("dazedtl_request_policy")
+        grouping_root = root
+        if plan.get("batch_link"):
+            from desktop.backend.batches import batch_root
+            grouping_root = batch_root(root, plan)
+            original_plan = Path(grouping_root) / "plan.json"
+            policy = (json.loads(original_plan.read_text(encoding="utf-8")).get("dazedtl_request_policy")
+                      if original_plan.is_file() and not original_plan.is_symlink() else None)
         if policy is None:
-            return native_prepare(root)
+            result = native_prepare(root)
+            import util.translation as translation
+            configure_builders(translation, None)
+            configure_states(plan, grouping_root, None)
+            return result
         if (
             not isinstance(policy, dict)
             or policy.get("version") != 1
             or policy.get("model") != plan["settings"]["model"]
+            or policy.get("generationParameters") not in (None, GENERATION_PARAMETERS)
+            or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or type(policy.get("entriesPerRequest")) is not int
             or not 1 <= policy["entriesPerRequest"] <= 100
             or plan["settings"]["batchsize"] != policy["entriesPerRequest"]
@@ -55,6 +82,13 @@ def install():
 
         # Long-running batches must retain these rates after the normal cache TTL.
         translation._load_litellm_pricing = lambda: prices
+        record = None
+        if policy.get("generationParameters") and plan.get("mode") in {"translate", "offline"}:
+            evidence = Evidence(root, plan["mode"])
+            evidence.install(translation, sys.modules.get("modules.rpgmakermvmz"))
+            record = evidence.prepared
+        configure_builders(translation, policy.get("generationParameters"), record)
+        configure_states(plan, grouping_root, policy)
         return result
 
     manual_environment.prepare = prepare

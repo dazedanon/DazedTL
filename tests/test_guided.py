@@ -107,7 +107,8 @@ class GuidedTests(unittest.TestCase):
                    lambda: self.configuration.update(model='changed-model'),
                    lambda: self.configuration.update(endpoint='https://changed.invalid/v1'),
                    lambda: self.configuration['rates'].update(input=3),
-                   lambda: self.configuration.update(language='French')]
+                   lambda: self.configuration.update(language='French'),
+                   lambda: self.configuration.update(generationParameters='provider-defaults-v1')]
         for change in changes:
             change()
             with self.subTest(change=change):

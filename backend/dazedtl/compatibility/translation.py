@@ -13,6 +13,7 @@ from functools import wraps
 from dazedtl.storage import write_json, write_bytes
 from dazedtl.translation.files import digest
 from dazedtl.translation.requests import output_schema
+from . import request_parameters
 
 
 class ProviderFailure(RuntimeError):
@@ -132,7 +133,8 @@ class TranslationEngine:
         from dazedtl.translation import requests, compilation
         return digest({"engine": _compiler_fingerprint(), "bridge": digest(Path(__file__).read_bytes()),
                        "contract": digest(Path(requests.__file__).read_bytes()),
-                       "compilation": digest(Path(compilation.__file__).read_bytes())})
+                       "compilation": digest(Path(compilation.__file__).read_bytes()),
+                       "parameters": digest(Path(request_parameters.__file__).read_bytes())})
 
     def payload(self, request, configuration):
         from util.translation import buildClaudeRequest, buildOpenAIRequest
@@ -162,7 +164,7 @@ class TranslationEngine:
             params["response_format"] = ({"type": "json_object"} if configuration["provider"] in {"custom", "mistral"} else
                                          {"type": "json_schema", "json_schema": {"name": "translation", "strict": True,
                                                                                  "schema": output_schema(request["sources"])}})
-        return params
+        return request_parameters.provider_defaults(params, configuration.get("generationParameters"))
 
     def token_count(self, text):
         import tiktoken

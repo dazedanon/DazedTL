@@ -1,6 +1,8 @@
 import { Button } from "../../ui/Button";
 import type { Job } from "../../api/contracts";
 import { Message } from "../../ui/Feedback";
+import { api } from "../../api/client";
+import { ProcessPanel } from "./ProcessPanel";
 export function Estimate({ value }: { value: Record<string, unknown> }) {
   const fields = [
     ["requests", "Requests"],
@@ -41,6 +43,7 @@ export default function RunPanel({
   error = "",
   pendingKey = "",
   hideTitle = false,
+  projectId,
 }: {
   job: Job;
   active: boolean;
@@ -53,6 +56,7 @@ export default function RunPanel({
   error?: string;
   pendingKey?: string;
   hideTitle?: boolean;
+  projectId?: string;
 }) {
   return (
     <section className="ui-section run-panel">
@@ -61,7 +65,9 @@ export default function RunPanel({
         <span className="badge">{job.status}</span>
       </div>
       <p>{job.message}</p>
-      {job.files && <details><summary>{job.files.length} frozen {job.files.length === 1 ? "file" : "files"} · {job.model || "Saved model"}</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
+      <ProcessPanel job={job} readPayload={projectId ? index => api.guided.payload(projectId, job.id, index) : undefined}
+        readProvider={projectId ? () => api.guided.providerDetails(projectId, job.id) : undefined} />
+      {job.files && <details><summary>Frozen file scope</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
       {job.eventTextReview && <details><summary>Saved event text review</summary>
         <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
         {job.eventTextReview.settings && <dl>{Object.entries(job.eventTextReview.settings).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value)}</dd></div>)}</dl>}
@@ -79,7 +85,7 @@ export default function RunPanel({
           </p>
         </>
       )}
-      {job.estimate && <Estimate value={job.estimate} />}
+      {job.estimate && <details><summary>Cost estimate</summary><Estimate value={job.estimate} /></details>}
       {job.approval && (
         <div className="approval">
           <h3>
@@ -131,7 +137,7 @@ export default function RunPanel({
         ) : ["failed", "stopped", "interrupted", "canceled"].includes(
             job.status,
           ) ? (
-          <Button variant="primary" size="comfortable" disabled={busy} onClick={resume}>
+          <Button variant="primary" size="comfortable" disabled={busy || job.process?.retryBlocked} onClick={resume}>
             Resume saved run
           </Button>
         ) : null}

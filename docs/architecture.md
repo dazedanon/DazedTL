@@ -29,6 +29,17 @@ The Translation workspace composes file selection, preferences and the preserved
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase retains its estimate beside the saved run, bound to source, scope, provider and pricing, guidance, and layout.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
+New API runs freeze a provider-default generation policy before estimation and review.
+The compatibility adapter omits the native engine's implicit temperature, frequency penalty, and reasoning effort; current model preferences expose no explicit overrides for these parameters.
+The policy participates in estimate identity and applies to both Live and Batch request construction.
+Saved runs without this policy retain their original parameters and recovery behavior.
+New MV/MZ state runs also freeze compatible state-call grouping before submission.
+The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
+Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.
+Actor-substitution calls and note calls retain their original boundaries.
+Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
+New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
+The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
 Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,

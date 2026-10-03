@@ -262,7 +262,28 @@ class Guided:
             job["outputsAvailable"] = False
         if compact:
             job["log"] = []
+        from dazedtl.compatibility.process_view import summary
+        try:
+            job["process"] = summary(self.backend.manual.folder(identity), job)
+        except (OSError, ValueError, KeyError):
+            job["process"] = {"errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
         return job
+
+    def payload(self, project_id, run_id, index):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError("Choose a translation run owned by this project.")
+        from dazedtl.compatibility.process_view import payload
+        return payload(self.backend.manual.folder(run_id), index)
+
+    def provider_details(self, project_id, run_id):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError("Choose a translation run owned by this project.")
+        if not self.backend.allow_providers:
+            raise ValueError("Provider reads are disabled in offline mode.")
+        from dazedtl.compatibility.process_view import provider_details
+        return provider_details(self.backend.manual.folder(run_id))
 
     def inspect(self, project_id, run_id):
         if not isinstance(run_id, str):

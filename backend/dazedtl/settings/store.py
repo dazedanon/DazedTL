@@ -351,7 +351,8 @@ class Settings:
     def guided_configuration(self, mode):
         from .execution import configuration
         state = self._read()
-        return {**configuration(self, mode), "engine_settings": self._values(state)}
+        return {**configuration(self, mode), "engine_settings": self._values(state),
+                "stateGrouping": "compatible-states-v1"}
 
     def connection_summary(self):
         from .execution import connection_summary
@@ -680,6 +681,8 @@ class Settings:
             self.adapter.manual.request_policy = {
                 "version": 1,
                 "model": values["model"],
+                "generationParameters": preferences.GENERATION_PARAMETERS,
+                "stateGrouping": "compatible-states-v1",
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

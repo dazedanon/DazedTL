@@ -49,6 +49,7 @@ export interface Job {
   logicalPhase?: Phase;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
+  process?: RunProcess;
   eventTextReview?: { manual?: string[]; reason?: string; binding?: string; reportId?: string | null; fingerprint?: string; literalBased?: boolean; settings?: Record<string, EngineValue> } | null;
   action?: string;
   result?: Record<string, unknown> | null;
@@ -57,6 +58,19 @@ export interface Job {
     kind: "batch" | "speakers";
     detail: Record<string, unknown>;
   };
+}
+export interface RunProcess {
+  mode?: string; prepared?: number; submitted?: number | null; remaining?: number | null;
+  received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
+  failed?: number; retryBlocked?: boolean; nextAction?: string;
+  uncertain?: number; duplicateSubmissions?: number;
+  sourceItems?: number | null; submittedItems?: number | null;
+  batches?: { id: string; status: string; counts: Record<string, number>; errors?: Record<string, string>[] }[];
+  errors: string[]; usage?: Record<string, number> | null;
+}
+export interface RunPayload {
+  index: number; total: number; state: string; source: Record<string, string> | null;
+  context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown;
 }
 export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
@@ -705,6 +719,8 @@ export interface RpcContract {
   guided_resume: { request: { project_id: string }; response: Job };
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
+  guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };
+  guided_provider_details: { request: { project_id: string; run_id: string }; response: { batches: NonNullable<RunProcess['batches']> } };
   guided_draft: {
     request: { project_id: string; documents: Documents };
     response: Saved;

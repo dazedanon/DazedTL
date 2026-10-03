@@ -29,6 +29,7 @@ def configuration(settings, mode):
              "connection_id": connection["id"], "provider": connection["provider"],
              "protocol": connection["protocol"], "endpoint": providers.address(connection),
              "organization": connection["organization"],
+             "generationParameters": preferences.GENERATION_PARAMETERS,
              "entries_per_request": selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST,
              "rates": {"input": input_rate, "output": output_rate, "batch_factor": None,
                        "source": "custom" if selected["pricing"] == "custom" else defaults["source"]}}

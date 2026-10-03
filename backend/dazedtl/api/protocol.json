@@ -152,6 +152,12 @@
     "guided_inspect": {
       "refresh": false
     },
+    "guided_payload": {
+      "refresh": false
+    },
+    "guided_provider_details": {
+      "refresh": false
+    },
     "guided_form": {
       "refresh": false,
       "duringClose": true

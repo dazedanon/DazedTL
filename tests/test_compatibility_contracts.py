@@ -18,9 +18,67 @@ from dazedtl.compatibility.guided import rewrap_review, run_ace, runtime_files, 
 from dazedtl.compatibility.speaker_scan import collect as collect_speakers
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
+from dazedtl.settings.preferences import GENERATION_PARAMETERS
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_frozen_worker_defaults_preserve_payloads_and_legacy_recovery(self):
+        # Regression: the native builder injects unsupported temperature into a
+        # new guided Batch. Normalize before collection and Live serialization,
+        # but never reinterpret the saved policy of a historical run.
+        from copy import deepcopy
+        from dazedtl.compatibility.worker_policy import install
+        desktop, backend, environment, util, translation = (ModuleType(name) for name in
+            ('desktop', 'desktop.backend', 'desktop.backend.manual_environment', 'util', 'util.translation'))
+        desktop.backend = backend
+        backend.manual_environment = environment
+        util.translation = translation
+        baseline = {'messages': [{'role': 'system', 'content': 'Approved game guidance'},
+                                {'role': 'user', 'content': '{"Line1":"防御"}'}],
+                    'max_completion_tokens': 8192,
+                    'response_format': {'type': 'json_schema', 'json_schema': {'strict': True,
+                                        'schema': {'type': 'object', 'properties': {'Line1': {'type': 'string'}},
+                                                   'required': ['Line1'], 'additionalProperties': False}}}}
+        def native(model):
+            return {**deepcopy(baseline), 'model': model, 'temperature': 0,
+                    'frequency_penalty': 0.05, 'reasoning_effort': 'none'}
+        translation.buildOpenAIRequest = translation.buildClaudeRequest = native
+        native_prepare = Mock(return_value='prepared')
+        environment.prepare = native_prepare
+        modules = {module.__name__: module for module in (desktop, backend, environment, util, translation)}
+        with TemporaryDirectory() as temporary, patch.dict(sys.modules, modules):
+            root = Path(temporary)
+            policy = {'version': 1, 'model': 'gpt-6.1-sol', 'entriesPerRequest': 50,
+                      'inputRate': 2, 'outputRate': 10, 'generationParameters': GENERATION_PARAMETERS}
+            plan = {'settings': {'model': 'gpt-6.1-sol', 'batchsize': 50}, 'dazedtl_request_policy': policy}
+            write_json(root/'plan.json', plan)
+            write_json(root/'log/batch_requests.json', {'historical': native('gpt-6.1-sol')})
+            frozen = {name: (root/name).read_bytes() for name in ('plan.json', 'log/batch_requests.json')}
+            install()
+            self.assertEqual(environment.prepare(root), 'prepared')
+            for model in ('gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra', 'gpt-4.1', 'custom-model'):
+                with self.subTest(model=model):
+                    live = translation.buildOpenAIRequest(model)
+                    batch_body = json.loads(json.dumps({'body': translation.buildOpenAIRequest(model)}))['body']
+                    self.assertEqual(live, {**baseline, 'model': model})
+                    self.assertEqual(batch_body, live)
+                    self.assertEqual(translation.buildClaudeRequest(model), live)
+            self.assertEqual({name: (root/name).read_bytes() for name in frozen}, frozen)
+            for legacy in ({key: value for key, value in policy.items() if key != 'generationParameters'}, None):
+                if legacy is None:
+                    plan.pop('dazedtl_request_policy')
+                else:
+                    plan['dazedtl_request_policy'] = legacy
+                write_json(root/'plan.json', plan)
+                environment.prepare(root)
+                self.assertEqual(translation.buildOpenAIRequest('gpt-6.1-sol'), native('gpt-6.1-sol'))
+            plan['dazedtl_request_policy'] = {**policy, 'generationParameters': 'unsupported-future-policy'}
+            write_json(root/'plan.json', plan)
+            before = native_prepare.call_count
+            with self.assertRaisesRegex(ValueError, 'invalid or unsupported'):
+                environment.prepare(root)
+            self.assertEqual(native_prepare.call_count, before)
+
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(self):
         # The native worker reports several failures with the same canceled message.
         # Only its explicit no-submission evidence can retire a first declined run.
@@ -314,7 +372,8 @@ class ManualJobs:
         context_module.request_contexts = contexts
         skill_module.ctx = lambda *_args, **_kwargs: "Field guidance"
         provider_module.buildClaudeRequest = lambda **kwargs: {"captured": kwargs}
-        provider_module.buildOpenAIRequest = lambda **kwargs: {"captured": kwargs}
+        provider_module.buildOpenAIRequest = lambda **kwargs: {"captured": kwargs, "temperature": 0,
+                                                              "frequency_penalty": 0.05, "reasoning_effort": "none"}
         modules = {module.__name__: module for module in (package, context_module, skill_module, provider_module)}
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.project = lambda *_args: None
@@ -330,7 +389,9 @@ class ManualJobs:
             for protocol, mode in (("openai", "live"), ("anthropic", "batch")):
                 with self.subTest(protocol=protocol):
                     payload = engine.payload(row, {"protocol": protocol, "provider": protocol,
-                                                  "mode": mode, "model": "fixture", "endpoint": "https://provider.invalid/v1"})
+                                                  "mode": mode, "model": "fixture", "endpoint": "https://provider.invalid/v1",
+                                                  "generationParameters": GENERATION_PARAMETERS})
+                    self.assertFalse({'temperature', 'frequency_penalty', 'reasoning_effort'} & payload.keys())
                     sent = payload["captured"]
                     self.assertEqual(sent["user"], row["context"]["user"])
                     self.assertIn(note, sent["user"])
