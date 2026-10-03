@@ -121,10 +121,19 @@ class GuidedRuns:
         except (OSError, ValueError, UnicodeError) as exc:
             return {"matches": 0, "unmatched": 0, "files": [], "rows": [], "fingerprint": None, "status": "recovery_needed", "message": str(exc)}
 
-    def remember(self, project_id, job, inputs, estimate=None):
+    def remember(self, project_id, job, inputs, estimate=None, preparation_mode=None):
         records = self.records(project_id)
-        records[job["id"]] = {**inputs, "estimate": estimate}
+        records[job["id"]] = {**inputs, "estimate": estimate, "preparation_mode": preparation_mode}
         write_json(self.guided.path(project_id, "runs"), {"version": 1, "runs": records})
+
+    def preparation_mode(self, project_id, identity):
+        records = self.records(project_id)
+        mode = records.get(identity, {}).get("preparation_mode")
+        # A later run consuming this estimate owns the next stage, including
+        # failed/canceled runs. Reopening an estimate must never start it again.
+        if any((row.get("estimate") or {}).get("jobId") == identity for row in records.values()):
+            return None
+        return mode
 
     def continuation(self, project_id, native, inputs):
         from dazedtl.compatibility.process_view import ledger

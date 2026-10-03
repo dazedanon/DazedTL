@@ -139,6 +139,29 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.started, [])
 
+    def test_translation_preparation_survives_reopen_and_cancel_targets_its_estimate(self):
+        # Protect navigation/reload losing the local preparation handoff, and
+        # Cancel clearing only renderer state while the estimate keeps running.
+        identity = self.seed_estimate()
+        job = self.backend.manual.jobs[identity]
+        inputs = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
+        self.guided.runs.remember(self.identity, job, inputs, preparation_mode='batch')
+        job['status'] = 'running'
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.assertEqual(reopened.runs.quote(self.identity, self.native, 'database', 'batch')[0]['job']['preparationMode'], 'batch')
+        self.assertEqual(reopened._start(self.identity, 'estimate', 'database', ['Items.json'], inputs,
+                                        preparation_mode='batch')['id'], identity)
+        self.assertEqual(self.started, [])
+        self.backend.manual.stop = Mock(return_value={**job, 'status': 'stopped'})
+        reopened.stop(self.identity, identity)
+        self.backend.manual.stop.assert_called_once_with(identity)
+        self.assertIsNone(reopened.runs.preparation_mode(self.identity, identity))
+        reopened.runs.remember(self.identity, job, inputs, preparation_mode='batch')
+        reopened.runs.remember(self.identity, {'id': 'next-run'}, inputs, {'jobId': identity})
+        self.assertIsNone(reopened.runs.preparation_mode(self.identity, identity))
+        with self.assertRaises(ValueError):
+            reopened.stop(self.identity, 'foreign-run')
+
     def test_independent_selection_and_refresh_do_not_reuse_a_retired_quote(self):
         write_json(self.source / 'Map001.json', {'events': []})
         self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json']
@@ -166,7 +189,11 @@ class GuidedTests(unittest.TestCase):
         self.assertNotIn('dialogue', status['phase_runs'])
         self.assertEqual(status['phase_runs']['database']['appliedOutputs'], [])
         write_json(self.folder / 'applied-outputs.json', {'files': {'Items.json': expected}})
+        self.assertEqual(self.guided.run_view(identity)['appliedOutputs'], [])
+        write_json(self.source / 'Items.json', output)
         self.assertEqual(self.guided.run_view(identity)['appliedOutputs'], ['Items.json'])
+        write_json(self.source / 'Items.json', [{'name': 'Manual game edit'}])
+        self.assertEqual(self.guided.run_view(identity)['appliedOutputs'], [])
         write_json(self.backend.manual.folder(identity) / 'translated/Items.json', [{'name': 'Changed output'}])
         self.assertFalse(self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs']['database']['scopeComplete'])
 

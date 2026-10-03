@@ -41,12 +41,17 @@ Guided process views read saved queue fragments, manifests, results, and file re
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
 Main-text Translate prepares a local estimate and Batch requests from one click, then shows one final submission cost approval for the frozen scope.
+The estimate retains its requested continuation mode in the backend run registry.
+Navigation and reopening recover preparation from that record; cancellation stops the owned estimate worker, and a later run consuming its quote closes the handoff.
 Other Batch actions likewise begin local preparation immediately and retain the native final spending approval.
 The fresh Batch speaker check validates unresolved names against frozen files and current glossary before collection; it retains its separate approval if names need translation.
 Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
 Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
 The request inspector keeps model, line count and token limit beside its source/context, response/error and exact JSON tabs.
 Full request parameters and strict schemas stay in Exact JSON; independently scrollable source and context panes keep retained content readable without pushing the tabs below the fold.
+File and request lists use bounded pages with search; inspector selection, tab, filter and page are retained by run identity without storing payloads in browser preferences.
+Saved translated output and currently verified runtime files are separate counts.
+An older Apply receipt does not establish that the current game still matches a run's output; later game edits remain visible and protected by the existing publication review.
 Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
 All project-owned runs remain in History automatically, including failed and canceled runs. The native pointer is not the ownership registry.
 Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.

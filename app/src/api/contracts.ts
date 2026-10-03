@@ -47,6 +47,7 @@ export interface Job {
   outputs?: Record<string, string>;
   outputsAvailable?: boolean;
   logicalPhase?: Phase;
+  preparationMode?: "batch" | "translate" | null;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
   process?: RunProcess;

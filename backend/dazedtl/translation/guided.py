@@ -267,11 +267,12 @@ class Guided:
             project = next((item for item in self.projects.data["projects"] if item.get("backend_id") == workflow.get("id")), None)
             if project:
                 job["eventTextReview"] = self.runs.records(project["id"]).get(identity, {}).get("review")
+                if job.get("mode") == "estimate":
+                    job["preparationMode"] = self.runs.preparation_mode(project["id"], identity)
             native = self.backend.workflows.projects.get(workflow.get("id"))
             if native:
-                receipt = self.backend.workflows.folder(native["id"]) / "applied-outputs.json"
-                applied = read_json(receipt).get("files", {}) if receipt.exists() else {}
-                job["appliedOutputs"] = [name for name, expected in job.get("outputs", {}).items() if applied.get(name) == expected or self.observed_digest(project_path(native["data"], name)) == expected]
+                job["appliedOutputs"] = [name for name, expected in job.get("outputs", {}).items()
+                                         if self.observed_digest(project_path(native["data"], name)) == expected]
         except (OSError, ValueError, KeyError):
             job["outputsAvailable"] = False
         if compact:
@@ -582,9 +583,12 @@ class Guided:
         expected = None
         manifest = None
         if action == "start":
-            if set(options) != {"mode"} or options["mode"] not in {"batch", "translate", "estimate", "speakers"}:
+            if (set(options) - {"mode", "preparation_mode"} or options.get("mode") not in {"batch", "translate", "estimate", "speakers"}
+                    or "preparation_mode" in options and (options["mode"] != "estimate" or options["preparation_mode"] not in {"batch", "translate"})):
                 raise ValueError("Choose Batch, Live API, a cost estimate, or speaker collection.")
             mode = options["mode"]
+            if options.get("preparation_mode") and options["preparation_mode"] != self.preferences(native)["values"]["mode"]:
+                raise ValueError("Save the intended translation mode before preparing its estimate.")
             phase = "speakers" if mode == "speakers" else project["phase"]
             if phase == "speakers" and mode != "speakers":
                 raise ValueError("Choose a translation phase first.")
@@ -772,7 +776,7 @@ class Guided:
                     if not matched["current"] or matched["job"]["id"] != confirmed["estimate"]["jobId"]:
                         raise ValueError("The matching estimate changed. Review a new preview.")
                     self.protect_submission(native, confirmed['estimate'])
-            return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"])
+            return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"], options.get("preparation_mode"))
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
             return self.backend.guided_refresh(native, confirmed["paths"], options["sources"])
@@ -820,8 +824,15 @@ class Guided:
                 or inputs.status(sorted(self.supported_files(native)))["changed"]):
             raise ValueError("Source work changed after review. Playtest and record the current pass again.")
 
-    def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None):
+    def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None, preparation_mode=None):
         _, native = self.record(project_id)
+        if preparation_mode:
+            for identity, record in reversed(list(self.runs.records(project_id).items())):
+                job = self.backend.manual.jobs.get(identity)
+                if (job and job.get("mode") == "estimate" and job.get("status") in {"ready", "running", "waiting"}
+                        and record.get("preparation_mode") == preparation_mode
+                        and record.get("fingerprint") == run_inputs["fingerprint"]):
+                    return self.run_view(identity)
         self.inputs(native).prepare(files)
         native["imported"] = list(dict.fromkeys([*native["imported"], *files]))
         self.backend.workflows.save(native)
@@ -835,8 +846,8 @@ class Guided:
         try:
             job = self.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
-                self.runs.remember(project_id, job, run_inputs, estimate)
-            return {**job, "logicalPhase": phase}
+                self.runs.remember(project_id, job, run_inputs, estimate, preparation_mode)
+            return {**job, "logicalPhase": phase, "preparationMode": preparation_mode}
         finally:
             self.backend.manual.continuation = None
             self.backend.manual.reserved_sources = None
@@ -1008,7 +1019,13 @@ class Guided:
         if run_id is not None:
             if run_id not in self.owned_runs(native):
                 raise ValueError('Choose a run owned by this project.')
-            return self.backend.manual.stop(run_id)
+            result = self.backend.manual.stop(run_id)
+            if result.get('mode') == 'estimate':
+                records = self.runs.records(project_id)
+                if run_id in records:
+                    records[run_id]['preparation_mode'] = None
+                    write_json(self.path(project_id, 'runs'), {'version': 1, 'runs': records})
+            return result
         operation = self.backend.operations.jobs.get(self.backend.operations.active)
         if operation and operation["project_id"] == native["id"]:
             return self.backend.operations.stop(operation["id"])

@@ -6,6 +6,17 @@ import { Message } from "../../ui/Feedback";
 const formatted = (value: unknown) => JSON.stringify(value, null, 2);
 const tabs = ["source", "response", "json"] as const;
 type Tab = typeof tabs[number];
+type InspectorView = { index: number; tab: Tab; filter: string; page: number; query: string };
+const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
+function savedView(id: string): InspectorView {
+  const fallback: InspectorView = { index: 0, tab: "source", filter: "all", page: 0, query: "" };
+  try {
+    const value = JSON.parse(localStorage.getItem(inspectorKey(id)) || "null");
+    if (!value || !Number.isSafeInteger(value.index) || value.index < 0 || !Number.isSafeInteger(value.page) || value.page < 0
+        || !tabs.includes(value.tab) || !["all", "failed", "unsent"].includes(value.filter) || typeof value.query !== "string") return fallback;
+    return { index: value.index, tab: value.tab, filter: value.filter, page: value.page, query: value.query.slice(0, 200) };
+  } catch { return fallback; }
+}
 const contextText = (payload: RunPayload) => [
   payload.system != null ? "System instructions\n" + (typeof payload.system === "string" ? payload.system : formatted(payload.system)) : "",
   ...(Array.isArray(payload.messages) ? payload.messages.slice(0, -1).map(message => {
@@ -29,18 +40,23 @@ export function ProcessPanel({ job, readPayload, readProvider, compact = false }
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("source");
   const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(0);
+  const [query, setQuery] = useState("");
   const generation = useRef(0);
   const pending = useRef(false);
   const tabList = useRef<HTMLDivElement>(null);
   const tabId = useId();
-  useEffect(() => { generation.current++; pending.current = false; setPayload(null); setRemote(undefined); setError(""); setBusy(""); setFilter("all"); setTab("source"); if (readPayload && process?.prepared) void load(0); return () => { generation.current++; }; }, [job.id]);
+  useEffect(() => { const view = savedView(job.id); generation.current++; pending.current = false; setPayload(null); setRemote(undefined); setError(""); setBusy(""); setFilter(view.filter); setTab(view.tab); setPage(view.page); setQuery(view.query); if (readPayload && process?.prepared) void load(Math.min(view.index, process.prepared - 1)); return () => { generation.current++; }; }, [job.id]);
   if (!process) return null;
+  function remember(view: Partial<InspectorView>) {
+    try { localStorage.setItem(inspectorKey(job.id), JSON.stringify({ ...savedView(job.id), ...view })); } catch { /* Storage may be unavailable; request evidence stays backend-owned. */ }
+  }
   async function load(index: number) {
     if (!readPayload || pending.current) return;
     pending.current = true;
     const token = ++generation.current;
     setBusy("payload"); setError("");
-    try { const value = await readPayload(index); if (token === generation.current) { setPayload(value); } }
+    try { const value = await readPayload(index); if (token === generation.current) { setPayload(value); remember({ index }); } }
     catch (failure) { if (token === generation.current) setError(failure instanceof Error ? failure.message : "Payload unavailable."); }
     finally { if (token === generation.current) { pending.current = false; setBusy(""); } }
   }
@@ -55,6 +71,7 @@ export function ProcessPanel({ job, readPayload, readProvider, compact = false }
   }
   function showTab(value: Tab, focus = false) {
     setTab(value);
+    remember({ tab: value });
     if (focus) tabList.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[tabs.indexOf(value)]?.focus();
   }
   const batches = remote || process.batches || [];
@@ -66,6 +83,12 @@ export function ProcessPanel({ job, readPayload, readProvider, compact = false }
     ["Validated files", process.validatedFiles], ["Applied files", process.appliedFiles]] as const;
   const schema = payload?.parameters.response_format as { type?: string; json_schema?: { strict?: boolean } } | undefined;
   const tokenLimit = payload?.parameters.max_completion_tokens ?? payload?.parameters.max_tokens;
+  const requests = process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 }));
+  const matching = requests.filter(row => (filter === "all" || filter === "failed" && row.state === "failed" || filter === "unsent" && ["queued", "prepared"].includes(row.state))
+    && (`${row.index + 1} ${row.file || ""}`).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const pageSize = 40;
+  const lastPage = Math.max(0, Math.ceil(matching.length / pageSize) - 1);
+  const currentPage = Math.min(page, lastPage);
   return <div className={`translation-process${compact ? " translation-process--compact" : ""}`}>
     <p><strong>{job.mode === "batch" ? "Batch" : job.mode === "estimate" ? "Estimate" : job.mode === "offline" ? "Local fixture" : "Live"}</strong>
       {job.model && <> · {job.model}</>}{job.files && <> · {job.files.length} {job.files.length === 1 ? "file" : "files"}</>}
@@ -80,8 +103,11 @@ export function ProcessPanel({ job, readPayload, readProvider, compact = false }
     </div>
     <Message message={error} />
     <div className="request-workspace">
-      <aside className="request-list"><div role="group" aria-label="Request filters">{["all", "failed", "unsent"].map(value => <Button key={value} variant="quiet" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "all" ? "All" : value === "failed" ? "Failed" : "Unsent"}</Button>)}</div>
-        {(process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 }))).filter(row => filter === "all" || filter === "failed" && row.state === "failed" || filter === "unsent" && ["queued", "prepared"].includes(row.state)).map(row => <Button key={row.index} variant="quiet" disabled={!!busy} aria-pressed={payload?.index === row.index} onClick={() => load(row.index)}><strong>Request {row.index+1}</strong><small>{row.file || "Saved scope"} · {row.state}</small></Button>)}
+      <aside className="request-list"><div role="group" aria-label="Request filters">{["all", "failed", "unsent"].map(value => <Button key={value} variant="quiet" aria-pressed={filter === value} onClick={() => { setFilter(value); setPage(0); remember({ filter: value, page: 0 }); }}>{value === "all" ? "All" : value === "failed" ? "Failed" : "Unsent"}</Button>)}</div>
+        <label>Find request<input type="search" maxLength={200} value={query} placeholder="Number or file" onChange={event => { setQuery(event.target.value); setPage(0); remember({ query: event.target.value, page: 0 }); }} /></label>
+        <div className="request-page-actions"><small>{matching.length.toLocaleString()} matching · {currentPage + 1}/{lastPage + 1}</small>{lastPage > 0 && <div className="actions"><Button aria-label="Previous requests" disabled={!currentPage} onClick={() => { setPage(currentPage - 1); remember({ page: currentPage - 1 }); }}>Prev</Button><Button aria-label="Next requests" disabled={currentPage >= lastPage} onClick={() => { setPage(currentPage + 1); remember({ page: currentPage + 1 }); }}>Next</Button></div>}</div>
+        {matching.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map(row => <Button key={row.index} variant="quiet" disabled={!!busy} aria-pressed={payload?.index === row.index} onClick={() => load(row.index)}><strong>Request {row.index+1}</strong><small>{row.file || "Saved scope"} · {row.state}</small></Button>)}
+        {!matching.length && <p>No requests match this filter.</p>}
       </aside>
       <section className="payload-inspector">
         {payload ? <><div className="request-selection"><strong>Request {payload.index+1} / {payload.total}</strong><span className="badge">{payload.state}</span></div>

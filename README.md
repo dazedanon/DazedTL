@@ -5,13 +5,16 @@ An Electron application migrating the existing DazedTL translation engine into a
 ## Current scope
 
 RPG Maker MV/MZ has a **Translation** workspace following the working Qt workflow:
-**Prepare → Names & context → Translate → Plugin text → Images → Apply & test → Release**.
+**Prepare → Names & context → Translate → Plugin text → Images → Apply & Fitting → Release**.
 Each stage opens a focused task. The app sidebar stays in place; workflow navigation becomes
 compact in smaller windows. File selection supports search, groups, map names when available,
 and keyboard ranges across its virtualized list. Filtering preserves checked files.
-The app prepares working copies and carries saved phase results forward. Each run and
-application review uses the selected scope. Saved operations remain in **Activity**.
-Translation offers Batch when supported and Live API; cost estimation is a separate action.
+The app prepares working copies and carries saved phase results forward.
+Each run and application review uses the selected scope.
+Saved operations remain in **History**.
+Main-text Translate prepares a local estimate and opens spending review for Batch or Live API.
+Preparation survives navigation and reopening; Cancel preparation stops its saved worker.
+Saved output and verified game files have separate counts, and the request inspector retains its selected request and view.
 Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
 Its bundled executables require Windows for native conversion and are cached in the app profile.
 Release verifies saved packing evidence against current JSON and native bytes.
@@ -92,18 +95,20 @@ names and actor/variable lookups to investigate the glossary, characters, voice 
 The scanner makes no API requests. Optional API name translation remains in the discovery tools.
 Review/save the resulting guidance and measured widths. **View findings** explains each speaker
 rule; **Adjust manually** retains your overrides. Re-copy the task when upgrading from older setup prompts.
-In **Translate**, choose a database and small map scope, translate database names before
-dialogue, and build the variable comparison cache before advanced variable translation.
+In **Translate**, choose a database and small map scope, then translate database names before dialogue.
+**Other event text** investigates variables, plugin commands, scripts and labels before translation.
+Translate audited assignments first, then review and update comparisons from their saved literal mappings.
 Apply and playtest an early scene before expanding. Batch pauses for cost approval before submission.
-**Extra text** starts with the existing advanced-text audit. Enable only its confirmed
-codes, variable IDs, plugin handlers, and script patterns; skip the phase if none are needed.
+Enable only the investigation's confirmed codes, variable IDs, plugin handlers, and script patterns; skip the phase if none are needed.
 
-Review accumulated outputs before applying them. Rewrap requires a completed scan with
-the same files and settings. QA findings stay in **Apply & test**. **Release** installs or
-updates TL Inspector and Forge for MV/MZ, applies their settings, and builds a clean game
-or local patch ZIP. Packaging has no manual-review checklist. A patch scope preview is
-followed by its automatic local checkpoint and workspace backup; a clean game ZIP leaves
-the working game untouched. Destinations stay outside the game, app workspace and engine.
+Review accumulated outputs before applying them.
+Rewrap requires a completed scan with the same files and settings.
+Optional QA and game tools stay in **Apply & Fitting**.
+Its Tools view installs or updates TL Inspector and Forge for MV/MZ and applies their settings.
+**Release** builds a clean game or local patch ZIP.
+Packaging has no manual-review checklist.
+A patch scope preview is followed by its automatic local checkpoint and workspace backup; a clean game ZIP leaves the working game untouched.
+Destinations stay outside the game, app workspace and engine.
 Existing archives require replacement approval. Package contents and the finished archive
 are checked before the app offers its folder. These checks do not claim that the game passed QA.
 Configured public GameUpdate metadata retains the engine's clean-commit and upstream checks;

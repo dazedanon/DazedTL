@@ -96,7 +96,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [inspected, setInspected] = useState<Job | null>(null);
   const [started, setStarted] = useState<Record<string, Job>>({});
   const [translateScope, setTranslateScope] = useState<"database" | "dialogue">(state.phase === "dialogue" ? "dialogue" : "database");
-  const [preparingTranslation, setPreparingTranslation] = useState<{ id: string; phase: "database" | "dialogue" } | null>(null);
+  const reviewedPreparations = useRef(new Set<string>());
+  const preparationQuote = state.estimates[translateScope];
+  const preparationRun = preparationQuote?.job || null;
+  const preparingTranslation = preparationRun && ["ready", "running", "waiting"].includes(preparationRun.status) ? preparationRun : null;
 
   const documentSelection = useDraft("guided-document:" + project.id, { initial: { saved: state.contextDocument }, report: action.report,
     persist: (document) => api.guided.position(project.id, "context", "guidance", document) });
@@ -256,20 +259,16 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const beginTranslation = () => action.run(async () => {
     await save();
     await api.phase(project.id, translateScope);
-    const local = await api.preview(project.id, "start", undefined, { mode: "estimate" });
-    const result = await api.execute(project.id, local.token);
-    setPreparingTranslation({ id: result.id, phase: translateScope });
+    const local = await api.preview(project.id, "start", undefined, { mode: "estimate", preparation_mode: mode });
+    await api.execute(project.id, local.token);
   }, "", "translate:prepare");
   useEffect(() => {
-    if (!preparingTranslation) return;
-    if (taskId !== "main-text") { setPreparingTranslation(null); return; }
-    if (action.busy) return;
-    const quote = state.estimates[preparingTranslation.phase]?.job;
-    if (quote?.id !== preparingTranslation.id || ["running", "waiting", "ready"].includes(quote.status)) return;
-    setPreparingTranslation(null);
-    if (quote.status !== "complete") { action.report(quote.message || "Local preparation failed.", "translate:prepare"); return; }
-    void review("start", { mode, phase: preparingTranslation.phase });
-  }, [preparingTranslation, state.estimates, taskId, action.busy]);
+    if (taskId !== "main-text" || action.busy || !preparationRun || preparationRun.status !== "complete"
+        || !preparationQuote?.current || preparationRun.preparationMode !== mode || draft.dirty
+        || Object.keys(context.drafts).length || reviewedPreparations.current.has(preparationRun.id)) return;
+    reviewedPreparations.current.add(preparationRun.id);
+    void review("start", { mode: preparationRun.preparationMode, phase: translateScope });
+  }, [preparationRun, preparationQuote?.current, taskId, action.busy, mode, translateScope, draft.dirty, context.drafts]);
   const closePanel = () => panel === "files" ? action.run(async () => { edit("selected", fileBaseline); await flushDrafts(); setPanel(null); }, "", "files:cancel") : setPanel(null);
   const chooseFolder = (key: "original" | "release") => action.run(async () => {
     const folder = await window.dazedtl.chooseFolder();
@@ -419,9 +418,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           scopeRuns.find(run => run.mode === "batch" && run.process?.batches?.some(batch => ["validating", "in_progress", "finalizing"].includes(batch.status))) || scopeRuns[0];
         const quote = currentEstimate(translateScope);
         content = <>{current?.approval && <section className="translate-cost-review" aria-label="Final submission cost"><h3>{current.approval.kind === "batch" ? "Review submission cost" : "Review speaker translation cost"}</h3><p>{current.model} · {fileCount(current.files?.length || 0)} · saved run settings</p><p className="path">{current.files?.join(", ")}</p><Estimate value={current.approval.detail} /><p>Submit incurs API charges for this prepared scope.</p></section>}
-          <TranslateWorkspace state={state} scope={translateScope} mode={mode} run={current} estimate={quote}
+          <TranslateWorkspace state={state} scope={translateScope} mode={mode} run={current} estimate={preparationRun && preparationRun.status !== "complete" ? preparationRun : quote}
           pending={!!preparingTranslation || action.busy && action.key === "translate:prepare"} disabled={disabled}
-          scopeChange={scope => { setPreparingTranslation(null); setTranslateScope(scope); }} modeChange={value => edit("mode", value)}
+          scopeChange={scope => action.run(async () => { await flushDrafts(); await api.phase(project.id, scope); setTranslateScope(scope); }, "", "translate:scope")} modeChange={value => edit("mode", value)}
           settings={settings} files={() => chooseFiles(translateScope)} guidance={() => setPanel("translation-context")} requests={inspect} />
           {!baseline && <p className="guided-status-warning">Preserve the original and save its version baseline before translating.</p>}
           {!paidModeReady && <Message message="This connection does not support Batch. Choose Live API or a supported connection." />}</>;
@@ -430,7 +429,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           : <Button variant="primary" pending={!!preparingTranslation || action.busy && action.key === "translate:prepare"}
             disabled={disabled || !!preparingTranslation || !baseline || !!changed.length || !(translateScope === "database" ? databaseFiles : eventFiles).length || !state.provider.model || !paidModeReady}
             onClick={beginTranslation}>{preparingTranslation ? "Preparing estimate…" : "Translate"}</Button>;
-        secondary = preparingTranslation ? <Button onClick={() => setPreparingTranslation(null)}>Cancel preparation</Button>
+        secondary = preparingTranslation ? <Button disabled={disabled} pending={action.busy && action.key === "translate:cancel"}
+          onClick={() => action.run(() => api.stop(project.id, preparingTranslation.id), "Preparation stop requested. Saved estimates remain in History.", "translate:cancel")}>Cancel preparation</Button>
           : current?.approval ? <Button disabled={disabled} onClick={() => action.run(() => api.answer(project.id, current.approval!.token, false), "", "run:answer:false")}>Decline</Button>
           : current && ["running", "waiting"].includes(current.status) ? <Button disabled={disabled} onClick={() => action.run(() => api.stop(project.id, current.id), "", "run:stop")}>{current.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}</Button>
           : current?.mode === "batch" && ["stopped", "interrupted"].includes(current.status) && current.phase?.startsWith("poll") && current.process?.submitted ? <Button disabled={disabled} onClick={() => setResume(current)}>Resume local monitoring</Button>
