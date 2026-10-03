@@ -1,8 +1,4 @@
 main.editor-main.guided-main { padding: 0; }
-.translate-redesign .guided-layout { display: flex; flex-direction: column; }
-.translate-redesign .guided-task-nav { display: none; }
-.translate-redesign .guided-compact-nav { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-5); border-bottom: 1px solid var(--line); }
-.translate-redesign .guided-compact-nav button[aria-current] { color: var(--accent); background: var(--color-navigation-selected); }
 .translate-redesign .guided-task-workspace { flex: 1; }
 .translate-redesign .guided-task-heading > p, .translate-redesign .guided-task-location { display: none; }
 .translate-redesign .guided-task-heading { margin-bottom: var(--space-4); }
@@ -66,19 +62,13 @@ main.editor-main.guided-main { padding: 0; }
 .guided-header h1 { font-size: var(--font-body); }
 .guided-header > div:first-child { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: baseline; }
 .guided-header p { margin: 0; font-size: var(--font-small); color: var(--muted); }
-.guided-layout { display: grid; grid-template-columns: 12.5em minmax(0, 1fr); flex: 1; min-height: 0; }
-.guided-task-nav { padding: var(--space-4) var(--space-2); border-right: 1px solid var(--line); overflow: auto; }
-.guided-nav-label { color: var(--muted); margin: 0 var(--space-2) var(--space-3); font-size: var(--font-small); }
-.guided-task-nav button { width: 100%; text-align: left; justify-content: flex-start; gap: var(--space-2); }
-.guided-stage-button { margin-top: var(--space-1); }
+.guided-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.guided-phase-nav { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: var(--space-2); padding: var(--space-2) var(--space-5); border-bottom: 1px solid var(--line); }
+.guided-phase-nav button { gap: var(--space-2); }
+.guided-phase-nav button[aria-current="step"] { color: var(--accent); background: var(--color-navigation-selected); }
 .guided-stage-number { flex: 0 0 1.2em; color: var(--muted); }
-.guided-task-nav button[aria-current="step"] { color: var(--accent); }
-.guided-subtasks { margin: var(--space-1) var(--space-1) var(--space-3) var(--space-5); border-left: 1px solid var(--line); }
-.guided-subtasks button { border-radius: 0 var(--control-radius) var(--control-radius) 0; font-size: var(--font-small); }
-.guided-subtasks button[aria-current="step"] { background: var(--color-navigation-selected); color: var(--color-navigation-text); }
 .guided-completed, .guided-success { color: var(--color-success); }
-.guided-compact-nav { display: none; }
-.guided-task-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.guided-task-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .guided-workspace .guided-task-body { padding: var(--space-5) var(--space-6); }
 .guided-task-heading { margin-bottom: var(--space-5); }
 .guided-task-heading h2 { margin: var(--space-2) 0; font-size: var(--font-page-title); line-height: 1.25; overflow-wrap: anywhere; }
@@ -193,12 +183,8 @@ main.editor-main.guided-main { padding: 0; }
 .guided-speaker-findings li { overflow-wrap: anywhere; margin-block: var(--space-2); }
 .guided-name-list { display: flex; flex-direction: column; height: min(16em, 35dvh); margin-block: var(--space-3); }
 @container guided (max-width: 62em) {
-  .guided-layout { display: flex; flex-direction: column; }
-  .guided-task-nav { display: none; }
-  .guided-compact-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.5em, 1fr)); gap: var(--space-1); flex-shrink: 0; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); }
-  .guided-compact-nav button { min-width: 0; padding: var(--space-2) var(--space-1); gap: var(--space-1); font-size: var(--font-small); }
-  .guided-compact-nav button[aria-current="step"] { background: var(--color-navigation-selected); color: var(--color-navigation-text); }
-  .guided-task-workspace { flex: 1; }
+  .guided-phase-nav { gap: var(--space-1); padding-inline: var(--space-3); }
+  .guided-phase-nav button { padding-inline: var(--space-2); font-size: var(--font-small); }
   .guided-workspace .guided-task-body { padding: var(--space-4) var(--space-5); }
   .guided-task-workspace > .action-bar { padding-inline: var(--space-5); }
 }

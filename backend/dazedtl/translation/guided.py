@@ -281,6 +281,8 @@ class Guided:
             job["process"] = summary(self.backend.manual.folder(identity), job)
         except (OSError, ValueError, KeyError):
             job["process"] = {"errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
+        from dazedtl.compatibility.process_view import phase_feedback
+        job.update(phase_feedback(job))
         return job
 
     def payload(self, project_id, run_id, index):
@@ -297,7 +299,8 @@ class Guided:
         if not self.backend.allow_providers:
             raise ValueError("Provider reads are disabled in offline mode.")
         from dazedtl.compatibility.process_view import provider_details
-        return provider_details(self.backend.manual.folder(run_id))
+        plan = self.backend.saved_run_configuration(run_id)
+        return provider_details(self.backend.manual.folder(run_id), lambda batch: self.settings.batch_connection(batch, plan))
 
     def inspect(self, project_id, run_id):
         if not isinstance(run_id, str):
@@ -1011,10 +1014,16 @@ class Guided:
             return self.backend.operations.stop(operation["id"])
         return self.backend.manual.stop(self.job(project_id)["id"])
 
-    def resume(self, project_id):
+    def resume(self, project_id, run_id=None):
         self.idle()
-        identity = self.job(project_id)["id"]
-        self.settings.prepare_engine(resume=self.backend.saved_run_configuration(identity))
+        _, native = self.record(project_id)
+        identity = run_id if run_id is not None else self.job(project_id)["id"]
+        if not isinstance(identity, str) or identity not in self.owned_runs(native):
+            raise ValueError('Choose a saved run belonging to this project.')
+        plan = self.backend.saved_run_configuration(identity)
+        if (plan.get('workflow') or {}).get('id') != native['id']:
+            raise ValueError('This saved run belongs to another project.')
+        self.settings.prepare_engine(resume=plan)
         return self.backend.manual.resume(identity)
 
     def export(self, project_id, run_id=None):

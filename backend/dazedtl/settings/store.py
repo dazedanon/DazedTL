@@ -182,6 +182,22 @@ class Settings:
             and (connection["secret"] or connection["keyless"])
         )
 
+    def batch_connection(self, batch, plan):
+        """Resolve the submitted account without using the current selection."""
+        name = batch.get("key_name") or plan.get("key_name")
+        connection = next((item for item in self._read()["connections"]
+                           if item["runtime_name"] == name), None)
+        if not self._configured(connection):
+            raise ValueError("This Batch's saved connection is unavailable. Restore that connection in Settings to read its status.")
+        frozen = plan.get("settings", {})
+        endpoint = batch.get("endpoint") or frozen.get("api")
+        if (not endpoint or providers.route(batch["provider"], endpoint) !=
+                providers.route(connection["protocol"], providers.address(connection))
+                or connection["organization"] != frozen.get("organization", "")):
+            raise ValueError("This Batch's saved provider, server, or organization changed. Restore its original connection before reading status.")
+        return {"secret": connection["secret"], "keyless": connection["keyless"],
+                "endpoint": endpoint, "organization": connection["organization"]}
+
     def _import(self):
         saved, vault, draft = self.adapter.import_settings()
         state = {

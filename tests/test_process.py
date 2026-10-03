@@ -13,6 +13,7 @@ from dazedtl.compatibility import state_requests, process_view, request_scope
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
+from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
@@ -185,6 +186,20 @@ class ProcessTests(unittest.TestCase):
             provider = SimpleNamespace(_openai_batch_body=lambda _provider, params: params)
             with patch.dict('sys.modules', {'util.batch_providers': provider}):
                 self.assertEqual(process_view.payload(root, 0)['state'], 'uncertain')
+            pending_batch = process_view.saved(root, 'batch_history.json')['batches'][0]
+            rejected_batch = {**pending_batch, 'id': 'batch-rejected', 'api_status': 'completed',
+                              'request_counts': {'processing':0, 'succeeded':0, 'errored':1, 'canceled':0, 'expired':0}}
+            write_json(root/'log/batch_state.json', {'status':'submitted', 'batches':[
+                {'id': row['id'], 'custom_ids':row['custom_ids']} for row in [pending_batch, rejected_batch]]})
+            # A rejected duplicate must not release still-pending work, in
+            # either receipt order. Known pending work is not "uncertain".
+            for rows in [[pending_batch, rejected_batch], [rejected_batch, pending_batch]]:
+                write_json(root/'log/batch_history.json', {'batches':rows})
+                known = process_view.summary(root, {'mode':'batch'})
+                self.assertTrue(known['retryBlocked']); self.assertEqual(known['uncertain'], 0)
+                with patch.dict('sys.modules', {'util.batch_providers': provider}):
+                    self.assertEqual(process_view.payload(root, 0)['state'], 'submitted')
+            (root/'log/batch_state.json').unlink()
             write_json(root/'log/batch_history.json', {'batches': [{'id': 'batch-fixture', 'custom_ids': {'req-000000': 'a'},
                         'api_status': 'completed', 'request_counts': {'errored': 1}, 'provider_errors': [{'message': 'Unsupported temperature'}]}]})
             frozen = (root/'log/batch_requests.json').read_bytes()
@@ -208,23 +223,58 @@ class ProcessTests(unittest.TestCase):
             frozen = (root/'log/batch_history.json').read_bytes()
             client = Mock(); client.with_options.return_value = client
             package = ModuleType('util')
-            package.batch_history = SimpleNamespace(_client_for_entry=Mock(return_value=client))
-            package.api_keys = SimpleNamespace(get_secret=Mock(return_value='fixture-private-value'))
+            connection = {'runtime_name': 'fixture-key', 'provider': 'openai', 'protocol': 'openai',
+                          'secret': 'fixture-private-value', 'keyless': False, 'endpoint': 'https://provider.invalid/v1', 'organization': 'fixture-org'}
+            # The submitted account must resolve from canonical settings even
+            # when another account is active and the legacy vault is absent.
+            settings = object.__new__(Settings)
+            current = {'connections': [connection, {**connection, 'runtime_name': 'other-key', 'secret': 'other-fixture-value'}], 'active': 'other-key'}
+            settings._read = lambda: deepcopy(current)
+            plan = {'settings': {'api': connection['endpoint'], 'organization': 'fixture-org'}}
+            resolve = lambda batch: settings.batch_connection(batch, plan)
             package.batch_providers = SimpleNamespace(retrieve_batch=Mock(return_value={
                 'api_status':'completed', 'counts':{'errored':1}, 'errors':[], 'error_file_id':'file-fixture'}),
+                get_client=Mock(return_value=client),
                 _download_file_text=Mock(return_value=json.dumps({'custom_id':'req-1', 'response':{'body':{'error':{
                     'code':'unsupported_value','param':'temperature','message':'Unsupported temperature 0. fixture-private-value'}}}})+'\n'+
                     json.dumps({'custom_id':'unrelated-request','error':{'message':'Unrelated private request'}})))
             with patch.dict('sys.modules', {'util':package}):
-                result = process_view.provider_details(root)
+                result = process_view.provider_details(root, resolve)
             error = result['batches'][0]['errors'][0]
             self.assertEqual((error['code'], error['param']), ('unsupported_value','temperature'))
             self.assertIn('Unsupported temperature 0.', error['message'])
             self.assertNotIn('fixture-private-value', json.dumps(result))
             self.assertNotIn('Unrelated private request', json.dumps(result))
-            client.with_options.assert_called_once_with(timeout=20,max_retries=0)
+            package.batch_providers.get_client.assert_called_once_with('openai',api_key='fixture-private-value',api_url=connection['endpoint'],max_retries=0)
+            client.with_options.assert_called_once_with(timeout=20,max_retries=0,organization='fixture-org')
             client.batches.create.assert_not_called(); client.files.create.assert_not_called(); client.batches.cancel.assert_not_called()
             self.assertEqual((root/'log/batch_history.json').read_bytes(), frozen)
+            for change in [lambda: current['connections'].pop(0), lambda: connection.update(endpoint='https://other.invalid/v1'),
+                           lambda: connection.update(organization='different-org')]:
+                baseline = deepcopy(current)
+                change()
+                with patch.dict('sys.modules', {'util':package}), self.assertRaises(ValueError):
+                    process_view.provider_details(root, resolve)
+                current.clear(); current.update(baseline); connection = current['connections'][0]
+            package.batch_providers.get_client.assert_called_once()
+
+    def test_batch_phase_feedback_uses_receipts_instead_of_stale_scan_progress(self):
+        job = {'mode': 'batch', 'status': 'waiting', 'phase': 'submit', 'message': 'Scanning speakers… 3/3',
+               'progress': {'current':3,'total':3,'file':'Classes.json'}, 'approval': {'kind':'batch'}}
+        frozen = deepcopy(job)
+        waiting = process_view.phase_feedback(job)
+        self.assertIn('Review the cost', waiting['message']); self.assertIsNone(waiting['progress'])
+        self.assertEqual(job, frozen)
+        job.update(status='running', phase='poll_status', approval=None,
+                   process={'batches':[{'counts':{'succeeded':7,'processing':1}}]})
+        polling = process_view.phase_feedback(job)
+        self.assertIn('7 completed, 1 processing', polling['message']); self.assertIsNone(polling['progress'])
+        job['status'] = 'stopped'
+        self.assertIn('monitoring is paused', process_view.phase_feedback(job)['message'])
+        job['process']['batches'][0]['status'] = 'completed'
+        self.assertIn('Provider work has finished', process_view.phase_feedback(job)['message'])
+        job.update(status='failed',message='Actual provider failure')
+        self.assertEqual(process_view.phase_feedback(job), {})
 
     def test_live_receipt_usage_and_validation_are_separate_from_preparation(self):
         with TemporaryDirectory() as temporary:

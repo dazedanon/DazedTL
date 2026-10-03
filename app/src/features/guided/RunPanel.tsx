@@ -17,7 +17,9 @@ export function Estimate({ value }: { value: Record<string, unknown> }) {
   return (
     <dl className="estimate">
       {fields
-        .filter(([key]) => typeof value[key] === "number")
+        .filter(([key]) => typeof value[key] === "number" &&
+          !(key === "request_count" && typeof value.requests === "number") &&
+          !(key === "batch_cost" && typeof value.batch_cached_cost === "number" && value.batch_cost === value.batch_cached_cost))
         .map(([key, label]) => (
           <div key={key}>
             <dt>{label}</dt>
@@ -137,7 +139,7 @@ export default function RunPanel({
         ) : ["failed", "stopped", "interrupted", "canceled"].includes(
             job.status,
           ) ? (
-          <Button size="comfortable" disabled={busy || job.process?.retryBlocked} onClick={resume}>
+          <Button size="comfortable" disabled={busy || job.process?.retryBlocked && !(job.mode === "batch" && job.phase?.startsWith("poll"))} onClick={resume}>
             Resume with saved settings
           </Button>
         ) : null}

@@ -88,7 +88,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [inspectRelease, setInspectRelease] = useState(false);
-  const [resume, setResume] = useState(false);
+  const [resume, setResume] = useState<Job | null>(null);
   const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
   const [comparisonsAccepted, setComparisonsAccepted] = useState(false);
@@ -223,7 +223,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     if (name === "start" && phase) await api.phase(project.id, phase as Phase);
     setInspectRelease(inspectOnly && ["release", "release_patch"].includes(name));
     const result = await api.preview(project.id, name, files, requestOptions);
-    if (!result.confirmation && !inspectOnly) await execute(result); else setPreview(result);
+    const prepareBatch = name === "start" && options.mode === "batch";
+    if ((!result.confirmation || prepareBatch) && !inspectOnly) await execute(result); else setPreview(result);
   }, "", actionKey(name, options));
   const task = (name: string, label: string, options: Record<string, unknown> = {}, blocked = false, variant: "default" | "primary" = "default", files?: string[]) => {
     const recorded = name === "start" ? options.mode === "estimate" ? state.estimates[options.phase as Phase]?.job || undefined : undefined : operationJob(name, options);
@@ -258,12 +259,13 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   useEffect(() => {
     if (!preparingTranslation) return;
     if (taskId !== "main-text") { setPreparingTranslation(null); return; }
+    if (action.busy) return;
     const quote = state.estimates[preparingTranslation.phase]?.job;
     if (quote?.id !== preparingTranslation.id || ["running", "waiting", "ready"].includes(quote.status)) return;
     setPreparingTranslation(null);
     if (quote.status !== "complete") { action.report(quote.message || "Local preparation failed.", "translate:prepare"); return; }
     void review("start", { mode, phase: preparingTranslation.phase });
-  }, [preparingTranslation, state.estimates, taskId]);
+  }, [preparingTranslation, state.estimates, taskId, action.busy]);
   const closePanel = () => panel === "files" ? action.run(async () => { edit("selected", fileBaseline); await flushDrafts(); setPanel(null); }, "", "files:cancel") : setPanel(null);
   const chooseFolder = (key: "original" | "release") => action.run(async () => {
     const folder = await window.dazedtl.chooseFolder();
@@ -408,13 +410,15 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <p className="muted">Optional · get fresh evidence before changing these values.</p></div>;
       primary = <ActionControl label={discovery.layoutStatus === "defaults" && !draft.dirty && !discovery.layout ? "Use current defaults & translate" : "Save layout & translate"} variant="primary" disabled={disabled} {...feedback("save-options", "Saving layout…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id); await api.guided.reviewContext(project.id, "layout", current.layoutRevision, "layout"); await navigate("translate", "main-text"); }, "", "save-options")} />; break;
     case "main-text":
-      { const current = state.runs.find(run => run.logicalPhase === translateScope && run.mode !== "estimate");
+      { const scopeRuns = state.runs.filter(run => run.logicalPhase === translateScope && run.mode !== "estimate");
+        const current = scopeRuns.find(run => ["running", "waiting"].includes(run.status)) ||
+          scopeRuns.find(run => run.mode === "batch" && run.process?.batches?.some(batch => ["validating", "in_progress", "finalizing"].includes(batch.status))) || scopeRuns[0];
         const quote = currentEstimate(translateScope);
-        content = <><TranslateWorkspace state={state} scope={translateScope} mode={mode} run={current} estimate={quote}
+        content = <>{current?.approval && <section className="translate-cost-review" aria-label="Final submission cost"><h3>{current.approval.kind === "batch" ? "Review submission cost" : "Review speaker translation cost"}</h3><p>{current.model} · {fileCount(current.files?.length || 0)} · saved run settings</p><p className="path">{current.files?.join(", ")}</p><Estimate value={current.approval.detail} /><p>Submit incurs API charges for this prepared scope.</p></section>}
+          <TranslateWorkspace state={state} scope={translateScope} mode={mode} run={current} estimate={quote}
           pending={!!preparingTranslation || action.busy && action.key === "translate:prepare"} disabled={disabled}
           scopeChange={scope => { setPreparingTranslation(null); setTranslateScope(scope); }} modeChange={value => edit("mode", value)}
           settings={settings} files={() => chooseFiles(translateScope)} guidance={() => setPanel("translation-context")} requests={inspect} />
-          {current?.approval && <section className="translate-cost-review"><h3>Review submission cost</h3><Estimate value={current.approval.detail} /><p>Submit uses this run’s saved settings and incurs API charges.</p></section>}
           {!baseline && <p className="guided-status-warning">Preserve the original and save its version baseline before translating.</p>}
           {!paidModeReady && <Message message="This connection does not support Batch. Choose Live API or a supported connection." />}</>;
         primary = current?.approval ? <Button variant="primary" disabled={disabled} pending={action.busy && action.key === "run:answer:true"}
@@ -425,6 +429,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         secondary = preparingTranslation ? <Button onClick={() => setPreparingTranslation(null)}>Cancel preparation</Button>
           : current?.approval ? <Button disabled={disabled} onClick={() => action.run(() => api.answer(project.id, current.approval!.token, false), "", "run:answer:false")}>Decline</Button>
           : current && ["running", "waiting"].includes(current.status) ? <Button disabled={disabled} onClick={() => action.run(() => api.stop(project.id, current.id), "", "run:stop")}>{current.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}</Button>
+          : current?.mode === "batch" && ["stopped", "interrupted"].includes(current.status) && current.phase?.startsWith("poll") && current.process?.submitted ? <Button disabled={disabled} onClick={() => setResume(current)}>Resume local monitoring</Button>
           : <Button variant="quiet" onClick={() => stepTask("audit")}>Other event text</Button>;
         break; }
     case "variables": case "advanced-run":
@@ -524,7 +529,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     default:
       content = job ? <RunPanel projectId={project.id} hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy || running && job.status === "failed"}
         pendingKey={action.busy ? action.key : ""} error={action.key.startsWith("run:") ? action.error : ""}
-        stop={() => action.run(() => api.stop(project.id), "", "run:stop")} resume={() => setResume(true)} answer={(approved) => action.run(() => api.answer(project.id, job.approval!.token, approved), "", "run:answer:" + approved)}
+        stop={() => action.run(() => api.stop(project.id, job.id), "", "run:stop")} resume={() => setResume(job)} answer={(approved) => action.run(() => api.answer(project.id, job.approval!.token, approved), "", "run:answer:" + approved)}
         exportFiles={() => action.run(async () => setOutput((await api.export(project.id)).path), "Output copy saved.", "run:export")} /> : <p className="muted">No saved translation run is available for this game.</p>;
       primary = job?.status === "complete" && job.mode !== "estimate"
         ? job.mode === "speakers" ? <Button variant="primary" onClick={() => stepTask("guidance")}>Review translation guidance</Button> : nextRun(job)
@@ -545,7 +550,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
       actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button variant="quiet" onClick={() => setHistory(true)}>History</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
     <div className="guided-layout">
-      <WorkflowNavigation stages={stages} step={position.step} task={taskId} completed={completed} disabled={action.busy} move={move} taskFor={stage => taskForStage(state, stage)} />
+      <WorkflowNavigation stages={stages} step={position.step} completed={completed} disabled={action.busy} move={move} taskFor={stage => taskForStage(state, stage)} />
       <div className="guided-task-workspace">
         {unfinished && taskId !== "main-text" && taskId !== "run" && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => move(runStage(state), "run")}>Open saved run</Button></div>}
         {activeOperation && !localOperation && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
@@ -651,7 +656,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <label className="toggle"><input type="checkbox" checked={comparisonsAccepted} onChange={(event) => setComparisonsAccepted(event.target.checked)} />I checked every matched use, including internal references and logic, and accept these literal-based updates.</label>
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setComparisonReview(false)}>Cancel</Button><Button variant="primary" disabled={!comparisonsAccepted || !state.comparisons.matches} pending={action.busy} onClick={() => action.run(async () => { await save(); await api.guided.comparisonsReview(project.id, state.comparisons.fingerprint, true); setComparisonReview(false); }, "Comparison coverage reviewed.", "event-text:comparisons")}>Confirm comparison coverage</Button></ActionBar>
     </Modal>}
-    {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(false)}><h2>Resume the saved run?</h2><p>Continue its frozen files, context, and provider settings. Remaining requests may incur charges.</p><Message message={action.error} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(false)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id); setResume(false); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
+    {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(null)}><h2>Resume the saved run?</h2><p>{resume.model} · {fileCount(resume.files?.length || 0)} · saved run settings</p><p>{resume.mode === "batch" && resume.phase?.startsWith("poll") ? "Continue monitoring this submitted Batch and save its results when ready." : "Continue its frozen files, context, and provider settings. Remaining requests may incur charges."}</p><Message message={action.key === "run:resume" ? action.error : ""} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(null)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id, resume.id); setResume(null); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
   </PageLayout>;
 }
 

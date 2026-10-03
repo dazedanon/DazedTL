@@ -40,7 +40,12 @@ Actor-substitution calls and note calls retain their original boundaries.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
-Guided Translate has one primary action: prepare a local estimate for remaining source work, then review its cost. The request inspector uses source/context, response/error and exact JSON tabs.
+Main-text Translate prepares a local estimate and Batch requests from one click, then shows one final submission cost approval for the frozen scope.
+Other Batch actions likewise begin local preparation immediately and retain the native final spending approval.
+The fresh Batch speaker check validates unresolved names against frozen files and current glossary before collection; it retains its separate approval if names need translation.
+Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
+Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
+The request inspector uses source/context, response/error and exact JSON tabs.
 All project-owned runs remain in History automatically, including failed and canceled runs. The native pointer is not the ownership registry.
 Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
@@ -124,8 +129,8 @@ the same backup, project ownership, input validation, and one-use execution chec
 Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.
 
 Translation follows the working Qt GUI's task dependencies through the tasks in
-[workflow.ts](../app/src/features/guided/workflow.ts). The app sidebar stays global; the local
-task rail becomes a stage strip when the workspace is narrow. One task occupies the editing
+[workflow.ts](../app/src/features/guided/workflow.ts). The app sidebar stays global; every phase uses the same wrapping top stage strip.
+One task occupies the editing
 body and its action footer stays outside the scroll region. One copied setup task identifies
 speaker formats, runs local name collection, then uses those results for the glossary/context
 investigation. Guidance review and layout settings follow before

@@ -13,9 +13,11 @@ export function TranslateWorkspace({ state, scope, mode, run, estimate, pending,
   const quote = estimate?.estimate;
   const cost = quote && Number(mode === "batch" ? quote.batch_nocache_cost ?? quote.batch_cost : quote.live_cost);
   const active = !!run && ["running", "waiting"].includes(run.status);
+  const providerPending = process?.batches?.some(batch => ["validating", "in_progress", "finalizing"].includes(batch.status));
+  const monitoringPaused = !!run && ["stopped", "interrupted"].includes(run.status) && run.phase?.startsWith("poll") && !!process?.submitted;
   const errors = process?.errors || [];
-  const details = estimate || run;
-  const status = pending ? "Preparing a local estimate…" : active ? run.message : run?.status === "complete" ? "Saved translation finished" : "Ready for translation";
+  const details = active || monitoringPaused ? run : estimate || run;
+  const status = pending ? "Preparing a local estimate…" : run?.approval ? run.approval.kind === "batch" ? "Ready for Batch approval" : "Speaker names need review" : monitoringPaused ? "Local monitoring paused" : providerPending ? "Batch processing" : active ? "Preparing translation" : run?.status === "complete" ? "Saved translation finished" : "Ready for translation";
   return <div className="translate-overview">
     <div className="translate-toolbar">
       <label>Text scope<select value={scope} disabled={disabled} onChange={event => scopeChange(event.target.value as typeof scope)}>
@@ -31,10 +33,10 @@ export function TranslateWorkspace({ state, scope, mode, run, estimate, pending,
     <dl className="translate-metrics">
       <div><dt>Verified files</dt><dd>{rows.filter(file => state.readiness.outputs.includes(file.name)).length} <small>/ {rows.length}</small></dd></div>
       <div><dt>Planned requests</dt><dd>{estimate?.process?.prepared ?? "-"}</dd></div>
-      <div><dt>Provider work</dt><dd>{active ? run.approval ? "Awaiting approval" : "In progress" : process?.uncertain ? "Needs reconciliation" : process?.failed ? "Requests rejected" : process?.submitted ? "Finished" : "Not submitted"}</dd></div>
+      <div><dt>Provider work</dt><dd>{run?.approval ? "Awaiting approval" : providerPending ? "Processing" : active ? "Preparing" : process?.uncertain ? "Needs reconciliation" : process?.failed ? "Requests rejected" : process?.submitted ? "Finished" : "Not submitted"}</dd></div>
       <div><dt>Local estimate</dt><dd>{Number.isFinite(cost) ? "$" + cost!.toFixed(4) : "Not calculated"}</dd></div>
     </dl>
-    <div className="translate-status"><div><strong>{status}</strong><p>{active ? run.message : "Translate prepares remaining work with current settings, then opens cost review."}</p>
+    <div className="translate-status"><div><strong>{status}</strong><p>{active || monitoringPaused ? run!.message : "Translate prepares remaining work with current settings, then opens cost review."}</p>
       {active && run.progress && <progress max={run.progress.total || 1} value={run.progress.current} />}
     </div>{details && <Button disabled={disabled} onClick={() => requests(details)}>View requests</Button>}</div>
     {!!errors.length && <div className="translate-run-error" role="status"><strong>{process?.failed || "Saved"} {process?.failed ? "requests rejected" : "run needs attention"}</strong>

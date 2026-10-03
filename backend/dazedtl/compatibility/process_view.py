@@ -180,7 +180,13 @@ def summary(root, job):
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('input_tokens', 'output_tokens')}
     from .request_scope import requests as source_requests
     items = list(source_requests(root, job))
-    uncertain = max(uncertain, sum(row['state'] in {'submitted', 'uncertain'} for row in items))
+    uncertain = max(uncertain, sum(row['state'] == 'uncertain' for row in items))
+    polls = {row['id']: row for row in job.get('batch_detail', []) if isinstance(row, dict) and row.get('id')} if isinstance(job.get('batch_detail'), list) and str(job.get('phase', '')).startswith('poll') else {}
+    receipts = []
+    for batch in batches:
+        current = polls.get(batch['id'], {}) if batch.get('api_status') not in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'} else {}
+        receipts.append({'id': batch['id'], 'status': current.get('api_status') or batch.get('api_status') or 'unknown',
+                         'counts': current.get('counts') or batch.get('request_counts') or {}})
     return {'mode': job.get('mode'), 'prepared': prepared,
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
@@ -188,11 +194,39 @@ def summary(root, job):
             'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or with_connection else None,
             'validated': validated, 'validatedFiles': len(job.get('completed', [])),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
-            'batches': [{'id': batch['id'], 'status': batch.get('api_status') or 'unknown', 'counts': batch.get('request_counts') or {}} for batch in batches],
+            'batches': receipts,
             'errors': list(dict.fromkeys(errors)), 'usage': usage,
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
-            'retryBlocked': bool(uncertain or any(row['state'] == 'received' for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
+            'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
             'nextAction': 'Use Translate for remaining work with current settings. All saved requests and verified results remain in History.'}
+
+
+def phase_feedback(job):
+    """Current phase wins over an earlier scan's status and file progress."""
+    approval = job.get('approval') or {}
+    if job.get('status') == 'waiting' and approval.get('kind') == 'batch':
+        return {'message': 'Batch requests are ready. Review the cost before submitting.', 'progress': None}
+    if job.get('status') == 'waiting' and approval.get('kind') == 'speakers':
+        return {'message': 'Speaker check finished. Review unresolved names before translating them.', 'progress': None}
+    if job.get('mode') != 'batch' or job.get('status') not in {'running', 'waiting', 'stopped', 'interrupted'}:
+        return {}
+    phase = str(job.get('phase', ''))
+    if phase.startswith('poll'):
+        paused = job.get('status') in {'stopped', 'interrupted'}
+        batches = (job.get('process') or {}).get('batches', [])
+        counts = [row.get('counts') or {} for row in batches]
+        done = sum(row.get('succeeded') or 0 for row in counts)
+        pending = sum(row.get('processing') or 0 for row in counts)
+        detail = f' Last saved provider status: {done} completed, {pending} processing.' if counts and any(counts) else ''
+        terminal = bool(batches) and all(row.get('status') in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'} for row in batches)
+        message = 'Provider work has finished. Resume local monitoring to retrieve its results.' if terminal and paused else 'Local monitoring is paused. Submitted Batch work continues at the provider.' if paused else 'Batch submitted. Waiting for provider results.'
+        return {'message': message + detail,
+                'progress': None}
+    if phase in {'collect', 'collect_done', 'submit'}:
+        return {'message': 'Preparing Batch requests locally.'}
+    if phase == 'consume':
+        return {'message': 'Validating received Batch results and saving translated files.'}
+    return {}
 
 
 def ledger_columns(root):
@@ -243,25 +277,33 @@ def payload(root, index):
             'response': json.loads(row[3]) if has_response and row[3] else None}
 
 
-def provider_details(root):
-    from util import batch_history, batch_providers, api_keys
+def provider_details(root, resolve_connection):
+    from util import batch_providers
     rows = []
     for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []):
-        client = batch_history._client_for_entry(batch)
+        binding = resolve_connection(batch)
+        client = batch_providers.get_client(batch['provider'], api_key=binding['secret'] or 'not-needed',
+                                            api_url=binding['endpoint'], max_retries=0)
         if hasattr(client, 'with_options'):
-            client = client.with_options(timeout=20, max_retries=0)
-        current = batch_providers.retrieve_batch(batch['provider'], batch['id'], client=client)
-        errors = current['errors']
-        if current.get('error_file_id'):
-            text = batch_providers._download_file_text(batch['provider'], current['error_file_id'], client=client)
-            errors = []
-            for line in text.splitlines():
-                value = json.loads(line)
-                if value.get('custom_id') not in batch.get('custom_ids', {}):
-                    continue
-                error = value.get('error') or value.get('response', {}).get('body', {}).get('error') or {}
-                errors.append({**error, 'custom_id': value.get('custom_id')})
-        secret = api_keys.get_secret(batch.get('key_name', '')) or ''
-        rows.append({'id': batch['id'], 'status': current['api_status'], 'counts': current['counts'],
-                     'errors': [{key: clean_message(error.get(key), secret) for key in ('custom_id', 'code', 'param', 'message')} for error in errors[:100]]})
+            options = {'organization': binding['organization'] or None} if batch['provider'] in {'openai', 'gemini'} else {}
+            client = client.with_options(timeout=20, max_retries=0, **options)
+        try:
+            current = batch_providers.retrieve_batch(batch['provider'], batch['id'], client=client)
+            errors = current.get('errors') or []
+            if current.get('error_file_id'):
+                text = batch_providers._download_file_text(batch['provider'], current['error_file_id'], client=client)
+                errors = []
+                for line in text.splitlines():
+                    value = json.loads(line)
+                    if value.get('custom_id') not in batch.get('custom_ids', {}):
+                        continue
+                    error = value.get('error') or value.get('response', {}).get('body', {}).get('error') or {}
+                    errors.append({**error, 'custom_id': value.get('custom_id')})
+            secret = binding['secret']
+            rows.append({'id': batch['id'], 'status': current['api_status'], 'counts': current.get('counts') or {},
+                         'errors': [{key: clean_message(error.get(key), secret) for key in ('custom_id', 'code', 'param', 'message')} for error in errors[:100]]})
+        finally:
+            close = getattr(client, 'close', None)
+            if close:
+                close()
     return {'batches': rows}

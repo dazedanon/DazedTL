@@ -590,6 +590,20 @@ class GuidedTests(unittest.TestCase):
         reopened = Guided(self.backend, self.projects, self.settings, self.translation)
         self.assertIn(identity, reopened.owned_runs(self.native))
         self.assertEqual({path: path.read_bytes() for path in frozen}, frozen)
+        # A later local estimate can move the current pointer. Explicit resume
+        # must still select the displayed owned Batch, never that estimate.
+        self.native['manual_job'] = estimate_id
+        self.backend.manual.resume = Mock(return_value=job)
+        self.settings.prepare_engine = Mock()
+        reopened.resume(self.identity, identity)
+        self.backend.manual.resume.assert_called_once_with(identity)
+        self.settings.prepare_engine.assert_called_once()
+        with self.assertRaisesRegex(ValueError, 'belonging'):
+            reopened.resume(self.identity, 'another-project-run')
+        self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'another-project'}}
+        with self.assertRaisesRegex(ValueError, 'another project'):
+            reopened.resume(self.identity, identity)
+        self.backend.manual.resume.assert_called_once()
 
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses

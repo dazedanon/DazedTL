@@ -58,8 +58,10 @@ def requests(root, job):
             for custom, key in mapping.items():
                 error = next((row for row in (batch.get('provider_errors') or []) if row.get('custom_id') == custom), None)
                 # Multiple submissions retain the strictest known outcome.
-                outcome = 'received' if key in results else 'failed' if rejected or error else 'uncertain'
-                if outcomes.get(key) != 'uncertain':
+                pending = batch.get('api_status') in {'validating', 'in_progress', 'finalizing'} and manifests.get(batch.get('id')) == mapping
+                outcome = 'received' if key in results else 'failed' if rejected or error else 'submitted' if pending else 'uncertain'
+                priority = {'failed': 0, 'submitted': 1, 'received': 2, 'uncertain': 3}
+                if priority[outcome] >= priority.get(outcomes.get(key), -1):
                     outcomes[key] = outcome
         for manifest in state.get('batches', []):
             for key in manifest.get('custom_ids', {}).values():
