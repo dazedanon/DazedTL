@@ -67,7 +67,7 @@ main.editor-main.guided-main { padding: 0; }
 .history-list { overflow:auto; min-height:0; padding-right:var(--space-2); scrollbar-gutter:stable; }
 .history-day { container:history-day / inline-size; }
 .history-day + .history-day { margin-top:var(--space-2); }
-.history-day h3 { position:sticky; top:0; z-index:1; background:var(--color-dialog); border-bottom:1px solid var(--line); margin:0; padding:var(--space-1) 0; color:var(--color-label); font-size:var(--font-small); font-weight:500; }
+.history-day h3 { position:sticky; top:0; z-index:1; background:var(--color-step-selected); border-bottom:1px solid var(--color-control-border); margin:0; padding:var(--space-1) var(--space-2); color:var(--color-navigation-text); font-size:var(--font-control); font-weight:600; }
 .history-day .action-list { gap:0; }
 .history-day .action-row { padding:var(--space-2) 0; border-bottom:1px solid var(--line); }
 .history-entry { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.9fr); align-items:start; gap:var(--space-4); line-height:calc(var(--font-control) * 1.5); }
