@@ -1,6 +1,27 @@
 import type { Job, Phase, RunPayload } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
+
+/** Preparation has a later approval exit; only running work needs a footer stop. */
+export function translationStopLabel(run?: Job | null) {
+  if (!run || !activeRun(run) || run.approval || run.mode === "estimate") return null;
+  if (run.mode !== "batch" || run.phase === "consume") return "Stop translation";
+  return run.process?.submitted || run.phase?.startsWith("poll") ? "Pause monitoring" : null;
+}
+
+/** A missing request log is not evidence of an empty translation estimate. */
+export function estimateRequestCount(job?: Job | null) {
+  const count = job?.estimate?.requests ?? job?.estimate?.request_count;
+  return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+
+export function estimateFollowup(id: string, quote: { job?: Job | null; current: boolean } | undefined, runs: Job[], inputsChanged: boolean) {
+  const job = quote?.job?.id === id ? quote.job : runs.find(run => run.id === id);
+  if (!job || activeRun(job)) return { kind: "waiting" as const, job };
+  if (job.status !== "complete") return { kind: "failed" as const, job };
+  if (quote?.job?.id !== id || !quote.current || inputsChanged) return { kind: "stale" as const, job };
+  return { kind: estimateRequestCount(job) === 0 ? "empty" as const : "review" as const, job };
+}
 export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]) {
   const own = runs.filter(run => run.logicalPhase === phase)
     .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
@@ -18,7 +39,9 @@ export function completeForSelection(run: Job, selected: readonly string[]) {
   return !!run.scopeComplete && selected.length > 0 && run.files?.length === selected.length && selected.every(name => run.files!.includes(name) && !run.partialOutputs?.includes(name) && !run.retiredFiles?.includes(name));
 }
 export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, previous?: Job, estimateCurrent = true) {
-  if (run?.files?.includes(name) && (activeRun(run) || run.scopeComplete)) return run;
+  if (run?.files?.includes(name) && activeRun(run)) return run;
+  if (estimateCurrent && estimate?.files?.includes(name)) return estimate;
+  if (run?.files?.includes(name) && run.scopeComplete) return run;
   const saved = previous?.files?.includes(name) ? previous : undefined;
   if (estimate?.files?.includes(name) && (estimateCurrent || !saved)) return estimate;
   return saved;

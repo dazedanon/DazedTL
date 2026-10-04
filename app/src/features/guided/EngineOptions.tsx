@@ -1,12 +1,16 @@
 import type { EngineValue, GuidedState } from "../../api/contracts";
 import { FieldRow } from "../../ui/FieldRow";
 
-export function EngineOptions({ state, values, change, keys, disabled, dependencies = {}, collapseChoices = false }: {
+export function EngineOptions({ state, values, change, keys, disabled, dependencies = {}, collapseChoices = false, inlineBooleans = false }: {
   state: GuidedState; values: Record<string, EngineValue>; change: (key: string, value: EngineValue) => void;
-  keys: readonly string[]; disabled: boolean; dependencies?: Record<string, string>; collapseChoices?: boolean;
+  keys: readonly string[]; disabled: boolean; dependencies?: Record<string, string>; collapseChoices?: boolean; inlineBooleans?: boolean;
 }) {
-  return <fieldset disabled={disabled} className="guided-engine-options">
+  return <fieldset disabled={disabled} className={`guided-engine-options${inlineBooleans ? " guided-engine-options--inline" : ""}`}>
     {keys.flatMap((key) => state.engineSchema.filter((field) => field.key === key)).map((field) => {
+      if (inlineBooleans && field.type === "boolean") return <label key={field.key} className="guided-option-toggle">
+        <input type="checkbox" checked={values[field.key] === true} disabled={!!dependencies[field.key] && values[dependencies[field.key]] !== true}
+          onChange={event => change(field.key, event.target.checked)} />{field.label}
+      </label>;
       const control = <FieldRow key={field.key} id={"guided-option-" + field.key} label={field.label}>
       {(props) => field.type === "boolean" ? <input {...props} type="checkbox" checked={values[field.key] === true}
         disabled={!!dependencies[field.key] && values[dependencies[field.key]] !== true}

@@ -7,10 +7,10 @@ import { filePreviewRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, guidance, requestPreview, history, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, requestPreview, history, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; guidance: () => void; history: () => void; children?: ReactNode;
+  settings: () => void; options: () => void; history: () => void; children?: ReactNode;
   requestPreview?: { job: string; file: string; phase: Phase } | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -37,9 +37,9 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
       <Button variant="quiet" disabled={locked} onClick={settings} title={state.provider.connection}>{state.provider.model || "Choose a model"}</Button>
       <div className="guided-mode" role="group" aria-label="Translation method"><Button disabled={disabled || locked || !state.provider.batchSupported} title={state.provider.batchSupported ? "Recommended · often 50% cheaper" : "Unavailable for this connection"} aria-pressed={values.mode === "batch"} onClick={() => change("mode", "batch")}>Batch</Button><Button disabled={disabled || locked} aria-pressed={values.mode === "translate"} onClick={() => change("mode", "translate")}>Live</Button></div>
       <small className="translation-method-hint">{state.provider.batchSupported ? "Batch recommended · often 50% cheaper" : "Live · saves results as they arrive"}</small>
-      <div className="translation-tools"><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={guidance}>Options</Button></div>
+      <div className="translation-tools"><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={options}>Options</Button></div>
     </div>
-    <div className="translation-notices">{children}{locked && <p className="muted">Selection is fixed while this run is active. You can still search and preview files.</p>}</div>
+    <div className="translation-notices">{children}</div>
     <div className="translation-columns">
       <section className="translation-files" aria-label="Translation files">
         <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked}

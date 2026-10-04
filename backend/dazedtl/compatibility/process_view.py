@@ -265,6 +265,19 @@ def ledger_columns(root):
         return connection.execute('PRAGMA table_info(requests)').fetchall()
 
 
+def token_usage(value):
+    """Expose only recorded, finite token counts; missing usage is not zero."""
+    if not isinstance(value, dict):
+        return None
+    aliases = {'input_tokens': 'prompt_tokens', 'output_tokens': 'completion_tokens'}
+    result = {}
+    for key in ('input_tokens', 'output_tokens', 'total_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'thinking_tokens'):
+        count = value.get(key, value.get(aliases.get(key)))
+        if type(count) in (int, float) and math.isfinite(count) and count >= 0:
+            result[key] = count
+    return result or None
+
+
 def payload(root, index):
     if type(index) is not int or index < 0:
         raise ValueError('Choose a valid request index.')
@@ -287,14 +300,15 @@ def payload(root, index):
         return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': error,
                 'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
                 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
-                'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact}
+                'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,
+                'usage': token_usage(row['response'])}
     connection = ledger(root)
     if connection is None:
         raise ValueError('Exact payloads were not recorded for this older Live run.')
     with closing(connection):
         total = connection.execute('SELECT COUNT(*) FROM requests').fetchone()[0]
         has_response = 'response' in {item[1] for item in connection.execute('PRAGMA table_info(requests)')}
-        row = connection.execute('SELECT params,state,error' + (',response' if has_response else '') + ' FROM requests ORDER BY id LIMIT 1 OFFSET ?', (index,)).fetchone()
+        row = connection.execute('SELECT params,state,error,usage' + (',response' if has_response else '') + ' FROM requests ORDER BY id LIMIT 1 OFFSET ?', (index,)).fetchone()
     if row is None:
         raise ValueError('This request is no longer available.')
     params = json.loads(row[0])
@@ -302,7 +316,8 @@ def payload(root, index):
             'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
             'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
             'error': json.loads(row[2]) if row[2] else None,
-            'response': json.loads(row[3]) if has_response and row[3] else None}
+            'usage': token_usage(json.loads(row[3])) if row[3] else None,
+            'response': json.loads(row[4]) if has_response and row[4] else None}
 
 
 def provider_details(root, resolve_connection):

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, filePreviewRun, fileStatus, phaseRun, needsSubmissionReview, canResumeRun, requestContext, translatedLines } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileStatus, phaseRun, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel } from "../app/src/features/guided/translationView.ts";
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -33,7 +33,10 @@ test("opening a file outside the current selection uses that file's retained req
   const current = { id: "items", files: ["Items.json"], status: "complete", scopeComplete: true } as Job;
   const estimate = { ...current, id: "estimate", mode: "estimate" };
   assert.equal(filePreviewRun("Actors.json", current, estimate, previous), previous);
-  assert.equal(filePreviewRun("Items.json", current, estimate, previous), current);
+  // A current estimate must take precedence over an older completed output.
+  assert.equal(filePreviewRun("Items.json", current, estimate, previous), estimate);
+  assert.equal(filePreviewRun("Items.json", { ...current, status: "running" }, estimate, previous)?.mode, current.mode);
+  assert.equal(filePreviewRun("Items.json", current, estimate, previous, false), current);
   assert.equal(filePreviewRun("Items.json", { ...current, scopeComplete: false, status: "failed" }, estimate, previous), estimate);
   assert.equal(filePreviewRun("Unknown.json", current, estimate, previous), undefined);
   assert.equal(filePreviewRun("Items.json", previous, estimate, current, false), current);
@@ -105,4 +108,47 @@ test("history outcomes distinguish verified output from completed attempts and u
   assert.equal(historyOutcome({ ...verified, status: "failed" }).kind, "failed");
   assert.equal(historyOutcome({ ...verified, status: "stopped", keptForHistory: true, process: { ...done.process!, retryBlocked: true } }).kind, "review");
   assert.equal(historyOutcome({ ...verified, status: "waiting", approval: { token: "fixture", kind: "batch", detail: {} } }).kind, "approval");
+});
+
+// An old run can lack request evidence while its estimate still requires paid
+// work. Conversely, a finished zero-request estimate must have an explicit result.
+test("translation followup uses the matching estimate count and exits for terminal failures", () => {
+  const job = { id: "new-estimate", mode: "estimate", status: "complete", estimate: { requests: 3 },
+    process: { prepared: 0, errors: [] } } as Job;
+  const quote = { job, current: true };
+  assert.equal(estimateFollowup(job.id, quote, [job], false).kind, "review");
+  assert.equal(estimateRequestCount({ ...job, estimate: { request_count: 2 } }), 2);
+  assert.equal(estimateFollowup(job.id, { ...quote, job: { ...job, estimate: { requests: 0 } } }, [job], false).kind, "empty");
+  assert.equal(estimateFollowup(job.id, { ...quote, job: { ...job, estimate: {} } }, [job], false).kind, "review");
+  assert.equal(estimateFollowup(job.id, { ...quote, job: { ...job, status: "running" } }, [job], false).kind, "waiting");
+  assert.equal(estimateFollowup(job.id, { ...quote, current: false }, [job], false).kind, "stale");
+  assert.equal(estimateFollowup(job.id, quote, [job], true).kind, "stale");
+  assert.equal(estimateFollowup(job.id, { job: { ...job, id: "other" }, current: true }, [job], false).kind, "stale");
+  // A failed/stopped run remains visible even if quote calculation can no
+  // longer produce a current entry. It must not leave Translate spinning.
+  for (const status of ["failed", "stopped", "interrupted", "canceled"]) {
+    assert.equal(estimateFollowup(job.id, undefined, [{ ...job, status }], false).kind, "failed");
+  }
+  assert.equal(estimateFollowup(job.id, undefined, [], false).kind, "waiting");
+});
+
+// Hiding preparation controls must not remove the exit from paid execution or
+// confuse stopping local monitoring with canceling a submitted provider Batch.
+test("translation stop controls distinguish preparation, approval and running work", () => {
+  const job = { id: "run", mode: "batch", status: "running", log: [], message: "" } as Job;
+  assert.equal(translationStopLabel(undefined), null);
+  assert.equal(translationStopLabel({ ...job, mode: "estimate" }), null);
+  for (const phase of [undefined, "preparing", "collect", "collect_done", "submit"]) {
+    assert.equal(translationStopLabel({ ...job, phase, process: { submitted: 0, errors: [] } }), null);
+  }
+  assert.equal(translationStopLabel({ ...job, process: { submitted: 1, errors: [] } }), "Pause monitoring");
+  assert.equal(translationStopLabel({ ...job, phase: "poll_status" }), "Pause monitoring");
+  assert.equal(translationStopLabel({ ...job, phase: "consume", process: { submitted: 1, errors: [] } }), "Stop translation");
+  assert.equal(translationStopLabel({ ...job, mode: "translate" }), "Stop translation");
+  for (const mode of ["batch", "translate"]) {
+    assert.equal(translationStopLabel({ ...job, mode, status: "waiting", approval: { token: "review", kind: "batch", detail: {} } }), null);
+    for (const status of ["complete", "failed", "stopped", "interrupted", "canceled"]) {
+      assert.equal(translationStopLabel({ ...job, mode, status, phase: "poll" }), null);
+    }
+  }
 });

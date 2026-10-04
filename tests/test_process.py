@@ -258,6 +258,16 @@ class ProcessTests(unittest.TestCase):
             with patch.dict('sys.modules', {'util.batch_providers': provider}):
                 self.assertEqual(process_view.payload(root, 0)['exact']['custom_id'], 'req-000000')
                 self.assertEqual(process_view.payload(root, 1)['state'], 'queued')
+                # Per-request usage must not inherit whole-Batch totals, or
+                # turn missing/invalid provider counts into zero-token usage.
+                self.assertIsNone(process_view.payload(root, 0)['usage'])
+                write_json(root/'log/batch_results.json', {'results': {'a': {
+                    'text': '{"Line1":"Guard"}', 'prompt_tokens': 42, 'completion_tokens': 5,
+                    'cache_read_input_tokens': 0, 'thinking_tokens': None, 'total_tokens': -1,
+                    'cache_creation_input_tokens': True}}})
+                self.assertEqual(process_view.payload(root, 0)['usage'],
+                                 {'input_tokens': 42, 'output_tokens': 5, 'cache_read_input_tokens': 0})
+                self.assertIsNone(process_view.payload(root, 1)['usage'])
             with self.assertRaises(ValueError): process_view.payload(root, True)
             self.assertEqual((root/'log/batch_requests.json').read_bytes(), frozen)
             self.assertNotIn('sk-fixture', process_view.clean_message('Bearer sk-fixture; api_key=private-value'))
@@ -327,6 +337,7 @@ class ProcessTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             evidence = Evidence(temporary, 'translate')
             evidence.prepared({'model': 'fixture', 'messages': []})
+            self.assertIsNone(process_view.payload(temporary, 0)['usage'])
             summary = lambda: process_view.summary(temporary, {'mode': 'translate'})
             self.assertEqual((summary()['prepared'], summary()['received'], summary()['validated']), (1, 0, 0))
             interrupted = lambda: process_view.summary(temporary, {'mode': 'translate', 'status': 'interrupted'})
@@ -346,3 +357,5 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(summary()['validated'], 1)
             self.assertFalse(interrupted()['retryBlocked'])
             self.assertEqual(process_view.payload(temporary, 0)['state'], 'validated')
+            self.assertEqual(process_view.payload(temporary, 0)['usage'],
+                             {'input_tokens': 12, 'output_tokens': 3, 'total_tokens': 15})

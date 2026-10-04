@@ -8,6 +8,7 @@ import { Tabs, TabPanel } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import { useAction } from "../../state/useAction";
 import { RequestSource } from "./RequestSource";
+import { RequestTechnical } from "./RequestTechnical";
 import { needsSubmissionReview, translatedLines } from "./translationView";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -160,7 +161,7 @@ function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
               {translated && visiblePayload && <details><summary>Raw response</summary><pre>{formatted(visiblePayload.response)}</pre></details>}
             </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh request to try again." : "No request payload is available. Run details retains the saved receipts and log."}</p>
               : view.tab === "source" ? <RequestSource payload={visiblePayload} />
-              : <><p className="muted">Exact retained request · includes provider parameters and full instructions.</p><pre>{JSON.stringify(visiblePayload.exact, null, 2)}</pre></>}
+              : <RequestTechnical key={visiblePayload.index} payload={visiblePayload} job={job} />}
 
           </TabPanel>
         </div>

@@ -79,6 +79,7 @@ export interface RunProcess {
 export interface RunPayload {
   index: number; total: number; state: string; source: Record<string, string> | null;
   context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;
+  usage?: Record<string, number> | null;
 }
 export interface FileTextPreview {
   file: string; origin: "translated" | "working" | "game"; revision: string;
