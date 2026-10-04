@@ -260,7 +260,7 @@ def serve(args, diagnostics):
                 getattr(app.guided, name),
                 lambda value, _params: views.job(value),
             )
-            for name in ("execute", "answer", "stop", "resume", "inspect")
+            for name in ("execute", "answer", "stop", "resume", "inspect", "retain_run")
         },
         "guided_export": (app.guided.export, lambda value, _params: value),
         "guided_output_folder": (app.guided.output_folder, lambda value, _params: value),

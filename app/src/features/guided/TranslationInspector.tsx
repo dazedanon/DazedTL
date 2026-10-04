@@ -4,7 +4,9 @@ import { api } from "../../api/client";
 import { Button } from "../../ui/Button";
 import { Tabs, TabPanel } from "../../ui/Tabs";
 import { Message } from "../../ui/Feedback";
-import { requestContext, translatedLines } from "./translationView";
+import { translatedLines } from "./translationView";
+
+import { RequestSource } from "./RequestSource";
 
 type View = "source" | "translation" | "exact";
 const views = [{ id: "source", label: "Source & context" }, { id: "translation", label: "Translation" }, { id: "exact", label: "Exact payload" }] as const;
@@ -52,9 +54,7 @@ export function TranslationInspector({ projectId, file, checked, job, records, s
       <TabPanel id="translation-inspector" value={tab}>
         {!payload ? <p className="muted">{pending ? "Reading saved request…" : !job ? "Click Translate to prepare an estimate and preview. You can inspect it before approving any API charges." : !rows.length ? "No prepared requests are linked to this file in this record. It may have no remaining translatable text; History retains earlier runs." : error ? "Use Refresh to try reading this saved request again." : "Select a request to preview it."}</p>
           : tab === "exact" ? <pre>{JSON.stringify(payload.exact, null, 2)}</pre>
-          : tab === "source" ? <><h3>Lines to translate</h3>{payload.source ? <dl className="translation-source-lines">{Object.entries(payload.source).map(([key, text]) => <div key={key}><dt>{key}</dt><dd>{text}</dd></div>)}</dl> : <p>Source is contained in Exact payload.</p>}
-            {requestContext(payload).length ? requestContext(payload).map(section => section.notes ? <details key={section.title}><summary>{section.title}</summary><pre>{section.text}</pre></details> : <section key={section.title} className="translation-matched-context"><h3>{section.title}</h3><pre>{section.text}</pre></section>) : <p className="muted">No separate matched context was recorded. Full instructions are available in Exact payload.</p>}
-            </>
+          : tab === "source" ? <RequestSource payload={payload} />
           : <><p className="muted">{job?.mode === "estimate" ? "Results are saved under the translation record." : job?.availableOutputs?.includes(file) ? "Translated file verified · saved response below." : payload.state === "validated" ? "Validated response saved." : "Provider response · file validation may still be pending."}</p>
             {translated ? <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(payload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>
               : payload.response != null ? <><p>The saved response cannot be matched to individual lines unambiguously.</p><pre>{JSON.stringify(payload.response, null, 2)}</pre></> : <p>No response has been saved for this request yet.</p>}

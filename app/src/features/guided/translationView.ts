@@ -2,10 +2,18 @@ import type { Job, Phase, RunPayload } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]) {
-  const own = runs.filter(run => run.logicalPhase === phase && run.mode !== "estimate" && !run.keptForHistory
-    && (!selected || run.files?.some(name => selected.includes(name) && !run.retiredFiles?.includes(name))));
-  return own.find(activeRun) || own.find(run => run.process?.batches?.some(batch => ["validating", "in_progress", "finalizing"].includes(batch.status))) || own[0];
+  const own = runs.filter(run => run.logicalPhase === phase)
+    .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
+  const latest = own.find(run => run.mode !== "estimate" && activeRun(run)) || own[0];
+  // Check scope after choosing the latest attempt. Falling back by overlap
+  // revives old failures when selection changes or an estimate replaces them.
+  return latest && latest.mode !== "estimate" && (activeRun(latest) || !latest.keptForHistory)
+    && (!selected || latest.files?.some(name => selected.includes(name) && !latest.retiredFiles?.includes(name))) ? latest : undefined;
 }
+export const needsSubmissionReview = (run: Job) => run.mode !== "estimate" && run.status !== "complete" && !!run.process?.retryBlocked;
+export const canResumeRun = (run: Job) => run.mode !== "estimate" && ["failed", "stopped", "interrupted"].includes(run.status)
+  && (run.mode === "batch" && run.phase?.startsWith("poll") ? needsSubmissionReview(run)
+    : !run.process?.retryBlocked && !(run.mode === "batch" && run.process?.failed));
 export function completeForSelection(run: Job, selected: readonly string[]) {
   return !!run.scopeComplete && selected.length > 0 && run.files?.length === selected.length && selected.every(name => run.files!.includes(name) && !run.partialOutputs?.includes(name) && !run.retiredFiles?.includes(name));
 }
@@ -15,7 +23,7 @@ export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, p
   if (estimate?.files?.includes(name) && (estimateCurrent || !saved)) return estimate;
   return saved;
 }
-export function fileStatus(name: string, run?: Job) {
+export function fileStatus(name: string, run?: Job, historical = false) {
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return { label: "Ready", tone: "idle", symbol: "·" };
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
   if (saved && run.partialOutputs?.includes(name)) return { label: "Progress saved", tone: "active", symbol: "◐" };
@@ -23,6 +31,7 @@ export function fileStatus(name: string, run?: Job) {
     ? { label: "Applied", tone: "success", symbol: "✓" }
     : { label: "Saved", tone: "success", symbol: "✓" };
   if (run.outputs?.[name]) return { label: "Output unavailable", tone: "warning", symbol: "!" };
+  if (historical && !needsSubmissionReview(run) && !activeRun(run)) return { label: "Ready", tone: "idle", symbol: "·" };
   const states = run.process?.requests?.filter(row => row.file === name).map(row => row.state) || [];
   if (states.includes("uncertain")) return { label: "Check submission", tone: "warning", symbol: "!" };
   if (states.includes("failed")) return { label: "Needs attention", tone: "warning", symbol: "!" };

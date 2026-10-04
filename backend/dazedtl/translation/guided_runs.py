@@ -21,6 +21,15 @@ class GuidedRuns:
         path = self.guided.path(project_id, "runs")
         return read_json(path).get("runs", {}) if path.exists() else {}
 
+    @staticmethod
+    def current(runs, phase):
+        """Newest attempt owns a task; dismissing it never revives an older one."""
+        own = [job for job in runs if job.get('logicalPhase') == phase]
+        active = next((job for job in own if job.get('mode') != 'estimate'
+                       and job.get('status') in {'ready', 'running', 'waiting'}), None)
+        latest = active or (own[0] if own else None)
+        return latest if latest and latest.get('mode') != 'estimate' and (active or not latest.get('keptForHistory')) else None
+
     def files(self, native, phase):
         return sorted(set(self.guided.backend.phase_files(native, phase)).intersection(native["selected"]))
 
@@ -200,6 +209,7 @@ class GuidedRuns:
         retired = set(source_status.get("retired", []))
         jobs = getattr(self.guided.backend, "manual", None)
         jobs = jobs.jobs if jobs else {}
+        views = [run_view(identity, compact=True) for identity in owned if identity in jobs]
         for phase in PHASES:
             try:
                 estimates[phase], current = self.quote(project_id, native, phase, mode, guard=guard, run_view=run_view)
@@ -209,17 +219,13 @@ class GuidedRuns:
             names = self.files(native, phase)
             inputs = self.guided.inputs(native)
             sources = inputs.sources(names, inputs.record()["inputs"], self.guided.observed_digest)
-            for identity in owned:
-                if identity not in jobs or identity in retired or jobs[identity].get("mode") == "estimate":
-                    continue
-                job = run_view(identity, compact=True)
-                if job.get("logicalPhase") != phase or sorted(job.get("files", [])) != names:
-                    continue
+            job = self.current(views, phase)
+            if job and job['id'] not in retired and sorted(job.get('files', [])) == names:
+                identity = job['id']
                 record = records.get(identity)
                 job["scopeComplete"] = bool(names and job["status"] == "complete" and job.get("outputsAvailable")
                     and not set(names).intersection([*job.get("retiredFiles", []), *job.get("partialOutputs", [])])
                     and set(names).issubset(job.get("outputs", {})) and not set(names).intersection(source_status["changed"])
                     and (not record or record["source"] == sources))
                 phases[phase] = job
-                break
         return {"estimates": estimates, "phase_runs": phases, "comparisons": self.comparisons(native)}

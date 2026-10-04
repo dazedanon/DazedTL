@@ -223,7 +223,9 @@ def summary(root, job):
             'batches': receipts,
             'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
-            'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
+            'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)
+                                 or not items and job.get('mode') == 'translate' and job.get('status') in {'running', 'waiting', 'interrupted', 'stopped'}),
+            'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
             'nextAction': 'Use Translate for remaining work with current settings. All saved requests and verified results remain in History.'}
 
 

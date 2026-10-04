@@ -250,9 +250,13 @@ class Guided:
                     historical.append(identity)
             except (OSError, ValueError, KeyError):
                 pass
-        return list(dict.fromkeys([native.get("manual_job"), *reversed(recorded), *reversed(historical), *reversed(native.get("collected", [])),
+        identities = list(dict.fromkeys([*reversed(recorded), *reversed(historical), native.get("manual_job"), *reversed(native.get("collected", [])),
                                    *reversed(native.get("kept_failed_runs", {})),
                                    *self.inputs(native).record().get("retired_runs", [])]))
+        # A resumed old job can own the native pointer or have a newer update
+        # time. Neither makes it the latest attempt for this task.
+        jobs = getattr(getattr(self.backend, 'manual', None), 'jobs', {})
+        return sorted(identities, key=lambda identity: jobs.get(identity, {}).get('created', ''), reverse=True)
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
@@ -292,7 +296,7 @@ class Guided:
         try:
             job["process"] = summary(self.backend.manual.folder(identity), job)
         except (OSError, ValueError, KeyError):
-            job["process"] = {"errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
+            job["process"] = {"retryBlocked": job.get('mode') != 'estimate', "errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
         from dazedtl.compatibility.process_view import phase_feedback
         job.update(phase_feedback(job))
         return job
@@ -324,6 +328,24 @@ class Guided:
         if run_id in self.owned_runs(native) and run_id in self.backend.manual.jobs:
             return self.run_view(run_id)
         return self.translation.run(project_id, run_id)
+
+    def retain_run(self, project_id, run_id, dismissed):
+        """Only change presentation; all ownership and submission receipts remain."""
+        _, native = self.record(project_id)
+        if type(dismissed) is not bool or not isinstance(run_id, str) or run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError('Choose a saved run belonging to this project.')
+        job = self.backend.manual.jobs[run_id]
+        if job.get('status') in {'ready', 'running', 'waiting'} or job.get('approval'):
+            raise ValueError('Finish or stop this run before dismissing its notice.')
+        updated = deepcopy(native)
+        kept = updated.setdefault('kept_failed_runs', {})
+        if dismissed:
+            kept[run_id] = {'dismissed': True}
+        else:
+            kept.pop(run_id, None)
+        self.backend.workflows.save(updated)
+        self.backend.workflows.projects[native['id']] = updated
+        return self.run_view(run_id)
 
     def readiness(self, project_id, native, value, source_status=None):
         folder = self.backend.workflows.folder(native["id"])
@@ -463,7 +485,7 @@ class Guided:
             value.get("draft", {}).get("documents", {}))
         paid = [self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
                 if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate']
-        current_run = next((job for job in paid if job['status'] in {'running', 'waiting'}), paid[0] if paid else None)
+        current_run = next((job for job in paid if job['status'] in {'ready', 'running', 'waiting'}), None)
         recovered = read_json(draft) if draft.exists() else None
         rebased = context_setup.rebase_layout_draft(native, recovered)
         if recovered != rebased:

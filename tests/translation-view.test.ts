@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, filePreviewRun, fileStatus, phaseRun, requestContext, translatedLines } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, filePreviewRun, fileStatus, phaseRun, needsSubmissionReview, canResumeRun, requestContext, translatedLines } from "../app/src/features/guided/translationView.ts";
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -13,7 +13,8 @@ test("a later event-code task cannot inherit completion from map outputs or an o
   assert.equal(fileStatus("Map001.json", { ...maps, appliedOutputs: ["Map001.json"] }).label, "Applied");
   const partial = { ...maps, status: "interrupted", availableOutputs: [], outputs: {}, process: { requests: [{ index: 0, file: "Map001.json", state: "uncertain", sourceItems: 1 }], errors: [] } };
   assert.equal(fileStatus("Map001.json", partial).label, "Check submission");
-  assert.equal(phaseRun([{ ...maps, id: "kept", keptForHistory: true }, partial], "dialogue"), partial);
+  // Dismissal must not revive the previous attempt.
+  assert.equal(phaseRun([{ ...maps, id: "kept", keptForHistory: true }, partial], "dialogue"), undefined);
   // A new draft selection must not offer Apply for a different completed scope
   // while the backend snapshot still describes the previous saved selection.
   assert.equal(phaseRun([maps], "dialogue", ["Map003.json"]), undefined);
@@ -66,4 +67,24 @@ test("context preview separates matched guidance from static prompts and transla
   assert.deepEqual(requestContext({ ...payload, messages: messages.slice(1), system: [{type:"text",text:staticPrompt},{type:"text",text:dynamic}] }), sections);
   assert.deepEqual(requestContext({ ...payload, messages: [{role:"system",content:staticPrompt}], context: null }), []);
   assert.deepEqual(requestContext({ ...payload, context: {source_items:["Exact saved scene"],instructions:["Exact saved instructions"]} }).map(section => section.text), [dynamic,"Exact saved scene","Exact saved instructions"]);
+});
+
+// Protect stale overlapping failures becoming current after an estimate, a
+// selection change or dismissal, while unresolved receipts remain actionable.
+test("new attempts supersede historical warnings without releasing submission protections", () => {
+  const old = { id: "old", created: "2020-01-01", updated: "2030-01-01", mode: "batch", logicalPhase: "database", files: ["Items.json", "Actors.json"], status: "failed", phase: "poll", process: { failed: 82, retryBlocked: false, requests: [{ index: 0, file: "Items.json", state: "failed", sourceItems: 1 }] } } as Job;
+  const next = { ...old, id: "next", created: "2026-01-01", files: ["Actors.json"] };
+  assert.equal(phaseRun([old, next], "database", ["Items.json"]), undefined);
+  assert.equal(phaseRun([old, next], "database", ["Actors.json"]), next);
+  assert.equal(phaseRun([{ ...next, mode: "estimate" }, old], "database"), undefined);
+  assert.equal(phaseRun([{ ...next, keptForHistory: true }, old], "database"), undefined);
+  assert.equal(fileStatus("Items.json", old, true).label, "Ready");
+  assert.equal(needsSubmissionReview(old), false);
+  assert.equal(canResumeRun(old), false);
+  assert.equal(canResumeRun({ ...old, mode: "estimate", phase: "prepare" }), false);
+  const unresolved = { ...old, keptForHistory: true, process: { ...old.process!, retryBlocked: true } };
+  assert.equal(needsSubmissionReview(unresolved), true);
+  assert.equal(canResumeRun(unresolved), true);
+  const resumed = { ...unresolved, status: "running" };
+  assert.equal(phaseRun([next, resumed], "database"), resumed);
 });

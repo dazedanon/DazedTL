@@ -730,6 +730,7 @@ export interface RpcContract {
   };
   guided_stop: { request: { project_id: string; run_id?: string }; response: Job };
   guided_resume: { request: { project_id: string; run_id?: string }; response: Job };
+  guided_retain_run: { request: { project_id: string; run_id: string; dismissed: boolean }; response: Job };
   guided_output_folder: { request: { project_id: string }; response: { path: string } };
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };

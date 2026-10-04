@@ -3,14 +3,14 @@ import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
-import { activeRun, filePreviewRun, fileStatus } from "./translationView";
+import { activeRun, filePreviewRun, fileStatus, needsSubmissionReview } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, guidance, requestPreview, runActions, review, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, guidance, requestPreview, runActions, review, history, dismiss, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; guidance: () => void; runActions: ReactNode; review: (job: Job) => void; children?: ReactNode;
+  settings: () => void; guidance: () => void; runActions: ReactNode; review: (job: Job) => void; history: () => void; dismiss?: ReactNode; children?: ReactNode;
   requestPreview?: { job: string; file: string; phase: Phase } | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -22,7 +22,7 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
   const rows = useMemo(() => state.files.filter(row => row.group === (phase === "database" ? "database" : "dialogue")), [state.files, phase]);
   const selected = new Set(values.selected);
   const scoped = rows.filter(row => selected.has(row.name));
-  const ownRuns = state.runs.filter(item => item.logicalPhase === phase && item.mode !== "estimate" && !item.keptForHistory);
+  const ownRuns = state.runs.filter(item => item.logicalPhase === phase && item.mode !== "estimate");
   const retired = new Set(state.sourceStatus.retired || []);
   const fileRun = (name: string) => ownRuns.find(item => !retired.has(item.id) && !item.retiredFiles?.includes(name) && item.files?.includes(name));
   const records = [estimate, run, fileRun(file)].filter((item): item is Job => !!item && !!item.files?.includes(file))
@@ -32,25 +32,25 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
     setFile(name); setInspecting(true);
     setRecord(filePreviewRun(name, run, estimate, fileRun(name), currentEstimate)?.id || "");
   };
-  const saved = scoped.filter(row => fileStatus(row.name, fileRun(row.name)).tone === "success").length;
+  const saved = scoped.filter(row => state.readiness.outputs.includes(row.name)).length;
   return <div ref={root} className={`translation-workspace${inspecting ? " is-inspecting" : ""}`}>
     <div className="translation-toolbar" aria-label="Translation setup">
       <Button variant="quiet" disabled={locked} onClick={settings} title={state.provider.connection}>{state.provider.model || "Choose a model"}</Button>
       <div className="guided-mode" role="group" aria-label="Translation method"><Button disabled={disabled || locked || !state.provider.batchSupported} title={state.provider.batchSupported ? "Recommended · often 50% cheaper" : "Unavailable for this connection"} aria-pressed={values.mode === "batch"} onClick={() => change("mode", "batch")}>Batch</Button><Button disabled={disabled || locked} aria-pressed={values.mode === "translate"} onClick={() => change("mode", "translate")}>Live</Button></div>
       <small className="translation-method-hint">{state.provider.batchSupported ? "Batch recommended · often 50% cheaper" : "Live · saves results as they arrive"}</small>
-      <div className="translation-tools"><Button variant="quiet" onClick={guidance}>Options</Button></div>
+      <div className="translation-tools"><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={guidance}>Options</Button></div>
     </div>
     <div className="translation-notices">{children}{locked && <p className="muted">Selection is fixed while this run is active. You can still search and preview files.</p>}</div>
     {run && !run.scopeComplete && <div className="translation-run-summary" role="status"><span>{run.approval ? "Requests prepared" : activeRun(run) ? run.message : `${saved} / ${scoped.length} selected files saved`}</span>
-      {!activeRun(run) && !!run.process?.errors.length && <span className="translation-error">{run.process.errors[0]}</span>}
-      {runActions}<Button variant="link" onClick={() => review(run)}>Run details</Button></div>}
+      {!activeRun(run) && (run.status === "failed" || needsSubmissionReview(run)) && <span className="translation-error">{needsSubmissionReview(run) ? "Review saved submissions before sending this text again." : <>{run.process?.failed ? `${run.process.failed} requests rejected.` : "This attempt did not finish."} Use Translate for remaining work.</>}</span>}
+      {runActions}{dismiss}<Button variant="link" onClick={() => review(run)}>Run details</Button></div>}
     <div className="translation-columns">
       <section className="translation-files" aria-label="Translation files">
         <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked}
           change={names => change("selected", retainOtherScope(values.selected, rows, names))}
           inline={{ preview: openFile, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
-              const owner = fileRun(row.name), status = fileStatus(row.name, owner), metrics = owner?.process?.fileMetrics?.[row.name];
+              const owner = fileRun(row.name), status = fileStatus(row.name, owner, owner?.id !== run?.id), metrics = owner?.process?.fileMetrics?.[row.name];
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}><span aria-hidden="true">{status.symbol}</span><span className="translation-status-text">{status.label}</span></span>
                 <span className="translation-file-cost" title={metrics ? "Engine-reported cost for this saved run" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>
                 <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${owner?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;

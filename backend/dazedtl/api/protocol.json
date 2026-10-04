@@ -45,6 +45,9 @@
     "guided_resume": {
       "refresh": true
     },
+    "guided_retain_run": {
+      "refresh": true
+    },
     "guided_export": {
       "refresh": true
     },

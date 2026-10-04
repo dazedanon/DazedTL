@@ -3,6 +3,7 @@ import type { Job } from "../../api/contracts";
 import { Message } from "../../ui/Feedback";
 import { api } from "../../api/client";
 import { ProcessPanel } from "./ProcessPanel";
+import { canResumeRun } from "./translationView";
 export function Estimate({ value }: { value: Record<string, unknown> }) {
   const fields = [
     ["requests", "Requests"],
@@ -146,9 +147,7 @@ export default function RunPanel({
           <Button size="comfortable" disabled={busy} pending={pendingKey === "run:stop"} onClick={stop}>
             {job.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}
           </Button>
-        ) : ["failed", "stopped", "interrupted", "canceled"].includes(
-            job.status,
-          ) ? (
+        ) : canResumeRun(job) ? (
           <Button size="comfortable" disabled={busy || job.process?.retryBlocked && !(job.mode === "batch" && job.phase?.startsWith("poll"))} onClick={resume}>
             Resume with saved settings
           </Button>

@@ -129,6 +129,8 @@ class ProcessTests(unittest.TestCase):
             self.assertFalse(request_scope.overlap(new, estimate, [(old, job)]))
             job['dazedtl_submission_intent'] = True
             self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
+            job.update(keptForHistory=True, created='2020-01-01', status='interrupted')
+            self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
             write_json(new/'log/estimate_requests.json', {'different-group': row('毒', [b])})
             self.assertFalse(request_scope.overlap(new, estimate, [(old, job)]))
             job['logicalPhase'] = 'dialogue'

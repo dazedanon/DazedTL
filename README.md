@@ -11,7 +11,7 @@ compact in smaller windows. File selection supports search, groups, map names wh
 and keyboard ranges across its virtualized list. Filtering preserves checked files.
 Selecting a game is enough: the app prepares selected working copies automatically from its current files and carries saved translation progress forward. Reopening the project preserves those copies.
 Each run and application review uses the selected scope.
-Saved operations remain in **History**.
+Saved runs are searchable in **Run history** on Translate; **History** also includes other project activity. **Dismiss notice** removes a finished run from current work while retaining its requests and results. Unresolved submissions still require review before overlapping paid work.
 Translate separates **Database files → Maps & events → Event / plugin codes**. Click **Translate** to prepare a local estimate and open the cost review. Inspect source and matched context, approve the charge, or decline; Batch reviews open automatically when prepared.
 One shared file selector handles large scopes, search, Ctrl/Cmd toggles and Shift ranges. Preview is separate from selection. Saved output remains available for read-only comparison, with recorded per-file cost and processing time; older runs may have missing figures.
 Apply explicitly overwrites checked game files that have saved output. It does not merge or synchronize files automatically. **Options → File options** opens the translated folder or reloads checked files from the current game; reload archives previous working copies and invalidates their cached results.

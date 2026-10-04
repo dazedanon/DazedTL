@@ -1,131 +1,170 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { Job, RunPayload, RunProcess } from "../../api/contracts";
 import { Button } from "../../ui/Button";
+import { ActionControl } from "../../ui/ActionControl";
+import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Message } from "../../ui/Feedback";
+import { Tabs, TabPanel } from "../../ui/Tabs";
+import { VirtualList } from "../../ui/VirtualList";
+import { useAction } from "../../state/useAction";
+import { RequestSource } from "./RequestSource";
+import { needsSubmissionReview, translatedLines } from "./translationView";
 
-const formatted = (value: unknown) => JSON.stringify(value, null, 2);
-const tabs = ["source", "response", "json"] as const;
-type Tab = typeof tabs[number];
-type InspectorView = { index: number; tab: Tab; filter: string; page: number; query: string };
+const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
+const tabs = [{ id: "source", label: "Source & context" }, { id: "response", label: "Response & errors" },
+  { id: "json", label: "Exact JSON" }, { id: "run", label: "Run details" }] as const;
+type Tab = typeof tabs[number]["id"];
+type InspectorView = { index: number; tab: Tab; filter: string; query: string };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
 function savedView(id: string): InspectorView {
-  const fallback: InspectorView = { index: 0, tab: "source", filter: "all", page: 0, query: "" };
+  const fallback: InspectorView = { index: 0, tab: "source", filter: "all", query: "" };
   try {
     const value = JSON.parse(localStorage.getItem(inspectorKey(id)) || "null");
-    if (!value || !Number.isSafeInteger(value.index) || value.index < 0 || !Number.isSafeInteger(value.page) || value.page < 0
-        || !tabs.includes(value.tab) || !["all", "failed", "unsent"].includes(value.filter) || typeof value.query !== "string") return fallback;
-    return { index: value.index, tab: value.tab, filter: value.filter, page: value.page, query: value.query.slice(0, 200) };
+    if (!value || !Number.isSafeInteger(value.index) || value.index < 0
+      || !tabs.some(tab => tab.id === value.tab) || !["all", "failed", "unsent", "unresolved"].includes(value.filter) || typeof value.query !== "string") return fallback;
+    return { index: value.index, tab: value.tab, filter: value.filter, query: value.query.slice(0, 200) };
   } catch { return fallback; }
 }
-const contextText = (payload: RunPayload) => [
-  payload.system != null ? "System instructions\n" + (typeof payload.system === "string" ? payload.system : formatted(payload.system)) : "",
-  ...(Array.isArray(payload.messages) ? payload.messages.slice(0, -1).map(message => {
-    if (!message || typeof message !== "object" || Array.isArray(message)) return formatted(message);
-    const value = message as { role?: string; content?: unknown };
-    return (value.role || "Saved") + " message\n" + (typeof value.content === "string" ? value.content : formatted(value.content));
-  }) : []),
-  payload.context != null ? "Matched context\n" + (typeof payload.context === "string" ? payload.context : formatted(payload.context)) : "",
-].filter(Boolean).join("\n\n") || "No separate context was retained. Exact JSON contains the saved request.";
-
-export function ProcessPanel({ job, readPayload, readProvider, compact = false }: {
-  job: Job;
-  readPayload?: (index: number) => Promise<RunPayload>;
+export function runLabel(job: Job) {
+  return `${job.logicalPhase === "database" ? "Database" : job.logicalPhase === "dialogue" ? "Maps & events" : job.logicalPhase === "advanced" ? "Event / plugin codes" : job.logicalPhase === "variables" ? "Comparisons" : job.logicalPhase === "speakers" ? "Speakers" : "Translation"} · ${job.mode === "batch" ? "Batch" : job.mode === "estimate" ? "Estimate" : "Live"}`;
+}
+type Props = {
+  job: Job; readPayload?: (index: number) => Promise<RunPayload>;
   readProvider?: () => Promise<{ batches: NonNullable<RunProcess["batches"]> }>;
-  compact?: boolean;
-}) {
-  const process = job.process;
+  compact?: boolean; actions?: ReactNode;
+};
+export function ProcessPanel(props: Props) {
+  return props.job.process ? <RequestProcess key={props.job.id} {...props} /> : null;
+}
+function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
+  const process = job.process!;
+  const [view, setView] = useState(() => savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
   const [remote, setRemote] = useState<RunProcess["batches"]>();
-  const [busy, setBusy] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<Tab>("source");
-  const [filter, setFilter] = useState("all");
-  const [page, setPage] = useState(0);
-  const [query, setQuery] = useState("");
-  const generation = useRef(0);
-  const pending = useRef(false);
-  const tabList = useRef<HTMLDivElement>(null);
+  const [refreshed, setRefreshed] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [focus, setFocus] = useState<string | null>(() => String(savedView(job.id).index));
+  const keyboardFocus = useRef(false);
+  const provider = useAction();
+  const reader = useRef<HTMLDivElement>(null);
+  const refreshedIndex = useRef<number | null>(null);
+  const payloadReader = useRef(readPayload);
+  payloadReader.current = readPayload;
   const tabId = useId();
-  useEffect(() => { const view = savedView(job.id); generation.current++; pending.current = false; setPayload(null); setRemote(undefined); setError(""); setBusy(""); setFilter(view.filter); setTab(view.tab); setPage(view.page); setQuery(view.query); if (readPayload && process?.prepared) void load(Math.min(view.index, process.prepared - 1)); return () => { generation.current++; }; }, [job.id]);
-  if (!process) return null;
-  function remember(view: Partial<InspectorView>) {
-    try { localStorage.setItem(inspectorKey(job.id), JSON.stringify({ ...savedView(job.id), ...view })); } catch { /* Storage may be unavailable; request evidence stays backend-owned. */ }
+  const requests = process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 }));
+  const index = requests.some(row => row.index === view.index) ? view.index : requests[0]?.index;
+  const selected = requests.find(row => row.index === index);
+  function change(value: Partial<InspectorView>) {
+    setView(previous => {
+      const next = { ...previous, ...value };
+      try { localStorage.setItem(inspectorKey(job.id), JSON.stringify(next)); } catch { /* Evidence remains backend-owned. */ }
+      return next;
+    });
   }
-  async function load(index: number) {
-    if (!readPayload || pending.current) return;
-    pending.current = true;
-    const token = ++generation.current;
-    setBusy("payload"); setError("");
-    try { const value = await readPayload(index); if (token === generation.current) { setPayload(value); remember({ index }); } }
-    catch (failure) { if (token === generation.current) setError(failure instanceof Error ? failure.message : "Payload unavailable."); }
-    finally { if (token === generation.current) { pending.current = false; setBusy(""); } }
+  useEffect(() => {
+    let current = true;
+    if (index == null || !payloadReader.current) return;
+    setBusy(true); setError(""); setRefreshed(false);
+    void payloadReader.current(index).then(value => { if (current) { setPayload(value); setRefreshed(refreshedIndex.current === index); } })
+      .catch(failure => { if (current) setError(failure instanceof Error ? failure.message : "Saved request unavailable."); })
+      .finally(() => { if (current) setBusy(false); });
+    return () => { current = false; };
+  }, [index, refresh]);
+  useEffect(() => { reader.current?.scrollTo(0, 0); }, [index, view.tab]);
+  const visiblePayload = payload?.index === index ? payload : null;
+  const query = view.query.trim().toLocaleLowerCase();
+  function matches(row: typeof requests[number], filter: string, query: string) {
+    const status = filter === "all" || filter === "failed" && row.state === "failed"
+      || filter === "unsent" && ["queued", "prepared"].includes(row.state)
+      || filter === "unresolved" && ["submitted", "uncertain", "received"].includes(row.state);
+    const found = !query || (/^#?\d+$/.test(query) ? row.index + 1 === Number(query.replace("#", "")) : (row.file || "").toLocaleLowerCase().includes(query));
+    return status && found;
   }
-  async function refreshProvider() {
-    if (!readProvider || pending.current) return;
-    pending.current = true;
-    const token = ++generation.current;
-    setBusy("provider"); setError("");
-    try { const value = await readProvider(); if (token === generation.current) setRemote(value.batches); }
-    catch (failure) { if (token === generation.current) setError(failure instanceof Error ? failure.message : "Provider details unavailable."); }
-    finally { if (token === generation.current) { pending.current = false; setBusy(""); } }
+  const matching = requests.filter(row => matches(row, view.filter, query));
+  const position = matching.findIndex(row => row.index === index);
+  function refine(value: Partial<InspectorView>) {
+    const next = { ...view, ...value };
+    const rows = requests.filter(row => matches(row, next.filter, next.query.trim().toLocaleLowerCase()));
+    const target = rows.find(row => row.index === index) || rows[0];
+    if (target?.index !== index) refreshedIndex.current = null;
+    change({ ...value, ...(target ? { index: target.index } : {}) });
+    keyboardFocus.current = false;
+    setFocus(target ? String(target.index) : null);
   }
-  function showTab(value: Tab, focus = false) {
-    setTab(value);
-    remember({ tab: value });
-    if (focus) tabList.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[tabs.indexOf(value)]?.focus();
-  }
+  const choose = (number: number, keyboard = false) => { refreshedIndex.current = null; change({ index: number }); setRefreshed(false); keyboardFocus.current = keyboard; setFocus(String(number)); };
   const batches = remote || process.batches || [];
   const statuses = [...new Set(batches.map(batch => batch.status))].join(", ");
-  const errors = [...new Set([...(process.errors || []), ...batches.flatMap(batch => (batch.errors || []).map(error =>
-    [error.code, error.param, error.message].filter(Boolean).join(" · ")))])];
-  const counts = [["Prepared requests", process.prepared], ["Submitted", process.submitted],
-    ["Received", process.received], ["Validated requests", process.validated],
-    ["Validated files", process.validatedFiles], ["Applied files", process.appliedFiles]] as const;
-  const schema = payload?.parameters.response_format as { type?: string; json_schema?: { strict?: boolean } } | undefined;
-  const tokenLimit = payload?.parameters.max_completion_tokens ?? payload?.parameters.max_tokens;
-  const requests = process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 }));
-  const matching = requests.filter(row => (filter === "all" || filter === "failed" && row.state === "failed" || filter === "unsent" && ["queued", "prepared"].includes(row.state))
-    && (`${row.index + 1} ${row.file || ""}`).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
-  const pageSize = 40;
-  const lastPage = Math.max(0, Math.ceil(matching.length / pageSize) - 1);
-  const currentPage = Math.min(page, lastPage);
-  return <div className={`translation-process${compact ? " translation-process--compact" : ""}`}>
-    <p><strong>{job.mode === "batch" ? "Batch" : job.mode === "estimate" ? "Estimate" : job.mode === "offline" ? "Local fixture" : "Live"}</strong>
-      {job.model && <> · {job.model}</>}{job.files && <> · {job.files.length} {job.files.length === 1 ? "file" : "files"}</>}
-      {!!statuses && <> · {remote ? "Provider" : "Saved provider"}: {statuses}</>}</p>
-    <dl className={`process-counts${compact ? " process-counts--compact" : ""}`}>{[...counts, ...(process.remaining != null ? [["Unsent", process.remaining] as const] : [])].map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count == null ? "Not recorded" : count.toLocaleString()}</dd></div>)}</dl>
-    {!!process.uncertain && <p>{process.uncertain} requests have uncertain submission. Check the provider before retrying.</p>}
-    {!!process.duplicateSubmissions && <p>{process.duplicateSubmissions} request entries appear in multiple provider Batches. Check those jobs before submitting more work.</p>}
-    {!!errors.length && <div className={`process-errors${compact ? " process-errors--compact" : ""}`}>{!!process.failed && <strong>{process.failed} requests rejected</strong>}{(compact ? errors.slice(0, 1) : errors.slice(0, 3)).map(message => <p key={message}>{message}</p>)}{errors.length > (compact ? 1 : 3) && <Button variant="link" onClick={() => showTab("response", true)}>View all {errors.length} errors</Button>}</div>}
-    <div className="actions">
-      {readPayload && <Button disabled={!!busy || process.prepared === 0} pending={busy === "payload"} onClick={() => load(payload?.index || 0)}>Refresh saved requests</Button>}
-      {!!batches.length && readProvider && <Button disabled={!!busy} pending={busy === "provider"} onClick={refreshProvider}>Read latest Batch details</Button>}
+  const errors = [...new Set([...(process.errors || []), ...(["failed", "interrupted"].includes(job.status) && job.message ? [job.message] : []),
+    ...batches.flatMap(batch => (batch.errors || []).map(error => [error.code, error.param, error.message].filter(Boolean).join(" · ")))])];
+  const counts = [["Prepared", process.prepared], ["Submitted", process.submitted], ["Received", process.received],
+    ["Rejected", process.failed], ["Unsent", process.remaining]] as const;
+  const translated = visiblePayload && translatedLines(visiblePayload);
+  return <div className="translation-process">
+    <div className="process-overview"><div><strong>{runLabel(job)}</strong><span className="muted"> · {job.model || "Model not recorded"} · {job.files?.length || 0} files</span>
+      <span className="badge">{job.status}</span>{job.created && <time className="muted" dateTime={job.created}>{new Date(job.created).toLocaleDateString()}</time>}{job.keptForHistory && <span className="muted">Dismissed</span>}{needsSubmissionReview(job) && <span className="translation-error">Submission review needed</span>}</div>
+      <dl className="process-counts process-counts--compact">{counts.filter(([, count]) => count != null).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count!.toLocaleString()}</dd></div>)}</dl>
     </div>
-    <Message message={error} />
     <div className="request-workspace">
-      <aside className="request-list"><div role="group" aria-label="Request filters">{["all", "failed", "unsent"].map(value => <Button key={value} variant="quiet" aria-pressed={filter === value} onClick={() => { setFilter(value); setPage(0); remember({ filter: value, page: 0 }); }}>{value === "all" ? "All" : value === "failed" ? "Failed" : "Unsent"}</Button>)}</div>
-        <label>Find request<input type="search" maxLength={200} value={query} placeholder="Number or file" onChange={event => { setQuery(event.target.value); setPage(0); remember({ query: event.target.value, page: 0 }); }} /></label>
-        <div className="request-page-actions"><small>{matching.length.toLocaleString()} matching · {currentPage + 1}/{lastPage + 1}</small>{lastPage > 0 && <div className="actions"><Button aria-label="Previous requests" disabled={!currentPage} onClick={() => { setPage(currentPage - 1); remember({ page: currentPage - 1 }); }}>Prev</Button><Button aria-label="Next requests" disabled={currentPage >= lastPage} onClick={() => { setPage(currentPage + 1); remember({ page: currentPage + 1 }); }}>Next</Button></div>}</div>
-        {matching.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map(row => <Button key={row.index} variant="quiet" disabled={!!busy} aria-pressed={payload?.index === row.index} onClick={() => load(row.index)}><strong>Request {row.index+1}</strong><small>{row.file || "Saved scope"} · {row.state}</small></Button>)}
-        {!matching.length && <p>No requests match this filter.</p>}
+      <aside className="request-list" aria-label="Choose a request">
+        <div className="request-search"><input aria-label="Find request" type="search" maxLength={200} value={view.query} placeholder="Request # or file name" onChange={event => refine({ query: event.target.value })} />
+          <div><select aria-label="Request status" value={view.filter} onChange={event => refine({ filter: event.target.value })}>
+            <option value="all">All requests</option><option value="failed">Rejected</option><option value="unsent">Unsent</option><option value="unresolved">Unresolved</option>
+          </select><small>{matching.length.toLocaleString()} / {requests.length.toLocaleString()}</small></div></div>
+        <div className="request-list-viewport" onKeyDown={event => {
+          if (!matching.length || !(event.target instanceof HTMLButtonElement)) return;
+          const next = event.key === "ArrowDown" ? Math.min(matching.length - 1, position + 1) : event.key === "ArrowUp" ? Math.max(0, position - 1) : event.key === "Home" ? 0 : event.key === "End" ? matching.length - 1 : null;
+          if (next != null) { event.preventDefault(); choose(matching[next].index, true); }
+        }}><VirtualList items={matching} itemKey={row => String(row.index)} label="Saved requests" focusKey={focus}
+          onFocusReady={row => { if (keyboardFocus.current) row.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true }); setFocus(null); }}
+          empty={<p className="muted">No requests match.</p>}>{row => <button type="button" className="request-row" aria-current={row.index === index ? "true" : undefined}
+            tabIndex={row.index === index || position < 0 && row.index === matching[0]?.index ? 0 : -1} onClick={() => choose(row.index)}>
+            <span className="request-row-number">{row.index + 1}</span><span><strong>{row.file || `Request ${row.index + 1}`}</strong><small>{row.state}{row.sourceItems ? ` · ${row.sourceItems} lines` : ""}{!row.file ? " · saved scope" : ""}</small></span>
+          </button>}</VirtualList></div>
       </aside>
-      <section className="payload-inspector">
-        {payload ? <><div className="request-selection"><strong>Request {payload.index+1} / {payload.total}</strong><span className="badge">{payload.state}</span></div>
-          <p className="request-parameters">{typeof payload.parameters.model === "string" && <span>{payload.parameters.model}</span>}{payload.source && <span>{Object.keys(payload.source).length} source lines</span>}{typeof tokenLimit === "number" && <span>{tokenLimit.toLocaleString()} token limit</span>}{schema?.type === "json_schema" && <span>{schema.json_schema?.strict ? "Strict JSON schema" : "JSON schema"}</span>}{payload.error != null && <Button variant="link" onClick={() => showTab("response", true)}>Request error recorded</Button>}</p>
-          <div ref={tabList} role="tablist" aria-label="Request details" className="request-tabs" onKeyDown={event => {
-            const index = tabs.indexOf(tab);
-            const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : null;
-            if (next != null) { event.preventDefault(); showTab(tabs[next], true); }
-          }}>{tabs.map(value => <Button key={value} role="tab" tabIndex={tab === value ? 0 : -1} aria-selected={tab === value} aria-controls={`${tabId}-${value}`} id={`${tabId}-button-${value}`} onClick={() => showTab(value)}>{value === "source" ? "Source & context" : value === "response" ? "Response & error" : "Exact JSON"}</Button>)}</div>
-          <div key={`${payload.index}-${tab}`} role="tabpanel" id={`${tabId}-${tab}`} aria-labelledby={`${tabId}-button-${tab}`}>
-            {tab === "source" ? <div className="request-source-context"><section><h3>Source</h3><pre tabIndex={0} role="region" aria-label="Source payload">{payload.source ? formatted(payload.source) : "Source is in the final retained message."}</pre></section><section><h3>Context</h3><pre tabIndex={0} role="region" aria-label="Saved context">{contextText(payload)}</pre></section></div>
-              : tab === "response" ? <><h3>Response</h3><pre tabIndex={0} role="region" aria-label="Saved response">{payload.response != null ? formatted(payload.response) : "No response body was retained for this request."}</pre><h3>Error</h3><pre tabIndex={0} role="region" aria-label="Request error">{payload.error != null ? formatted(payload.error) : "No request-specific error was retained."}</pre>{!!errors.length && <><h3>Run & provider errors</h3><pre tabIndex={0} role="region" aria-label="Run and provider errors">{errors.join("\n\n")}</pre></>}{!!job.log.length && <><h3>Diagnostic log</h3><pre tabIndex={0} role="region" aria-label="Diagnostic log">{job.log.join("\n")}</pre></>}</>
-              : <pre tabIndex={0} role="region" aria-label="Exact request JSON">{formatted(payload.exact)}</pre>}
-          </div>
-        </> : <p>{busy ? "Loading saved request…" : process.prepared ? "Choose a request to inspect." : "No requests were recorded."}</p>}
+      <section className="payload-inspector" aria-label="Request details">
+        <div className="request-selection"><strong>{index != null ? `Request ${index + 1} / ${requests.length}` : "No saved requests"}</strong>
+          {selected && <span className="badge">{visiblePayload?.state || selected.state}</span>}
+          <div className="request-navigation"><Button variant="quiet" aria-label="Previous request" disabled={position <= 0} onClick={() => choose(matching[position - 1].index, true)}>←</Button>
+            <Button variant="quiet" aria-label="Next request" disabled={position < 0 || position >= matching.length - 1} onClick={() => choose(matching[position + 1].index, true)}>→</Button>
+            {readPayload && <Button variant="quiet" pending={busy} disabled={busy || index == null} onClick={() => { refreshedIndex.current = index ?? null; setRefresh(value => value + 1); }}>Refresh request</Button>}</div>
+        </div>
+        <Tabs id={tabId} label="Request content" items={tabs} value={view.tab} onChange={tab => change({ tab })} />
+        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={busy}>
+          <Message message={error} />
+          {refreshed && !error && <p className="muted" role="status">Saved request refreshed.</p>}
+          {visiblePayload && selected?.state !== visiblePayload.state && <p role="status">New results are available. Refresh when ready.</p>}
+          <TabPanel id={tabId} value={view.tab}>
+            {view.tab === "run" ? <>
+              <p>{job.created ? new Date(job.created).toLocaleString() : "Date not recorded"} · <span className="muted">{job.id}</span></p>
+              {job.keptForHistory && <p>Dismissed from current work. Requests, settings and results remain saved. Submission checks still apply.</p>}
+              {actions}
+              {!!process.uncertain && <p className="translation-error">{process.uncertain} uncertain submissions. Check provider receipts before retrying.</p>}
+              {!!process.duplicateSubmissions && <p className="translation-error">{process.duplicateSubmissions} request entries appear in multiple Batches.</p>}
+              <h3>Validation & application</h3><dl className="process-counts process-counts--compact">{[["Validated requests", process.validated], ["Validated files", process.validatedFiles], ["Applied files", process.appliedFiles]].map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count == null ? "Not recorded" : count.toLocaleString()}</dd></div>)}</dl>
+              {!!batches.length && <><h3>Provider receipts</h3><ActionList compact><ActionRow label={<><strong>{statuses}</strong><small>{remote ? "Latest provider read" : "Saved status"} · read-only</small></>}>
+                {readProvider && <ActionControl label="Read latest Batch details" pending={provider.busy} error={provider.error} notice={provider.notice} onClick={() => provider.run(async () => setRemote((await readProvider()).batches), "Provider details loaded.")} />}
+              </ActionRow></ActionList>{batches.map(batch => <div className="process-receipt" key={batch.id}><strong>{batch.status}</strong> · <code>{batch.id}</code><p>{Object.entries(batch.counts).map(([key, count]) => `${count ?? "Unknown"} ${key}`).join(" · ") || "Counts not recorded"}</p></div>)}</>}
+              <h3>Recorded usage</h3><p>{process.usage ? Object.entries(process.usage).map(([key, count]) => `${count.toLocaleString()} ${key.replaceAll("_", " ")}`).join(" · ") : "Not recorded. Estimates do not establish billed usage."}</p>
+              <details><summary>Frozen files ({job.files?.length || 0})</summary><pre>{job.files?.join("\n") || "Not recorded"}</pre></details>
+              {job.eventTextReview && <details><summary>Saved event text review</summary><pre>{formatted(job.eventTextReview)}</pre></details>}
+              {job.estimate && <details><summary>Saved estimate</summary><pre>{formatted(job.estimate)}</pre></details>}
+              {!!job.log.length && <details><summary>Diagnostic log</summary><pre>{job.log.join("\n")}</pre></details>}
+            </> : view.tab === "response" ? <>
+              {visiblePayload?.error != null && <><h3>Request error</h3><pre>{formatted(visiblePayload.error)}</pre></>}
+              {!!errors.length && <section><h3>Run & provider errors</h3><pre>{errors.join("\n\n")}</pre></section>}
+              <h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
+                : translated ? <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>
+                : visiblePayload.response != null ? <pre>{formatted(visiblePayload.response)}</pre> : <p className="muted">No response body was retained for this request.</p>}
+              {translated && visiblePayload && <details><summary>Raw response</summary><pre>{formatted(visiblePayload.response)}</pre></details>}
+            </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh request to try again." : "No request payload is available. Run details retains the saved receipts and log."}</p>
+              : view.tab === "source" ? <RequestSource payload={visiblePayload} />
+              : <><p className="muted">Exact retained request · includes provider parameters and full instructions.</p><pre>{JSON.stringify(visiblePayload.exact, null, 2)}</pre></>}
+
+          </TabPanel>
+        </div>
       </section>
     </div>
-    <div className="process-receipts">{!!batches.length && <section><h3>Saved provider receipts</h3>{batches.map(batch => <p key={batch.id}><strong>{batch.status}</strong> · {Object.entries(batch.counts).filter(([,count]) => count).map(([key,count]) => `${count} ${key}`).join(" · ")}</p>)}</section>}
-      <section><h3>Recorded usage</h3>{process.usage ? <p>{Object.entries(process.usage).map(([key,count]) => `${count.toLocaleString()} ${key.replaceAll("_", " ")}`).join(" · ")}</p> : <p>Not recorded. Local estimates do not establish billed usage.</p>}</section></div>
   </div>;
 }

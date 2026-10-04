@@ -216,6 +216,47 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs']['database']['scopeComplete'])
         self.assertEqual(self.guided.run_view(identity)['availableOutputs'], [])
 
+    def test_history_dismissal_preserves_ownership_receipts_and_never_revives_old_work(self):
+        # Protect stale native pointers, updated timestamps and exact-scope
+        # fallback from promoting old failures; dismissal must be reversible
+        # without removing frozen evidence or allowing overlapping payment.
+        from dazedtl.translation.guided_runs import GuidedRuns
+        inputs = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
+        old = {'id': 'old', 'created': '2020-01-01', 'updated': '2030-01-01', 'mode': 'batch',
+               'status': 'interrupted', 'files': ['Items.json'], 'log': [], 'dazedtl_submission_intent': True}
+        new = {**old, 'id': 'new', 'created': '2026-01-01', 'mode': 'estimate', 'status': 'complete'}
+        for job in (old, new):
+            self.backend.manual.jobs[job['id']] = job
+            self.guided.runs.remember(self.identity, job, inputs)
+            write_json(self.backend.manual.folder(job['id']) / ('log/estimate_requests.json' if job['mode'] == 'estimate' else 'log/batch_requests.json'),
+                       {'request': {'payload': '{"Line1":"薬"}', 'params': {}, 'provider': 'openai'}})
+        self.native['manual_job'] = 'old'
+        self.assertEqual(self.guided.owned_runs(self.native)[:2], ['new', 'old'])
+        self.assertNotIn('database', self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs'])
+        roots = [self.backend.manual.folder(identity) for identity in ('old', 'new')]
+        before = {path: path.read_bytes() for root in roots for path in root.rglob('*') if path.is_file()}
+        self.assertTrue(self.guided.retain_run(self.identity, 'old', True)['keptForHistory'])
+        native = self.backend.workflows.projects['native']
+        self.assertIn('old', self.guided.owned_runs(native))
+        with self.assertRaisesRegex(ValueError, 'Paid submission overlaps'):
+            self.guided.protect_submission(native, {'jobId': 'new'})
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        self.assertFalse(self.guided.retain_run(self.identity, 'old', False)['keptForHistory'])
+        with self.assertRaises(ValueError):
+            self.guided.retain_run(self.identity, 'foreign', True)
+        old['status'] = 'running'
+        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
+            self.guided.retain_run(self.identity, 'old', True)
+        views = [self.guided.run_view(identity) for identity in ('new', 'old')]
+        self.assertEqual(GuidedRuns.current(views, 'database')['id'], 'old')
+        old['status'] = 'failed'
+        new.update(mode='batch', files=['Actors.json'])
+        self.assertNotIn('database', self.guided.runs.snapshot(self.identity, native, {'changed': []})['phase_runs'])
+        self.backend.workflows.save.side_effect = OSError('Disk full')
+        with self.assertRaises(OSError):
+            self.guided.retain_run(self.identity, 'new', True)
+        self.assertFalse(self.guided.run_view('new')['keptForHistory'])
+
     def test_comparisons_require_exact_usable_mappings_for_the_selected_event_scope(self):
         self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json', 'Map002.json']
         self.native['selected'] = ['Items.json', 'Map001.json']
