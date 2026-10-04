@@ -74,6 +74,7 @@ def guided(value, project_id):
         'tools': value['tools'],
         'artifacts': value['artifacts'],
         'references': [pick(item, ('id', 'title')) for item in value.get('references', [])],
+        'referenceFolders': value.get('reference_folders', []),
         'provider': {
             'model': value['provider']['model'],
             'connection': value['provider']['connection'],

@@ -134,6 +134,12 @@ def manual_jobs(source, workspace, lock, allow_providers):
         def _event(self, job, event):
             with self.lock:
                 args = event.get("args", [])
+                if (event.get("event") == "log" and args and
+                        (job.get("mode") in {"translate", "offline"} or job.get("mode") == "batch" and job.get("phase") == "consume")):
+                    from .process_view import file_metric
+                    receipt = file_metric(args[0], job.get("files", []))
+                    if receipt:
+                        job.setdefault("file_metrics", {}).update(receipt)
                 if (event.get("event") == "finished" and len(args) >= 2
                         and args[0] is False and args[1] == SPEAKER_CANCELLATION
                         and not self.stopping.is_set()):

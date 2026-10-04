@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-export function ActionList({ children }: { children: ReactNode }) {
-  return <div className="action-list">{children}</div>;
+export function ActionList({ children, compact = false }: { children: ReactNode; compact?: boolean }) {
+  return <div className={`action-list${compact ? " action-list--compact" : ""}`}>{children}</div>;
 }
 
 export function ActionRow({ label, children }: { label: ReactNode; children: ReactNode }) {

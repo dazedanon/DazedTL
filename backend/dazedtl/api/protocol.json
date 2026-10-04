@@ -168,6 +168,12 @@
     "guided_context_review": {
       "refresh": true
     },
+    "guided_reference_add": {
+      "refresh": true
+    },
+    "guided_reference_remove": {
+      "refresh": true
+    },
     "guided_event_text_request": {
       "refresh": false
     },

@@ -122,6 +122,7 @@ class ManualJobs:
     def load_saved(self):
         self.jobs['fixture'] = json.loads((self.folder('fixture')/'job.json').read_text())
     def _event(self, job, event):
+        if event['event'] == 'log': return
         job.update(status='canceled' if job['phase']=='canceled' else 'complete' if event['args'][0] else 'failed', message=event['args'][1])
     def _launch(self, job, resume): job['status'] = 'running'
 ''')
@@ -146,6 +147,24 @@ class ManualJobs:
             self.assertEqual((paid['status'], paid['outputs']), ('failed', {'Items.json': 'kept'}))
             controller._event(paid, {'event': 'finished', 'args': [True, 'Completed']})
             self.assertEqual((paid['status'], paid['outputs']), ('complete', {'Items.json': 'kept'}))
+            # Keep every file's metric receipt after the native log cap, and
+            # never present Batch collection/estimate figures as paid results.
+            from dazedtl.compatibility.process_view import file_metrics
+            metric_run = {'mode': 'batch', 'phase': 'collect', 'files': ['Items.json'], 'log': []}
+            event = {'event': 'log', 'args': ['Items.json: [Input: 120] [Output: 20] [Cost: $0.0042] [12.5s] ✓']}
+            controller._event(metric_run, event)
+            self.assertEqual(file_metrics(metric_run), {})
+            metric_run['phase'] = 'consume'
+            controller._event(metric_run, event)
+            metric_run['phase'] = 'done'
+            self.assertEqual(file_metrics(metric_run), {'Items.json': {'cost': .0042, 'seconds': 12.5}})
+            restored = json.loads(json.dumps(metric_run))
+            self.assertEqual(file_metrics(restored), file_metrics(metric_run))
+            legacy = {'mode': 'translate', 'files': ['Items.json'], 'log': event['args']}
+            self.assertEqual(file_metrics(legacy), file_metrics(restored))
+            legacy['files'] = ['Other.json']
+            self.assertEqual(file_metrics(legacy), {})
+
 
     def test_event_text_catalog_excludes_dictionary_keys_but_retains_coarse_handlers(self):
         from dazedtl.compatibility.event_text import catalog

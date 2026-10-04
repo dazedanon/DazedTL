@@ -113,14 +113,15 @@ def inspect(request_path, native, project_id, observed_digest):
         report = read_json(path, limit=200_000)
         if not isinstance(report, dict) or set(report) != {"version", "request_id", "project_id", "engine", "rules"}:
             raise ValueError("Speaker findings are incomplete. Ask the setup assistant to finish the structured report.")
+        report_id = digest(report)
+        applied = native.get("guided_speakers", {}).get("reportId") == report_id
         if (report["project_id"] != project_id or report["engine"] != native["engine"] or type(report["version"]) is not int or report["version"] != 1
-                or report["request_id"] != expected["request_id"]):
+                or report["request_id"] != expected["request_id"] and not applied):
             return {**empty, "status": "waiting", "message": "Waiting for findings from this game’s latest setup task."}
         if not isinstance(report["rules"], dict) or set(report["rules"]) != set(expected["rules"]):
             raise ValueError("Speaker findings must cover every requested rule and no additional settings.")
-        report_id = digest(report)
-        applied = native.get("guided_speakers", {}).get("reportId") == report_id
         rows = []
+        changed = False
         for key, label in expected["rules"].items():
             rule = report["rules"][key]
             if (not isinstance(rule, dict) or set(rule) != {"decision", "confidence", "reason", "evidence"}
@@ -141,8 +142,11 @@ def inspect(request_path, native, project_id, observed_digest):
                 # Applied settings remain a record of the investigated source;
                 # ordinary translation must not invalidate that historic result.
                 if not applied and observed_digest(source) != ref["sha256"]:
-                    return {**empty, "status": "stale", "message": "Speaker evidence changed before application. Ask the setup assistant to refresh its findings."}
+                    changed = True
             rows.append({"key": key, "label": label, **rule})
+        if changed:
+            return {"status": "stale", "message": "Speaker findings are saved. Refresh the investigation before applying rules to changed source files.",
+                    "reportId": report_id, "rules": rows, "overrides": overrides(native)}
         return {"status": "applied" if applied else "ready", "message": "Speaker findings applied." if applied else "Speaker findings are ready to apply.",
                 "reportId": report_id, "rules": rows, "overrides": overrides(native)}
     except (OSError, ValueError, UnicodeError, KeyError, TypeError) as exc:

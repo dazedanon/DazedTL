@@ -15,6 +15,7 @@ JAPANESE = re.compile(r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u3
 class GuidedRuns:
     def __init__(self, guided):
         self.guided = guided
+        self.comparison_files = {}
 
     def records(self, project_id):
         path = self.guided.path(project_id, "runs")
@@ -23,13 +24,50 @@ class GuidedRuns:
     def files(self, native, phase):
         return sorted(set(self.guided.backend.phase_files(native, phase)).intersection(native["selected"]))
 
-    def working_bytes(self, native, name, source):
+    def working_path(self, native, name, source):
         inputs = self.guided.inputs(native)
         for group in ("translated", "files"):
             path = inputs.path(group, name)
             if path.is_file():
-                return path.read_bytes()
-        return project_path(inputs.source, source["relative"]).read_bytes()
+                return path
+        return project_path(inputs.source, source["relative"])
+
+    def working_bytes(self, native, name, source):
+        return self.working_path(native, name, source).read_bytes()
+
+    def comparison_literals(self, path):
+        fingerprint = self.guided.observed_digest(path)
+        cached = self.comparison_files.get(path)
+        if cached and cached[0] == fingerprint:
+            return cached
+
+        def commands(value):
+            if isinstance(value, list):
+                for item in value:
+                    yield from commands(item)
+            elif isinstance(value, dict):
+                if value.get("code") == 111:
+                    yield value
+                for key, item in value.items():
+                    if key != "_original":
+                        yield from commands(item)
+
+        # Retain only parsed comparison literals, never whole game documents.
+        # Selection, mappings, IGNORETLTEXT and review are checked on every read.
+        raw = path.read_bytes()
+        literals = []
+        for index, command in enumerate(commands(json.loads(raw.decode("utf-8-sig")))):
+            for parameter in command.get("parameters", []):
+                if isinstance(parameter, str) and "$gameVariables" in parameter:
+                    variables = sorted(set(re.findall(r"\$gameVariables\.value\(\s*(\d+)\s*\)", parameter)))
+                    literals.extend((index, literal, variables) for literal in re.findall(r"['\"`](.*?)['\"`]", parameter))
+        if len(self.comparison_files) >= 1024:
+            self.comparison_files.clear()
+        # Bind to the bytes actually parsed if a writer changed the file after
+        # observed_digest; the next observation will invalidate this entry.
+        result = (digest(raw), literals)
+        self.comparison_files[path] = result
+        return result
 
     def inputs(self, project_id, native, phase, mode, *, guard=None):
         names = self.files(native, phase)
@@ -77,36 +115,19 @@ class GuidedRuns:
             inputs = self.guided.inputs(native)
             sources = inputs.sources(names, inputs.record()["inputs"], self.guided.observed_digest)
             matched, missing, files, rows, working = 0, 0, [], [], {}
-            import json
-            def commands(value):
-                if isinstance(value, list):
-                    for item in value:
-                        yield from commands(item)
-                elif isinstance(value, dict):
-                    if value.get("code") == 111:
-                        yield value
-                    for key, item in value.items():
-                        if key != "_original":
-                            yield from commands(item)
             for name in names:
                 count = 0
-                raw = self.working_bytes(native, name, sources[name])
-                working[name] = digest(raw)
-                for command_index, command in enumerate(commands(json.loads(raw.decode("utf-8-sig")))):
-                    for parameter in command.get("parameters", []):
-                        if not isinstance(parameter, str) or "$gameVariables" not in parameter:
-                            continue
-                        for literal in re.findall(r"['\"`](.*?)['\"`]", parameter):
-                            if native["engine_options"].get("IGNORETLTEXT", True) and not JAPANESE.search(literal):
-                                continue
-                            if literal in cache:
-                                matched += 1
-                                count += 1
-                                rows.append({"file": name, "location": "code 111 occurrence " + str(command_index + 1),
-                                             "literal": literal, "translation": cache[literal],
-                                             "variables": sorted(set(re.findall(r"\$gameVariables\.value\(\s*(\d+)\s*\)", parameter)))})
-                            else:
-                                missing += 1
+                working[name], literals = self.comparison_literals(self.working_path(native, name, sources[name]))
+                for command_index, literal, variables in literals:
+                    if native["engine_options"].get("IGNORETLTEXT", True) and not JAPANESE.search(literal):
+                        continue
+                    if literal in cache:
+                        matched += 1
+                        count += 1
+                        rows.append({"file": name, "location": "code 111 occurrence " + str(command_index + 1),
+                                     "literal": literal, "translation": cache[literal], "variables": variables})
+                    else:
+                        missing += 1
                 if count:
                     files.append(name)
             fingerprint = digest({"cache": cache, "working": working, "ignore": native["engine_options"].get("IGNORETLTEXT", True)})
@@ -156,7 +177,7 @@ class GuidedRuns:
                     result[key] = row
         return result
 
-    def quote(self, project_id, native, phase, mode, *, guard=None):
+    def quote(self, project_id, native, phase, mode, *, guard=None, run_view=None):
         inputs = self.inputs(project_id, native, phase, mode, guard=guard)
         records = self.records(project_id)
         jobs = getattr(self.guided.backend, "manual", None)
@@ -166,11 +187,12 @@ class GuidedRuns:
             job = jobs.get(identity)
             if identity in owned and job and job.get("mode") == "estimate" and record["phase"] == phase:
                 current = job["status"] == "complete" and bool(job.get("estimate")) and identity not in self.guided.inputs(native).record().get("retired_runs", []) and record["fingerprint"] == inputs["fingerprint"]
-                return {"job": self.guided.run_view(identity, compact=True), "current": current}, inputs
+                return {"job": (run_view or self.guided.run_view)(identity, compact=True), "current": current}, inputs
         return {"job": None, "current": False}, inputs
 
-    def snapshot(self, project_id, native, source_status):
+    def snapshot(self, project_id, native, source_status, *, run_view=None):
         estimates, phases = {}, {}
+        run_view = run_view or self.guided.run_view
         guard = self.guided.backend.guided_guard(native, self.guided.inputs(native).folder)
         mode = self.guided.preferences(native)["values"]["mode"]
         owned = self.guided.owned_runs(native)
@@ -180,7 +202,7 @@ class GuidedRuns:
         jobs = jobs.jobs if jobs else {}
         for phase in PHASES:
             try:
-                estimates[phase], current = self.quote(project_id, native, phase, mode, guard=guard)
+                estimates[phase], current = self.quote(project_id, native, phase, mode, guard=guard, run_view=run_view)
             except (ValueError, OSError):
                 estimates[phase] = {"job": None, "current": False}
                 current = None
@@ -190,7 +212,7 @@ class GuidedRuns:
             for identity in owned:
                 if identity not in jobs or identity in retired or jobs[identity].get("mode") == "estimate":
                     continue
-                job = self.guided.run_view(identity, compact=True)
+                job = run_view(identity, compact=True)
                 if job.get("logicalPhase") != phase or sorted(job.get("files", [])) != names:
                     continue
                 record = records.get(identity)

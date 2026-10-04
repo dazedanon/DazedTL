@@ -1,7 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ContextSetup, Documents } from "../app/src/api/contracts.ts";
+import type { ContextSetup, Documents, GuidedState } from "../app/src/api/contracts.ts";
 import { guidanceAvailability, guidanceNames, saveGuidanceSet } from "../app/src/features/guided/guidanceReview.ts";
+import { investigationResults } from "../app/src/features/guided/contextView.ts";
+
+test("investigation progress retains saved artifacts through settings changes and unsuccessful rescans", () => {
+  const state = {
+    speakerSetup: {status:"applied", reportId:"saved", rules:[]},
+    speakerScan: {available:true, current:false, names:["リーナ"], files:1, job:{id:"old",status:"complete"}},
+    contextSetup: {requestId:"copied", status:"stale", documents:Object.fromEntries(["glossary", "quirks", "game"].map(name=>[name,{exists:true}]))},
+  } as Pick<GuidedState, "speakerSetup" | "speakerScan" | "contextSetup">;
+  assert.ok(investigationResults(state).every(row=>row.saved && row.status==="saved"));
+  state.speakerScan.job!.status="running";
+  let names=investigationResults(state).find(row=>row.id==="names")!;
+  assert.equal(names.saved,true);
+  assert.equal(names.status,"working");
+  state.speakerScan.job!.status="failed";
+  names=investigationResults(state).find(row=>row.id==="names")!;
+  assert.equal(names.saved,true);
+  assert.equal(names.status,"saved");
+  state.speakerScan.available=false;
+  names=investigationResults(state).find(row=>row.id==="names")!;
+  assert.equal(names.saved,false);
+  assert.equal(names.status,"failed");
+  state.speakerScan.job!.status="complete";
+  state.speakerScan.issue="Saved file missing";
+  assert.equal(investigationResults(state).find(row=>row.id==="names")!.status,"unavailable");
+  state.contextSetup.documents.game.exists=false;
+  assert.equal(investigationResults(state).find(row=>row.id==="guidance")!.saved,false);
+});
 
 test("guidance completion follows file presence independently of old review and investigation state", () => {
   const setup = { status: "stale", documents: Object.fromEntries(["glossary", "quirks", "game"].map(name => [name,

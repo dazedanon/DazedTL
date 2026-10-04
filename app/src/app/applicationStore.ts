@@ -53,9 +53,9 @@ export class ApplicationStore {
       } else {
         this.mutations = Math.max(0, this.mutations - 1);
         if (!this.mutations) {
-          for (const resume of this.idleWaiters) resume();
-          this.idleWaiters.clear();
-          void this.refresh();
+          // Let an awaiting action submit its next operation before observing.
+          // Otherwise save → navigate pays for a discarded full read in between.
+          this.timer = setTimeout(() => void this.refresh(), 0);
         }
       }
     });
@@ -79,12 +79,17 @@ export class ApplicationStore {
   refresh = (): Promise<void> => {
     if (!this.started || this.value.stopped) return Promise.resolve();
     clearTimeout(this.timer);
+    if (!this.mutations) {
+      for (const resume of this.idleWaiters) resume();
+      this.idleWaiters.clear();
+    }
     if (this.inFlight) {
       if (this.readingEpoch !== this.epoch) this.requested = true;
       return this.inFlight;
     }
     this.inFlight = this.read().finally(() => {
       this.inFlight = null;
+      clearTimeout(this.timer);
       if (
         this.started &&
         !this.value.stopped &&

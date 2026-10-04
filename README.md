@@ -12,9 +12,9 @@ and keyboard ranges across its virtualized list. Filtering preserves checked fil
 Selecting a game is enough: the app prepares selected working copies automatically from its current files and carries saved translation progress forward. Reopening the project preserves those copies.
 Each run and application review uses the selected scope.
 Saved operations remain in **History**.
-Translate separates **Database files → Maps & events → Event / plugin codes**. Generate an estimate, inspect the prepared lines and context if desired, then review paid translation.
-The compact file list supports large scopes, filtering and optional selection. Estimate, Translate, and Apply stay available while previewing results; Translate more files opens selection for another pass. Saved output remains available for read-only comparison.
-Apply explicitly overwrites checked game files that have saved output. It does not merge or synchronize files automatically. **File options** opens the translated folder or reloads checked files from the current game; reload archives previous working copies and invalidates their cached results.
+Translate separates **Database files → Maps & events → Event / plugin codes**. Click **Translate** to prepare a local estimate and open the cost review. Inspect source and matched context, approve the charge, or decline; Batch reviews open automatically when prepared.
+One shared file selector handles large scopes, search, Ctrl/Cmd toggles and Shift ranges. Preview is separate from selection. Saved output remains available for read-only comparison, with recorded per-file cost and processing time; older runs may have missing figures.
+Apply explicitly overwrites checked game files that have saved output. It does not merge or synchronize files automatically. **Options → File options** opens the translated folder or reloads checked files from the current game; reload archives previous working copies and invalidates their cached results.
 Preparation and translated work survive navigation and reopening. Live resumes from verified partial JSON checkpoints and retained validated responses; Batch retains its frozen request grouping and provider receipts. Saved partial files remain separate from game files until you choose Apply.
 Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
 Its bundled executables require Windows for native conversion and are cached in the app profile.
@@ -90,12 +90,14 @@ See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.
 
 Open an MV/MZ or Ace game and choose **Translation**. Preserve the original, prepare
 runtime files, then review the file list and game version for Git setup.
-In **Names & context**, copy the combined **speaker & context task** into your coding assistant.
+In **Context → Investigation**, use **Copy investigation task** and paste it into your coding assistant.
 It identifies speaker formats, runs the local name scanner with evidenced rules, then uses the
 names and actor/variable lookups to investigate the glossary, characters, voice and game context.
-The scanner makes no API requests. Optional API name translation remains in the discovery tools.
-Review/save the resulting guidance and measured widths. **View findings** explains each speaker
-rule; **Adjust manually** retains your overrides. Re-copy the task when upgrading from older setup prompts.
+The scanner makes no API requests. **Add game folder** includes an earlier game as a read-only,
+best-effort terminology reference in the next copied task; no prepared translation format is required.
+**View names** opens the saved scan, and **Detection settings** contains speaker rules and overrides.
+Optional API name translation is available from the name-scan panel.
+Edit the resulting files in **Guidance** and character limits in **Layout**. Re-copy the task after changing reference folders.
 In **Translate**, all supported files start selected. Translate database names first, then maps, CommonEvents and Troops; narrow the scope if you want to test an early scene.
 **Event / plugin codes** investigates variables, plugin commands, scripts and labels before translation.
 Translate audited assignments first, then review and update comparisons from their saved literal mappings.

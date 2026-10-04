@@ -269,8 +269,30 @@ def _stored_file(directory, value, name):
             else _child(Path(directory), "files/" + name))
 
 
+def _available_objects(directory, value, stopped):
+    """Check each object and shard once per observation, without retaining state."""
+    root = _child(Path(directory).parent.parent, "objects")
+    shards, objects = {}, {}
+    for name, fingerprint in value["files"].items():
+        _cancel(stopped)
+        if fingerprint not in objects:
+            prefix = fingerprint[:2]
+            if prefix not in shards:
+                shards[prefix] = _child(root, prefix)
+            info = (shards[prefix] / fingerprint).lstat()
+            if (not stat.S_ISREG(info.st_mode)
+                    or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+                raise ValueError("Backup content is missing or is no longer a regular file.")
+            objects[fingerprint] = info.st_size
+        if objects[fingerprint] != value["sizes"][name]:
+            raise ValueError("Backup content has changed size.")
+
+
 def verify(directory, *, source=None, full=True, stopped=lambda: False):
     value = manifest(directory, source)
+    if not full and value["version"] == 2:
+        _available_objects(directory, value, stopped)
+        return value
     checked = set()
     for name, fingerprint in value["files"].items():
         _cancel(stopped)

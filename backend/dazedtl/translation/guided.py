@@ -15,7 +15,7 @@ from .guided_runs import GuidedRuns
 from .event_text import EventText
 from .files import digest
 from . import backups
-from . import speaker_setup, preparation, context_setup
+from . import speaker_setup, preparation, context_setup, reference_folders
 
 STEPS = {"prepare", "context", "translate", "plugins", "images", "advanced", "apply", "layout", "review"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
@@ -426,6 +426,15 @@ class Guided:
     def state(self, project_id):
         project, native = self.record(project_id)
         value = self.backend.workflows.state(native["id"])
+        run_views = {}
+
+        def run_view(identity, *, compact=False):
+            key = (identity, compact)
+            if key not in run_views:
+                run_views[key] = self.run_view(identity, compact=compact)
+            # Phase scope annotations must not leak into History or other phases.
+            return dict(run_views[key])
+
         native = value["project"]
         supported = self.supported_files(native)
         native["files"] = [row for row in native["files"] if row["name"] in supported]
@@ -454,8 +463,8 @@ class Guided:
                 if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate']
         current_run = next((job for job in paid if job['status'] in {'running', 'waiting'}), paid[0] if paid else None)
         return {
-            **value, **self.runs.snapshot(project_id, native, source_status),
-            "manual_job": self.run_view(current_run['id']) if current_run else None,
+            **value, **self.runs.snapshot(project_id, native, source_status, run_view=run_view),
+            "manual_job": run_view(current_run['id']) if current_run else None,
             "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "positions": saved_position.get("positions", {}) if isinstance(saved_position.get("positions", {}), dict) else {},
             "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
@@ -465,6 +474,7 @@ class Guided:
             "speaker_setup": self.speaker_findings(project_id, native),
             "speaker_scan": self.speakers(project_id),
             "context_setup": self.context_status(project_id),
+            "reference_folders": reference_folders.describe(self.path(project_id, "reference-folders")),
             "event_text": self.event_text.status(project_id, native),
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(project_id, value["jobs"]),
@@ -473,7 +483,7 @@ class Guided:
             "documents": documents, "phase": project["phase"],
             "phase_files": [name for name in self.backend.phase_files(native, project["phase"]) if name in native["selected"]],
             "source_status": source_status, "readiness": self.readiness(project_id, native, value, source_status),
-            "runs": [self.run_view(identity, compact=True) for identity in dict.fromkeys([
+            "runs": [run_view(identity, compact=True) for identity in dict.fromkeys([
                          *self.owned_runs(native), *native.get("kept_failed_runs", {})])
                      if identity in self.backend.manual.jobs],
             "provider": {**self.settings.translation_defaults(), "credential_ready": self.settings.ready(),
@@ -713,7 +723,7 @@ class Guided:
             # without asking the user to confirm the button they just clicked.
             return {**result, "action": action, "paths": paths or result.get("paths") or result["options"].get("files", []),
                     "confirmation": (bool(result.get("overwrite")) if action == "release" else result["confirmation"] and action not in {
-                        "prepare_game", "format_data", "format_plugins", "gameupdate", "qa_prepare", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build"})}
+                        "prepare_game", "format_data", "format_plugins", "gameupdate", "qa_prepare", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build", "reference_remove"})}
         token = uuid.uuid4().hex
         self.confirmations = {token: {"project_id": project_id, "action": action, "options": options,
             "paths": paths, "evidence": expected, "manifest": manifest,
@@ -884,7 +894,9 @@ class Guided:
             context_request = context_setup.request(self.path(project_id, "context-request"), project_id, request)
             context_command = command.removesuffix("speakers") + "context"
             text += context_setup.instructions(context_request, context_command)
-            text = speaker_setup.instructions(request, command) + "\n## Glossary and context investigation (after the local speaker scan)\n" + text
+            text = (speaker_setup.instructions(request, command)
+                    + reference_folders.instructions(reference_folders.records(self.path(project_id, "reference-folders")))
+                    + "\n## Glossary and context investigation (after the local speaker scan)\n" + text)
         if name == "wrap":
             text += "\nFor optional remeasurement, retain the existing game guidance and speaker findings. If a current verified .dazedtl/guided/context-findings.json exists, update only its layout widths/reason/source evidence with the new measurements. Otherwise report the measured values for manual review. Do not invent a completed context investigation or execute translation.\n"
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}
@@ -911,6 +923,14 @@ class Guided:
             raise ValueError("The saved mappings or selected comparison uses changed. Review them again.")
         write_json(self.path(project_id, "comparisons-review"), {"fingerprint": fingerprint, "accepted": True})
         return {"saved": True}
+
+    def reference_add(self, project_id, folder):
+        self.record(project_id)
+        return reference_folders.add(self.path(project_id, "reference-folders"), folder)
+
+    def reference_remove(self, project_id, reference_id):
+        self.record(project_id)
+        return reference_folders.remove(self.path(project_id, "reference-folders"), reference_id)
 
     def context_status(self, project_id):
         _, native = self.record(project_id)
@@ -975,8 +995,17 @@ class Guided:
                 "options": {"files": files, "configuration": self.speaker_configuration(native), "reportId": findings["reportId"]}})
         jobs = sorted((job for job in self.backend.operations.jobs.values() if job["project_id"] == native["id"] and job["action"] == "speaker_scan"), key=lambda job: job["created"], reverse=True)
         job = jobs[0] if jobs else None
-        result = job.get("result") or {} if job else {}
-        current = bool(job and job["status"] == "complete" and result.get("configuration") == self.speaker_configuration(native)
+        artifact = None
+        try:
+            artifact = project_path(native["source"], ".dazedtl/guided/speakers.json")
+            artifact_hash = self.observed_digest(artifact)
+        except (OSError, ValueError):
+            artifact_hash = None
+        saved = next((item for item in jobs if item["status"] == "complete" and artifact_hash
+                      and (item.get("result") or {}).get("artifact_sha256") == artifact_hash), None)
+        result = saved.get("result") or {} if saved else {}
+        available = saved is not None
+        current = bool(saved and job["id"] == saved["id"] and result.get("configuration") == self.speaker_configuration(native)
                        and result.get("reportId") == native.get("guided_speakers", {}).get("reportId")
                        and result.get("reportId") == self.speaker_findings(project_id, native)["reportId"])
         if current:
@@ -986,14 +1015,15 @@ class Guided:
                 data_relative = data.relative_to(root)
                 inventory = {path.relative_to(root).as_posix() for path in data.iterdir() if path.is_file() and path.suffix.lower() == ".json"}
                 scanned = {name for name in result.get("source_inputs", {}) if Path(name).parent == data_relative and Path(name).suffix.lower() == ".json"}
-                current = (self.observed_digest(project_path(native["source"], ".dazedtl/guided/speakers.json")) == result.get("artifact_sha256")
-                           and inventory == scanned and bool(scanned)
+                current = (inventory == scanned and bool(scanned)
                            and all(self.observed_digest(project_path(native["source"], name)) == sha for name, sha in result["source_inputs"].items()))
             except (OSError, ValueError):
                 current = False
-        return {"job": job, "current": current, "names": result.get("names", []) if current else [],
-                "actorNames": result.get("actor_names", {}) if current else {}, "variableActorIds": result.get("variable_actor_ids", {}) if current else {}, "files": result.get("files", 0),
-                "path": str(Path(native["source"]) / ".dazedtl/guided/speakers.json") if current else None}
+        return {"job": job, "available": available, "current": current, "names": result.get("names", []),
+                "actorNames": result.get("actor_names", {}), "variableActorIds": result.get("variable_actor_ids", {}), "files": result.get("files", 0),
+                "savedAt": (saved.get("updated") or saved.get("created")) if saved else None,
+                "path": str(artifact) if available else None,
+                "issue": "The saved scan file is missing or no longer matches its saved result." if not available and any(item["status"] == "complete" for item in jobs) else ""}
 
     def job(self, project_id):
         _, native = self.record(project_id)

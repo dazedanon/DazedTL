@@ -146,6 +146,8 @@ export const api = {
     draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
     save: (project_id: string, revision: number, values: GuidedOptions) => request("guided_save_options", { project_id, revision, values }),
     context: (project_id: string) => request("guided_context_status", { project_id }),
+    referenceAdd: (project_id: string, folder: string) => request("guided_reference_add", { project_id, folder }),
+    referenceRemove: (project_id: string, reference_id: string) => request("guided_reference_remove", { project_id, reference_id }),
     reviewContext: (project_id: string, name: string, revision: string, choice: "empty" | "review" | "layout") => request("guided_context_review", { project_id, name, revision, choice }),
     skill: (project_id: string, name: string) => request("guided_skill", { project_id, name }),
   },

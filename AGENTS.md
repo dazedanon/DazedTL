@@ -25,7 +25,7 @@
 
 - Automated testing is enabled. Run node scripts/test.mjs for foundation or shared behavior changes; use focused targets while iterating.
 - Builds, static checks, and visual review are allowed when relevant to the change.
-- UI changes require visual review at normal and minimum (900 × 650) window sizes, plus enlarged text. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
+- UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
 - Routine reversible actions should start on one click. Keep review where the user must approve cost, scope, or consequential changes; do not remove execution checks or duplicate-submission guards.
 - Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.

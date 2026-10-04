@@ -52,13 +52,20 @@ export function translatedLines(payload: RunPayload): Record<string, string> | n
   return Object.keys(record).length === keys.length && keys.every(key => typeof record[key] === "string") ? record as Record<string, string> : null;
 }
 
+/** Read only identifiable per-request blocks; never substitute today's glossary. */
 export function requestContext(payload: RunPayload) {
-  const format = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  return [payload.system != null ? "System instructions\n" + format(payload.system) : "",
-    payload.context != null ? "Matched context\n" + format(payload.context) : "",
-    ...(Array.isArray(payload.messages) ? payload.messages.map(message => {
-      if (!message || typeof message !== "object") return format(message);
-      return `${message.role || "Saved"} message\n${format(message.content)}`;
-    }) : []),
-  ].filter(Boolean).join("\n\n") || "No separate context was recorded. See the exact payload for all retained fields.";
+  const text = (value: unknown): string => typeof value === "string" ? value : Array.isArray(value)
+    ? value.map(block => typeof block?.text === "string" ? block.text : "").filter(Boolean).join("\n\n") : "";
+  const messages = Array.isArray(payload.messages) ? payload.messages : [];
+  const dynamic = [payload.system, ...messages.filter(message => message.role === "system").map(message => message.content)]
+    .map(value => Array.isArray(value) ? text(value.slice(1)) : text(value).replace(/^```[\s\S]*?\n```\s*(?=Here are glossary entries|Japanese SFX reference|$)/, ""))
+    .filter(value => /^(Here are glossary entries|Japanese SFX reference)/.test(value.trim()));
+  const context = payload.context as { source_items?: string[]; instructions?: string[] } | null;
+  const section = (prefix: string) => messages.filter(message => message.role === "user" && text(message.content).startsWith(prefix))
+    .map(message => { const content = text(message.content); return content.match(/```\n([\s\S]*?)\n```/)?.[1] || content; });
+  return [
+    { title: "Matched glossary & sound effects", text: [...new Set(dynamic)].join("\n\n"), notes: false },
+    { title: "Preceding scene context", text: (context?.source_items || section("Preceding Japanese Source Context")).join("\n"), notes: false },
+    { title: "Request-specific instructions", text: (context?.instructions || section("Request Instructions:")).join("\n"), notes: true },
+  ].filter(section => section.text.trim());
 }

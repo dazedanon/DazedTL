@@ -46,6 +46,24 @@ test("request comparisons reject misaligned or unvalidated Live responses and mi
   assert.deepEqual(translatedLines({ ...payload, state: "received", response: { text: '{"Line2":"Poison","Line1":"Medicine"}' } }), { Line2: "Poison", Line1: "Medicine" });
   assert.equal(translatedLines({ ...payload, response: { text: '{"Line1":"Medicine","Line3":"Poison"}' } }), null);
   assert.equal(translatedLines({ ...payload, response: { text: "Unstructured reply" } }), null);
-  // Context embedded beside source in the final message must not disappear from the preview.
-  assert.match(requestContext({ ...payload, messages: [{ role: "user", content: "Final source with contextual instruction" }] }), /contextual instruction/);
+
+});
+
+// Prevent dumping the static prompt into the context preview or substituting
+// current glossary entries for the specific request's retained matches.
+test("context preview separates matched guidance from static prompts and translatable source", () => {
+  const dynamic = "Here are glossary entries with the approved spelling and translation.\n# Speakers\nアスター (Aster)";
+  const staticPrompt = "Rules with an example\n```json\n{}\n```\nDo not remove control codes.";
+  const source = { Line1: "薬" };
+  const messages = [{ role: "system", content: "```\n" + staticPrompt + "\n```\n\n" + dynamic },
+    { role: "user", content: "Preceding Japanese Source Context (untranslated):\nUse for scene context.\n```\n前の台詞\n```" },
+    { role: "user", content: "Request Instructions:\n```\nTranslate item names.\n```" },
+    { role: "user", content: '```json\n{"Line1":"薬"}\n```' }];
+  const payload = { source, messages } as unknown as RunPayload;
+  const sections = requestContext(payload);
+  assert.deepEqual(sections.map(section => section.text), [dynamic, "前の台詞", "Translate item names."]);
+  assert.equal(sections[2].notes, true);
+  assert.deepEqual(requestContext({ ...payload, messages: messages.slice(1), system: [{type:"text",text:staticPrompt},{type:"text",text:dynamic}] }), sections);
+  assert.deepEqual(requestContext({ ...payload, messages: [{role:"system",content:staticPrompt}], context: null }), []);
+  assert.deepEqual(requestContext({ ...payload, context: {source_items:["Exact saved scene"],instructions:["Exact saved instructions"]} }).map(section => section.text), [dynamic,"Exact saved scene","Exact saved instructions"]);
 });

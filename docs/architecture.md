@@ -42,14 +42,14 @@ New Live workers retain exact payloads, received usage, and native validation ev
 The [checkpoint adapter](../backend/dazedtl/compatibility/checkpoints.py) records verified native JSON progress saves. Live resumes read those partial outputs through the native file reader while preserving frozen input snapshots, and reload validated responses from the same run to cover the gap before a checkpoint. Batch consume keeps its original input grouping and saved provider responses. The collector exposes verified partial outputs without overwriting newer staged copies.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
 Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
-The user generates a local estimate, optionally inspects prepared source/context, then starts Live review or local Batch preparation. Navigation and reopening never start paid work automatically.
-Legacy estimate continuation records remain readable for recovery. Batch retains its native final cost approval, presented in a focused review of the frozen settings and file scope.
+Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation. Failed, stopped, stale or empty estimates do not advance. The user can inspect prepared source/context before approval. Navigation and reopening never start paid work automatically.
+Legacy estimate continuation records remain readable for recovery. Each pending Batch or speaker approval opens once in a focused cost review with an explicit Decline action; closing it leaves Review cost available. The native one-use approval still controls submission.
 The fresh Batch speaker check validates unresolved names against frozen files and current glossary before collection; it retains its separate approval if names need translation.
 Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
 Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
-The inline file inspector reads the project-bound saved payload endpoint; source/context, side-by-side translations and exact payload are read-only views of retained evidence.
+The inline file inspector reads the project-bound saved payload endpoint. Source & context shows identifiable matched glossary/SFX and preceding scene blocks from that exact request, with request-specific instructions collapsed. Static prompts remain in Exact payload; unknown older formats never substitute current guidance. Side-by-side translations are read-only.
 It pairs only matching LineN keys or equal-length validated Live responses, and retains raw responses when pairing is ambiguous.
-File lists use the shared variable-height virtual list with compact rows, search and status filters; checkmarks remain independent of inspection and filtering.
+Translate embeds the existing [FileSelection](../app/src/features/guided/FileSelection.tsx) component rather than a second picker. Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift ranges, keyboard movement and Undo. A separate Preview control does not change scope. Selection locks during active work while search and inspection remain available. Per-file cost and processing time come from native result receipts, retained beyond the log cap; Batch collection figures are excluded and consumption time excludes provider waiting. Missing historical receipts stay unknown.
 Incoming observations preserve the reader's selected file, request, tab and scroll position. New response states offer explicit refresh; older records without file provenance identify their scope limitation.
 History retains its separate paged request inspector and saved view preferences without storing payloads in browser preferences.
 Saved translated output and currently verified runtime files are separate counts.
@@ -60,7 +60,7 @@ Confirmed per-request rejections and unsubmitted queues allow a new estimate and
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
 Source identity currently treats repeated identical strings within one file and phase as aliases. Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase. Interrupted old Live runs without request evidence protect only their shared file/phase scope; their send outcomes cannot be reconstructed locally.
 Provider monitoring and new runs have independent isolated workers. The cost approval rechecks other saved request receipts under the API lock before sending. Existing saved-run resumes retain their frozen settings and require explicit review; new remaining work requires a fresh estimate and spending review.
-The action footer keeps Estimate, Translate and Apply visible in setup and preview views. Their primary emphasis follows estimate readiness and completed output. Translate more files returns to selection; estimating another pass retains the engine’s skip-translated behavior. Apply includes only checked files with saved output in the current task, including output from earlier runs.
+The compact footer keeps Translate and available Apply actions beside the selected scope, substituting estimate progress or the active run’s review/stop action when needed. Selecting more files or clicking Translate again retains the engine’s skip-translated behavior. Apply includes only checked files with saved output in the current task, including output from earlier runs. Model and method live in the toolbar; guidance and working-file utilities share Options.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,
 selection, settings and working-output changes invalidate the relevant preview. Explicit full-overwrite Apply does not track runtime JSON conflicts. The preserved runner
@@ -124,6 +124,8 @@ to evaluate real workflows, rather than adding extra panels or confirmation step
 
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
+Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
+Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps.
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview,
 so generic completion messages are handled consistently while useful detail remains visible.
@@ -131,7 +133,7 @@ Action controls pair the shared pending button and status feedback with `useActi
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
 Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared
 action-column width, token-based gaps, wrapping text, and a stacked layout based on available
-container width. Rows grow with feedback rather than fixing heights or clipping content.
+container width. The compact variant fits shorter actions to their content and stacks in narrower containers. Rows grow with feedback rather than fixing heights or clipping content.
 Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
 Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click;
 the same backup, project ownership, input validation, and one-use execution checks still apply.
@@ -151,6 +153,8 @@ Explicitly declined speaker preflight is interpreted as canceled only with verif
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project recovery guard and receipts.
 Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
+Context uses compact Investigation, Guidance and Layout tasks. Investigation shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan. Names, actor/variable lookup tables and detection settings open in focused panels rather than expanding the task body.
+Reference game folders are retained per project by [reference_folders.py](../backend/dazedtl/translation/reference_folders.py) and included as read-only source material in the copied investigation prompt. Adding a folder only registers its path; it does not parse, convert or index the game. Missing references remain listed so they can be removed or replaced. Earlier native reference imports and their translation matching remain intact.
 Translate task 3, Event / plugin codes, retains investigation, source review, translation and comparison views within one task.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
 Findings stage recommendations; applying supported settings and reviewing their actual coverage remain explicit user actions.
@@ -171,7 +175,7 @@ investigation. Preferences and the consumed report are saved atomically through 
 boundary. Pending option drafts and actively running workers defer application; dormant API runs
 do not block speaker setup or local scanning and retain their frozen settings and receipts.
 The shared observer reports scanner results; manual overrides survive new findings
-until explicitly reset.
+until explicitly reset. Copying another investigation task retains already-applied findings until replacement results are saved. Scan availability is checked against the saved artifact and its owning operation separately from current source/settings freshness. Settings changes, another running scan or a failed rescan keep the previous verified saved names visible; only a current result can satisfy the assistant's scan-reuse check.
 Guidance setup is complete when the glossary, style and game-context files exist in the game folder, including empty files. Edits, drafts, scan freshness and old investigation records do not revoke completion. No document review or conflict receipts are required; the optional context findings record supplies measured layout recommendations only.
 The guidance editor keeps glossary, translation style/quirks and game context in separate tabs, with custom guidance available separately.
 The selected tab is retained per project, and legacy glossary/voice review positions open the corresponding tab.
@@ -226,7 +230,9 @@ Portable workflow options live in the selected game's .dazedtl/len-method/workfl
 The app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups. New source/workspace snapshots live in the game's .dazedtl/backups/v2 store. Source guidance remains in the established game files.
 `useApplication` supplies shared state through one observer; feature polling loops would introduce competing reads.
 The application provider supplies its API and browser event subscriptions; the observer owns response ordering and refresh scheduling.
+Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
 An open project stays observable while no app worker is active so external assistant reports become visible. Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
+Each Guided observation reuses its run views. Variable-comparison observations retain only parsed literals bound to the current file content; mappings, selection, settings and review are reconciled on every read.
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
@@ -298,7 +304,7 @@ path-to-content manifest with file sizes, permissions and empty directories; con
 across original, prepared-source and workspace snapshots in the same game. No delta chain or live-file hardlinks
 are used. Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
 Backup presentation checks manifest and payload availability instead of treating a profile reference as proof
-that its files still exist. Resolved locations are shown in the UI; Electron opens only backup folders returned
+that its files still exist. Each observation checks shared object directories and payload sizes once, without retaining availability across observations. Resolved locations are shown in the UI; Electron opens only backup folders returned
 as available by the backend. Full content hashes are still verified at restore and reuse boundaries.
 The managed store has its own writer lock. Content is verified before reuse/publication; source mutations abort
 capture. A failed capture removes only unpublished objects it created. Existing snapshots are never pruned.

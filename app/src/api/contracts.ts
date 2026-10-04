@@ -65,6 +65,7 @@ export interface Job {
   };
 }
 export interface RunProcess {
+  fileMetrics?: Record<string, { cost: number; seconds: number }>;
   mode?: string; prepared?: number; submitted?: number | null; remaining?: number | null;
   received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
   failed?: number; retryBlocked?: boolean; nextAction?: string;
@@ -127,6 +128,7 @@ export interface ContextSetup {
   layout: { widths: GuidedOptions["widths"]; reason: string; evidence: { file: string; sha256: string; location: string }[] } | null;
   layoutStatus: "defaults" | "saved"; layoutRevision: string;
 }
+export interface ReferenceFolder { id: string; title: string; path: string; available: boolean }
 export interface EventTextRow {
   key: string; label: string; coverage: string; selector: "ENABLED_PLUGINS_357" | "ENABLED_PATTERNS_355655" | null;
   choices: { id: string; group: string; details: string }[]; builtins: string[];
@@ -197,6 +199,7 @@ export interface GuidedState {
   artifacts: ReleaseArtifact[];
   acePacking: { required: boolean; current: boolean; message: string };
   references: { id: string; title: string }[];
+  referenceFolders: ReferenceFolder[];
   provider: {
     connection: string;
     model: string;
@@ -206,7 +209,7 @@ export interface GuidedState {
     enabled: boolean;
   };
 }
-export interface SpeakerScan { job: Job | null; current: boolean; names: string[]; actorNames: Record<string, string>; variableActorIds: Record<string, number>; files: number; path: string | null }
+export interface SpeakerScan { job: Job | null; available: boolean; current: boolean; names: string[]; actorNames: Record<string, string>; variableActorIds: Record<string, number>; files: number; path: string | null; savedAt: string | null; issue: string }
 export interface WorkspaceSnapshot {
   application: AppState;
   guided: GuidedState | null;
@@ -714,6 +717,8 @@ export interface RpcContract {
   guided_comparisons_review: { request: { project_id: string; fingerprint: string | null; accepted: boolean }; response: Saved };
   guided_context_status: { request: { project_id: string }; response: ContextSetup };
   guided_context_review: { request: { project_id: string; name: string; revision: string; choice: "empty" | "review" | "layout" }; response: Saved };
+  guided_reference_add: { request: { project_id: string; folder: string }; response: ReferenceFolder[] };
+  guided_reference_remove: { request: { project_id: string; reference_id: string }; response: ReferenceFolder[] };
   guided_skill: {
     request: { project_id: string; name: string };
     response: { text: string };

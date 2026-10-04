@@ -10,9 +10,9 @@ export const workflow: WorkflowStage[] = [
     { id: "baseline", title: "Save version baseline", description: "Record this prepared version so future game updates can be compared and merged." },
   ]},
   { id: "context", title: "Names & context", short: "Context", tasks: [
-    { id: "names", title: "Speakers & game context", description: "Discover how speakers are named, then save reusable guidance." },
-    { id: "guidance", title: "Review translation guidance", description: "Review names, terminology, translation style and game background." },
-    { id: "speakers", title: "Review layout settings", description: "Set character limits for the game’s text areas." },
+    { id: "names", title: "Investigation", description: "Find speaker names and prepare reusable guidance." },
+    { id: "guidance", title: "Guidance", description: "Edit terminology, translation style and game background." },
+    { id: "speakers", title: "Layout", description: "Set character limits for dialogue and interface text." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
     { id: "database", title: "Database files", description: "Names, descriptions and interface text." },

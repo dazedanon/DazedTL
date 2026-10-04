@@ -67,6 +67,45 @@ test("concurrent refreshes share a read and discard snapshots preceding a mutati
   assert.equal(store.getSnapshot().snapshot, current);
 });
 
+test("chained writes do not start an intermediate snapshot before the next operation", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let calls = 0;
+  let next: Promise<WorkspaceSnapshot> | undefined;
+  const { store, mutate } = setup(async () => { calls++; return next || snapshot(); });
+  t.after(() => store.stop());
+  store.start();
+  await store.refresh();
+  mutate("begin");
+  mutate("end");
+  // A draft save resolves into the action's awaiting navigation continuation.
+  await Promise.resolve();
+  mutate("begin");
+  t.mock.timers.tick(0);
+  assert.equal(calls, 1);
+  mutate("end");
+  // Explicit completion need not wait for the automatic refresh timer.
+  await store.refresh();
+  assert.equal(calls, 2);
+  t.mock.timers.tick(0);
+  assert.equal(calls, 2);
+  mutate("begin");
+  mutate("end");
+  t.mock.timers.tick(0);
+  await store.refresh();
+  assert.equal(calls, 3);
+  const pending = Promise.withResolvers<WorkspaceSnapshot>();
+  next = pending.promise;
+  const reading = store.refresh();
+  mutate("begin");
+  mutate("end");
+  next = undefined;
+  pending.resolve(snapshot());
+  await reading;
+  assert.equal(calls, 5);
+  t.mock.timers.tick(0);
+  assert.equal(calls, 5); // The in-flight read already supplied the refresh.
+});
+
 test("a late successful read cannot hide a backend disconnection", async (t) => {
   const pending = Promise.withResolvers<WorkspaceSnapshot>();
   const { store, disconnect } = setup(() => pending.promise);

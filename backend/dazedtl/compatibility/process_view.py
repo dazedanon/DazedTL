@@ -3,6 +3,7 @@
 from functools import lru_cache
 from contextlib import closing
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
@@ -143,6 +144,31 @@ def fresh_start(root, job):
         return protected
 
 
+def file_metric(line, files):
+    """Interpret the same per-file receipt used by Qt, never a total/estimate."""
+    line = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', str(line))
+    match = re.match(r'^\s*(.+?):\s.*?\[Input:\s*(\d+)\].*?\[Output:\s*(\d+)\].*?\[Cost:\s*\$([\d,.]+)\].*?\[([\d.]+)s\]', line)
+    if not match or match[1].strip() not in files:
+        return {}
+    try:
+        cost, seconds = float(match[4].replace(',', '')), float(match[5])
+        if not all(math.isfinite(value) and value >= 0 for value in (cost, seconds)):
+            return {}
+        return {match[1].strip(): {'cost': cost, 'seconds': seconds}}
+    except ValueError:
+        return {}
+
+
+def file_metrics(job):
+    # New receipts survive the native 40-line log cap. Old Live runs can still
+    # show the receipts retained in their log; missing figures stay unknown.
+    result = {}
+    if job.get('mode') in {'translate', 'offline'}:
+        for line in job.get('log', []):
+            result.update(file_metric(line, job.get('files', [])))
+    return {**result, **job.get('file_metrics', {})}
+
+
 def summary(root, job):
     requests = queue(root)
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
@@ -195,7 +221,7 @@ def summary(root, job):
             'validated': validated, 'validatedFiles': len(job.get('completed', [])),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
-            'errors': list(dict.fromkeys(errors)), 'usage': usage,
+            'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
             'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)), 'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
             'nextAction': 'Use Translate for remaining work with current settings. All saved requests and verified results remain in History.'}

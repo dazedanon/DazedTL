@@ -575,3 +575,15 @@ pre {
     padding-top: 0;
   }
 }
+.action-list--compact { gap: var(--space-3); }
+.action-list--compact > .action-row {
+  grid-template-columns: minmax(0, 1fr) fit-content(var(--action-column-width));
+  align-items: center;
+  gap: var(--space-3);
+}
+.action-list--compact > .action-row > :last-child { justify-self: end; }
+.action-list--compact .action-row-label { padding-top: 0; }
+@container (max-width: 24rem) {
+  .action-list--compact > .action-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .action-list--compact > .action-row > :last-child { justify-self: start; }
+}

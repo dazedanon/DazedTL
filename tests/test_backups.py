@@ -33,6 +33,11 @@ class BackupTests(unittest.TestCase):
         saved = backups.snapshot(self.game, self.store, source_game=True)
         before = dict(saved)
         self.assertTrue(backups.record_status(self.game, saved, kind="source")["available"])
+        blob = next((self.store / "objects").glob("*/*"))
+        content = blob.read_bytes()
+        blob.write_bytes(content + b"changed size")
+        self.assertFalse(backups.record_status(self.game, saved, kind="source")["available"])
+        blob.write_bytes(content)
         next((self.store / "objects").glob("*/*")).unlink()
         self.assertFalse(backups.record_status(self.game, saved, kind="source")["available"])
         backups.snapshot(self.game, self.store, source_game=True)
@@ -180,3 +185,11 @@ class BackupTests(unittest.TestCase):
         external.write_bytes(content)
         blob.symlink_to(external)
         with self.assertRaises(ValueError): backups.restore(saved["path"], self.root / "linked-restore")
+        self.assertFalse(backups.record_status(self.work, saved, kind="workspace")["available"])
+        blob.unlink()
+        blob.write_bytes(content)
+        shard = blob.parent
+        moved = elsewhere / shard.name
+        shard.rename(moved)
+        shard.symlink_to(moved, target_is_directory=True)
+        self.assertFalse(backups.record_status(self.work, saved, kind="workspace")["available"])

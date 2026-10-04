@@ -149,7 +149,7 @@ main.editor-main.guided-main { padding: 0; }
 .file-browser-toolbar .actions { gap: var(--space-1); }
 .file-browser-help { font-size: var(--font-small); color: var(--muted); margin: 0 0 var(--space-2); }
 .file-browser-heading, .file-browser-row { display: grid; grid-template-columns: 1.3em minmax(0, 1fr) minmax(0, 1.3fr) 6em; gap: var(--space-3); align-items: center; }
-.file-browser-heading { padding: var(--space-2); color: var(--muted); font-size: var(--font-small); border-bottom: 1px solid var(--line); }
+.file-browser-heading { padding: var(--space-2); color: var(--muted); font-size: var(--font-control); border-bottom: 1px solid var(--line); }
 .file-browser-row { padding: var(--space-2); font-size: var(--font-control); border-bottom: 1px solid var(--line); align-items: start; }
 .file-browser-row > span { min-width: 0; overflow-wrap: anywhere; }
 .file-browser-row > input { margin: var(--space-1) 0 0; }
@@ -169,7 +169,6 @@ main.editor-main.guided-main { padding: 0; }
 .guided-speaker-findings section + section { border-top: 1px solid var(--line); padding-top: var(--space-4); }
 .guided-speaker-findings h3 { font-size: var(--font-body); }
 .guided-speaker-findings li { overflow-wrap: anywhere; margin-block: var(--space-2); }
-.guided-name-list { display: flex; flex-direction: column; height: min(16em, 35dvh); margin-block: var(--space-3); }
 @container guided (max-width: 62em) {
   .guided-phase-nav { gap: var(--space-1); padding-inline: var(--space-3); }
   .guided-phase-nav button { padding-inline: var(--space-2); font-size: var(--font-small); }
@@ -206,8 +205,6 @@ main.editor-main.guided-main { padding: 0; }
 
 .guided-footer-context > .guided-prepare-feedback { display: inline; }
 
-.guided-discovery-settings { margin-block: var(--space-4); }
-.guided-discovery-settings > summary { font-weight: 600; }
 .guided-status-warning { color: var(--color-warning); }
 .guided-document-state { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3); font-size: var(--font-control); }
 .guided-document-state .path { min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
@@ -277,3 +274,5 @@ main.editor-main.guided-main { padding: 0; }
 .release-overwrite small, .release-exclusions small { color: var(--muted); font-size: var(--font-small); }
 .release-exclusions { display: grid; gap: var(--space-3); margin-top: var(--space-3); }
 .release-exclusions p { display: grid; gap: var(--space-1); }
+
+.file-browser-heading > span { font-size: var(--font-small); }

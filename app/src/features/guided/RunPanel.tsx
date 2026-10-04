@@ -33,6 +33,16 @@ export function Estimate({ value }: { value: Record<string, unknown> }) {
     </dl>
   );
 }
+
+export function TranslationCost({ value, mode }: { value: Record<string, unknown>; mode: string }) {
+  const costs = (mode === "batch" ? [value.batch_nocache_cost, value.batch_cached_cost, value.batch_cost] : [value.live_cost])
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const low = Math.min(...costs), high = Math.max(...costs);
+  return <section className="translation-cost-review"><p><strong>{costs.length ? `$${low.toFixed(4)}${high > low ? `–$${high.toFixed(4)}` : ""}` : "Price unavailable"}</strong> estimated {mode === "batch" ? "Batch" : "Live"} cost</p>
+    <small>{String(value.requests ?? value.request_count ?? "—")} requests · Final cost depends on actual usage.</small>
+    <details><summary>Token counts & pricing details</summary><Estimate value={value} /></details>
+  </section>;
+}
 export default function RunPanel({
   job,
   active,

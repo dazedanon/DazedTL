@@ -248,6 +248,21 @@ class GuidedTests(unittest.TestCase):
         write_json(self.folder / 'log/var_translation_map.json', {})
         self.assertEqual(self.guided.runs.comparisons(self.native)['status'], 'not_needed')
 
+        # Warm observations must follow changed working copies, selection and
+        # skip-translated settings, even when parsed literals have been reused.
+        write_json(self.folder / 'log/var_translation_map.json', {'日本語': 'Fixture English', '別の語': 'Other fixture', 'English': 'Replacement'})
+        write_json(self.folder / 'files/Map001.json', {'list': [{'code': 111, 'parameters': [12, '$gameVariables.value(2) === "別の語"']}]})
+        changed = self.guided.runs.comparisons(self.native)
+        self.assertNotEqual(changed['fingerprint'], comparisons['fingerprint'])
+        self.assertEqual(changed['rows'][0]['variables'], ['2'])
+        self.assertEqual(changed['rows'][0]['translation'], 'Other fixture')
+        write_json(self.folder / 'files/Map001.json', {'list': [{'code': 111, 'parameters': [12, '$gameVariables.value(3) === "English"']}]})
+        self.assertEqual(self.guided.runs.comparisons(self.native)['matches'], 0)
+        self.native['engine_options']['IGNORETLTEXT'] = False
+        self.assertEqual(self.guided.runs.comparisons(self.native)['rows'][0]['variables'], ['3'])
+        self.native['selected'] = ['Map002.json']
+        self.assertEqual(self.guided.runs.comparisons(self.native)['files'], ['Map002.json'])
+
     def test_apply_review_keeps_a_completed_scope_and_does_not_apply_another_phases_output(self):
         write_json(self.source / 'System.json', {'gameTitle': 'Fixture'})
         self.native['selected'] = ['Items.json', 'System.json']
@@ -305,6 +320,41 @@ class GuidedTests(unittest.TestCase):
             self.guided.save_document(self.identity, 'glossary', 'older', 'Keep after failure')
         self.assertEqual(pending['documents']['glossary']['text'], 'Keep after failure')
         self.assertEqual(path.read_text(), '')
+
+    def test_reference_folders_need_no_game_format_and_stay_project_owned(self):
+        import json
+        from dazedtl.translation import reference_folders
+        folder = self.root / 'Earlier "game" with an unfamiliar format'
+        folder.mkdir()
+        (folder / 'old-terms.txt').write_text('薬: Potion')
+        before = evidence(folder, ['old-terms.txt'])
+        rows = self.guided.reference_add(self.identity, str(folder))
+        self.assertTrue(rows[0]['available'])
+        self.assertEqual(self.guided.reference_add(self.identity, str(folder / '.')), rows)
+        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
+        self.assertEqual(reference_folders.describe(reopened.path(self.identity, 'reference-folders')), rows)
+        self.speaker_report()
+        prompt = reopened.skill(self.identity, 'setup')['text']
+        self.assertIn(json.dumps(str(folder)), prompt)
+        self.assertEqual(evidence(folder, ['old-terms.txt']), before)
+        other_source = self.root / 'other-game'
+        other_source.mkdir()
+        other = self.projects.open({'source': str(other_source), 'engine': 'MVMZ'})
+        other['backend_id'] = 'other-native'
+        self.projects.save()
+        self.backend.workflows.projects['other-native'] = {**self.native, 'id': 'other-native', 'source': str(other_source)}
+        with self.assertRaises(ValueError):
+            reopened.reference_remove(other['id'], rows[0]['id'])
+        self.assertEqual(reference_folders.describe(reopened.path(self.identity, 'reference-folders')), rows)
+        (folder / 'old-terms.txt').unlink()
+        folder.rmdir()
+        self.assertFalse(reference_folders.describe(reopened.path(self.identity, 'reference-folders'))[0]['available'])
+        self.assertIn(json.dumps(str(folder)), reopened.skill(self.identity, 'setup')['text'])
+        self.assertEqual(reopened.reference_remove(self.identity, rows[0]['id']), [])
+        with self.assertRaises(ValueError):
+            reopened.reference_add(self.identity, str(folder))
+        with self.assertRaises(ValueError):
+            reopened.reference_add(self.identity, str(self.source / 'Items.json'))
 
     def test_document_selection_migrates_review_positions_and_stays_with_its_project(self):
         self.backend.workflows.documents = lambda _: {"glossary": {}, "quirks": {}, "game": {}}
@@ -403,6 +453,9 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(saved['values']['engine_options']['INLINE401SPEAKERS'])
         self.assertFalse(saved['values']['engine_options']['FIRSTLINESPEAKERS'])
         self.assertEqual(self.guided.speaker_findings(self.identity)['status'], 'applied')
+        self.guided.skill(self.identity, 'setup')
+        self.assertEqual(self.guided.speaker_findings(self.identity)['status'], 'applied')
+        report['request_id'] = read_json(self.guided.path(self.identity, 'speaker-request'))['request_id']
         self.assertEqual(self.started, [])
         self.assertTrue(self.guided.preview(self.identity, 'start', options={'mode': 'speakers'})['confirmation'])
         # An amended finding can turn off an earlier automatic recommendation;
@@ -439,6 +492,7 @@ class GuidedTests(unittest.TestCase):
         self.backend.running = lambda: False
         value = self.guided.speakers(self.identity, scan=True)
         self.assertTrue(value['current'])
+        self.assertTrue(value['available'])
         self.assertEqual(value['names'], ['リーナ', '\\N[1]'])
         self.guided.speakers(self.identity, scan=True)
         self.assertEqual(self.backend.operations.start.call_count, 1)
@@ -449,11 +503,28 @@ class GuidedTests(unittest.TestCase):
         other = self.projects.open({'source': str(self.root), 'engine': 'MVMZ'})
         with self.assertRaises(ValueError): self.guided.speakers(other['id'], scan=True)
         self.native['engine_options']['FIRSTLINESPEAKERS'] = True
-        self.assertFalse(self.guided.speakers(self.identity)['current'])
+        saved = self.guided.speakers(self.identity)
+        self.assertFalse(saved['current'])
+        self.assertTrue(saved['available'])
+        self.assertEqual(saved['names'], value['names'])
         self.native['engine_options']['FIRSTLINESPEAKERS'] = False
+        attempt = {'id': 'new-scan', 'action': 'speaker_scan', 'project_id': 'native', 'created': '2026-01-02', 'status': 'running'}
+        self.backend.operations.jobs['new-scan'] = attempt
+        for status in ('running', 'failed'):
+            attempt['status'] = status
+            saved = self.guided.speakers(self.identity)
+            self.assertTrue(saved['available'])
+            self.assertFalse(saved['current'])
+            self.assertEqual(saved['names'], value['names'])
+            self.assertEqual(saved['job']['id'], 'new-scan')
+        del self.backend.operations.jobs['new-scan']
         artifact = self.source / '.dazedtl/guided/speakers.json'
         artifact.unlink()
-        self.assertFalse(self.guided.speakers(self.identity)['current'])
+        missing = self.guided.speakers(self.identity)
+        self.assertFalse(missing['current'])
+        self.assertFalse(missing['available'])
+        self.assertEqual(missing['names'], [])
+        self.assertTrue(missing['issue'])
         self.guided.speakers(self.identity, scan=True)
         write_json(self.source / 'NewPluginData.JSON', {'events': []})
         self.assertFalse(self.guided.speakers(self.identity)['current'])
