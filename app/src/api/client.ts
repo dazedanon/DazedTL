@@ -142,6 +142,7 @@ export const api = {
     retainRun: (project_id: string, run_id: string, dismissed: boolean) => request("guided_retain_run", { project_id, run_id, dismissed }),
     payload: (project_id: string, run_id: string, index: number) => request("guided_payload", { project_id, run_id, index }),
     filePreview: (project_id: string, name: string, offset = 0, query = "") => request("guided_file_preview", { project_id, name, offset, query }),
+    discardPreparation: (project_id: string, run_id: string) => request("guided_discard_preparation", { project_id, run_id }),
     providerDetails: (project_id: string, run_id: string) => request("guided_provider_details", { project_id, run_id }),
     form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
     position: (project_id: string, step: GuidedStep, task?: string, document?: string) => request("guided_position", { project_id, step, task, document }),

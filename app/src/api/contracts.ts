@@ -51,6 +51,7 @@ export interface Job {
   retiredFiles?: string[];
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
+  temporary?: boolean;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
   process?: RunProcess;
@@ -742,6 +743,7 @@ export interface RpcContract {
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };
   guided_file_preview: { request: { project_id: string; name: string; offset?: number; query?: string }; response: FileTextPreview };
+  guided_discard_preparation: { request: { project_id: string; run_id: string }; response: { discarded: boolean } };
   guided_provider_details: { request: { project_id: string; run_id: string }; response: { batches: NonNullable<RunProcess['batches']> } };
   guided_draft: {
     request: { project_id: string; documents: Documents };

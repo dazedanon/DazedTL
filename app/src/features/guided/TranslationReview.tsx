@@ -43,14 +43,14 @@ export function TranslationReview({ job, busy, pendingKey, disabled, approvalCur
   return <Modal label={title} className="guided-sheet translation-review" dismissible={!busy} onDismiss={close}>
     <header className="guided-sheet-heading translation-review-heading"><h2>{title}</h2><Button variant="quiet" disabled={busy} aria-label="Close review" onClick={close}><X size={18} aria-hidden="true" /></Button></header>
     <div className="guided-sheet-body translation-review-body">
-      <p className="translation-review-model">{job.model || "Saved model"} <span>· {batch ? "Batch" : "Live"} · frozen working copy</span></p>
+      <p className="translation-review-model">{job.model || "Saved model"} <span>· {batch ? "Batch" : "Live"} · {job.temporary ? "temporary preparation" : "saved run settings"}</span></p>
       <TranslationCost value={job.approval.detail} mode={batch ? "batch" : "translate"} />
       <section className="translation-review-scope" aria-label="Prepared scope">
         <div className="translation-review-scope-heading"><h3>{files.length} {files.length === 1 ? "file" : "files"} to {batch ? "submit" : "check"}</h3><Button variant="quiet" disabled={busy || !files.length} onClick={inspect}>Inspect source & context</Button></div>
         {files.length <= 8 ? <ul className="guided-preview-paths">{files.map(name => <li key={name}>{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={files} itemKey={pathKey} label="Files to submit" empty={null}>{name => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}
         {!!speakers.length && <p className="translation-review-speakers"><strong>Names to translate</strong><br />{speakers.join(", ")}</p>}
       </section>
-      <p className="translation-review-notice">Submit approves this saved snapshot and incurs API charges. To include later edits, decline and prepare again. Results may replace saved working translations; earlier runs remain in History. Game files change only after Apply.</p>
+      <p className="translation-review-notice">Submitting incurs API charges. {job.temporary && "Decline discards this preparation. "}Results may replace working translations; earlier approved runs stay in History. Game files change only after Apply.</p>
     </div>
     <ActionBar feedback={<Message message={error} />}>
       <Button pending={busy && pendingKey === "run:answer:false"} disabled={disabled} onClick={() => answer(false)}>Decline</Button>

@@ -8,7 +8,7 @@ export function ExpandableText({ text, label }: { text: string; label: string })
   const excerpt = text.split("\n").slice(0, 6).join("\n").slice(0, 480).trimEnd();
   const shortened = excerpt.length < text.trimEnd().length;
   return <div className="expandable-text">
-    <pre id={id}>{shortened && !expanded ? excerpt + "…" : text}</pre>
+    <pre id={id} data-collapsed={shortened && !expanded || undefined}>{shortened && !expanded ? excerpt + "…" : text}</pre>
     {shortened && <Button variant="quiet" aria-label={`${expanded ? "Show less" : "Show more"}: ${label}`} aria-expanded={expanded} aria-controls={id} onClick={() => setExpanded(value => !value)}>{expanded ? "Show less" : "Show more"}</Button>}
   </div>;
 }

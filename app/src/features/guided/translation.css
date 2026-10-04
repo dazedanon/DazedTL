@@ -74,7 +74,7 @@
 .translation-action-scope { flex:1; min-width:0; font-size:var(--font-small); line-height:1.5; }
 .translation-action-scope small { display:block; color:var(--muted); font:inherit; }
 .translation-preview-check { font-size:var(--font-small); color:var(--muted); }
-.translation-inspector .translation-reader pre { max-height:none; overflow:visible; }
+.translation-reader pre { max-height:none; overflow:visible; }
 .translation-matched-context { border-bottom:1px solid var(--line); padding-bottom:var(--space-2); }
 .translation-reader details:first-child { margin-top:var(--space-2); }
 .guided-sheet.translation-review { width:min(740px,calc(100vw - var(--space-8))); }

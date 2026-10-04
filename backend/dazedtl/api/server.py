@@ -266,6 +266,7 @@ def serve(args, diagnostics):
         "guided_output_folder": (app.guided.output_folder, lambda value, _params: value),
         "guided_payload": (app.guided.payload, lambda value, _params: value),
         "guided_file_preview": (app.guided.file_preview, lambda value, _params: value),
+        "guided_discard_preparation": (app.guided.discard_preparation, lambda value, _params: value),
         "guided_provider_details": (app.guided.provider_details, lambda value, _params: value),
         "translation_speakers": (app.guided.speakers, lambda value, _params: views.speaker_scan(value)),
         **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)

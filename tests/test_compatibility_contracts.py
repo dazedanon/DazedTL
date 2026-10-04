@@ -379,6 +379,12 @@ class ManualJobs:
                 write_json(directory/'log/dazedtl-checkpoints.json', {'version': 1, 'plan_hash': plan_hash,
                     'files': {name: digest((directory/'translated'/name).read_bytes()) for name in before}})
                 phases.manual.jobs['partial'] = {'id': 'partial', 'files': list(before), 'mode': 'translate', 'status': 'interrupted', 'plan_hash': plan_hash}
+                # Scratch collection before cost approval cannot become saved output.
+                phases.manual.jobs['partial']['dazedtl_preapproval'] = True
+                phases._collect({'id': 'owner', 'manual_job': 'partial'})
+                self.assertFalse((phases.folder('owner')/'translated/System.json').exists())
+                self.assertNotIn('partial', collected)
+                phases.manual.jobs['partial']['dazedtl_approved'] = True
                 write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'file_versions': {'Items.json': 'reloaded'}})
                 project = {'id': 'owner', 'manual_job': 'partial'}
                 phases._collect(project)

@@ -32,7 +32,7 @@ export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]
     && (!selected || latest.files?.some(name => selected.includes(name) && !latest.retiredFiles?.includes(name))) ? latest : undefined;
 }
 export const needsSubmissionReview = (run: Job) => run.mode !== "estimate" && run.status !== "complete" && !!run.process?.retryBlocked;
-export const canResumeRun = (run: Job) => run.mode !== "estimate" && ["failed", "stopped", "interrupted"].includes(run.status)
+export const canResumeRun = (run: Job) => !run.temporary && run.mode !== "estimate" && ["failed", "stopped", "interrupted"].includes(run.status)
   && (run.mode === "batch" && run.phase?.startsWith("poll") ? needsSubmissionReview(run)
     : !run.process?.retryBlocked && !(run.mode === "batch" && run.process?.failed));
 export function completeForSelection(run: Job, selected: readonly string[]) {
@@ -48,6 +48,10 @@ export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, p
 }
 export function fileStatus(name: string, run?: Job, historical = false) {
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return { label: "Ready", tone: "idle", symbol: "·" };
+  if (run.temporary) {
+    if (["failed", "interrupted"].includes(run.status)) return { label: "Needs attention", tone: "warning", symbol: "!" };
+    return { label: run.approval ? "Review cost" : activeRun(run) ? "Preparing" : "Ready", tone: activeRun(run) ? "active" : "idle", symbol: activeRun(run) ? "◷" : "·" };
+  }
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
   if (saved && run.partialOutputs?.includes(name)) return { label: "Progress saved", tone: "active", symbol: "◐" };
   if (saved) return run.appliedOutputs?.includes(name)

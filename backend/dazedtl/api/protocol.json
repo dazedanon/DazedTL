@@ -161,6 +161,9 @@
     "guided_file_preview": {
       "refresh": false
     },
+    "guided_discard_preparation": {
+      "refresh": true
+    },
     "guided_provider_details": {
       "refresh": false
     },

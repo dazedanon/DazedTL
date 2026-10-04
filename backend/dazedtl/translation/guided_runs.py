@@ -19,7 +19,10 @@ class GuidedRuns:
 
     def records(self, project_id):
         path = self.guided.path(project_id, "runs")
-        return read_json(path).get("runs", {}) if path.exists() else {}
+        records = read_json(path).get("runs", {}) if path.exists() else {}
+        jobs = getattr(getattr(self.guided.backend, 'manual', None), 'jobs', {})
+        return {identity: record for identity, record in records.items()
+                if not record.get('temporary') or identity in jobs}
 
     @staticmethod
     def current(runs, phase):
@@ -152,7 +155,8 @@ class GuidedRuns:
 
     def remember(self, project_id, job, inputs, estimate=None, preparation_mode=None):
         records = self.records(project_id)
-        records[job["id"]] = {**inputs, "estimate": estimate, "preparation_mode": preparation_mode}
+        records[job["id"]] = {**inputs, "estimate": estimate, "preparation_mode": preparation_mode,
+                               'temporary': bool(job.get('dazedtl_preapproval'))}
         write_json(self.guided.path(project_id, "runs"), {"version": 1, "runs": records})
 
     def preparation_mode(self, project_id, identity):

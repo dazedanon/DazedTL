@@ -782,6 +782,52 @@ class GuidedTests(unittest.TestCase):
             self.guided.preview(self.identity, 'format_data')
         self.assertEqual(self.started, [])
 
+    def test_temporary_preparation_rechecks_inputs_and_fresh_translate_discards_only_unapproved_work(self):
+        # A file edit while the review is open must not send the stale payload;
+        # a new Translate must replace preparation without touching paid runs.
+        inputs = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
+        pending = {'id': 'temporary', 'mode': 'batch', 'status': 'waiting', 'dazedtl_preapproval': True,
+                   'files': ['Items.json'], 'approval': {'token': 'pending', 'kind': 'batch', 'detail': {}}, 'log': []}
+        self.backend.manual.jobs[pending['id']] = pending
+        self.guided.runs.remember(self.identity, pending, inputs)
+        self.backend.manual.answer = Mock(return_value=pending)
+        self.backend.manual.save = Mock()
+        for invalid in ('true', 1, None):
+            with self.assertRaises(ValueError): self.guided.answer(self.identity, 'pending', invalid)
+        self.assertNotIn('dazedtl_submission_intent', pending)
+        write_json(self.folder/'files/Items.json', [{'name': 'Changed working text'}])
+        with self.assertRaisesRegex(ValueError, 'fresh estimate'):
+            self.guided.answer(self.identity, 'pending', True)
+        self.backend.manual.answer.assert_not_called()
+        self.assertNotIn('dazedtl_submission_intent', pending)
+        pending['status'] = 'stopped'
+        with self.assertRaisesRegex(ValueError, 'cannot be resumed'):
+            self.guided.resume(self.identity, pending['id'])
+        pending['status'] = 'waiting'
+        self.assertEqual(self.guided.run_view(pending['id'])['availableOutputs'], [])
+        paid = {**pending, 'id': 'approved', 'status': 'complete', 'approval': None, 'dazedtl_approved': True}
+        self.backend.manual.jobs[paid['id']] = paid
+        self.guided.runs.remember(self.identity, paid, inputs)
+        discarded = []
+        def discard(identity):
+            discarded.append(identity)
+            self.backend.manual.jobs.pop(identity)
+        self.backend.manual.discard_preparation = discard
+        with self.assertRaises(ValueError): self.guided.discard_preparation(self.identity, 'foreign-run')
+        new = {'id': 'new-estimate', 'mode': 'estimate', 'status': 'running', 'dazedtl_preapproval': True, 'log': []}
+        def start(*_args):
+            self.assertTrue(self.backend.manual.temporary_preparation)
+            self.backend.manual.jobs[new['id']] = new
+            return new
+        self.backend.guided_phase = start
+        fresh = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
+        self.assertNotEqual(inputs['fingerprint'], fresh['fingerprint'])
+        self.guided._start(self.identity, 'estimate', 'database', ['Items.json'], fresh)
+        self.assertEqual(discarded, ['temporary'])
+        self.assertIn('approved', self.backend.manual.jobs)
+        self.assertFalse(self.backend.manual.temporary_preparation)
+        self.assertEqual(self.guided.runs.records(self.identity)['new-estimate']['fingerprint'], fresh['fingerprint'])
+
     def complete_preparation(self):
         return preparation.run({"action": "prepare_game", "project": self.native, "folder": str(self.folder)},
                                lambda _: None, lambda *_: {"files": 1}, lambda *_: {})

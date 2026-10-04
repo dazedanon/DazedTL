@@ -40,8 +40,8 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
   const [tab, setTab] = useState("runs");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState(initialFilter);
-  const runs = useMemo(() => state.runs.filter(job => job.mode !== "estimate"), [state.runs]);
-  const estimates = useMemo(() => state.runs.filter(job => job.mode === "estimate"), [state.runs]);
+  const runs = useMemo(() => state.runs.filter(job => job.mode !== "estimate" && !job.temporary), [state.runs]);
+  const estimates = useMemo(() => state.runs.filter(job => job.mode === "estimate" && !job.temporary), [state.runs]);
   const operations = useMemo(() => projectActivity(state, translation), [state.operations, translation.jobs]);
   const rows = useMemo(() => (tab === "runs" ? runs : tab === "estimates" ? estimates : operations).slice()
     .sort((a, b) => (b.created || "").localeCompare(a.created || "")), [tab, runs, estimates, operations]);

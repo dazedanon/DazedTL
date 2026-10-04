@@ -246,6 +246,15 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const prepareBatch = name === "start" && options.mode === "batch";
     if ((!result.confirmation || prepareBatch) && !inspectOnly) await execute(result); else setPreview(result);
   }, "", actionKey(name, options));
+  const cancelPreview = () => action.run(async () => {
+    const estimate = preview?.estimate?.jobId;
+    if (estimate && state.runs.some(run => run.id === estimate && run.temporary)) await api.guided.discardPreparation(project.id, estimate);
+    setPreview(null);
+  }, "", "review:cancel");
+  const closeEmptyEstimate = () => action.run(async () => {
+    if (emptyEstimate?.temporary) await api.guided.discardPreparation(project.id, emptyEstimate.id);
+    setEmptyEstimate(null);
+  }, "", "review:cancel");
   const translateSelected = () => action.run(async () => {
     await save();
     await api.phase(project.id, phase);
@@ -470,15 +479,17 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const guidance = !selectedNames.length ? "Select files to translate." : !baseline ? "Complete Prepare before translating."
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
+        : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
         : unresolved.length ? `${unresolved.length} saved ${unresolved.length === 1 ? "run needs" : "runs need"} submission review in Run history.`
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
+        {current?.approval && <Button disabled={disabled} onClick={() => setSubmission(current)}>Review cost</Button>}
         {stopLabel && <Button variant="quiet" disabled={disabled} pending={action.busy && action.key === "run:stop"}
           onClick={() => action.run(() => api.stop(project.id, current!.id), "Stop requested. Saved work is retained.", "run:stop")}>{stopLabel}</Button>}
         <Button variant="primary" pending={preparing || activeRun(current) && !current?.approval}
-          disabled={disabled || !current?.approval && (prerequisites || locked || !state.provider.ready || !state.provider.enabled || !paidModeReady)}
-          onClick={() => current?.approval ? setSubmission(current) : translateSelected()}>Translate</Button>
+          disabled={disabled || prerequisites || !current?.approval && locked || !state.provider.ready || !state.provider.enabled || !paidModeReady}
+          onClick={translateSelected}>Translate</Button>
         {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || locked || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
       </>;
       break;
@@ -675,7 +686,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {!inspected.process && <>{inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}{inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}{!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}</>}
       </Modal>}
-    {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : preview.action === "release_patch" ? inspectRelease ? "Archive contents" : "Review patch ZIP" : preview.action === "release" ? inspectRelease ? "Archive contents" : "Replace game ZIP" : "Review translation action"} className={`guided-sheet${paid ? " translation-review" : ""}${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`} dismissible={!action.busy} onDismiss={() => setPreview(null)}><header className="guided-sheet-heading"><h2>{["release", "release_patch"].includes(preview.action) ? inspectRelease ? "Archive contents" : preview.action === "release_patch" ? "Review patch ZIP" : "Replace game ZIP" : preview.label}</h2></header><div className="guided-sheet-body">
+    {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : preview.action === "release_patch" ? inspectRelease ? "Archive contents" : "Review patch ZIP" : preview.action === "release" ? inspectRelease ? "Archive contents" : "Replace game ZIP" : "Review translation action"} className={`guided-sheet${paid ? " translation-review" : ""}${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`} dismissible={!action.busy} onDismiss={cancelPreview}><header className="guided-sheet-heading"><h2>{["release", "release_patch"].includes(preview.action) ? inspectRelease ? "Archive contents" : preview.action === "release_patch" ? "Review patch ZIP" : "Replace game ZIP" : preview.label}</h2></header><div className="guided-sheet-body">
       {["release", "release_patch"].includes(preview.action) && <ReleaseReview preview={preview} inspectOnly={inspectRelease} busy={action.busy} editAssets={() => { setPreview(null); setPanel("release-assets"); }} />}
       {preview.action === "git_setup" ? <><p>Check the version, original source and runtime files before saving.</p>
         <dl className="guided-baseline-summary"><div><dt>Game version</dt><dd>{String(preview.options.version)}</dd></div>
@@ -696,7 +707,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && preview.options.phase === "advanced" && values.engine_options.AUTONAMEPOPUP101 === true && <p>Saved AutoNamePopup handling also processes supported actor-name changes independently of source 320.</p>}
       {paid && preview.options.phase === "variables" && <p>Reviewed literal-based updates apply to all matching quoted literals in the selected code-111 expressions. Unmatched literals remain unchanged.</p>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
-      </div><ActionBar feedback={<Message message={action.error} />}>{paid && <Button disabled={action.busy} onClick={() => { const estimate = state.estimates[phase]?.job, name = preview.paths[0]; if (estimate && name) setRequestPreview({ job: estimate.id, file: name, phase }); setPreview(null); }}>Inspect source & context</Button>}<Button disabled={action.busy} onClick={() => setPreview(null)}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
+      </div><ActionBar feedback={<Message message={action.error} />}>{paid && <Button disabled={action.busy} onClick={() => { const estimate = state.estimates[phase]?.job, name = preview.paths[0]; if (estimate && name) setRequestPreview({ job: estimate.id, file: name, phase }); setPreview(null); }}>Inspect source & context</Button>}<Button disabled={action.busy} onClick={cancelPreview}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
         {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Reload from game" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
@@ -710,19 +721,19 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <label className="toggle"><input type="checkbox" checked={comparisonsAccepted} onChange={(event) => setComparisonsAccepted(event.target.checked)} />I checked every matched use, including internal references and logic, and accept these literal-based updates.</label>
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setComparisonReview(false)}>Cancel</Button><Button variant="primary" disabled={!comparisonsAccepted || !state.comparisons.matches} pending={action.busy} onClick={() => action.run(async () => { await save(); await api.guided.comparisonsReview(project.id, state.comparisons.fingerprint, true); setComparisonReview(false); }, "Comparison coverage reviewed.", "event-text:comparisons")}>Confirm comparison coverage</Button></ActionBar>
     </Modal>}
-    {emptyEstimate && <Modal label="No new translation requests" className="guided-sheet translation-review" onDismiss={() => setEmptyEstimate(null)}>
+    {emptyEstimate && <Modal label="No new translation requests" className="guided-sheet translation-review" dismissible={!action.busy} onDismiss={closeEmptyEstimate}>
       <header className="guided-sheet-heading"><h2>No new translation requests</h2></header>
       <div className="guided-sheet-body"><p>The estimate checked {fileCount(emptyEstimate.files?.length || 0)}. With the current settings, none need a new API request.</p>
         <p>No API charges were incurred. Existing saved translations are unchanged and remain available to Apply.</p>
         <p className="muted">A Saved status does not prevent another pass. Translation checks the current working text again and skips text that is already translated when that option is enabled.</p>
         <p className="guided-preview-paths">{emptyEstimate.files?.slice(0, 8).join(", ")}{(emptyEstimate.files?.length || 0) > 8 && ` + ${emptyEstimate.files!.length - 8} more`}</p>
-      </div><ActionBar feedback={null}><Button onClick={() => { const file = emptyEstimate.files?.[0]; if (file) setRequestPreview({ job: emptyEstimate.id, file, phase: emptyEstimate.logicalPhase || phase }); setEmptyEstimate(null); }}>Inspect text</Button><Button variant="primary" onClick={() => setEmptyEstimate(null)}>Close</Button></ActionBar>
+      </div><ActionBar feedback={null}><Button onClick={() => { const file = emptyEstimate.files?.[0]; if (file) setRequestPreview({ job: emptyEstimate.id, file, phase: emptyEstimate.logicalPhase || phase }); setEmptyEstimate(null); }}>Inspect text</Button><Button variant="primary" pending={action.busy} onClick={closeEmptyEstimate}>Close</Button></ActionBar>
     </Modal>}
     {submission?.approval && <TranslationReview job={submission} busy={action.busy} pendingKey={action.key} disabled={disabled}
       approvalCurrent={state.runs.some(run => run.approval?.token === submission.approval!.token)}
       error={action.key.startsWith("run:answer:") ? action.error : ""} close={() => setSubmission(null)}
       inspect={() => { const name = submission.files?.[0]; if (name) setRequestPreview({ job: submission.id, file: name, phase: submission.logicalPhase || phase }); setSubmission(null); }}
-      answer={approved => action.run(async () => { await api.answer(project.id, submission.approval!.token, approved); setSubmission(null); }, approved ? "" : "Submission declined. Prepared requests remain saved.", "run:answer:" + approved)} />}
+      answer={approved => action.run(async () => { await api.answer(project.id, submission.approval!.token, approved); setSubmission(null); }, approved ? "" : "Submission declined.", "run:answer:" + approved)} />}
     {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(null)}><h2>Resume the saved run?</h2><p>{resume.model} · {fileCount(resume.files?.length || 0)} · saved run settings</p><p>{resume.mode === "batch" && resume.phase?.startsWith("poll") ? "Continue this Batch with its frozen settings. Submitted requests stay attached; any unsent requests may incur charges." : "Continue its frozen files, context, and provider settings. Remaining requests may incur charges."}</p><Message message={action.key === "run:resume" ? action.error : ""} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(null)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id, resume.id); setResume(null); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
   </PageLayout>;
 }

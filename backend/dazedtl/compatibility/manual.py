@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from types import SimpleNamespace
+from .preparations import temporary, discard, discardable
 
 
 SPEAKER_CANCELLATION = "Speaker translation canceled"
@@ -88,6 +89,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
         reserved_sources = None
         source_versions = None
         workflow_selection = None
+        temporary_preparation = False
         controllers = None
 
         def __init__(self, *args, **kwargs):
@@ -107,12 +109,55 @@ def manual_jobs(source, workspace, lock, allow_providers):
             return self.controllers[identity]
 
         def answer(self, identity, token, approved):
-            return self.controller(identity).answer(identity, token, approved) if self.controllers is not None else super().answer(identity, token, approved)
+            if self.controllers is not None:
+                return self.controller(identity).answer(identity, token, approved)
+            with self.lock:
+                job = self.jobs[identity]
+                prompt = job.get('approval')
+                if not prompt or prompt['token'] != token or identity != self.active or type(approved) is not bool or self.stopping.is_set():
+                    raise ValueError('This approval is no longer pending. Prepare a new estimate.')
+                if approved and job.get('dazedtl_preapproval'):
+                    # Persist before the worker can send, including separately
+                    # approved speaker requests inside a Batch preparation.
+                    previous = deepcopy(job)
+                    job['dazedtl_approved'] = True
+                    job['estimate'] = prompt['detail']
+                    try:
+                        self.save(job)
+                    except Exception:
+                        job.clear(); job.update(previous)
+                        raise
+                result = super().answer(identity, token, approved)
+                if not approved and temporary(job):
+                    self.discard_preparation(identity)
+                return result
+
+        def discard_preparation(self, identity):
+            if self.controllers is not None:
+                return self.controller(identity).discard_preparation(identity)
+            with self.lock:
+                job = self.jobs[identity]
+                if not discardable(job, self.folder(identity)):
+                    raise ValueError('This run may contain approved work. Keep it for recovery.')
+                job['dazedtl_discard_preparation'] = True
+                self.save(job)
+                if self.running():
+                    self.stop(identity)
+                else:
+                    discard(job, self.folder(identity))
+                    self.jobs.pop(identity)
+
+        def save(self, job):
+            if self.temporary_preparation and 'dazedtl_preapproval' not in job:
+                job['dazedtl_preapproval'] = True
+            return super().save(job)
 
         def stop(self, identity):
             return self.controller(identity).stop(identity) if self.controllers is not None else super().stop(identity)
 
         def resume(self, identity):
+            if temporary(self.jobs[identity]):
+                raise ValueError('Unapproved preparation cannot be resumed. Prepare a fresh estimate.')
             return self.controller(identity).resume(identity) if self.controllers is not None else super().resume(identity)
 
         def resume_batch(self, identity, recovery):
@@ -121,12 +166,19 @@ def manual_jobs(source, workspace, lock, allow_providers):
         def close(self):
             if self.controllers is None:
                 return super().close()
-            for item in self.controllers.values():
+            for identity, item in list(self.controllers.items()):
+                job = self.jobs.get(identity)
+                if job and temporary(job) and discardable(job, self.folder(identity)):
+                    item.discard_preparation(identity)
                 item.close()
 
         def load_saved(self):
             super().load_saved()
-            for job in self.jobs.values():
+            for identity, job in list(self.jobs.items()):
+                if temporary(job) and discardable(job, self.folder(identity)):
+                    discard(job, self.folder(identity))
+                    self.jobs.pop(identity)
+                    continue
                 if canceled_before_submission(job, self.folder(job["id"])):
                     # Interpret the historical defect without rewriting saved user records.
                     job.update(status="canceled", phase="canceled", approval=None)
@@ -153,6 +205,16 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 job["phase"] = "preparing"
             return super()._launch(job, resume)
 
+        def _run(self, identity, resume):
+            try:
+                return super()._run(identity, resume)
+            finally:
+                with self.lock:
+                    job = self.jobs.get(identity)
+                    if job and temporary(job) and job.get('dazedtl_discard_preparation') and discardable(job, self.folder(identity)):
+                        discard(job, self.folder(identity))
+                        self.jobs.pop(identity)
+
         @contextmanager
         def selected_workflow(self, identity, files):
             previous = self.workflow_selection
@@ -171,6 +233,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     item.request_policy, item.workflow_selection, item.continuation = self.request_policy, self.workflow_selection, self.continuation
                     item.reserved_sources = self.reserved_sources
                     item.source_versions = self.source_versions
+                    item.temporary_preparation = self.temporary_preparation
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result['id']] = self.controllers.pop('preparing')
                     self.active = result['id']

@@ -60,11 +60,12 @@ export function TranslationInspector({ projectId, file, job, history, close }: {
   return <section className="translation-inspector" aria-label="File preview">
     <header className="translation-inspector-heading"><strong>{file}</strong><Button variant="quiet" onClick={close}>Close preview</Button></header>
     <Tabs id="translation-inspector" label="Preview content" items={views} value={tab} onChange={setTab} />
+    <div className="file-preview-panel" role="tabpanel" id={`translation-inspector-panel-${tab}`} aria-labelledby={`translation-inspector-tab-${tab}`}>
     {tab === "technical" && <Tabs id="translation-technical" label="Technical view" items={[{ id: "payload", label: "API payload" }, { id: "file", label: "File contents" }]} value={technical} onChange={setTechnical} />}
     <div className="file-preview-panel" hidden={needDetails} role="tabpanel" id="translation-technical-panel-file" aria-labelledby="translation-technical-tab-file">
       {tab === "technical" && technical === "file" && <WorkingFileText key={`${projectId}:${file}`} read={readText} />}
     </div>
-    {needDetails && <div className="file-preview-panel" role="tabpanel" id={`translation-inspector-panel-${tab}`} aria-labelledby={`translation-inspector-tab-${tab}`}>
+    {needDetails && <div className="file-preview-panel" {...(tab === "technical" ? { role: "tabpanel", id: "translation-technical-panel-payload", "aria-labelledby": "translation-technical-tab-payload" } : {})}>
       <div className="translation-request-controls">
         {rows.length > 1 && <div className="translation-group-navigation"><span>Text group {position + 1} of {rows.length}</span><Button variant="quiet" aria-label="Previous text group" disabled={position <= 0} onClick={() => choose(rows[position - 1].index)}>Previous</Button><Button variant="quiet" aria-label="Next text group" disabled={position < 0 || position >= rows.length - 1} onClick={() => choose(rows[position + 1].index)}>Next</Button></div>}
         {!!rows.length && <Button variant="quiet" pending={pending} onClick={() => { requestCache.current.delete(key); setRefresh(value => value + 1); }}>Refresh preview</Button>}
@@ -72,7 +73,7 @@ export function TranslationInspector({ projectId, file, job, history, close }: {
       </div>
       <Message message={error} />
       <div className="translation-reader" tabIndex={0} aria-label="Prepared request preview" aria-busy={pending}>
-        {!rows.length ? <p className="muted">{missing}</p> : !payload ? <p role="status">{pending ? "Reading prepared text…" : "Use Refresh preview to try again."}</p>
+        {!rows.length ? <p className="muted">{missing}</p> : !payload ? error ? null : <p role="status">{pending ? "Reading prepared text…" : "Use Refresh preview to try again."}</p>
           : <>{job && <p className="file-text-caption">{job.mode === "estimate" ? "Prepared estimate" : job.approval ? "Prepared for approval" : "Saved translation attempt"}{job.model && ` · ${job.model}`}{job.created && ` · ${new Date(job.created).toLocaleString()}`}</p>}
             <div hidden={tab !== "text"}>
               {payload.source && Object.keys(payload.source).length ? <table className="translation-comparison prepared-text-table"><thead><tr><th>{translated ? "Source text" : "Text to translate"}</th>{translated && <th>Saved translation</th>}</tr></thead><tbody>{Object.entries(payload.source).map(([line, text]) => <tr key={line}><td>{text}</td>{translated && <td>{translated[line]}</td>}</tr>)}</tbody></table>
@@ -83,5 +84,6 @@ export function TranslationInspector({ projectId, file, job, history, close }: {
           </>}
       </div>
     </div>}
+    </div>
   </section>;
 }

@@ -257,10 +257,13 @@ class Guided:
         # A resumed old job can own the native pointer or have a newer update
         # time. Neither makes it the latest attempt for this task.
         jobs = getattr(getattr(self.backend, 'manual', None), 'jobs', {})
-        return sorted(identities, key=lambda identity: jobs.get(identity, {}).get('created', ''), reverse=True)
+        return sorted((identity for identity in identities if not jobs.get(identity, {}).get('dazedtl_discard_preparation')),
+                      key=lambda identity: jobs.get(identity, {}).get('created', ''), reverse=True)
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
+        from dazedtl.compatibility.preparations import temporary
+        job['temporary'] = temporary(job)
         job["keptForHistory"] = any(identity in project.get("kept_failed_runs", {})
                                     for project in self.backend.workflows.projects.values())
         try:
@@ -279,7 +282,10 @@ class Guided:
             job["logicalPhase"] = workflow.get("phase")
             project = next((item for item in self.projects.data["projects"] if item.get("backend_id") == workflow.get("id")), None)
             if project:
-                job["eventTextReview"] = self.runs.records(project["id"]).get(identity, {}).get("review")
+                record = self.runs.records(project["id"]).get(identity, {})
+                job["eventTextReview"] = record.get("review")
+                if not job.get('estimate') and record.get('estimate'):
+                    job['estimate'] = record['estimate'].get('value')
                 if job.get("mode") == "estimate":
                     job["preparationMode"] = self.runs.preparation_mode(project["id"], identity)
             native = self.backend.workflows.projects.get(workflow.get("id"))
@@ -300,7 +306,21 @@ class Guided:
             job["process"] = {"retryBlocked": job.get('mode') != 'estimate', "errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
         from dazedtl.compatibility.process_view import phase_feedback
         job.update(phase_feedback(job))
+        if job['temporary']:
+            # Collection can write local scratch JSON before any paid request.
+            # It is never saved translation output available to the user.
+            job.update(outputs={}, availableOutputs=[], partialOutputs=[], outputsAvailable=False, appliedOutputs=[])
         return job
+
+    def discard_preparation(self, project_id, run_id):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError('Choose temporary preparation belonging to this project.')
+        self.backend.manual.discard_preparation(run_id)
+        records = self.runs.records(project_id)
+        records.pop(run_id, None)
+        write_json(self.path(project_id, 'runs'), {'version': 1, 'runs': records})
+        return {'discarded': True}
 
     def payload(self, project_id, run_id, index):
         _, native = self.record(project_id)
@@ -885,6 +905,16 @@ class Guided:
 
     def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None, preparation_mode=None):
         _, native = self.record(project_id)
+        if mode == 'estimate':
+            from dazedtl.compatibility.preparations import temporary
+            records = self.runs.records(project_id)
+            for identity in self.owned_runs(native):
+                job = self.backend.manual.jobs.get(identity)
+                record = records.get(identity, {})
+                if job and temporary(job) and record.get('phase') == phase:
+                    self.discard_preparation(project_id, identity)
+                elif job and job.get('approval') and record.get('phase') == phase:
+                    self.answer(project_id, job['approval']['token'], False)
         if preparation_mode:
             for identity, record in reversed(list(self.runs.records(project_id).items())):
                 job = self.backend.manual.jobs.get(identity)
@@ -904,11 +934,15 @@ class Guided:
         if mode != "speakers":
             self.backend.workflows.update(native["id"], native["revision"], {"mode": mode})
         try:
+            self.backend.manual.temporary_preparation = mode in {'estimate', 'batch'}
             job = self.backend.guided_phase(native["id"], phase, files)
             if run_inputs:
                 self.runs.remember(project_id, job, run_inputs, estimate, preparation_mode)
+            if estimate and self.backend.manual.jobs.get(estimate['jobId'], {}).get('dazedtl_preapproval'):
+                self.discard_preparation(project_id, estimate['jobId'])
             return {**job, "logicalPhase": phase, "preparationMode": preparation_mode}
         finally:
+            self.backend.manual.temporary_preparation = False
             self.backend.manual.continuation = None
             self.backend.manual.source_versions = None
             self.backend.manual.reserved_sources = None
@@ -1105,11 +1139,17 @@ class Guided:
 
     def answer(self, project_id, token, approved):
         _, native = self.record(project_id)
+        if type(approved) is not bool:
+            raise ValueError('Choose whether to approve this submission.')
         job = next((self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
                     if identity in self.backend.manual.jobs and (self.backend.manual.jobs[identity].get('approval') or {}).get('token') == token), None)
         if not job:
             raise ValueError('This approval is no longer pending. Refresh the run.')
         if approved:
+            if job.get('dazedtl_preapproval') and not job.get('dazedtl_approved'):
+                record = self.runs.records(project_id).get(job['id'])
+                if not record or self.runs.inputs(project_id, native, record['phase'], record['mode'])['fingerprint'] != record['fingerprint']:
+                    raise ValueError('The files or settings changed after preparation. Click Translate for a fresh estimate.')
             self.protect_submission(native, {'jobId': job['id']})
             if job.get('mode') == 'batch':
                 # Persist intent before signaling the native worker, closing the
@@ -1141,6 +1181,9 @@ class Guided:
         identity = run_id if run_id is not None else self.job(project_id)["id"]
         if not isinstance(identity, str) or identity not in self.owned_runs(native):
             raise ValueError('Choose a saved run belonging to this project.')
+        from dazedtl.compatibility.preparations import temporary
+        if temporary(self.backend.manual.jobs.get(identity, {})):
+            raise ValueError('Unapproved preparation cannot be resumed. Click Translate for a fresh estimate.')
         plan = self.backend.saved_run_configuration(identity)
         if (plan.get('workflow') or {}).get('id') != native['id']:
             raise ValueError('This saved run belongs to another project.')

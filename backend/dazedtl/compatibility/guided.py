@@ -133,6 +133,7 @@ def phased_workflows(workspace, lock, operations, manual):
             return updated
 
         def _collect(self, project):
+            from .preparations import temporary
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):
                 return  # Frozen work from an older source pass stays in its own run.
@@ -143,7 +144,7 @@ def phased_workflows(workspace, lock, operations, manual):
             if current_plan and current_plan.is_file():
                 saved = read_json(current_plan)
                 same_pass = all(versions.get(name, "") == saved.get("dazedtl_source_versions", {}).get(name, "") for name in current.get("files", []))
-            if same_pass:
+            if same_pass and not (current and temporary(current)):
                 super()._collect(project)
             # Native collection only follows one completed run. Preserve verified
             # completed files from older or partly failed runs as well, without
@@ -152,7 +153,7 @@ def phased_workflows(workspace, lock, operations, manual):
             retired = read_json(index).get('retired_runs', []) if index.exists() else []
             changed = False
             for identity, job in self.manual.jobs.items():
-                if identity in retired or job.get('mode') == 'estimate':
+                if identity in retired or job.get('mode') == 'estimate' or temporary(job):
                     continue
                 source = self.manual.folder(identity)
                 try:

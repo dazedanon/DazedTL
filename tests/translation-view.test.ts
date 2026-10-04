@@ -137,6 +137,10 @@ test("translation followup uses the matching estimate count and exits for termin
 test("translation stop controls distinguish preparation, approval and running work", () => {
   const job = { id: "run", mode: "batch", status: "running", log: [], message: "" } as Job;
   assert.equal(translationStopLabel(undefined), null);
+  const temporary = { ...job, temporary: true, status: "stopped", files: ["Items.json"] };
+  assert.equal(canResumeRun(temporary), false);
+  assert.equal(fileStatus("Items.json", temporary).label, "Ready");
+  assert.equal(fileStatus("Items.json", { ...temporary, status: "failed" }).label, "Needs attention");
   assert.equal(translationStopLabel({ ...job, mode: "estimate" }), null);
   for (const phase of [undefined, "preparing", "collect", "collect_done", "submit"]) {
     assert.equal(translationStopLabel({ ...job, phase, process: { submitted: 0, errors: [] } }), null);

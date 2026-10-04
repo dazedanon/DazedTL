@@ -587,3 +587,4 @@ pre {
   .action-list--compact > .action-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
   .action-list--compact > .action-row > :last-child { justify-self: start; }
 }
+.expandable-text > pre[data-collapsed="true"] { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; overflow:hidden; }
