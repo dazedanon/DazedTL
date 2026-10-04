@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("dazedtl", {
   ready: () => ipcRenderer.invoke("dazedtl:ready"),
   copyText: (text) => ipcRenderer.invoke("dazedtl:copy-text", text),
   copyDiagnostics: () => ipcRenderer.invoke("dazedtl:copy-diagnostics"),
+  reportRendererError: (failure) => ipcRenderer.invoke("dazedtl:renderer-error", failure),
+  reloadInterface: () => ipcRenderer.invoke("dazedtl:reload-interface"),
   chooseFolder: () => ipcRenderer.invoke("dazedtl:choose-folder"),
   chooseEditor: () => ipcRenderer.invoke("dazedtl:choose-editor"),
   openFolder: (kind, target) =>

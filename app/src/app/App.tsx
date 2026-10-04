@@ -23,6 +23,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 export default function App() {
   const application = useApplication();
@@ -160,7 +161,8 @@ export default function App() {
                   }
             }
           />
-          {(settingsOpened || state?.screen === "settings") && <div hidden={state?.screen !== "settings"} style={{ display: "contents" }}><Settings /></div>}
+          {(settingsOpened || state?.screen === "settings") && <div hidden={state?.screen !== "settings"} style={{ display: "contents" }}><ErrorBoundary label="Settings"><Settings /></ErrorBoundary></div>}
+          <ErrorBoundary resetKey={`${state?.project?.id}:${state?.screen}`} label="This view">
           {!state ? (
             <p className="muted">
               {error
@@ -192,6 +194,7 @@ export default function App() {
               }
             />
           ) : null}
+          </ErrorBoundary>
         </main>
       </div>
       {picker && (

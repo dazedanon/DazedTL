@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { DraftSession } from "./DraftSession";
-import { registerLeaveGuard } from "./leaveGuards";
+import { retainDraft } from "./leaveGuards";
 
 /** Identity binds a session to its project/document for its entire lifetime. */
 export function useDraft<T>(
@@ -26,12 +26,9 @@ export function useDraft<T>(
   }, [identity]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   useEffect(() => {
-    const unregister = registerLeaveGuard(session.flush);
+    const release = retainDraft(session);
     return () => {
-      session
-        .dispose()
-        .catch((error) => report.current(error))
-        .finally(unregister);
+      void release().catch((error) => report.current(error));
     };
   }, [session]);
   return { ...state, session };

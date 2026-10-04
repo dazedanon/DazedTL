@@ -14,6 +14,9 @@ const EVENTS = new Set([
   "desktop.started",
   "desktop.error",
   "renderer.gone",
+  "renderer.error",
+  "renderer.unresponsive",
+  "renderer.reload",
   "renderer.load-failed",
   "backend.started",
   "backend.error",
@@ -61,6 +64,7 @@ function safeRecord(record) {
               ? frame.file
               : "external",
           line: Number.isSafeInteger(frame?.line) ? frame.line : 0,
+          ...(Number.isSafeInteger(frame?.column) ? { column: frame.column } : {}),
           function: identifier(frame?.function) || "unknown",
         })),
     }));

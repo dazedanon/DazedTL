@@ -163,15 +163,20 @@ test("file status follows active and automatically monitored Batch work before r
   const checkpoint = { id: "batch", logicalPhase: "database", mode: "batch", status: "running", phase: "poll_status", files: ["Items.json"],
     outputs: { "Items.json": "saved" }, availableOutputs: ["Items.json"], partialOutputs: ["Items.json"],
     process: { retryBlocked: true, requests: [{ index: 0, file: "Items.json", state: "submitted", sourceItems: 1 }], errors: [] }, log: [], message: "" } as Job;
-  assert.equal(fileStatus("Items.json", checkpoint).label, "Submitted");
+  assert.equal(fileStatus("Items.json", checkpoint).label, "In Batch");
+  const withSkipped = { ...checkpoint, files: ["Items.json", "Armors.json"], process: { ...checkpoint.process!, noRequestFiles: ["Armors.json"] } };
+  assert.equal(fileStatus("Armors.json", withSkipped).label, "No new requests");
+  assert.equal(fileStatus("Armors.json", { ...withSkipped, temporary: true, status: "waiting" }).label, "No new requests");
+  assert.equal(fileStatus("Armors.json", { ...withSkipped, status: "complete", availableOutputs: ["Armors.json"] }).label, "Saved");
+  assert.notEqual(fileStatus("Armors.json", { ...withSkipped, mode: "translate" }).label, "No new requests");
   const received = { ...checkpoint, process: { ...checkpoint.process!, requests: [{ index: 0, file: "Items.json", state: "received", sourceItems: 1 }] } };
   assert.equal(fileStatus("Items.json", received).label, "Received");
   assert.equal(fileStatus("Items.json", { ...received, phase: "consume" }).label, "Saving results");
   assert.equal(fileStatus("Items.json", { ...received, phase: "consume", partialOutputs: [] }).label, "Saved");
-  assert.equal(fileStatus("Items.json", { ...checkpoint, status: "stopped" }).label, "Awaiting Batch");
+  assert.equal(fileStatus("Items.json", { ...checkpoint, status: "stopped" }).label, "In Batch");
   assert.equal(fileStatus("Items.json", { ...checkpoint, status: "complete", partialOutputs: [] }).label, "Saved");
   assert.equal(fileStatus("Items.json", { ...checkpoint, mode: "translate" }).label, "Translating");
-  assert.equal(fileStatus("Items.json", { ...checkpoint, process: { errors: [] } }).label, "Awaiting Batch");
+  assert.equal(fileStatus("Items.json", { ...checkpoint, process: { errors: [] } }).label, "In Batch");
   const completed = { ...checkpoint, id: "newer", status: "complete", partialOutputs: [] };
   assert.equal(fileRun([completed, checkpoint], "database", "Items.json"), checkpoint);
   assert.equal(fileRun([completed, checkpoint], "dialogue", "Items.json"), undefined);

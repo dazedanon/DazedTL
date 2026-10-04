@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -17,6 +18,91 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_continuation_translates_new_text_inside_a_previously_translated_file_only_once(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = [{'name': 'Potion', '_original': {'name': '薬'}}, {'name': '毒'}]
+            write_json(root/'files/Items.json', data)
+            key = request_scope.identities('Items.json', 'database', ['薬'], request_scope.source_locations(data))[0]
+            plan = {'workflow': {'phase': 'database'}, 'dazedtl_continuation': {key: {'source': '薬', 'response': 'Potion'}}}
+            sent = []
+            def native_ai(text, history, filename):
+                sent.append(text)
+                return [[{'薬': 'Potion', '毒': 'Poison'}[value] for value in text], [3, 4]]
+            def translator():
+                return SimpleNamespace(queue_batch_request=lambda *_: 'unused', BATCH_LOCK=threading.RLock(), _batch_queue_pending={},
+                    _write_request_debug_log=lambda *_: None, translateText=lambda *_: None, translateAI=native_ai,
+                    _thread_local=threading.local(), last_translation_had_mismatch=lambda: False, get_batch_phase=lambda: None)
+            first = translator()
+            Evidence(root, 'translate', plan).install(first)
+            self.assertEqual(first.translateAI(['薬', '毒'], [], 'Items.json')[0], ['Potion', 'Poison'])
+            self.assertEqual(sent, [['毒']])
+            again = translator()
+            Evidence(root, 'translate', plan).install(again)
+            self.assertEqual(again.translateAI(['薬', '毒'], [], 'Items.json')[0], ['Potion', 'Poison'])
+            self.assertEqual(sent, [['毒']])
+
+    def test_finished_batch_receipts_are_settled_only_with_verified_unmodified_output(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)/'old'; current = Path(temporary)/'new'
+            plan = {'mode': 'batch', 'selected': ['Items.json']}
+            write_json(root/'plan.json', plan)
+            output = [{'name': 'Potion'}]
+            write_json(root/'translated/Items.json', output)
+            job = {'id': 'old', 'mode': 'batch', 'status': 'complete', 'logicalPhase': 'database', 'files': ['Items.json'],
+                   'completed': ['Items.json'], 'outputs': {'Items.json': digest((root/'translated/Items.json').read_bytes())},
+                   'plan_hash': digest((root/'plan.json').read_bytes())}
+            write_json(root/'job.json', job)
+            entry = {'payload': '{"Line1":"薬"}', 'params': {}, 'dazedtl_sources': ['item'], 'dazedtl_file': 'Items.json'}
+            write_json(root/'log/batch_requests.json', {'key': entry})
+            write_json(root/'log/batch_results.json', {'key': {'text': '{"Line1":"Potion"}'}})
+            write_json(root/'log/batch_history.json', {'batches': [{'id': 'paid', 'status': 'consumed', 'api_status': 'completed', 'custom_ids': {'one': 'key'}}]})
+            write_json(current/'log/estimate_requests.json', {'key': entry})
+            new = {**job, 'id': 'new', 'mode': 'estimate'}
+            self.assertEqual(list(request_scope.requests(root, job))[0]['state'], 'saved')
+            self.assertEqual(request_scope.overlap(current, new, [(root, job)]), [])
+            write_json(root/'translated/Items.json', [{'name': 'Unverified edit'}])
+            self.assertEqual(list(request_scope.requests(root, job))[0]['state'], 'received')
+            self.assertTrue(request_scope.overlap(current, new, [(root, job)]))
+            write_json(root/'translated/Items.json', output)
+            write_json(root/'job.json', {**job, 'mismatches': {'Items.json': 1}})
+            self.assertTrue(request_scope.overlap(current, new, [(root, job)]))
+            # Expanding file scope must not match identical text from a
+            # different known file, or resurrect explicitly retired sources.
+            write_json(current/'log/estimate_requests.json', {'other': {**entry, 'dazedtl_sources': [], 'dazedtl_file': 'States.json'}})
+            scope = ['Items.json', 'States.json']
+            self.assertEqual(request_scope.overlap(current, {**new, 'files': scope}, [(root, {**job, 'files': scope})]), [])
+            write_json(current/'log/estimate_requests.json', {'key': entry})
+            self.assertEqual(request_scope.overlap(current, new, [(root, {**job, 'retiredFiles': ['Items.json']})]), [])
+
+    def test_batch_skipped_file_labels_require_complete_provenance_and_preserve_deduplicated_callers(self):
+        from dazedtl.settings.preferences import GENERATION_PARAMETERS
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            files = ['Actors.json', 'Classes.json', 'Armors.json']
+            plan = {'mode': 'batch', 'selected': files, 'dazedtl_request_policy': {'generationParameters': GENERATION_PARAMETERS}}
+            write_json(root/'plan.json', plan)
+            evidence = Evidence(root, 'batch')
+            # Two files may share one provider request; neither was skipped.
+            for name in files[:2]:
+                evidence.local.filename, evidence.local.sources = name, ['source-'+name]
+                evidence.prepared({'messages': []})
+            items = [{'file': 'Classes.json'}]
+            job = {'mode': 'batch', 'phase': 'poll_status', 'files': files}
+            self.assertEqual(process_view.no_request_files(root, job, items), ['Armors.json'])
+            self.assertEqual(process_view.no_request_files(root, {**job, 'phase': 'collect'}, items), [])
+            write_json(root/'log/batch_state.json', {'status': 'submitted'})
+            self.assertEqual(process_view.no_request_files(root, {**job, 'phase': 'failed'}, items), ['Armors.json'])
+            self.assertEqual(process_view.no_request_files(root, {**job, 'mode': 'translate'}, items), [])
+            self.assertEqual(process_view.no_request_files(root, {**job, 'errors': {'Armors.json': 'Parse failed'}}, items), [])
+            self.assertEqual(process_view.no_request_files(root, job, [{'file': None}]), [])
+            write_json(root/'plan.json', {**plan, 'dazedtl_request_policy': {}})
+            self.assertEqual(process_view.no_request_files(root, job, items), [])
+            write_json(root/'plan.json', plan)
+            evidence.local.filename = None
+            evidence.prepared({'messages': []})
+            self.assertEqual(process_view.no_request_files(root, job, items), [])
+
     def test_checkpoint_resume_reads_partial_json_without_mutating_frozen_inputs(self):
         from dazedtl.compatibility import checkpoints
         from dazedtl.storage import write_bytes

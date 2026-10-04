@@ -100,6 +100,9 @@ def preview(value):
 
 
 def error(exc):
+    from dazedtl.translation.guided_runs import SubmissionOverlap
+    if isinstance(exc, SubmissionOverlap):
+        return {'code': 'validation', 'message': str(exc), 'details': exc.details}
     if isinstance(exc, FileNotFoundError):
         return {'code': 'not_found', 'message': str(exc)}
     if isinstance(exc, ValueError):

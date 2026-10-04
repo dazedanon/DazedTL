@@ -226,6 +226,10 @@ class GuidedTests(unittest.TestCase):
         with evidence.connect() as connection:
             connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('item', '薬', '"Prior wording"'))
         self.assertEqual(self.guided.runs.continuation(self.identity, self.native, recorded)['item']['response'], 'Prior wording')
+        # Adding files must retain item-level results, while a source reload
+        # still invalidates only the affected file's reuse authority.
+        expanded = {**recorded, 'files': ['Items.json', 'States.json'], 'source': {**recorded['source'], 'States.json': {'identity': 'new-file'}}}
+        self.assertEqual(self.guided.runs.continuation(self.identity, self.native, expanded)['item']['response'], 'Prior wording')
         inputs.prepare(['Items.json'], refresh=True, expected=inputs.sources(['Items.json'], inputs.record()['inputs'], fresh=True))
         current = self.guided.runs.inputs(self.identity, self.native, 'database', 'translate')
         self.assertEqual(self.guided.runs.continuation(self.identity, self.native, current), {})
@@ -278,8 +282,12 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(self.guided.retain_run(self.identity, 'old', True)['keptForHistory'])
         native = self.backend.workflows.projects['native']
         self.assertIn('old', self.guided.owned_runs(native))
-        with self.assertRaisesRegex(ValueError, 'Paid submission overlaps'):
+        from dazedtl.translation.guided_runs import SubmissionOverlap
+        from dazedtl.api import views
+        with self.assertRaises(SubmissionOverlap) as blocked:
             self.guided.protect_submission(native, {'jobId': 'new'})
+        self.assertEqual(views.error(blocked.exception)['details']['files'], ['Items.json'])
+        self.assertEqual(views.error(blocked.exception)['details']['matches'][0]['run'], 'old')
         self.assertEqual({path: path.read_bytes() for path in before}, before)
         self.assertFalse(self.guided.retain_run(self.identity, 'old', False)['keptForHistory'])
         with self.assertRaises(ValueError):

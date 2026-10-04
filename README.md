@@ -82,6 +82,8 @@ Existing app-local settings are retained in backups during migration; connection
 
 **Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.
 Local diagnostic logs live under the profile's `diagnostics/` folder, capped at three 64 KiB files per process; credentials, request bodies, game text, and raw stderr are excluded.
+If a view fails, its recovery panel offers **Try again**, **Copy diagnostics**, and **Reload interface** while the surrounding navigation remains available. Retry and reload first save pending recovery drafts; a failed save keeps the recovery action blocked and retryable.
+If the renderer freezes or exits, a native dialog offers to wait, copy diagnostics, or reload the interface. Reloading keeps the backend and running jobs; a forced reload can lose edits that have not reached recovery storage. Recovery never resubmits the failed action.
 Project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 4.
 To restore a project backup, close the app, retain the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
 

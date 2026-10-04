@@ -8,7 +8,7 @@ from contextlib import closing
 import json
 
 from dazedtl.translation.files import digest, read_json
-from .process_view import evidence_root, ledger, queue, saved, source_values, batch_results, batch_state, ledger_records
+from .process_view import evidence_root, ledger, queue, saved, source_values, batch_results, batch_state, ledger_records, consumed_files
 
 
 def identities(filename, phase, values, locations=None):
@@ -67,8 +67,12 @@ def requests(root, job):
                 outcomes.setdefault(key, 'uncertain')
         unknown_submission = (state.get('status') in {'submission_uncertain', 'submitting', 'corrupt'} or
                               job.get('dazedtl_submission_intent') and state.get('status') not in {'partially_submitted', 'submitted', 'fetched'})
+        complete = consumed_files(root)
         for index, (key, entry) in enumerate(queued.items()):
-            yield {'index': index, 'state': outcomes.get(key, 'uncertain' if unknown_submission else 'queued'),
+            outcome = outcomes.get(key, 'uncertain' if unknown_submission else 'queued')
+            if outcome == 'received' and entry.get('dazedtl_file') in complete:
+                outcome = 'saved'
+            yield {'index': index, 'state': outcome,
                    'source': json.loads(entry['payload']), 'keys': entry.get('dazedtl_sources'),
                    'file': entry.get('dazedtl_file'), 'response': results.get(key)}
         return
@@ -96,22 +100,29 @@ def overlap(estimate_root, estimate_job, previous):
     for root, job in previous:
         if job.get('mode') not in {'batch', 'translate', 'speakers'} or job.get('logicalPhase') != phase:
             continue
-        shared = files.intersection(job.get('files', []))
+        shared = files.intersection(job.get('files', [])) - set(job.get('retiredFiles', []))
         if not shared:
             continue
         rows = list(requests(root, job))
         for old in rows:
             if old['state'] not in {'submitted', 'uncertain', 'received'}:
                 continue
+            if old['file'] and old['file'] not in shared:
+                continue
             for new in current:
+                if new['file'] and (new['file'] not in shared or old['file'] and old['file'] != new['file']):
+                    continue
                 if old['keys'] and new['keys']:
                     hit = bool(set(old['keys']).intersection(new['keys']))
                 else:
                     hit = bool(set(old['source'].values()).intersection(new['source'].values()))
                     hit = hit and (not old['file'] or old['file'] in shared) and (not new['file'] or new['file'] in shared)
                 if hit:
-                    matches.append({'run': job['id'], 'request': old['index'] + 1, 'state': old['state']})
+                    matches.append({'run': job['id'], 'request': old['index'] + 1, 'state': old['state'],
+                                    'files': [new['file']] if new['file'] else sorted(shared)})
                     break
         if not rows and job.get('mode') == 'translate' and job.get('status') in {'running', 'waiting', 'interrupted', 'stopped'}:
-            matches.append({'run': job['id'], 'state': 'legacy_unknown', 'files': sorted(shared)})
+            pending_files = shared.intersection(row['file'] for row in current) if current and all(row['file'] for row in current) else shared
+            if pending_files:
+                matches.append({'run': job['id'], 'state': 'legacy_unknown', 'files': sorted(pending_files)})
     return matches

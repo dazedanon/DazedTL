@@ -53,7 +53,7 @@ export function TranslationInspector({ projectId, file, job, history, close }: {
     return value;
   }, [projectId, file, job?.id]);
   const translated = payload && translatedLines(payload);
-  const missing = job ? "No prepared text was retained or linked to this file in this attempt. Click Translate to prepare a new estimate for the selected files."
+  const missing = job?.process?.noRequestFiles?.includes(file) ? "This file produced no new requests in this pass." : job ? "No prepared text was retained or linked to this file in this attempt. Click Translate to prepare a new estimate for the selected files."
     : "No text has been prepared for this file yet. Select it and click Translate to preview the text and estimate before approving API charges.";
   const position = rows.findIndex(row => row.index === index);
   const choose = (index: number) => setSelected({ job: job!.id, file, index });

@@ -4,6 +4,85 @@ import path from "node:path";
 import test from "node:test";
 import { root, requireNode } from "../scripts/dependencies.mjs";
 import { windowSize } from "../app/electron/window-size.cjs";
+import { EventEmitter } from "node:events";
+import os from "node:os";
+import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
+import { Diagnostics } from "../app/electron/diagnostics.cjs";
+import { rendererFailure } from "../app/src/app/rendererErrors.ts";
+
+const turn = () => new Promise<void>(resolve => setImmediate(resolve));
+
+function recoveryFixture() {
+  const contents = new EventEmitter(), window = new EventEmitter();
+  const prompts: { options: any; answer: (value: { response: number }) => void }[] = [];
+  const events: string[] = [];
+  let crashed = false, closing = false;
+  Object.assign(contents, { isDestroyed: () => false, isCrashed: () => crashed,
+    forcefullyCrashRenderer: () => { events.push("kill"); crashed = true; contents.emit("render-process-gone", {}, { reason: "killed", exitCode: 0 }); },
+    reload: () => events.push("reload") });
+  Object.assign(window, { webContents: contents, isDestroyed: () => false });
+  const recovery = rendererRecovery(window, {
+    diagnostics: { record: (event: string) => events.push(event), failure: () => events.push("failure"), report: () => "safe diagnostics" },
+    clipboard: { writeText: (text: string) => events.push(text) },
+    beforeReload: () => events.push("reset-ready"), closing: () => closing,
+    dialog: { showMessageBox: (_window: unknown, options: unknown) => new Promise(resolve => prompts.push({ options, answer: resolve })) },
+  });
+  return { window, contents, prompts, events, recovery, close: () => { closing = true; },
+    crash: () => { crashed = true; contents.emit("render-process-gone", {}, { reason: "crashed", exitCode: 1 }); } };
+}
+
+test("renderer recovery offers one native prompt and replaces a hung interface only on explicit reload", async () => {
+  const f = recoveryFixture();
+  f.window.emit("unresponsive");
+  f.window.emit("unresponsive");
+  assert.equal(f.prompts.length, 1);
+  assert.equal(f.events.includes("reload"), false);
+  f.prompts[0].answer({ response: 1 });
+  await turn();
+  assert.deepEqual(f.events.slice(-5), ["reset-ready", "renderer.reload", "kill", "renderer.gone", "reload"]);
+  assert.equal(f.prompts.length, 1); // The intentional process replacement cannot open a second prompt.
+  f.recovery.reload();
+  assert.equal(f.events.filter(event => event === "reload").length, 1);
+  f.contents.emit("did-finish-load");
+  assert.equal(f.recovery.failed(), false);
+});
+
+test("crash recovery can copy diagnostics, and stale dialog responses cannot reload a recovered or closing window", async () => {
+  const crashed = recoveryFixture();
+  crashed.crash();
+  crashed.prompts[0].answer({ response: 2 });
+  await turn();
+  assert.ok(crashed.events.includes("safe diagnostics"));
+  assert.equal(crashed.prompts.length, 2);
+  crashed.prompts[1].answer({ response: 1 });
+  await turn();
+  assert.ok(crashed.events.includes("reload"));
+  assert.equal(crashed.events.includes("kill"), false);
+  for (const finish of [(f: ReturnType<typeof recoveryFixture>) => f.window.emit("responsive"), (f: ReturnType<typeof recoveryFixture>) => f.close()]) {
+    const f = recoveryFixture();
+    f.window.emit("unresponsive");
+    finish(f);
+    f.prompts[0].answer({ response: 1 });
+    await turn();
+    assert.equal(f.events.includes("reload"), false);
+  }
+});
+
+test("renderer diagnostics retain useful code coordinates without messages, paths, or arbitrary rejection data", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-diagnostics-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const error = new TypeError("private game text\n    at private (/assets/not-code.js:1:2)");
+  error.stack = `${error.name}: ${error.message}\n    at render (file:///private/home/app/dist/assets/index-abc.js:25:617)\n    at secret (file:///private/credentials.json:12:3)`;
+  const fields = rendererFailure(error, "render");
+  assert.deepEqual(fields.causes, [{ type: "TypeError", frames: [{ file: "app/renderer/assets/index-abc.js", line: 25, column: 617, function: "unknown" }] }]);
+  const diagnostics = new Diagnostics(directory, { app: "fixture" }, root);
+  diagnostics.record("renderer.error", { ...fields, message: error.message, stack: error.stack });
+  const report = diagnostics.report();
+  assert.match(report, /renderer.error/);
+  assert.match(report, /index-abc.js/);
+  assert.doesNotMatch(report, /private|credentials|not-code/);
+  assert.deepEqual(rendererFailure({ message: "secret", stack: "private" }, "unhandledrejection").causes, [{ type: "Error", frames: [] }]);
+});
 
 test("desktop bounds fit scaled work areas without enlarging the default window on 4K displays", () => {
   for (const area of [{width:3840,height:2100},{width:1920,height:1020},{width:1024,height:540},{width:768,height:460}]) {

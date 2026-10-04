@@ -4,6 +4,16 @@
   flex-direction: column;
   overflow: hidden;
 }
+.view-recovery {
+  width: 100%;
+  max-width: var(--width-content, 64rem);
+  min-width: 0;
+  padding: var(--space-5);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.view-recovery h2 { margin: 0 0 var(--space-3); font-size: var(--font-page-title); }
+.view-recovery p { color: var(--muted); line-height: 1.6; margin: 0 0 var(--space-5); }
 .topbar {
   height: 68px;
   flex-shrink: 0;

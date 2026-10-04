@@ -28,6 +28,7 @@ class Evidence:
                 if name not in columns(connection):
                     connection.execute('ALTER TABLE requests ADD COLUMN ' + name + ' TEXT')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)')
+            connection.execute('CREATE TABLE IF NOT EXISTS validated_provenance (identity TEXT PRIMARY KEY, filename TEXT)')
             for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
                 self.reused[key] = {'source': source, 'response': json.loads(response)}
 
@@ -178,6 +179,8 @@ class Evidence:
                         if len(output) == len(values) and (self.mode in {'translate', 'offline'} or translation.get_batch_phase() == 'consume'):
                             connection.executemany('INSERT OR REPLACE INTO validated_items VALUES (?,?,?)',
                                                    [(key, source, json.dumps(response, ensure_ascii=False)) for key, source, response in zip(reuse_keys, values, output)])
+                            connection.executemany('INSERT OR REPLACE INTO validated_provenance VALUES (?,?)',
+                                                   [(key, filename) for key in reuse_keys])
                             connection.executemany('UPDATE requests SET response=? WHERE id=?',
                                                    [(json.dumps(output, ensure_ascii=False), identity) for identity in self.local.call])
                 return result

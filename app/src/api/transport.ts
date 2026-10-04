@@ -1,6 +1,7 @@
 import protocol from "../../../backend/dazedtl/api/protocol.json";
 import type { RpcContract } from "./contracts";
 import { ApiError, type ErrorCode, messageOf } from "./errors";
+import type { RendererFailure } from "./errors";
 
 type Method = keyof RpcContract;
 type AssertNever<T extends never> = T;
@@ -14,13 +15,15 @@ type MissingManifestMethods = AssertNever<
 export type ProtocolCoverage = MissingClientMethods | MissingManifestMethods;
 type Envelope =
   | { version: number; ok: true; value: unknown }
-  | { version: number; ok: false; error: { code: ErrorCode; message: string } };
+  | { version: number; ok: false; error: { code: ErrorCode; message: string; details?: unknown } };
 declare global {
   interface Window {
     dazedtl: {
       call(version: number, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;
+      reportRendererError(failure: RendererFailure): Promise<void>;
+      reloadInterface(): Promise<void>;
       copyText(text: string): Promise<void>;
       chooseFolder(): Promise<string | null>;
       chooseEditor(): Promise<string | null>;
@@ -66,7 +69,7 @@ export async function request<M extends Method>(
           "protocol",
           "The backend returned an invalid error response.",
         );
-      throw new ApiError(reply.error.code, reply.error.message);
+      throw new ApiError(reply.error.code, reply.error.message, reply.error.details);
     }
     if (!("value" in reply))
       throw new ApiError(

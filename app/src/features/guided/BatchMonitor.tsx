@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoaderCircle } from "lucide-react";
 import type { BatchCancellation, Job } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -39,13 +40,13 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect }: {
               : canRetrySaving(job) ? "Collected responses could not be saved." : "";
             return <section className="batch-monitor-run" aria-label={`${historyPhase(job)} Batch ${job.id}`}>
               <ActionList compact><ActionRow label={<div className="batch-run-heading">
-                <div><strong>{historyPhase(job)}</strong><span>{job.files?.length || 0} files</span></div>
+                <div><strong>{historyPhase(job)}</strong><span>{job.files?.length || 0} selected files</span></div>
                 <small>{job.model || "Saved model"}{job.created && ` · ${new Date(job.created).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}</small>
               </div>}><Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Requests</Button></ActionRow>
               {batches.map(batch => {
                 const outcome = batchOutcome(batch, job), cancelKey = "batch:cancel:" + batch.id;
                 return <ActionRow key={batch.id} label={<div className="batch-provider-row">
-                  <div className="batch-provider-heading"><strong className={outcome.failed ? "translation-error" : ""}>{outcome.label}</strong><span>{outcome.summary}</span></div>
+                  <div className="batch-provider-heading"><strong className={`batch-activity${outcome.failed ? " translation-error" : ""}`}>{outcome.active && <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" />}{outcome.label}</strong><span>{outcome.summary}</span></div>
                   {outcome.pending && <progress aria-label={`Finished requests in ${batch.id}`} max={outcome.progress.total || 1} value={outcome.progress.finished} />}
                 </div>}>
                   {outcome.pending && !["cancelling", "canceling"].includes(batch.status) && <ActionControl label="Cancel Batch" variant="quiet" disabled={action.busy} pending={action.busy && action.key === cancelKey} pendingText="Reading cancellation scope…"

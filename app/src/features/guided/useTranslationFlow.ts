@@ -1,0 +1,150 @@
+import { useEffect, useRef, useState } from "react";
+import { api } from "../../api/client";
+import { ApiError, messageOf } from "../../api/errors";
+import type { GuidedState, Job, Phase, Preview } from "../../api/contracts";
+import { useAction } from "../../state/useAction";
+import { estimateFollowup } from "./translationView";
+
+export type SubmissionConflict = { kind: "submission_overlap"; files: string[]; matches: { run: string; files: string[]; state: string }[] };
+export function submissionConflict(error: unknown): SubmissionConflict | undefined {
+  if (!(error instanceof ApiError) || !error.details || typeof error.details !== "object") return;
+  const value = error.details as SubmissionConflict;
+  if (value.kind === "submission_overlap" && Array.isArray(value.files) && value.files.every(file => typeof file === "string")
+    && Array.isArray(value.matches) && value.matches.every(match => match && typeof match.run === "string" && typeof match.state === "string"
+      && Array.isArray(match.files) && match.files.every(file => typeof file === "string"))) return value;
+}
+export type TranslationFlowState = {
+  phase: Phase; mode: "batch" | "translate"; files: string[];
+  stage: "preparing" | "estimating" | "batch" | "review" | "empty" | "error" | "canceling";
+  estimateId?: string; runId?: string; job?: Job; preview?: Preview;
+  decision?: boolean;
+  error?: string; conflict?: SubmissionConflict;
+};
+type Session = { state: TranslationFlowState; advanced: boolean; canceled: boolean; finished: boolean };
+type Options = { projectId: string; phase: Phase; mode: "batch" | "translate"; files: string[]; state: GuidedState;
+  dirty: boolean; busy: boolean; save: () => Promise<void>; settle: () => Promise<unknown> | void };
+
+/** One visible operation, driven by the existing observer and guarded actions. */
+export function useTranslationFlow(options: Options) {
+  const latest = useRef(options); latest.current = options;
+  const current = useRef<Session | null>(null);
+  const [state, setState] = useState<TranslationFlowState | null>(null);
+  const action = useAction({ after: async () => {
+    try { await latest.current.settle(); }
+    catch (error) {
+      const session = current.current;
+      if (session) {
+        session.finished = false; session.canceled = false;
+        change(session, { stage: "error", error: messageOf(error), conflict: submissionConflict(error) });
+      }
+      throw error;
+    }
+  } });
+  const claimed = useRef(new Set<string>());
+  useEffect(() => () => { if (current.current) current.current.canceled = true; current.current = null; }, []);
+  function change(session: Session, patch: Partial<TranslationFlowState>) {
+    if (current.current !== session) return;
+    session.state = { ...session.state, ...patch }; setState(session.state);
+  }
+  function finish(session: Session) {
+    if (current.current === session) { current.current = null; setState(null); }
+  }
+  async function abandon(session: Session) {
+    const id = session.state.runId || session.state.estimateId;
+    if (id) await api.guided.discardPreparation(options.projectId, id);
+    session.finished = true;
+  }
+  const canceled = (session: Session) => session.canceled || current.current !== session;
+  function perform(session: Session, task: () => Promise<void>, discardCanceled = true) {
+    const pending = action.run(async () => {
+      try {
+        await task();
+        if (session.canceled && discardCanceled) await abandon(session);
+      } catch (error) {
+        session.canceled = false;
+        change(session, { stage: "error", error: messageOf(error), conflict: submissionConflict(error) });
+        throw error;
+      }
+    }, "", "translation-flow");
+    void pending.then(result => { if (result.ok && session.finished) finish(session); });
+    return pending;
+  }
+  function start(files = latest.current.files) {
+    if (current.current || action.busy || latest.current.busy) return;
+    const session: Session = { advanced: false, canceled: false, finished: false,
+      state: { phase: latest.current.phase, mode: latest.current.mode, files: [...files], stage: "preparing" } };
+    current.current = session; setState(session.state);
+    void perform(session, async () => {
+      await latest.current.save();
+      if (canceled(session)) return;
+      await api.phase(options.projectId, session.state.phase);
+      if (canceled(session)) return;
+      const preview = await api.preview(options.projectId, "start", undefined, { mode: "estimate" });
+      if (canceled(session)) return;
+      const estimate = await api.execute(options.projectId, preview.token);
+      // Retain the ID even after cancellation so a late reply is discarded,
+      // never followed into another preparation or paid submission.
+      session.state.estimateId = estimate.id;
+      if (!canceled(session)) change(session, { stage: "estimating" });
+    });
+  }
+  useEffect(() => {
+    const session = current.current;
+    if (!session || session.canceled || session.finished || action.busy) return;
+    const value = session.state;
+    if (value.stage === "estimating" && value.estimateId && !session.advanced) {
+      const result = estimateFollowup(value.estimateId, options.state.estimates[value.phase], options.state.runs,
+        options.dirty || value.phase !== options.phase || value.mode !== options.mode);
+      if (result.kind === "waiting") return;
+      session.advanced = true;
+      if (result.kind === "failed" || result.kind === "stale") {
+        change(session, { stage: "error", error: result.kind === "stale" ? "The selection or guidance changed. Prepare a fresh estimate." : result.job?.message || "The estimate could not finish." });
+      } else if (result.kind === "empty" && value.phase !== "variables") {
+        change(session, { stage: "empty", job: result.job! });
+      } else {
+        change(session, { stage: "batch" });
+        void perform(session, async () => {
+          const preview = await api.preview(options.projectId, "start", undefined, { mode: value.mode });
+          if (canceled(session)) return;
+          if (value.mode === "translate") { change(session, { stage: "review", preview }); return; }
+          const run = await api.execute(options.projectId, preview.token);
+          session.state.runId = run.id; claimed.current.add(run.id);
+          if (!canceled(session)) change(session, { stage: "batch" });
+        });
+      }
+    } else if (value.stage === "batch" && value.runId) {
+      const job = options.state.runs.find(run => run.id === value.runId);
+      if (job?.approval) change(session, { stage: "review", job });
+      else if (job && ["failed", "interrupted", "stopped", "canceled"].includes(job.status)) change(session, { stage: "error", error: job.message || "Request preparation did not finish.", job });
+      else if (job?.status === "complete") change(session, { stage: "empty", job });
+    }
+  }, [options.state.runs, options.state.estimates, options.dirty, options.phase, options.mode, action.busy, state]);
+  function cancel() {
+    const session = current.current;
+    if (!session) return;
+    if (session.state.stage === "error") { finish(session); return; }
+    session.canceled = true; change(session, { stage: "canceling" });
+    if (!action.busy) void perform(session, async () => {});
+  }
+  function answer(approved: boolean) {
+    const session = current.current;
+    if (!session || session.finished || action.busy) return;
+    const value = session.state;
+    change(session, { decision: approved });
+    void perform(session, async () => {
+      if (value.job?.approval) {
+        const prompt = value.job.approval;
+        await api.answer(options.projectId, prompt.token, approved);
+        if (approved && prompt.kind === "speakers") change(session, { stage: "batch", job: undefined });
+        else session.finished = true;
+      } else if (approved && value.preview) {
+        const run = await api.execute(options.projectId, value.preview.token);
+        session.state.runId = run.id;
+        session.finished = true;
+      } else await abandon(session);
+    }, false);
+  }
+  function dismiss() { if (current.current) finish(current.current); }
+  return { state, active: !!state || action.busy, busy: action.busy || !!current.current?.finished, claimed: claimed.current,
+    start, cancel, answer, dismiss, retry: () => { const files = current.current?.state.files; dismiss(); start(files); } };
+}

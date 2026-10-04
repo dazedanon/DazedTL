@@ -1,23 +1,22 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { LoaderCircle } from "lucide-react";
 import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
-import { filePreviewRun, fileRun, fileStatus } from "./translationView";
+import { activeRun, filePreviewRun, fileRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, requestPreview, history, batches, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, batches, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
   settings: () => void; options: () => void; history: () => void; batches: (runId?: string) => void; children?: ReactNode;
-  requestPreview?: { job: string; file: string; phase: Phase } | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState("");
   const [inspecting, setInspecting] = useState(false);
   const [record, setRecord] = useState("");
-  useEffect(() => { if (requestPreview?.phase === phase) { setFile(requestPreview.file); setRecord(requestPreview.job); setInspecting(true); } }, [requestPreview]);
   useLayoutEffect(() => { root.current?.closest(".page-body")?.scrollTo(0, 0); }, [inspecting]);
   const rows = useMemo(() => state.files.filter(row => row.group === (phase === "database" ? "database" : "dialogue")), [state.files, phase]);
   const selected = new Set(values.selected);
@@ -45,7 +44,8 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
           inline={{ preview: openFile, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
               const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner, fileOwner?.id !== run?.id), metrics = fileOwner?.process?.fileMetrics?.[row.name];
-              const statusText = <><span aria-hidden="true">{status.symbol}</span><span className="translation-status-text">{status.label}</span></>;
+              const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
+              const statusText = <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}>
                 {fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
                 <span className="translation-file-cost" title={metrics ? "Engine-reported cost for this saved run" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>

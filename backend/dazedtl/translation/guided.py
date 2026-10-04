@@ -11,7 +11,7 @@ from dazedtl.storage import write_json
 from .files import read_json, project_path, evidence, verify_evidence
 from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
-from .guided_runs import GuidedRuns
+from .guided_runs import GuidedRuns, SubmissionOverlap
 from .event_text import EventText
 from .files import digest
 from . import backups
@@ -714,8 +714,7 @@ class Guided:
                     if identity and identity != current and identity in self.backend.manual.jobs]
         matches = overlap(self.backend.manual.folder(current), job, previous)
         if matches:
-            raise ValueError('Paid submission overlaps ' + str(len(matches)) + ' saved active or unresolved source requests. '
-                             'Review their responses in History before sending that scope again. Settings and local estimates remain available.')
+            raise SubmissionOverlap(matches)
 
     def protect_batch_files(self, native, files):
         from dazedtl.compatibility.batch_control import TERMINAL

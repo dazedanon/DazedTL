@@ -21,6 +21,10 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   const failed = { ...batch, status: "completed", counts: { succeeded: 0, errored: 10 } };
   assert.equal(batchOutcome(failed, paused).label, "Failed");
   assert.equal(batchOutcome(failed, paused).pending, false);
+  assert.equal(batchOutcome(failed, paused).active, false);
+  assert.equal(batchOutcome({ ...batch, status: 'validating' }, paused).active, true);
+  assert.equal(batchOutcome({ ...batch, status: 'unknown' }, paused).active, false);
+  assert.equal(batchOutcome({ ...batch, status: 'completed' }, { ...paused, status: 'running', phase: 'consume' }).active, true);
   assert.equal(batchOutcome({ ...failed, counts: { succeeded: 8, errored: 2 } }, paused).label, "Partial");
   assert.equal(batchOutcome({ ...batch, status: "ended", counts: { succeeded: 10 } }, completed).label, batchOutcome({ ...batch, status: "completed", counts: { succeeded: 10 } }, completed).label);
   assert.equal(canRetrySaving({ ...collected, status: "running" }), false);

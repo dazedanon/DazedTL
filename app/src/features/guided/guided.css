@@ -34,9 +34,6 @@ main.editor-main.guided-main { padding: 0; }
 .request-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); margin-left:auto; }
 .translation-process > .ui-tabs { flex-shrink:0; flex-wrap:wrap; gap:var(--space-3); }
 .request-workspace.request-workspace--run { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
-.request-inspector-sheet:has(.translation-process[data-view="run"]) { width:min(900px,calc(100vw - var(--space-6))); height:fit-content; }
-.translation-process[data-view="run"] { flex:0 1 auto; }
-.translation-process[data-view="run"] .request-workspace { flex:0 1 auto; max-height:60dvh; }
 .request-reader { min-height:0; flex:1; overflow:auto; scrollbar-gutter:stable; padding-right:var(--space-3); }
 .request-reader h3 { font-size:var(--font-control); margin:var(--space-4) 0 var(--space-2); }
 .request-reader h3:first-child { margin-top:0; }
@@ -360,4 +357,5 @@ main.editor-main.guided-main { padding: 0; }
 .batch-run-heading span, .batch-run-heading small, .batch-provider-heading > span { color:var(--muted); font-size:var(--font-small); }
 .batch-run-files { overflow-wrap:anywhere; font-size:var(--font-small); color:var(--muted); }
 .batch-provider-row { min-width:0; }
+.batch-activity { display:inline-flex; align-items:center; gap:var(--space-1); }
 .batch-provider-row progress { width:100%; display:block; margin:var(--space-2) 0 0; }

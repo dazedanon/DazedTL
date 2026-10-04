@@ -67,6 +67,8 @@ export function blockingBatches(runs: Job[], selected: readonly string[]) {
 }
 export function fileStatus(name: string, run?: Job, historical = false) {
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return { label: "Ready", tone: "idle", symbol: "·" };
+  if (run.mode === "batch" && run.status !== "complete" && run.process?.noRequestFiles?.includes(name))
+    return { label: "No new requests", tone: "idle", symbol: "–" };
   if (run.temporary) {
     if (["failed", "interrupted"].includes(run.status)) return { label: "Needs attention", tone: "warning", symbol: "!" };
     return { label: run.approval ? "Review cost" : activeRun(run) ? "Preparing" : "Ready", tone: activeRun(run) ? "active" : "idle", symbol: activeRun(run) ? "◷" : "·" };
@@ -78,25 +80,25 @@ export function fileStatus(name: string, run?: Job, historical = false) {
     && progress.total > 0 && progress.current >= 0 && progress.current <= progress.total ? `Translating ${progress.current}/${progress.total}` : "Translating";
   if (run.mode === "batch" && run.process?.monitoring) {
     if (["error", "save_error", "blocked"].includes(run.process.monitoring.state)) return { label: "Needs attention", tone: "warning", symbol: "!" };
-    return { label: run.process.monitoring.state === "collecting" ? "Receiving results" : "Awaiting Batch", tone: "active", symbol: "◷" };
+    return { label: run.process.monitoring.state === "collecting" ? "Receiving results" : "In Batch", tone: "active", symbol: "◷" };
   }
   // Retained checkpoints describe available output, not the active operation.
   if (activeRun(run)) {
     if (run.approval) return { label: "Review cost", tone: "active", symbol: "◷" };
     if (states.includes("uncertain")) return { label: "Check submission", tone: "warning", symbol: "!" };
     if (states.includes("failed")) return { label: "Needs attention", tone: "warning", symbol: "!" };
-    if (states.includes("submitted")) return { label: run.mode === "batch" ? "Submitted" : translating, tone: "active", symbol: "◷" };
+    if (states.includes("submitted")) return { label: run.mode === "batch" ? "In Batch" : translating, tone: "active", symbol: "◷" };
     if (states.some(state => ["queued", "prepared"].includes(state))) return { label: run.mode !== "batch" && run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
     if (!saved || run.partialOutputs?.includes(name)) {
       if (run.mode === "batch" && run.phase === "consume") return { label: "Saving results", tone: "active", symbol: "◷" };
       if (states.some(state => ["received", "validated"].includes(state))) return { label: run.mode === "translate" && run.progress?.file === name ? translating : "Received", tone: "active", symbol: "◐" };
-      if (run.mode === "batch" && run.phase?.startsWith("poll")) return { label: "Awaiting Batch", tone: "active", symbol: "◷" };
+      if (run.mode === "batch" && run.phase?.startsWith("poll")) return { label: "In Batch", tone: "active", symbol: "◷" };
       if (run.phase === "submit") return { label: "Submitting", tone: "active", symbol: "◷" };
       return { label: run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
     }
   }
   if (run.mode === "batch" && (run.phase?.startsWith("poll") || run.process?.resultsCollected) && ["stopped", "interrupted"].includes(run.status))
-    return { label: run.process?.resultsCollected ? "Waiting to save" : "Awaiting Batch", tone: "active", symbol: "◷" };
+    return { label: run.process?.resultsCollected ? "Waiting to save" : "In Batch", tone: "active", symbol: "◷" };
   if (run.mode === "translate" && !historical && (!saved || run.partialOutputs?.includes(name))) {
     if (["stopped", "interrupted"].includes(run.status)) return { label: run.status === "stopped" ? "Stopped" : "Interrupted", tone: "warning", symbol: "Ⅱ" };
     if (run.status === "failed") return { label: "Needs attention", tone: "warning", symbol: "!" };
@@ -110,7 +112,7 @@ export function fileStatus(name: string, run?: Job, historical = false) {
   if (states.includes("uncertain")) return { label: "Check submission", tone: "warning", symbol: "!" };
   if (states.includes("failed")) return { label: "Needs attention", tone: "warning", symbol: "!" };
   if (states.some(state => ["validated", "received"].includes(state))) return { label: "Partial results", tone: "active", symbol: "◐" };
-  if (states.includes("submitted")) return { label: "Submitted", tone: "active", symbol: "◷" };
+  if (states.includes("submitted")) return { label: run.mode === "batch" ? "In Batch" : "Submitted", tone: "active", symbol: "◷" };
   if (["failed", "interrupted", "stopped"].includes(run.status)) return { label: "Unfinished", tone: "warning", symbol: "!" };
   return { label: "No saved output", tone: "idle", symbol: "·" };
 }

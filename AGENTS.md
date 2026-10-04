@@ -8,7 +8,7 @@
 - Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
 - Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
 - Use the [UX principles](docs/architecture.md#ux-principles) as the ongoing design and review guide for this tool.
-- Default to compact, task-focused layouts. Show each status once; omit zero-value counters, repeated explanations, finished progress bars, and technical identifiers from routine views. Keep related text and actions close, and put diagnostics in the dedicated inspector. Do not use disclosure dropdowns to hide an overstuffed layout; shorten long text with an explicit expand action when needed.
+- Default to compact, task-focused layouts. Show each status once; omit zero-value counters, repeated explanations, finished progress bars, and technical identifiers from routine views. Keep related text and actions close, and put diagnostics in the dedicated inspector. Keep window dimensions stable when switching tabs; compact the content inside them. Do not use disclosure dropdowns to hide an overstuffed layout; shorten long text with an explicit expand action when needed.
 - Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
 - Keep credentials, games, run files, logs, and caches outside the source tree.
 - Use `rg` for repository searches.

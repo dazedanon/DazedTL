@@ -12,6 +12,14 @@ PHASES = ("database", "dialogue", "advanced", "variables")
 JAPANESE = re.compile(r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+")
 
 
+class SubmissionOverlap(ValueError):
+    def __init__(self, matches):
+        files = sorted({name for match in matches for name in match.get('files', [])})
+        super().__init__('This selection overlaps unfinished requests in ' + ', '.join(files) +
+                         '. Translate the other selected files or inspect the saved work before sending this text again.')
+        self.details = {'kind': 'submission_overlap', 'files': files, 'matches': matches}
+
+
 class GuidedRuns:
     def __init__(self, guided):
         self.guided = guided
@@ -172,10 +180,16 @@ class GuidedRuns:
         from dazedtl.compatibility.process_view import ledger
         result = {}
         for identity, record in self.records(project_id).items():
-            if (record['phase'] != inputs['phase'] or record['source'] != inputs['source']
-                    or any(record.get('file_versions', {}).get(name, '') != inputs.get('file_versions', {}).get(name, '') for name in inputs['files'])):
+            if record['phase'] != inputs['phase']:
+                continue
+            shared = set(record['files']).intersection(inputs['files'])
+            eligible = {name for name in shared if record['source'].get(name) == inputs['source'].get(name)
+                        and record.get('file_versions', {}).get(name, '') == inputs.get('file_versions', {}).get(name, '')}
+            if not eligible:
                 continue
             if identity not in self.guided.backend.manual.jobs:
+                continue
+            if (self.guided.backend.saved_run_configuration(identity).get('workflow') or {}).get('id') != native['id']:
                 continue
             connection = ledger(self.guided.backend.manual.folder(identity))
             if connection is None:
@@ -183,7 +197,26 @@ class GuidedRuns:
             with closing(connection):
                 if not connection.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='validated_items'").fetchone():
                     continue
+                provenance = dict(connection.execute('SELECT identity,filename FROM validated_provenance')) if connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='validated_provenance'").fetchone() else {}
+                # Legacy identities already include the filename. If every
+                # selected old file still matches, entries for unselected files
+                # cannot match the new worker's file-bound keys. Otherwise only
+                # explicitly file-scoped legacy entries may be reused.
+                legacy_allowed = None
+                if shared - eligible:
+                    legacy_allowed = set()
+                    columns = {row[1] for row in connection.execute('PRAGMA table_info(requests)')}
+                    if {'filename', 'sources'}.issubset(columns):
+                        for filename, sources in connection.execute('SELECT filename,sources FROM requests'):
+                            if filename in eligible and sources:
+                                legacy_allowed.update(json.loads(sources) or [])
                 for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
+                    if key in provenance:
+                        if provenance[key] not in eligible:
+                            continue
+                    elif legacy_allowed is not None and key not in legacy_allowed:
+                        continue
                     row = {'source': source, 'response': json.loads(response)}
                     if key in result and row != result[key]:
                         raise ValueError('Saved validated responses conflict. Review this source in History.')

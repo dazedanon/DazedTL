@@ -19,8 +19,8 @@ export function canRetrySaving(job: Job) {
   return job.mode === "batch" && !!job.process?.resultsCollected && (job.process.received ?? 0) > 0 && job.process?.monitoring?.state === "save_error"
     && ["failed", "stopped", "interrupted", "canceled"].includes(job.status);
 }
-const statuses: Record<string, string> = { validating: "Validating", in_progress: "Processing", finalizing: "Finalizing", cancelling: "Canceling", canceling: "Canceling",
-  completed: "Completed", ended: "Completed", cancelled: "Canceled", canceled: "Canceled", failed: "Failed", expired: "Expired" };
+const statuses: Record<string, string> = { validating: "Checking requests", in_progress: "Translating", finalizing: "Preparing results", cancelling: "Canceling", canceling: "Canceling",
+  completed: "Completed", ended: "Completed", cancelled: "Canceled", canceled: "Canceled", failed: "Failed", expired: "Expired", unknown: "Status unavailable" };
 export const batchStatus = (status: string) => statuses[status] || status.replaceAll("_", " ");
 
 export function batchOutcome(batch: ProviderBatch, job: Job) {
@@ -28,10 +28,13 @@ export function batchOutcome(batch: ProviderBatch, job: Job) {
   const failures = ([['errored', 'failed'], ['canceled', 'canceled'], ['expired', 'expired']] as const)
     .filter(([key]) => (batchCount(batch.counts[key]) || 0) > 0).map(([key, label]) => `${batch.counts[key]!.toLocaleString()} ${label}`);
   const terminal = terminalBatch(batch.status);
+  const consuming = terminal && activeRun(job) && job.phase === "consume";
+  const collecting = terminal && job.process?.monitoring?.state === "collecting";
   let label = terminal && failures.length ? succeeded ? "Partial" : batch.counts.errored ? "Failed" : batch.counts.canceled ? "Canceled" : "Expired" : batchStatus(batch.status);
-  if (terminal && !failures.length && activeRun(job)) label = job.phase === "consume" ? "Saving results" : job.process?.monitoring?.state === "collecting" ? "Receiving results" : label;
+  if (consuming || collecting) label = consuming ? "Saving results" : "Receiving results";
   const uniform = terminal && progress.total != null && (succeeded === progress.total || succeeded === 0 && failures.length === 1);
   const summary = uniform ? `${progress.total!.toLocaleString()} ${progress.total === 1 ? "request" : "requests"}` : [succeeded != null && (succeeded > 0 || !failures.length) ? `${succeeded.toLocaleString()}${progress.total != null ? `/${progress.total.toLocaleString()}` : ""} succeeded` : "", ...failures].filter(Boolean).join(" · ")
     || (progress.total != null ? `${progress.total.toLocaleString()} requests` : "Counts unavailable");
-  return { label, summary, progress, pending: !terminal, failed: terminal && failures.length > 0 };
+  const providerActive = ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(batch.status);
+  return { label, summary, progress, pending: !terminal, active: providerActive || consuming || collecting, failed: terminal && failures.length > 0 };
 }

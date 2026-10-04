@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const { Backend } = require("./backend.cjs");
 const { Diagnostics } = require("./diagnostics.cjs");
 const { windowSize } = require("./window-size.cjs");
+const { rendererRecovery } = require("./renderer-recovery.cjs");
 
 app.setName("DazedTLNext");
 if (process.env.DAZEDTL_NEXT_PROFILE)
@@ -129,12 +130,10 @@ app.whenReady().then(() => {
     (message) => window?.webContents.send("dazedtl:stopped", message),
     diagnostics,
   );
-  window.webContents.on("render-process-gone", (_event, details) =>
-    diagnostics.record("renderer.gone", {
-      reason: details.reason,
-      exitCode: details.exitCode,
-    }),
-  );
+  const recovery = rendererRecovery(window, {
+    diagnostics, dialog, clipboard, closing: () => closing || quit,
+    beforeReload: () => { ready = false; },
+  });
   window.webContents.on(
     "did-fail-load",
     (_event, errorCode, _description, _url, mainFrame) => {
@@ -153,6 +152,15 @@ app.whenReady().then(() => {
     if (closing) return;
     closing = true;
     const token = (closeToken = ++closeSerial);
+    if (recovery.failed()) {
+      void closeProblem("The interface cannot save changes right now. Keep it open to recover, or discard unsaved changes and close.", token).catch(error => {
+        diagnostics.failure("desktop.error", error, { operation: "native" });
+        if (token !== closeToken) return;
+        closing = false;
+        closeToken = 0;
+      });
+      return;
+    }
     if (!ready) return void finishClose();
     closeTimer = setTimeout(
       () =>
@@ -186,6 +194,16 @@ app.whenReady().then(() => {
       diagnostics.failure("desktop.error", error, { operation: "native" });
       throw new Error("Diagnostics could not be copied. Try again.");
     }
+  });
+  ipcMain.handle("dazedtl:renderer-error", (event, failure) => {
+    trusted(event);
+    if (!["render", "error", "unhandledrejection"].includes(failure?.reason)) return;
+    diagnostics.record("renderer.error", { reason: failure.reason, causes: failure.causes });
+  });
+  ipcMain.handle("dazedtl:reload-interface", (event) => {
+    trusted(event);
+    if (closing || quit) throw new Error("Wait for the close request to finish.");
+    recovery.reload();
   });
   ipcMain.handle("dazedtl:call", async (event, version, method, params) => {
     trusted(event);
@@ -243,6 +261,7 @@ app.whenReady().then(() => {
         error: {
           code: error.code || "internal",
           message: error.message || "The operation could not finish.",
+          details: error.details,
         },
       };
     }

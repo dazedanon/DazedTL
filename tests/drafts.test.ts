@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { DraftSession } from "../app/src/state/DraftSession.ts";
-import { flushDrafts, registerLeaveGuard } from "../app/src/state/leaveGuards.ts";
+import { flushDrafts, registerLeaveGuard, retainDraft } from "../app/src/state/leaveGuards.ts";
 import type { GuidedPreferences } from "../app/src/api/contracts.ts";
 import { mergeInvestigationSettings, onlyInvestigationSettingsChanged } from "../app/src/features/guided/speakerSetup.ts";
 
@@ -54,7 +54,7 @@ test("edits during an explicit save survive with the new saved revision", async 
   await session.dispose();
 });
 
-test("a failed recovery write blocks leaving and remains retryable", async (t) => {
+test("a failed recovery write blocks leaving and remains retryable after the editor unmounts", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let fail = true;
   const writes: string[] = [];
@@ -64,12 +64,16 @@ test("a failed recovery write blocks leaving and remains retryable", async (t) =
   }, unexpected);
   session.adopt("saved");
   session.edit("keep this edit");
-  const unregister = registerLeaveGuard(session.flush);
-  t.after(unregister);
+  const release = retainDraft(session);
+  t.after(async () => { fail = false; await release(); });
+  await assert.rejects(flushDrafts(), /No space/);
+  await assert.rejects(release(), /No space/);
   await assert.rejects(flushDrafts(), /No space/);
   assert.equal(session.getSnapshot().dirty, true);
   assert.equal(session.getSnapshot().value, "keep this edit");
   fail = false;
+  await flushDrafts();
+  assert.deepEqual(writes, ["keep this edit"]);
   await flushDrafts();
   assert.deepEqual(writes, ["keep this edit"]);
   await session.dispose();

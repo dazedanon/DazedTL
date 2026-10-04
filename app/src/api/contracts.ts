@@ -67,6 +67,7 @@ export interface Job {
   };
 }
 export interface RunProcess {
+  noRequestFiles?: string[];
   monitoring?: { state: "monitoring" | "collecting" | "error" | "save_error" | "blocked"; message: string; checkedAt?: string };
   resultsCollected?: boolean;
   fileMetrics?: Record<string, { cost: number; seconds: number }>;

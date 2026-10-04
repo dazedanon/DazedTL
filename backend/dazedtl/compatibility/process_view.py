@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sqlite3
 
-from dazedtl.translation.files import digest, read_json
+from dazedtl.translation.files import digest, read_json, project_path
 
 
 @lru_cache(maxsize=8)
@@ -45,6 +45,50 @@ def ledger(root):
     return sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
 
 
+def file_stamp(path):
+    stat = path.stat()
+    return stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
+@lru_cache(maxsize=20_000)
+def _verified_digest(path, signature):
+    return digest(Path(path).read_bytes())
+
+
+def consumed_files(root):
+    """Prove local Batch completion without claiming per-request validation.
+
+    Native cleanup may leave preparation-only ledger rows. Terminal provider
+    history plus a bound completed-file receipt settles those old requests;
+    a missing/changed output or native mismatch must keep its recovery guard.
+    This does not exclude the file from later parsing or translate new text.
+    """
+    root = Path(root)
+    history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
+    if not history or not all(batch.get('status') == 'consumed' and batch.get('api_status') in
+                             {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'} for batch in history):
+        return frozenset()
+    try:
+        job_path = project_path(root, 'job.json')
+        plan_path = project_path(root, 'plan.json')
+        job = _read_cached(str(job_path), job_path.stat().st_mtime_ns, job_path.stat().st_size)
+        if job.get('mode') != 'batch' or job.get('status') != 'complete' or job.get('plan_hash') != _verified_digest(str(plan_path), file_stamp(plan_path)):
+            return frozenset()
+        plan = _read_cached(str(plan_path), plan_path.stat().st_mtime_ns, plan_path.stat().st_size)
+        if plan.get('mode') != 'batch' or plan.get('batch_link') or set(job.get('files', [])) != set(plan.get('selected', [])):
+            return frozenset()
+        complete = set(job.get('completed', [])) & set(plan.get('selected', []))
+        complete -= set(job.get('errors', {})) | set(job.get('mismatches', {}))
+        verified = set()
+        for name in complete:
+            path = project_path(root, 'translated/' + name, exists=False)
+            if path.is_file() and job.get('outputs', {}).get(name) == _verified_digest(str(path), file_stamp(path)):
+                verified.add(name)
+        return frozenset(verified)
+    except (OSError, ValueError, KeyError):
+        return frozenset()
+
+
 def ledger_records(root):
     path = Path(root)/'log/dazedtl-process.sqlite3'
     if not path.is_file():
@@ -54,7 +98,9 @@ def ledger_records(root):
     stat = path.stat()
     history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
     consumed = bool(history) and all(batch.get('status') == 'consumed' for batch in history)
-    return _ledger_records(str(root), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), consumed)
+    rows = _ledger_records(str(root), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), consumed)
+    complete = consumed_files(root) if consumed else frozenset()
+    return [{**row, 'state': 'saved'} if row['filename'] in complete and row['state'] in {'prepared', 'uncertain', 'received'} else row for row in rows]
 
 
 @lru_cache(maxsize=8)
@@ -231,6 +277,49 @@ def file_metrics(job):
     return {**result, **job.get('file_metrics', {})}
 
 
+@lru_cache(maxsize=32)
+def _prepared_files(root, signature):
+    connection = ledger(root)
+    if connection is None:
+        return None
+    with closing(connection):
+        columns = {row[1] for row in connection.execute('PRAGMA table_info(requests)')}
+        if not {'filename', 'sources'}.issubset(columns):
+            return None
+        rows = connection.execute('SELECT DISTINCT filename, sources IS NOT NULL FROM requests').fetchall()
+    return frozenset(name for name, _ in rows) if all(name and recorded for name, recorded in rows) else None
+
+
+def no_request_files(root, job, items):
+    """Negative file evidence needs a finished, fully instrumented collection.
+
+    Keep all builder file identities, including callers sharing a deduplicated
+    request. A missing queue filename alone never proves that a file was skipped.
+    """
+    phase = str(job.get('phase', ''))
+    if job.get('mode') != 'batch':
+        return []
+    complete = phase.startswith('poll') or phase in {'collect_done', 'submit', 'consume', 'done', 'no_work'}
+    if not complete and batch_state(root).get('status') not in {'submitted', 'partially_submitted', 'fetched'}:
+        return []
+    root = Path(root)
+    plan_path, ledger_path = root/'plan.json', root/'log/dazedtl-process.sqlite3'
+    if not plan_path.is_file() or plan_path.is_symlink() or not ledger_path.is_file():
+        return []
+    stat = plan_path.stat()
+    plan = _read_cached(str(plan_path), stat.st_mtime_ns, stat.st_size)
+    from dazedtl.settings.preferences import GENERATION_PARAMETERS
+    files = set(job.get('files', []))
+    if ((plan.get('dazedtl_request_policy') or {}).get('generationParameters') != GENERATION_PARAMETERS
+            or files != set(plan.get('selected', [])) or any(item.get('file') not in files for item in items)):
+        return []
+    stat = ledger_path.stat()
+    prepared = _prepared_files(str(root), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+    if prepared is None or not prepared.issubset(files):
+        return []
+    return sorted(files - prepared - {item['file'] for item in items} - set(job.get('errors', {})))
+
+
 def summary(root, job):
     requests = queue(root)
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
@@ -289,6 +378,7 @@ def summary(root, job):
             'validated': validated, 'validatedFiles': len(job.get('completed', [])),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
+            'noRequestFiles': no_request_files(root, job, items),
             'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
             'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)

@@ -121,6 +121,7 @@ class Backend {
         ? task.reject(
             Object.assign(new Error(response.error.message), {
               code: response.error.code,
+              details: response.error.details,
             }),
           )
         : task.resolve(response.result);
