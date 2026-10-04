@@ -27,8 +27,10 @@ import { DiagnosticsAction } from "./DiagnosticsAction";
 export default function App() {
   const application = useApplication();
   const state = application.snapshot?.application;
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const [picker, setPicker] = useState(false);
+  const [settingsOpened, setSettingsOpened] = useState(false);
+  useEffect(() => { if (state?.screen === "settings") setSettingsOpened(true); }, [state?.screen]);
   const ready = useRef(false);
   useEffect(() => {
     if (state && !ready.current) {
@@ -42,18 +44,27 @@ export default function App() {
       if (!source) return;
       await flushDrafts();
       await api.open(source);
+      await application.settle();
+      application.navigate("overview");
       setPicker(false);
     });
   const select = (id: string) =>
     action.run(async () => {
       await flushDrafts();
       await api.select(id);
+      await application.settle();
+      application.navigate("overview");
       setPicker(false);
     });
   const navigate = (screen: Screen) =>
     action.run(async () => {
       await flushDrafts();
-      await api.navigate(screen);
+      application.navigate(screen);
+      // Linking a new Guided project is real setup work. Existing pages use
+      // their observed data and do not send a navigation request to Python.
+      if (["guided", "manual"].includes(screen) && !application.snapshot?.guided) {
+        await api.navigate(screen);
+      }
     });
   const error = application.stopped
     ? application.error
@@ -149,6 +160,7 @@ export default function App() {
                   }
             }
           />
+          {(settingsOpened || state?.screen === "settings") && <div hidden={state?.screen !== "settings"} style={{ display: "contents" }}><Settings /></div>}
           {!state ? (
             <p className="muted">
               {error
@@ -164,10 +176,8 @@ export default function App() {
               go={navigate}
               report={action.report}
             />
-          ) : state.screen === "settings" ? (
-            <Settings />
-          ) : state.project && (state.screen === "guided" || state.screen === "manual") ? (
-            <GuidedWorkflow key={state.project.id} project={state.project} settings={() => navigate("settings")}
+          ) : state.screen === "settings" ? null : state.project && (state.screen === "guided" || state.screen === "manual") ? (
+            <GuidedWorkflow key={state.project.id} project={state.project} opening={action.busy} settings={() => navigate("settings")}
               backups={(target) => application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} actionTarget={target} /> : null}
               versions={(actions) => application.snapshot?.translation ? <VersionsPanel guided project={state.project!} state={application.snapshot.translation} onBackups={actions.backups} onPrepare={actions.prepare} onCheckpoint={actions.checkpoint} actionTarget={actions.target} /> : null} />
           ) : state.project ? (

@@ -19,6 +19,10 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
         snapshot: api.snapshot,
         onMutation,
         onStopped: (handler) => window.dazedtl.onStopped(handler),
+        navigationStorage: {
+          getItem: (key) => window.localStorage.getItem(key),
+          setItem: (key, value) => window.localStorage.setItem(key, value),
+        },
       }),
   );
   useEffect(() => {
@@ -44,5 +48,6 @@ export function useApplication() {
   const store = useContext(Context);
   if (!store) throw new Error("ApplicationProvider is required.");
   const value = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  return { ...value, refresh: store.refresh, clearError: store.clearError };
+  return { ...value, refresh: store.refresh, settle: store.settle, navigate: store.navigate,
+    navigateGuided: store.navigateGuided, clearError: store.clearError };
 }

@@ -9,7 +9,7 @@ import { Section } from "../../ui/Section";
 
 export function ContextPanel({ state }: { state: TranslationState }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const draft = useDocumentDraft(
     "translation-context:" + state.projectId,
     state.drafts.documents,

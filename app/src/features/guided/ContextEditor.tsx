@@ -17,7 +17,7 @@ export default function ContextEditor({
   disabled: boolean;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const draft = useContextDraft(projectId, recovered, action.report);
   return (
     <section className="ui-section guided-context">

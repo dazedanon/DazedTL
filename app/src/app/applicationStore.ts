@@ -1,10 +1,12 @@
 import { ApiError, messageOf } from "../api/errors.ts";
-import type { WorkspaceSnapshot } from "../api/contracts";
+import type { Screen, WorkspaceSnapshot } from "../api/contracts";
+import { Navigation, type NavigationChange, type NavigationStorage } from "./navigation.ts";
 
 export interface ApplicationSource {
   snapshot: () => Promise<WorkspaceSnapshot>;
   onMutation: (handler: (phase: "begin" | "end") => void) => () => void;
   onStopped: (handler: (message: string) => void) => () => void;
+  navigationStorage?: NavigationStorage;
 }
 
 interface State {
@@ -15,10 +17,14 @@ interface State {
 /** One observer per window. Reads never overlap or replace a newer mutation. */
 export class ApplicationStore {
   private source: ApplicationSource;
+  private navigation: Navigation;
   constructor(source: ApplicationSource) {
     this.source = source;
+    this.navigation = new Navigation(source.navigationStorage);
   }
   private value: State = { snapshot: null, error: "", stopped: false };
+  private observed: WorkspaceSnapshot | null = null;
+  private publishedEpoch = -1;
   private listeners = new Set<() => void>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private inFlight: Promise<void> | null = null;
@@ -42,6 +48,18 @@ export class ApplicationStore {
     for (const listener of this.listeners) listener();
   }
   clearError = () => this.publish({ ...this.value, error: "" });
+  navigate = (screen: Screen) => {
+    if (!this.observed) throw new Error("Wait for the workspace to open.");
+    this.navigation.navigate(this.observed, screen);
+    this.publish({ ...this.value, snapshot: this.navigation.observe(this.observed) });
+  };
+  navigateGuided = (projectId: string, change: NavigationChange) => {
+    if (!this.observed) throw new Error("Wait for the workspace to open.");
+    this.navigation.guided(this.observed, projectId, change);
+    this.publish({ ...this.value, snapshot: this.navigation.observe(this.observed) });
+  };
+  /** Only mutations need a fresh observation before an action reports success. */
+  settle = () => this.publishedEpoch === this.epoch && !this.mutations ? Promise.resolve() : this.refresh();
   start() {
     if (this.started) return;
     this.started = true;
@@ -114,8 +132,11 @@ export class ApplicationStore {
       this.readingEpoch = ticket;
       try {
         const snapshot = await this.source.snapshot();
-        if (ticket === this.epoch && !this.mutations && this.started)
-          this.publish({ snapshot, error: "", stopped: false });
+        if (ticket === this.epoch && !this.mutations && this.started) {
+          this.observed = snapshot;
+          this.publishedEpoch = ticket;
+          this.publish({ snapshot: this.navigation.observe(snapshot), error: "", stopped: false });
+        }
       } catch (error) {
         if (ticket === this.epoch && this.started)
           this.publish({

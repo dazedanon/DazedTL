@@ -16,7 +16,7 @@ import { RequestLines } from "./RequestLines";
 const money = (value: number) => "$" + value.toFixed(4);
 export function RequestsPanel({ state }: { state: TranslationState }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const [path, setPath] = useState(".dazedtl/len-method/work/requests.json");
   const [preview, setPreview] = useState<RequestPreview | null>(null);
   const [reviewedRetry, setReviewedRetry] = useState(false);

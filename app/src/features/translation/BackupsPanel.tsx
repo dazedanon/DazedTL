@@ -30,7 +30,7 @@ function backupName(item: Snapshot, state: TranslationState) {
 
 export function BackupsPanel({ state, actionTarget }: { state: TranslationState; actionTarget?: HTMLElement | null }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const [recovering, setRecovering] = useState(false);
   const [catalog, setCatalog] = useState<BackupCatalog | null>(null);
   const [kind, setKind] = useState<Snapshot["kind"]>("source");

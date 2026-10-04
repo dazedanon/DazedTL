@@ -5,6 +5,7 @@
 - Preserve existing user changes and the sibling DazedMTLTool repository.
 - Keep changes focused; preserve engine parsing, context, and translation behavior during migration.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
+- Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
 - Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
 - Use the [UX principles](docs/architecture.md#ux-principles) as the ongoing design and review guide for this tool.
 - Add functional pages incrementally; keep prototype translation routes and synthetic output out of the product.
@@ -26,6 +27,7 @@
 - Automated testing is enabled. Run node scripts/test.mjs for foundation or shared behavior changes; use focused targets while iterating.
 - Builds, static checks, and visual review are allowed when relevant to the change.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
+- For navigation or observer changes, verify that switching already-loaded views with clean drafts completes while a backend read is stalled, sends no navigation or refresh RPC, and survives a late snapshot. Reuse the [observer tests](tests/application.test.ts); retain draft recovery, project ownership, and execution guards.
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
 - Routine reversible actions should start on one click. Keep review where the user must approve cost, scope, or consequential changes; do not remove execution checks or duplicate-submission guards.
 - Action buttons must acknowledge pending work and show success or failure near the control; check saved artifacts on disk before presenting them as available.

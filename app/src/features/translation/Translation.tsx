@@ -78,7 +78,7 @@ function Workspace({
   legacy: ReactNode;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const draft = useProjectOptions(state, action.report);
   const [view, setView] = useState<View>("progress");
   const [imageManager, setImageManager] = useState(false);

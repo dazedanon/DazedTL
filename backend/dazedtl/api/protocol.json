@@ -49,7 +49,7 @@
       "refresh": true
     },
     "guided_draft": {
-      "refresh": false,
+      "refresh": true,
       "duringClose": true
     },
     "guided_save_document": {
@@ -76,7 +76,7 @@
       "refresh": true
     },
     "translation_draft": {
-      "refresh": false,
+      "refresh": true,
       "duringClose": true
     },
     "translation_documents": {
@@ -134,7 +134,7 @@
       "refresh": true
     },
     "guided_options_draft": {
-      "refresh": false,
+      "refresh": true,
       "duringClose": true
     },
     "guided_save_options": {
@@ -159,7 +159,7 @@
       "refresh": false
     },
     "guided_form": {
-      "refresh": false,
+      "refresh": true,
       "duringClose": true
     },
     "guided_context_status": {

@@ -21,7 +21,7 @@ export function PluginWorkspace({projectId,observed,error,footerTarget,continueC
   beforeAction:()=>Promise<unknown>;disabled?:boolean;
 }) {
   const application=useApplication();
-  const action=useAction({after:application.refresh});
+  const action=useAction({after:application.settle});
   const [state,setState]=useState<PluginState|null>(observed||null);
   const stateRef=useRef(state);
   const [list,setList]=useState<PluginList|null>(null), [detail,setDetail]=useState<PluginDetail|null>(null);

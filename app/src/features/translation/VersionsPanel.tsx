@@ -23,7 +23,7 @@ export function VersionsPanel({ project, state, guided = false, onBackups, onPre
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
   const [recovery, setRecovery] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [official, setOfficial] = useState("");

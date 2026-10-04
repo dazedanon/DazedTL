@@ -4,7 +4,7 @@ import {
   ApplicationStore,
   type ApplicationSource,
 } from "../app/src/app/applicationStore.ts";
-import type { WorkspaceSnapshot } from "../app/src/api/contracts.ts";
+import type { GuidedState, Project, WorkspaceSnapshot } from "../app/src/api/contracts.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const snapshot = (ready = false): WorkspaceSnapshot => ({
@@ -20,11 +20,12 @@ const snapshot = (ready = false): WorkspaceSnapshot => ({
   translation: null,
   translationError: "",
 });
-function setup(read: ApplicationSource["snapshot"]) {
+function setup(read: ApplicationSource["snapshot"], navigationStorage?: ApplicationSource["navigationStorage"]) {
   let mutation: (phase: "begin" | "end") => void = () => {};
   let stopped: (message: string) => void = () => {};
   const store = new ApplicationStore({
     snapshot: read,
+    navigationStorage,
     onMutation: (handler) => {
       mutation = handler;
       return () => {
@@ -75,6 +76,8 @@ test("chained writes do not start an intermediate snapshot before the next opera
   t.after(() => store.stop());
   store.start();
   await store.refresh();
+  await store.settle();
+  assert.equal(calls, 1); // A local/read-only action has nothing to refresh.
   mutate("begin");
   mutate("end");
   // A draft save resolves into the action's awaiting navigation continuation.
@@ -84,7 +87,7 @@ test("chained writes do not start an intermediate snapshot before the next opera
   assert.equal(calls, 1);
   mutate("end");
   // Explicit completion need not wait for the automatic refresh timer.
-  await store.refresh();
+  await store.settle();
   assert.equal(calls, 2);
   t.mock.timers.tick(0);
   assert.equal(calls, 2);
@@ -104,6 +107,73 @@ test("chained writes do not start an intermediate snapshot before the next opera
   assert.equal(calls, 5);
   t.mock.timers.tick(0);
   assert.equal(calls, 5); // The in-flight read already supplied the refresh.
+});
+
+const projectSnapshot = (id: string): WorkspaceSnapshot => ({
+  ...snapshot(),
+  application: { ...snapshot().application, project: { id } as Project },
+  guided: {
+    projectId: id, step: "context", task: "guidance", positions: { context: "guidance" },
+    contextDocument: "glossary", documents: { glossary: { text: "", revision: "one" }, game: { text: "", revision: "two" } }, drafts: {},
+    eventText: { view: "audit" }, form: { text: { view: "apply" } },
+  } as GuidedState,
+});
+
+test("navigation completes during an outstanding observation without losing newer project evidence", async (t) => {
+  const initial = projectSnapshot("one");
+  const pending = Promise.withResolvers<WorkspaceSnapshot>();
+  let calls = 0;
+  const { store } = setup(() => ++calls === 1 ? Promise.resolve(initial) : pending.promise);
+  t.after(() => store.stop());
+  store.start(); await store.refresh();
+  const reading = store.refresh();
+  store.navigate("guided");
+  store.navigateGuided("one", { step: "translate", task: "dialogue", eventView: "sources", textView: "fitting", contextDocument: "game" });
+  let settled = false;
+  void store.settle().then(() => { settled = true; });
+  await turn();
+  assert.equal(settled, true);
+  assert.equal(calls, 2);
+  assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
+  pending.resolve({ ...initial, application: { ...initial.application, provider_ready: true } });
+  await reading;
+  const value = store.getSnapshot().snapshot!;
+  assert.equal(value.application.screen, "guided");
+  assert.equal(value.application.provider_ready, true);
+  assert.equal(value.guided?.task, "dialogue");
+  assert.equal(value.guided?.contextDocument, "game");
+  assert.equal(value.guided?.eventText.view, "sources");
+  assert.equal(value.guided?.form.text.view, "fitting");
+});
+
+test("workflow views persist per project and storage failures leave the previous view usable", async (t) => {
+  const records = new Map<string, string>();
+  let fail = false;
+  const storage = {
+    getItem: (key: string) => records.get(key) || null,
+    setItem: (key: string, value: string) => { if (fail) throw new Error("Storage unavailable"); records.set(key, value); },
+  };
+  let current = projectSnapshot("one");
+  const { store } = setup(async () => current, storage);
+  t.after(() => store.stop());
+  store.start(); await store.refresh();
+  store.navigate("guided");
+  store.navigateGuided("one", { step: "translate", task: "dialogue" });
+  fail = true;
+  assert.throws(() => store.navigateGuided("one", { step: "apply", task: "apply" }), /Storage unavailable/);
+  assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
+  fail = false;
+  current = projectSnapshot("two"); await store.refresh();
+  assert.equal(store.getSnapshot().snapshot?.application.screen, "overview");
+  assert.equal(store.getSnapshot().snapshot?.guided?.task, "guidance");
+  assert.throws(() => store.navigateGuided("one", { task: "apply" }), /workspace first/);
+  store.stop();
+  const restored = setup(async () => projectSnapshot("one"), storage).store;
+  t.after(() => restored.stop());
+  restored.start(); await restored.refresh();
+  assert.equal(restored.getSnapshot().snapshot?.guided?.task, "dialogue");
+  assert.deepEqual(restored.getSnapshot().snapshot?.guided?.positions, { context: "guidance", translate: "dialogue" });
+  assert.ok([...records.values()].every(raw => !raw.includes('"documents"')));
 });
 
 test("a late successful read cannot hide a backend disconnection", async (t) => {

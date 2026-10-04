@@ -63,21 +63,22 @@ const panelTitles: Record<Exclude<Panel, null>, string> = {
   options: "Engine options", "translation-context": "Guidance & layout", tools: "Configure game tools", "project-tools": "Project tools",
   preparation: "Preparation tools", exclusions: "Release exclusions", "release-assets": "Additional runtime assets",
 };
-type Props = { project: Project; settings: () => void; backups?: (target: HTMLElement | null) => ReactNode;
+type Props = { project: Project; opening?: boolean; settings: () => void; backups?: (target: HTMLElement | null) => ReactNode;
   versions?: (actions: { backups: () => void; prepare: () => void; checkpoint: () => void; target: HTMLElement | null }) => ReactNode };
 
 export default function GuidedWorkflow(props: Props) {
   const { snapshot } = useApplication();
   const state = snapshot?.guided, translation = snapshot?.translation;
   if (!state || state.projectId !== props.project.id || !translation || translation.projectId !== props.project.id)
-    return <Message message={snapshot?.translationError || "Open this game’s Translation workspace to continue."} />;
+    return props.opening && !snapshot?.translationError ? <p className="muted" role="status">Opening translation workspace…</p>
+      : <Message message={snapshot?.translationError || "Open this game’s Translation workspace to continue."} />;
   return <Workspace key={props.project.id} {...props} state={state} translation={translation} />;
 }
 
 function Workspace({ project, state, translation, settings, backups, versions }: Props & { state: GuidedState; translation: TranslationState }) {
   const application = useApplication();
-  const action = useAction({ after: application.refresh });
-  const speakerAction = useAction({ after: application.refresh });
+  const action = useAction({ after: application.settle });
+  const speakerAction = useAction({ after: application.settle });
   const draft = useGuidedWorkflow(state, action.report);
   const context = useContextDraft(project.id, state.drafts, action.report);
   const form = useDraft("guided-form:" + project.id, { initial: { saved: state.form }, report: action.report, persist: (value) => api.guided.form(project.id, value) });
@@ -87,7 +88,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const stage = stages.find((item) => item.id === position.step)!;
   const selectedTask = stage.tasks.find((item) => item.id === position.task);
   const taskId = selectedTask?.id || "run";
-  const taskView = taskId === "other-event-text" ? state.eventText.view : taskId === "apply" ? fields.text.view : taskId;
+  const taskView = taskId === "other-event-text" ? state.eventText.view : taskId === "apply" ? state.form.text.view : taskId;
   const taskIndex = stage.tasks.findIndex((item) => item.id === taskId);
   const showTaskTabs = stage.tasks.length > 1;
   const taskTabsId = `${stage.id}-tasks`;
@@ -114,10 +115,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [inspected, setInspected] = useState<Job | null>(null);
   const [started, setStarted] = useState<Record<string, Job>>({});
 
-  const documentSelection = useDraft("guided-document:" + project.id, { initial: { saved: state.contextDocument }, report: action.report,
-    persist: (document) => api.guided.position(project.id, "context", "guidance", document) });
-  const documentName = documentSelection.value || state.contextDocument;
-  const setDocumentName = (name: string) => documentSelection.session.edit(name);
+  const documentName = state.contextDocument;
+  const setDocumentName = (name: string) => { void action.run(async () => application.navigateGuided(project.id, { contextDocument: name })); };
   const [output, setOutput] = useState("");
   const [baselineRun, setBaselineRun] = useState<string | null>(null);
   const [baselineNotice, setBaselineNotice] = useState("");
@@ -183,9 +182,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const editRelease = <K extends keyof GuidedForm["release"]>(key: K, value: GuidedForm["release"][K]) => form.session.edit((current) => ({ ...current, release: { ...current.release, [key]: value } }));
   const editText = <K extends keyof GuidedForm["text"]>(key: K, value: GuidedForm["text"][K]) => form.session.edit((current) => ({ ...current, text: { ...current.text, [key]: value } }));
   const save = async () => { await flushDrafts(); if (draft.dirty || state.optionsDraft) await draft.save(); };
-  const navigate = async (step: GuidedStep, task: string) => { await flushDrafts(); await api.guided.position(project.id, step, task); };
+  const navigate = async (step: GuidedStep, task: string) => { await flushDrafts(); application.navigateGuided(project.id, { step, task }); };
   const move = (step: GuidedStep, task: string) => action.run(async () => { await navigate(step, task); setPanel(null); }, "", "position");
-  const eventStep = (view: GuidedState["eventText"]["view"]) => action.run(async () => { await flushDrafts(); await api.guided.eventTextView(project.id, view); await navigate("translate", "other-event-text"); setPanel(null); }, "", "event-text:step");
+  const eventStep = (view: GuidedState["eventText"]["view"]) => action.run(async () => { await flushDrafts(); application.navigateGuided(project.id, { step: "translate", task: "other-event-text", eventView: view }); setPanel(null); }, "", "event-text:step");
   const stepTask = (task: string) => {
     if (["audit", "sources", "advanced-run", "variables"].includes(task)) { void eventStep(task as GuidedState["eventText"]["view"]); return; }
     const owner = stages.find((item) => item.tasks.some((entry) => entry.id === task)); if (owner) void move(owner.id, task);
@@ -316,7 +315,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const layoutOptions = { files: layoutFiles, widths: values.widths, categories: fields.text.categories, codes: fields.text.codes, max_rows: fields.text.max_rows, protect_rows: fields.text.protect_rows, over_limit: fields.only_overflow };
   const fitting = activity.find((item) => item.id === state.readiness.layout_scan)?.result as Preview["rewrap"] | undefined;
   const fittingSettingsSaved = fields.only_overflow === state.form.only_overflow && ["categories", "codes", "max_rows", "protect_rows"].every(key => JSON.stringify(fields.text[key as keyof GuidedForm["text"]]) === JSON.stringify(state.form.text[key as keyof GuidedForm["text"]]));
-  const textView = (view: GuidedForm["text"]["view"]) => action.run(async () => { editText("view", view); await flushDrafts(); }, "", "text:view");
+  const textView = (view: GuidedForm["text"]["view"]) => action.run(async () => { await flushDrafts(); application.navigateGuided(project.id, { textView: view }); }, "", "text:view");
   const releaseButton = <Button variant="quiet" disabled={action.busy || form.committing} onClick={() => stepTask("package")}>Continue to Release</Button>;
   const widths = <fieldset disabled={disabled} className="guided-widths">{([["width", "Dialogue"], ["faceWidth", "With portrait"], ["listWidth", "List / help"], ["noteWidth", "Notes"]] as const).map(([key, label]) =>
     <label key={key}>{label}<input aria-label={label + " width in characters"} type="number" min={20} max={key === "faceWidth" ? values.widths.width : 300} value={values.widths[key]}
@@ -689,7 +688,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
       await api.guided.eventTextReview(project.id, sourceReview.revision, sourceReview.state.binding, sourceReview.state.reportId, reason, accepted);
-      setSourceReview(null); await api.guided.eventTextView(project.id, "advanced-run");
+      setSourceReview(null); application.navigateGuided(project.id, { eventView: "advanced-run" });
     }, "Source choices reviewed. Estimate this scope before paid review.", "event-text:confirm")} />}
     {comparisonReview && <Modal label="Review comparison coverage" className="guided-sheet" dismissible={!action.busy} onDismiss={() => setComparisonReview(false)}>
       <header className="guided-sheet-heading"><h2>Review matching comparisons</h2></header><div className="guided-sheet-body"><p>Mappings are keyed by literal text, not variable ID. The engine updates every matching quoted literal in these selected code-111 expressions. A saved mapping does not prove a logic string is safe to translate.</p>

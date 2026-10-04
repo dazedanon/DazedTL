@@ -224,30 +224,39 @@ Working copies are seeded from current game bytes and are retained across naviga
 Reload from game explicitly archives the checked working copies, staged outputs and variable cache, then copies the current game files. Per-file versions prevent earlier runs from replacing those reloaded files or supplying stale cached responses. Other files keep their progress; frozen run outputs remain inspectable under their original project owner.
 The former manual screen remains a compatibility route into Translation, preserving saved project identity.
 
+### Navigation and responsiveness
+
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,
 backend job references, phase selections and recovery data when adding workflow screens.
 Portable workflow options live in the selected game's .dazedtl/len-method/workflow.json; the old Len project.json is imported without being overwritten.
 The app profile holds connections, recoverable drafts, run plans and receipts, and older full-copy backups. New source/workspace snapshots live in the game's .dazedtl/backups/v2 store. Source guidance remains in the established game files.
 `useApplication` supplies shared state through one observer; feature polling loops would introduce competing reads.
 The application provider supplies its API and browser event subscriptions; the observer owns response ordering and refresh scheduling.
+The shared [navigation state](../app/src/app/navigation.ts) owns the visible screen and per-project workflow views independently of backend observations. Existing screens switch from already observed data after draft leave guards finish; a background read cannot move the user back. The shell starts at Overview on launch or project selection. Workflow tasks, document tabs, event-code views and fitting views are small browser-profile preferences, written before the view changes; older backend positions supply the fallback until local preferences exist. These preferences contain no game text, drafts or execution authority. The first entry into an uninitialized Guided workspace still links it through the backend.
+Route application screens and Guided workflow locations through the shared navigation methods exposed by `useApplication`; keep feature-local view choices in their owning UI state. Switching an already-loaded view with clean drafts must not require a Python request or await a project snapshot. Retain usable page data across revisits where its ownership and invalidation rules permit; scope any missing-data load and its pending feedback to the feature that needs it. [App](../app/src/app/App.tsx) and [GuidedWorkflow](../app/src/features/guided/GuidedWorkflow.tsx) provide working examples.
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
+Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state. Reserve `application.refresh` for an intentional re-read, such as an explicit reload control. Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible. Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
+New observation work must use bounded summaries or cached derivations with explicit invalidation. Do not add whole-game parsing or full request-history reconstruction to a polling snapshot. Measure nontrivial additions with representative generated data; keep authoritative source, artifact and spending checks at their execution or explicit inspection boundaries. Cached display state never authorizes paid work or file publication.
 Each Guided observation reuses its run views. Variable-comparison observations retain only parsed literals bound to the current file content; mappings, selection, settings and review are reconciled on every read.
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
-Guided engine options use the same draft session and retain the native revision check. Its step and
-setup-form recovery live alongside project records in the profile.
+Mutations changing snapshot-backed state, including recovery drafts, must declare `refresh: true` in the [protocol manifest](../backend/dazedtl/api/protocol.json), so remounted editors cannot recover an older draft from the cached snapshot.
+Guided engine options use the same draft session and retain the native revision check. Setup-form recovery lives alongside project records in the profile.
 Opening Guided transfers any pending shared-context draft before linking the native workflow.
 Never retry writes automatically, since some actions submit paid work.
 
+### Persistence and settings
+
 Project-format changes increment `SCHEMA_VERSION` and register consecutive upgrades in [projects/store.py](../backend/dazedtl/projects/store.py).
 The storage helper validates the result, retains the original bytes in a backup, and replaces the file atomically; unsupported or invalid formats are left untouched.
-Project opening, selection, and navigation publish their in-memory state only after persistence succeeds.
+Project opening and selection publish their in-memory ownership only after backend persistence succeeds; presentation-only navigation does not change that ownership.
 Engine-owned settings and run formats remain the adapter's responsibility.
 Diagnostics record only fixed metadata and relative code locations, excluding exception messages, payloads, and raw stderr.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
+The Settings editor retains its session while hidden, so returning preserves its current view and fields without another initial settings read.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
 The public preference schema contains language, model, and per-model request/pricing options; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
