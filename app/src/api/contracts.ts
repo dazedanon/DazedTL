@@ -47,6 +47,8 @@ export interface Job {
   outputs?: Record<string, string>;
   outputsAvailable?: boolean;
   availableOutputs?: string[];
+  partialOutputs?: string[];
+  retiredFiles?: string[];
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
   scopeComplete?: boolean;
@@ -722,6 +724,7 @@ export interface RpcContract {
   };
   guided_stop: { request: { project_id: string; run_id?: string }; response: Job };
   guided_resume: { request: { project_id: string; run_id?: string }; response: Job };
+  guided_output_folder: { request: { project_id: string }; response: { path: string } };
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };

@@ -37,6 +37,17 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already used"):
             p.publish(self.folder, self.root, canceled)
 
+    def test_explicit_overwrite_uses_frozen_output_and_backs_up_latest_game_edits(self):
+        plan = p.freeze(self.folder, self.root, self.after, "export_selected", overwrite=True)
+        newer = b'{"text":"manual edit after preview"}'
+        write_bytes(self.root / "data/A.json", newer)
+        result = p.publish(self.folder, self.root, plan)
+        self.assertEqual((self.root / "data/A.json").read_bytes(), self.after["data/A.json"])
+        restore, _ = p.restore_candidates(self.folder, self.root, result["publication"])
+        self.assertEqual(restore["data/A.json"], newer)
+        with self.assertRaises(ValueError):
+            p.publish(self.folder, self.root, plan)
+
     def test_write_then_raise_rolls_back_the_attempted_batch_and_retains_backups(self):
         plan = p.freeze(self.folder, self.root, self.after, "export_selected")
         def failing(path, raw):

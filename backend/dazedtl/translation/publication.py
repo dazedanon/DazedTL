@@ -41,7 +41,7 @@ def json_hash(value):
     return digest((json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode())
 
 
-def freeze(folder, root, candidates, kind, *, outputs=None, restore=None):
+def freeze(folder, root, candidates, kind, *, outputs=None, restore=None, overwrite=False):
     """Freeze both sides before the user reviews an exact destination batch."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
@@ -61,7 +61,7 @@ def freeze(folder, root, candidates, kind, *, outputs=None, restore=None):
         rows.append({"path": name, "before": digest(before), "after": digest(raw), "index": index,
                      "size": len(raw), "mode": target.stat().st_mode & 0o777})
     record = {"version": 1, "id": identity, "created": time.time(), "root": str(Path(root).resolve()),
-              "kind": kind, "state": "reviewed", "files": rows,
+              "kind": kind, "state": "reviewed", "files": rows, "overwrite": overwrite,
               "prior_outputs": previous, "next_outputs": following,
               "outputs_hash": receipt_hash(folder), "restores": restore["id"] if restore else None}
     index = Path(folder) / "source-inputs.json"
@@ -96,7 +96,7 @@ def publish(folder, root, plan, log=lambda _: None):
         target = project_path(root, row["path"])
         before = project_path(base, f"{row['index']}.before").read_bytes()
         after = project_path(base, f"{row['index']}.after").read_bytes()
-        if digest(before) != row["before"] or digest(after) != row["after"] or digest(target.read_bytes()) != row["before"]:
+        if digest(before) != row["before"] or digest(after) != row["after"] or (not record.get("overwrite") and digest(target.read_bytes()) != row["before"]):
             raise ValueError("A source, destination or frozen candidate changed. Review again.")
         payloads.append((target, row, before, after))
     log("Publishing the reviewed batch; backups are retained.")
@@ -105,7 +105,14 @@ def publish(folder, root, plan, log=lambda _: None):
     attempted = []
     try:
         for target, row, before, after in payloads:
-            if digest(target.read_bytes()) != row["before"]:
+            if record.get("overwrite"):
+                # Explicit full-file Apply backs up the bytes present at the
+                # actual overwrite, including edits made after its preview.
+                before = target.read_bytes()
+                row["before"], row["mode"] = digest(before), target.stat().st_mode & 0o777
+                write_bytes(base / f"{row['index']}.before", before)
+                write_json(base / "receipt.json", record)
+            elif digest(target.read_bytes()) != row["before"]:
                 raise ValueError("A runtime file changed during publication.")
             attempted.append((target, row, before, after))
             write_bytes(target, after)

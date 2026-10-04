@@ -18,7 +18,7 @@ class Evidence:
         self.mode = mode
         self.local = threading.local()
         self.plan = plan or {}
-        self.reused = self.plan.get('dazedtl_continuation', {})
+        self.reused = dict(self.plan.get('dazedtl_continuation', {}))
         self.root, self.locations = Path(root), {}
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
@@ -28,6 +28,8 @@ class Evidence:
                 if name not in columns(connection):
                     connection.execute('ALTER TABLE requests ADD COLUMN ' + name + ' TEXT')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)')
+            for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
+                self.reused[key] = {'source': source, 'response': json.loads(response)}
 
     @contextmanager
     def connect(self):

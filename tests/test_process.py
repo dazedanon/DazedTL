@@ -17,6 +17,51 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_checkpoint_resume_reads_partial_json_without_mutating_frozen_inputs(self):
+        from dazedtl.compatibility import checkpoints
+        from dazedtl.storage import write_bytes
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = [{'name': '薬', 'description': '説明'}]
+            partial = [{'name': 'Potion', 'description': '説明', '_original': {'name': '薬'}}]
+            plan = {'mode': 'translate', 'files': [{'name': 'Items.json'}]}
+            write_json(root/'plan.json', plan)
+            write_json(root/'files/Items.json', source)
+            original = (root/'files/Items.json').read_bytes()
+            module = SimpleNamespace(saveProgress=lambda data, name, **_: (write_json(root/'translated'/name, data), True)[1])
+            checkpoints.install(module, root, plan)
+            module.saveProgress(partial, 'Items.json')
+            self.assertIn('Items.json', checkpoints.outputs(root, plan))
+            # A fresh worker sees the checkpoint even if the previous process died.
+            replacement = SimpleNamespace(saveProgress=module.saveProgress)
+            checkpoints.install(replacement, root, plan)
+            with replacement.open(root/'files/Items.json', encoding='utf-8') as stream:
+                self.assertEqual(json.load(stream), partial)
+            self.assertEqual((root/'files/Items.json').read_bytes(), original)
+            # Never bless bytes written after the last durable checkpoint receipt.
+            write_bytes(root/'translated/Items.json', b'{"different":"unreceipted"}')
+            self.assertEqual(checkpoints.outputs(root, plan), {})
+            # Batch consumption keeps its frozen request grouping and uses receipts.
+            plan['mode'] = 'batch'
+            write_json(root/'plan.json', plan)
+            (root/checkpoints.INDEX).unlink()
+            batch = SimpleNamespace(saveProgress=lambda data, name, **_: (write_json(root/'translated'/name, data), True)[1])
+            checkpoints.install(batch, root, plan)
+            batch.saveProgress(partial, 'Items.json')
+            with batch.open(root/'files/Items.json', encoding='utf-8') as stream:
+                self.assertEqual(json.load(stream), source)
+            write_json(root/'plan.json', {**plan, 'files': [{'name': 'Foreign.json'}]})
+            with self.assertRaises(ValueError):
+                checkpoints.outputs(root, plan)
+
+    def test_reopened_evidence_reuses_its_own_validated_results(self):
+        with TemporaryDirectory() as temporary:
+            evidence = Evidence(temporary, 'translate')
+            with evidence.connect() as connection:
+                connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('item', '薬', '"Potion"'))
+            reopened = Evidence(temporary, 'translate', {'dazedtl_continuation': {'item': {'source': '薬', 'response': 'Older'}}})
+            self.assertEqual(reopened.reused['item'], {'source': '薬', 'response': 'Potion'})
+
     def test_fresh_start_requires_complete_terminal_rejection_receipts(self):
         # A failed worker is not proof of no provider work. Protect missing,
         # pending, partial-success, conflicting, and duplicate submission evidence.

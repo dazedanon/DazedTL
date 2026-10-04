@@ -174,6 +174,23 @@ class GuidedTests(unittest.TestCase):
         write_json(self.folder / 'source-inputs.json', {'version': 1, 'inputs': {}, 'retired_runs': [identity]})
         self.assertFalse(self.guided.runs.quote(self.identity, self.native, 'database', 'batch')[0]['current'])
 
+    def test_reload_does_not_reuse_results_from_an_earlier_working_copy(self):
+        from dazedtl.compatibility.run_evidence import Evidence
+        inputs = self.guided.inputs(self.native)
+        inputs.prepare(['Items.json'])
+        recorded = self.guided.runs.inputs(self.identity, self.native, 'database', 'translate')
+        job = {'id': 'prior-working-copy', 'mode': 'translate', 'status': 'complete', 'files': ['Items.json'], 'log': []}
+        self.backend.manual.jobs[job['id']] = job
+        self.guided.runs.remember(self.identity, job, recorded)
+        evidence = Evidence(self.backend.manual.folder(job['id']), 'translate')
+        with evidence.connect() as connection:
+            connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('item', '薬', '"Prior wording"'))
+        self.assertEqual(self.guided.runs.continuation(self.identity, self.native, recorded)['item']['response'], 'Prior wording')
+        inputs.prepare(['Items.json'], refresh=True, expected=inputs.sources(['Items.json'], inputs.record()['inputs'], fresh=True))
+        current = self.guided.runs.inputs(self.identity, self.native, 'database', 'translate')
+        self.assertEqual(self.guided.runs.continuation(self.identity, self.native, current), {})
+        self.assertTrue(evidence.path.is_file())
+
     def test_completed_phase_and_apply_status_require_that_runs_verified_outputs(self):
         identity = 'completed-database'
         output = [{'name': 'Fixture term'}]
@@ -259,6 +276,35 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.guided.readiness(self.identity, self.native, state)['unapplied'], ['Items.json'])
         with self.assertRaisesRegex(ValueError, 'Apply the selected saved outputs'):
             self.guided.release_ready(self.identity, self.native, state)
+
+    def test_guidance_save_replaces_external_edits_and_retains_other_drafts(self):
+        path = self.source / 'glossary.txt'
+        path.write_text('Changed outside the editor')
+        pending = {'documents': {'glossary': {'text': 'My draft', 'revision': 'older'},
+                                  'game': {'text': 'Keep this draft', 'revision': 'other'}}}
+        documents = lambda _: {'glossary': {'text': path.read_text(), 'revision': digest(path.read_bytes()), 'path': str(path)}}
+        self.backend.workflows.documents = documents
+        self.backend.workflows.state = lambda _: {'draft': pending}
+        self.backend.workflows.draft = Mock()
+        def save(owner, name, revision, text):
+            self.assertEqual(owner, 'native')
+            self.assertEqual(name, 'glossary')
+            self.assertEqual(revision, digest(path.read_bytes()))
+            path.write_text(text)
+            return documents(owner)
+        self.backend.workflows.document_save = save
+        self.guided.save_document(self.identity, 'glossary', 'older', 'My draft')
+        self.assertEqual(path.read_text(), 'My draft')
+        self.assertEqual(set(pending['documents']), {'game'})
+        self.guided.save_document(self.identity, 'glossary', 'older', '')
+        self.assertTrue(path.is_file())
+        self.assertEqual(path.read_text(), '')
+        pending['documents']['glossary'] = {'text': 'Keep after failure', 'revision': 'older'}
+        self.backend.workflows.document_save = Mock(side_effect=OSError('No space'))
+        with self.assertRaises(OSError):
+            self.guided.save_document(self.identity, 'glossary', 'older', 'Keep after failure')
+        self.assertEqual(pending['documents']['glossary']['text'], 'Keep after failure')
+        self.assertEqual(path.read_text(), '')
 
     def test_document_selection_migrates_review_positions_and_stays_with_its_project(self):
         self.backend.workflows.documents = lambda _: {"glossary": {}, "quirks": {}, "game": {}}
@@ -853,48 +899,51 @@ class GuidedTests(unittest.TestCase):
             self.preview()
         self.assertEqual(len(calls), 1)
 
-    def test_source_drift_blocks_new_work_and_refresh_preserves_previous_outputs(self):
+    def test_game_edits_do_not_replace_working_progress_until_explicit_reload(self):
         inputs = self.guided.inputs(self.native)
         inputs.prepare(['Items.json'])
         write_json(self.folder/'translated/Items.json', [{'name': 'Potion'}])
         write_json(self.folder/'files/Items.json', [{'name': 'Saved database phase'}])
         write_json(self.source/'Items.json', [{'name': '新しい薬'}])
-        with self.assertRaises(ValueError):
-            self.preview()
+        self.assertIsNotNone(self.preview()['token'])
+        self.assertEqual(inputs.status(['Items.json'])['changed'], [])
         self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': 'Saved database phase'}])
-        refreshed = inputs.prepare(['Items.json'], refresh=True, expected=inputs.sources(['Items.json'], inputs.record()['inputs']), retired=['former-run'])
+        refreshed = inputs.prepare(['Items.json'], refresh=True, expected=inputs.sources(['Items.json'], inputs.record()['inputs'], fresh=True), retired=['former-run'])
         archive = Path(refreshed['archive'])
         self.assertEqual(read_json(archive/'translated/Items.json'), [{'name': 'Potion'}])
         self.assertEqual(read_json(archive/'files/Items.json'), [{'name': 'Saved database phase'}])
         self.assertFalse((self.folder/'translated/Items.json').exists())
         self.assertEqual(inputs.record()['retired_runs'], ['former-run'])
+        self.assertEqual(inputs.record()['file_versions']['Items.json'], archive.name)
         self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': '新しい薬'}])
         self.assertIsNotNone(self.preview()['token'])
         with self.assertRaises(ValueError):
             inputs.prepare(['Items.json'], refresh=True, expected={})
 
-    def test_original_blobs_seed_new_work_and_exact_applied_exports_are_not_source_drift(self):
+    def test_current_game_seeds_working_copies_and_original_backups_remain_separate(self):
         write_json(self.source/'Items.json', [{'name': 'English runtime'}])
         inputs = GuidedInputs(self.folder, self.source, self.source,
                               lambda *_args: {'Items.json': 'original'}, lambda *_args: b'[{"name":"Japanese baseline"}]')
         inputs.prepare(['Items.json'])
-        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': 'Japanese baseline'}])
+        self.assertEqual(read_json(self.folder/'files/Items.json'), [{'name': 'English runtime'}])
         self.assertEqual(inputs.status(['Items.json'])['changed'], [])
         # Native Ace JSON exports do not live in Git; an exact applied output is
-        # still the same source identity, while unrelated edits require review.
+        # still the same source identity. Game edits wait for explicit reload.
         self.guided.inputs(self.native).prepare(['Items.json'], refresh=True)
         write_json(self.folder/'translated/Items.json', [{'name': 'Applied English'}])
         (self.source/'Items.json').write_bytes((self.folder/'translated/Items.json').read_bytes())
         self.assertEqual(self.guided.inputs(self.native).status(['Items.json'])['changed'], [])
         write_json(self.source/'Items.json', [{'name': 'Changed export'}])
-        self.assertEqual(self.guided.inputs(self.native).status(['Items.json'])['changed'], ['Items.json'])
+        self.assertEqual(self.guided.inputs(self.native).status(['Items.json'])['changed'], [])
         native_inputs = GuidedInputs(self.folder, self.source, self.source,
                                      lambda *_: {'Data/Items.rvdata2': 'native-original'}, lambda *_: b'', native_exports=True)
         native_inputs.prepare(['Items.json'], refresh=True)
         write_json(self.source/'Items.json', [{'name': 'Fitted runtime English'}])
         self.assertEqual(native_inputs.status(['Items.json'])['changed'], [])
         native_inputs.bindings = lambda *_: {'Data/Items.rvdata2': 'new-native-original'}
-        self.assertEqual(native_inputs.status(['Items.json'])['changed'], ['Items.json'])
+        self.assertEqual(native_inputs.status(['Items.json'])['changed'], [])
+        native_inputs.prepare(['Items.json'], refresh=True)
+        self.assertEqual(native_inputs.record()['inputs']['Items.json']['identity']['native_original']['blob'], 'new-native-original')
 
     def test_fitting_does_not_request_reapplication_and_changed_review_or_missing_output_is_pending(self):
         self.native['files'] = [{'name': 'Items.json'}]

@@ -91,6 +91,15 @@ def guard(project, folder):
 def phased_workflows(workspace, lock, operations, manual):
     from desktop.backend.workflow import Workflows
     class ScopedWorkflows(Workflows):
+        def execute(self, token):
+            plan = self.previews.get(token)
+            if plan and plan.get("overwrite_runtime") and plan.get("action") == "export_selected":
+                from .text import validate_publication
+                self.previews.pop(token)
+                validate_publication(plan)
+                return self.operations.start(plan)
+            return super().execute(token)
+
         def apply_speaker_settings(self, identity, revision, options, receipt):
             from util.engine_options import validate_engine_options
             project = self.projects[identity]
@@ -108,7 +117,15 @@ def phased_workflows(workspace, lock, operations, manual):
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):
                 return  # Frozen work from an older source pass stays in its own run.
-            super()._collect(project)
+            versions = read_json(index).get("file_versions", {}) if index.exists() else {}
+            current = self.manual.jobs.get(project.get("manual_job"))
+            current_plan = self.manual.folder(current["id"]) / "plan.json" if current else None
+            same_pass = True
+            if current_plan and current_plan.is_file():
+                saved = read_json(current_plan)
+                same_pass = all(versions.get(name, "") == saved.get("dazedtl_source_versions", {}).get(name, "") for name in current.get("files", []))
+            if same_pass:
+                super()._collect(project)
             # Native collection only follows one completed run. Preserve verified
             # completed files from older or partly failed runs as well, without
             # overwriting a newer working copy or merging changed guidance.
@@ -116,7 +133,7 @@ def phased_workflows(workspace, lock, operations, manual):
             retired = read_json(index).get('retired_runs', []) if index.exists() else []
             changed = False
             for identity, job in self.manual.jobs.items():
-                if identity in retired or job.get('mode') == 'estimate' or not job.get('outputs'):
+                if identity in retired or job.get('mode') == 'estimate':
                     continue
                 source = self.manual.folder(identity)
                 try:
@@ -124,20 +141,25 @@ def phased_workflows(workspace, lock, operations, manual):
                     plan = read_json(plan_path)
                     if digest(plan_path.read_bytes()) != job['plan_hash'] or (plan.get('workflow') or {}).get('id') != project['id']:
                         continue
+                    from .checkpoints import outputs as checkpoint_outputs
+                    outputs = {**job.get('outputs', {}), **checkpoint_outputs(source, plan)}
                     before = {row['name']: row['sha256'] for row in plan['files']}
-                    for name, expected in job['outputs'].items():
+                    for name, expected in outputs.items():
+                        if versions.get(name, '') != plan.get('dazedtl_source_versions', {}).get(name, ''):
+                            continue
                         marker = identity + ':' + name
                         if collected.get(marker) == expected:
                             continue
                         output = project_path(source / 'translated', name)
                         working = project_path(self.folder(project['id']) / 'files', name)
-                        destination = project_path(self.folder(project['id']) / 'translated', name, exists=False)
+                        destination = project_path(self.folder(project['id']), 'translated/' + name, exists=False)
                         if digest(output.read_bytes()) != expected or digest(working.read_bytes()) not in {before.get(name), expected}:
                             continue
-                        if destination.exists() and digest(destination.read_bytes()) not in {before.get(name), expected}:
+                        if destination.exists() and digest(destination.read_bytes()) not in {before.get(name), expected, collected.get(marker)}:
                             continue
                         destination.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copyfile(output, destination)
+                        from dazedtl.storage import write_bytes
+                        write_bytes(destination, output.read_bytes())
                         collected[marker] = expected
                         changed = True
                 except (OSError, ValueError, KeyError):

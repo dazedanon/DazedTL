@@ -1,6 +1,3 @@
-.translation-task-nav { flex-shrink:0; padding:var(--space-2) var(--space-6) 0; }
-.translation-task-nav .ui-tabs { gap:var(--space-5); }
-.translation-task-nav button span { color:var(--color-success); margin-right:var(--space-2); }
 .guided-workspace .guided-task-body.translation-task-body { display:flex; flex-direction:column; padding:var(--space-4) var(--space-6); }
 .translation-task-body > .guided-task-heading { flex-shrink:0; }
 .translation-workspace { display:flex; flex-direction:column; flex:1; min-height:320px; min-width:0; }
@@ -66,7 +63,6 @@
 .translation-substeps button[aria-pressed="true"] { color:var(--accent); }
 @container translation-files (max-width:410px) { .translation-file-head,.translation-file-row { grid-template-columns:16px minmax(0,1fr) 16px; }.translation-file-head > span:last-child,.translation-status-text { display:none; } }
 @media(max-width:1050px) {
-  .translation-task-nav { padding-inline:var(--space-4); }.translation-task-nav .ui-tabs { gap:var(--space-3); }
   .guided-workspace .guided-task-body.translation-task-body { padding:var(--space-3) var(--space-4); }
   .translation-columns { gap:var(--space-4); grid-template-columns:minmax(0,1fr) minmax(220px,.9fr); }
   .translation-setup { padding-left:var(--space-4); }
@@ -88,3 +84,13 @@
 .is-inspecting .translation-intro { display:none; }
 
 .translation-source-toolbar { display:flex; justify-content:space-between; align-items:center; gap:var(--space-3); font-size:var(--font-small); color:var(--muted); flex-shrink:0; }
+
+.translation-action-context { display:flex; flex:1 1 100%; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2) var(--space-4); min-width:0; }
+.translation-action-scope { min-width:0; flex:1 1 15em; font-size:var(--font-small); line-height:1.5; }
+.translation-action-scope strong { font-weight:600; }.translation-action-scope small { display:block; color:var(--muted); font:inherit; }
+.translation-navigation-actions,.translation-submit-actions { display:flex; align-items:flex-start; flex-wrap:wrap; gap:var(--space-2); min-width:0; }
+.translation-apply-action { padding-left:var(--space-3); border-left:1px solid var(--line); min-width:0; }
+.action-bar:has(.translation-action-context) { gap:var(--space-2); }
+.translation-preview-check { font-size:var(--font-small); color:var(--muted); }
+
+@media(max-width:1050px) { .translation-next-task { display:none; } }

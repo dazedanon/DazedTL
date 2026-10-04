@@ -201,7 +201,7 @@ app.whenReady().then(() => {
           ? result?.application?.project
           : result?.project;
       if (selected?.source) currentSource = selected.source;
-      if (method === "guided_export") outputs.add(result.path);
+      if (method === "guided_export" || method === "guided_output_folder") outputs.add(result.path);
       if (method === "workspace_snapshot") {
         backupFolders.clear();
         for (const key of ["source_backup", "prepared_source", "workspace_backup"]) {

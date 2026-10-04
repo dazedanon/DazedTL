@@ -25,7 +25,7 @@ The default engine location is shared by the launcher and Electron backend throu
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
-The Translation workspace composes file selection, preferences and the preserved phased runner.
+The Translation workspace composes file selection, preferences and the preserved phased runner. Working-copy ownership and reload behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase retains its estimate beside the saved run, bound to source, scope, provider and pricing, guidance, and layout.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
@@ -39,6 +39,7 @@ Grouped requests carry their state-ID and field associations as context beside t
 Actor-substitution calls and note calls retain their original boundaries.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
+The [checkpoint adapter](../backend/dazedtl/compatibility/checkpoints.py) records verified native JSON progress saves. Live resumes read those partial outputs through the native file reader while preserving frozen input snapshots, and reload validated responses from the same run to cover the gap before a checkpoint. Batch consume keeps its original input grouping and saved provider responses. The collector exposes verified partial outputs without overwriting newer staged copies.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
 Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
 The user generates a local estimate, optionally inspects prepared source/context, then starts Live review or local Batch preparation. Navigation and reopening never start paid work automatically.
@@ -52,17 +53,17 @@ File lists use the shared variable-height virtual list with compact rows, search
 Incoming observations preserve the reader's selected file, request, tab and scroll position. New response states offer explicit refresh; older records without file provenance identify their scope limitation.
 History retains its separate paged request inspector and saved view preferences without storing payloads in browser preferences.
 Saved translated output and currently verified runtime files are separate counts.
-An older Apply receipt does not establish that the current game still matches a run's output; later game edits remain visible and protected by the existing publication review.
+An older Apply receipt does not establish that the current game still matches a run’s output. Explicit text Apply is a full overwrite: it binds the frozen candidate and destination scope while accepting intervening game-data edits. It captures the actual overwritten bytes for rollback at execution. Fitting, QA and restore keep their existing exact-before checks; no background synchronization is performed.
 Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
 All project-owned runs remain in History automatically, including failed and canceled runs. The native pointer is not the ownership registry.
 Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
 Source identity currently treats repeated identical strings within one file and phase as aliases. Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase. Interrupted old Live runs without request evidence protect only their shared file/phase scope; their send outcomes cannot be reconstructed locally.
 Provider monitoring and new runs have independent isolated workers. The cost approval rechecks other saved request receipts under the API lock before sending. Existing saved-run resumes retain their frozen settings and require explicit review; new remaining work requires a fresh estimate and spending review.
-Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
+The action footer keeps Estimate, Translate and Apply visible in setup and preview views. Their primary emphasis follows estimate readiness and completed output. Translate more files returns to selection; estimating another pass retains the engine’s skip-translated behavior. Apply includes only checked files with saved output in the current task, including output from earlier runs.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,
-selection, settings and runtime-scope changes invalidate the relevant preview. The preserved runner
+selection, settings and working-output changes invalidate the relevant preview. Explicit full-overwrite Apply does not track runtime JSON conflicts. The preserved runner
 continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
 App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
 Guided release freezes the current runtime scope and original-source bindings through an app-only,
@@ -136,7 +137,7 @@ Formatting, GameUpdate creation, initial source backup, and local estimation con
 the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.
 
-Translation follows the working Qt GUI's task dependencies through the tasks in
+Translation follows the working Qt GUI's task order through the tasks in
 [workflow.ts](../app/src/features/guided/workflow.ts). The app sidebar stays global; every phase uses the same wrapping top stage strip.
 One task occupies the editing
 body and its action footer stays outside the scroll region. One copied setup task identifies
@@ -144,6 +145,7 @@ speaker formats, runs local name collection, then uses those results for the glo
 investigation. Guidance review and layout settings follow before
 the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
+Every phase with multiple tasks uses the same clickable task tabs. Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks. Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
 Explicitly declined speaker preflight is interpreted as canceled only with verified first-attempt, no-submission evidence and no saved outputs or queue artifacts.
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
@@ -170,13 +172,11 @@ boundary. Pending option drafts and actively running workers defer application; 
 do not block speaker setup or local scanning and retain their frozen settings and receipts.
 The shared observer reports scanner results; manual overrides survive new findings
 until explicitly reset.
-Names and context completion requires a request-bound context report, a current local name scan, and matching saved document revisions.
-Document existence alone does not verify an investigation; existing guidance can be reviewed independently.
-One review task keeps glossary, translation style/quirks and game context in separate tabs, with custom guidance available separately.
+Guidance setup is complete when the glossary, style and game-context files exist in the game folder, including empty files. Edits, drafts, scan freshness and old investigation records do not revoke completion. No document review or conflict receipts are required; the optional context findings record supplies measured layout recommendations only.
+The guidance editor keeps glossary, translation style/quirks and game context in separate tabs, with custom guidance available separately.
 The selected tab is retained per project, and legacy glossary/voice review positions open the corresponding tab.
 Missing custom files remain addressable while their recovery drafts exist.
-Switching tabs retains edits without completing review; continuing validates the complete set and reports successful writes if a later document save fails.
-Empty guidance requires an explicit retained choice, and disk changes beneath a draft require comparison before a guarded replacement or rebase.
+Switching tabs and continuing retain drafts. Explicit Save writes the editor's guidance over the current files through the native serializer, creating missing core files without an empty-document approval. It reports successful writes if a later document save fails and retains remaining drafts. Guidance has no revision-conflict workflow; paid estimates still bind the actual saved inputs used for translation.
 The shared plain-text editor retains glossary category headers, source (translation) entries and same-line notes; engine parsing and per-batch selection remain unchanged.
 Layout recommendations reuse the first investigation’s source evidence; defaults are identified separately and remeasurement remains optional.
 Saved findings describe the investigated source; translating runtime files does not erase that record.
@@ -216,13 +216,8 @@ QA and opening the game are optional, with no playtest records or QA prerequisit
 The selected phase files bind each new run and each application preview. Working copies are
 prepared automatically without removing other phase work. The compatibility launcher filters
 the preserved phase's selected files, retaining its profiles, glossary, speakers, and frozen run format.
-New tracked inputs come from original-branch blobs. Ace exports bind to their native original blobs
-when available, so fitting or packing runtime translations does not create false source drift;
-untracked exports bind to source bytes.
-Source changes block new work until an explicit refresh archives affected working copies, outputs,
-and variable cache in profile source-history. Existing runs keep their original recovery records.
-Runs retired by that refresh cannot merge older results into the new pass; their frozen outputs
-remain inspectable and exportable under the original project owner.
+Working copies are seeded from current game bytes and are retained across navigation, estimates and restarts. Original-branch/native-original identities remain reference and recovery bindings; they do not force working copies back to untranslated versions.
+Reload from game explicitly archives the checked working copies, staged outputs and variable cache, then copies the current game files. Per-file versions prevent earlier runs from replacing those reloaded files or supplying stale cached responses. Other files keep their progress; frozen run outputs remain inspectable under their original project owner.
 The former manual screen remains a compatibility route into Translation, preserving saved project identity.
 
 Project identity, execution mode, and visible screen are separate. Registry upgrades retain existing IDs,

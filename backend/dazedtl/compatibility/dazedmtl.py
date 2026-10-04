@@ -272,7 +272,7 @@ class ExistingBackend:
         folder = self.workflows.folder(native["id"])
         return self.operations.start({"project_id": native["id"], "project": native,
             "folder": str(folder), "action": "refresh_sources", "label": "Refresh selected source copies",
-            "options": {"files": files, "sources": sources, "retired": [native["manual_job"]] if native.get("manual_job") else []}, "guard": self.guided_guard(native, folder)})
+            "options": {"files": files, "sources": sources, "retired": []}, "guard": self.guided_guard(native, folder)})
 
     @staticmethod
     def ace_available():

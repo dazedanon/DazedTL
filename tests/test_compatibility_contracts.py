@@ -344,6 +344,41 @@ class ManualJobs:
                 self.assertEqual(collected, [])
                 phases._collect({'id': 'owner', 'manual_job': 'current-source-run'})
                 self.assertEqual(collected, ['current-source-run'])
+                # Reloading Items must not resurrect its old checkpoint, while
+                # an unaffected file in the same interrupted run remains usable.
+                phases.save = lambda _: None
+                phases.manual.folder = lambda identity: source/'saved-runs'/identity
+                directory = phases.manual.folder('partial')
+                before = {'Items.json': [{'name': '薬'}], 'System.json': {'gameTitle': '題'}}
+                for name, value in before.items():
+                    write_json(phases.folder('owner')/'files'/name, value)
+                    write_json(directory/'files'/name, value)
+                    write_json(directory/'translated'/name, {'translated': name})
+                plan = {'workflow': {'id': 'owner'}, 'files': [{'name': name, 'sha256': digest((directory/'files'/name).read_bytes())} for name in before]}
+                write_json(directory/'plan.json', plan)
+                plan_hash = digest((directory/'plan.json').read_bytes())
+                write_json(directory/'log/dazedtl-checkpoints.json', {'version': 1, 'plan_hash': plan_hash,
+                    'files': {name: digest((directory/'translated'/name).read_bytes()) for name in before}})
+                phases.manual.jobs['partial'] = {'id': 'partial', 'files': list(before), 'mode': 'translate', 'status': 'interrupted', 'plan_hash': plan_hash}
+                write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'file_versions': {'Items.json': 'reloaded'}})
+                project = {'id': 'owner', 'manual_job': 'partial'}
+                phases._collect(project)
+                self.assertFalse((phases.folder('owner')/'translated/Items.json').exists())
+                self.assertEqual(json.loads((phases.folder('owner')/'translated/System.json').read_text()), {'translated': 'System.json'})
+
+    def test_full_overwrite_ignores_game_edits_but_binds_the_reviewed_working_output(self):
+        from dazedtl.compatibility.text import validate_publication
+        actions = ModuleType('desktop.backend.workflow_actions')
+        current = {'layout': 'same game', 'data': 'new manual edits', 'translated': 'reviewed output'}
+        actions.action_guard = lambda *_: current
+        actions.validate_plan = Mock()
+        plan = {'action': 'export_selected', 'overwrite_runtime': True, 'project': {}, 'folder': 'work',
+                'guard': {**current, 'data': 'before edits'}}
+        with patch.dict(sys.modules, {actions.__name__: actions}):
+            validate_publication(plan)
+            actions.validate_plan.assert_not_called()
+            current['translated'] = 'different output'
+            with self.assertRaises(ValueError): validate_publication(plan)
 
     def test_rewrap_apply_requires_the_same_completed_scan_and_settings(self):
         with TemporaryDirectory() as temporary:

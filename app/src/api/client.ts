@@ -131,6 +131,7 @@ export const api = {
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
   guided: {
+    outputFolder: (project_id: string) => request("guided_output_folder", { project_id }),
     eventTextRequest: (project_id: string) => request("guided_event_text_request", { project_id }),
     eventTextReview: (project_id: string, revision: number, binding: string | null, report_id: string | null, manual_reason: string, risk_accepted: boolean) => request("guided_event_text_review", { project_id, revision, binding, report_id, manual_reason, risk_accepted }),
     eventTextView: (project_id: string, view: import("./contracts").EventTextState["view"]) => request("guided_event_text_view", { project_id, view }),

@@ -21,12 +21,16 @@ def unique_object(pairs):
     return result
 
 
+def decode_json(raw):
+    return json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique_object,
+                      parse_constant=lambda _value: (_ for _ in ()).throw(ValueError("JSON numbers must be finite.")))
+
+
 def read_json(path, *, limit=128_000_000):
     path = Path(path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
         raise ValueError("Choose a regular JSON file within the supported size limit.")
-    return json.loads(path.read_bytes().decode("utf-8-sig"), object_pairs_hook=unique_object,
-                      parse_constant=lambda _value: (_ for _ in ()).throw(ValueError("JSON numbers must be finite.")))
+    return decode_json(path.read_bytes())
 
 
 def project_path(root, relative, *, exists=True):

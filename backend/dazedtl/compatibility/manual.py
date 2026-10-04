@@ -86,6 +86,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
         request_policy = None
         continuation = None
         reserved_sources = None
+        source_versions = None
         workflow_selection = None
         controllers = None
 
@@ -163,6 +164,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                         raise ValueError('A run is being prepared. Wait for its saved workspace.')
                     item.request_policy, item.workflow_selection, item.continuation = self.request_policy, self.workflow_selection, self.continuation
                     item.reserved_sources = self.reserved_sources
+                    item.source_versions = self.source_versions
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result['id']] = self.controllers.pop('preparing')
                     self.active = result['id']
@@ -176,6 +178,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
         def _snapshot_context(self, directory, plan, workspace=None):
             super()._snapshot_context(directory, plan, workspace)
+            if self.source_versions is not None:
+                plan['dazedtl_source_versions'] = deepcopy(self.source_versions)
             if self.continuation:
                 plan['dazedtl_continuation'] = deepcopy(self.continuation)
             if self.reserved_sources:

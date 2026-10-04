@@ -9,12 +9,13 @@ RPG Maker MV/MZ has a **Translation** workspace following the working Qt workflo
 Each stage opens a focused task. The app sidebar stays in place; workflow navigation becomes
 compact in smaller windows. File selection supports search, groups, map names when available,
 and keyboard ranges across its virtualized list. Filtering preserves checked files.
-The app prepares working copies and carries saved phase results forward.
+Selecting a game is enough: the app prepares selected working copies automatically from its current files and carries saved translation progress forward. Reopening the project preserves those copies.
 Each run and application review uses the selected scope.
 Saved operations remain in **History**.
 Translate separates **Database files → Maps & events → Event / plugin codes**. Generate an estimate, inspect the prepared lines and context if desired, then review paid translation.
-The compact file list supports large scopes, filtering and optional selection. Saved output remains available for read-only comparison and a separate Apply review.
-Preparation and translated work survive navigation and reopening; stopping retains saved evidence and submitted Batch receipts.
+The compact file list supports large scopes, filtering and optional selection. Estimate, Translate, and Apply stay available while previewing results; Translate more files opens selection for another pass. Saved output remains available for read-only comparison.
+Apply explicitly overwrites checked game files that have saved output. It does not merge or synchronize files automatically. **File options** opens the translated folder or reloads checked files from the current game; reload archives previous working copies and invalidates their cached results.
+Preparation and translated work survive navigation and reopening. Live resumes from verified partial JSON checkpoints and retained validated responses; Batch retains its frozen request grouping and provider receipts. Saved partial files remain separate from game files until you choose Apply.
 Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
 Its bundled executables require Windows for native conversion and are cached in the app profile.
 Release verifies saved packing evidence against current JSON and native bytes.

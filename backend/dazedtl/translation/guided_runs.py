@@ -29,9 +29,7 @@ class GuidedRuns:
             path = inputs.path(group, name)
             if path.is_file():
                 return path.read_bytes()
-        identity = source["identity"]
-        return (inputs.original_bytes(inputs.source, identity["original"]) if "original" in identity
-                else project_path(inputs.source, source["relative"]).read_bytes())
+        return project_path(inputs.source, source["relative"]).read_bytes()
 
     def inputs(self, project_id, native, phase, mode, *, guard=None):
         names = self.files(native, phase)
@@ -42,7 +40,8 @@ class GuidedRuns:
         # are independent; only shared frozen context belongs in every quote.
         context = {key: value for key, value in guard.items()
                    if key not in {"data", "files", "translated", "variables"}}
-        value = {"version": 1, "project": project_id, "phase": phase, "mode": mode,
+        versions = {name: inputs.record().get("file_versions", {}).get(name, "") for name in names}
+        value = {"file_versions": versions, "version": 1, "project": project_id, "phase": phase, "mode": mode,
                  "source": sources, "source_pass": inputs.record().get("last_refresh"), "files": names,
                  "working": {name: digest(self.working_bytes(native, name, sources[name])) for name in names},
                  "configuration": self.guided.settings.guided_configuration(mode),
@@ -58,7 +57,7 @@ class GuidedRuns:
             comparisons = self.comparisons(native)
             value["comparison_review"] = comparisons["status"]
             review = {"fingerprint": comparisons["fingerprint"], "status": comparisons["status"], "literalBased": True}
-        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review}
+        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review, "file_versions": versions}
 
     def cache(self, native):
         path = self.guided.backend.workflows.folder(native["id"]) / "log/var_translation_map.json"
@@ -139,7 +138,8 @@ class GuidedRuns:
         from dazedtl.compatibility.process_view import ledger
         result = {}
         for identity, record in self.records(project_id).items():
-            if record['phase'] != inputs['phase'] or record['source'] != inputs['source']:
+            if (record['phase'] != inputs['phase'] or record['source'] != inputs['source']
+                    or any(record.get('file_versions', {}).get(name, '') != inputs.get('file_versions', {}).get(name, '') for name in inputs['files'])):
                 continue
             if identity not in self.guided.backend.manual.jobs:
                 continue
@@ -195,6 +195,7 @@ class GuidedRuns:
                     continue
                 record = records.get(identity)
                 job["scopeComplete"] = bool(names and job["status"] == "complete" and job.get("outputsAvailable")
+                    and not set(names).intersection([*job.get("retiredFiles", []), *job.get("partialOutputs", [])])
                     and set(names).issubset(job.get("outputs", {})) and not set(names).intersection(source_status["changed"])
                     and (not record or record["source"] == sources))
                 phases[phase] = job

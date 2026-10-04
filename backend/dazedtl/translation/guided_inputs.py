@@ -4,7 +4,7 @@ from pathlib import Path
 import uuid
 
 from dazedtl.storage import write_bytes, write_json
-from .files import digest, project_path, read_json
+from .files import decode_json, digest, project_path, read_json
 
 
 def original_bindings(record):
@@ -43,13 +43,16 @@ class GuidedInputs:
             raise ValueError("The working-source index needs recovery before preparing new work.")
         return value
 
-    def sources(self, names, previous, fingerprint=None):
+    def sources(self, names, previous, fingerprint=None, *, fresh=False):
         fingerprint = fingerprint or (lambda path: digest(path.read_bytes()))
         paths = {name: (self.data / name).relative_to(self.source).as_posix() for name in names}
         native_paths = {name: "Data/" + Path(name).stem + ".rvdata2" for name in names} if self.native_exports else {}
         originals = self.bindings(self.source, [*paths.values(), *native_paths.values()])
         result = {}
         for name, relative in paths.items():
+            if not fresh and name in previous and (self.path("files", name).is_file() or self.path("translated", name).is_file()):
+                result[name] = previous[name]
+                continue
             path = project_path(self.source, relative)
             if relative in originals:
                 identity = {"original": originals[relative]}
@@ -73,8 +76,9 @@ class GuidedInputs:
                 "changed": [name for name in names if name in previous and previous[name] != current[name]]}
 
     def prepare(self, names, *, refresh=False, expected=None, retired=(), progress=lambda _message: None):
-        previous = self.record()["inputs"]
-        current = self.sources(names, previous)
+        record = self.record()
+        previous = record["inputs"]
+        current = self.sources(names, previous, fresh=refresh)
         if expected is not None and current != expected:
             raise ValueError("The original source version changed. Review the source refresh again.")
         changed = [name for name in names if name in previous and previous[name] != current[name]]
@@ -84,10 +88,14 @@ class GuidedInputs:
         for name in names:
             if refresh or not self.path("files", name).is_file():
                 row = current[name]
-                replacements[name] = (self.original_bytes(self.source, row["identity"]["original"])
-                                      if "original" in row["identity"] else
+                retained = self.path("translated", name)
+                replacements[name] = (retained.read_bytes() if not refresh and retained.is_file() else
                                       project_path(self.source, row["relative"]).read_bytes())
-        if self.sources(names, previous) != current:
+                # A reload is an explicit choice of current game bytes, never a
+                # silent restoration from the original-version backup.
+                if not isinstance(decode_json(replacements[name]), (dict, list)):
+                    raise ValueError("Working copies must contain valid game JSON.")
+        if self.sources(names, previous, fresh=refresh) != current:
             raise ValueError("The source changed while preparing working copies. Try again after reviewing the source.")
 
         old = {}
@@ -103,7 +111,7 @@ class GuidedInputs:
                 raise ValueError("The phase cache cannot be a symbolic link.")
             cache_bytes = cache.read_bytes() if cache.is_file() else None
             archive = self.folder / "source-history" / uuid.uuid4().hex
-            write_json(archive / "source-inputs.json", {"version": 1, "inputs": previous})
+            write_json(archive / "source-inputs.json", record)
             for (group, name), raw in old.items():
                 if raw is not None:
                     write_bytes(archive / group / name, raw)
@@ -121,7 +129,8 @@ class GuidedInputs:
             record = self.record()
             write_json(self.index, {**record, "inputs": {**previous, **current},
                                     **({"last_refresh": archive.name,
-                                        "retired_runs": list(dict.fromkeys([*record.get("retired_runs", []), *retired]))} if refresh else {})})
+                                        "retired_runs": list(dict.fromkeys([*record.get("retired_runs", []), *retired])),
+                                        "file_versions": {**record.get("file_versions", {}), **dict.fromkeys(names, archive.name)}} if refresh else {})})
         except Exception:
             for (group, name), raw in old.items():
                 path = self.path(group, name)

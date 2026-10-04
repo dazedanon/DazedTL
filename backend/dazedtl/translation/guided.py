@@ -33,7 +33,7 @@ SHARED_ACTIONS = {
     "checkpoint": "Save reviewed patch in Git", "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
-    "refresh_sources": "Review source refresh",
+    "refresh_sources": "Reload selected files from game",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 
@@ -259,7 +259,13 @@ class Guided:
         job["keptForHistory"] = any(identity in project.get("kept_failed_runs", {})
                                     for project in self.backend.workflows.projects.values())
         try:
-            folder = self.backend.manual.folder(identity) / "translated"
+            root = self.backend.manual.folder(identity)
+            folder = root / "translated"
+            plan = self.backend.saved_run_configuration(identity)
+            if (root / "plan.json").is_file() and job.get("plan_hash") == digest((root / "plan.json").read_bytes()):
+                from dazedtl.compatibility.checkpoints import outputs as checkpoint_outputs
+                job["outputs"] = {**job.get("outputs", {}), **checkpoint_outputs(root, plan)}
+                job["partialOutputs"] = [name for name in job["outputs"] if name in job.get("errors", {}) or name in job.get("mismatches", {}) or (name not in job.get("completed", []) and job.get("status") != "complete")]
             job["availableOutputs"] = [name for name, expected in job.get("outputs", {}).items()
                                        if project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected]
             job["outputsAvailable"] = bool(job.get("outputs")) and len(job["availableOutputs"]) == len(job["outputs"])
@@ -273,6 +279,8 @@ class Guided:
                     job["preparationMode"] = self.runs.preparation_mode(project["id"], identity)
             native = self.backend.workflows.projects.get(workflow.get("id"))
             if native:
+                versions = self.inputs(native).record().get("file_versions", {})
+                job["retiredFiles"] = [name for name in job.get("files", []) if versions.get(name, "") != plan.get("dazedtl_source_versions", {}).get(name, "")]
                 job["appliedOutputs"] = [name for name, expected in job.get("outputs", {}).items()
                                          if self.observed_digest(project_path(native["data"], name)) == expected]
         except (OSError, ValueError, KeyError):
@@ -643,7 +651,7 @@ class Guided:
                         or len(set(files)) != len(files) or set(files) - self.supported_files(native)):
                     raise ValueError("Select supported files to refresh.")
                 paths = files
-                options = {"sources": self.inputs(native).sources(paths, self.inputs(native).record()["inputs"])}
+                options = {"sources": self.inputs(native).sources(paths, self.inputs(native).record()["inputs"], fresh=True)}
             if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
                 paths = self.release_paths(project_id, project["source"], action)
                 manifest = self.patch_manifest(project_id, paths, action)
@@ -677,9 +685,6 @@ class Guided:
                     raise ValueError("The selected run outputs are no longer available. Review current outputs.")
                 if not paths:
                     raise ValueError("Complete and review a translation before applying its files.")
-                if self.inputs(native).status(paths)["changed"]:
-                    raise ValueError("Review changed sources and refresh their working copies before applying older outputs.")
-                self.inputs(native).prepare(paths)
                 options = {"files": paths}
             if action == "release":
                 from .release import destination
@@ -745,7 +750,7 @@ class Guided:
             self.source_preserved(project_id)
         if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
             self.translation.ready(project_id)
-        if action in {"export_selected", "rewrap_apply", "qa_apply", "runtime_restore"} and self.inputs(native).status(sorted(self.supported_files(native)))["changed"]:
+        if action in {"rewrap_apply", "qa_apply", "runtime_restore"} and self.inputs(native).status(sorted(self.supported_files(native)))["changed"]:
             raise ValueError("Original sources changed after review. Review current sources first.")
         if action in {"release", "release_patch"}:
             release_status = self.release_ready(project_id, native, self.backend.workflows.state(native["id"]))
@@ -840,6 +845,7 @@ class Guided:
         native["imported"] = list(dict.fromkeys([*native["imported"], *files]))
         self.backend.workflows.save(native)
         self.settings.prepare_engine(mode=mode)
+        self.backend.manual.source_versions = run_inputs.get("file_versions", {}) if run_inputs else {}
         self.backend.manual.continuation = self.runs.continuation(project_id, native, run_inputs) if run_inputs else {}
         from dazedtl.compatibility.request_scope import requests
         self.backend.manual.reserved_sources = list(requests(self.backend.manual.folder(estimate['jobId']), self.run_view(estimate['jobId']))) if estimate else []
@@ -853,6 +859,7 @@ class Guided:
             return {**job, "logicalPhase": phase, "preparationMode": preparation_mode}
         finally:
             self.backend.manual.continuation = None
+            self.backend.manual.source_versions = None
             self.backend.manual.reserved_sources = None
             if mode == "estimate":
                 current = self.backend.workflows.projects[native["id"]]
@@ -916,10 +923,6 @@ class Guided:
         self.idle()
         _, native = self.record(project_id)
         documents = self.backend.workflows.documents(native["id"])
-        if choice == "review" and name in documents and not documents[name]["text"].strip():
-            if not self.context_status(project_id)["documents"][name]["intentionalEmpty"]:
-                raise ValueError("Choose whether to keep this document empty before continuing.")
-            choice = "empty"
         return context_setup.review(self.path(project_id, "context-review"), documents, native, name, revision, choice)
 
     def speaker_findings(self, project_id, native=None):
@@ -1046,6 +1049,14 @@ class Guided:
         self.settings.prepare_engine(resume=plan)
         return self.backend.manual.resume(identity)
 
+    def output_folder(self, project_id):
+        _, native = self.record(project_id)
+        self.backend.workflows.state(native["id"])
+        folder = project_path(self.backend.workflows.folder(native["id"]), "translated", exists=False)
+        if not folder.is_dir():
+            raise ValueError("No translated folder is available for this project.")
+        return {"path": str(folder)}
+
     def export(self, project_id, run_id=None):
         self.idle()
         _, native = self.record(project_id)
@@ -1063,7 +1074,12 @@ class Guided:
 
     def save_document(self, project_id, name, revision, text):
         _, native = self.record(project_id)
-        result = self.backend.workflows.document_save(native["id"], name, revision, text)
+        if not isinstance(name, str):
+            raise ValueError("Choose a guidance document.")
+        # Explicit Save replaces the current guidance. The editor's older
+        # revision is recovery metadata, not a conflict-review prerequisite.
+        current = self.backend.workflows.documents(native["id"]).get(name, {})
+        result = self.backend.workflows.document_save(native["id"], name, current.get("revision", ""), text)
         draft = self.backend.workflows.state(native["id"]).get("draft", {})
         draft.get("documents", {}).pop(name, None)
         self.backend.workflows.draft(native["id"], draft)

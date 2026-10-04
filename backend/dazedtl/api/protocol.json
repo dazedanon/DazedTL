@@ -236,6 +236,9 @@
     },
     "plugins_action": {
       "refresh": true
+    },
+    "guided_output_folder": {
+      "refresh": false
     }
   }
 }

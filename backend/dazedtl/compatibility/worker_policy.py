@@ -37,11 +37,16 @@ def install():
             original_plan = Path(grouping_root) / "plan.json"
             policy = (json.loads(original_plan.read_text(encoding="utf-8")).get("dazedtl_request_policy")
                       if original_plan.is_file() and not original_plan.is_symlink() else None)
+        def checkpoint_reader():
+            from .checkpoints import install as install_checkpoints
+            install_checkpoints(sys.modules.get("modules.rpgmakermvmz"), root, plan)
+
         if policy is None:
             result = native_prepare(root)
             import util.translation as translation
             configure_builders(translation, None)
             configure_states(plan, grouping_root, None)
+            checkpoint_reader()
             return result
         if (
             not isinstance(policy, dict)
@@ -89,6 +94,7 @@ def install():
             record = evidence.record
         configure_builders(translation, policy.get("generationParameters"), record)
         configure_states(plan, grouping_root, policy)
+        checkpoint_reader()
         return result
 
     manual_environment.prepare = prepare

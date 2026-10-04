@@ -140,7 +140,9 @@ def prepare_publication(plan):
                 candidates[(prefix / name).as_posix()] = project_path(scratch, name).read_bytes()
     else:
         raise ValueError("Unknown text publication.")
-    frozen = publication.freeze(folder, root, candidates, action, outputs=outputs, restore=restored)
+    frozen = publication.freeze(folder, root, candidates, action, outputs=outputs, restore=restored, overwrite=action == "export_selected")
+    if action == "export_selected":
+        plan["overwrite_runtime"] = True
     plan["publication"] = frozen
     previous = read_json(folder / "applied-outputs.json").get("files", {}) if (folder / "applied-outputs.json").exists() else {}
     rows = []
@@ -164,7 +166,16 @@ def prepare_publication(plan):
 
 
 def run_publication(plan, log):
-    from desktop.backend.workflow_actions import validate_plan
-    validate_plan(plan)
+    validate_publication(plan)
     result = publication.publish(plan["folder"], plan["project"]["source"], plan["publication"], log)
     return {**result, "ace_packing_required": plan["project"]["engine"] == "ACE"}
+
+
+def validate_publication(plan):
+    from desktop.backend.workflow_actions import action_guard, validate_plan
+    if plan.get("overwrite_runtime") and plan.get("action") == "export_selected":
+        current = action_guard(plan["project"], plan["folder"])
+        if {key: value for key, value in current.items() if key != "data"} != {key: value for key, value in plan["guard"].items() if key != "data"}:
+            raise ValueError("The saved output, destination or settings changed. Review Apply again.")
+    else:
+        validate_plan(plan)
