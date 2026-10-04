@@ -109,6 +109,13 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual([(row['location'], row['source'], row['text']) for row in page['rows']],
                          [('/0/name', '薬', 'Potion'), ('/0/description', '説明', '')])
         self.assertFalse(any('_original' in row['location'] for row in page['rows']))
+        # Plain unchanged notes should not look like missing translations.
+        note = 'ステート1番はHP0のときに付加されます。'
+        write_json(self.folder/'files/Items.json', [{'name': '薬', 'description': '説明', 'note': note}])
+        write_json(self.folder/'translated/Items.json', [{**output[0], 'note': note, 'unmatched': 'New text'}])
+        page = self.guided.file_preview(self.identity, 'Items.json')
+        self.assertEqual([row['location'] for row in page['rows']], ['/0/name', '/0/description', '/0/unmatched'])
+        self.assertEqual(self.guided.file_preview(self.identity, 'Items.json', query=note)['total'], 0)
         # Pagination and text search stay bounded, with no dropped text between pages.
         write_json(self.folder/'translated/Items.json', [{'name': f'Item {index}', 'note': 'long'*3000 if index == 5 else 'Note'} for index in range(180)])
         offset, locations = 0, []
@@ -245,6 +252,12 @@ class GuidedTests(unittest.TestCase):
         self.backend.manual.jobs[identity] = job
         self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
         self.native['manual_job'] = identity
+        plan = {'workflow': {'id': 'native', 'phase': 'database'},
+                'files': [{'name': 'Items.json', 'sha256': digest((self.source/'Items.json').read_bytes())}]}
+        self.backend.saved_run_configuration = lambda _: plan
+        self.assertEqual(self.guided.run_view(identity)['changedOutputs'], ['Items.json'])
+        plan['files'][0]['sha256'] = expected
+        self.assertEqual(self.guided.run_view(identity)['changedOutputs'], [])
         status = self.guided.runs.snapshot(self.identity, self.native, {'changed': [], 'retired': []})
         self.assertTrue(status['phase_runs']['database']['scopeComplete'])
         self.assertEqual(status['phase_runs']['database']['availableOutputs'], ['Items.json'])
@@ -389,6 +402,73 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.guided.readiness(self.identity, self.native, state)['unapplied'], ['Items.json'])
         with self.assertRaisesRegex(ValueError, 'Apply the selected saved outputs'):
             self.guided.release_ready(self.identity, self.native, state)
+
+    def test_reapply_batch_freezes_owned_history_outputs_without_using_current_selection(self):
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
+        from dazedtl.compatibility.text import prepare_publication, run_publication
+        from dazedtl.translation import publication
+        from types import ModuleType
+        import sys
+        # Reapplying must never substitute the newest working copy for a chosen
+        # historical run, or publish files belonging to another project.
+        identity = 'old-batch'
+        root = self.backend.manual.folder(identity)
+        write_json(root/'translated/Items.json', [{'name': 'Older wording'}])
+        expected = digest((root/'translated/Items.json').read_bytes())
+        job = {'id': identity, 'mode': 'batch', 'status': 'complete', 'files': ['Items.json'],
+               'outputs': {'Items.json': expected}, 'log': []}
+        self.backend.manual.jobs[identity] = job
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        write_json(self.folder/'translated/Items.json', [{'name': 'Newer wording'}])
+        self.native['selected'] = []
+        self.backend.workflows.previews = {}
+        def preview(*_):
+            token = 'historical-preview'
+            self.backend.workflows.previews[token] = {'project_id': 'native', 'project': self.native,
+                'folder': str(self.folder), 'action': 'export_selected', 'options': {},
+                'guard': {'data': self.backend.guided_guard(self.native, self.folder)}}
+            return {'token': token, 'confirmation': True, 'options': {}}
+        self.backend.workflows.preview = preview
+        self.backend.guided_export_preview = lambda *args, **kw: ExistingBackend.guided_export_preview(self.backend, *args, **kw)
+        self.backend.guided_text_publication = lambda token: prepare_publication(self.backend.workflows.previews[token])
+        self.backend.workflows.execute = lambda token: run_publication(self.backend.workflows.previews.pop(token), lambda _: None)
+        actions = ModuleType('desktop.backend.workflow_actions')
+        actions.validate_plan = lambda _: None
+        actions.action_guard = lambda *_: {'data': self.backend.guided_guard(self.native, self.folder)}
+        with patch.dict(sys.modules, {'desktop.backend.workflow_actions': actions}):
+            review = self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
+            self.assertEqual(review['paths'], ['Items.json'])
+            self.assertEqual(review['options']['run_id'], identity)
+            self.assertEqual(read_json(self.source/'Items.json'), [{'name': '薬'}])
+            write_json(self.source/'Items.json', [{'name': 'Edit after review'}])
+            # Runtime edits are accepted by explicit overwrite and backed up.
+            result = self.guided.execute(self.identity, review['token'])
+            self.assertEqual(read_json(self.source/'Items.json'), [{'name': 'Older wording'}])
+            self.assertEqual(read_json(self.folder/'translated/Items.json'), [{'name': 'Newer wording'}])
+            restore, _ = publication.restore_candidates(self.folder, self.source, result['publication'])
+            self.assertIn(b'Edit after review', restore['Items.json'])
+            self.assertEqual(self.native['selected'], [])
+            with self.assertRaises(ValueError): self.guided.execute(self.identity, review['token'])
+            for state in ('running', 'failed', 'stopped'):
+                job['status'] = state
+                with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
+            job['status'] = 'complete'
+            for files in ([], ['Foreign.json'], ['Items.json', 'Items.json'], ['../Items.json']):
+                with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', files=files, options={'run_id': identity})
+            with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': 'foreign'})
+            self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'foreign'}}
+            with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
+            self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'native'}}
+            descriptor, _ = self.guided.batch_output(self.native, identity, None)
+            write_json(root/'translated/Items.json', [{'name': 'Tampered saved output'}])
+            # Recheck bytes at freeze, even if the observed availability was old.
+            preview()
+            self.backend.workflows.previews['historical-preview'].update(options={'files': ['Items.json']}, run_output=descriptor)
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                prepare_publication(self.backend.workflows.previews['historical-preview'])
+            with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
+            (root/'translated/Items.json').unlink()
+            with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
 
     def test_guidance_save_replaces_external_edits_and_retains_other_drafts(self):
         path = self.source / 'glossary.txt'

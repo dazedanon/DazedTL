@@ -19,6 +19,10 @@ export function canRetrySaving(job: Job) {
   return job.mode === "batch" && !!job.process?.resultsCollected && (job.process.received ?? 0) > 0 && job.process?.monitoring?.state === "save_error"
     && ["failed", "stopped", "interrupted", "canceled"].includes(job.status);
 }
+export function canReapplyBatch(job: Job) {
+  return job.mode === "batch" && job.status === "complete" && !job.temporary
+    && job.outputsAvailable === true && Object.keys(job.outputs || {}).length > 0;
+}
 const statuses: Record<string, string> = { validating: "Checking requests", in_progress: "Translating", finalizing: "Preparing results", cancelling: "Canceling", canceling: "Canceling",
   completed: "Completed", ended: "Completed", cancelled: "Canceled", canceled: "Canceled", failed: "Failed", expired: "Expired", unknown: "Status unavailable" };
 export const batchStatus = (status: string) => statuses[status] || status.replaceAll("_", " ");

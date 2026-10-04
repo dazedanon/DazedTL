@@ -262,11 +262,17 @@ class ExistingBackend:
         with self.manual.selected_workflow(native_id, files):
             return self.workflows.phase(native_id, phase, True)
 
-    def guided_export_preview(self, native_id, files):
+    def guided_export_preview(self, native_id, files, *, run_output=None):
         preview = self.workflows.preview(native_id, "export_selected", {})
-        self.workflows.previews[preview["token"]]["options"] = {"files": list(files)}
-        self.workflows.previews[preview["token"]]["label"] = "Apply selected saved outputs"
-        return {**preview, "label": "Apply selected saved outputs", "options": {"files": list(files)}, "files": len(files)}
+        plan = self.workflows.previews[preview["token"]]
+        options = {"files": list(files)}
+        label = "Apply selected saved outputs"
+        if run_output:
+            plan["run_output"] = run_output
+            options["run_id"] = run_output["run_id"]
+            label = "Reapply saved Batch output"
+        plan.update(options=options, label=label)
+        return {**preview, "label": label, "options": options, "files": len(files)}
 
     def guided_refresh(self, native, files, sources):
         folder = self.workflows.folder(native["id"])

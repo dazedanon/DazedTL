@@ -13,19 +13,20 @@ import { useAction } from "../../state/useAction";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import { historyPhase } from "./historyView";
-import { batchOutcome, batchRuns, canRetrySaving } from "./batchView";
+import { batchOutcome, batchRuns, canRetrySaving, canReapplyBatch } from "./batchView";
 
 const keyOf = (job: Job) => job.id;
 
-export function BatchMonitor({ projectId, runs, focusRun, close, inspect }: {
+export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reapply, applicationJob, disabled }: {
   projectId: string; runs: Job[]; focusRun?: string; close: () => void; inspect: (job: Job) => void;
+  reapply: (job: Job) => Promise<void>; applicationJob: (job: Job) => Job | undefined; disabled: boolean;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
   const [filter, setFilter] = useState(focusRun || !batchRuns(runs).length ? "all" : "active");
   const [cancellation, setCancellation] = useState<BatchCancellation | null>(null);
   const [focus, setFocus] = useState(focusRun || null);
-  const blocking = action.busy && (action.key === "batch:confirm-cancel" || action.key.startsWith("batch:collect:"));
+  const blocking = action.busy && (action.key === "batch:confirm-cancel" || action.key.startsWith("batch:collect:") || action.key.startsWith("batch:reapply:"));
   const jobs = batchRuns(runs, filter === "all");
   return <>
     <Modal label="Batches" className="guided-sheet batch-monitor" dismissible={!blocking} onDismiss={close}>
@@ -34,15 +35,23 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect }: {
       <div className="batch-monitor-list" role="tabpanel" id={`batch-filter-panel-${filter}`} aria-labelledby={`batch-filter-tab-${filter}`}>
         <VirtualList items={jobs} itemKey={keyOf} focusKey={focus} onFocusReady={() => setFocus(null)} label="Saved Batch runs" empty={<p className="muted">{filter === "active" ? "No Batches are in progress. Completed runs are in All batches." : "No provider Batches have been submitted for this project."}</p>}>
           {job => {
-            const batches = job.process?.batches || [], collectKey = "batch:collect:" + job.id;
-            const monitoring = job.process?.monitoring;
+            const batches = job.process?.batches || [], collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id;
+            const monitoring = job.process?.monitoring, applied = applicationJob(job);
             const issue = monitoring && ["error", "blocked"].includes(monitoring.state) ? monitoring.message
               : canRetrySaving(job) ? "Collected responses could not be saved." : "";
             return <section className="batch-monitor-run" aria-label={`${historyPhase(job)} Batch ${job.id}`}>
               <ActionList compact><ActionRow label={<div className="batch-run-heading">
                 <div><strong>{historyPhase(job)}</strong><span>{job.files?.length || 0} selected files</span></div>
                 <small>{job.model || "Saved model"}{job.created && ` · ${new Date(job.created).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`}</small>
-              </div>}><Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Requests</Button></ActionRow>
+              </div>}><div className="actions">
+                <Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Requests</Button>
+                {job.status === "complete" && <ActionControl label="Reapply" disabled={disabled || action.busy || !canReapplyBatch(job)}
+                  pending={action.busy && action.key === reapplyKey} pendingText="Preparing saved output…"
+                  title={!canReapplyBatch(job) ? "Saved output is unavailable for this Batch." : "Review and apply this Batch’s saved output to the game."}
+                  error={action.key === reapplyKey ? action.error : ""} job={applied?.status === "complete" ? undefined : applied}
+                  notice={applied?.status === "complete" ? "Batch output applied." : ""}
+                  onClick={() => action.run(() => reapply(job), "", reapplyKey)} />}
+              </div></ActionRow>
               {batches.map(batch => {
                 const outcome = batchOutcome(batch, job), cancelKey = "batch:cancel:" + batch.id;
                 return <ActionRow key={batch.id} label={<div className="batch-provider-row">

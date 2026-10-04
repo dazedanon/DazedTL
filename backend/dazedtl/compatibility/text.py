@@ -6,7 +6,7 @@ import shutil
 import tempfile
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, read_json, project_path
+from dazedtl.translation.files import decode_json, digest, read_json, project_path
 from dazedtl.translation import publication
 
 
@@ -80,9 +80,16 @@ def prepare_publication(plan):
     prefix = data.relative_to(root)
     candidates, outputs, restored = {}, {}, None
     if action == "export_selected":
+        saved = plan.get("run_output")
+        output_folder = Path(saved["folder"]) if saved else folder
         for name in options["files"]:
-            output = project_path(folder, "translated/" + name).read_bytes()
-            read_json(project_path(folder, "translated/" + name))
+            output = project_path(output_folder, "translated/" + name).read_bytes()
+            if saved and digest(output) != saved["outputs"].get(name):
+                raise ValueError("Saved Batch output changed. Review this Batch again.")
+            # Parse the same bytes that will be frozen for publication.
+            if len(output) > 128_000_000:
+                raise ValueError("Choose a JSON output within the supported size limit.")
+            decode_json(output)
             candidates[(prefix / name).as_posix()] = output
             outputs[name] = digest(output)
     elif action == "runtime_restore":

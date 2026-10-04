@@ -561,6 +561,11 @@ pre {
   align-items: start;
   gap: var(--space-6);
 }
+.action-row > .actions {
+  margin-top: 0;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
 .action-row-label {
   min-width: 0;
   padding-top: var(--space-2);

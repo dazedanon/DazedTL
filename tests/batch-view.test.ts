@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Job } from "../app/src/api/contracts.ts";
-import { batchProgress, batchRuns, canRetrySaving, batchOutcome } from "../app/src/features/guided/batchView.ts";
+import { batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome } from "../app/src/features/guided/batchView.ts";
 
 test("Batch monitoring keeps unknown counts unknown and interrupted work recoverable", () => {
   const batch = { id: "provider", status: "in_progress", total: 10, counts: {} };
@@ -12,6 +12,12 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   assert.equal(batchProgress({ ...batch, counts: { ...counts, succeeded: 11 } }).finished, undefined);
   const paused = { id: "run", mode: "batch", status: "stopped", phase: "poll_status", process: { batches: [batch], retryBlocked: true, errors: [] } } as Job;
   const completed = { ...paused, id: "finished", status: "complete", process: { ...paused.process!, retryBlocked: false, batches: [{ ...batch, status: "completed" }] } };
+  const saved = { ...completed, outputs: { "Items.json": "retained" }, outputsAvailable: true };
+  assert.equal(canReapplyBatch(saved), true);
+  for (const unavailable of [{ ...saved, status: "running" }, { ...saved, outputsAvailable: false },
+    { ...saved, outputs: {} }, { ...saved, temporary: true }, { ...saved, mode: "estimate" }]) {
+    assert.equal(canReapplyBatch(unavailable), false);
+  }
   assert.deepEqual(batchRuns([completed, paused]), [paused]);
   assert.equal(batchRuns([completed, paused], true).length, 2);
   assert.equal(canRetrySaving(paused), false);

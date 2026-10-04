@@ -48,6 +48,7 @@ export interface Job {
   outputs?: Record<string, string>;
   outputsAvailable?: boolean;
   availableOutputs?: string[];
+  changedOutputs?: string[];
   partialOutputs?: string[];
   retiredFiles?: string[];
   logicalPhase?: Phase;

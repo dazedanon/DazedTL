@@ -58,6 +58,14 @@ export function fileRun(runs: Job[], phase: Phase, name: string, retired: readon
     && !run.retiredFiles?.includes(name) && run.files?.includes(name));
   return matches.find(activeRun) || matches[0];
 }
+/** Status follows current work; metrics follow the last run that changed this file. */
+export function fileMetricRun(runs: Job[], phase: Phase, name: string, retired: readonly string[] = []) {
+  const matches = runs.filter(run => run.logicalPhase === phase && run.mode !== "estimate" && !run.temporary
+    && !retired.includes(run.id) && !run.retiredFiles?.includes(name) && run.files?.includes(name));
+  const changed = (run: Job) => run.changedOutputs !== undefined ? run.changedOutputs.includes(name)
+    : !run.process?.noRequestFiles?.includes(name) && !!run.process?.fileMetrics?.[name];
+  return matches.find(run => activeRun(run) && changed(run)) || matches.find(changed);
+}
 export function blockingBatches(runs: Job[], selected: readonly string[]) {
   return runs.filter(run => run.mode === "batch" && !run.temporary
     && run.files?.some(name => selected.includes(name) && !run.retiredFiles?.includes(name))

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileRun, fileStatus, phaseRun, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -159,6 +159,26 @@ test("translation stop controls distinguish preparation, approval and running wo
 
 // An earlier checkpoint must not freeze the rows at Saved while a provider is
 // working. A resumed older run also needs to displace a newer finished attempt.
+test("file metrics survive unchanged passes and advance only with changed output", () => {
+  const old = { id: "old", logicalPhase: "database", mode: "batch", status: "complete", files: ["Items.json"], changedOutputs: ["Items.json"],
+    process: { errors: [], fileMetrics: { "Items.json": { cost: .125, seconds: 12.5 } } } } as Job;
+  const skipped = { ...old, id: "skipped", status: "running", changedOutputs: [], process: { errors: [], noRequestFiles: ["Items.json"], fileMetrics: {} } };
+  assert.equal(fileMetricRun([skipped, old], "database", "Items.json"), old);
+  const unchanged = { ...skipped, status: "complete", process: { errors: [], fileMetrics: { "Items.json": { cost: 0, seconds: .1 } } } };
+  assert.equal(fileMetricRun([unchanged, old], "database", "Items.json"), old);
+  const changed = { ...unchanged, changedOutputs: ["Items.json"] };
+  assert.equal(fileMetricRun([changed, old], "database", "Items.json"), changed);
+  const unrecorded = { ...changed, process: { errors: [] } };
+  assert.equal(fileMetricRun([unrecorded, old], "database", "Items.json"), unrecorded);
+  assert.equal(fileMetricRun([old], "database", "Items.json", [old.id]), undefined);
+  assert.equal(fileMetricRun([{ ...old, retiredFiles: ["Items.json"] }], "database", "Items.json"), undefined);
+  assert.equal(fileMetricRun([old], "dialogue", "Items.json"), undefined);
+  const resumed = { ...old, status: "running" };
+  assert.equal(fileMetricRun([changed, resumed], "database", "Items.json"), resumed);
+  assert.equal(fileMetricRun([{ ...skipped, changedOutputs: undefined }, old], "database", "Items.json"), old);
+  assert.equal(fileMetricRun([{ ...changed, mode: "estimate" }, { ...changed, temporary: true }, old], "database", "Items.json"), old);
+});
+
 test("file status follows active and automatically monitored Batch work before retained outputs", () => {
   const checkpoint = { id: "batch", logicalPhase: "database", mode: "batch", status: "running", phase: "poll_status", files: ["Items.json"],
     outputs: { "Items.json": "saved" }, availableOutputs: ["Items.json"], partialOutputs: ["Items.json"],

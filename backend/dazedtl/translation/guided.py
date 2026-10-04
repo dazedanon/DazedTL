@@ -279,6 +279,11 @@ class Guided:
                 from dazedtl.compatibility.checkpoints import outputs as checkpoint_outputs, can_collect_outputs
                 job["outputs"] = {**job.get("outputs", {}), **(checkpoint_outputs(root, plan) if can_collect_outputs(job) else {})}
                 job["partialOutputs"] = [name for name in job["outputs"] if name in job.get("errors", {}) or name in job.get("mismatches", {}) or (name not in job.get("completed", []) and job.get("status") != "complete")]
+            input_hashes = {row['name']: row['sha256'] for row in plan.get('files', [])
+                            if isinstance(row, dict) and isinstance(row.get('name'), str) and isinstance(row.get('sha256'), str)}
+            if set(job.get('files', [])).issubset(input_hashes):
+                job["changedOutputs"] = [name for name, expected in job.get('outputs', {}).items()
+                                         if name in input_hashes and expected != input_hashes[name]]
             job["availableOutputs"] = [name for name, expected in job.get("outputs", {}).items()
                                        if project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected]
             job["outputsAvailable"] = bool(job.get("outputs")) and len(job["availableOutputs"]) == len(job["outputs"])
@@ -733,16 +738,43 @@ class Guided:
                     or job.get('status') in {'stopped', 'interrupted'} and (str(job.get('phase', '')).startswith('poll') and process.get('batches') or process.get('resultsCollected'))):
                 raise ValueError('These files still belong to Batch work. Open Batches to track progress or cancel it before changing the files.')
 
+    def batch_output(self, native, run_id, files):
+        if (not isinstance(run_id, str) or run_id not in self.owned_runs(native)
+                or run_id not in self.backend.manual.jobs):
+            raise ValueError("Choose a saved Batch belonging to this project.")
+        plan = self.backend.saved_run_configuration(run_id)
+        if (plan.get('workflow') or {}).get('id') != native['id']:
+            raise ValueError("This saved Batch belongs to another project.")
+        job = self.run_view(run_id)
+        if job.get('mode') != 'batch' or job.get('status') != 'complete' or job.get('temporary'):
+            raise ValueError("Wait for this Batch to finish saving its results before reapplying it.")
+        outputs = job.get('outputs', {})
+        requested = sorted(outputs) if files is None else files
+        if (not isinstance(requested, list) or not requested
+                or any(not isinstance(name, str) for name in requested)
+                or len(set(requested)) != len(requested)
+                or set(requested) - (set(outputs) & set(job.get('files', [])) & self.supported_files(native))):
+            raise ValueError("Choose retained output files from this Batch.")
+        if set(requested) - set(job.get('availableOutputs', [])):
+            raise ValueError("Saved Batch output is missing or changed. Its files cannot be reapplied.")
+        return {"run_id": run_id, "folder": str(self.backend.manual.folder(run_id)),
+                "outputs": {name: outputs[name] for name in requested}}, list(requested)
+
     def preview(self, project_id, action, files=None, options=None):
         if action != 'start':
             self.idle()
         project, native = self.record(project_id)
-        if action in {'refresh_sources', 'export_selected'}:
-            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
         self.clean(project_id)
         options = {} if options is None else deepcopy(options)
         if not isinstance(options, dict):
             raise ValueError("Action options must be an object.")
+        run_output = None
+        if action == 'export_selected' and options:
+            if set(options) != {'run_id'}:
+                raise ValueError("Choose a saved Batch to reapply.")
+            run_output, files = self.batch_output(native, options['run_id'], files)
+        if action in {'refresh_sources', 'export_selected'}:
+            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
         self.settings.prepare_engine()
@@ -849,6 +881,9 @@ class Guided:
                 if not isinstance(files, list) or any(not isinstance(name, str) or name not in self.supported_files(native) for name in files):
                     raise ValueError("Select supported RPG Maker files from this project's list.")
                 options = {"files": files or []}
+            elif action == "export_selected" and run_output:
+                paths = files
+                options = {"files": paths, "run_id": run_output["run_id"]}
             elif action == "export_selected":
                 if value["project"].get("collection_error"):
                     raise ValueError(value["project"]["collection_error"])
@@ -869,6 +904,7 @@ class Guided:
                     raise ValueError("Choose the release destination.")
                 options["output"] = str(destination(project["source"], self.translation.workspace, self.backend.source, options["output"]))
             result = (self.backend.guided_text_preview(native["id"], action, options) if action in {"runtime_restore", "qa_apply"}
+                      else self.backend.guided_export_preview(native["id"], paths, run_output=run_output) if run_output
                       else self.backend.guided_export_preview(native["id"], paths) if action == "export_selected"
                       else self.backend.guided_preparation_preview(native["id"], action, options) if action == "prepare_game"
                       else self.backend.workflows.preview(native["id"], action, options))

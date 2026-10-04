@@ -4,7 +4,7 @@ import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
-import { activeRun, filePreviewRun, fileRun, fileStatus } from "./translationView";
+import { activeRun, filePreviewRun, fileRun, fileMetricRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
@@ -43,13 +43,14 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
           change={names => change("selected", retainOtherScope(values.selected, rows, names))}
           inline={{ preview: openFile, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
-              const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner, fileOwner?.id !== run?.id), metrics = fileOwner?.process?.fileMetrics?.[row.name];
+              const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner, fileOwner?.id !== run?.id);
+              const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
               const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
               const statusText = <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}>
                 {fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
-                <span className="translation-file-cost" title={metrics ? "Engine-reported cost for this saved run" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>
-                <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${fileOwner?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;
+                <span className="translation-file-cost" title={metrics ? "Engine-reported cost from the last run that changed this file" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>
+                <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${metricRun?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;
             } }} />
       </section>
       {file && <div className="translation-preview" hidden={!inspecting}>

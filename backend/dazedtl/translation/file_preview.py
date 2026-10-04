@@ -20,7 +20,9 @@ def text_fields(value, source=None, path=""):
             before = source[index] if isinstance(source, list) and index < len(source) else None
             yield from text_fields(item, before, path + "/" + str(index))
     elif isinstance(value, str) and (value.strip() or isinstance(source, str) and source.strip()):
-        before = source if isinstance(source, str) and source != value else None
+        if isinstance(source, str) and source == value:
+            return
+        before = source if isinstance(source, str) else None
         yield {"location": path or "/", "text": value, "source": before}
 
 

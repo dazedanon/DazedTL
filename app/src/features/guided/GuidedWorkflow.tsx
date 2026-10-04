@@ -59,7 +59,7 @@ const speakers = ["NAMES", "FIRSTLINESPEAKERS", "INLINE401SPEAKERS", "FACENAME10
 const advanced = ["CODE122", "CODE122_VAR_RANGES", "CODE357", "ENABLED_PLUGINS_357", "CODE355655", "ENABLED_PATTERNS_355655", "CODE657", "CODE356", "CODE320", "CODE324", "CODE325", "CODE108"];
 const advancedCodes = advanced.filter((key) => key.startsWith("CODE") && key !== "CODE122_VAR_RANGES");
 const phaseLabels: Record<Phase, string> = { database: "Database files", dialogue: "Maps & events", variables: "Update comparisons", advanced: "Event / plugin codes", speakers: "Optional name translation" };
-const actionKey = (name: string, options: Record<string, unknown> = {}) => name === "start" ? `start:${options.mode}:${options.phase || "speakers"}` : name === "runtime_restore" ? `runtime_restore:${options.publication}` : name;
+const actionKey = (name: string, options: Record<string, unknown> = {}) => name === "start" ? `start:${options.mode}:${options.phase || "speakers"}` : name === "runtime_restore" ? `runtime_restore:${options.publication}` : name === "export_selected" && options.run_id ? `export_selected:${options.run_id}` : name;
 const jobTime = (job: { updated?: string; created?: string }) => Date.parse(job.updated || job.created || "") || 0;
 const fileCount = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 const pathKey = (name: string) => name;
@@ -665,7 +665,15 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panelActions}</ActionBar>
     </Modal>}
     {batchesOpen && <BatchMonitor projectId={project.id} runs={state.runs} focusRun={batchesRun} close={() => setBatchesOpen(false)}
-      inspect={item => { setBatchesOpen(false); inspect(item); }} />}
+      disabled={disabled || !baseline} applicationJob={item => {
+        const startedJob = started[actionKey("export_selected", { run_id: item.id })];
+        return state.operations.find(job => job.id === startedJob?.id) || startedJob;
+      }} reapply={async item => {
+        const options = { run_id: item.id };
+        const result = await preparePreview("export_selected", options);
+        previewRequest.current = { name: "export_selected", options };
+        setInspectRelease(false); setPreview(result);
+      }} inspect={item => { setBatchesOpen(false); inspect(item); }} />}
     {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
       <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}
     {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
@@ -687,6 +695,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <div><dt>Original source</dt><dd>{preview.options.untranslated ? `This untranslated game, after preparation: ${preview.destination}` : String(preview.options.original)}</dd></div></dl>
       </> : !["release", "release_patch"].includes(preview.action) && <p className="path">{preview.destination}</p>}{preview.action === "start" && <><p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>{paid && preview.paths.some(name => state.readiness.outputs.includes(name)) && <p>Existing working outputs for this scope will be replaced as results are saved. Earlier run copies remain in History; game files change only after Apply.</p>}</>}
       {!["release", "release_patch"].includes(preview.action) && !!preview.paths.length && <><p>{fileCount(preview.files || preview.paths.length)} {preview.action === "git_setup" ? "in this baseline" : "in this action"}</p>{preview.paths.length <= 8 ? <ul className="guided-preview-paths" aria-label="Files in this action">{preview.paths.map((name) => <li key={name} className="guided-preview-path">{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={preview.paths} itemKey={pathKey} label="Files in this action" empty={null}>{(name) => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}</>}
+      {preview.action === "export_selected" && !!preview.options.run_id && <p>Uses the saved files from this Batch. Reapplying makes no API requests.</p>}
       {!!preview.additions?.length && <p>{preview.additions.length} files are additions to the original baseline.</p>}
       {preview.action === "backup_source" && sourceBackup?.available === false && <p>This saves current files. It cannot recover the missing original.</p>}
       {preview.action === "refresh_sources" && <p>Replace these working copies with the current game files, including any manual edits. Existing working copies, translated output and variable cache will be archived. Saved runs remain in History. This does not restore the original backup or change the game.</p>}
