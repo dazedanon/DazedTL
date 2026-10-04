@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { Job, RunPayload } from "../app/src/api/contracts.ts";
 import { completeForSelection, filePreviewRun, fileStatus, phaseRun, needsSubmissionReview, canResumeRun, requestContext, translatedLines } from "../app/src/features/guided/translationView.ts";
 
@@ -87,4 +88,21 @@ test("new attempts supersede historical warnings without releasing submission pr
   assert.equal(canResumeRun(unresolved), true);
   const resumed = { ...unresolved, status: "running" };
   assert.equal(phaseRun([next, resumed], "database"), resumed);
+});
+
+// History must not turn local estimates, absent receipts or a stopped/failed
+// worker with partial output into a successful translated-file claim.
+test("history outcomes distinguish verified output from completed attempts and unresolved submissions", () => {
+  const done = { id: "history", status: "complete", mode: "batch", files: ["Items.json"], process: { prepared: 0, received: 0, errors: [] } } as Job;
+  assert.equal(historyOutcome(done).kind, "empty");
+  assert.equal(historyOutcome({ ...done, mode: "estimate" }).kind, "estimate");
+  const recorded = { ...done, outputs: { "Items.json": "hash" } };
+  assert.equal(historyOutcome(recorded).kind, "finished");
+  assert.equal(historyOutcome({ ...recorded, availableOutputs: [] }).kind, "missing");
+  const verified = { ...recorded, availableOutputs: ["Items.json"] };
+  assert.equal(historyOutcome(verified).kind, "saved");
+  assert.equal(historyOutcome({ ...verified, partialOutputs: ["Items.json"] }).kind, "partial");
+  assert.equal(historyOutcome({ ...verified, status: "failed" }).kind, "failed");
+  assert.equal(historyOutcome({ ...verified, status: "stopped", keptForHistory: true, process: { ...done.process!, retryBlocked: true } }).kind, "review");
+  assert.equal(historyOutcome({ ...verified, status: "waiting", approval: { token: "fixture", kind: "batch", detail: {} } }).kind, "approval");
 });

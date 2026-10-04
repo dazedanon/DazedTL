@@ -3,14 +3,14 @@ import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
-import { activeRun, filePreviewRun, fileStatus, needsSubmissionReview } from "./translationView";
+import { filePreviewRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, guidance, requestPreview, runActions, review, history, dismiss, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, guidance, requestPreview, history, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; guidance: () => void; runActions: ReactNode; review: (job: Job) => void; history: () => void; dismiss?: ReactNode; children?: ReactNode;
+  settings: () => void; guidance: () => void; history: () => void; children?: ReactNode;
   requestPreview?: { job: string; file: string; phase: Phase } | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
@@ -32,7 +32,6 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
     setFile(name); setInspecting(true);
     setRecord(filePreviewRun(name, run, estimate, fileRun(name), currentEstimate)?.id || "");
   };
-  const saved = scoped.filter(row => state.readiness.outputs.includes(row.name)).length;
   return <div ref={root} className={`translation-workspace${inspecting ? " is-inspecting" : ""}`}>
     <div className="translation-toolbar" aria-label="Translation setup">
       <Button variant="quiet" disabled={locked} onClick={settings} title={state.provider.connection}>{state.provider.model || "Choose a model"}</Button>
@@ -41,9 +40,6 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
       <div className="translation-tools"><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={guidance}>Options</Button></div>
     </div>
     <div className="translation-notices">{children}{locked && <p className="muted">Selection is fixed while this run is active. You can still search and preview files.</p>}</div>
-    {run && !run.scopeComplete && <div className="translation-run-summary" role="status"><span>{run.approval ? "Requests prepared" : activeRun(run) ? run.message : `${saved} / ${scoped.length} selected files saved`}</span>
-      {!activeRun(run) && (run.status === "failed" || needsSubmissionReview(run)) && <span className="translation-error">{needsSubmissionReview(run) ? "Review saved submissions before sending this text again." : <>{run.process?.failed ? `${run.process.failed} requests rejected.` : "This attempt did not finish."} Use Translate for remaining work.</>}</span>}
-      {runActions}{dismiss}<Button variant="link" onClick={() => review(run)}>Run details</Button></div>}
     <div className="translation-columns">
       <section className="translation-files" aria-label="Translation files">
         <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked}
@@ -57,8 +53,7 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
             } }} />
       </section>
       {file && <div className="translation-preview" hidden={!inspecting}>
-        <TranslationInspector projectId={state.projectId} file={file} checked={selected.has(file)} job={inspected}
-          records={[...records, ...(inspected && !records.some(item => item.id === inspected.id) ? [inspected] : [])]} selectRecord={setRecord}
+        <TranslationInspector projectId={state.projectId} file={file} job={inspected} history={history}
           close={() => { setInspecting(false); }} />
       </div>}
     </div>

@@ -80,6 +80,11 @@ export interface RunPayload {
   index: number; total: number; state: string; source: Record<string, string> | null;
   context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;
 }
+export interface FileTextPreview {
+  file: string; origin: "translated" | "working" | "game"; revision: string;
+  rows: { location: string; text: string; source: string | null; truncated: boolean }[];
+  offset: number; total: number; nextOffset: number | null;
+}
 export type Phase = "database" | "dialogue" | "variables" | "advanced" | "speakers";
 export type RunMode = "estimate" | "translate" | "batch";
 export type GuidedStep = "prepare" | "context" | "translate" | "plugins" | "images" | "advanced" | "apply" | "layout" | "review";
@@ -735,6 +740,7 @@ export interface RpcContract {
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };
+  guided_file_preview: { request: { project_id: string; name: string; offset?: number; query?: string }; response: FileTextPreview };
   guided_provider_details: { request: { project_id: string; run_id: string }; response: { batches: NonNullable<RunProcess['batches']> } };
   guided_draft: {
     request: { project_id: string; documents: Documents };

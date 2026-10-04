@@ -309,6 +309,18 @@ class Guided:
         from dazedtl.compatibility.process_view import payload
         return payload(self.backend.manual.folder(run_id), index)
 
+    def file_preview(self, project_id, name, offset=0, query=""):
+        _, native = self.record(project_id)
+        if name not in self.supported_files(native):
+            raise ValueError("Choose a supported file from this project.")
+        inputs = self.inputs(native)
+        # Check the runtime path even when a working copy exists. No caller can
+        # turn this reader into arbitrary project/profile filesystem access.
+        relative = (Path(native["data"]) / name).relative_to(Path(native["source"])).as_posix()
+        runtime = project_path(native["source"], relative, exists=False)
+        from .file_preview import preview
+        return preview(inputs, name, runtime, offset, query)
+
     def provider_details(self, project_id, run_id):
         _, native = self.record(project_id)
         if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:

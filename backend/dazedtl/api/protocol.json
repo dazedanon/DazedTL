@@ -158,6 +158,9 @@
     "guided_payload": {
       "refresh": false
     },
+    "guided_file_preview": {
+      "refresh": false
+    },
     "guided_provider_details": {
       "refresh": false
     },

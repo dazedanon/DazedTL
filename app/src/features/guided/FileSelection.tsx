@@ -84,7 +84,7 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
       <div className="actions">
         <Button variant="quiet" disabled={disabled || !visible.length || visible.every((file) => selection.has(file.name))} onClick={() => bulk(true)}>Select {inline && !query ? "all" : "matching"}</Button>
         <Button variant="quiet" disabled={disabled || !visible.some((file) => selection.has(file.name))} onClick={() => bulk(false)}>Clear {inline && !query ? "all" : "matching"}</Button>
-        {inline && undo && <Button variant="quiet" disabled={disabled} onClick={() => { change(undo); setUndo(null); setNotice("Previous selection restored."); }}>Undo</Button>}
+        {inline && <Button variant="quiet" disabled={disabled || !undo} onClick={() => { if (undo) change(undo); setUndo(null); setNotice("Previous selection restored."); }}>Undo</Button>}
         <Button variant="quiet" aria-expanded={help} onClick={() => setHelp(!help)}>Shortcuts</Button>
       </div>
     </div>

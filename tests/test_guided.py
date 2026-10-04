@@ -90,6 +90,46 @@ class GuidedTests(unittest.TestCase):
         saved = snapshot(self.source, store_path(self.source), source_game=True)
         write_json(lifecycle_path(self.translation.workspace, self.identity), {'version': 1, 'source_backup': saved})
 
+    def test_file_preview_uses_actual_files_without_selection_or_request_receipts(self):
+        # A saved translation without request provenance must remain readable;
+        # previewing an unchecked file must never prepare, select or mutate it.
+        self.native['selected'] = []
+        before = {path: path.read_bytes() for path in self.source.rglob('*') if path.is_file()}
+        page = self.guided.file_preview(self.identity, 'Items.json')
+        self.assertEqual((page['origin'], page['rows'][0]['text']), ('game', '薬'))
+        self.assertEqual(self.native['selected'], [])
+        self.assertEqual(before, {path: path.read_bytes() for path in self.source.rglob('*') if path.is_file()})
+        self.assertFalse((self.folder/'source-inputs.json').exists())
+        write_json(self.folder/'files/Items.json', [{'name': '薬', 'description': '説明'}])
+        self.assertEqual(self.guided.file_preview(self.identity, 'Items.json')['origin'], 'working')
+        output = [{'name': 'Potion', 'description': '', '_original': {'name': '薬', 'description': '説明'}}]
+        write_json(self.folder/'translated/Items.json', output)
+        page = self.guided.file_preview(self.identity, 'Items.json')
+        self.assertEqual(page['origin'], 'translated')
+        self.assertEqual([(row['location'], row['source'], row['text']) for row in page['rows']],
+                         [('/0/name', '薬', 'Potion'), ('/0/description', '説明', '')])
+        self.assertFalse(any('_original' in row['location'] for row in page['rows']))
+        # Pagination and text search stay bounded, with no dropped text between pages.
+        write_json(self.folder/'translated/Items.json', [{'name': f'Item {index}', 'note': 'long'*3000 if index == 5 else 'Note'} for index in range(180)])
+        offset, locations = 0, []
+        while offset is not None:
+            part = self.guided.file_preview(self.identity, 'Items.json', offset)
+            self.assertLessEqual(len(part['rows']), 80)
+            self.assertTrue(all(len(row['text']) <= 8000 for row in part['rows']))
+            locations.extend(row['location'] for row in part['rows'])
+            offset = part['nextOffset']
+        self.assertEqual(len(locations), 360)
+        self.assertEqual(len(set(locations)), 360)
+        match = self.guided.file_preview(self.identity, 'Items.json', query='Item 179')
+        self.assertEqual((match['total'], match['rows'][0]['location']), (1, '/179/name'))
+        for kwargs in ({'name': '../secret.json'}, {'name': 'Foreign.json'}, {'name': 'Items.json', 'offset': -1}, {'name': 'Items.json', 'offset': True}):
+            with self.assertRaises(ValueError): self.guided.file_preview(self.identity, **kwargs)
+        with self.assertRaises(ValueError): self.guided.file_preview('foreign-project', 'Items.json')
+        (self.folder/'translated/Items.json').unlink()
+        (self.folder/'translated/Items.json').symlink_to(self.source/'Items.json')
+        with self.assertRaises(ValueError): self.guided.file_preview(self.identity, 'Items.json')
+
+
     def test_matching_estimates_survive_reopening_and_reject_each_changed_input(self):
         with self.assertRaisesRegex(ValueError, 'current estimate'):
             self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
