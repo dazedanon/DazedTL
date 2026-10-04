@@ -167,6 +167,15 @@
     "guided_provider_details": {
       "refresh": false
     },
+    "guided_batch_cancel_preview": {
+      "refresh": false
+    },
+    "guided_batch_cancel": {
+      "refresh": true
+    },
+    "guided_batch_collect": {
+      "refresh": true
+    },
     "guided_form": {
       "refresh": true,
       "duringClose": true
@@ -250,6 +259,9 @@
       "refresh": true
     },
     "plugins_action": {
+      "refresh": true
+    },
+    "plugins_continue": {
       "refresh": true
     },
     "guided_output_folder": {

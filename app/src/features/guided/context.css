@@ -55,12 +55,9 @@
 .context-finding-details { padding-bottom: var(--space-3); font-size: var(--font-control); line-height: 1.6; }
 .context-finding-details p { margin-top: 0; white-space: pre-wrap; }
 .context-finding-details li, .context-report-details li { margin-block: var(--space-2); overflow-wrap: anywhere; }
-.context-measurement-caption { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin: 0 0 var(--space-4); color: var(--muted); font-size: var(--font-control); }
-.context-measurement-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(8em, 1fr)); gap: var(--space-4); margin: 0 0 var(--space-5); }
-.context-measurement-values > div { padding: var(--space-3); background: var(--color-inset); border: 1px solid var(--line); border-radius: var(--control-radius); }
-.context-measurement-values dt { color: var(--muted); font-size: var(--font-control); }
-.context-measurement-values dd { margin: var(--space-1) 0 0; font-size: var(--font-page-title); font-variant-numeric: tabular-nums; }
-.context-measurement-values small { color: var(--muted); }
+.context-measurements { margin: var(--space-4) 0 0; font-size: var(--font-control); }
+.context-measurements > summary { margin: 0; }
+.context-measurements > p { white-space: pre-wrap; line-height: 1.6; }
 .context-measurements > .context-report-details { margin: 0; padding-block: var(--space-3); border-top: 1px solid var(--line); font-size: var(--font-control); }
 .context-report-details > summary { margin: 0; }
 .context-report-details p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }

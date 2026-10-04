@@ -76,7 +76,7 @@ export default function RunPanel({
         <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
         {job.eventTextReview.settings && <dl>{Object.entries(job.eventTextReview.settings).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value)}</dd></div>)}</dl>}
       </details>}
-      {active && job.mode === "batch" && <p className="muted">Stopping local monitoring leaves submitted provider work attached to this saved run.</p>}
+      {active && job.mode === "batch" && <p className="muted">Submitted Batches are monitored automatically. Open Batches to view progress or cancel provider work.</p>}
       {job.progress && (
         <>
           <progress
@@ -134,9 +134,9 @@ export default function RunPanel({
         </div>
       )}
       <div className="actions">
-        {active ? (
+        {active && job.mode !== "batch" ? (
           <Button size="comfortable" disabled={busy} pending={pendingKey === "run:stop"} onClick={stop}>
-            {job.mode === "batch" ? "Pause local monitoring" : "Stop after current work"}
+            Stop after current work
           </Button>
         ) : canResumeRun(job) ? (
           <Button size="comfortable" disabled={busy || job.process?.retryBlocked && !(job.mode === "batch" && job.phase?.startsWith("poll"))} onClick={resume}>

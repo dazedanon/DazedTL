@@ -45,6 +45,49 @@ def ledger(root):
     return sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
 
 
+def ledger_records(root):
+    path = Path(root)/'log/dazedtl-process.sqlite3'
+    if not path.is_file():
+        return None
+    if path.is_symlink() or path.parent.is_symlink():
+        raise ValueError('Saved process evidence cannot follow symbolic links.')
+    stat = path.stat()
+    history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
+    consumed = bool(history) and all(batch.get('status') == 'consumed' for batch in history)
+    return _ledger_records(str(root), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), consumed)
+
+
+@lru_cache(maxsize=8)
+def _ledger_records(root, signature, consumed):
+    connection = ledger(root)
+    if connection is None:
+        return None
+    with closing(connection):
+        names = {row[1] for row in connection.execute('PRAGMA table_info(requests)')}
+        fields = ('params', 'state', 'error', 'usage', 'sources', 'filename', 'response')
+        rows = connection.execute('SELECT ' + ','.join(name if name in names else 'NULL' for name in fields) + ' FROM requests ORDER BY id').fetchall()
+        validated = {}
+        if consumed and connection.execute("SELECT 1 FROM sqlite_master WHERE name='validated_items'").fetchone():
+            validated = {key: (source, json.loads(response)) for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items')}
+    result = []
+    for row in rows:
+        entry = dict(zip(fields, row))
+        for key in ('params', 'error', 'usage', 'sources', 'response'):
+            entry[key] = json.loads(entry[key]) if entry[key] is not None else None
+        source = source_values(entry['params']) or {}
+        keys = entry['sources'] or []
+        # Older Batch workers cleared raw responses after consume. Recover only
+        # exact native-validated source identities from this same saved run.
+        # Never present this local translation as an original provider body.
+        if consumed and entry['response'] is None and source and len(keys) == len(source) and all(
+                key in validated and validated[key][0] == text for key, text in zip(keys, source.values())):
+            entry.update(state='validated', response=[validated[key][1] for key in keys], responseOrigin='validated')
+        elif consumed and entry['state'] == 'prepared':
+            entry['state'] = 'uncertain'
+        result.append(entry)
+    return result
+
+
 def queue(root):
     root = evidence_root(root)
     for name in ('batch_requests.json', 'estimate_requests.json'):
@@ -61,9 +104,28 @@ def queue(root):
                     if key in result and result[key] != value:
                         raise ValueError('Saved request fragments conflict; no submission was made.')
                     result[key] = value
+        if name == 'batch_requests.json':
+            from .batch_evidence import ARCHIVE, merge
+            result = merge(saved(root, ARCHIVE).get('requests', {}), result)
         if result:
             return result
     return {}
+
+
+def batch_results(root):
+    from .batch_evidence import ARCHIVE, merge
+    root = evidence_root(root)
+    current = saved(root, 'batch_results.json')
+    return merge(saved(root, ARCHIVE).get('results', {}), current.get('results', current))
+
+
+def batch_state(root):
+    from .batch_evidence import ARCHIVE
+    root = evidence_root(root)
+    previous, current = saved(root, ARCHIVE).get('state', {}), saved(root, 'batch_state.json')
+    manifests = {batch['id']: batch for batch in previous.get('batches', [])}
+    manifests.update({batch['id']: batch for batch in current.get('batches', [])})
+    return {**previous, **current, 'batches': list(manifests.values())}
 
 
 def clean_message(value, secret=''):
@@ -174,9 +236,7 @@ def summary(root, job):
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
     submitted = set(key for batch in batches for key in batch.get('custom_ids', {}).values())
     duplicate_submissions = sum(len(batch.get('custom_ids', {})) for batch in batches) - len(submitted)
-    results = saved(evidence_root(root), 'batch_results.json')
-    if 'results' in results:
-        results = results['results']
+    results = batch_results(root)
     failed = sum((batch.get('request_counts') or {}).get('errored') or 0 for batch in batches)
     errors = [clean_message(error.get('message')) for batch in batches for error in (batch.get('provider_errors') or []) if error.get('message')]
     received = len(results)
@@ -184,10 +244,9 @@ def summary(root, job):
     validated = None
     usage = None
     uncertain = 0
-    with_connection = ledger(root) if not requests else None
-    if with_connection is not None:
-        with closing(with_connection) as connection:
-            rows = connection.execute('SELECT state,usage,error FROM requests').fetchall()
+    records = ledger_records(root) if not requests else None
+    if records is not None:
+        rows = [(row['state'], row['usage'], row['error']) for row in records]
         prepared = len(rows)
         received = sum(state in {'received', 'validated'} for state, _, _ in rows)
         validated = sum(state == 'validated' for state, _, _ in rows)
@@ -196,8 +255,8 @@ def summary(root, job):
         has_intent = 'sources' in {row[1] for row in ledger_columns(root)}
         uncertain = sum(state in {'submitted', 'uncertain'} or (interrupted and not has_intent and state == 'prepared')
                         for state, _, _ in rows)
-        errors += [clean_message(json.loads(error).get('message') or 'Provider response unavailable; submission may be uncertain.') for _, _, error in rows if error]
-        usages = [json.loads(value) for _, value, _ in rows if value]
+        errors += [clean_message(error.get('message') or 'Provider response unavailable; submission may be uncertain.') for _, _, error in rows if error]
+        usages = [value for _, value, _ in rows if value]
         if usages:
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('prompt_tokens', 'completion_tokens', 'total_tokens')}
     elif batches:
@@ -211,13 +270,22 @@ def summary(root, job):
     receipts = []
     for batch in batches:
         current = polls.get(batch['id'], {}) if batch.get('api_status') not in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'} else {}
-        receipts.append({'id': batch['id'], 'status': current.get('api_status') or batch.get('api_status') or 'unknown',
-                         'counts': current.get('counts') or batch.get('request_counts') or {}})
+        status = current.get('api_status') or batch.get('api_status') or 'unknown'
+        counts = current.get('counts') or batch.get('request_counts') or {}
+        cancellation = job.get('dazedtl_batch_cancellations', {}).get(batch['id'])
+        if cancellation and status not in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'}:
+            status = cancellation['status']
+            if status in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'}:
+                counts = cancellation.get('counts') or {}
+        receipts.append({'id': batch['id'], 'status': status, 'provider': batch.get('provider'),
+                         'total': len(batch['custom_ids']) if isinstance(batch.get('custom_ids'), dict) else None,
+                         'counts': counts})
     return {'mode': job.get('mode'), 'prepared': prepared,
+            'resultsCollected': batch_state(root).get('status') == 'fetched',
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
-            'submitted': len(submitted) if batches or requests else None,
-            'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or with_connection else None,
+            'submitted': len(submitted) if batches or requests else sum(row['state'] != 'prepared' for row in records) if records is not None else None,
+            'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or records is not None else None,
             'validated': validated, 'validatedFiles': len(job.get('completed', [])),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
@@ -247,7 +315,7 @@ def phase_feedback(job):
         pending = sum(row.get('processing') or 0 for row in counts)
         detail = f' Last saved provider status: {done} completed, {pending} processing.' if counts and any(counts) else ''
         terminal = bool(batches) and all(row.get('status') in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'} for row in batches)
-        message = 'Provider work has finished. Resume local monitoring to retrieve its results.' if terminal and paused else 'Local monitoring is paused. Submitted Batch work continues at the provider.' if paused else 'Batch submitted. Waiting for provider results.'
+        message = 'Provider work has finished. Results are collected automatically.' if terminal else 'Batch submitted. Waiting for provider results.'
         return {'message': message + detail,
                 'progress': None}
     if phase in {'collect', 'collect_done', 'submit'}:
@@ -302,22 +370,18 @@ def payload(root, index):
                 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
                 'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,
                 'usage': token_usage(row['response'])}
-    connection = ledger(root)
-    if connection is None:
+    rows = ledger_records(root)
+    if rows is None:
         raise ValueError('Exact payloads were not recorded for this older Live run.')
-    with closing(connection):
-        total = connection.execute('SELECT COUNT(*) FROM requests').fetchone()[0]
-        has_response = 'response' in {item[1] for item in connection.execute('PRAGMA table_info(requests)')}
-        row = connection.execute('SELECT params,state,error,usage' + (',response' if has_response else '') + ' FROM requests ORDER BY id LIMIT 1 OFFSET ?', (index,)).fetchone()
-    if row is None:
+    if index >= len(rows):
         raise ValueError('This request is no longer available.')
-    params = json.loads(row[0])
-    return {'index': index, 'total': total, 'state': row[1], 'source': source_values(params),
+    row = rows[index]
+    params = row['params']
+    return {'index': index, 'total': len(rows), 'state': row['state'], 'source': source_values(params),
             'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
             'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
-            'error': json.loads(row[2]) if row[2] else None,
-            'usage': token_usage(json.loads(row[3])) if row[3] else None,
-            'response': json.loads(row[4]) if has_response and row[4] else None}
+            'error': row['error'], 'usage': token_usage(row['usage']), 'response': row['response'],
+            'responseOrigin': row.get('responseOrigin')}
 
 
 def provider_details(root, resolve_connection):

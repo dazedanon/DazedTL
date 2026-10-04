@@ -12,6 +12,15 @@ from dazedtl.translation.files import decode_json, digest, project_path, read_js
 INDEX = 'log/dazedtl-checkpoints.json'
 
 
+def can_collect_outputs(job):
+    """Batch collection writes scratch JSON; only consumption translates it.
+
+    Keep explicit completed-file receipts and unknown legacy phases readable.
+    """
+    return (job.get('mode') != 'batch' or bool(job.get('completed'))
+            or job.get('phase') not in {'preparing', 'collect', 'collect_done', 'submit', 'poll', 'polling', 'poll_status', 'failed', 'canceled'})
+
+
 @lru_cache(maxsize=1024)
 def _json_digest(path, signature):
     raw = Path(path).read_bytes()

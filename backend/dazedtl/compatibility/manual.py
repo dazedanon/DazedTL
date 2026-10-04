@@ -68,6 +68,12 @@ def manual_jobs(source, workspace, lock, allow_providers):
             raise RuntimeError(
                 "The preserved worker entrypoint changed. Update the compatibility adapter."
             )
+        directory = Path(arguments[3])
+        job = json.loads((directory / 'job.json').read_bytes())
+        if job.get('dazedtl_consume_only'):
+            attempt = json.loads((directory / 'attempt.json').read_bytes())
+            if job.get('mode') != 'batch' or attempt.get('resume') is not True or attempt.get('batch_resume_state') != 'fetched':
+                raise ValueError('Automatic Batch recovery can only save already collected responses.')
         arguments = [
             *arguments[:2],
             str(Path(__file__).with_name("manual_worker.py")),
@@ -162,6 +168,16 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
         def resume_batch(self, identity, recovery):
             return self.controller(identity).resume_batch(identity, recovery) if self.controllers is not None else super().resume_batch(identity, recovery)
+
+        def consume_batch(self, identity):
+            from .process_view import saved
+            with self.lock:
+                job = self.jobs[identity]
+                if job.get('mode') != 'batch' or saved(self.folder(identity), 'batch_state.json').get('status') != 'fetched':
+                    raise ValueError('Collect this Batch’s responses before saving results.')
+                job['dazedtl_consume_only'] = True
+                self.save(job)
+                return self.resume(identity)
 
         def close(self):
             if self.controllers is None:

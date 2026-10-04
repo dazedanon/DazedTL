@@ -39,7 +39,9 @@ def install():
                       if original_plan.is_file() and not original_plan.is_symlink() else None)
         def checkpoint_reader():
             from .checkpoints import install as install_checkpoints
+            from .batch_evidence import install as install_batch_evidence
             install_checkpoints(sys.modules.get("modules.rpgmakermvmz"), root, plan)
+            install_batch_evidence(sys.modules["util.translation"], root, plan)
 
         if policy is None:
             result = native_prepare(root)

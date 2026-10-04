@@ -14,7 +14,10 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
   const batch = mode === "batch";
   const costs = (batch ? [value.batch_nocache_cost, value.batch_cached_cost, value.batch_cost] : [value.live_cost ?? value.estimated_cost]).filter(numeric);
   const low = Math.min(...costs), high = Math.max(...costs);
-  const prices = batch ? [["Without cache", value.batch_nocache_cost], ["With cache", value.batch_cached_cost]] as const : [];
+  const writes = numeric(value.cache_write_tokens) && value.cache_write_tokens > 0;
+  const reads = numeric(value.cache_read_tokens) && value.cache_read_tokens > 0;
+  const cacheLabel = writes ? reads ? "Including cache writes & reuse" : "Including cache writes" : reads ? "With cache reuse" : "Cache-adjusted estimate";
+  const prices = batch ? [["Base Batch cost", value.batch_nocache_cost], [cacheLabel, value.batch_cached_cost]] as const : [];
   return <section className="translation-cost-review" aria-label="Estimated cost">
     <div className="translation-cost-total">
       <span>Estimated {batch ? "Batch" : "Live"} cost</span>
@@ -29,6 +32,7 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
     {prices.some(([, price]) => numeric(price)) && <dl className="translation-cost-prices">
       {prices.filter(([, price]) => numeric(price)).map(([label, price]) => <div key={label}><dt>{label}</dt><dd>${Number(price).toFixed(5)}</dd></div>)}
     </dl>}
+    {batch && writes && <small className="translation-cache-note">Cache writes cost extra; savings come from reusing cached text.{value.cache_read_tokens === 0 && " No cache reuse is assumed in this estimate."}</small>}
   </section>;
 }
 
@@ -43,7 +47,7 @@ export function TranslationReview({ job, busy, pendingKey, disabled, approvalCur
   return <Modal label={title} className="guided-sheet translation-review" dismissible={!busy} onDismiss={close}>
     <header className="guided-sheet-heading translation-review-heading"><h2>{title}</h2><Button variant="quiet" disabled={busy} aria-label="Close review" onClick={close}><X size={18} aria-hidden="true" /></Button></header>
     <div className="guided-sheet-body translation-review-body">
-      <p className="translation-review-model">{job.model || "Saved model"} <span>· {batch ? "Batch" : "Live"} · {job.temporary ? "temporary preparation" : "saved run settings"}</span></p>
+      <p className="translation-review-model">{job.model || "Saved model"} <span>· {batch ? "Batch" : "Live"}</span></p>
       <TranslationCost value={job.approval.detail} mode={batch ? "batch" : "translate"} />
       <section className="translation-review-scope" aria-label="Prepared scope">
         <div className="translation-review-scope-heading"><h3>{files.length} {files.length === 1 ? "file" : "files"} to {batch ? "submit" : "check"}</h3><Button variant="quiet" disabled={busy || !files.length} onClick={inspect}>Inspect source & context</Button></div>

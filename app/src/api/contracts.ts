@@ -42,6 +42,7 @@ export interface Job {
   model?: string;
   files?: string[];
   progress?: { current: number; total: number; file: string };
+  itemProgress?: { current: number; total: number; file: string };
   log: string[];
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
@@ -66,6 +67,8 @@ export interface Job {
   };
 }
 export interface RunProcess {
+  monitoring?: { state: "monitoring" | "collecting" | "error" | "save_error" | "blocked"; message: string; checkedAt?: string };
+  resultsCollected?: boolean;
   fileMetrics?: Record<string, { cost: number; seconds: number }>;
   mode?: string; prepared?: number; submitted?: number | null; remaining?: number | null;
   received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
@@ -74,10 +77,14 @@ export interface RunProcess {
   requests?: { index: number; state: string; file?: string | null; sourceItems: number }[];
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
-  batches?: { id: string; status: string; counts: Record<string, number>; errors?: Record<string, string>[] }[];
+  batches?: { id: string; status: string; provider?: string; total?: number | null; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
   errors: string[]; usage?: Record<string, number> | null;
 }
+export interface BatchCancellation {
+  token: string; runId: string; batchId: string; provider: string; model: string; files: string[]; requests: number;
+}
 export interface RunPayload {
+  responseOrigin?: "validated" | null;
   index: number; total: number; state: string; source: Record<string, string> | null;
   context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;
   usage?: Record<string, number> | null;
@@ -510,6 +517,7 @@ export interface RpcContract {
   plugins_detail: {request:{project_id:string;file:string};response:PluginDetail};
   plugins_update: {request:{project_id:string;revision:string;changes:{view:Partial<PluginView>}};response:PluginState};
   plugins_action: {request:{project_id:string;action:string;options?:Record<string,unknown>};response:PluginActionResult};
+  plugins_continue: {request:{project_id:string;request_id:string};response:PluginActionResult};
   images_list: { request: { project_id: string; query?: string; folder?: string; filter?: string; offset?: number; limit?: number; selected_only?: boolean; asset_id?: string }; response: ImageList };
   images_update: { request: { project_id: string; revision: string; changes: Partial<ImageDraft> }; response: ImageManagerState };
   images_action: { request: { project_id: string; action: string; options?: Record<string, unknown> }; response: ImageActionResult };
@@ -745,6 +753,9 @@ export interface RpcContract {
   guided_file_preview: { request: { project_id: string; name: string; offset?: number; query?: string }; response: FileTextPreview };
   guided_discard_preparation: { request: { project_id: string; run_id: string }; response: { discarded: boolean } };
   guided_provider_details: { request: { project_id: string; run_id: string }; response: { batches: NonNullable<RunProcess['batches']> } };
+  guided_batch_cancel_preview: { request: { project_id: string; run_id: string; batch_id: string }; response: BatchCancellation };
+  guided_batch_cancel: { request: { project_id: string; token: string }; response: { id: string; status: string; requested: boolean } };
+  guided_batch_collect: { request: { project_id: string; run_id: string }; response: Job };
   guided_draft: {
     request: { project_id: string; documents: Documents };
     response: Saved;

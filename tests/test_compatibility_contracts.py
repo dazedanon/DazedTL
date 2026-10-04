@@ -330,11 +330,13 @@ class ManualJobs:
     def running(self): return False
     def start(self, source, engine, files, *args, **kwargs): return {'id': str(len(files)), 'files': files}
     def launch(self):
-        return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), 'run'],
+        return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), str(self.workspace/'run')],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
 ''')
             with patch('subprocess.Popen') as launch:
                 controller = manual_jobs(source, source / 'profile', None, False)
+                run = source / 'profile/run'
+                write_json(run/'job.json', {})
                 controller.launch()
                 args, kwargs = launch.call_args
                 self.assertEqual(Path(args[0][2]).name, 'manual_worker.py')
@@ -342,6 +344,17 @@ class ManualJobs:
                 self.assertEqual((kwargs['stdin'], kwargs['stdout']), (subprocess.PIPE, subprocess.PIPE))
                 self.assertEqual(kwargs['env']['DAZEDTL_ENGINE_SOURCE'], str(source))
                 self.assertEqual(kwargs['env']['PYTHONDONTWRITEBYTECODE'], '1')
+                # A collected-only worker must never fall back to queued or
+                # partially submitted work, even if state changed before launch.
+                write_json(run/'job.json', {'mode': 'batch', 'dazedtl_consume_only': True})
+                for state in ('queued', 'partially_submitted', 'submitted', None):
+                    write_json(run/'attempt.json', {'resume': True, 'batch_resume_state': state})
+                    with self.assertRaisesRegex(ValueError, 'already collected'):
+                        controller.launch()
+                self.assertEqual(launch.call_count, 1)
+                write_json(run/'attempt.json', {'resume': True, 'batch_resume_state': 'fetched'})
+                controller.launch()
+                self.assertEqual(launch.call_count, 2)
                 # The preserved phase may find more files than the user checked.
                 # Filter only its new run, preserving its native phase setup.
                 with controller.selected_workflow('owner', ['Items.json']):
@@ -385,6 +398,12 @@ class ManualJobs:
                 self.assertFalse((phases.folder('owner')/'translated/System.json').exists())
                 self.assertNotIn('partial', collected)
                 phases.manual.jobs['partial']['dazedtl_approved'] = True
+                # Approval starts provider work, but collection-pass JSON is
+                # still scratch data until the consume pass actually runs.
+                phases.manual.jobs['partial'].update(mode='batch', phase='poll_status')
+                phases._collect({'id': 'owner', 'manual_job': 'partial'})
+                self.assertFalse((phases.folder('owner')/'translated/System.json').exists())
+                phases.manual.jobs['partial']['phase'] = 'consume'
                 write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'file_versions': {'Items.json': 'reloaded'}})
                 project = {'id': 'owner', 'manual_job': 'partial'}
                 phases._collect(project)

@@ -41,15 +41,16 @@ class PluginTests(unittest.TestCase):
 
     def write(self,path,value):write_bytes(self.game/path,value.encode())
 
-    def investigation(self):
-        result=self.service.action(self.identity,'investigate');request=read_json(result['request'])
+    def investigation(self, task=None, *, refresh=True):
+        result=task or self.service.action(self.identity,'investigate');request=read_json(result['request'])
         rows=[]
         for asked in request['files']:
             rows.append({'path':asked['path'],'sourceHash':asked['sourceHash'],'examined':not asked['issue'],'evidence':'Complete recursive/source fixture audit',
                          'occurrences':[{'id':item['id'],'disposition':'protected' if item['protected'] else 'latent' if item['latent'] else 'visible',
                                          'safe':not item['protected'],'evidence':'Fixture drawText consumer checked; keys remain read-only','reason':'Player-visible static label' if not item['protected'] else 'Original Japanese item lookup'} for item in asked['occurrences']]})
         report={key:request[key] for key in ('version','kind','projectId','requestId','binding')};report.update(files=rows,complete=True,dependencies=[])
-        write_json(request['report'],report);self.service.action(self.identity,'refresh_findings')
+        write_json(request['report'],report)
+        if refresh: self.service.action(self.identity,'refresh_findings')
         return request,report
 
     def candidate(self,path,targets):
@@ -71,7 +72,7 @@ class PluginTests(unittest.TestCase):
         write_bytes(self.game/prepared['candidate'],raw);return raw
 
     def translated(self):
-        self.investigation();self.service.action(self.identity,'recommended');self.service.action(self.identity,'prepare')
+        self.investigation()
         result=self.service.action(self.identity,'translation_task');request=read_json(result['request'])
         rows=[]
         for asked in request['files']:
@@ -89,7 +90,9 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(item['protected']);self.assertFalse(item['finding']['safe'])
         labels=[item for item in value['files']['www/js/plugins.js']['occurrences'] if item['value']=='目的地']
         self.assertEqual(len(labels),2);self.assertTrue(all(item['finding']['safe'] for item in labels))
-        self.service.action(self.identity,'recommended');selected=self.service.state(self.identity)['counts']['selected']
+        selected=self.service.state(self.identity)['counts']['selected']
+        self.assertEqual(selected,4)  # Confirmed active leaves are included without a recommendation click.
+        self.assertFalse(any(row.get('prepared') for row in value['files'].values()))
         state=self.service.state(self.identity);self.service.update(self.identity,state['revision'],{'view':{'query':'PluginB','currentFile':'www/js/plugins/PluginA.js'}})
         self.assertEqual(self.service.list(self.identity,query='PluginB')['selectedMatched'],0)
         restarted=PluginService(self.projects,self.translation,self.backend)
@@ -97,8 +100,37 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(restarted.state(self.identity)['view']['query'],'PluginB')
         self.assertNotIn('www/data/Map001.json',[row['path'] for row in request['files']])
 
+    def test_automatic_scope_retains_exclusions_and_drops_missing_or_uncertain_evidence(self):
+        request,report=self.investigation()
+        selected=self.service.load(self.identity)['selection'];excluded=selected[0]
+        self.service.action(self.identity,'select',{'ids':[excluded],'selected':False})
+        self.service.action(self.identity,'refresh_findings')
+        self.assertNotIn(excluded,self.service.load(self.identity)['selection'])
+        row=next(row for row in report['files'] if row['path'].endswith('/PluginA.js'))
+        uncertain=next(item for item in row['occurrences'] if item['id'] in selected and item['id']!=excluded)
+        uncertain.update(disposition='unresolved',safe=False,reason='Display use is ambiguous')
+        omitted=next(item for item in report['files'][0]['occurrences'] if item['id'] in selected and item['id']!=excluded)
+        report['files'][0]['occurrences'].remove(omitted)
+        write_json(request['report'],report);self.service.action(self.identity,'refresh_findings')
+        value=self.service.load(self.identity)
+        self.assertTrue({excluded,uncertain['id'],omitted['id']}.isdisjoint(value['selection']))
+        attention=self.service.list(self.identity,filter='attention')['items']
+        self.assertEqual({row['path'] for row in attention},{'www/js/plugins.js','www/js/plugins/PluginA.js'})
+        self.assertEqual(self.service.state(self.identity)['counts']['needsReview'],2)
+        before={path:(self.game/path).read_bytes() for path in value['files']}
+        task=self.service.action(self.identity,'translation_task')
+        self.assertEqual(self.service.state(self.identity)['counts']['selectedNotPrepared'],0)
+        self.assertTrue(all((self.game/path).read_bytes()==raw for path,raw in before.items()))
+        self.assertTrue(all((self.game/row['candidate']).is_file() for row in read_json(task['request'])['files']))
+        # A retained path must not advertise a deleted copy as available to the agent.
+        (self.game/read_json(task['request'])['files'][0]['candidate']).unlink()
+        with self.assertRaisesRegex(ValueError,'missing files'):
+            self.service.action(self.identity,'translation_task')
+
     def test_foreign_duplicate_traversal_and_stale_reports_are_atomic(self):
         request,report=self.investigation();prior=deepcopy(self.service.load(self.identity))
+        with self.assertRaisesRegex(ValueError,'Copy a plugin task'):
+            self.service.continue_task(self.identity,request['requestId'])
         for mutate in (lambda r:r.update(projectId='foreign'),lambda r:r['files'].append(deepcopy(r['files'][0])),lambda r:r['files'][0].update(path='../outside.js')):
             invalid=deepcopy(report);mutate(invalid);write_json(request['report'],invalid)
             with self.assertRaises(ValueError):self.service.action(self.identity,'refresh_findings')
@@ -198,25 +230,42 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'does not decode'):list(leaves('{"Text": "日本語"'))
 
     def test_explicit_loaded_json_needs_new_investigation_then_exact_leaf_checks(self):
-        request,report=self.investigation();loader=next(row for row in request['files'] if row['path'].endswith('/PluginA.js'))
+        task=self.service.action(self.identity,'plugin_task')
+        request,report=self.investigation(task,refresh=False);loader=next(row for row in request['files'] if row['path'].endswith('/PluginA.js'))
+        with self.assertRaisesRegex(ValueError,'replaced'):
+            self.service.continue_task(self.identity,'foreign-request')
         literal=loader['loaderLiterals'][0]
         report['dependencies']=[{'path':literal['value'],'sourceFile':loader['path'],'literalId':literal['id'],'evidence':'Exact static fixture loadJSON call'}]
-        write_json(request['report'],report);self.service.action(self.identity,'refresh_findings')
-        self.assertEqual(self.service.state(self.identity)['findings']['status'],'partial')
-        self.investigation();self.service.action(self.identity,'recommended');self.service.action(self.identity,'prepare')
+        write_json(request['report'],report)
+        followup=self.service.continue_task(self.identity,request['requestId'])
+        self.assertEqual(followup['stage'],'investigation')
+        self.assertIn('www/data/PluginN.json',[row['path'] for row in read_json(followup['request'])['files']])
+        # A lost reply returns the existing successor, without creating another request.
+        self.assertEqual(self.service.continue_task(self.identity,request['requestId'])['requestId'],followup['requestId'])
+        self.investigation(followup,refresh=False)
+        view_revision=self.service.state(self.identity)['revision']
+        result=self.service.continue_task(self.identity,followup['requestId'])
+        self.assertEqual(result['stage'],'translation')
+        # Incoming agent scope must not invalidate a pending search/view edit.
+        self.service.update(self.identity,view_revision,{'view':{'query':'PluginN'}})
+        self.assertEqual(self.service.state(self.identity)['view']['query'],'PluginN')
         path='www/data/PluginN.json';row=self.service.load(self.identity)['files'][path]
-        result=self.service.action(self.identity,'translation_task');request=read_json(result['request']);asked=next(item for item in request['files'] if item['path']==path)
+        request=read_json(result['request']);asked=next(item for item in request['files'] if item['path']==path)
         targets={item['id']:'Archive' for item in asked['occurrences']};candidate=self.candidate(path,targets)
         answer={'path':path,'sourceHash':asked['sourceHash'],'candidateHash':digest(candidate),'targets':targets,'evidence':'Synthetic fixture display field'}
         report={key:request[key] for key in ('version','kind','projectId','requestId','binding')};report.update(files=[answer])
-        write_json(request['report'],report);self.service.action(self.identity,'refresh_results')
+        write_json(request['report'],report);self.service.continue_task(self.identity,request['requestId'])
         self.assertEqual(self.service.detail(self.identity,path)['status'],'ready')
+        self.assertEqual(self.service.state(self.identity)['counts']['applied'],0)
         altered=candidate.replace(b'"id"',b'"renamed"');write_bytes(self.game/row['prepared']['candidate'],altered);answer['candidateHash']=digest(altered)
         write_json(request['report'],report);self.service.action(self.identity,'refresh_results')
         self.assertEqual(self.service.detail(self.identity,path)['status'],'needs_revision')
         write_bytes(self.game/row['prepared']['candidate'],candidate);answer['candidateHash']=digest(candidate);write_json(request['report'],report)
         write_bytes(self.game/row['prepared']['copyRoot']/'New.js',b'malicious();')
         with self.assertRaisesRegex(ValueError,'New or missing'):self.service.action(self.identity,'refresh_results')
+        self.service.action(self.identity,'plugin_task')
+        with self.assertRaisesRegex(ValueError,'replaced'):
+            self.service.continue_task(self.identity,request['requestId'])
 
     def test_interrupted_publication_reconciles_exact_bytes_and_rejects_tampered_journal(self):
         request,report=self.translated();preview=self.service.action(self.identity,'preview_apply')['preview']

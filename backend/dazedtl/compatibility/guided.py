@@ -155,6 +155,9 @@ def phased_workflows(workspace, lock, operations, manual):
             for identity, job in self.manual.jobs.items():
                 if identity in retired or job.get('mode') == 'estimate' or temporary(job):
                     continue
+                from .checkpoints import can_collect_outputs
+                if not can_collect_outputs(job):
+                    continue
                 source = self.manual.folder(identity)
                 try:
                     plan_path = source / 'plan.json'

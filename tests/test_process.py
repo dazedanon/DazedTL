@@ -62,6 +62,67 @@ class ProcessTests(unittest.TestCase):
             reopened = Evidence(temporary, 'translate', {'dazedtl_continuation': {'item': {'source': '薬', 'response': 'Older'}}})
             self.assertEqual(reopened.reused['item'], {'source': '薬', 'response': 'Potion'})
 
+    def test_consumed_batch_recovers_only_exact_validated_translations_without_inventing_raw_responses(self):
+        # Native cleanup used to leave successful requests looking merely
+        # prepared. Local accepted values are usable only with exact identities.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = Evidence(root, 'batch')
+            params = {'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}
+            evidence.local.sources = ['owned-source']
+            evidence.local.filename = 'Items.json'
+            evidence.prepared(params)
+            write_json(root/'log/batch_history.json', {'batches': [{'id': 'paid', 'status': 'consumed', 'api_status': 'completed', 'custom_ids': {'one': 'key'}}]})
+            with evidence.connect() as connection:
+                connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('owned-source', '薬', '"Potion"'))
+            before = evidence.path.read_bytes()
+            payload = process_view.payload(root, 0)
+            self.assertEqual((payload['state'], payload['response'], payload['responseOrigin']), ('validated', ['Potion'], 'validated'))
+            self.assertEqual(process_view.summary(root, {'mode': 'batch'})['received'], 1)
+            self.assertEqual(evidence.path.read_bytes(), before)
+            with evidence.connect() as connection:
+                connection.execute("UPDATE validated_items SET source='Different source'")
+            payload = process_view.payload(root, 0)
+            self.assertIsNone(payload['response'])
+            self.assertEqual(payload['state'], 'uncertain')
+
+    def test_batch_cleanup_preserves_exact_requests_responses_and_submission_mapping(self):
+        # Normal fetch and consume clear native scratch files; the inspector
+        # and overlap checks must retain the original paid request evidence.
+        from dazedtl.compatibility import batch_evidence
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = {'payload': '{"Line1":"薬"}', 'params': {'messages': []}, 'provider': 'openai'}
+            requests, results = {'key': entry}, {'key': {'text': '{"Line1":"Potion"}', 'prompt_tokens': 12}}
+            queue_file, result_file, state_file = (root/'log'/name for name in ('batch_requests.json','batch_results.json','batch_state.json'))
+            state = {'status': 'submitted', 'batches': [{'id': 'paid', 'custom_ids': {'one': 'key'}}]}
+            for path, value in ((queue_file, requests), (result_file, results), (state_file, state)):
+                write_json(path, value)
+            read = lambda path, **_: json.loads(path.read_bytes()) if path.exists() else {}
+            native = SimpleNamespace(BATCH_QUEUE_FILE=queue_file, BATCH_RESULTS_FILE=result_file, BATCH_STATE_FILE=state_file,
+                _read_batch_queue=lambda **_: read(queue_file), _read_batch_file=read,
+                _clear_batch_queue_storage=lambda **_: queue_file.unlink(missing_ok=True))
+            original = native._clear_batch_queue_storage
+            batch_evidence.install(native, root, {'mode': 'translate'})
+            self.assertIs(native._clear_batch_queue_storage, original)
+            batch_evidence.install(native, root, {'mode': 'batch'})
+            # Unapproved preparation creates no durable archive.
+            native._clear_batch_queue_storage(queue_file=queue_file)
+            self.assertFalse((root/'log'/batch_evidence.ARCHIVE).exists())
+            write_json(queue_file, requests)
+            write_json(root/'log/batch_history.json', {'batches': [{**state['batches'][0], 'status': 'fetched', 'api_status': 'completed'}]})
+            native._clear_batch_queue_storage(queue_file=queue_file)
+            write_json(state_file, {'status': 'fetched', 'batches': []})
+            native._clear_batch_queue_storage(queue_file=queue_file)
+            result_file.unlink(); state_file.unlink()
+            with patch.dict('sys.modules', {'util.batch_providers': SimpleNamespace(_openai_batch_body=lambda _p, params: params)}):
+                payload = process_view.payload(root, 0)
+            self.assertEqual((payload['state'], payload['response'], payload['exact']['custom_id']), ('received', results['key'], 'one'))
+            self.assertEqual(process_view.queue(root), requests)
+            self.assertTrue(process_view.summary(root, {'mode': 'batch'})['resultsCollected'])
+            with self.assertRaisesRegex(ValueError, 'conflicts'):
+                batch_evidence.preserve(root, {'key': {**entry, 'payload': '{"Line1":"Changed"}'}}, {}, {})
+
     def test_fresh_start_requires_complete_terminal_rejection_receipts(self):
         # A failed worker is not proof of no provider work. Protect missing,
         # pending, partial-success, conflicting, and duplicate submission evidence.
@@ -327,10 +388,12 @@ class ProcessTests(unittest.TestCase):
         polling = process_view.phase_feedback(job)
         self.assertIn('7 completed, 1 processing', polling['message']); self.assertIsNone(polling['progress'])
         job['status'] = 'stopped'
-        self.assertIn('monitoring is paused', process_view.phase_feedback(job)['message'])
+        self.assertEqual(process_view.phase_feedback(job), polling)
         job['process']['batches'][0]['status'] = 'completed'
         self.assertIn('Provider work has finished', process_view.phase_feedback(job)['message'])
         job.update(status='failed',message='Actual provider failure')
+        self.assertEqual(process_view.phase_feedback(job), {})
+        job.update(mode='translate', status='running', phase='translate')
         self.assertEqual(process_view.phase_feedback(job), {})
 
     def test_live_receipt_usage_and_validation_are_separate_from_preparation(self):

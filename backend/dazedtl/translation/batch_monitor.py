@@ -1,0 +1,141 @@
+"""Observe retained provider jobs without restarting a submission-capable worker."""
+from contextlib import contextmanager
+from copy import deepcopy
+from datetime import datetime, timezone
+import threading
+
+from dazedtl.compatibility import batch_control
+from dazedtl.compatibility.preparations import temporary
+from dazedtl.compatibility.process_view import saved
+
+
+class BatchMonitor:
+    def __init__(self, guided):
+        self.guided = guided
+        self.backend = guided.backend
+        self.stopping = threading.Event()
+        self.worker = None
+        self.busy = set()
+        self.consumed = set()
+        self.settled = set()
+        self.views = {}
+
+    def start(self):
+        if self.backend.allow_providers and self.worker is None:
+            self.worker = threading.Thread(target=self._run, name='saved-batch-monitor', daemon=True)
+            self.worker.start()
+
+    def close(self):
+        # An in-flight read may finish later, but cannot commit or launch work.
+        with self.backend.lock:
+            self.stopping.set()
+        if self.worker:
+            self.worker.join(timeout=1)
+
+    def _run(self):
+        while not self.stopping.is_set():
+            self.tick()
+            self.stopping.wait(30)
+
+    def tick(self):
+        with self.backend.lock:
+            identities = list(self.backend.manual.jobs)
+        for identity in identities:
+            if self.stopping.is_set():
+                return
+            try:
+                self.check(identity)
+            except Exception:
+                # Provider errors can contain credentials; keep background
+                # feedback fixed and retain the last successful observation.
+                with self.backend.lock:
+                    self.views[identity] = {**self.views.get(identity, {}), 'state': 'error',
+                        'message': 'Could not check or collect this Batch. Check its saved connection in Settings; the app will retry automatically.'}
+            finally:
+                with self.backend.lock:
+                    self.busy.discard(identity)
+
+    def _owned(self, identity):
+        plan = self.backend.saved_run_configuration(identity)
+        native_id = (plan.get('workflow') or {}).get('id')
+        native = self.backend.workflows.projects.get(native_id)
+        owner = next((project for project in self.guided.projects.data['projects']
+                      if project.get('backend_id') == native_id), None)
+        if not native or not owner or owner['source'] != native['source'] or plan.get('batch_link'):
+            raise ValueError('The original Batch owner is unavailable.')
+        return plan
+
+    @contextmanager
+    def _commit(self, identity, expected):
+        with self.backend.context():
+            job = self.backend.manual.jobs[identity]
+            if (self.stopping.is_set() or job['status'] not in {'stopped', 'interrupted', 'failed', 'canceled'}
+                    or self.backend.manual.controller(identity).running() or self._owned(identity) != expected):
+                raise ValueError('The Batch owner or worker changed during collection.')
+            yield
+
+    def check(self, identity):
+        with self.backend.context():
+            job = self.backend.manual.jobs[identity]
+            if (not self.backend.allow_providers or self.stopping.is_set() or job.get('mode') != 'batch' or temporary(job)
+                    or job['status'] not in {'stopped', 'interrupted', 'failed', 'canceled'}
+                    or self.backend.manual.controller(identity).running()):
+                self.views.pop(identity, None)
+                return
+            root = self.backend.manual.folder(identity)
+            history = saved(root, 'batch_history.json').get('batches', [])
+            if not history:
+                return
+            if identity in self.settled:
+                self.views.pop(identity, None)
+                return
+            plan = self._owned(identity)
+            if batch_control.no_successful_results(root):
+                self._finish_empty(identity)
+                return
+            if identity in self.consumed:
+                self.views[identity] = {'state': 'save_error', 'message': 'Saving the collected responses did not finish. Review the run error, then retry saving results.'}
+                return
+            state = saved(root, 'batch_state.json').get('status')
+            if state not in {'submitted', 'partially_submitted', 'fetched'}:
+                self.views[identity] = {'state': 'blocked', 'message': 'The saved Batch state is incomplete. View requests to inspect its retained submission receipts.'}
+                return
+            batches = [deepcopy(batch_control.receipt(root, batch['id'])) for batch in history]
+            connections = {batch['id']: self.guided.settings.batch_connection(batch, plan) for batch in batches}
+            self.busy.add(identity)
+            self.views[identity] = {**self.views.get(identity, {}), 'state': 'monitoring', 'message': ''}
+        resolve = lambda batch: connections[batch['id']]
+        if state != 'fetched':
+            observed = []
+            for batch in batches:
+                with batch_control.connection(batch, resolve) as provider:
+                    current = provider.status(batch['id'])
+                observed.append({'id': batch['id'], 'status': current['api_status'], 'counts': current.get('counts') or {}})
+            with self.backend.lock:
+                if self.stopping.is_set():
+                    return
+                self.views[identity] = {'state': 'monitoring', 'message': '', 'batches': observed,
+                                        'checkedAt': datetime.now(timezone.utc).isoformat()}
+            if any(row['status'] not in batch_control.TERMINAL for row in observed):
+                return
+            with self.backend.lock:
+                self.views[identity]['state'] = 'collecting'
+            batch_control.collect(root, resolve, commit=lambda: self._commit(identity, plan))
+        with self._commit(identity, plan):
+            if batch_control.no_successful_results(root):
+                self._finish_empty(identity)
+                return
+            self.guided.settings.prepare_engine(resume=plan)
+            # Only fetched responses can reach the local consume worker.
+            # In particular a partially submitted queue is never resumed.
+            self.backend.manual.consume_batch(identity)
+            self.consumed.add(identity)
+            self.views.pop(identity, None)
+
+    def _finish_empty(self, identity):
+        job = self.backend.manual.jobs[identity]
+        job.update(status='failed', phase='failed', approval=None,
+                   message='No successful Batch responses. Use Translate for a fresh estimate of remaining work.')
+        self.backend.manual.save(job)
+        self.settled.add(identity)
+        self.views.pop(identity, None)

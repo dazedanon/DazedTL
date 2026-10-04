@@ -7,6 +7,7 @@ export interface PluginOccurrence {
 export interface PluginRow {
   path: string; plugin: string; enabled: boolean|null; kind: string; sourceHash: string; issue: string;
   selected: number; visible: number; latent: number; occurrences: number; recommended: number; manual: number;
+  uncertain: number; needsReview: boolean;
   status: string; changed: number; reason: string; candidateHash: string; working: string; ready: boolean;
 }
 export interface PluginView { mode: "scope"|"working"; query: string; filter: string; selectedOnly: boolean; currentFile: string; offset: number }
@@ -16,11 +17,11 @@ export interface PluginReceipt { id: string; mode: string; saved: string; status
 export interface PluginState {
   projectId: string; revision: string; observationRevision: string; supported: boolean; limitation: string;
   layout: string; source: string; view: PluginView;
-  counts: {files:number;selectedFiles:number;selectedNotPrepared:number;selected:number;recommended:number;ready:number;blocked:number;applied:number;latent:number};
+  counts: {files:number;selectedFiles:number;selectedNotPrepared:number;selected:number;recommended:number;ready:number;blocked:number;applied:number;latent:number;needsReview:number};
   findings: {status:string;errors:string[];accepted?:number;reported?:number;expected?:number};
   editing: {status:string;errors:string[];accepted?:number;reported?:number;expected?:number};
-  originalIssue: string; originalBackup: string; receipts: PluginReceipt[]; requestPaths: Record<string,string>;
+  originalIssue: string; originalBackup: string; receipts: PluginReceipt[]; requestPaths: Record<string,string>; activeRequest: string;
 }
 export interface PluginList { items: PluginRow[]; total: number; selectedMatched: number; offset: number; limit: number }
 export interface PluginDetail extends PluginRow { items: PluginOccurrence[]; total: number; checks: Record<string,boolean>; resultEvidence:string; rendered:string; original:string; originalHash:string }
-export interface PluginActionResult { state?:PluginState; text?:string; preview?:PluginPreview; receipt?:PluginReceipt; completed?:number; message?:string }
+export interface PluginActionResult { state?:PluginState; text?:string; preview?:PluginPreview; receipt?:PluginReceipt; completed?:number; message?:string; request?:string; requestId?:string; stage?:string }

@@ -51,7 +51,8 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("state")
     commands.add_parser("images", help="Read the selected project's indexed images, scoped handoffs and saved reports")
-    commands.add_parser("plugins", help="Read the selected project's plugin workspace and scoped handoff paths")
+    plugins = commands.add_parser("plugins", help="Read plugin work or continue the copied agent task after saving its report")
+    plugins.add_argument("--continue-request", help="Exact active request ID; checks the report and returns the next stage without publishing game files")
     commands.add_parser("prepare")
     commands.add_parser("backups", help="List local restore points and older profile backups")
     speakers = commands.add_parser("speakers", help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls")
@@ -109,7 +110,9 @@ def main():
             if args.command == "images":
                 method = "images_state"
             if args.command == "plugins":
-                method = "plugins_state"
+                method = "plugins_continue" if args.continue_request else "plugins_state"
+                if args.continue_request:
+                    params["request_id"] = args.continue_request
             if hasattr(args, "run"):
                 params["run_id"] = args.run
             if args.command in {"compile", "progress", "accept"}:

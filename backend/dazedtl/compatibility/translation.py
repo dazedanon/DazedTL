@@ -405,6 +405,12 @@ class TranslationProvider:
         return value
 
     @provider_errors
+    def cancel(self, identity):
+        from util.batch_providers import cancel_batch
+        value = cancel_batch(self.provider, identity, client=self.client)
+        return {'id': identity, 'status': value['api_status']}
+
+    @provider_errors
     def collect(self, identity, mapping):
         from util.batch_providers import download_results
         results, errors, usage = download_results(self.provider, identity, mapping, client=self.client, google_client=self.google)

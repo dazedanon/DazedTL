@@ -3,8 +3,11 @@
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 import json
+import os
 from pathlib import Path
 import re
+import shlex
+import sys
 import threading
 import uuid
 
@@ -76,7 +79,8 @@ class PluginService:
 
     @staticmethod
     def revision(value):
-        return digest({key:value[key] for key in ("selection","manual","view")})
+        # View drafts must survive the external agent updating findings and scope.
+        return digest(value['view'])
 
     def source(self, root, path):
         target = project_path(root, path)
@@ -200,9 +204,9 @@ class PluginService:
                 item['latent'] = not item['enabled'] or item['kind']=='default'
                 old = next((old for old in prior.get('occurrences',[]) if old['id']==item['id']),{})
                 for key in ('finding','target'):
-                    if key in old: item[key]=old[key]
+                    if key in old and row['sourceHash']==prior.get('sourceHash'): item[key]=old[key]
             if row['sourceHash']==prior.get('sourceHash'):
-                for key in ('prepared','result','applied'):
+                for key in ('prepared','result','applied','examined'):
                     if key in prior: row[key]=prior[key]
             elif prior.get('applied') and row['sourceHash']==prior['applied'].get('afterHash'):
                 # Applied source is displayed separately; frozen investigation remains meaningful.
@@ -220,6 +224,15 @@ class PluginService:
                 for item in row['occurrences'] if not item['protected'] and item.get('finding',{}).get('disposition') in {'visible','latent'}
                 and item.get('finding',{}).get('safe') is True}
 
+    def recommended_selection(self, value):
+        eligible = self.eligible(value)
+        selected = {identity for identity,item in eligible.items()
+                    if not item['latent'] and item['finding']['disposition']=='visible'}
+        for identity,choice in value['manual'].items():
+            if choice['selected'] and identity in eligible: selected.add(identity)
+            if not choice['selected']: selected.discard(identity)
+        return sorted(selected)
+
     def public_row(self, value, row):
         selected = set(value['selection'])
         items = row['occurrences']; visible = [item for item in items if item.get('finding',{}).get('disposition')=='visible' and not item['latent']]
@@ -227,11 +240,17 @@ class PluginService:
         count = sum(item['id'] in selected for item in items)
         result = row.get('result',{}); status = result.get('status') or ('working_copy' if row.get('prepared') else 'selected' if count else 'not_investigated')
         if row.get('applied') and result.get('status')=='ready' and result.get('candidateHash')==row['applied'].get('afterHash'): status = 'applied'
+        if row.get('examined') and not count and not result: status = 'latent' if latent and not visible else 'not_needed' if not visible else 'available'
+        uncertain = sum(not item['protected'] and (not item.get('finding') or
+                        item['finding']['disposition']=='unresolved' or
+                        item['finding']['disposition'] in {'visible','latent'} and not item['finding']['safe']) for item in items)
+        needs_review = bool(uncertain or row.get('issue') or row.get('stale') or status in {'needs_revision','partial'})
+        if uncertain and not count and not result and not row.get('stale'): status = 'unresolved'
         if row.get('stale'): status = 'stale'
         if row.get('issue'): status = 'unresolved'
-        if row.get('examined') and not count and not result: status = 'latent' if latent and not visible else 'not_needed' if not visible else 'available'
         return {key:row.get(key) for key in ('path','plugin','enabled','kind','sourceHash','issue')} | {
             'selected':count,'visible':len(visible),'latent':len(latent),'occurrences':len(items),'status':status,
+            'uncertain':uncertain,'needsReview':needs_review,
             'recommended':sum(not item['protected'] and not item['latent'] and item.get('finding',{}).get('disposition')=='visible'
                               and item.get('finding',{}).get('safe') is True and not row.get('stale') and not row.get('issue') for item in items),
             'manual':sum(item['id'] in value['manual'] for item in items),'changed':len(result.get('targets',{})),
@@ -273,13 +292,15 @@ class PluginService:
             counts = {'files':len(rows),'selectedFiles':sum(row['selected']>0 for row in rows), 'selected':len(value['selection']),
                       'recommended':sum(row['recommended'] for row in rows),'ready':sum(row['selected']>0 and row['ready'] for row in rows),
                       'blocked':sum(row['selected']>0 and not row['ready'] and row['status']!='applied' for row in rows),
-                      'applied':sum(row['applied'] for row in rows),'latent':sum(row['latent'] for row in rows)}
+                      'applied':sum(row['applied'] for row in rows),'latent':sum(row['latent'] for row in rows),
+                      'needsReview':sum(row['needsReview'] for row in rows)}
             counts['selectedNotPrepared']=sum(row['selected']>0 and not row['working'] for row in rows)
             return {'projectId':project_id,'revision':self.revision(value),'observationRevision':digest(value),
                     'supported':project['engine']=='MVMZ','limitation':'Ace Ruby scripts need parser and native packing support; this workspace cannot publish them.' if project['engine']=='ACE' else '',
                     'layout':value['layout'],'source':str(root),'view':value['view'],'counts':counts,
                     'findings':value['findings'],'editing':value['editing'],'originalIssue':value.get('originalIssue',''),
                     'originalBackup':value['originals'].get('backupId',''), 'receipts':value['receipts'][-12:],
+                    'activeRequest':next((request['path'] for request in value['requests'].values() if request['requestId']==value.get('activeRequest')),''),
                     'requestPaths':{key:request['path'] for key,request in value['requests'].items()}}
 
     def list(self, project_id, query='', filter='all', selected_only=False, offset=0, limit=100):
@@ -288,7 +309,7 @@ class PluginService:
         with self.lock:
             value = self.load(project_id); self.observe(project_id,value); rows = [self.public_row(value,row) for row in value['files'].values()]
             rows = [row for row in rows if query.casefold() in (row['path']+' '+row['plugin']).casefold()
-                    and (filter=='all' or row['status']==filter) and (not selected_only or row['selected'])]
+                    and (filter=='all' or filter=='attention' and row['needsReview'] or row['status']==filter) and (not selected_only or row['selected'])]
             rows.sort(key=lambda row:row['path'])
             return {'items':rows[offset:offset+limit],'total':len(rows),'selectedMatched':sum(row['selected']>0 for row in rows),'offset':offset,'limit':limit}
 
@@ -336,17 +357,14 @@ class PluginService:
         if not isinstance(options,dict): raise ValueError("Plugin action options must be an object.")
         with self.lock:
             value=self.load(project_id)
-            if action=='investigate':
-                self.scan(project_id,value); result=self.request(project_id,value,'investigation')
+            if action in {'investigate','plugin_task'}:
+                self.scan(project_id,value); result=self.request(project_id,value,'investigation',automatic=action=='plugin_task')
             elif action in {'refresh_findings','refresh_results'}:
                 result=self.refresh(project_id,value,'investigation' if action=='refresh_findings' else 'translation')
             elif action in {'recommended','select','select_files','clear'}:
                 eligible=self.eligible(value); selected=set(value['selection'])
                 if action=='recommended':
-                    selected={identity for identity,item in eligible.items() if not item['latent']}
-                    for identity,choice in value['manual'].items():
-                        if choice['selected'] and identity in eligible: selected.add(identity)
-                        if not choice['selected']: selected.discard(identity)
+                    selected=set(self.recommended_selection(value))
                 elif action=='clear':
                     for identity in selected: value['manual'][identity]={'selected':False,'reason':'Selection cleared by you'}
                     selected=set()
@@ -370,7 +388,9 @@ class PluginService:
                         selected.add(identity) if wanted else selected.discard(identity)
                 value['selection']=sorted(selected); result={'selected':len(selected)}
             elif action=='prepare': result=self.prepare(project_id,value)
-            elif action=='translation_task': result=self.request(project_id,value,'translation')
+            elif action=='translation_task':
+                self.prepare(project_id,value)
+                result=self.request(project_id,value,'translation')
             elif action in {'preview_apply','preview_restore'}: return {'preview':self.preview(project_id,value,'apply' if action=='preview_apply' else 'restore',options)}
             elif action in {'apply','restore'}: return self.publish(project_id,value,action,options)
             else: raise ValueError("Choose a supported Plugin workspace action.")
@@ -380,7 +400,7 @@ class PluginService:
         paths=['.dazedtl/glossary.txt',*[path.relative_to(root).as_posix() for path in (root/'.dazedtl/skills').glob('*.md')]]
         return {path:{'sha256':digest(self.source(root,path)),'text':self.source(root,path).decode()} for path in paths if (root/path).is_file()}
 
-    def request(self, project_id, value, kind):
+    def request(self, project_id, value, kind, *, automatic=False, previous=''):
         _,root=self.record(project_id); identity=uuid.uuid4().hex
         request_path=self.path(project_id,'requests/'+identity+'.json'); report_path=self.path(project_id,'reports/'+identity+'.json')
         files=[]; selected=set(value['selection'])
@@ -397,9 +417,6 @@ class PluginService:
                  'guidance':self.guidance(root),'originals':value['originals'],'layout':value['layout'],'files':files,
                  'selection':value['selection'],'manual':value['manual'],'report':str(report_path),'path':str(request_path)}
         request=deepcopy(request)  # Requests never alias mutable findings, scope choices or results.
-        write_json(request_path,request); value['requests'][kind]=request
-        write_json(Path(self.translation.workspace)/'plugin-contracts'/project_id/(identity+'.json'),
-                   {'projectId':project_id,'requestId':identity,'requestHash':digest(request)})
         value['findings' if kind=='investigation' else 'editing']={'status':'awaiting_report','errors':[],'requestId':identity}
         common=("This is one explicitly scoped DazedTL Plugin text task. Copying it did not start an assistant.\n"
                 "Read the request JSON: "+str(request_path)+"\nSave a structured report at: "+str(report_path)+"\n"
@@ -411,22 +428,83 @@ class PluginService:
                     'files':[{'path':'exact requested path','sourceHash':'request hash','examined':True,'evidence':'complete source and recursive-parameter coverage',
                               'occurrences':[{'id':'request occurrence ID','disposition':'visible|latent|protected|editor_only|non_visible|unresolved','safe':True,'evidence':'runtime display usage and readback checks','reason':'why visible and safe'}]}],
                     'dependencies':[{'path':'exact plugin-loaded JSON path','sourceFile':'requested loader file','literalId':'requested literal ID containing the exact path','evidence':'static loader use'}]}
-            text=common+"INVESTIGATION ONLY. Do not edit runtime files, working copies, settings or source backups. Audit every configured enabled/disabled plugin and every listed source. "
+            text=common+("FIRST, INVESTIGATE. " if automatic else "INVESTIGATION ONLY. ")+"During investigation, do not edit runtime files, working copies, settings or source backups. Audit every configured enabled/disabled plugin and every listed source. "
             text+="Recursively decode every parameter layer, count repeated leaf occurrences, inspect executable strings/templates, defaults/fallbacks and usages; ordinary comments/editor metadata stay excluded. "
             text+="Every supplied occurrence needs a disposition. Missing/ambiguous sources remain unresolved. Disabled/default-only display text is latent. "
             text+="Protect exact lookup keys from pristine original note-tag names, 356/357 arguments, parameters and database names; both drawn and compared remains protected. "
             text+="No whole-file substring matching. The app rechecks original hashes and deterministic key guards. If originals are missing, report discovery only and leave safety unresolved. "
             text+="Additional JSON may be proposed only with an exact existing loader-path literal from the request. Its own text needs a subsequent bound investigation before selection.\nReport schema:\n"+json.dumps(schema,ensure_ascii=False,indent=2)
+            text+="\nConfirmed active display text is included automatically when the app checks this report; do not ask the user to approve safe items or inspect each string. Ask focused questions only for ambiguous meaning, visibility or behavioral safety after completing all independent investigation. Leave uncertain items unresolved and explain the evidence needed. Disabled/default-only text stays excluded unless the user chooses it."
         else:
             schema={'version':1,'kind':kind,'projectId':project_id,'requestId':identity,'binding':value['binding'],'complete':False,
                     'files':[{'path':'exact scope path','sourceHash':'request hash','candidateHash':'working copy SHA-256','evidence':'Japanese/English meaning and layout review performed',
                               'targets':{'approved occurrence ID':'exact decoded English target'}}]}
-            text=common+"TRANSLATE THE APPROVED WORKING COPIES ONLY. Runtime files and frozen originals are read-only. No new files, unrelated module edits, or scope expansion. "
+            text=common+"TRANSLATE THE SCOPED WORKING COPIES ONLY. The app has included confirmed safe display text and retained user overrides. Proceed without asking for approval of these routine translations; ask only about ambiguity you cannot resolve and leave those occurrences unchanged. Runtime files and frozen originals are read-only. No new files, unrelated module edits, or scope expansion. "
             text+="Change only listed literal spans/decoded parameter paths. Preserve quote style, parameter keys/order/types/serialization depth, identifiers, lookup values, interpolation and control codes. "
             text+="Translate connected text with the saved guidance; revise failed/partial results in these same copies. Report every translated occurrence and exact decoded target. "
             text+="The app rejects any bytes outside approved spans, unapproved decoded leaves and stale hashes; syntax alone does not verify meaning. Apply is a separate user review. "
             text+="Do not claim rendered fit/playtest without testing it.\nReport schema:\n"+json.dumps(schema,ensure_ascii=False,indent=2)
-        return {'text':text,'request':str(request_path)}
+        if automatic:
+            helper = Path(__file__).resolve().parents[3] / 'scripts/project.py'
+            arguments = [sys.executable,'-B',str(helper),'--workspace',str(self.translation.workspace),'--project',project_id,'plugins']
+            def command(arguments):
+                return ('& '+' '.join("'"+item.replace("'","''")+"'" for item in arguments)
+                        if os.name=='nt' else shlex.join(arguments))
+            resume=command(arguments); advance=command([*arguments,'--continue-request',identity])
+            text=("Complete plugin investigation and translation in this same agent task. Keep DazedTL open. "
+                  "Continue automatically through confirmed safe work; do not ask the user to copy a second prompt or approve routine steps. "
+                  "Ask focused questions only for unresolved choices, and complete independent work first.\n\n"+text+
+                  "\n\nAfter saving this stage's report, run:\n"+advance+
+                  "\nThe helper validates the report and returns the next request with its instructions, or the final checked state. "
+                  "Read and carry out those instructions in this same conversation. Additional plugin-loaded JSON is investigated before translation. "
+                  "Working copies are prepared automatically. On failed translation checks, repair the same copies and report, then run this command again. "
+                  "Runtime Apply remains in the app; this helper cannot approve or publish game files.\n"
+                  "If loopback access is sandboxed, use your normal permission flow and retry this read-only status command first:\n"+resume+
+                  "\nA lost response may follow a completed action. Read the activeRequest path from that status and follow its saved instructions; "
+                  "do not restart investigation or blindly retry a mutation. Never expose the local connection token. "
+                  "If permitted access still fails, save work and report the connection blocker.\n")
+            request.update(automatic=True,previousRequestId=previous,instructions=text)
+        value['activeRequest']=identity if automatic else ''
+        write_json(request_path,request); value['requests'][kind]=request
+        write_json(Path(self.translation.workspace)/'plugin-contracts'/project_id/(identity+'.json'),
+                   {'projectId':project_id,'requestId':identity,'requestHash':digest(request)})
+        return {'text':text,'request':str(request_path),'requestId':identity,'stage':kind}
+
+    def continue_task(self, project_id, request_id):
+        """Advance a copied task through reports and editable copies, never publication."""
+        with self.lock:
+            value=self.load(project_id)
+            request=next((row for row in value['requests'].values()
+                          if row['requestId']==value.get('activeRequest')),None)
+            if not request or not request.get('automatic'):
+                raise ValueError("Copy a plugin task in the app before continuing through the helper.")
+            self.verify_request(project_id,request)
+            if request_id!=request['requestId']:
+                if request_id==request.get('previousRequestId'):
+                    # A lost reply must not restart the next stage or replace edited copies.
+                    return {'text':request['instructions'],'request':request['path'],
+                            'requestId':request['requestId'],'stage':request['kind'],'state':self.state(project_id)}
+                raise ValueError("This plugin task was replaced. Read plugin status and use its active request.")
+            self.translation.idle(project_id); self.translation.clean_drafts(project_id)
+            self.refresh(project_id,value,request['kind'])
+            # Retain accepted findings even if later preparation cannot finish.
+            self.save(project_id,value)
+            result={}
+            if request['kind']=='investigation':
+                asked={row['path'] for row in request['files']}
+                if set(value['files'])-asked:
+                    self.scan(project_id,value)
+                    result=self.request(project_id,value,'investigation',automatic=True,previous=request_id)
+                elif value['selection']:
+                    self.prepare(project_id,value,switch_view=False)
+                    result=self.request(project_id,value,'translation',automatic=True,previous=request_id)
+            self.save(project_id,value)
+            state=self.state(project_id)
+            if not result:
+                attention=state['counts']['needsReview'] or state['counts']['blocked'] or value['findings']['status']=='partial'
+                result={'stage':'needs_attention' if attention else 'complete',
+                        'message':'Saved work checked. Resolve reported uncertainty or failed checks; runtime Apply remains in the app.' if attention else 'Plugin work checked. Review and apply available translations in the app.'}
+            return {**result,'state':state}
 
     def current_sources(self, project_id, value, rows):
         _,root=self.record(project_id)
@@ -477,6 +555,8 @@ class PluginService:
         if not request: raise ValueError("Copy the scoped task before refreshing its saved report.")
         _,root=self.record(project_id)
         self.verify_request(project_id,request)
+        if not Path(request['report']).is_file():
+            raise ValueError("No saved "+kind+" report yet. Have your agent finish the copied task, then check again.")
         report=read_json(request['report'],limit=32_000_000)
         if not isinstance(report,dict) or any(report.get(key)!=request[key] for key in ('version','kind','projectId','requestId','binding')):
             raise ValueError("Saved report is foreign, stale or belongs to another task. No findings were accepted.")
@@ -490,6 +570,11 @@ class PluginService:
         accepted=0; errors=[]
         # Work on a copy so malformed reports never partially mutate trusted findings.
         updated=deepcopy(value)
+        if kind=='investigation':
+            # A partial replacement report cannot inherit safety from an earlier report.
+            for path in allowed:
+                updated['files'][path]['examined']=False
+                for item in updated['files'][path]['occurrences']: item.pop('finding',None)
         for answer in rows:
             path=answer['path']; asked=allowed[path]; row=updated['files'][path]
             if answer.get('sourceHash')!=asked['sourceHash']: raise ValueError("Report source hash does not match: "+path)
@@ -556,10 +641,11 @@ class PluginService:
         key='findings' if kind=='investigation' else 'editing'
         completed=len(rows)==len(allowed) and not errors and (kind!='investigation' or all(updated['files'][path].get('examined') for path in allowed))
         updated[key]={'status':'current' if completed else 'partial','errors':errors,'accepted':accepted,'reported':len(rows),'expected':len(allowed),'saved':now(),'requestId':request['requestId']}
+        if kind=='investigation': updated['selection']=self.recommended_selection(updated)
         value.clear(); value.update(updated)
         return {'accepted':accepted,'message':'Saved '+kind+' report checked.','errors':errors}
 
-    def prepare(self, project_id, value):
+    def prepare(self, project_id, value, *, switch_view=True):
         self.translation.idle(project_id); self.translation.clean_drafts(project_id)
         eligible=self.eligible(value); selected=set(value['selection'])
         if not selected or selected-set(eligible): raise ValueError("Choose current, safe investigated text before making working copies.")
@@ -568,13 +654,19 @@ class PluginService:
         self.current_sources(project_id,value,rows); completed=0
         for row in rows:
             self.runtime_allowlist(project_id,value,row)
-            if row.get('prepared'): continue
+            if row.get('prepared'):
+                prepared=row['prepared']; self.copy_boundary(root,prepared)
+                if digest(self.source(root,prepared['original']))!=prepared['originalHash']:
+                    raise ValueError("Frozen original changed: "+row['path'])
+                self.source(root,prepared['candidate'])
+                continue
             identity=uuid.uuid4().hex; base=WORK+'/copies/'+identity+'/'+row['path']
             raw=self.source(root,row['path'])
             original=base+'.original'; candidate=base
             write_bytes(project_path(root,original,exists=False),raw); write_bytes(project_path(root,candidate,exists=False),raw)
             row['prepared']={'original':original,'originalHash':digest(raw),'candidate':candidate,'copyRoot':WORK+'/copies/'+identity,'prepared':now()}; completed+=1
-        value['view']['mode']='working'; return {'completed':completed,'message':'Working copies prepared; runtime files are unchanged.'}
+        if switch_view: value['view']['mode']='working'
+        return {'completed':completed,'message':'Working copies prepared; runtime files are unchanged.'}
 
     def checked_rows(self, project_id, value, mode, options):
         _,root=self.record(project_id); selected=set(value['selection']); included=[]; blocked=[]

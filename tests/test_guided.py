@@ -6,7 +6,7 @@ import shutil
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
@@ -828,6 +828,68 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.backend.manual.temporary_preparation)
         self.assertEqual(self.guided.runs.records(self.identity)['new-estimate']['fingerprint'], fresh['fingerprint'])
 
+    def test_batch_controls_bind_project_review_and_recover_only_through_fetched_state(self):
+        from dazedtl.compatibility import batch_control
+        job = {'id': 'paid-batch', 'mode': 'batch', 'status': 'running', 'files': ['Items.json'], 'log': []}
+        self.backend.manual.jobs[job['id']] = job
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        self.backend.allow_providers = True
+        self.backend.manual.save = Mock()
+        self.backend.manual.controller = Mock(return_value=SimpleNamespace(running=lambda: False))
+        self.settings.batch_connection = Mock(return_value={'secret': 'fixture', 'endpoint': 'https://fixture.invalid', 'organization': ''})
+        root = self.backend.manual.folder(job['id'])
+        batch = {'id': 'provider-batch', 'provider': 'openai', 'custom_ids': {'one': 'key'}}
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        write_json(root/'log/batch_state.json', {'status': 'submitted', 'batches': [batch]})
+        write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}', 'params': {}}})
+        job['status'], job['phase'] = 'stopped', 'poll_status'
+        # The app's restored monitor is current activity even though the saved
+        # native worker remains stopped and cannot be resumed to send work.
+        self.guided.batch_monitor.views[job['id']] = {'state': 'monitoring', 'message': ''}
+        self.assertEqual(self.guided.run_view(job['id'])['status'], 'running')
+        self.assertEqual(job['status'], 'stopped')
+        self.guided.batch_monitor.views.clear()
+        self.guided.protect_batch_files(self.native, ['Other.json'])
+        for action in ('export_selected', 'refresh_sources'):
+            with self.assertRaisesRegex(ValueError, 'Open Batches'):
+                self.guided.preview(self.identity, action, files=['Items.json'])
+            self.guided.confirmations['file-review'] = {'project_id': self.identity, 'action': action, 'paths': ['Items.json']}
+            with self.assertRaisesRegex(ValueError, 'Open Batches'):
+                self.guided.execute(self.identity, 'file-review')
+        job['status'] = 'running'
+        provider = Mock()
+        provider.status.return_value = {'api_status': 'in_progress'}
+        provider.cancel.return_value = {'id': batch['id'], 'status': 'cancelling'}
+        with patch.object(batch_control, 'TranslationProvider', return_value=provider):
+            review = self.guided.batch_cancel_preview(self.identity, job['id'], batch['id'])
+            other = self.projects.open({'source': str(self.root/'other-batch-project'), 'engine': 'MVMZ'})
+            with self.assertRaises(ValueError): self.guided.batch_cancel(other['id'], review['token'])
+            provider.cancel.assert_not_called()
+            configuration = self.backend.saved_run_configuration
+            self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'other-owner'}}
+            with self.assertRaises(ValueError): self.guided.batch_cancel(self.identity, review['token'])
+            provider.cancel.assert_not_called()
+            self.backend.saved_run_configuration = configuration
+            review = self.guided.batch_cancel_preview(self.identity, job['id'], batch['id'])
+            self.guided.batch_cancel(self.identity, review['token'])
+            with self.assertRaises(ValueError): self.guided.batch_cancel(self.identity, review['token'])
+            provider.cancel.assert_called_once_with(batch['id'])
+            self.assertEqual(job['dazedtl_batch_cancellations'][batch['id']]['status'], 'cancelling')
+            with self.assertRaises(ValueError): self.guided.batch_collect(self.identity, job['id'])
+            job['status'] = 'stopped'
+            provider.status.return_value = {'api_status': 'cancelled', 'counts': {'succeeded': 1, 'processing': 0, 'canceled': 0}}
+            provider.collect_terminal.return_value = ({'key': {'text': 'Saved response'}}, [], {})
+            def resume(identity):
+                self.assertEqual(identity, job['id'])
+                self.assertEqual(read_json(root/'log/batch_state.json')['status'], 'fetched')
+                job['status'] = 'running'
+                return job
+            self.backend.manual.consume_batch = Mock(side_effect=resume)
+            self.guided.batch_collect(self.identity, job['id'])
+            with self.assertRaises(ValueError): self.guided.batch_collect(self.identity, job['id'])
+            self.backend.manual.consume_batch.assert_called_once()
+        provider.submit.assert_not_called(); provider.live.assert_not_called()
+
     def complete_preparation(self):
         return preparation.run({"action": "prepare_game", "project": self.native, "folder": str(self.folder)},
                                lambda _: None, lambda *_: {"files": 1}, lambda *_: {})
@@ -933,20 +995,17 @@ class GuidedTests(unittest.TestCase):
         reopened = Guided(self.backend, self.projects, self.settings, self.translation)
         self.assertIn(identity, reopened.owned_runs(self.native))
         self.assertEqual({path: path.read_bytes() for path in frozen}, frozen)
-        # A later local estimate can move the current pointer. Explicit resume
-        # must still select the displayed owned Batch, never that estimate.
+        # A later estimate must not turn a saved Batch into a manual paid
+        # resume. Its receipts remain owned and automatic monitoring handles it.
         self.native['manual_job'] = estimate_id
         self.backend.manual.resume = Mock(return_value=job)
         self.settings.prepare_engine = Mock()
-        reopened.resume(self.identity, identity)
-        self.backend.manual.resume.assert_called_once_with(identity)
-        self.settings.prepare_engine.assert_called_once()
+        with self.assertRaisesRegex(ValueError, 'monitored automatically'):
+            reopened.resume(self.identity, identity)
         with self.assertRaisesRegex(ValueError, 'belonging'):
             reopened.resume(self.identity, 'another-project-run')
-        self.backend.saved_run_configuration = lambda _: {'workflow': {'id': 'another-project'}}
-        with self.assertRaisesRegex(ValueError, 'another project'):
-            reopened.resume(self.identity, identity)
-        self.backend.manual.resume.assert_called_once()
+        self.backend.manual.resume.assert_not_called()
+        self.settings.prepare_engine.assert_not_called()
 
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses

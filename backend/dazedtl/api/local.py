@@ -35,7 +35,7 @@ class LocalAPI:
                     if not isinstance(value, dict) or value.get("version") != version or not isinstance(value.get("params", {}), dict):
                         raise ValueError("The agent helper and app versions must match.")
                     method = value.get("method")
-                    if not isinstance(method, str) or not (method.startswith("translation_") or method in {"images_state", "images_list", "images_preview", "plugins_state", "plugins_list", "plugins_detail"}):
+                    if not isinstance(method, str) or not (method.startswith("translation_") or method in {"images_state", "images_list", "images_preview", "plugins_state", "plugins_list", "plugins_detail", "plugins_continue"}):
                         raise ValueError("This helper only exposes the selected translation project's operations.")
                     result = {"ok": True, "version": version, "value": dispatch(method, value.get("params", {}))}
                 except Exception as exc:

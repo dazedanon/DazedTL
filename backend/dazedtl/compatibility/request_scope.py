@@ -8,7 +8,7 @@ from contextlib import closing
 import json
 
 from dazedtl.translation.files import digest, read_json
-from .process_view import evidence_root, ledger, queue, saved, source_values
+from .process_view import evidence_root, ledger, queue, saved, source_values, batch_results, batch_state, ledger_records
 
 
 def identities(filename, phase, values, locations=None):
@@ -42,9 +42,8 @@ def requests(root, job):
     if queued:
         evidence = evidence_root(root)
         batches = saved(evidence, 'batch_history.json').get('batches', [])
-        state = saved(evidence, 'batch_state.json')
-        results = saved(evidence, 'batch_results.json')
-        results = results.get('results', results)
+        state = batch_state(evidence)
+        results = batch_results(evidence)
         manifests = {row['id']: row.get('custom_ids', {}) for row in state.get('batches', []) if row.get('id')}
         outcomes = {}
         for batch in batches:
@@ -73,21 +72,14 @@ def requests(root, job):
                    'source': json.loads(entry['payload']), 'keys': entry.get('dazedtl_sources'),
                    'file': entry.get('dazedtl_file'), 'response': results.get(key)}
         return
-    connection = ledger(root)
-    if connection is not None:
-        with closing(connection):
-            available = columns(connection)
-            extra = ',sources,filename,response' if 'sources' in available else ''
-            rows = connection.execute('SELECT params,state' + extra + ' FROM requests ORDER BY id').fetchall()
+    rows = ledger_records(root)
+    if rows is not None:
         for index, row in enumerate(rows):
-            state = row[1]
-            # Old prepared rows could have reached the network. New rows record
-            # submission intent separately at the SDK boundary.
-            if state == 'prepared' and (not extra or row[2] is None):
+            state = row['state']
+            if state == 'prepared' and row['sources'] is None:
                 state = 'uncertain'
-            yield {'index': index, 'state': state, 'source': source_values(json.loads(row[0])) or {},
-                   'keys': json.loads(row[2]) if extra and row[2] else None,
-                   'file': row[3] if extra else None, 'response': json.loads(row[4]) if extra and row[4] else None}
+            yield {'index': index, 'state': state, 'source': source_values(row['params']) or {},
+                   'keys': row['sources'], 'file': row['filename'], 'response': row['response']}
         if rows:
             return
     plan_path = root / 'plan.json'

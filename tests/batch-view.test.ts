@@ -1,0 +1,30 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type { Job } from "../app/src/api/contracts.ts";
+import { batchProgress, batchRuns, canRetrySaving, batchOutcome } from "../app/src/features/guided/batchView.ts";
+
+test("Batch monitoring keeps unknown counts unknown and interrupted work recoverable", () => {
+  const batch = { id: "provider", status: "in_progress", total: 10, counts: {} };
+  assert.deepEqual(batchProgress(batch), { total: 10, finished: undefined });
+  const counts = { succeeded: 3, errored: 1, canceled: 0, expired: 0 };
+  assert.deepEqual(batchProgress({ ...batch, counts }), { total: 10, finished: 4 });
+  assert.equal(batchProgress({ ...batch, counts: { ...counts, succeeded: null } }).finished, undefined);
+  assert.equal(batchProgress({ ...batch, counts: { ...counts, succeeded: 11 } }).finished, undefined);
+  const paused = { id: "run", mode: "batch", status: "stopped", phase: "poll_status", process: { batches: [batch], retryBlocked: true, errors: [] } } as Job;
+  const completed = { ...paused, id: "finished", status: "complete", process: { ...paused.process!, retryBlocked: false, batches: [{ ...batch, status: "completed" }] } };
+  assert.deepEqual(batchRuns([completed, paused]), [paused]);
+  assert.equal(batchRuns([completed, paused], true).length, 2);
+  assert.equal(canRetrySaving(paused), false);
+  const collected = { ...paused, process: { ...paused.process!, resultsCollected: true, received: 1, monitoring: { state: "save_error" as const, message: "Local processing failed" }, batches: [{ ...batch, status: "cancelled" }] } };
+  assert.equal(canRetrySaving(collected), true);
+  assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, received: 0 } }), false);
+  const failed = { ...batch, status: "completed", counts: { succeeded: 0, errored: 10 } };
+  assert.equal(batchOutcome(failed, paused).label, "Failed");
+  assert.equal(batchOutcome(failed, paused).pending, false);
+  assert.equal(batchOutcome({ ...failed, counts: { succeeded: 8, errored: 2 } }, paused).label, "Partial");
+  assert.equal(batchOutcome({ ...batch, status: "ended", counts: { succeeded: 10 } }, completed).label, batchOutcome({ ...batch, status: "completed", counts: { succeeded: 10 } }, completed).label);
+  assert.equal(canRetrySaving({ ...collected, status: "running" }), false);
+  assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, resultsCollected: false } }), false);
+  assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, monitoring: { state: "monitoring", message: "" } } }), false);
+  assert.equal(batchRuns([{ ...paused, process: { retryBlocked: true, errors: [] } }]).length, 1);
+});

@@ -70,6 +70,7 @@
 .file-browser-inline .file-preview-control { font-size:var(--font-small); min-height:0; padding:var(--space-1); }
 .translation-file-status { display:flex; align-items:center; gap:var(--space-2); font-size:var(--font-small); color:var(--muted); }
 .translation-file-status.success { color:var(--color-success); }.translation-file-status.warning { color:var(--color-warning); }.translation-file-status.active { color:var(--accent); }
+.translation-file-status .translation-status-link { display:flex; gap:var(--space-2); color:inherit; font:inherit; padding:0; min-height:0; text-align:left; }
 .translation-file-cost,.translation-file-time { text-align:right; font-size:var(--font-small); font-variant-numeric:tabular-nums; color:var(--muted); }
 .translation-action-scope { flex:1; min-width:0; font-size:var(--font-small); line-height:1.5; }
 .translation-action-scope small { display:block; color:var(--muted); font:inherit; }
@@ -95,6 +96,7 @@
 .translation-cost-prices { display:grid; gap:var(--space-1); margin:0; }
 .translation-cost-prices > div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:var(--space-1) var(--space-4); }
 .translation-cost-prices dd { margin:0; font-size:var(--font-small); font-variant-numeric:tabular-nums; }
+.translation-cache-note { color:var(--muted); font-size:var(--font-small); line-height:1.5; }
 .translation-review-scope { border-top:1px solid var(--line); padding-top:var(--space-3); min-width:0; }
 .translation-review-scope-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2); }
 .translation-review-scope-heading h3 { margin:0; font-size:var(--font-control); }

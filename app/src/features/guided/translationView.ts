@@ -1,12 +1,19 @@
 import type { Job, Phase, RunPayload } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
+export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
+
+/** Keep the inspector current without replacing its retained full log. */
+export function observedRun(detail: Job | null, observed?: Job) {
+  const time = (run: Job) => Math.max(Date.parse(run.updated || "") || 0, Date.parse(run.process?.monitoring?.checkedAt || "") || 0);
+  if (!detail || !observed || detail.id !== observed.id || !time(observed) || time(observed) < time(detail)) return detail;
+  return { ...detail, ...observed, log: detail.log };
+}
 
 /** Preparation has a later approval exit; only running work needs a footer stop. */
 export function translationStopLabel(run?: Job | null) {
-  if (!run || !activeRun(run) || run.approval || run.mode === "estimate") return null;
-  if (run.mode !== "batch" || run.phase === "consume") return "Stop translation";
-  return run.process?.submitted || run.phase?.startsWith("poll") ? "Pause monitoring" : null;
+  if (!run || !activeRun(run) || run.approval || ["estimate", "batch"].includes(run.mode || "")) return null;
+  return "Stop translation";
 }
 
 /** A missing request log is not evidence of an empty translation estimate. */
@@ -32,9 +39,8 @@ export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]
     && (!selected || latest.files?.some(name => selected.includes(name) && !latest.retiredFiles?.includes(name))) ? latest : undefined;
 }
 export const needsSubmissionReview = (run: Job) => run.mode !== "estimate" && run.status !== "complete" && !!run.process?.retryBlocked;
-export const canResumeRun = (run: Job) => !run.temporary && run.mode !== "estimate" && ["failed", "stopped", "interrupted"].includes(run.status)
-  && (run.mode === "batch" && run.phase?.startsWith("poll") ? needsSubmissionReview(run)
-    : !run.process?.retryBlocked && !(run.mode === "batch" && run.process?.failed));
+export const canResumeRun = (run: Job) => !run.temporary && !["estimate", "batch"].includes(run.mode || "")
+  && ["failed", "stopped", "interrupted"].includes(run.status) && !run.process?.retryBlocked;
 export function completeForSelection(run: Job, selected: readonly string[]) {
   return !!run.scopeComplete && selected.length > 0 && run.files?.length === selected.length && selected.every(name => run.files!.includes(name) && !run.partialOutputs?.includes(name) && !run.retiredFiles?.includes(name));
 }
@@ -46,6 +52,19 @@ export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, p
   if (estimate?.files?.includes(name) && (estimateCurrent || !saved)) return estimate;
   return saved;
 }
+/** The observer supplies newest-first runs; a resumed worker owns its files. */
+export function fileRun(runs: Job[], phase: Phase, name: string, retired: readonly string[] = []) {
+  const matches = runs.filter(run => run.logicalPhase === phase && run.mode !== "estimate" && !retired.includes(run.id)
+    && !run.retiredFiles?.includes(name) && run.files?.includes(name));
+  return matches.find(activeRun) || matches[0];
+}
+export function blockingBatches(runs: Job[], selected: readonly string[]) {
+  return runs.filter(run => run.mode === "batch" && !run.temporary
+    && run.files?.some(name => selected.includes(name) && !run.retiredFiles?.includes(name))
+    && (activeRun(run) || run.process?.batches?.some(batch => !terminalBatch(batch.status)) || needsSubmissionReview(run) && !run.process?.resultsCollected
+      || ["monitoring", "collecting"].includes(run.process?.monitoring?.state || "")
+      || ["stopped", "interrupted"].includes(run.status) && (!!run.process?.batches?.length && !!run.phase?.startsWith("poll") || run.process?.resultsCollected)));
+}
 export function fileStatus(name: string, run?: Job, historical = false) {
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return { label: "Ready", tone: "idle", symbol: "·" };
   if (run.temporary) {
@@ -53,19 +72,45 @@ export function fileStatus(name: string, run?: Job, historical = false) {
     return { label: run.approval ? "Review cost" : activeRun(run) ? "Preparing" : "Ready", tone: activeRun(run) ? "active" : "idle", symbol: activeRun(run) ? "◷" : "·" };
   }
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
+  const states = run.process?.requests?.filter(row => row.file === name).map(row => row.state) || [];
+  const progress = run.itemProgress;
+  const translating = run.mode === "translate" && progress?.file === name && Number.isSafeInteger(progress.current) && Number.isSafeInteger(progress.total)
+    && progress.total > 0 && progress.current >= 0 && progress.current <= progress.total ? `Translating ${progress.current}/${progress.total}` : "Translating";
+  if (run.mode === "batch" && run.process?.monitoring) {
+    if (["error", "save_error", "blocked"].includes(run.process.monitoring.state)) return { label: "Needs attention", tone: "warning", symbol: "!" };
+    return { label: run.process.monitoring.state === "collecting" ? "Receiving results" : "Awaiting Batch", tone: "active", symbol: "◷" };
+  }
+  // Retained checkpoints describe available output, not the active operation.
+  if (activeRun(run)) {
+    if (run.approval) return { label: "Review cost", tone: "active", symbol: "◷" };
+    if (states.includes("uncertain")) return { label: "Check submission", tone: "warning", symbol: "!" };
+    if (states.includes("failed")) return { label: "Needs attention", tone: "warning", symbol: "!" };
+    if (states.includes("submitted")) return { label: run.mode === "batch" ? "Submitted" : translating, tone: "active", symbol: "◷" };
+    if (states.some(state => ["queued", "prepared"].includes(state))) return { label: run.mode !== "batch" && run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
+    if (!saved || run.partialOutputs?.includes(name)) {
+      if (run.mode === "batch" && run.phase === "consume") return { label: "Saving results", tone: "active", symbol: "◷" };
+      if (states.some(state => ["received", "validated"].includes(state))) return { label: run.mode === "translate" && run.progress?.file === name ? translating : "Received", tone: "active", symbol: "◐" };
+      if (run.mode === "batch" && run.phase?.startsWith("poll")) return { label: "Awaiting Batch", tone: "active", symbol: "◷" };
+      if (run.phase === "submit") return { label: "Submitting", tone: "active", symbol: "◷" };
+      return { label: run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
+    }
+  }
+  if (run.mode === "batch" && (run.phase?.startsWith("poll") || run.process?.resultsCollected) && ["stopped", "interrupted"].includes(run.status))
+    return { label: run.process?.resultsCollected ? "Waiting to save" : "Awaiting Batch", tone: "active", symbol: "◷" };
+  if (run.mode === "translate" && !historical && (!saved || run.partialOutputs?.includes(name))) {
+    if (["stopped", "interrupted"].includes(run.status)) return { label: run.status === "stopped" ? "Stopped" : "Interrupted", tone: "warning", symbol: "Ⅱ" };
+    if (run.status === "failed") return { label: "Needs attention", tone: "warning", symbol: "!" };
+  }
   if (saved && run.partialOutputs?.includes(name)) return { label: "Progress saved", tone: "active", symbol: "◐" };
   if (saved) return run.appliedOutputs?.includes(name)
     ? { label: "Applied", tone: "success", symbol: "✓" }
     : { label: "Saved", tone: "success", symbol: "✓" };
   if (run.outputs?.[name]) return { label: "Output unavailable", tone: "warning", symbol: "!" };
   if (historical && !needsSubmissionReview(run) && !activeRun(run)) return { label: "Ready", tone: "idle", symbol: "·" };
-  const states = run.process?.requests?.filter(row => row.file === name).map(row => row.state) || [];
   if (states.includes("uncertain")) return { label: "Check submission", tone: "warning", symbol: "!" };
   if (states.includes("failed")) return { label: "Needs attention", tone: "warning", symbol: "!" };
   if (states.some(state => ["validated", "received"].includes(state))) return { label: "Partial results", tone: "active", symbol: "◐" };
   if (states.includes("submitted")) return { label: "Submitted", tone: "active", symbol: "◷" };
-  if (activeRun(run)) return run.progress?.file === name
-    ? { label: "Translating", tone: "active", symbol: "◷" } : { label: "Queued", tone: "idle", symbol: "·" };
   if (["failed", "interrupted", "stopped"].includes(run.status)) return { label: "Unfinished", tone: "warning", symbol: "!" };
   return { label: "No saved output", tone: "idle", symbol: "·" };
 }

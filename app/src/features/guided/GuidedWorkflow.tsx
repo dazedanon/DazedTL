@@ -18,7 +18,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { Modal } from "../../ui/Modal";
 import { Section } from "../../ui/Section";
 import { Tabs } from "../../ui/Tabs";
-import { activeRun, canResumeRun, completeForSelection, estimateFollowup, estimateRequestCount, needsSubmissionReview, phaseRun, translationStopLabel } from "./translationView";
+import { activeRun, blockingBatches, canResumeRun, completeForSelection, estimateFollowup, estimateRequestCount, needsSubmissionReview, phaseRun, translationStopLabel, observedRun } from "./translationView";
 import { VirtualList } from "../../ui/VirtualList";
 import { ActivityHistory, projectActivity } from "./ActivityHistory";
 import { EngineOptions } from "./EngineOptions";
@@ -28,6 +28,7 @@ import RunPanel, { Estimate } from "./RunPanel";
 import { TranslationCost, TranslationReview } from "./TranslationReview";
 import { ProcessPanel } from "./ProcessPanel";
 import { TranslateWorkspace } from "./TranslateWorkspace";
+import { BatchMonitor } from "./BatchMonitor";
 import { TranslationOptions } from "./TranslationOptions";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
@@ -60,10 +61,10 @@ const jobTime = (job: { updated?: string; created?: string }) => Date.parse(job.
 const fileCount = (count: number) => `${count} ${count === 1 ? "file" : "files"}`;
 const pathKey = (name: string) => name;
 const publicationLabels: Record<string, string> = { rewrap_apply: "Text fitting", qa_apply: "QA corrections", runtime_restore: "Text restore", export_selected: "Text Apply" };
-type Panel = "file-tools" | "tasks" | "files" | "backups" | "versions" | "speakers" | "speaker-names" | "name-translation" | "measurements" | "widths" | "options" | "translation-context" | "tools" | "project-tools" | "preparation" | "exclusions" | "release-assets" | null;
+type Panel = "file-tools" | "tasks" | "files" | "backups" | "versions" | "speakers" | "speaker-names" | "name-translation" | "widths" | "options" | "translation-context" | "tools" | "project-tools" | "preparation" | "exclusions" | "release-assets" | null;
 const panelTitles: Record<Exclude<Panel, null>, string> = {
   "file-tools": "Working files", tasks: "Translation tasks", files: "Choose files for this pass", backups: "Backups & recovery", versions: "Game updates",
-  speakers: "Speaker detection", "speaker-names": "Speaker names", "name-translation": "API name translation", measurements: "Layout measurements", widths: "Character limits",
+  speakers: "Speaker detection", "speaker-names": "Speaker names", "name-translation": "API name translation", widths: "Character limits",
   options: "Engine options", "translation-context": "Translation options", tools: "Configure game tools", "project-tools": "Project tools",
   preparation: "Preparation tools", exclusions: "Release exclusions", "release-assets": "Additional runtime assets",
 };
@@ -116,8 +117,12 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
   const [comparisonsAccepted, setComparisonsAccepted] = useState(false);
+  const [batchesOpen, setBatchesOpen] = useState(false);
+  const [batchesRun, setBatchesRun] = useState<string>();
+  const openBatches = (id?: string) => { setBatchesRun(id); setBatchesOpen(true); };
   const [history, setHistory] = useState<string | null>(null);
-  const [inspected, setInspected] = useState<Job | null>(null);
+  const [inspection, setInspected] = useState<Job | null>(null);
+  const inspected = observedRun(inspection, state.runs.find(run => run.id === inspection?.id));
   const [started, setStarted] = useState<Record<string, Job>>({});
 
   const documentName = state.contextDocument;
@@ -287,10 +292,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     void review("start", { mode: intent.mode, phase: intent.phase });
   }, [translationIntent, state.estimates, state.runs, action.busy, phase, position.step, mode, draft.dirty, context.drafts]);
   useEffect(() => {
-    if (action.busy || panel || preview || submission || emptyEstimate || position.step !== "translate") return;
+    if (action.busy || panel || batchesOpen || preview || submission || emptyEstimate || position.step !== "translate") return;
     const pending = state.runs.find(run => run.approval && !seenApprovals.current.has(run.approval.token));
     if (pending?.approval) { seenApprovals.current.add(pending.approval.token); setSubmission(pending); }
-  }, [state.runs, action.busy, panel, preview, submission, emptyEstimate, position.step]);
+  }, [state.runs, action.busy, panel, batchesOpen, preview, submission, emptyEstimate, position.step]);
   const task = (name: string, label: string, options: Record<string, unknown> = {}, blocked = false, variant: "default" | "primary" = "default", files?: string[]) => {
     const recorded = name === "start" ? options.mode === "estimate" ? state.estimates[options.phase as Phase]?.job || undefined : undefined : operationJob(name, options);
     const current = name === "backup_source" && recorded?.status === "complete" ? undefined : recorded;
@@ -309,7 +314,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   };
   const workingFileActions = () => <>
           <ActionRow label={<><strong>Saved translations</strong><small>Open the persistent translated folder to inspect or copy its JSON files. Some files may contain partial progress.</small></>}><ActionControl label="Open translated folder" disabled={disabled} {...feedback("translated-folder", "Opening folder…")} onClick={() => action.run(async () => { const folder = await api.guided.outputFolder(project.id); await window.dazedtl.openFolder("output", folder.path); }, "Translated folder opened.", "translated-folder")} /></ActionRow>
-          <ActionRow label={<><strong>Reload selected files from game</strong><small>For deliberate changes made outside the tool. Replaces these working copies with the current game files; previous working copies and run history are retained.</small></>}>{task("refresh_sources", "Review reload", {}, !baseline || !phaseFiles.length || running, "default", phaseFiles.map(file => file.name))}</ActionRow>
+          <ActionRow label={<><strong>Reload selected files from game</strong><small>For deliberate changes made outside the tool. Replaces these working copies with the current game files; previous working copies and run history are retained. {blockingBatches(state.runs, phaseFiles.map(file => file.name)).length > 0 && "Wait for these Batches to finish or cancel them before reloading."}</small></>}>{task("refresh_sources", "Review reload", {}, !baseline || !phaseFiles.length || running || !!blockingBatches(state.runs, phaseFiles.map(file => file.name)).length, "default", phaseFiles.map(file => file.name))}</ActionRow>
   </>;
   const copyTask = (name: string, label: string, variant: "default" | "primary" | "quiet" = "default") => <ActionControl label={label} variant={variant} disabled={disabled} {...feedback("copy:" + name, "Copying…")}
     onClick={() => action.run(async () => { await save(); await window.dazedtl.copyText((await api.guided.skill(project.id, name)).text); }, name === "setup" ? "Investigation task copied. Paste it into your assistant." : "Task copied. Return to its saved results when your assistant finishes.", "copy:" + name)} />;
@@ -445,9 +450,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <Message message={action.key === "save-options" && action.error ? "" : discovery.layoutMessage || ""} />
           {discovery.layoutApplication === "pending" && !discovery.layoutMessage && <p className="muted">Measured values will be saved automatically after current work or option edits finish.</p>}
           <Section title="Character limits" hint="Characters">{widths}</Section>
-          <div className="context-layout-actions">{discovery.layout && <Button variant="quiet" onClick={() => setPanel("measurements")}>View measurements</Button>}
-            {copyTask("wrap", discovery.layout ? "Copy remeasurement task" : "Copy measurement task", "quiet")}</div>
-          <p className="muted">Measurement is optional. You can keep the current values and continue.</p>
+          <div className="context-layout-actions">{copyTask("wrap", discovery.layout ? "Copy remeasurement task" : "Copy measurement task", "quiet")}</div>
+          {discovery.layout ? <LayoutMeasurements layout={discovery.layout} /> : <p className="muted">Measurement is optional. You can keep the current values and continue.</p>}
         </div></>;
       primary = advance("Continue to translation");
       secondary = <ActionControl label={discovery.layoutMessage && !widthsDirty ? "Retry measured layout" : "Save layout"} disabled={disabled} {...feedback("save-options", "Saving layout…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id, true); if (current.layoutMessage) throw new Error(current.layoutMessage); await api.guided.reviewContext(project.id, "layout", current.layoutRevision, "layout"); }, "Layout saved.", "save-options")} />; break;
@@ -459,16 +463,17 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const unresolved = state.runs.filter(item => item.id !== current?.id && item.logicalPhase === phase && needsSubmissionReview(item) && item.files?.some(name => selectedNames.includes(name)));
       const quote = currentEstimate(phase);
       const localEstimate = state.estimates[phase]?.job;
-      const locked = activeRun(current) || activeRun(localEstimate) || !!translationIntent;
+      const pendingBatches = blockingBatches(state.runs, selectedNames);
+      const locked = activeRun(current) || activeRun(localEstimate) || !!translationIntent || !!pendingBatches.length;
       const applyFiles = selectedNames.filter(name => state.readiness.outputs.includes(name));
       const noRemainingWork = estimateRequestCount(quote) === 0;
 
       const prerequisites = !baseline || !!changed.length || !state.provider.model || !phaseFiles.length || phase === "advanced" && !advancedReady || phase === "variables" && state.comparisons.status !== "ready";
       const estimating = activeRun(localEstimate) || !!translationIntent;
       const preparing = estimating || action.busy && ["translate:prepare", actionKey("start", { mode, phase })].includes(action.key);
-      const stopLabel = estimating ? null : translationStopLabel(current);
+      const stopLabel = estimating || current?.mode === "batch" ? null : translationStopLabel(current);
       content = <TranslateWorkspace key={phase} state={state} phase={phase} values={values} run={current} estimate={localEstimate} currentEstimate={!!quote}
-        disabled={disabled} locked={locked} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} requestPreview={requestPreview}>
+        disabled={disabled} locked={locked} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} batches={openBatches} requestPreview={requestPreview}>
         {!baseline && <p className="translation-error">Preserve the original and save its version baseline before translating.</p>}
         {!state.provider.enabled && <p className="muted">Provider execution is disabled for this launch. Local estimates are available.</p>}
         {!paidModeReady && <Message message="This connection does not support Batch. Choose Live or a supported connection." />}
@@ -479,10 +484,12 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
         : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
+        : pendingBatches.length ? "These files belong to submitted Batches. Progress and cancellation are available in Batches."
         : unresolved.length ? `${unresolved.length} saved ${unresolved.length === 1 ? "run needs" : "runs need"} submission review in Run history.`
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
+        {(pendingBatches.length > 0 || current?.mode === "batch" && activeRun(current) && !current.approval) && <Button onClick={() => openBatches(pendingBatches[0]?.id || current?.id)}>View Batches</Button>}
         {current?.approval && <Button disabled={disabled} onClick={() => setSubmission(current)}>Review cost</Button>}
         {stopLabel && <Button variant="quiet" disabled={disabled} pending={action.busy && action.key === "run:stop"}
           onClick={() => action.run(() => api.stop(project.id, current!.id), "Stop requested. Saved work is retained.", "run:stop")}>{stopLabel}</Button>}
@@ -599,7 +606,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     return <ImageManager projectId={project.id} initialMode={imageView} observed={application.snapshot?.images}
       onClose={() => setImageView(null)} onOpenEditor={(ids, mode) => { setImageView(mode || imageView); setEditorAssets(ids); }} />;
   }
-  return <PageLayout variant="editor" className={`guided-workspace${position.step === "context" ? " guided-workspace--bounded" : ""}`} aria-label="Translation workspace">
+  return <PageLayout variant="editor" className={`guided-workspace${["context", "plugins"].includes(position.step) ? " guided-workspace--bounded" : ""}`} aria-label="Translation workspace">
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
       actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button ref={historyControl} variant="quiet" onClick={() => setHistory("all")}>History</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
     <div className="guided-layout">
@@ -625,7 +632,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         </ActionBar>}
       </div>
     </div>
-    {panel && <Modal label={panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]} className={`guided-sheet${panel === "translation-context" ? " translation-options" : ["speakers", "speaker-names", "measurements"].includes(panel) ? " context-sheet" : ""}`} dismissible={!action.busy} onDismiss={closePanel}>
+    {panel && <Modal label={panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]} className={`guided-sheet${panel === "translation-context" ? " translation-options" : ["speakers", "speaker-names"].includes(panel) ? " context-sheet" : ""}`} dismissible={!action.busy} onDismiss={closePanel}>
       <header className="guided-sheet-heading"><h2>{panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]}</h2></header>
       {panel === "files" ? <FileSelection state={{ ...state, files: pickerFiles }} selected={pickerSelected} change={(names) => edit("selected", fileScope ? retainOtherScope(values.selected, pickerFiles, names) : names)} disabled={disabled} /> : <div className="guided-sheet-body">
         {panel === "tasks" && <div className="guided-all-tasks">{stages.map((item) => <section key={item.id}><h3>{item.title}</h3>{item.tasks.map((entry) => <Button key={entry.id} variant="quiet" onClick={() => move(item.id, entry.id)}>{entry.title}</Button>)}</section>)}</div>}
@@ -652,7 +659,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {!["ready", "applied"].includes(findings.status) && <p className="muted">{findings.message}</p>}
           {scan.job && ["ready", "running"].includes(scan.job.status) && <JobStatus compact job={{...scan.job,label:"Local speaker scan"}} />}</>}
         {panel === "name-translation" && <>{fileSummary(eventFiles.length)}{connection}<p className="muted">Optional · creates provisional translated names using the API. Investigation and local scanning do not require this.</p>{task("start", "Review paid name translation", { mode: "speakers" }, !baseline || !eventFiles.length || !state.provider.ready || !state.provider.enabled)}</>}
-        {panel === "measurements" && <LayoutMeasurements setup={discovery} current={values.widths} />}
         {panel === "widths" && <>{widths}{copyTask("wrap", "Copy width-measurement task")}</>}
         {panel === "options" && <><EngineOptions state={state} values={values.engine_options} keys={["IGNORETLTEXT", "PRESERVEORIGINAL", "FIXTEXTWRAP", "BRFLAG", "TLSYSTEMVARIABLES", "TLSYSTEMSWITCHES"]} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
           <Button variant="quiet" onClick={() => setPanel("file-tools")}>Working file options</Button></>}
@@ -674,16 +680,18 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       </div>}
       <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panelActions}</ActionBar>
     </Modal>}
+    {batchesOpen && <BatchMonitor projectId={project.id} runs={state.runs} focusRun={batchesRun} close={() => setBatchesOpen(false)}
+      inspect={item => { setBatchesOpen(false); inspect(item); }} />}
     {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
       <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}
     {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
       <ProcessPanel job={inspected} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
         readProvider={() => api.guided.providerDetails(project.id, inspected.id)} actions={<ActionList compact>
-          {!activeRun(inspected) && <ActionRow label={<><strong>{inspected.keptForHistory ? "Restore current-work notice" : "Dismiss from current work"}</strong><small>{inspected.keptForHistory ? "Only the latest attempt can appear as current. Restoring does not resume it." : "Retain this run in history. Unresolved submissions still protect against duplicate spending."}</small></>}>
+          {!activeRun(inspected) && <ActionRow label={<small>{inspected.keptForHistory ? "Hidden from current work." : "Keep this run in history only."}</small>}>
             <ActionControl label={inspected.keptForHistory ? "Restore notice" : "Dismiss notice"} disabled={action.busy} {...feedback("run:retain:" + inspected.id, "Saving…")} onClick={() => action.run(async () => { const saved = await api.guided.retainRun(project.id, inspected.id, !inspected.keptForHistory); setInspected(current => current?.id === saved.id ? saved : current); }, "History preference saved.", "run:retain:" + inspected.id)} />
           </ActionRow>}
-          {canResumeRun(inspected) && <ActionRow label={<><strong>Resume with frozen settings</strong><small>Review this run’s saved scope and possible charges before continuing.</small></>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>}
-          {inspected.status === "complete" && Object.keys(inspected.outputs || {}).length > 0 && <ActionRow label="Save a separate copy of this run’s verified outputs."><ActionControl label="Save output copy" disabled={action.busy || inspected.outputsAvailable === false} {...feedback("run:export", "Saving output copy…")} onClick={() => action.run(async () => setOutput((await api.export(project.id, inspected.id)).path), "Output copy saved.", "run:export")} /></ActionRow>}
+          {canResumeRun(inspected) && <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>}
+          {inspected.status === "complete" && Object.keys(inspected.outputs || {}).length > 0 && <ActionRow label="Export saved translations."><ActionControl label="Save output copy" disabled={action.busy || inspected.outputsAvailable === false} {...feedback("run:export", "Saving output copy…")} onClick={() => action.run(async () => setOutput((await api.export(project.id, inspected.id)).path), "Output copy saved.", "run:export")} /></ActionRow>}
         </ActionList>} />
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {!inspected.process && <>{inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}{inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}{!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}</>}
@@ -736,6 +744,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       error={action.key.startsWith("run:answer:") ? action.error : ""} close={() => setSubmission(null)}
       inspect={() => { const name = submission.files?.[0]; if (name) setRequestPreview({ job: submission.id, file: name, phase: submission.logicalPhase || phase }); setSubmission(null); }}
       answer={approved => action.run(async () => { await api.answer(project.id, submission.approval!.token, approved); setSubmission(null); }, approved ? "" : "Submission declined.", "run:answer:" + approved)} />}
-    {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(null)}><h2>Resume the saved run?</h2><p>{resume.model} · {fileCount(resume.files?.length || 0)} · saved run settings</p><p>{resume.mode === "batch" && resume.phase?.startsWith("poll") ? "Continue this Batch with its frozen settings. Submitted requests stay attached; any unsent requests may incur charges." : "Continue its frozen files, context, and provider settings. Remaining requests may incur charges."}</p><Message message={action.key === "run:resume" ? action.error : ""} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(null)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id, resume.id); setResume(null); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
+    {resume && <Modal label="Resume saved run" dismissible={!action.busy} onDismiss={() => setResume(null)}><h2>Resume the saved run?</h2><p>{resume.model} · {fileCount(resume.files?.length || 0)} · saved run settings</p><p>Continue its frozen files, context, and provider settings. Remaining requests may incur charges.</p><Message message={action.key === "run:resume" ? action.error : ""} /><div className="actions"><Button disabled={action.busy} onClick={() => setResume(null)}>Cancel</Button><Button variant="primary" pending={action.busy} onClick={() => action.run(async () => { await api.resume(project.id, resume.id); setResume(null); }, "", "run:resume")}>Resume saved run</Button></div></Modal>}
   </PageLayout>;
 }

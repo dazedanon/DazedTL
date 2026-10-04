@@ -55,10 +55,13 @@ class Guided:
         self.backend, self.projects, self.settings = backend, projects, settings
         self.translation = translation
         self.confirmations = {}
+        self.batch_confirmations = {}
         self.observed_files = {}
         self.layout_failures = {}
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
+        from .batch_monitor import BatchMonitor
+        self.batch_monitor = BatchMonitor(self)
 
     def observed_digest(self, path):
         path = Path(path)
@@ -262,6 +265,8 @@ class Guided:
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
+        if job.get('mode') in {'translate', 'offline'} and job.get('item_progress'):
+            job['itemProgress'] = dict(job['item_progress'])
         from dazedtl.compatibility.preparations import temporary
         job['temporary'] = temporary(job)
         job["keptForHistory"] = any(identity in project.get("kept_failed_runs", {})
@@ -271,8 +276,8 @@ class Guided:
             folder = root / "translated"
             plan = self.backend.saved_run_configuration(identity)
             if (root / "plan.json").is_file() and job.get("plan_hash") == digest((root / "plan.json").read_bytes()):
-                from dazedtl.compatibility.checkpoints import outputs as checkpoint_outputs
-                job["outputs"] = {**job.get("outputs", {}), **checkpoint_outputs(root, plan)}
+                from dazedtl.compatibility.checkpoints import outputs as checkpoint_outputs, can_collect_outputs
+                job["outputs"] = {**job.get("outputs", {}), **(checkpoint_outputs(root, plan) if can_collect_outputs(job) else {})}
                 job["partialOutputs"] = [name for name in job["outputs"] if name in job.get("errors", {}) or name in job.get("mismatches", {}) or (name not in job.get("completed", []) and job.get("status") != "complete")]
             job["availableOutputs"] = [name for name, expected in job.get("outputs", {}).items()
                                        if project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected]
@@ -304,8 +309,26 @@ class Guided:
             job["process"] = summary(self.backend.manual.folder(identity), job)
         except (OSError, ValueError, KeyError):
             job["process"] = {"retryBlocked": job.get('mode') != 'estimate', "errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
+        monitoring = self.batch_monitor.views.get(identity)
+        if monitoring:
+            job['process']['monitoring'] = {key: value for key, value in monitoring.items() if key != 'batches'}
+            updates = {batch['id']: batch for batch in monitoring.get('batches', [])}
+            refreshed = []
+            from dazedtl.compatibility.batch_control import TERMINAL
+            for batch in job['process'].get('batches', []):
+                update = updates.get(batch['id'], {})
+                merged = {**batch, **update}
+                if batch['status'] in {'cancelling', 'canceling'} and update.get('status') not in TERMINAL:
+                    merged['status'] = batch['status']
+                refreshed.append(merged)
+            job['process']['batches'] = refreshed
         from dazedtl.compatibility.process_view import phase_feedback
         job.update(phase_feedback(job))
+        if monitoring and monitoring['state'] in {'monitoring', 'collecting'}:
+            # Public activity follows the app-owned monitor, without rewriting
+            # the stopped native worker or granting it submission authority.
+            job.update(status='running', phase='poll_status', approval=None,
+                       message='Downloading Batch results.' if monitoring['state'] == 'collecting' else 'Waiting for provider results. Monitoring continues automatically.')
         if job['temporary']:
             # Collection can write local scratch JSON before any paid request.
             # It is never saved translation output available to the user.
@@ -350,6 +373,70 @@ class Guided:
         from dazedtl.compatibility.process_view import provider_details
         plan = self.backend.saved_run_configuration(run_id)
         return provider_details(self.backend.manual.folder(run_id), lambda batch: self.settings.batch_connection(batch, plan))
+
+    def batch_cancel_preview(self, project_id, run_id, batch_id):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError('Choose a Batch belonging to this project.')
+        from dazedtl.compatibility.batch_control import receipt, binding
+        batch = receipt(self.backend.manual.folder(run_id), batch_id)
+        job = self.backend.manual.jobs[run_id]
+        token = uuid.uuid4().hex
+        value = {'token': token, 'runId': run_id, 'batchId': batch_id, 'provider': batch['provider'],
+                 'files': job.get('files', []), 'model': job.get('model', ''), 'requests': len(batch['custom_ids'])}
+        self.batch_confirmations[token] = {'project': project_id, 'value': value, 'binding': binding(batch)}
+        if len(self.batch_confirmations) > 32:
+            self.batch_confirmations.pop(next(iter(self.batch_confirmations)))
+        return value
+
+    def batch_cancel(self, project_id, token):
+        _, native = self.record(project_id)
+        review = self.batch_confirmations.get(token)
+        if not review or review['project'] != project_id:
+            raise ValueError('Review cancellation for this project before continuing.')
+        value = review['value']
+        if value['runId'] not in self.owned_runs(native) or value['runId'] not in self.backend.manual.jobs:
+            raise ValueError('The Batch no longer belongs to this project.')
+        if not self.backend.allow_providers:
+            raise ValueError('Provider actions are disabled in offline mode.')
+        self.batch_confirmations.pop(token)
+        from dazedtl.compatibility.batch_control import cancel
+        plan = self.backend.saved_run_configuration(value['runId'])
+        if (plan.get('workflow') or {}).get('id') != native['id']:
+            raise ValueError('This saved Batch belongs to another project.')
+        result = cancel(self.backend.manual.folder(value['runId']), value['batchId'], review['binding'],
+                        lambda batch: self.settings.batch_connection(batch, plan))
+        job = self.backend.manual.jobs[value['runId']]
+        job.setdefault('dazedtl_batch_cancellations', {})[value['batchId']] = {'status': result['status'], 'counts': result.get('counts')}
+        self.backend.manual.save(job)
+        return result
+
+    def batch_collect(self, project_id, run_id):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError('Choose a Batch belonging to this project.')
+        job = self.backend.manual.jobs[run_id]
+        if run_id in self.batch_monitor.busy:
+            raise ValueError('This Batch is already being checked or collected automatically.')
+        if job.get('mode') != 'batch' or job.get('status') not in {'failed', 'stopped', 'interrupted', 'canceled'} or self.backend.manual.controller(run_id).running():
+            raise ValueError('Wait for this run’s local worker to finish before collecting its results.')
+        if not self.backend.allow_providers:
+            raise ValueError('Provider reads are disabled in offline mode.')
+        plan = self.backend.saved_run_configuration(run_id)
+        if (plan.get('workflow') or {}).get('id') != native['id']:
+            raise ValueError('This saved Batch belongs to another project.')
+        if plan.get('batch_link'):
+            raise ValueError('Collect results from the original run that owns this linked Batch.')
+        from dazedtl.compatibility.batch_control import collect, no_successful_results
+        from dazedtl.compatibility.process_view import saved
+        root = self.backend.manual.folder(run_id)
+        if saved(root, 'batch_state.json').get('status') != 'fetched':
+            collect(root, lambda batch: self.settings.batch_connection(batch, plan))
+        if no_successful_results(root):
+            raise ValueError('This Batch has no successful responses to save. Use Translate for a fresh estimate.')
+        self.settings.prepare_engine(resume=plan)
+        # The fetched marker restricts the native runner to local consumption.
+        return self.backend.manual.consume_batch(run_id)
 
     def inspect(self, project_id, run_id):
         if not isinstance(run_id, str):
@@ -518,7 +605,8 @@ class Guided:
             value.get("draft", {}).get("documents", {}))
         paid = [self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
                 if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate']
-        current_run = next((job for job in paid if job['status'] in {'ready', 'running', 'waiting'}), None)
+        current_run = next((job for job in paid if job['status'] in {'ready', 'running', 'waiting'}
+                           or self.batch_monitor.views.get(job['id'], {}).get('state') in {'monitoring', 'collecting'}), None)
         recovered = read_json(draft) if draft.exists() else None
         rebased = context_setup.rebase_layout_draft(native, recovered)
         if recovered != rebased:
@@ -629,10 +717,29 @@ class Guided:
             raise ValueError('Paid submission overlaps ' + str(len(matches)) + ' saved active or unresolved source requests. '
                              'Review their responses in History before sending that scope again. Settings and local estimates remain available.')
 
+    def protect_batch_files(self, native, files):
+        from dazedtl.compatibility.batch_control import TERMINAL
+        names = set(files)
+        for identity in self.owned_runs(native):
+            job = self.backend.manual.jobs.get(identity)
+            if not job or job.get('mode') != 'batch' or not names.intersection(job.get('files', [])):
+                continue
+            view = self.run_view(identity, compact=True)
+            if not (names.intersection(job.get('files', [])) - set(view.get('retiredFiles', []))):
+                continue
+            process = view.get('process') or {}
+            if (identity in self.batch_monitor.busy or job.get('status') in {'ready', 'running', 'waiting'}
+                    or any(batch.get('status') not in TERMINAL for batch in process.get('batches', []))
+                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected')
+                    or job.get('status') in {'stopped', 'interrupted'} and (str(job.get('phase', '')).startswith('poll') and process.get('batches') or process.get('resultsCollected'))):
+                raise ValueError('These files still belong to Batch work. Open Batches to track progress or cancel it before changing the files.')
+
     def preview(self, project_id, action, files=None, options=None):
         if action != 'start':
             self.idle()
         project, native = self.record(project_id)
+        if action in {'refresh_sources', 'export_selected'}:
+            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
         self.clean(project_id)
         options = {} if options is None else deepcopy(options)
         if not isinstance(options, dict):
@@ -815,6 +922,8 @@ class Guided:
         project, native = self.record(project_id)
         self.confirmations.pop(token)
         action = confirmed["action"]
+        if action in {'refresh_sources', 'export_selected'}:
+            self.protect_batch_files(native, confirmed['paths'])
         if action != 'start':
             self.idle()
         if action != "backup_source":
@@ -1184,6 +1293,8 @@ class Guided:
         from dazedtl.compatibility.preparations import temporary
         if temporary(self.backend.manual.jobs.get(identity, {})):
             raise ValueError('Unapproved preparation cannot be resumed. Click Translate for a fresh estimate.')
+        if self.backend.manual.jobs.get(identity, {}).get('mode') == 'batch':
+            raise ValueError('Submitted Batches are monitored automatically. Use Translate for a fresh estimate of remaining work.')
         plan = self.backend.saved_run_configuration(identity)
         if (plan.get('workflow') or {}).get('id') != native['id']:
             raise ValueError('This saved run belongs to another project.')

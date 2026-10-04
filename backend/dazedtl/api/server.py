@@ -55,6 +55,7 @@ class Application:
             "answer": lambda identity, token, approved: views.job(self.guided.answer(identity, token, approved)),
             "export": self.guided.export,
         }
+        self.guided.batch_monitor.start()
 
     def state(self):
         value = self.projects.state()
@@ -268,6 +269,9 @@ def serve(args, diagnostics):
         "guided_file_preview": (app.guided.file_preview, lambda value, _params: value),
         "guided_discard_preparation": (app.guided.discard_preparation, lambda value, _params: value),
         "guided_provider_details": (app.guided.provider_details, lambda value, _params: value),
+        "guided_batch_cancel_preview": (app.guided.batch_cancel_preview, lambda value, _params: value),
+        "guided_batch_cancel": (app.guided.batch_cancel, lambda value, _params: value),
+        "guided_batch_collect": (app.guided.batch_collect, lambda value, _params: views.job(value)),
         "translation_speakers": (app.guided.speakers, lambda value, _params: views.speaker_scan(value)),
         **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
            for name in ("position", "options_draft", "save_options", "apply_speakers", "skill", "form", "context_status", "context_review", "reference_add", "reference_remove", "event_text_request", "event_text_review", "event_text_view", "event_text_picker", "comparisons_review")},
@@ -284,6 +288,7 @@ def serve(args, diagnostics):
         methods["images_" + name] = (getattr(app.images, name), lambda value, _params: value)
     for name in ("state", "list", "detail", "update", "action"):
         methods["plugins_" + name] = (getattr(app.plugins, name), lambda value, _params: value)
+    methods["plugins_continue"] = (app.plugins.continue_task, lambda value, _params: value)
     for name in ("state", "save", "action"):
         methods["images_editor_" + name] = (getattr(app.image_editor, name), lambda value, _params: value)
     for name in ("state", "preview", "start", "action"):
@@ -348,6 +353,7 @@ def serve(args, diagnostics):
             print(json.dumps(response, ensure_ascii=False), file=RPC_OUTPUT, flush=True)
     finally:
         app.closing = True
+        app.guided.batch_monitor.close()
         local.close()
         app.translation.jobs.close()
         app.images.close()
