@@ -21,6 +21,7 @@ export function DocumentEditor({
   selectedName,
   select,
   focused = false,
+  fill = false,
   showActions = true,
   before,
   tabNames,
@@ -37,6 +38,7 @@ export function DocumentEditor({
   selectedName?: string;
   select?: (name: string) => void;
   focused?: boolean;
+  fill?: boolean;
   showActions?: boolean;
   before?: (name: string) => ReactNode;
   tabNames?: string[];
@@ -50,7 +52,7 @@ export function DocumentEditor({
   const name = available.includes(preferred) ? preferred : available[0] || preferred;
   const document = drafts[name] || documents[name];
   return (
-    <fieldset disabled={disabled} className={focused ? "document-editor document-editor--focused" : "document-editor"}>
+    <fieldset disabled={disabled} className={`document-editor${focused ? " document-editor--focused" : ""}${fill ? " document-editor--fill" : ""}`}>
       {focused ? available.length > 1 && <Tabs id="guidance-documents" label="Guidance documents" value={name}
         items={available.filter((key) => !tabNames || tabNames.includes(key)).map((key) => ({ id: key, label: tabLabel ? tabLabel(key) : labelFor(key) + (drafts[key] ? " · Draft" : "") }))}
         onChange={select || setName} disabled={disabled} /> : <label>
@@ -71,7 +73,7 @@ export function DocumentEditor({
           {before?.(name)}
           <textarea
             aria-label={focused ? labelFor(name) + " text" : "Game context text"}
-            rows={focused ? 9 : 16}
+            rows={fill ? 4 : focused ? 9 : 16}
             spellCheck={false}
             value={document.text}
             onChange={(event) =>

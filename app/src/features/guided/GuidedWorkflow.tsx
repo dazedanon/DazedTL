@@ -38,6 +38,8 @@ import { GuidanceReview } from "./GuidanceReview";
 import { ContextTaskHeader, ContextWorkspace, SpeakerNames } from "./ContextWorkspace";
 import { investigationResults } from "./contextView";
 import { SpeakerFindings } from "./SpeakerFindings";
+import { LayoutMeasurements } from "./LayoutMeasurements";
+import { commentTextHelp, speakerOptions } from "./speakerOptions";
 import { EventTextSources } from "./EventTextSources";
 import { EventTextPicker } from "./EventTextPicker";
 import { EventTextReview, type SourceReview } from "./EventTextReview";
@@ -417,8 +419,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       for (const row of state.referenceFolders || []) feedbackKeys.add("reference:remove:" + row.id);
       if (state.references.length) feedbackKeys.add("reference_remove");
       content = <><ContextTaskHeader headingRef={headingRef} title="Speakers & game context" description="Copy the task into your assistant to investigate this game."
-        actions={<><ActionControl label="Refresh results" variant="quiet" disabled={disabled} {...feedback("context:refresh", "Reading saved files…")} onClick={() => action.run(() => application.refresh(), "Saved results refreshed.", "context:refresh")} />
-          <Button variant="quiet" disabled={disabled} onClick={() => { setSpeakerTab("settings"); setPanel("speakers"); }}>Detection settings</Button></>} />
+        actions={<Button variant="quiet" disabled={disabled} onClick={() => { setSpeakerTab("settings"); setPanel("speakers"); }}>Detection settings</Button>} />
         <ContextWorkspace state={state} results={investigation} actions={{
           formats: <Button variant="quiet" disabled={disabled} onClick={() => { setSpeakerTab("findings"); setPanel("speakers"); }}>View formats</Button>,
           names: <Button variant="quiet" disabled={disabled} onClick={() => setPanel("speaker-names")}>{scan.available ? "View names" : "Open scan"}</Button>,
@@ -433,11 +434,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       primary = advance("Continue to guidance", undefined, investigation.every(row => row.saved) ? "primary" : "quiet");
       secondary = copyTask("setup", "Copy investigation task", investigation.every(row => row.saved) ? "default" : "primary"); break;
     case "guidance":
-      content = <><ContextTaskHeader headingRef={headingRef} title="Translation guidance" description="Saved terminology, style and game context are used by translation."
-        actions={<ActionControl label="Reload files" variant="quiet" disabled={disabled} {...feedback("reload-guidance", "Reloading…")} onClick={() => action.run(() => application.refresh(), "Saved guidance reloaded; your drafts are retained.", "reload-guidance")} />} />
-        <GuidanceReview documents={state.documents} context={context} setup={discovery} names={savedNames} selectedName={documentName} select={setDocumentName} disabled={disabled} />
-        <div className="guided-utilities">{context.drafts[documentName] && <ActionControl label="Discard this draft" variant="quiet" disabled={disabled} {...feedback("context:discard", "Discarding…")} onClick={() => action.run(() => context.discard(documentName), "This draft discarded.", "context:discard")} />}</div>
-        {!!Object.keys(context.drafts).length && <p className="muted">Drafts are retained when you leave. Save guidance to use your edits for translation.</p>}</>;
+      content = <><ContextTaskHeader headingRef={headingRef} title="Translation guidance"
+        actions={<ActionControl label="Discard draft" variant="quiet" disabled={disabled || !context.drafts[documentName]} {...feedback("context:discard", "Discarding…")} onClick={() => action.run(() => context.discard(documentName), "Draft discarded.", "context:discard")} />} />
+        <GuidanceReview documents={state.documents} context={context} setup={discovery} names={savedNames} selectedName={documentName} select={setDocumentName} disabled={disabled} /></>;
       primary = advance("Continue to layout");
       secondary = <ActionControl label="Save guidance" disabled={disabled} {...feedback("context:save", "Saving guidance…")} onClick={() => saveDocuments(savedNames)} />; break;
     case "speakers":
@@ -588,6 +587,13 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const paid = preview?.action === "start" && preview.options.mode !== "estimate";
   const reviewEstimateCurrent = !paid || preview?.options.mode === "speakers" || !!preview?.estimate && currentEstimate(preview.options.phase as Phase)?.id === preview.estimate.jobId;
   const savePanel = (label = "Save & close") => <ActionControl label={label} variant="primary" disabled={disabled} {...feedback("save-options", "Saving…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "Options saved.", "save-options")} />;
+  // Build controls before fallback feedback so each action reports in one place.
+  const panelActions = panel && (panel === "files" ? <><Button disabled={action.busy} onClick={closePanel}>Cancel</Button><ActionControl label={`Use ${fileCount(pickerSelected.length)}`} variant="primary" disabled={disabled} {...feedback("files:save", "Saving selection…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "File selection saved.", "files:save")} /></> : <><Button disabled={action.busy} onClick={() => setPanel(null)}>Close</Button><div ref={setUtilityActions} className="action-bar-slot" />{panel === "speaker-names" && <><Button disabled={disabled} onClick={() => setPanel("name-translation")}>API name translation</Button>
+        <ActionControl label={scan.available ? "Scan again" : "Run local scan"} disabled={disabled || running || !["ready", "applied"].includes(findings.status)}
+          {...feedback("speaker-scan", "Starting local scan…")} pending={action.busy && action.key === "speaker-scan" || !!scan.job && ["ready", "running"].includes(scan.job.status)}
+          notice={scan.job?.status === "complete" && scan.available ? `${scan.names.length} names saved.` : ""}
+          job={scan.job && ["failed", "interrupted", "stopped", "canceled"].includes(scan.job.status) ? scan.job : undefined}
+          onClick={async () => { const result = await action.run(async () => { await save(); return api.translation.speakers(project.id, true); }, "", "speaker-scan"); if (result.ok && result.value.available && result.value.job?.status === "complete") action.succeed("Names saved.", "speaker-scan"); }} /></>}{["speakers", "widths", "options", "tools", "translation-context"].includes(panel) && (panel !== "speakers" || speakerTab === "settings" && draft.dirty) && <>{draft.dirty && <ActionControl label="Discard engine options" disabled={disabled} {...feedback("discard-options", "Discarding…")} onClick={() => action.run(draft.discard, "Engine options restored.", "discard-options")} />}{savePanel()}</>}</>);
   if (imageView && taskId === "images") {
     if (editorAssets) return <ImageTextEditor projectId={project.id} assetIds={editorAssets} observationKey={application.snapshot} onClose={() => setEditorAssets(null)} />;
     return <ImageManager projectId={project.id} initialMode={imageView} observed={application.snapshot?.images}
@@ -602,7 +608,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         {showTaskTabs && <nav className="guided-task-nav" aria-label={`${stage.title} tasks`}><Tabs id={taskTabsId} label={`${stage.title} tasks`} value={taskId} disabled={action.busy} onChange={stepTask} items={stage.tasks.map(item => ({ id: item.id, label: <>{completed.has(item.id) && <span aria-label="Complete">✓</span>}{item.title}</> }))} /></nav>}
         {unfinished && taskId !== "run" && (position.step !== "translate" || runPhase(state) !== phase) && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => job?.mode === "speakers" ? move("context", "run") : stepTask(runPhase(state) === "advanced" ? "advanced-run" : runPhase(state))}>Open saved run</Button></div>}
         {activeOperation && !localOperation && !(taskId === "names" && activeOperation.action === "speaker_scan") && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
-        <PageBody ref={bodyRef} role={showTaskTabs && selectedTask ? "tabpanel" : undefined} id={showTaskTabs && selectedTask ? `${taskTabsId}-panel-${taskId}` : undefined} aria-labelledby={showTaskTabs && selectedTask ? `${taskTabsId}-tab-${taskId}` : undefined} className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : ""}`}>
+        <PageBody ref={bodyRef} role={showTaskTabs && selectedTask ? "tabpanel" : undefined} id={showTaskTabs && selectedTask ? `${taskTabsId}-panel-${taskId}` : undefined} aria-labelledby={showTaskTabs && selectedTask ? `${taskTabsId}-tab-${taskId}` : undefined} className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}>
           {position.step !== "translate" && (position.step !== "context" || taskId === "run") && <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskId === "plugins" ? "" : taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
             <h2 ref={headingRef} tabIndex={-1}>{taskId === "apply" && taskView === "qa" ? "Text QA · optional" : taskId === "apply" && taskView === "tools" ? "Game tools · optional" : selectedTask?.title || phaseLabels[runPhase(state)] + " run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}{taskId === "other-event-text" && <p className="muted">{{audit: "Investigation", sources: "Findings & source choices", "advanced-run": "Translation", variables: "Comparison updates"}[state.eventText.view]}</p>}</div>}
           <Message message={!preview && (!feedbackKeys.has(action.key) && !action.key.startsWith("run:retain:") && !(taskId === "run" && action.key.startsWith("run:"))) ? action.error : ""} onDismiss={action.clear} />
@@ -619,7 +625,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         </ActionBar>}
       </div>
     </div>
-    {panel && <Modal label={panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]} className={`guided-sheet${panel === "translation-context" ? " translation-options" : ""}`} dismissible={!action.busy} onDismiss={closePanel}>
+    {panel && <Modal label={panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]} className={`guided-sheet${panel === "translation-context" ? " translation-options" : ["speakers", "speaker-names", "measurements"].includes(panel) ? " context-sheet" : ""}`} dismissible={!action.busy} onDismiss={closePanel}>
       <header className="guided-sheet-heading"><h2>{panel === "translation-context" ? `${phaseLabels[phase]} options` : panelTitles[panel]}</h2></header>
       {panel === "files" ? <FileSelection state={{ ...state, files: pickerFiles }} selected={pickerSelected} change={(names) => edit("selected", fileScope ? retainOtherScope(values.selected, pickerFiles, names) : names)} disabled={disabled} /> : <div className="guided-sheet-body">
         {panel === "tasks" && <div className="guided-all-tasks">{stages.map((item) => <section key={item.id}><h3>{item.title}</h3>{item.tasks.map((entry) => <Button key={entry.id} variant="quiet" onClick={() => move(item.id, entry.id)}>{entry.title}</Button>)}</section>)}</div>}
@@ -635,9 +641,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <div role="tabpanel" id={`detection-panel-${speakerTab}`} aria-labelledby={`detection-tab-${speakerTab}`}>
             {speakerTab === "findings" ? <>{findings.reportId ? <SpeakerFindings findings={findings} values={values.engine_options} /> : <p className="muted">{findings.message}</p>}
               {findings.status === "stale" && <p className="muted">{findings.message}</p>}{applySpeakerControl}</>
-              : <><p className="muted">The local scan examines all event files. Your manual overrides are retained.</p>
-                <label className="toggle"><input type="checkbox" disabled={disabled} checked={values.phase1_comments} onChange={event => edit("phase1_comments", event.target.checked)} />Include displayed comment text (408)</label>
-                <EngineOptions state={state} values={values.engine_options} keys={speakers} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
+              : <><div className="context-detection-settings"><FieldRow id="guided-comment-text" label="Comment text" help={commentTextHelp} helpDisplay="popover">
+                  {props => <input {...props} type="checkbox" disabled={disabled} checked={values.phase1_comments} onChange={event => edit("phase1_comments", event.target.checked)} />}</FieldRow>
+                <EngineOptions state={state} values={values.engine_options} keys={speakers} descriptions={speakerOptions} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} /></div>
                 {!!findings.overrides.length && <ActionControl label="Use investigation recommendations" disabled={disabled || draft.dirty || !!state.optionsDraft || !["ready", "applied"].includes(findings.status)} pending={speakerAction.busy} pendingText="Applying rules…" error={speakerAction.error} notice={speakerAction.notice}
                   onClick={() => speakerAction.run(() => draft.applySpeakers(true), "Investigation recommendations restored.", "apply")} />}</>}
           </div></>}
@@ -646,7 +652,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {!["ready", "applied"].includes(findings.status) && <p className="muted">{findings.message}</p>}
           {scan.job && ["ready", "running"].includes(scan.job.status) && <JobStatus compact job={{...scan.job,label:"Local speaker scan"}} />}</>}
         {panel === "name-translation" && <>{fileSummary(eventFiles.length)}{connection}<p className="muted">Optional · creates provisional translated names using the API. Investigation and local scanning do not require this.</p>{task("start", "Review paid name translation", { mode: "speakers" }, !baseline || !eventFiles.length || !state.provider.ready || !state.provider.enabled)}</>}
-        {panel === "measurements" && discovery.layout && <><p>{discovery.layout.reason}</p><ul>{discovery.layout.evidence.map((ref, index) => <li key={index}><span className="path">{ref.file}</span>: {ref.location}</li>)}</ul></>}
+        {panel === "measurements" && <LayoutMeasurements setup={discovery} current={values.widths} />}
         {panel === "widths" && <>{widths}{copyTask("wrap", "Copy width-measurement task")}</>}
         {panel === "options" && <><EngineOptions state={state} values={values.engine_options} keys={["IGNORETLTEXT", "PRESERVEORIGINAL", "FIXTEXTWRAP", "BRFLAG", "TLSYSTEMVARIABLES", "TLSYSTEMSWITCHES"]} disabled={disabled} change={(key, value) => edit("engine_options", { ...values.engine_options, [key]: value })} />
           <Button variant="quiet" onClick={() => setPanel("file-tools")}>Working file options</Button></>}
@@ -666,11 +672,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {panel === "translation-context" && <TranslationOptions state={state} phase={phase} values={values} disabled={disabled || running} change={edit}
         fileActions={workingFileActions()} />}
       </div>}
-      <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panel === "files" ? <><Button disabled={action.busy} onClick={closePanel}>Cancel</Button><ActionControl label={`Use ${fileCount(pickerSelected.length)}`} variant="primary" disabled={disabled} {...feedback("files:save", "Saving selection…")} onClick={() => action.run(async () => { await save(); setPanel(null); }, "File selection saved.", "files:save")} /></> : <><Button disabled={action.busy} onClick={() => setPanel(null)}>Close</Button><div ref={setUtilityActions} className="action-bar-slot" />{panel === "speaker-names" && <><Button variant="quiet" disabled={disabled} onClick={() => setPanel("name-translation")}>API name translation</Button>
-        <ActionControl label={scan.available ? "Scan again" : "Run local scan"} disabled={disabled || running || !["ready", "applied"].includes(findings.status)}
-          {...feedback("speaker-scan", "Starting local scan…")} pending={action.busy && action.key === "speaker-scan" || !!scan.job && ["ready", "running"].includes(scan.job.status)}
-          job={scan.job && ["failed", "interrupted", "stopped", "canceled"].includes(scan.job.status) ? scan.job : undefined}
-          onClick={async () => { const result = await action.run(async () => { await save(); return api.translation.speakers(project.id, true); }, "", "speaker-scan"); if (result.ok && result.value.available && result.value.job?.status === "complete") action.succeed("Names saved.", "speaker-scan"); }} /></>}{["speakers", "widths", "options", "tools", "translation-context"].includes(panel) && (panel !== "speakers" || draft.dirty) && <>{draft.dirty && <ActionControl label="Discard engine options" disabled={disabled} {...feedback("discard-options", "Discarding…")} onClick={() => action.run(draft.discard, "Engine options restored.", "discard-options")} />}{savePanel()}</>}</>}</ActionBar>
+      <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panelActions}</ActionBar>
     </Modal>}
     {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
       <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}

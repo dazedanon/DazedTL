@@ -8,9 +8,9 @@ import type { InvestigationPart, InvestigationResult } from "./contextView";
 import "./context.css";
 
 export function ContextTaskHeader({ title, description, actions, headingRef }: {
-  title: string; description: string; actions?: ReactNode; headingRef: Ref<HTMLHeadingElement>;
+  title: string; description?: string; actions?: ReactNode; headingRef: Ref<HTMLHeadingElement>;
 }) {
-  return <header className="context-task-header"><div><h2 ref={headingRef} tabIndex={-1}>{title}</h2><p>{description}</p></div><div className="actions">{actions}</div></header>;
+  return <header className="context-task-header"><div><h2 ref={headingRef} tabIndex={-1}>{title}</h2>{description && <p>{description}</p>}</div>{actions && <div className="actions">{actions}</div>}</header>;
 }
 
 export function ContextWorkspace({ state, results, actions, addReference, removeReference, removeImported }: {
@@ -47,7 +47,7 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
     : scan.names.map((text, index) => ({id:String(index), label:"", text})), [scan, tab]);
   const matching = rows.filter(row => `${row.label} ${row.text}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   return <div className="context-name-results">
-    <p className="muted">{scan.available ? `${scan.names.length} nameplates from ${scan.files} event files. These are source names, not approved translations.` : scan.issue || "Run the local scan after the speaker formats are saved."}</p>
+    <p className="muted">{scan.available ? `${scan.names.length} source nameplates · ${scan.files} event files` : scan.issue || "Run the local scan after the speaker formats are saved."}</p>
     <Tabs id="speaker-results" label="Speaker result types" value={tab} onChange={setTab} items={[
       {id:"nameplates",label:`Nameplates (${scan.names.length})`}, {id:"actors",label:`Actors (${Object.keys(scan.actorNames).length})`}, {id:"variables",label:`Variable links (${Object.keys(scan.variableActorIds).length})`},
     ]} />

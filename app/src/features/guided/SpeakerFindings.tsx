@@ -1,14 +1,16 @@
 import type { EngineValue, SpeakerSetup } from "../../api/contracts";
+import { speakerOptions } from "./speakerOptions";
 
 export function SpeakerFindings({ findings, values }: { findings: SpeakerSetup; values: Record<string, EngineValue> }) {
   return <div className="guided-speaker-findings">
-    <p className="muted">Automatic setup enables only high-confidence rules with source evidence. Manual overrides are marked.</p>
-    {findings.rules.map((rule) => <section key={rule.key}>
-      <div className="section-heading"><h3>{rule.label}</h3><span className="badge">{findings.overrides.includes(rule.key) ? "Manual · " : ""}{values[rule.key] === true ? "On" : "Off"}</span></div>
-      <p>{rule.reason}</p>
-      <details><summary>{rule.confidence === "high" ? "High confidence" : "Needs more evidence"} · {rule.evidence.length} source {rule.evidence.length === 1 ? "reference" : "references"}</summary>
-        <ul>{rule.evidence.map((ref, index) => <li key={index}><span className="path">{ref.file}</span> — {ref.location}</li>)}</ul>
-      </details>
-    </section>)}
+    {findings.rules.map((rule) => <details className="context-finding" key={rule.key}>
+      <summary><span className="context-finding-summary"><span className="context-finding-title"><strong>{speakerOptions[rule.key]?.label || rule.label}</strong>
+        <span className={`badge context-rule-state ${values[rule.key] === true ? "enabled" : "disabled"}`}>{values[rule.key] === true ? "On" : "Off"}</span>
+        {findings.overrides.includes(rule.key) && <span className="badge context-rule-manual">Manual</span>}</span>
+        <span className="context-finding-meta">{rule.confidence[0].toUpperCase() + rule.confidence.slice(1)} confidence · {rule.evidence.length} {rule.evidence.length === 1 ? "source" : "sources"}</span></span></summary>
+      <div className="context-finding-details"><p>{rule.reason}</p>
+        {!!rule.evidence.length && <ul>{rule.evidence.map((ref, index) => <li key={index}><span className="path">{ref.file}</span> — {ref.location}</li>)}</ul>}
+      </div>
+    </details>)}
   </div>;
 }
