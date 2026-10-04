@@ -43,6 +43,16 @@ class CompatibilityContracts(unittest.TestCase):
             return {**deepcopy(baseline), 'model': model, 'temperature': 0,
                     'frequency_penalty': 0.05, 'reasoning_effort': 'none'}
         translation.buildOpenAIRequest = translation.buildClaudeRequest = native
+        quote = {'model': 'gpt-6.1-sol', 'provider': 'openai', 'input_tokens': 98_016, 'output_tokens': 4_617,
+                 'cache_read_tokens': 86_528, 'cache_write_tokens': 11_360, 'uses_prompt_cache': True,
+                 'batch_nocache_cost': .121101, 'batch_cached_cost': .0460658}
+        native_estimate = Mock(return_value=quote)
+        translation.estimateBatchCost = native_estimate
+        def pricing(model):
+            rates = translation._load_litellm_pricing()[model]
+            return {'inputAPICost': rates['input_cost_per_token'] * 1_000_000,
+                    'outputAPICost': rates['output_cost_per_token'] * 1_000_000}
+        translation.getPricingConfig = pricing
         native_prepare = Mock(return_value='prepared')
         environment.prepare = native_prepare
         modules = {module.__name__: module for module in (desktop, backend, environment, util, translation)}
@@ -56,6 +66,20 @@ class CompatibilityContracts(unittest.TestCase):
             frozen = {name: (root/name).read_bytes() for name in ('plan.json', 'log/batch_requests.json')}
             install()
             self.assertEqual(environment.prepare(root), 'prepared')
+            # New quotes must use Sol 6.1's 5% cache-read price, preserve the
+            # cache-write charge, and never repeatedly discount a saved value.
+            self.assertAlmostEqual(translation.estimateBatchCost()['batch_cached_cost'], .0417394)
+            self.assertEqual(quote['batch_cached_cost'], .0460658)
+            environment.prepare(root)
+            self.assertAlmostEqual(translation.estimateBatchCost()['batch_cached_cost'], .0417394)
+            self.assertEqual(native_estimate.call_count, 2)
+            with patch.object(translation, 'getPricingConfig', return_value={'inputAPICost': 4, 'outputAPICost': 20}):
+                self.assertAlmostEqual(translation.estimateBatchCost()['batch_cached_cost'], .0834788)
+            for other in ({**quote, 'provider': 'anthropic'}, {**quote, 'model': 'gpt-6-sol'},
+                          {**quote, 'cache_read_tokens': None}):
+                native_estimate.return_value = other
+                self.assertIs(translation.estimateBatchCost(), other)
+            native_estimate.return_value = quote
             for model in ('gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra', 'gpt-4.1', 'custom-model'):
                 with self.subTest(model=model):
                     live = translation.buildOpenAIRequest(model)
@@ -72,6 +96,8 @@ class CompatibilityContracts(unittest.TestCase):
                 write_json(root/'plan.json', plan)
                 environment.prepare(root)
                 self.assertEqual(translation.buildOpenAIRequest('gpt-6.1-sol'), native('gpt-6.1-sol'))
+                if legacy is None:
+                    self.assertIs(translation.estimateBatchCost, native_estimate)
             plan['dazedtl_request_policy'] = {**policy, 'generationParameters': 'unsupported-future-policy'}
             write_json(root/'plan.json', plan)
             before = native_prepare.call_count

@@ -179,7 +179,14 @@ class GuidedRuns:
     def continuation(self, project_id, native, inputs):
         from dazedtl.compatibility.process_view import ledger
         result = {}
-        for identity, record in self.records(project_id).items():
+        jobs = self.guided.backend.manual.jobs
+        # Newer compatible attempts own reusable wording. Historical variants
+        # are normal, and must not prevent even estimating the remaining text.
+        # Creation time (not later polling/resume updates) determines precedence;
+        # the ID breaks ties independently of registry serialization order.
+        records = sorted(self.records(project_id).items(),
+                         key=lambda item: (jobs.get(item[0], {}).get('created', ''), item[0]), reverse=True)
+        for identity, record in records:
             if record['phase'] != inputs['phase']:
                 continue
             shared = set(record['files']).intersection(inputs['files'])
@@ -217,10 +224,7 @@ class GuidedRuns:
                             continue
                     elif legacy_allowed is not None and key not in legacy_allowed:
                         continue
-                    row = {'source': source, 'response': json.loads(response)}
-                    if key in result and row != result[key]:
-                        raise ValueError('Saved validated responses conflict. Review this source in History.')
-                    result[key] = row
+                    result.setdefault(key, {'source': source, 'response': json.loads(response)})
         return result
 
     def quote(self, project_id, native, phase, mode, *, guard=None, run_view=None):

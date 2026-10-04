@@ -110,8 +110,8 @@ function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
       <dl className="process-counts process-counts--compact">{counts.filter(([label, count]) => count != null && (label === "Requests" || typeof count === "string" || count > 0)).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count!.toLocaleString()}</dd></div>)}</dl>
     </div>
     <Tabs id={tabId} label="Request content" items={tabs} value={view.tab} onChange={tab => change({ tab })} />
-    <div className={`request-workspace${runView ? " request-workspace--run" : ""}`}>
-      {!runView && <aside className="request-list" aria-label="Choose a request">
+    <div className="request-workspace">
+      <aside className="request-list" aria-label="Choose a request">
         <div className="request-search"><input aria-label="Find request" type="search" maxLength={200} value={view.query} placeholder="Request # or file name" onChange={event => refine({ query: event.target.value })} />
           <div><select aria-label="Request status" value={view.filter} onChange={event => refine({ filter: event.target.value })}>
             <option value="all">All requests</option><option value="failed">Failed</option><option value="unsent">Unsent</option><option value="unresolved">Unresolved</option>
@@ -126,7 +126,7 @@ function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
             tabIndex={row.index === index || position < 0 && row.index === matching[0]?.index ? 0 : -1} onClick={() => choose(row.index)}>
             <span className="request-row-number">{row.index + 1}</span><span><strong>{row.file || `Request ${row.index + 1}`}</strong><small>{row.state}{row.sourceItems ? ` · ${row.sourceItems} lines` : ""}{!row.file ? " · saved scope" : ""}</small></span>
           </button>}</VirtualList></div>
-      </aside>}
+      </aside>
       <section className="payload-inspector" aria-label="Request details">
         {!runView && <div className="request-selection"><strong>{index != null ? `Request ${index + 1} / ${requests.length}` : "No saved requests"}</strong>
           {selected && <span className="badge">{visiblePayload?.state || selected.state}</span>}
@@ -134,8 +134,8 @@ function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
             <Button variant="quiet" aria-label="Next request" disabled={position < 0 || position >= matching.length - 1} onClick={() => choose(matching[position + 1].index, true)}>→</Button>
             {readPayload && <Button variant="quiet" pending={busy} disabled={busy || index == null} onClick={() => { refreshedIndex.current = index ?? null; setRefresh(value => value + 1); }}>{refreshed ? "Updated" : "Refresh request"}</Button>}</div>
         </div>}
-        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={busy}>
-          <Message message={error} />
+        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={!runView && busy}>
+          {!runView && <Message message={error} />}
           <TabPanel id={tabId} value={view.tab}>
             {view.tab === "run" ? <>
               <dl className="run-detail-summary">

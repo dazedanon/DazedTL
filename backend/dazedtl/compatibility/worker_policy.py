@@ -9,7 +9,7 @@ import sys
 from dazedtl.storage import write_json
 from dazedtl.settings.preferences import GENERATION_PARAMETERS
 from .request_parameters import configure_builders
-from . import state_requests
+from . import state_requests, batch_pricing
 from .run_evidence import Evidence
 
 
@@ -46,6 +46,7 @@ def install():
         if policy is None:
             result = native_prepare(root)
             import util.translation as translation
+            batch_pricing.configure(translation, False)
             configure_builders(translation, None)
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
@@ -89,6 +90,7 @@ def install():
 
         # Long-running batches must retain these rates after the normal cache TTL.
         translation._load_litellm_pricing = lambda: prices
+        batch_pricing.configure(translation, True)
         record = None
         if policy.get("generationParameters") and plan.get('mode') in {'estimate', 'batch', 'translate', 'offline'}:
             evidence = Evidence(root, plan["mode"], plan)

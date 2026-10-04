@@ -19,12 +19,37 @@ from dazedtl.settings.store import Settings
 
 class ProcessTests(unittest.TestCase):
     def test_continuation_translates_new_text_inside_a_previously_translated_file_only_once(self):
+        from dazedtl.translation.guided_runs import GuidedRuns
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary)/'current'
             data = [{'name': 'Potion', '_original': {'name': '薬'}}, {'name': '毒'}]
             write_json(root/'files/Items.json', data)
             key = request_scope.identities('Items.json', 'database', ['薬'], request_scope.source_locations(data))[0]
-            plan = {'workflow': {'phase': 'database'}, 'dazedtl_continuation': {key: {'source': '薬', 'response': 'Potion'}}}
+            inputs = {'phase': 'database', 'files': ['Items.json', 'States.json'],
+                      'source': {'Items.json': {'identity': 'items-source'}, 'States.json': {'identity': 'states-source'}}}
+            record = {**inputs, 'files': ['Items.json'], 'source': {'Items.json': inputs['source']['Items.json']}}
+            jobs = {'older': {'created': '2026-10-04T18:00:00Z', 'updated': '2026-10-04T23:00:00Z'},
+                    'newer': {'created': '2026-10-04T20:00:00Z', 'updated': '2026-10-04T20:00:00Z'}}
+            folder = lambda identity: Path(temporary)/identity
+            records = {'newer': record, 'older': record}
+            runs = GuidedRuns(SimpleNamespace(backend=SimpleNamespace(manual=SimpleNamespace(jobs=jobs, folder=folder),
+                saved_run_configuration=lambda _: {'workflow': {'id': 'project'}})))
+            runs.records = lambda _: records
+            history = []
+            for identity, wording in [('older', 'Medicine'), ('newer', 'Potion')]:
+                saved = Evidence(folder(identity), 'translate')
+                with saved.connect() as connection:
+                    connection.execute('INSERT INTO validated_items VALUES (?,?,?)', (key, '薬', json.dumps(wording)))
+                    if identity == 'newer':
+                        connection.execute('INSERT INTO validated_provenance VALUES (?,?)', (key, 'Items.json'))
+                history.append(saved.path)
+            before = {path: path.read_bytes() for path in [*history, root/'files/Items.json']}
+            continuation = runs.continuation('project', {'id': 'project'}, inputs)
+            self.assertEqual(continuation[key], {'source': '薬', 'response': 'Potion'})
+            records = dict(reversed(list(records.items())))
+            self.assertEqual(runs.continuation('project', {'id': 'project'}, inputs), continuation)
+            self.assertEqual({path: path.read_bytes() for path in before}, before)
+            plan = {'workflow': {'phase': 'database'}, 'dazedtl_continuation': continuation}
             sent = []
             def native_ai(text, history, filename):
                 sent.append(text)

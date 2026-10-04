@@ -884,11 +884,13 @@ class Guided:
                 result["rewrap"] = self.backend.guided_rewrap_review(native["id"], token)
             if action in {"export_selected", "rewrap_apply"}:
                 result.update(self.backend.guided_text_publication(token))
+            reviewed_paths = paths or result.get("paths") or result["options"].get("files", [])
             self.confirmations = {token: {"project_id": project_id, "action": action, "native": True,
+                "paths": list(reviewed_paths),
                 "revision": native["revision"], "phase": project["phase"], "settings_revision": self.settings.describe()["revision"]}}
             # Routine preparation uses the same one-use plan and execution checks,
             # without asking the user to confirm the button they just clicked.
-            return {**result, "action": action, "paths": paths or result.get("paths") or result["options"].get("files", []),
+            return {**result, "action": action, "paths": reviewed_paths,
                     "confirmation": (bool(result.get("overwrite")) if action == "release" else result["confirmation"] and action not in {
                         "prepare_game", "format_data", "format_plugins", "gameupdate", "qa_prepare", "playtest_install", "playtest_apply", "inspector_install", "forge_install", "reference_build", "reference_remove"})}
         token = uuid.uuid4().hex

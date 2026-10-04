@@ -109,6 +109,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [attemptedPreview, setAttemptedPreview] = useState("");
+  const previewRequest = useRef<{ name: string; options: Record<string, unknown>; files?: string[] } | null>(null);
   const [inspectRelease, setInspectRelease] = useState(false);
   const [submission, setSubmission] = useState<Job | null>(null);
   const seenApprovals = useRef(new Set<string>());
@@ -240,6 +242,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     return recorded.sort((a, b) => jobTime(b) - jobTime(a))[0];
   };
   const execute = async (value: Preview) => {
+    setAttemptedPreview(value.token);
     const result = await api.execute(project.id, value.token);
     setStarted((previous) => ({ ...previous, [actionKey(value.action, value.options)]: result }));
     setPreview(null);
@@ -248,15 +251,24 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       if (value.options.mode !== "estimate") await navigate(value.options.mode === "speakers" ? "context" : "translate", value.options.mode === "speakers" ? "run" : phase === "advanced" || phase === "variables" ? "other-event-text" : phase);
     }
   };
-  const review = (name: string, options: Record<string, unknown> = {}, files?: string[], inspectOnly = false) => action.run(async () => {
+  const preparePreview = async (name: string, options: Record<string, unknown>, files?: string[]) => {
     await save();
     const { phase, ...requestOptions } = options;
     if (name === "start" && phase) await api.phase(project.id, phase as Phase);
+    return api.preview(project.id, name, files, requestOptions);
+  };
+  const review = (name: string, options: Record<string, unknown> = {}, files?: string[], inspectOnly = false) => action.run(async () => {
     setInspectRelease(inspectOnly && ["release", "release_patch"].includes(name));
-    const result = await api.preview(project.id, name, files, requestOptions);
+    const result = await preparePreview(name, options, files);
+    previewRequest.current = { name, options: { ...options }, files: files && [...files] };
     const prepareBatch = name === "start" && options.mode === "batch";
     if ((!result.confirmation || prepareBatch) && !inspectOnly) await execute(result); else setPreview(result);
   }, "", actionKey(name, options));
+  const refreshPreview = () => action.run(async () => {
+    const request = previewRequest.current;
+    if (request) setPreview(await preparePreview(request.name, request.options, request.files));
+  }, "", "review:refresh");
+  const previewUsed = preview?.token === attemptedPreview;
   const cancelPreview = () => action.run(async () => {
     const estimate = preview?.estimate?.jobId;
     if (estimate && state.runs.some(run => run.id === estimate && run.temporary)) await api.guided.discardPreparation(project.id, estimate);
@@ -689,8 +701,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       {paid && preview.options.phase === "advanced" && values.engine_options.AUTONAMEPOPUP101 === true && <p>Saved AutoNamePopup handling also processes supported actor-name changes independently of source 320.</p>}
       {paid && preview.options.phase === "variables" && <p>Reviewed literal-based updates apply to all matching quoted literals in the selected code-111 expressions. Unmatched literals remain unchanged.</p>}
       {preview.rewrap && <><p>{preview.rewrap.changes_found} fitting changes · {preview.rewrap.overflow_skipped} protected overflows skipped</p>{preview.rewrap.previews.map((row, index) => <details key={index}><summary>{row.file_name} · {row.locator}</summary><strong>Before</strong><pre>{row.before}</pre><strong>After</strong><pre>{row.after}</pre></details>)}</>}
-      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={cancelPreview}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent} pending={action.busy} onClick={() => action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
-        {preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Reload from game" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
+      </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={cancelPreview}>{inspectRelease ? "Close" : preview.action === "git_setup" ? "Back" : "Cancel"}</Button>{!inspectRelease && <Button variant="primary" disabled={!reviewEstimateCurrent || previewUsed && !previewRequest.current} pending={action.busy} onClick={() => previewUsed ? refreshPreview() : action.run(() => execute(preview), "", actionKey(preview.action, preview.options))}>
+        {previewUsed && (!action.busy || action.key === "review:refresh") ? "Refresh preview" : preview.publication ? preview.action === "runtime_restore" ? "Restore reviewed batch" : "Apply reviewed batch" : preview.action === "git_setup" ? "Save baseline & continue" : paid && preview.options.mode === "translate" ? "Approve and start Live API" : paid && preview.options.mode === "batch" ? "Prepare Batch for cost review" : preview.action === "refresh_sources" ? "Reload from game" : ["release", "release_patch"].includes(preview.action) ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP` : "Run this action"}</Button>}</ActionBar></Modal>}
     {state.eventText.picker && <EventTextPicker key={state.eventText.picker.key} projectId={project.id} state={state.eventText} initial={state.eventText.picker} save={saveSourcePicker} refresh={application.refresh} />}
     {sourceReview && <EventTextReview review={sourceReview} busy={action.busy} error={action.error} cancel={() => setSourceReview(null)} accept={(reason, accepted) => action.run(async () => {
       await api.guided.eventTextReview(project.id, sourceReview.revision, sourceReview.state.binding, sourceReview.state.reportId, reason, accepted);

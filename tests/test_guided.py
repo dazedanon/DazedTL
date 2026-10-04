@@ -365,6 +365,15 @@ class GuidedTests(unittest.TestCase):
         self.backend.guided_export_preview.assert_called_once_with('native', ['Items.json'])
         self.assertEqual(read_json(self.source / 'Items.json'), [{'name': '薬'}])
         self.assertEqual(self.native['selected'], ['Items.json', 'System.json'])
+        # The execution guard needs the reviewed file scope on the stored
+        # native confirmation, not just in the renderer's preview response.
+        self.backend.workflows.execute = Mock(return_value={'id': 'apply-operation'})
+        with patch.object(self.guided, 'protect_batch_files', wraps=self.guided.protect_batch_files) as guard:
+            self.assertEqual(self.guided.execute(self.identity, preview['token']), {'id': 'apply-operation'})
+            guard.assert_called_once_with(self.native, ['Items.json'])
+        with self.assertRaisesRegex(ValueError, 'new preview'):
+            self.guided.execute(self.identity, preview['token'])
+        self.backend.workflows.execute.assert_called_once_with('apply-preview')
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, 'export_selected', files=['Foreign.json'])
         self.native['files'] = [{'name': 'Items.json'}, {'name': 'System.json'}]

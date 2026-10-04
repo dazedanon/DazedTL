@@ -16,8 +16,8 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
   const low = Math.min(...costs), high = Math.max(...costs);
   const writes = numeric(value.cache_write_tokens) && value.cache_write_tokens > 0;
   const reads = numeric(value.cache_read_tokens) && value.cache_read_tokens > 0;
-  const cacheLabel = writes ? reads ? "Including cache writes & reuse" : "Including cache writes" : reads ? "With cache reuse" : "Cache-adjusted estimate";
-  const prices = batch ? [["Base Batch cost", value.batch_nocache_cost], [cacheLabel, value.batch_cached_cost]] as const : [];
+  const caching = writes || reads || numeric(value.batch_cached_cost) && value.batch_cached_cost !== value.batch_nocache_cost;
+  const prices = batch ? [["Without prompt caching", value.batch_nocache_cost], ["With prompt caching (estimated)", caching ? value.batch_cached_cost : undefined]] as const : [];
   return <section className="translation-cost-review" aria-label="Estimated cost">
     <div className="translation-cost-total">
       <span>Estimated {batch ? "Batch" : "Live"} cost</span>
@@ -32,7 +32,7 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
     {prices.some(([, price]) => numeric(price)) && <dl className="translation-cost-prices">
       {prices.filter(([, price]) => numeric(price)).map(([label, price]) => <div key={label}><dt>{label}</dt><dd>${Number(price).toFixed(5)}</dd></div>)}
     </dl>}
-    {batch && writes && <small className="translation-cache-note">Cache writes cost extra; savings come from reusing cached text.{value.cache_read_tokens === 0 && " No cache reuse is assumed in this estimate."}</small>}
+    {batch && caching && <small className="translation-cache-note">The provider can reuse repeated instructions at a lower rate. This estimate includes creating the cache; actual savings vary.{writes && !reads && " No reuse is assumed for this batch."}</small>}
   </section>;
 }
 

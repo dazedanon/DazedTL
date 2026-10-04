@@ -33,7 +33,6 @@ main.editor-main.guided-main { padding: 0; }
 .request-selection { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); flex-shrink:0; font-size:var(--font-control); }
 .request-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); margin-left:auto; }
 .translation-process > .ui-tabs { flex-shrink:0; flex-wrap:wrap; gap:var(--space-3); }
-.request-workspace.request-workspace--run { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); }
 .request-reader { min-height:0; flex:1; overflow:auto; scrollbar-gutter:stable; padding-right:var(--space-3); }
 .request-reader h3 { font-size:var(--font-control); margin:var(--space-4) 0 var(--space-2); }
 .request-reader h3:first-child { margin-top:0; }
