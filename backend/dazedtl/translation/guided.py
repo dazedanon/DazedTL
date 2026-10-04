@@ -56,6 +56,7 @@ class Guided:
         self.translation = translation
         self.confirmations = {}
         self.observed_files = {}
+        self.layout_failures = {}
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
 
@@ -965,8 +966,12 @@ class Guided:
         self.record(project_id)
         return reference_folders.remove(self.path(project_id, "reference-folders"), reference_id)
 
-    def context_status(self, project_id):
+    def context_status(self, project_id, retry_layout=False):
         _, native = self.record(project_id)
+        if type(retry_layout) is not bool:
+            raise ValueError("Choose whether to retry saving the measured layout.")
+        if retry_layout:
+            self.layout_failures.pop(project_id, None)
         request_path = self.path(project_id, "context-request")
         def inspect():
             return context_setup.inspect(request_path, self.path(project_id, "context-review"),
@@ -975,14 +980,19 @@ class Guided:
                                          self.backend.workflows.state(native["id"]).get("references", []))
         setup = inspect()
         update = context_setup.layout_update(native, setup, context_setup.optional_record(request_path))
+        failure = self.layout_failures.get(project_id)
+        if update and failure and failure["reportId"] == update["reportId"]:
+            return {**setup, "layoutMessage": failure["message"]}
         draft_path = self.path(project_id, "draft")
         draft = read_json(draft_path) if draft_path.exists() else None
         if update and not draft and not self.backend.running() and not self.translation.jobs.running():
             try:
                 native = self.backend.workflows.apply_layout_settings(native["id"], native["revision"], update)
+                self.layout_failures.pop(project_id, None)
                 setup = inspect()
             except (OSError, ValueError) as exc:
                 setup["layoutMessage"] = "Measured layout could not be saved: " + str(exc)
+                self.layout_failures[project_id] = {"reportId": update["reportId"], "message": setup["layoutMessage"]}
         return setup
 
     def context_review(self, project_id, name, revision, choice):

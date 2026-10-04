@@ -716,7 +716,7 @@ export interface RpcContract {
   guided_event_text_view: { request: { project_id: string; view: EventTextState["view"] }; response: Saved };
   guided_event_text_picker: { request: { project_id: string; value: EventTextState["picker"] }; response: Saved };
   guided_comparisons_review: { request: { project_id: string; fingerprint: string | null; accepted: boolean }; response: Saved };
-  guided_context_status: { request: { project_id: string }; response: ContextSetup };
+  guided_context_status: { request: { project_id: string; retry_layout?: boolean }; response: ContextSetup };
   guided_context_review: { request: { project_id: string; name: string; revision: string; choice: "empty" | "review" | "layout" }; response: Saved };
   guided_reference_add: { request: { project_id: string; folder: string }; response: ReferenceFolder[] };
   guided_reference_remove: { request: { project_id: string; reference_id: string }; response: ReferenceFolder[] };

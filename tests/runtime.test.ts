@@ -3,6 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { root, requireNode } from "../scripts/dependencies.mjs";
+import { windowSize } from "../app/electron/window-size.cjs";
+
+test("desktop bounds fit scaled work areas without enlarging the default window on 4K displays", () => {
+  for (const area of [{width:3840,height:2100},{width:1920,height:1020},{width:1024,height:540},{width:768,height:460}]) {
+    const bounds = windowSize(area);
+    assert.ok(bounds.width <= area.width && bounds.height <= area.height);
+    assert.ok(bounds.minWidth <= bounds.width && bounds.minHeight <= bounds.height);
+  }
+  assert.deepEqual(windowSize({width:3840,height:2100}), windowSize({width:1920,height:1020}));
+});
 
 test("Node updates can launch the app while setup retains its exact runtime pin", () => {
   const expected = fs.readFileSync(path.join(root, ".node-version"), "utf8").trim();

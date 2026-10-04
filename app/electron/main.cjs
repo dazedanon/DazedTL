@@ -5,11 +5,13 @@ const {
   dialog,
   shell,
   clipboard,
+  screen,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { Backend } = require("./backend.cjs");
 const { Diagnostics } = require("./diagnostics.cjs");
+const { windowSize } = require("./window-size.cjs");
 
 app.setName("DazedTLNext");
 if (process.env.DAZEDTL_NEXT_PROFILE)
@@ -94,10 +96,7 @@ app.whenReady().then(() => {
   diagnostics.record("desktop.started");
   window = new BrowserWindow({
     show: false,
-    width: 1280,
-    height: 880,
-    minWidth: 900,
-    minHeight: 650,
+    ...windowSize(screen.getPrimaryDisplay().workAreaSize),
     title: "DazedTL",
     backgroundColor: "#171a20",
     icon: path.join(root, "resources/icon.png"),
@@ -109,7 +108,18 @@ app.whenReady().then(() => {
       backgroundThrottling: false,
     },
   });
+  const fitMinimumSize = () => {
+    if (!window || window.isDestroyed()) return;
+    const size = windowSize(screen.getDisplayMatching(window.getBounds()).workAreaSize);
+    const [width, height] = window.getMinimumSize();
+    if (width !== size.minWidth || height !== size.minHeight)
+      window.setMinimumSize(size.minWidth, size.minHeight);
+  };
+  window.on("move", fitMinimumSize);
+  screen.on("display-metrics-changed", fitMinimumSize);
+  window.once("closed", () => screen.off("display-metrics-changed", fitMinimumSize));
   window.once("ready-to-show", () => {
+    fitMinimumSize();
     window.maximize();
     window.show();
   });

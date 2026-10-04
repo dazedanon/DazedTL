@@ -395,8 +395,11 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.apply_layout_settings.side_effect = OSError('Read-only fixture settings')
         self.assertTrue(self.guided.context_status(self.identity)['layoutMessage'])
         self.assertNotIn('guided_layout', self.native)
+        failed_calls = self.backend.workflows.apply_layout_settings.call_count
+        self.assertTrue(self.guided.context_status(self.identity)['layoutMessage'])
+        self.assertEqual(self.backend.workflows.apply_layout_settings.call_count, failed_calls)
         self.backend.workflows.apply_layout_settings.side_effect = apply
-        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'applied')
+        self.assertEqual(self.guided.context_status(self.identity, retry_layout=True)['layoutApplication'], 'applied')
         self.assertEqual(self.native['widths'], report['layout']['widths'])
         calls = self.backend.workflows.apply_layout_settings.call_count
         self.guided.context_status(self.identity)

@@ -166,7 +166,7 @@
       "duringClose": true
     },
     "guided_context_status": {
-      "refresh": false
+      "refresh": true
     },
     "guided_context_review": {
       "refresh": true

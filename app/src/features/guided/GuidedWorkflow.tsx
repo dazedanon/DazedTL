@@ -424,7 +424,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     case "speakers":
       content = <><ContextTaskHeader headingRef={headingRef} title="Text layout" description="Character limits for the game’s dialogue and interface text." />
         <div className="context-layout"><p className="context-layout-status">{widthsDirty ? "Unsaved edits" : discovery.layoutApplication === "applied" ? "Set by investigation" : discovery.layoutStatus === "saved" ? "Saved" : "Using defaults"}</p>
-          <Message message={discovery.layoutMessage || ""} />
+          <Message message={action.key === "save-options" && action.error ? "" : discovery.layoutMessage || ""} />
           {discovery.layoutApplication === "pending" && !discovery.layoutMessage && <p className="muted">Measured values will be saved automatically after current work or option edits finish.</p>}
           <Section title="Character limits" hint="Characters">{widths}</Section>
           <div className="context-layout-actions">{discovery.layout && <Button variant="quiet" onClick={() => setPanel("measurements")}>View measurements</Button>}
@@ -432,7 +432,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           <p className="muted">Measurement is optional. You can keep the current values and continue.</p>
         </div></>;
       primary = advance("Continue to translation");
-      secondary = <ActionControl label="Save layout" disabled={disabled} {...feedback("save-options", "Saving layout…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id); await api.guided.reviewContext(project.id, "layout", current.layoutRevision, "layout"); }, "Layout saved.", "save-options")} />; break;
+      secondary = <ActionControl label={discovery.layoutMessage && !widthsDirty ? "Retry measured layout" : "Save layout"} disabled={disabled} {...feedback("save-options", "Saving layout…")} onClick={() => action.run(async () => { await save(); const current = await api.guided.context(project.id, true); if (current.layoutMessage) throw new Error(current.layoutMessage); await api.guided.reviewContext(project.id, "layout", current.layoutRevision, "layout"); }, "Layout saved.", "save-options")} />; break;
     case "database": case "dialogue": case "advanced-run": case "variables": {
       const selectedNames = phaseFiles.map(file => file.name);
       const latest = phaseRun(state.runs, phase, selectedNames);
@@ -570,7 +570,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     return <ImageManager projectId={project.id} initialMode={imageView} observed={application.snapshot?.images}
       onClose={() => setImageView(null)} onOpenEditor={(ids, mode) => { setImageView(mode || imageView); setEditorAssets(ids); }} />;
   }
-  return <PageLayout variant="editor" className="guided-workspace" aria-label="Translation workspace">
+  return <PageLayout variant="editor" className={`guided-workspace${position.step === "context" ? " guided-workspace--bounded" : ""}`} aria-label="Translation workspace">
     <PageHeader className="guided-header" title="Translation" description={state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"}
       actions={<div className="actions"><Button variant="quiet" onClick={() => setPanel("project-tools")}>Project tools</Button><Button ref={historyControl} variant="quiet" onClick={() => setHistory("all")}>History</Button><Button variant="quiet" onClick={() => action.run(() => window.dazedtl.openFolder("project"), "Game folder opened.", "open-game")}><FolderOpen size={16} />Game folder</Button></div>} />
     <div className="guided-layout">

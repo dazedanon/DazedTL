@@ -125,7 +125,7 @@ to evaluate real workflows, rather than adding extra panels or confirmation step
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
-Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps.
+Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps. The desktop window fits its display's work area in logical pixels. Reading-focused Guided tasks use the shared content-width limit so their tabs, content and footer remain aligned on wide displays.
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview,
 so generic completion messages are handled consistently while useful detail remains visible.
@@ -182,7 +182,7 @@ The selected tab is retained per project, and legacy glossary/voice review posit
 Missing custom files remain addressable while their recovery drafts exist.
 Switching tabs and continuing retain drafts. Explicit Save writes the editor's guidance over the current files through the native serializer, creating missing core files without an empty-document approval. It reports successful writes if a later document save fails and retains remaining drafts. Guidance has no revision-conflict workflow; paid estimates still bind the actual saved inputs used for translation.
 The shared plain-text editor retains glossary category headers, source (translation) entries and same-line notes; engine parsing and per-batch selection remain unchanged.
-Measured layout values are saved automatically when their project-bound report and source evidence are valid. The observer and project helper use the same reconciliation, deferring writes during active work or pending option edits. Each report is consumed once; later manual widths are retained until an explicitly requested new measurement establishes a new baseline. Late recovery writes rebase across this layout-only change without losing manual edits. Defaults remain identified separately, and remeasurement is optional.
+Measured layout values are saved automatically when their project-bound report and source evidence are valid. The observer and project helper use the same reconciliation, deferring writes during active work or pending option edits. Each report is consumed once; later manual widths are retained until an explicitly requested new measurement establishes a new baseline. Late recovery writes rebase across this layout-only change without losing manual edits. A failed automatic save is held for an explicit retry rather than repeated by polling. Defaults remain identified separately, and remeasurement is optional.
 Saved findings describe the investigated source; translating runtime files does not erase that record.
 New projects also clear inherited optional speaker rules.
 Prepare retains the untouched backup, one stoppable file-preparation action, and a reviewed version baseline as separate tasks.
