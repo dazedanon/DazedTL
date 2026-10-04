@@ -12,9 +12,9 @@ and keyboard ranges across its virtualized list. Filtering preserves checked fil
 The app prepares working copies and carries saved phase results forward.
 Each run and application review uses the selected scope.
 Saved operations remain in **History**.
-Main-text Translate prepares a local estimate and opens spending review for Batch or Live API.
-Preparation survives navigation and reopening; Cancel preparation stops its saved worker.
-Saved output and verified game files have separate counts, and the request inspector retains its selected request and view.
+Translate separates **Database files → Maps & events → Event / plugin codes**. Generate an estimate, inspect the prepared lines and context if desired, then review paid translation.
+The compact file list supports large scopes, filtering and optional selection. Saved output remains available for read-only comparison and a separate Apply review.
+Preparation and translated work survive navigation and reopening; stopping retains saved evidence and submitted Batch receipts.
 Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
 Its bundled executables require Windows for native conversion and are cached in the app profile.
 Release verifies saved packing evidence against current JSON and native bytes.
@@ -95,8 +95,8 @@ names and actor/variable lookups to investigate the glossary, characters, voice 
 The scanner makes no API requests. Optional API name translation remains in the discovery tools.
 Review/save the resulting guidance and measured widths. **View findings** explains each speaker
 rule; **Adjust manually** retains your overrides. Re-copy the task when upgrading from older setup prompts.
-In **Translate**, choose a database and small map scope, then translate database names before dialogue.
-**Other event text** investigates variables, plugin commands, scripts and labels before translation.
+In **Translate**, all supported files start selected. Translate database names first, then maps, CommonEvents and Troops; narrow the scope if you want to test an early scene.
+**Event / plugin codes** investigates variables, plugin commands, scripts and labels before translation.
 Translate audited assignments first, then review and update comparisons from their saved literal mappings.
 Apply and playtest an early scene before expanding. Batch pauses for cost approval before submission.
 Enable only the investigation's confirmed codes, variable IDs, plugin handlers, and script patterns; skip the phase if none are needed.

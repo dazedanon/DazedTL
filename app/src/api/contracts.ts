@@ -46,6 +46,7 @@ export interface Job {
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
   outputsAvailable?: boolean;
+  availableOutputs?: string[];
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
   scopeComplete?: boolean;

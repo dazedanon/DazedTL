@@ -15,8 +15,9 @@ export const workflow: WorkflowStage[] = [
     { id: "speakers", title: "Review layout settings", description: "Set character limits for the game’s text areas." },
   ]},
   { id: "translate", title: "Translate", short: "Translate", tasks: [
-    { id: "main-text", title: "Translate main text", description: "Prepare remaining work and review its cost before submitting." },
-    { id: "other-event-text", title: "Other event text", description: "Variables, plugin commands, scripts, and labels." },
+    { id: "database", title: "Database files", description: "Names, descriptions and interface text." },
+    { id: "dialogue", title: "Maps & events", description: "Maps, common events and troop events." },
+    { id: "other-event-text", title: "Event / plugin codes", description: "Investigate specific text sources, review their coverage, then translate." },
   ]},
   { id: "plugins", title: "Plugin text", short: "Plugin text", tasks: [
     { id: "plugins", title: "Plugin text", description: "Inspect player-visible text in plugin files and retain any excluded scope." },
@@ -49,8 +50,16 @@ export function unfinishedRun(state: GuidedState) {
 }
 export function taskForStage(state: GuidedState, stage: WorkflowStage) {
   const task = state.positions?.[stage.id];
+  if (stage.id === "translate" && ["main-text", "scope", "run"].includes(task || "")) return task === "run" ? translationTask(state, true) : mainTextTask(state);
   if (task === "run" && state.run && runStage(state) === stage.id) return task;
   return stage.tasks.find((item) => item.id === task)?.id || stage.tasks[0].id;
+}
+function mainTextTask(state: GuidedState) {
+  return (unfinishedRun(state) && ["database", "dialogue"].includes(runPhase(state)) ? runPhase(state) : state.phase) === "dialogue" ? "dialogue" : "database";
+}
+function translationTask(state: GuidedState, savedRun = false) {
+  const phase = savedRun || unfinishedRun(state) ? runPhase(state) : state.phase;
+  return phase === "dialogue" ? "dialogue" : phase === "advanced" || phase === "variables" ? "other-event-text" : "database";
 }
 export function initialPosition(state: GuidedState, translation: TranslationState) {
   const stages = stagesFor(state.engine);
@@ -58,17 +67,16 @@ export function initialPosition(state: GuidedState, translation: TranslationStat
   if (state.task === "plugins") return { step: "plugins" as const, task: "plugins" };
   if (["images", "image-text", "image-manager"].includes(state.task || "")) return { step: "images" as const, task: "images" };
   const step = state.step === "layout" ? "apply" : state.step === "advanced" ? "translate" : state.step;
-  if (state.task === "run") return { step: runStage(state), task: ["database", "dialogue"].includes(runPhase(state)) && state.run?.mode !== "speakers" ? "main-text" : "run" };
+  if (state.task === "run") return { step: runStage(state), task: state.run?.mode === "speakers" ? "run" : translationTask(state, true) };
   if (["audit", "sources", "advanced-run", "variables"].includes(state.task || "") || state.step === "advanced") return { step: "translate" as const, task: "other-event-text" };
-  if (state.step === "translate" && ["scope", "database", "dialogue"].includes(state.task || "")) return { step: "translate" as const, task: "main-text" };
+  if (state.step === "translate" && ["scope", "main-text"].includes(state.task || "")) return { step: "translate" as const, task: mainTextTask(state) };
   const saved = stages.find((stage) => stage.id === step)!;
   if (step === "context" && state.task === "glossary") return { step, task: "guidance" };
   if (step === "context" && state.task === "setup") return { step, task: "names" };
-  if (state.task === "run") return { step: runStage(state), task: ["database", "dialogue"].includes(runPhase(state)) && state.run?.mode !== "speakers" ? "main-text" : "run" };
   if (saved?.tasks.some((task) => task.id === state.task)) return { step, task: state.task! };
   const preserved = translation.lifecycle.source_backup && translation.lifecycle.source_backup.available !== false;
   if (!preserved) return { step: "prepare" as const, task: "backup" };
-  if (unfinishedRun(state)) return { step: runStage(state), task: "run" };
+  if (unfinishedRun(state)) return { step: runStage(state), task: state.run?.mode === "speakers" ? "run" : translationTask(state, true) };
   if (step === "prepare" && translation.git?.configured) return { step: "context" as const, task: "names" };
   return { step, task: saved?.tasks[0].id || "backup" };
 }

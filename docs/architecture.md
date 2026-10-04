@@ -40,16 +40,17 @@ Actor-substitution calls and note calls retain their original boundaries.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately; older runs report missing evidence rather than inferring successful validation or billed usage.
 New Live workers retain exact payloads, received usage, and native validation evidence in the run profile.
 The payload inspector is project-bound and read-only; its explicit provider-details action retrieves existing Batch status and sanitized errors without submitting, canceling, or rewriting history.
-Main-text Translate prepares a local estimate and Batch requests from one click, then shows one final submission cost approval for the frozen scope.
-The estimate retains its requested continuation mode in the backend run registry.
-Navigation and reopening recover preparation from that record; cancellation stops the owned estimate worker, and a later run consuming its quote closes the handoff.
-Other Batch actions likewise begin local preparation immediately and retain the native final spending approval.
+Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
+The user generates a local estimate, optionally inspects prepared source/context, then starts Live review or local Batch preparation. Navigation and reopening never start paid work automatically.
+Legacy estimate continuation records remain readable for recovery. Batch retains its native final cost approval, presented in a focused review of the frozen settings and file scope.
 The fresh Batch speaker check validates unresolved names against frozen files and current glossary before collection; it retains its separate approval if names need translation.
 Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
 Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
-The request inspector keeps model, line count and token limit beside its source/context, response/error and exact JSON tabs.
-Full request parameters and strict schemas stay in Exact JSON; independently scrollable source and context panes keep retained content readable without pushing the tabs below the fold.
-File and request lists use bounded pages with search; inspector selection, tab, filter and page are retained by run identity without storing payloads in browser preferences.
+The inline file inspector reads the project-bound saved payload endpoint; source/context, side-by-side translations and exact payload are read-only views of retained evidence.
+It pairs only matching LineN keys or equal-length validated Live responses, and retains raw responses when pairing is ambiguous.
+File lists use the shared variable-height virtual list with compact rows, search and status filters; checkmarks remain independent of inspection and filtering.
+Incoming observations preserve the reader's selected file, request, tab and scroll position. New response states offer explicit refresh; older records without file provenance identify their scope limitation.
+History retains its separate paged request inspector and saved view preferences without storing payloads in browser preferences.
 Saved translated output and currently verified runtime files are separate counts.
 An older Apply receipt does not establish that the current game still matches a run's output; later game edits remain visible and protected by the existing publication review.
 Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
@@ -57,7 +58,7 @@ All project-owned runs remain in History automatically, including failed and can
 Confirmed per-request rejections and unsubmitted queues allow a new estimate and paid review with current settings. Only overlapping unresolved submissions or received responses awaiting local reconciliation protect paid submission; configuration and estimates stay available.
 New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values. Continuation reuses these values locally and sends only remaining work with the new run's settings. Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
 Source identity currently treats repeated identical strings within one file and phase as aliases. Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase. Interrupted old Live runs without request evidence protect only their shared file/phase scope; their send outcomes cannot be reconstructed locally.
-Provider monitoring and new runs have independent isolated workers. The cost approval rechecks other saved request receipts under the API lock before sending. Existing saved-run resumes retain their frozen settings and require explicit review; the default continuation is Translate.
+Provider monitoring and new runs have independent isolated workers. The cost approval rechecks other saved request receipts under the API lock before sending. Existing saved-run resumes retain their frozen settings and require explicit review; new remaining work requires a fresh estimate and spending review.
 Completed runs expose Apply alongside the next phase; applying still requires its own scoped review.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source,
@@ -148,14 +149,14 @@ Explicitly declined speaker preflight is interpreted as canceled only with verif
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project recovery guard and receipts.
 Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
-Translate task 2, Other event text, retains investigation, source review, translation and comparison views within one task.
+Translate task 3, Event / plugin codes, retains investigation, source review, translation and comparison views within one task.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
 Findings stage recommendations; applying supported settings and reviewing their actual coverage remain explicit user actions.
 Mixed or uncertain recommendations stay off; manual overrides require a reason and material-risk confirmation retained with each frozen run.
 Code 122 requires explicit starting IDs, registered 357 and 355/655 selectors use exact installed identifiers, and 356 remains a single coarse switch.
 The compact selectors retain searchable, grouped drafts separately from saved engine settings and preserve hidden selections.
 The comparison cache is literal-based and requires a matching coverage review; missing, malformed and nonmatching caches expose distinct continuation or recovery states.
-New guided projects clear inherited advanced targets; existing projects and frozen runs retain their choices.
+New guided projects select all supported files and clear inherited advanced targets; existing projects and frozen runs retain their choices.
 Applying and testing a small scope is available before expanding translation.
 Speaker findings use the structured contract generated by
 [speaker_setup.py](../backend/dazedtl/translation/speaker_setup.py). A copied setup task binds its

@@ -113,7 +113,7 @@ class Guided:
             options = {**native["engine_options"], **dict.fromkeys(ADVANCED_CODES, False),
                        "CODE122_VAR_RANGES": "", "ENABLED_PLUGINS_357": [], "ENABLED_PATTERNS_355655": []}
             options.update({key: False for key in speaker_setup.KEYS if type(options.get(key)) is bool})
-            native = self.backend.workflows.update(native["id"], native["revision"], {"engine_options": options})["project"]
+            native = self.backend.workflows.update(native["id"], native["revision"], {"engine_options": options, "selected": sorted(self.supported_files(native))})["project"]
         if pending:
             self.backend.workflows.draft(native["id"], {"documents": pending})
         # Persist registry ownership before publishing it in memory.
@@ -260,7 +260,9 @@ class Guided:
                                     for project in self.backend.workflows.projects.values())
         try:
             folder = self.backend.manual.folder(identity) / "translated"
-            job["outputsAvailable"] = bool(job.get("outputs")) and all(project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected for name, expected in job["outputs"].items())
+            job["availableOutputs"] = [name for name, expected in job.get("outputs", {}).items()
+                                       if project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected]
+            job["outputsAvailable"] = bool(job.get("outputs")) and len(job["availableOutputs"]) == len(job["outputs"])
             plan = self.backend.saved_run_configuration(identity)
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
@@ -275,6 +277,7 @@ class Guided:
                                          if self.observed_digest(project_path(native["data"], name)) == expected]
         except (OSError, ValueError, KeyError):
             job["outputsAvailable"] = False
+            job["availableOutputs"] = []
         if compact:
             job["log"] = []
         from dazedtl.compatibility.process_view import summary

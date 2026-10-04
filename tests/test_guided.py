@@ -186,6 +186,7 @@ class GuidedTests(unittest.TestCase):
         self.native['manual_job'] = identity
         status = self.guided.runs.snapshot(self.identity, self.native, {'changed': [], 'retired': []})
         self.assertTrue(status['phase_runs']['database']['scopeComplete'])
+        self.assertEqual(status['phase_runs']['database']['availableOutputs'], ['Items.json'])
         self.assertNotIn('dialogue', status['phase_runs'])
         self.assertEqual(status['phase_runs']['database']['appliedOutputs'], [])
         write_json(self.folder / 'applied-outputs.json', {'files': {'Items.json': expected}})
@@ -196,6 +197,7 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.guided.run_view(identity)['appliedOutputs'], [])
         write_json(self.backend.manual.folder(identity) / 'translated/Items.json', [{'name': 'Changed output'}])
         self.assertFalse(self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs']['database']['scopeComplete'])
+        self.assertEqual(self.guided.run_view(identity)['availableOutputs'], [])
 
     def test_comparisons_require_exact_usable_mappings_for_the_selected_event_scope(self):
         self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json', 'Map002.json']
@@ -761,7 +763,9 @@ class GuidedTests(unittest.TestCase):
             self.backend.workflows.projects['native'] = self.native
             return {'project': self.native}
         self.backend.workflows.open = open_workflow
+        self.native['selected'] = []
         self.guided.open(self.identity)
+        self.assertEqual(self.native['selected'], ['Items.json'])
         options = self.native['engine_options']
         self.assertFalse(options['CODE122'])
         self.assertFalse(options['CODE357'])
@@ -772,10 +776,12 @@ class GuidedTests(unittest.TestCase):
         # Reopening a game retains its own reviewed choices and saved run.
         options.update(CODE122=True, CODE122_VAR_RANGES='5,10-18')
         self.native['manual_job'] = 'existing-run'
+        self.native['selected'] = []
         self.guided.open(self.identity)
         self.assertTrue(self.native['engine_options']['CODE122'])
         self.assertEqual(self.native['engine_options']['CODE122_VAR_RANGES'], '5,10-18')
         self.assertEqual(self.native['manual_job'], 'existing-run')
+        self.assertEqual(self.native['selected'], [])
 
     def test_deleted_backup_can_be_replaced_but_cannot_authorize_preparation(self):
         with self.assertRaises(ValueError):
