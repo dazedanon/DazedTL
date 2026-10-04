@@ -97,7 +97,7 @@ The scanner makes no API requests. **Add game folder** includes an earlier game 
 best-effort terminology reference in the next copied task; no prepared translation format is required.
 **View names** opens the saved scan, and **Detection settings** contains speaker rules and overrides.
 Optional API name translation is available from the name-scan panel.
-Edit the resulting files in **Guidance** and character limits in **Layout**. Re-copy the task after changing reference folders.
+Edit the resulting files in **Guidance**. Measured character limits are saved automatically during investigation; **Layout** shows the saved values and allows manual adjustments. Re-copy the task after changing reference folders.
 In **Translate**, all supported files start selected. Translate database names first, then maps, CommonEvents and Troops; narrow the scope if you want to test an early scene.
 **Event / plugin codes** investigates variables, plugin commands, scripts and labels before translation.
 Translate audited assignments first, then review and update comparisons from their saved literal mappings.

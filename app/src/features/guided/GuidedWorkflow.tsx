@@ -138,6 +138,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const guidance = guidanceAvailability(discovery.documents);
   const investigation = investigationResults(state);
   const scanOptionsDirty = JSON.stringify(values.engine_options) !== JSON.stringify(state.preferences.values.engine_options) || values.phase1_comments !== state.preferences.values.phase1_comments;
+  const widthsDirty = JSON.stringify(values.widths) !== JSON.stringify(state.preferences.values.widths);
   const changed = state.sourceStatus.changed;
   const selectedFiles = new Set(values.selected);
   const eventFiles = state.files.filter((file) => file.group === "dialogue" && selectedFiles.has(file.name));
@@ -347,7 +348,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     return !!saved && completeForSelection(saved, (target === "database" ? databaseFiles : eventFiles).map(file => file.name));
   };
   const completed = new Set<string>([...(preserved ? ["backup"] : []), ...(baseline ? ["baseline"] : []), ...(applied ? ["apply"] : []), ...(phaseComplete("database") ? ["database"] : []), ...(phaseComplete("dialogue") ? ["dialogue"] : []), ...(phaseComplete("advanced") && (state.comparisons.status === "not_needed" || state.comparisons.status === "ready" && phaseComplete("variables")) ? ["other-event-text"] : []),
-    ...(investigation.every(row => row.saved) ? ["names"] : []), ...(guidance.complete ? ["guidance"] : []), ...(discovery.layoutStatus === "saved" && !draft.dirty ? ["speakers"] : []), ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
+    ...(investigation.every(row => row.saved) ? ["names"] : []), ...(guidance.complete ? ["guidance"] : []), ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []), ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
   const applySpeakerControl = findings.status === "ready" && <ActionControl label={draft.dirty || state.optionsDraft ? "Save edits & apply findings" : "Apply investigated rules"} disabled={disabled}
     pending={speakerAction.busy} pendingText="Applying rules…" error={speakerAction.error} notice={speakerAction.notice}
     onClick={() => speakerAction.run(async () => { await save(); await draft.applySpeakers(); }, "Speaker rules configured.", "apply")} />;
@@ -423,9 +424,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       secondary = <ActionControl label="Save guidance" disabled={disabled} {...feedback("context:save", "Saving guidance…")} onClick={() => saveDocuments(savedNames)} />; break;
     case "speakers":
       content = <><ContextTaskHeader headingRef={headingRef} title="Text layout" description="Character limits for the game’s dialogue and interface text." />
-        <div className="context-layout"><p className="context-layout-status">{draft.dirty ? "Unsaved edits" : discovery.layoutStatus === "saved" ? "Saved" : "Using defaults"}{discovery.layout ? " · measured recommendations available" : ""}</p>
+        <div className="context-layout"><p className="context-layout-status">{widthsDirty ? "Unsaved edits" : discovery.layoutApplication === "applied" ? "Set by investigation" : discovery.layoutStatus === "saved" ? "Saved" : "Using defaults"}</p>
+          <Message message={discovery.layoutMessage || ""} />
+          {discovery.layoutApplication === "pending" && !discovery.layoutMessage && <p className="muted">Measured values will be saved automatically after current work or option edits finish.</p>}
           <Section title="Character limits" hint="Characters">{widths}</Section>
-          <div className="context-layout-actions">{discovery.layout && <><Button disabled={disabled} onClick={() => edit("widths", { ...discovery.layout!.widths })}>Use recommendations</Button><Button variant="quiet" onClick={() => setPanel("measurements")}>View measurements</Button></>}
+          <div className="context-layout-actions">{discovery.layout && <Button variant="quiet" onClick={() => setPanel("measurements")}>View measurements</Button>}
             {copyTask("wrap", discovery.layout ? "Copy remeasurement task" : "Copy measurement task", "quiet")}</div>
           <p className="muted">Measurement is optional. You can keep the current values and continue.</p>
         </div></>;

@@ -113,6 +113,25 @@ def phased_workflows(workspace, lock, operations, manual):
             self.projects[identity] = updated
             return updated
 
+        def apply_layout_settings(self, identity, revision, receipt):
+            from util.game_settings import save_game_wrap_widths
+            project = self.projects[identity]
+            if project["revision"] != revision:
+                raise ValueError("The guided settings changed before the measured layout was saved.")
+            widths = receipt["widths"]
+            if (set(widths) != {"width", "faceWidth", "listWidth", "noteWidth"}
+                    or any(type(value) is not int or not 20 <= value <= 300 for value in widths.values())
+                    or widths["faceWidth"] > widths["width"]):
+                raise ValueError("The measured layout contains invalid character limits.")
+            next_revision = revision + int(widths != project["widths"])
+            receipt = {**receipt, "beforeRevision": revision, "revision": next_revision, "beforeWidths": dict(project["widths"])}
+            updated = {**project, "widths": dict(widths), "revision": next_revision, "guided_layout": receipt}
+            if receipt["applied"]:
+                save_game_wrap_widths(project["source"], widths)
+            self.save(updated)
+            self.projects[identity] = updated
+            return updated
+
         def _collect(self, project):
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):

@@ -127,6 +127,7 @@ export interface ContextSetup {
   documents: Record<string, { exists: boolean; reviewed: boolean; needsReview: boolean; intentionalEmpty: boolean }>;
   layout: { widths: GuidedOptions["widths"]; reason: string; evidence: { file: string; sha256: string; location: string }[] } | null;
   layoutStatus: "defaults" | "saved"; layoutRevision: string;
+  layoutReportId?: string | null; layoutApplication?: "none" | "pending" | "applied" | "manual"; layoutMessage?: string;
 }
 export interface ReferenceFolder { id: string; title: string; path: string; available: boolean }
 export interface EventTextRow {

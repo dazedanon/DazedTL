@@ -30,12 +30,18 @@ def selected_document(path, position, documents):
     return "quirks" if position.get("task") == "guidance" and "quirks" in documents else "glossary"
 
 
-def request(path, project_id, speaker_request):
+def request(path, project_id, speaker_request, widths=None):
     previous = read_json(path) if path.exists() else {}
-    if previous.get("project_id") == project_id and previous.get("speaker_request_id") == speaker_request["request_id"]:
+    if (previous.get("project_id") == project_id and previous.get("speaker_request_id") == speaker_request["request_id"]
+            and (widths is None or previous.get("widths", widths) == widths)):
+        if widths is not None and "widths" not in previous:
+            previous["widths"] = dict(widths)
+            write_json(path, previous)
         return previous
     value = {"version": 1, "request_id": uuid.uuid4().hex, "project_id": project_id,
              "speaker_request_id": speaker_request["request_id"]}
+    if widths is not None:
+        value["widths"] = dict(widths)
     write_json(path, value)
     return value
 
@@ -58,19 +64,25 @@ def inspect(request_path, review_path, native, project_id, documents, findings, 
         # document review, empty-choice or conflict state.
         document_states[name] = {"exists": path.is_file(), "reviewed": False, "needsReview": False, "intentionalEmpty": False}
     complete = all(document_states.get(name, {}).get("exists") for name in CORE)
+    receipt = native.get("guided_layout", {})
+    applied = bool(receipt.get("applied") and native["widths"] == receipt.get("widths"))
     result = {"status": "ready" if complete else "waiting" if request_value else "missing",
               "message": "Guidance files are saved in the game folder." if complete else "Save the glossary, style and game context files when needed.",
               "requestId": request_value.get("request_id"), "speakerReportId": findings.get("reportId"),
               "referencesSha256": digest(references), "scanSha256": ((scan.get("job") or {}).get("result") or {}).get("artifact_sha256") if scan.get("current") else None,
               "documents": document_states, "revisions": {name: doc["revision"] for name, doc in documents.items()},
-              "layoutRevision": digest(native["widths"]), "layout": None, "layoutStatus": "saved" if reviews.get("layout") == digest(native["widths"]) or native["widths"] != DEFAULT_WIDTHS else "defaults"}
+              "layoutRevision": digest(native["widths"]), "layout": None,
+              "layoutReportId": None, "layoutApplication": "applied" if applied else "none", "layoutMessage": "",
+              "layoutStatus": "saved" if applied or reviews.get("layout") == digest(native["widths"]) or native["widths"] != DEFAULT_WIDTHS else "defaults"}
     if not request_value:
         return result
     try:
         path = project_path(native["source"], REPORT)
         report = read_json(path, limit=200_000)
+        report_id = digest({"request_id": report.get("request_id"), "layout": report.get("layout")}) if isinstance(report, dict) else None
+        consumed = receipt.get("reportId") == report_id and report_id is not None
         if (not isinstance(report, dict) or type(report.get("version")) is not int or report["version"] != 1
-                or report.get("request_id") != request_value.get("request_id") or report.get("project_id") != project_id):
+                or report.get("request_id") != request_value.get("request_id") and not consumed or report.get("project_id") != project_id):
             return result
         layout = report.get("layout")
         if layout is not None:
@@ -87,11 +99,36 @@ def inspect(request_path, review_path, native, project_id, documents, findings, 
                         or any(part.startswith(".") for part in ref["file"].split("/"))
                         or Path(ref["file"]).suffix.lower() not in {".json", ".js", ".rb", ".ini", ".ttf", ".otf"}):
                     raise ValueError("Cite inspected game sources or fonts for layout recommendations.")
-                if observed_digest(project_path(native["source"], ref["file"])) != ref["sha256"]:
+                if not consumed and observed_digest(project_path(native["source"], ref["file"])) != ref["sha256"]:
                     return result
-        return {**result, "layout": layout}
+        return {**result, "layout": layout, "layoutReportId": report_id if layout else None,
+                "layoutApplication": ("applied" if applied else "manual") if consumed else "pending" if layout else result["layoutApplication"]}
     except (OSError, ValueError, TypeError, KeyError):
         return result
+
+
+def layout_update(native, setup, request_value):
+    """Consume each measured result once and retain edits made after its baseline."""
+    layout, report_id = setup.get("layout"), setup.get("layoutReportId")
+    previous = native.get("guided_layout", {})
+    if not layout or not report_id or previous.get("reportId") == report_id:
+        return None
+    same_request = previous.get("requestId") == setup["requestId"]
+    baseline = previous.get("widths", native["widths"]) if same_request else request_value.get("widths", native["widths"])
+    manual = bool(same_request and not previous.get("applied") or native["widths"] != baseline and native["widths"] != layout["widths"])
+    return {"reportId": report_id, "requestId": setup["requestId"], "applied": not manual,
+            "widths": dict(native["widths"] if manual else layout["widths"])}
+
+
+def rebase_layout_draft(native, value):
+    """Late recovery writes may cross a layout-only revision without losing edits."""
+    receipt = native.get("guided_layout", {})
+    if (not isinstance(value, dict) or value.get("revision") != receipt.get("beforeRevision")
+            or native["revision"] != receipt.get("revision") or receipt.get("revision") == receipt.get("beforeRevision")):
+        return value
+    values = value["values"]
+    widths = native["widths"] if values["widths"] == receipt.get("beforeWidths") else values["widths"]
+    return {**value, "revision": native["revision"], "values": {**values, "widths": dict(widths)}}
 
 
 def review(path, documents, native, name, revision, choice):
@@ -104,7 +141,6 @@ def review(path, documents, native, name, revision, choice):
 
 
 def instructions(value, command):
-    example = {"version": 1, "request_id": value["request_id"], "project_id": value["project_id"], "layout": None}
     return f"""
 ## Save guidance and optional layout recommendations
 
@@ -123,17 +159,29 @@ you investigated. An empty file is fine when there is nothing to add. Their pres
 completes guidance setup; no document hashes, completion report or review receipts are required.
 Read `{command}` to confirm the saved files are available.
 
-If you have measured layout recommendations, atomically save `{REPORT}` with these identity fields:
+Do not execute translation, paid name translation, API submission, or playtesting as part of this setup task.
+""" + layout_instructions(value, command)
+
+
+def layout_instructions(value, command):
+    example = {"version": 1, "request_id": value["request_id"], "project_id": value["project_id"], "layout": None}
+    return f"""
+## Save measured character limits
+
+Atomically save measured layout recommendations to `{REPORT}` with these identity fields:
 
 ```json
 {json.dumps(example, ensure_ascii=False, indent=2)}
 ```
 
-If the first investigation produced measured width recommendations, replace layout null with
+Replace layout null with the measured values and their evidence:
 {{"widths": {{"width": 60, "faceWidth": 50, "listWidth": 100, "noteWidth": 75}},
 "reason": "Actual measurement method, confidence, font and exceptions.",
 "evidence": [{{"file": "js/rpg_windows.js", "sha256": "FINAL_FILE_HASH", "location": "Inspected window functions"}}]}}.
 Those values are schema examples, not measurements. Use only measured values with source evidence;
-otherwise omit the optional layout record and explain unresolved geometry in the game-context document.
-Do not execute translation, paid name translation, API submission, or playtesting as part of this setup task.
+otherwise omit the optional layout record and report the unresolved geometry.
+The app automatically saves verified widths as the project’s character limits; the user does not
+need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
+An active operation or pending option edits may defer the save. Later manual width edits are retained.
+Do not change unrelated guidance, translate text, submit API work or execute the game as part of remeasurement.
 """

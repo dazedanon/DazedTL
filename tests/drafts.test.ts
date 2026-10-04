@@ -3,7 +3,7 @@ import test from "node:test";
 import { DraftSession } from "../app/src/state/DraftSession.ts";
 import { flushDrafts, registerLeaveGuard } from "../app/src/state/leaveGuards.ts";
 import type { GuidedPreferences } from "../app/src/api/contracts.ts";
-import { mergeSpeakerFindings, onlySpeakerSettingsChanged } from "../app/src/features/guided/speakerSetup.ts";
+import { mergeInvestigationSettings, onlyInvestigationSettingsChanged } from "../app/src/features/guided/speakerSetup.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const unexpected = (error: unknown) => { throw error; };
@@ -75,25 +75,29 @@ test("a failed recovery write blocks leaving and remains retryable", async (t) =
   await session.dispose();
 });
 
-test("speaker findings merge without losing file, width, or rule edits made during application", async () => {
+test("investigation settings merge without losing file, width, or rule edits made during application", async () => {
   const before: GuidedPreferences = { revision: 1, values: { selected: ["Map001.json"], mode: "batch", phase1_comments: false,
     widths: { width: 50, faceWidth: 40, listWidth: 50, noteWidth: 50 }, engine_options: { INLINE401SPEAKERS: false, FIRSTLINESPEAKERS: false } } };
   const pending = Promise.withResolvers<{ saved: GuidedPreferences }>();
   const writes: GuidedPreferences[] = [];
   const session = new DraftSession<GuidedPreferences>(async value => { writes.push(value); }, unexpected);
   session.adopt(before);
-  const saving = session.commit(() => pending.promise, (before, current, result) => mergeSpeakerFindings(before, current, result.saved));
+  const saving = session.commit(() => pending.promise, (before, current, result) => mergeInvestigationSettings(before, current, result.saved));
   await turn();
   session.edit({ ...before, values: { ...before.values, selected: ["Map002.json"], widths: { ...before.values.widths, width: 60 },
     engine_options: { ...before.values.engine_options, FIRSTLINESPEAKERS: true } } });
-  pending.resolve({ saved: { ...before, revision: 2, values: { ...before.values, engine_options: { INLINE401SPEAKERS: true, FIRSTLINESPEAKERS: false } } } });
+  pending.resolve({ saved: { ...before, revision: 2, values: { ...before.values, widths: { ...before.values.widths, width: 55 }, engine_options: { INLINE401SPEAKERS: true, FIRSTLINESPEAKERS: false } } } });
   await saving;
   assert.deepEqual(writes.at(-1)?.values, { ...before.values, selected: ["Map002.json"], widths: { ...before.values.widths, width: 60 },
     engine_options: { INLINE401SPEAKERS: true, FIRSTLINESPEAKERS: true } });
   assert.equal(session.getSnapshot().value?.revision, 2);
   assert.equal(session.getSnapshot().dirty, true);
-  const changed = { ...before, revision: 2, values: { ...before.values, engine_options: { ...before.values.engine_options, INLINE401SPEAKERS: true } } };
-  assert.equal(onlySpeakerSettingsChanged(before, changed, ["INLINE401SPEAKERS"]), true);
-  assert.equal(onlySpeakerSettingsChanged(before, { ...changed, values: { ...changed.values, selected: ["Map003.json"] } }, ["INLINE401SPEAKERS"]), false);
+  const changed = { ...before, revision: 2, values: { ...before.values, widths: { ...before.values.widths, width: 55 }, engine_options: { ...before.values.engine_options, INLINE401SPEAKERS: true } } };
+  const selected = { ...before, values: { ...before.values, selected: ["Map002.json"] } };
+  const measured = mergeInvestigationSettings(before, selected, changed);
+  assert.equal(measured.values.widths.width, 55);
+  assert.deepEqual(measured.values.selected, selected.values.selected);
+  assert.equal(onlyInvestigationSettingsChanged(before, changed, ["INLINE401SPEAKERS"]), true);
+  assert.equal(onlyInvestigationSettingsChanged(before, { ...changed, values: { ...changed.values, selected: ["Map003.json"] } }, ["INLINE401SPEAKERS"]), false);
   await session.dispose();
 });

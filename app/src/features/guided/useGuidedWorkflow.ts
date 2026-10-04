@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import type { GuidedState } from "../../api/contracts";
 import { api } from "../../api/client";
 import { useDraft } from "../../state/useDraft";
-import { mergeSpeakerFindings, onlySpeakerSettingsChanged } from "./speakerSetup";
+import { mergeInvestigationSettings, onlyInvestigationSettingsChanged } from "./speakerSetup";
 
 export function useGuidedWorkflow(state: GuidedState, report: (error: unknown) => void) {
   const saved = state.preferences;
@@ -17,12 +17,12 @@ export function useGuidedWorkflow(state: GuidedState, report: (error: unknown) =
     const before = observed.current;
     if (!draft.dirty) { observed.current = saved; draft.session.adopt(saved); }
     else if (draft.value?.revision === saved.revision) observed.current = saved;
-    else if (onlySpeakerSettingsChanged(before, saved, state.speakerSetup.rules.map((rule) => rule.key))) {
+    else if (onlyInvestigationSettingsChanged(before, saved, state.speakerSetup.rules.map((rule) => rule.key))) {
       observed.current = saved;
-      // The agent may finish configuring speakers while a just-typed edit is
+      // The investigation may save settings while a just-typed edit is
       // still waiting for its recovery write. Rebase through the same queue.
-      void draft.session.commit(async (current) => ({ saved, draft: mergeSpeakerFindings(before, current, saved) }),
-        (_before, current) => mergeSpeakerFindings(before, current, saved)).then(async () => {
+      void draft.session.commit(async (current) => ({ saved, draft: mergeInvestigationSettings(before, current, saved) }),
+        (_before, current) => mergeInvestigationSettings(before, current, saved)).then(async () => {
           if (draft.session.getSnapshot().dirty) { draft.session.edit((current) => current); await draft.session.flush(); }
         }).catch(report);
     }
@@ -38,6 +38,6 @@ export function useGuidedWorkflow(state: GuidedState, report: (error: unknown) =
     if (draft.session.getSnapshot().dirty) throw new Error("Save or discard your option edits before applying speaker findings.");
     if (!state.speakerSetup.reportId) throw new Error("Wait for the setup task’s speaker findings.");
     return { saved: await api.guided.applySpeakers(state.projectId, value.revision, state.speakerSetup.reportId, reset) };
-  }, (before, current, result) => mergeSpeakerFindings(before, current, result.saved));
+  }, (before, current, result) => mergeInvestigationSettings(before, current, result.saved));
   return { ...draft, value: draft.value || saved, save, discard, applySpeakers };
 }

@@ -321,6 +321,73 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(pending['documents']['glossary']['text'], 'Keep after failure')
         self.assertEqual(path.read_text(), '')
 
+    def test_measured_layout_applies_once_and_preserves_active_work_and_width_edits(self):
+        self.backend.workflows.documents = lambda _: {}
+        request_path = self.guided.path(self.identity, 'context-request')
+        request = context_setup.request(request_path, self.identity, {'request_id': 'speaker-task'}, self.native['widths'])
+        source = self.source / 'windows.js'
+        source.write_text('Measured message window')
+        report = {'version': 1, 'request_id': request['request_id'], 'project_id': self.identity,
+                  'layout': {'widths': {'width': 55, 'faceWidth': 40, 'listWidth': 80, 'noteWidth': 70},
+                             'reason': 'Measured fixture window.',
+                             'evidence': [{'file': 'windows.js', 'sha256': digest(source.read_bytes()), 'location': 'message width'}]}}
+        def apply(identity, revision, receipt):
+            self.assertEqual(identity, 'native')
+            before = deepcopy(self.native['widths'])
+            next_revision = revision + int(before != receipt['widths'])
+            self.native.update(widths=dict(receipt['widths']), revision=next_revision,
+                               guided_layout={**receipt, 'beforeWidths': before, 'beforeRevision': revision, 'revision': next_revision})
+            return self.native
+        self.backend.workflows.apply_layout_settings = Mock(side_effect=apply)
+        write_json(self.source / context_setup.REPORT, {**report, 'project_id': 'another-game'})
+        self.assertIsNone(self.guided.context_status(self.identity)['layout'])
+        self.backend.workflows.apply_layout_settings.assert_not_called()
+        write_json(self.source / context_setup.REPORT, report)
+        self.backend.running = lambda: True
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'pending')
+        self.backend.running = lambda: False
+        pending = self.guided.preferences(self.native)
+        self.guided.options_draft(self.identity, pending)
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'pending')
+        self.backend.workflows.apply_layout_settings.assert_not_called()
+        self.guided.options_draft(self.identity, None)
+        self.backend.workflows.apply_layout_settings.side_effect = OSError('Read-only fixture settings')
+        self.assertTrue(self.guided.context_status(self.identity)['layoutMessage'])
+        self.assertNotIn('guided_layout', self.native)
+        self.backend.workflows.apply_layout_settings.side_effect = apply
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'applied')
+        self.assertEqual(self.native['widths'], report['layout']['widths'])
+        calls = self.backend.workflows.apply_layout_settings.call_count
+        self.guided.context_status(self.identity)
+        self.assertEqual(self.backend.workflows.apply_layout_settings.call_count, calls)
+        # A delayed recovery write from before application adopts measured
+        # widths, but a real width edit wins over the automatic update.
+        pending['values']['selected'] = []
+        self.guided.options_draft(self.identity, pending)
+        recovered = read_json(self.guided.path(self.identity, 'draft'))
+        self.assertEqual(recovered['values']['widths'], report['layout']['widths'])
+        self.assertEqual(recovered['values']['selected'], [])
+        self.assertEqual(recovered['revision'], self.native['revision'])
+        pending['values']['widths']['width'] = 90
+        self.guided.options_draft(self.identity, pending)
+        recovered = read_json(self.guided.path(self.identity, 'draft'))
+        self.assertEqual(recovered['values']['widths']['width'], 90)
+        self.guided.options_draft(self.identity, None)
+        self.native['widths']['width'] = 90
+        self.native['revision'] += 1
+        report['layout']['widths']['width'] = 60
+        write_json(self.source / context_setup.REPORT, report)
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'manual')
+        self.assertEqual(self.native['widths']['width'], 90)
+        # Explicitly requesting a new measurement establishes a new baseline.
+        renewed = context_setup.request(request_path, self.identity, {'request_id': 'speaker-task'}, self.native['widths'])
+        report['request_id'] = renewed['request_id']
+        write_json(self.source / context_setup.REPORT, report)
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'applied')
+        self.assertEqual(self.native['widths']['width'], 60)
+        source.write_text('Later game change')
+        self.assertEqual(self.guided.context_status(self.identity)['layoutApplication'], 'applied')
+
     def test_reference_folders_need_no_game_format_and_stay_project_owned(self):
         import json
         from dazedtl.translation import reference_folders

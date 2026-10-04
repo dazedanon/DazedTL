@@ -390,12 +390,13 @@ class Guided:
         return {"files": entries, "inputs": sorted(inputs)}
 
     def options_draft(self, project_id, value):
-        self.record(project_id)
+        _, native = self.record(project_id)
         if value is not None and (not isinstance(value, dict) or set(value) != {"revision", "values"}
                                  or type(value["revision"]) is not int):
             raise ValueError("Invalid guided options draft.")
         if value is not None:
             self.validate_options(value["values"])
+            value = context_setup.rebase_layout_draft(native, value)
         write_json(self.path(project_id, "draft"), value)
         return {"saved": True}
 
@@ -424,6 +425,7 @@ class Guided:
         return self.preferences(result["project"])
 
     def state(self, project_id):
+        context = self.context_status(project_id)
         project, native = self.record(project_id)
         value = self.backend.workflows.state(native["id"])
         run_views = {}
@@ -462,18 +464,22 @@ class Guided:
         paid = [self.backend.manual.jobs[identity] for identity in self.owned_runs(native)
                 if identity in self.backend.manual.jobs and self.backend.manual.jobs[identity].get('mode') != 'estimate']
         current_run = next((job for job in paid if job['status'] in {'running', 'waiting'}), paid[0] if paid else None)
+        recovered = read_json(draft) if draft.exists() else None
+        rebased = context_setup.rebase_layout_draft(native, recovered)
+        if recovered != rebased:
+            write_json(draft, rebased)
         return {
             **value, **self.runs.snapshot(project_id, native, source_status, run_view=run_view),
             "manual_job": run_view(current_run['id']) if current_run else None,
             "step": saved_position.get("step", "prepare"), "task": saved_position.get("task"),
             "positions": saved_position.get("positions", {}) if isinstance(saved_position.get("positions", {}), dict) else {},
             "context_document": context_setup.selected_document(self.path(project_id, "context-document"), saved_position, documents),
-            "preferences": self.preferences(native), "options_draft": read_json(draft) if draft.exists() else None,
+            "preferences": self.preferences(native), "options_draft": rebased,
             "form": self.saved_form(project_id),
             "preparation": self.preparation(native),
             "speaker_setup": self.speaker_findings(project_id, native),
             "speaker_scan": self.speakers(project_id),
-            "context_setup": self.context_status(project_id),
+            "context_setup": context,
             "reference_folders": reference_folders.describe(self.path(project_id, "reference-folders")),
             "event_text": self.event_text.status(project_id, native),
             "tools": self.backend.guided_tools(native),
@@ -891,14 +897,19 @@ class Guided:
             request = speaker_setup.request(self.path(project_id, "speaker-request"), project_id, native, schema)
             command = shlex.join([sys.executable, "-B", str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
                                   "--workspace", str(self.translation.workspace), "--project", project_id, "speakers"])
-            context_request = context_setup.request(self.path(project_id, "context-request"), project_id, request)
+            context_request = context_setup.request(self.path(project_id, "context-request"), project_id, request, native["widths"])
             context_command = command.removesuffix("speakers") + "context"
             text += context_setup.instructions(context_request, context_command)
             text = (speaker_setup.instructions(request, command)
                     + reference_folders.instructions(reference_folders.records(self.path(project_id, "reference-folders")))
                     + "\n## Glossary and context investigation (after the local speaker scan)\n" + text)
         if name == "wrap":
-            text += "\nFor optional remeasurement, retain the existing game guidance and speaker findings. If a current verified .dazedtl/guided/context-findings.json exists, update only its layout widths/reason/source evidence with the new measurements. Otherwise report the measured values for manual review. Do not invent a completed context investigation or execute translation.\n"
+            path = self.path(project_id, "context-request")
+            previous = context_setup.optional_record(path)
+            request = context_setup.request(path, project_id, {"request_id": previous.get("speaker_request_id", "layout")}, native["widths"])
+            command = shlex.join([sys.executable, "-B", str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
+                                  "--workspace", str(self.translation.workspace), "--project", project_id, "context"])
+            text += context_setup.layout_instructions(request, command)
         return {"text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n" + text}
 
     def event_text_request(self, project_id):
@@ -934,10 +945,23 @@ class Guided:
 
     def context_status(self, project_id):
         _, native = self.record(project_id)
-        return context_setup.inspect(self.path(project_id, "context-request"), self.path(project_id, "context-review"),
-                                     native, project_id, self.backend.workflows.documents(native["id"]),
-                                     self.speaker_findings(project_id, native), self.speakers(project_id), self.observed_digest,
-                                     self.backend.workflows.state(native["id"]).get("references", []))
+        request_path = self.path(project_id, "context-request")
+        def inspect():
+            return context_setup.inspect(request_path, self.path(project_id, "context-review"),
+                                         native, project_id, self.backend.workflows.documents(native["id"]),
+                                         self.speaker_findings(project_id, native), self.speakers(project_id), self.observed_digest,
+                                         self.backend.workflows.state(native["id"]).get("references", []))
+        setup = inspect()
+        update = context_setup.layout_update(native, setup, context_setup.optional_record(request_path))
+        draft_path = self.path(project_id, "draft")
+        draft = read_json(draft_path) if draft_path.exists() else None
+        if update and not draft and not self.backend.running() and not self.translation.jobs.running():
+            try:
+                native = self.backend.workflows.apply_layout_settings(native["id"], native["revision"], update)
+                setup = inspect()
+            except (OSError, ValueError) as exc:
+                setup["layoutMessage"] = "Measured layout could not be saved: " + str(exc)
+        return setup
 
     def context_review(self, project_id, name, revision, choice):
         self.idle()
