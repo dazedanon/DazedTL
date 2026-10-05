@@ -7,6 +7,8 @@ import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { VirtualList } from "../../ui/VirtualList";
 import { PreparedRequestPreview } from "./PreparedRequestPreview";
+import { NameTranslationFeedback } from "./NameTranslationFeedback";
+import { api } from "../../api/client";
 
 const numeric = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const count = (value: unknown) => numeric(value) ? value.toLocaleString() : "—";
@@ -69,6 +71,7 @@ export function TranslationReviewContent({ projectId, job, preview, busy, pendin
         {files.length <= 8 ? <ul className="guided-preview-paths">{files.map(name => <li key={name}>{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={files} itemKey={pathKey} label="Selected files" empty={null}>{name => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}
         {!!speakers.length && <p className="translation-review-speakers"><strong>Names and labels to translate</strong><br />{speakers.join(", ")}</p>}
       </section>
+      {batch && job && <NameTranslationFeedback value={job.nameTranslation} read={offset => api.guided.nameResults(projectId, job.id, offset)} />}
       <p className="translation-review-notice">Submitting incurs API charges. {(job?.temporary || preview) && "Decline discards this preparation. "}Results may replace working translations; earlier approved runs stay in History. Game files change only after Apply.</p>
     </div>
     <ActionBar feedback={<Message message={error} />}>

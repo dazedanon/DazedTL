@@ -3,7 +3,7 @@ import { api } from "../../api/client";
 import { ApiError, messageOf } from "../../api/errors";
 import type { GuidedState, Job, Phase, Preview } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
-import { estimateFollowup } from "./translationView";
+import { estimateFollowup, preparationFollowup } from "./translationView";
 
 export type SubmissionConflict = { kind: "submission_overlap"; files: string[]; matches: { run: string; files: string[]; state: string }[] };
 export function submissionConflict(error: unknown): SubmissionConflict | undefined {
@@ -18,9 +18,10 @@ export type TranslationFlowState = {
   stage: "preparing" | "estimating" | "batch" | "review" | "empty" | "error" | "canceling";
   estimateId?: string; runId?: string; job?: Job; preview?: Preview;
   decision?: boolean;
+  namesApproved?: boolean;
   error?: string; conflict?: SubmissionConflict;
 };
-type Session = { state: TranslationFlowState; advanced: boolean; canceled: boolean; finished: boolean };
+type Session = { state: TranslationFlowState; advanced: boolean; canceled: boolean; finished: boolean; answeredApproval?: string };
 type Options = { projectId: string; phase: Phase; mode: "batch" | "translate"; files: string[]; state: GuidedState;
   dirty: boolean; busy: boolean; save: () => Promise<void>; settle: () => Promise<unknown> | void };
 
@@ -113,15 +114,19 @@ export function useTranslationFlow(options: Options) {
         });
       }
     } else if (value.stage === "batch" && value.runId) {
-      const job = options.state.runs.find(run => run.id === value.runId);
-      if (job?.approval) change(session, { stage: "review", job });
-      else if (job && ["failed", "interrupted", "stopped", "canceled"].includes(job.status)) change(session, { stage: "error", error: job.message || "Request preparation did not finish.", job });
-      else if (job?.status === "complete") change(session, { stage: "empty", job });
+      const result = preparationFollowup(value.runId, options.state.runs, session.answeredApproval), job = result.job;
+      if (result.kind === "review") change(session, { stage: "review", job, decision: undefined });
+      else if (result.kind === "failed") change(session, { stage: "error", error: job?.message || "Request preparation did not finish.", job });
+      else if (result.kind === "empty") change(session, { stage: "empty", job });
+      else if (job && job !== value.job) change(session, { job });
     }
   }, [options.state.runs, options.state.estimates, options.dirty, options.phase, options.mode, action.busy, state]);
   function cancel() {
     const session = current.current;
     if (!session) return;
+    // The approved name pass is retained paid work. Closing its preparation
+    // view must not try to discard it or stop the continuing Batch collection.
+    if (session.state.namesApproved) { finish(session); return; }
     if (session.state.stage === "error") { finish(session); return; }
     session.canceled = true; change(session, { stage: "canceling" });
     if (!action.busy) void perform(session, async () => {});
@@ -135,7 +140,8 @@ export function useTranslationFlow(options: Options) {
       if (value.job?.approval) {
         const prompt = value.job.approval;
         await api.answer(options.projectId, prompt.token, approved);
-        if (approved && prompt.kind === "speakers") change(session, { stage: "batch", job: undefined });
+        session.answeredApproval = prompt.token;
+        if (approved && prompt.kind === "speakers") change(session, { stage: "batch", job: { ...value.job, approval: undefined }, namesApproved: true, decision: undefined });
         else session.finished = true;
       } else if (approved && value.preview) {
         const run = await api.execute(options.projectId, value.preview.token);

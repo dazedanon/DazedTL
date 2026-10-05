@@ -141,6 +141,7 @@ export const api = {
     inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
     retainRun: (project_id: string, run_id: string, dismissed: boolean) => request("guided_retain_run", { project_id, run_id, dismissed }),
     payload: (project_id: string, run_id: string, index: number) => request("guided_payload", { project_id, run_id, index }),
+    nameResults: (project_id: string, run_id: string, offset = 0) => request("guided_name_results", { project_id, run_id, offset }),
     filePreview: (project_id: string, name: string, offset = 0, query = "") => request("guided_file_preview", { project_id, name, offset, query }),
     discardPreparation: (project_id: string, run_id: string) => request("guided_discard_preparation", { project_id, run_id }),
     providerDetails: (project_id: string, run_id: string) => request("guided_provider_details", { project_id, run_id }),

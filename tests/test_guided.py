@@ -186,6 +186,42 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.started, [])
 
+    def test_canceled_batch_keeps_paid_names_in_quotes_without_crossing_ownership(self):
+        # Protect paying for the same names again after declining the map Batch,
+        # while keeping unrelated projects, languages and source passes isolated.
+        identity = 'paid-names'
+        root = self.backend.manual.folder(identity)
+        plan = {'mode': 'batch', 'workflow': {'id': 'native'}, 'settings': {'language': 'English'}}
+        write_json(root/'plan.json', plan)
+        glossary = root/'game/.dazedtl/glossary.txt'
+        glossary.parent.mkdir(parents=True)
+        glossary.write_text('# Speakers\n回想部屋 (Recollection Room)\n')
+        job = {'id': identity, 'mode': 'batch', 'status': 'canceled', 'phase': 'canceled', 'created': '2026-01-01',
+               'files': ['Items.json'], 'dazedtl_preapproval': True, 'dazedtl_approved': True,
+               'estimate': {'speakers': ['回想部屋']}, 'log': ['Speaker translations saved to the game glossary.'],
+               'plan_hash': digest((root/'plan.json').read_bytes())}
+        self.backend.manual.jobs[identity] = job
+        self.native.setdefault('collected', []).append(identity)
+        self.backend.saved_run_configuration = lambda run: read_json(self.backend.manual.folder(run)/'plan.json')
+        reused = self.guided.runs.name_reuse(self.native, 'English')
+        self.assertEqual(reused, [{'source': '回想部屋', 'translation': 'Recollection Room', 'runId': identity}])
+        self.assertEqual(self.guided.name_results(self.identity, identity)['rows'][0]['translation'], 'Recollection Room')
+        self.assertEqual(self.guided.run_view(identity, compact=True)['nameTranslation']['state'], 'saved')
+        before = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
+        self.assertEqual(before['reused_names'], reused)
+        self.backend.guided_phase = lambda *_: {'id': 'next', 'seed': self.backend.manual.reused_names}
+        self.assertEqual(self.guided._start(self.identity, 'estimate', 'database', ['Items.json'], before)['seed'], reused)
+        self.assertIsNone(self.backend.manual.reused_names)
+        self.assertEqual(self.guided.runs.name_reuse(self.native, 'French'), [])
+        with self.assertRaises(ValueError): self.guided.name_results(self.identity, 'foreign')
+        plan['workflow']['id'] = 'foreign'
+        write_json(root/'plan.json', plan)
+        self.assertEqual(self.guided.runs.name_reuse(self.native, 'English'), [])
+        plan['workflow']['id'] = 'native'
+        write_json(root/'plan.json', plan)
+        write_json(self.folder/'source-inputs.json', {'version': 1, 'inputs': {}, 'retired_runs': [identity]})
+        self.assertEqual(self.guided.runs.name_reuse(self.native, 'English'), [])
+
     def test_translation_preparation_survives_reopen_and_cancel_targets_its_estimate(self):
         # Protect navigation/reload losing the local preparation handoff, and
         # Cancel clearing only renderer state while the estimate keeps running.

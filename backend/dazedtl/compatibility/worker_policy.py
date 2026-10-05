@@ -40,8 +40,10 @@ def install():
         def checkpoint_reader():
             from .checkpoints import install as install_checkpoints
             from .batch_evidence import install as install_batch_evidence
+            from .speaker_results import install as install_speaker_results
             install_checkpoints(sys.modules.get("modules.rpgmakermvmz"), root, plan)
             install_batch_evidence(sys.modules["util.translation"], root, plan)
+            install_speaker_results(sys.modules.get("modules.rpgmakermvmz"), root)
 
         if policy is None:
             result = native_prepare(root)

@@ -54,6 +54,7 @@ export interface Job {
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
   temporary?: boolean;
+  nameTranslation?: NameTranslation | null;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
   process?: RunProcess;
@@ -66,6 +67,15 @@ export interface Job {
     kind: "batch" | "speakers";
     detail: Record<string, unknown>;
   };
+}
+export interface NameTranslation {
+  state: "running" | "saved" | "failed" | "unavailable";
+  reused?: boolean;
+  count: number;
+  rows: { source: string; translation: string }[];
+}
+export interface NameTranslationPage {
+  rows: NameTranslation["rows"]; total: number; offset: number; nextOffset: number | null;
 }
 export interface RunProcess {
   noRequestFiles?: string[];
@@ -752,6 +762,7 @@ export interface RpcContract {
   guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };
+  guided_name_results: { request: { project_id: string; run_id: string; offset?: number }; response: NameTranslationPage };
   guided_file_preview: { request: { project_id: string; name: string; offset?: number; query?: string }; response: FileTextPreview };
   guided_discard_preparation: { request: { project_id: string; run_id: string }; response: { discarded: boolean } };
   guided_provider_details: { request: { project_id: string; run_id: string }; response: { batches: NonNullable<RunProcess['batches']> } };

@@ -26,7 +26,7 @@ def job(value):
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
                           'progress', 'itemProgress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'availableOutputs', 'changedOutputs', 'partialOutputs', 'retiredFiles', 'eventTextReview', 'approval', 'action', 'result', 'created', 'updated',
-                          'logicalPhase', 'scopeComplete', 'appliedOutputs', 'process', 'keptForHistory', 'preparationMode', 'temporary'))
+                          'logicalPhase', 'scopeComplete', 'appliedOutputs', 'process', 'keptForHistory', 'preparationMode', 'temporary', 'nameTranslation'))
     result.setdefault('log', [])
     return result
 

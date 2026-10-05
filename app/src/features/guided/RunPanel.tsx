@@ -70,6 +70,7 @@ export default function RunPanel({
       </div>
       <p>{job.message}</p>
       <ProcessPanel job={job} readPayload={projectId ? index => api.guided.payload(projectId, job.id, index) : undefined}
+        readNames={projectId ? offset => api.guided.nameResults(projectId, job.id, offset) : undefined}
         readProvider={projectId ? () => api.guided.providerDetails(projectId, job.id) : undefined} />
       {job.files && <details><summary>Frozen file scope</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
       {job.eventTextReview && <details><summary>Saved event text review</summary>

@@ -88,7 +88,9 @@
 .prepared-request-navigation { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2); }
 .prepared-request-navigation .actions { gap:var(--space-2); }
 .translation-flow-loading { display:grid; place-items:center; }
-.translation-flow-loading > div { display:grid; justify-items:center; gap:var(--space-3); text-align:center; }
+.translation-flow-progress,.translation-flow-activity { display:grid; justify-items:center; gap:var(--space-3); text-align:center; min-width:0; max-width:100%; }
+.translation-flow-progress { gap:var(--space-4); }
+.translation-flow-progress > .name-translation-feedback { justify-content:center; }
 .translation-flow-loading small { color:var(--muted); }
 .translation-review-heading { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); }
 .translation-review-heading h2 { min-width:0; overflow-wrap:anywhere; }
@@ -97,6 +99,9 @@
 .translation-review-body > :not(.translation-review-scope) { flex-shrink:0; }
 .translation-review-model { margin:0; overflow-wrap:anywhere; }
 .translation-review-model span { color:var(--muted); }
+.name-translation-feedback { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1) var(--space-3); min-width:0; color:var(--muted); font-size:var(--font-small); overflow-wrap:anywhere; }
+.name-translation-feedback > [role="status"] { display:inline-flex; align-items:center; gap:var(--space-2); }
+.name-translation-feedback > button { font:inherit; }
 .translation-cost-review { display:flex; flex-direction:column; gap:var(--space-2); }
 .translation-cost-total { display:flex; flex-direction:column; align-items:flex-start; gap:var(--space-1); }
 .translation-cost-total > span { font-size:var(--font-control); }

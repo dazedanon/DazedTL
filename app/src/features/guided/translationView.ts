@@ -29,6 +29,14 @@ export function estimateFollowup(id: string, quote: { job?: Job | null; current:
   if (quote?.job?.id !== id || !quote.current || inputsChanged) return { kind: "stale" as const, job };
   return { kind: estimateRequestCount(job) === 0 ? "empty" as const : "review" as const, job };
 }
+/** A late observation of the answered name approval cannot reopen it. */
+export function preparationFollowup(id: string, runs: Job[], answeredApproval?: string) {
+  const job = runs.find(run => run.id === id);
+  if (!job || answeredApproval && job.approval?.token === answeredApproval) return { kind: "waiting" as const };
+  if (job.approval) return { kind: "review" as const, job };
+  if (["failed", "interrupted", "stopped", "canceled"].includes(job.status)) return { kind: "failed" as const, job };
+  return { kind: job.status === "complete" ? "empty" as const : "waiting" as const, job };
+}
 export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]) {
   const own = runs.filter(run => run.logicalPhase === phase)
     .sort((a, b) => (b.created || "").localeCompare(a.created || ""));

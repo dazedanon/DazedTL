@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { Job, RunPayload, RunProcess } from "../../api/contracts";
+import type { Job, NameTranslationPage, RunPayload, RunProcess } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
 import { Message } from "../../ui/Feedback";
@@ -11,6 +11,7 @@ import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
 import { translatedLines } from "./translationView";
+import { NameTranslationFeedback } from "./NameTranslationFeedback";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 const tabs = [{ id: "source", label: "Source" }, { id: "response", label: "Response" },
@@ -32,13 +33,14 @@ export function runLabel(job: Job) {
 }
 type Props = {
   job: Job; readPayload?: (index: number) => Promise<RunPayload>;
+  readNames?: (offset: number) => Promise<NameTranslationPage>;
   readProvider?: () => Promise<{ batches: NonNullable<RunProcess["batches"]> }>;
   compact?: boolean; actions?: ReactNode;
 };
 export function ProcessPanel(props: Props) {
   return props.job.process ? <RequestProcess key={props.job.id} {...props} /> : null;
 }
-function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
+function RequestProcess({ job, readPayload, readProvider, readNames, actions }: Props) {
   const process = job.process!;
   const [view, setView] = useState(() => savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
@@ -138,6 +140,7 @@ function RequestProcess({ job, readPayload, readProvider, actions }: Props) {
           {!runView && <Message message={error} />}
           <TabPanel id={tabId} value={view.tab}>
             {view.tab === "run" ? <>
+              <NameTranslationFeedback value={job.nameTranslation} read={readNames} />
               <dl className="run-detail-summary">
                 <div><dt>Files</dt><dd>{job.files?.join(", ") || "Not recorded"}</dd></div>
                 <div><dt>Outputs</dt><dd>{job.availableOutputs == null ? "Availability not recorded" : `${job.availableOutputs.length} saved`}{job.partialOutputs?.length ? ` · ${job.partialOutputs.length} partial` : ""}{process.appliedFiles ? ` · ${process.appliedFiles} applied` : ""}</dd></div>

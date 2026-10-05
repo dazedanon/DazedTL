@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -174,6 +174,15 @@ test("translation followup uses the matching estimate count and exits for termin
     assert.equal(estimateFollowup(job.id, undefined, [{ ...job, status }], false).kind, "failed");
   }
   assert.equal(estimateFollowup(job.id, undefined, [], false).kind, "waiting");
+  // A delayed speaker approval must not reopen after it was answered. A
+  // distinct Batch approval retains the verified name result for its review.
+  const names = { ...job, id: "paid", mode: "batch", status: "waiting", approval: { token: "names", kind: "speakers", detail: {} } } as Job;
+  assert.deepEqual(preparationFollowup(names.id, [names], "names"), { kind: "waiting" });
+  const translated = { ...names, approval: { token: "maps", kind: "batch", detail: {} },
+    nameTranslation: { state: "saved", count: 1, rows: [{ source: "回想部屋", translation: "Recollection Room" }] } } as Job;
+  assert.equal(preparationFollowup(names.id, [translated], "names").kind, "review");
+  assert.equal(preparationFollowup(names.id, [translated], "names").job?.nameTranslation, translated.nameTranslation);
+  assert.equal(preparationFollowup(names.id, [{ ...translated, approval: undefined, status: "failed" }], "names").kind, "failed");
 });
 
 // Hiding preparation controls must not remove the exit from paid execution or

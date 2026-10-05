@@ -99,10 +99,13 @@ class GuidedRuns:
         context = {key: value for key, value in guard.items()
                    if key not in {"data", "files", "translated", "variables"}}
         versions = {name: inputs.record().get("file_versions", {}).get(name, "") for name in names}
+        configuration = self.guided.settings.guided_configuration(mode)
+        reused_names = self.name_reuse(native, configuration.get('language'))
         value = {"file_versions": versions, "version": 1, "project": project_id, "phase": phase, "mode": mode,
                  "source": sources, "source_pass": inputs.record().get("last_refresh"), "files": names,
                  "working": {name: digest(self.working_bytes(native, name, sources[name])) for name in names},
-                 "configuration": self.guided.settings.guided_configuration(mode),
+                 "configuration": configuration,
+                 "reused_names": reused_names,
                  "options": native["engine_options"], "layout": native["widths"],
                  "comments": native["phase1_comments"], "context": context,
                  "runtime_context": self.guided.backend.guided_run_context()}
@@ -115,7 +118,33 @@ class GuidedRuns:
             comparisons = self.comparisons(native)
             value["comparison_review"] = comparisons["status"]
             review = {"fingerprint": comparisons["fingerprint"], "status": comparisons["status"], "literalBased": True}
-        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review, "file_versions": versions}
+        return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review, "file_versions": versions, "reused_names": reused_names}
+
+    def name_reuse(self, native, language):
+        from dazedtl.compatibility.preparations import temporary
+        from dazedtl.compatibility.speaker_results import reusable, RECEIPT
+        if not language:
+            return []
+        inputs = self.guided.inputs(native).record()
+        versions, retired = inputs.get('file_versions', {}), set(inputs.get('retired_runs', []))
+        candidates = []
+        for identity in self.guided.owned_runs(native):
+            job = self.guided.backend.manual.jobs.get(identity)
+            if not job or identity in retired or job.get('mode') == 'estimate' or temporary(job):
+                continue
+            root = self.guided.backend.manual.folder(identity)
+            if not (job.get('estimate') or {}).get('speakers') and not (root / 'log' / RECEIPT).is_file():
+                continue
+            try:
+                plan = self.guided.backend.saved_run_configuration(identity)
+                if ((plan.get('workflow') or {}).get('id') != native['id']
+                        or (plan.get('settings') or {}).get('language') != language
+                        or any(versions.get(name, '') != plan.get('dazedtl_source_versions', {}).get(name, '') for name in job.get('files', []))):
+                    continue
+                candidates.append((root, job))
+            except (OSError, ValueError, KeyError):
+                continue
+        return reusable(candidates)
 
     def cache(self, native):
         path = self.guided.backend.workflows.folder(native["id"]) / "log/var_translation_map.json"

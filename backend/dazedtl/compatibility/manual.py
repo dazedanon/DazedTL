@@ -94,6 +94,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
         continuation = None
         reserved_sources = None
         source_versions = None
+        reused_names = None
         workflow_selection = None
         temporary_preparation = False
         controllers = None
@@ -249,6 +250,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     item.request_policy, item.workflow_selection, item.continuation = self.request_policy, self.workflow_selection, self.continuation
                     item.reserved_sources = self.reserved_sources
                     item.source_versions = self.source_versions
+                    item.reused_names = self.reused_names
                     item.temporary_preparation = self.temporary_preparation
                     result = item.start(source, engine, files, *args, **kwargs)
                     self.controllers[result['id']] = self.controllers.pop('preparing')
@@ -263,6 +265,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
 
         def _snapshot_context(self, directory, plan, workspace=None):
             super()._snapshot_context(directory, plan, workspace)
+            if self.reused_names:
+                from .speaker_results import seed
+                seed(directory, plan, self.reused_names)
             if self.source_versions is not None:
                 plan['dazedtl_source_versions'] = deepcopy(self.source_versions)
             if self.continuation:

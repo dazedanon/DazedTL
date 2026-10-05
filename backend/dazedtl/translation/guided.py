@@ -309,6 +309,8 @@ class Guided:
             job["availableOutputs"] = []
         if compact:
             job["log"] = []
+        from dazedtl.compatibility.speaker_results import summary as name_summary
+        job['nameTranslation'] = name_summary(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
         from dazedtl.compatibility.process_view import summary
         try:
             job["process"] = summary(self.backend.manual.folder(identity), job)
@@ -368,6 +370,16 @@ class Guided:
         runtime = project_path(native["source"], relative, exists=False)
         from .file_preview import preview
         return preview(inputs, name, runtime, offset, query)
+
+    def name_results(self, project_id, run_id, offset=0):
+        _, native = self.record(project_id)
+        if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
+            raise ValueError('Choose a translation run owned by this project.')
+        plan = self.backend.saved_run_configuration(run_id)
+        if (plan.get('workflow') or {}).get('id') != native['id']:
+            raise ValueError('Choose a translation run owned by this project.')
+        from dazedtl.compatibility.speaker_results import page
+        return page(self.backend.manual.folder(run_id), self.backend.manual.jobs[run_id], offset)
 
     def provider_details(self, project_id, run_id):
         _, native = self.record(project_id)
@@ -1073,6 +1085,7 @@ class Guided:
         self.backend.workflows.save(native)
         self.settings.prepare_engine(mode=mode)
         self.backend.manual.source_versions = run_inputs.get("file_versions", {}) if run_inputs else {}
+        self.backend.manual.reused_names = run_inputs.get('reused_names', []) if run_inputs else []
         self.backend.manual.continuation = self.runs.continuation(project_id, native, run_inputs) if run_inputs else {}
         from dazedtl.compatibility.request_scope import requests
         self.backend.manual.reserved_sources = list(requests(self.backend.manual.folder(estimate['jobId']), self.run_view(estimate['jobId']))) if estimate else []
@@ -1091,6 +1104,7 @@ class Guided:
             self.backend.manual.temporary_preparation = False
             self.backend.manual.continuation = None
             self.backend.manual.source_versions = None
+            self.backend.manual.reused_names = None
             self.backend.manual.reserved_sources = None
             if mode == "estimate":
                 current = self.backend.workflows.projects[native["id"]]
