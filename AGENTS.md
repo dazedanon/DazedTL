@@ -25,9 +25,8 @@
 
 ## Testing
 
-- Run `node scripts/test.mjs` (Python and frontend suites, timed against the budget below) for foundation or shared behavior changes.
-  While iterating, run single files with `node --test tests/<name>.test.ts` or `.venv/bin/python -m unittest tests.<module>`.
-- Run `node scripts/build.mjs` (TypeScript type check, then Vite build) for frontend changes; there is no separate linter.
+- Run `node scripts/test.mjs` for foundation or shared behavior changes, and `node scripts/build.mjs` for any code change; there is no separate linter.
+  [Development checks](README.md#development-checks) lists what each covers, focused test commands, and the formatter.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
 - For navigation or observer changes, verify that switching already-loaded views with clean drafts completes while a backend read is stalled, sends no navigation or refresh RPC, and survives a late snapshot. Reuse the [observer tests](tests/application.test.ts); retain draft recovery, project ownership, and execution guards.
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.

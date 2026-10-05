@@ -1,0 +1,3 @@
+# One-time formatting passes; git blame skips these with blame.ignoreRevsFile.
+# style: apply Prettier and Ruff formatting
+efb9d11a58f4a1b8a624677ccac8062fb88e6fbc
