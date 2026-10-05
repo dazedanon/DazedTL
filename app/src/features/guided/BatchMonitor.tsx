@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LoaderCircle } from "lucide-react";
+import { AlertTriangle, Check, CircleHelp, LoaderCircle } from "lucide-react";
 import type { BatchCancellation, Job } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
@@ -13,7 +13,7 @@ import { useAction } from "../../state/useAction";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import { historyPhase } from "./historyView";
-import { batchOutcome, batchRuns, canRetrySaving, canReapplyBatch } from "./batchView";
+import { batchOutcome, batchRuns, canRetrySaving, canReapplyBatch, terminalBatch, totalBatchProgress } from "./batchView";
 
 const keyOf = (job: Job) => job.id;
 
@@ -36,6 +36,8 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
         <VirtualList items={jobs} itemKey={keyOf} focusKey={focus} onFocusReady={() => setFocus(null)} label="Saved Batch runs" empty={<p className="muted">{filter === "active" ? "No Batches are in progress. Completed runs are in All batches." : "No provider Batches have been submitted for this project."}</p>}>
           {job => {
             const batches = job.process?.batches || [], collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id;
+            const remaining = job.process?.remaining || 0;
+            const total = batches.length && (batches.length > 1 || remaining > 0) ? totalBatchProgress(batches, remaining) : null;
             const monitoring = job.process?.monitoring, applied = applicationJob(job);
             const issue = monitoring && ["error", "blocked"].includes(monitoring.state) ? monitoring.message
               : canRetrySaving(job) ? "Collected responses could not be saved." : "";
@@ -52,11 +54,24 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
                   notice={applied?.status === "complete" ? "Batch output applied." : ""}
                   onClick={() => action.run(() => reapply(job), "", reapplyKey)} />}
               </div></ActionRow>
+              {total && <ActionRow label={<div className="batch-provider-row">
+                <div className="batch-provider-heading"><strong>Total progress</strong><span>{total.finished != null && total.total != null
+                  ? `${total.finished.toLocaleString()}/${total.total.toLocaleString()} requests finished`
+                  : `${total.total != null ? `${total.total.toLocaleString()} requests · ` : ""}Counts unavailable`}</span>
+                  {remaining > 0 && <span>{remaining.toLocaleString()} queued</span>}</div>
+                {(remaining > 0 || batches.some(batch => !terminalBatch(batch.status))) && (total.finished == null || total.finished !== total.total)
+                  && <progress aria-label="Total finished requests" max={total.total || 1} value={total.finished} />}
+              </div>}>{null}</ActionRow>}
               {batches.map(batch => {
                 const outcome = batchOutcome(batch, job), cancelKey = "batch:cancel:" + batch.id;
+                const state = outcome.active ? "active" : outcome.failed ? "warning" : outcome.successful ? "complete" : "unknown";
+                const StatusIcon = outcome.active ? LoaderCircle : outcome.failed ? AlertTriangle : outcome.successful ? Check : CircleHelp;
                 return <ActionRow key={batch.id} label={<div className="batch-provider-row">
-                  <div className="batch-provider-heading"><strong className={`batch-activity${outcome.failed ? " translation-error" : ""}`}>{outcome.active && <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" />}{outcome.label}</strong><span>{outcome.summary}</span></div>
-                  {outcome.pending && <progress aria-label={`Finished requests in ${batch.id}`} max={outcome.progress.total || 1} value={outcome.progress.finished} />}
+                  <div className="batch-provider-heading"><strong className="batch-activity" data-state={state}>
+                    <StatusIcon size={14} className={outcome.active ? "job-status-spinner" : undefined} aria-hidden="true" />{outcome.label}
+                  </strong><span>{outcome.summary}</span></div>
+                  {!total && outcome.pending && (outcome.progress.finished == null || outcome.progress.finished !== outcome.progress.total)
+                    && <progress aria-label={`Finished requests in ${batch.id}`} max={outcome.progress.total || 1} value={outcome.progress.finished} />}
                 </div>}>
                   {outcome.pending && !["cancelling", "canceling"].includes(batch.status) && <ActionControl label="Cancel Batch" variant="quiet" disabled={action.busy} pending={action.busy && action.key === cancelKey} pendingText="Reading cancellation scope…"
                     error={action.key === cancelKey ? action.error : ""}

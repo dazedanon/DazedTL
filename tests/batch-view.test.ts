@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Job } from "../app/src/api/contracts.ts";
-import { batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome } from "../app/src/features/guided/batchView.ts";
+import { batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome, totalBatchProgress } from "../app/src/features/guided/batchView.ts";
+
+test("Total Batch progress retains completed requests when another provider batch starts", () => {
+  const completed = { id: "first", status: "completed", total: 74, counts: { succeeded: 74 } };
+  const next = { id: "next", status: "validating", total: 68, counts: { succeeded: 0, errored: 0, canceled: 0, expired: 0 } };
+  assert.deepEqual(totalBatchProgress([completed, next]), { total: 142, finished: 74 });
+  assert.deepEqual(totalBatchProgress([completed, next], 52), { total: 194, finished: 74 });
+  assert.deepEqual(totalBatchProgress([completed], 120), { total: 194, finished: 74 });
+  assert.deepEqual(totalBatchProgress([completed, next], -1), { total: undefined, finished: undefined });
+  assert.deepEqual(totalBatchProgress([completed, { ...next, status: "in_progress", counts: { ...next.counts, succeeded: 20, errored: 2 } }]), { total: 142, finished: 96 });
+  assert.deepEqual(totalBatchProgress([completed, { ...next, status: "completed", counts: { ...next.counts, succeeded: 68 } }]), { total: 142, finished: 142 });
+  // Missing or contradictory receipts must not become zero or fabricated completion.
+  for (const counts of [{}, { succeeded: null }, { succeeded: 69 }]) {
+    assert.deepEqual(totalBatchProgress([completed, { ...next, counts }]), { total: 142, finished: undefined });
+  }
+  assert.deepEqual(totalBatchProgress([completed, { ...next, total: null }]), { total: undefined, finished: undefined });
+  assert.deepEqual(totalBatchProgress([]), { total: undefined, finished: undefined });
+});
 
 test("Batch monitoring keeps unknown counts unknown and interrupted work recoverable", () => {
   const batch = { id: "provider", status: "in_progress", total: 10, counts: {} };
@@ -33,6 +50,15 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   assert.equal(batchOutcome({ ...batch, status: 'completed' }, { ...paused, status: 'running', phase: 'consume' }).active, true);
   assert.equal(batchOutcome({ ...failed, counts: { succeeded: 8, errored: 2 } }, paused).label, "Partial");
   assert.equal(batchOutcome({ ...batch, status: "ended", counts: { succeeded: 10 } }, completed).label, batchOutcome({ ...batch, status: "completed", counts: { succeeded: 10 } }, completed).label);
+  // A completion icon must not certify unknown, partial or still-saving results.
+  const successful = { ...batch, status: "completed", counts: { succeeded: 10 } };
+  assert.equal(batchOutcome(successful, completed).successful, true);
+  for (const row of [{ ...batch, status: "completed" }, failed, { ...failed, counts: { succeeded: 8, errored: 2 } },
+    { ...successful, status: "in_progress" }, { ...successful, status: "failed" }]) {
+    assert.equal(batchOutcome(row, paused).successful, false);
+  }
+  assert.equal(batchOutcome(successful, { ...paused, status: "running", phase: "consume" }).successful, false);
+  assert.equal(batchOutcome({ ...batch, status: "failed" }, paused).failed, true);
   assert.equal(canRetrySaving({ ...collected, status: "running" }), false);
   assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, resultsCollected: false } }), false);
   assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, monitoring: { state: "monitoring", message: "" } } }), false);

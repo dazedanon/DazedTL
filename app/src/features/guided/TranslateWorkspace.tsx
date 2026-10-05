@@ -1,23 +1,22 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts";
 import { Button } from "../../ui/Button";
+import { Modal } from "../../ui/Modal";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
 import { activeRun, filePreviewRun, fileRun, fileMetricRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, batches, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, batches, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; options: () => void; history: () => void; batches: (runId?: string) => void; children?: ReactNode;
+  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number) => void; batches: (runId?: string) => void; children?: ReactNode;
 }) {
-  const root = useRef<HTMLDivElement>(null);
   const [file, setFile] = useState("");
   const [inspecting, setInspecting] = useState(false);
   const [record, setRecord] = useState("");
-  useLayoutEffect(() => { root.current?.closest(".page-body")?.scrollTo(0, 0); }, [inspecting]);
   const rows = useMemo(() => state.files.filter(row => row.group === (phase === "database" ? "database" : "dialogue")), [state.files, phase]);
   const selected = new Set(values.selected);
   const scoped = rows.filter(row => selected.has(row.name));
@@ -29,7 +28,7 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
     setFile(name); setInspecting(true);
     setRecord(filePreviewRun(name, run, estimate, owner(name), currentEstimate)?.id || "");
   };
-  return <div ref={root} className={`translation-workspace${inspecting ? " is-inspecting" : ""}`}>
+  return <div className="translation-workspace">
     <div className="translation-toolbar" aria-label="Translation setup">
       <Button variant="quiet" disabled={locked} onClick={settings} title={state.provider.connection}>{state.provider.model || "Choose a model"}</Button>
       <div className="guided-mode" role="group" aria-label="Translation method"><Button disabled={disabled || locked || !state.provider.batchSupported} title={state.provider.batchSupported ? "Recommended · often 50% cheaper" : "Unavailable for this connection"} aria-pressed={values.mode === "batch"} onClick={() => change("mode", "batch")}>Batch</Button><Button disabled={disabled || locked} aria-pressed={values.mode === "translate"} onClick={() => change("mode", "translate")}>Live</Button></div>
@@ -41,22 +40,22 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
       <section className="translation-files" aria-label="Translation files">
         <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked}
           change={names => change("selected", retainOtherScope(values.selected, rows, names))}
-          inline={{ preview: openFile, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
+          inline={{ preview: openFile, previewed: inspecting ? file : undefined, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
               const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner, fileOwner?.id !== run?.id);
               const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
               const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
-              const statusText = <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
+              const statusText = status.label !== "Ready" && <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}>
-                {fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
+                {statusText && fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
                 <span className="translation-file-cost" title={metrics ? "Engine-reported cost from the last run that changed this file" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>
                 <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${metricRun?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;
             } }} />
       </section>
-      {file && <div className="translation-preview" hidden={!inspecting}>
-        <TranslationInspector projectId={state.projectId} file={file} job={inspected} history={history}
+      {inspecting && file && <Modal label={`File preview: ${file}`} className="request-inspector-sheet" onDismiss={() => setInspecting(false)}>
+        <TranslationInspector key={`${state.projectId}:${file}`} projectId={state.projectId} file={file} job={inspected} inspect={index => { if (inspected) inspect(inspected, file, index); }}
           close={() => { setInspecting(false); }} />
-      </div>}
+      </Modal>}
     </div>
   </div>;
 }

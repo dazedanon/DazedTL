@@ -602,4 +602,9 @@ pre {
   .action-list--compact > .action-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
   .action-list--compact > .action-row > :last-child:not(.action-row-label) { justify-self: start; }
 }
-.expandable-text > pre[data-collapsed="true"] { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:6; overflow:hidden; }
+.expandable-text { display:grid; gap:var(--space-2); }
+.expandable-text > .expandable-text-content { margin:0; max-height:none; overflow:visible; }
+.expandable-text > button { justify-self:start; font-size:var(--font-small); }
+.expandable-text--prose > pre { font-family:var(--font-family); line-height:1.65; background:transparent; border-radius:0; border-left:2px solid var(--line); padding:0 0 0 var(--space-3); }
+.expandable-text--fill { display:flex; flex-direction:column; flex:1; min-height:0; min-width:0; }
+.expandable-text--fill > .expandable-text-content { flex:1; min-height:0; overflow:auto; scrollbar-gutter:stable; }

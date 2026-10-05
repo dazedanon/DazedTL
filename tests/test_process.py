@@ -18,6 +18,36 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_completed_batch_waits_for_download_without_losing_submission_protection(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = {'payload': '{"Line1":"薬"}', 'params': {}, 'dazedtl_file': 'Items.json'}
+            write_json(root/'log/batch_requests.json', {'one': entry, 'two': entry})
+            first = {'id': 'first', 'custom_ids': {'first-request': 'one'}, 'api_status': 'completed',
+                     'request_counts': {'processing': 0, 'succeeded': 1, 'errored': 0, 'canceled': 0, 'expired': 0}}
+            second = {'id': 'second', 'custom_ids': {'second-request': 'two'}, 'api_status': 'validating'}
+            state = {'status': 'partially_submitted', 'batches': [first, second]}
+            write_json(root/'log/batch_history.json', {'batches': [first, second]})
+            write_json(root/'log/batch_state.json', state)
+            job = {'mode': 'batch', 'status': 'running'}
+            value = process_view.summary(root, job)
+            self.assertEqual([row['state'] for row in value['requests']], ['submitted', 'submitted'])
+            self.assertEqual((value['uncertain'], value['received']), (0, 0))
+            self.assertTrue(value['retryBlocked'])
+            # Known completion does not excuse missing downloaded responses,
+            # broken mappings, incomplete counts or a conflicting submission.
+            for change in ('fetched', 'mapping', 'counts', 'duplicate'):
+                history, manifest = deepcopy([first, second]), deepcopy(state)
+                if change == 'fetched': manifest['status'] = 'fetched'
+                if change == 'mapping': manifest['batches'][0]['custom_ids'] = {'other-request': 'one'}
+                if change == 'counts': history[0]['request_counts'].pop('succeeded')
+                if change == 'duplicate': history.append({**first, 'id': 'unmatched'})
+                write_json(root/'log/batch_history.json', {'batches': history})
+                write_json(root/'log/batch_state.json', manifest)
+                value = process_view.summary(root, job)
+                self.assertEqual(value['requests'][0]['state'], 'uncertain', change)
+                self.assertTrue(value['retryBlocked'], change)
+
     def test_continuation_translates_new_text_inside_a_previously_translated_file_only_once(self):
         from dazedtl.translation.guided_runs import GuidedRuns
         with TemporaryDirectory() as temporary:

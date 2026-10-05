@@ -18,6 +18,7 @@ const tabs = [{ id: "source", label: "Source" }, { id: "response", label: "Respo
   { id: "json", label: "Technical" }, { id: "run", label: "Run details" }, { id: "log", label: "Log" }] as const;
 type Tab = typeof tabs[number]["id"];
 type InspectorView = { index: number; tab: Tab; filter: string; query: string };
+export type RequestInspectionTarget = { file: string; index: number };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
 function savedView(id: string): InspectorView {
   const fallback: InspectorView = { index: 0, tab: "source", filter: "all", query: "" };
@@ -33,23 +34,26 @@ export function runLabel(job: Job) {
 }
 type Props = {
   job: Job; readPayload?: (index: number) => Promise<RunPayload>;
+  initialRequest?: RequestInspectionTarget;
   readNames?: (offset: number) => Promise<NameTranslationPage>;
   readProvider?: () => Promise<{ batches: NonNullable<RunProcess["batches"]> }>;
   compact?: boolean; actions?: ReactNode;
 };
 export function ProcessPanel(props: Props) {
-  return props.job.process ? <RequestProcess key={props.job.id} {...props} /> : null;
+  return props.job.process ? <RequestProcess key={`${props.job.id}:${props.initialRequest?.file || ""}:${props.initialRequest?.index ?? ""}`} {...props} /> : null;
 }
-function RequestProcess({ job, readPayload, readProvider, readNames, actions }: Props) {
+function RequestProcess({ job, readPayload, readProvider, readNames, initialRequest, actions }: Props) {
   const process = job.process!;
-  const [view, setView] = useState(() => savedView(job.id));
+  const [view, setView] = useState<InspectorView>(() => initialRequest
+    ? { index: initialRequest.index, tab: "source", filter: "all", query: initialRequest.file }
+    : savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
   const [remote, setRemote] = useState<RunProcess["batches"]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [refreshed, setRefreshed] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const [focus, setFocus] = useState<string | null>(() => String(savedView(job.id).index));
+  const [focus, setFocus] = useState<string | null>(() => String(view.index));
   const keyboardFocus = useRef(false);
   const provider = useAction();
   const reader = useRef<HTMLDivElement>(null);

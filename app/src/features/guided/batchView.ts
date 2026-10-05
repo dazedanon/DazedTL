@@ -7,8 +7,18 @@ export const batchCount = (value: unknown): number | undefined => typeof value =
 export function batchProgress(batch: ProviderBatch) {
   const total = batchCount(batch.total ?? batch.counts.total);
   const counts = ["succeeded", "errored", "canceled", "expired"].map(key => batchCount(batch.counts[key]));
-  const finished = counts.every(value => value !== undefined) ? counts.reduce((sum, value) => sum + value!, 0) : undefined;
+  const counted = counts.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  // Known outcomes can exhaust the total even when older receipts omit zero counts.
+  const finished = counts.every(value => value !== undefined) || counted === total ? counted : undefined;
   return { total, finished: total != null && finished != null && finished <= total ? finished : undefined };
+}
+export function totalBatchProgress(batches: ProviderBatch[], remaining = 0) {
+  const progress = batches.map(batchProgress);
+  const sum = (key: "total" | "finished") => progress.length && progress.every(row => row[key] != null)
+    ? batchCount(progress.reduce((total, row) => total + row[key]!, 0)) : undefined;
+  const submitted = sum("total"), queued = batchCount(remaining);
+  const total = submitted != null && queued != null ? batchCount(submitted + queued) : undefined;
+  return { total, finished: total != null ? sum("finished") : undefined };
 }
 export function batchRuns(runs: Job[], all = false) {
   return runs.filter(job => job.mode === "batch" && !job.temporary && (!!job.process?.batches?.length || needsSubmissionReview(job)) && (all || activeRun(job) || needsSubmissionReview(job)
@@ -40,5 +50,8 @@ export function batchOutcome(batch: ProviderBatch, job: Job) {
   const summary = uniform ? `${progress.total!.toLocaleString()} ${progress.total === 1 ? "request" : "requests"}` : [succeeded != null && (succeeded > 0 || !failures.length) ? `${succeeded.toLocaleString()}${progress.total != null ? `/${progress.total.toLocaleString()}` : ""} succeeded` : "", ...failures].filter(Boolean).join(" · ")
     || (progress.total != null ? `${progress.total.toLocaleString()} requests` : "Counts unavailable");
   const providerActive = ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(batch.status);
-  return { label, summary, progress, pending: !terminal, active: providerActive || consuming || collecting, failed: terminal && failures.length > 0 };
+  const active = providerActive || consuming || collecting;
+  const failed = terminal && (failures.length > 0 || !["completed", "ended"].includes(batch.status));
+  const successful = terminal && !active && !failed && progress.total != null && succeeded === progress.total;
+  return { label, summary, progress, pending: !terminal, active, failed, successful };
 }

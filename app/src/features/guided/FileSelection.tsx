@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Eye } from "lucide-react";
 import type { GuidedFile, GuidedState } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { VirtualList } from "../../ui/VirtualList";
@@ -13,7 +14,7 @@ const gesture = (event: Modifiers, checkbox = false): SelectionGesture => event.
 
 export function FileSelection({ state, selected, change, disabled, inline }: {
   state: GuidedState; selected: string[]; change: (names: string[]) => void; disabled: boolean;
-  inline?: { columns: ReactNode; details: (file: GuidedFile) => ReactNode; preview: (name: string) => void };
+  inline?: { columns: ReactNode; details: (file: GuidedFile) => ReactNode; preview: (name: string) => void; previewed?: string };
 }) {
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<FileGroup>("all");
@@ -71,7 +72,8 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
   return <div className={`file-browser${inline ? " file-browser-inline" : ""}`}>
     <div className="file-browser-search">
       <input ref={search} aria-label="Search game files" value={query}
-        placeholder="Search filename, map name, or ID range (10–25)…"
+        placeholder={inline ? "Search files…" : "Search filename, map name, or ID range (10–25)…"}
+        title="Search filename, map name, or ID range (10–25)"
         onChange={(event) => { setQuery(event.target.value); resetFilter(); }} />
       <Button aria-pressed={selectedOnly} onClick={() => { setSelectedOnly(!selectedOnly); resetFilter(); }}>Selected only</Button>
     </div>
@@ -95,13 +97,13 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
       empty={<div className="file-browser-empty"><strong>{files.length ? "No files match these filters." : "No supported files are available."}</strong>
         <p>{files.length ? "Your selection is retained." : "Prepare the game’s JSON data first."}</p>
         {!!files.length && <Button variant="quiet" onClick={() => { setGroup("all"); setQuery(""); setSelectedOnly(false); setChangedOnly(false); resetFilter(); }}>Clear filters</Button>}</div>}>
-      {(file, index) => <div className="file-browser-row" data-selected={selection.has(file.name)}
+      {(file, index) => <div className="file-browser-row" data-selected={selection.has(file.name)} data-previewed={inline?.previewed === file.name}
         onMouseDown={(event) => { if (event.shiftKey) event.preventDefault(); }}
         onClick={(event) => choose(file.name, event)} onKeyDown={(event) => keyDown(event, index)}>
         <input type="checkbox" aria-label={`Include ${file.name}${file.title ? ": " + file.title : ""}`} disabled={disabled} checked={selection.has(file.name)}
           onClick={(event) => event.stopPropagation()} onChange={(event) => choose(file.name, event.nativeEvent as MouseEvent, true)} />
-        <span className="file-browser-name" title={file.name}>{file.name}{inline && file.title && <small>{file.title}</small>}</span>
-        {inline ? <>{inline.details(file)}<Button variant="quiet" className="file-preview-control" aria-label={`Preview ${file.name}`} title={`Preview ${file.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); inline.preview(file.name); }}>Preview</Button></> : <><span className="file-browser-title">{file.title || (file.group === "database" ? "Names & interface" : "Dialogue & choices")}</span>
+        <span className="file-browser-name" title={inline && file.title ? `${file.name}\n${file.title}` : file.name}>{file.name}{inline && file.title && <small>{file.title}</small>}</span>
+        {inline ? <>{inline.details(file)}<Button variant="quiet" className="file-preview-control" aria-label={`Preview ${file.name}`} aria-pressed={inline.previewed === file.name} title={`Preview ${file.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); inline.preview(file.name); }}><Eye size={16} aria-hidden="true" /></Button></> : <><span className="file-browser-title">{file.title || (file.group === "database" ? "Names & interface" : "Dialogue & choices")}</span>
         <span className={changed.has(file.name) ? "file-browser-changed" : "muted"}>{changed.has(file.name) ? "Changed" : "Unchanged"}</span></>}
       </div>}
     </VirtualList>

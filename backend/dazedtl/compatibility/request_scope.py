@@ -54,11 +54,21 @@ def requests(root, job):
                         and all(type(counts.get(key)) is int and counts[key] == 0
                                 for key in ('processing', 'succeeded'))
                         and sum(counts.get(key, 0) for key in ('errored', 'canceled', 'expired')) == len(mapping))
+            # A successful provider receipt proves submission while the native
+            # runner waits for other batches before downloading their responses.
+            # Keep the paid-work guard until download; a fetched-but-missing
+            # response or mismatched manifest remains uncertain.
+            awaiting_results = (batch.get('api_status') in {'completed', 'ended'}
+                                and state.get('status') in {'submitted', 'partially_submitted'}
+                                and manifests.get(batch.get('id')) == mapping and bool(mapping)
+                                and type(counts.get('succeeded')) is int and counts['succeeded'] == len(mapping)
+                                and all(type(counts.get(key)) is int and counts[key] == 0
+                                        for key in ('processing', 'errored', 'canceled', 'expired')))
             for custom, key in mapping.items():
                 error = next((row for row in (batch.get('provider_errors') or []) if row.get('custom_id') == custom), None)
                 # Multiple submissions retain the strictest known outcome.
                 pending = batch.get('api_status') in {'validating', 'in_progress', 'finalizing'} and manifests.get(batch.get('id')) == mapping
-                outcome = 'received' if key in results else 'failed' if rejected or error else 'submitted' if pending else 'uncertain'
+                outcome = 'received' if key in results else 'failed' if rejected or error else 'submitted' if pending or awaiting_results else 'uncertain'
                 priority = {'failed': 0, 'submitted': 1, 'received': 2, 'uncertain': 3}
                 if priority[outcome] >= priority.get(outcomes.get(key), -1):
                     outcomes[key] = outcome
