@@ -743,6 +743,12 @@ main.editor-main.guided-main {
   color: var(--color-navigation-text);
   border-color: var(--color-control-border);
 }
+/* A selected method stays recognizable after it becomes unavailable. */
+.guided-mode button[aria-pressed="true"]:disabled {
+  opacity: 1;
+  color: var(--muted);
+  border-style: dashed;
+}
 .guided-utilities {
   display: flex;
   gap: var(--space-2);
