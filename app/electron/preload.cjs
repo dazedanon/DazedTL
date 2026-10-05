@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
     ipcRenderer.invoke("dazedtl:open-folder", kind, target),
   onClose: (handler, cancelled) => {
     let activeToken = 0;
-    const listener = async (_event, token) => {
+    const respond = async (token) => {
       activeToken = token;
       let error = "";
       try {
@@ -22,8 +22,13 @@ contextBridge.exposeInMainWorld("dazedtl", {
       } catch (value) {
         error = value instanceof Error ? value.message : String(value);
       }
-      await ipcRenderer.invoke("dazedtl:close-ready", { token, error });
+      try {
+        await ipcRenderer.invoke("dazedtl:close-ready", { token, error });
+      } catch {
+        // Without a reply, the main process shows its close-timeout choice.
+      }
     };
+    const listener = (_event, token) => void respond(token);
     const cancelListener = (_event, token) => {
       if (token !== activeToken) return;
       activeToken = 0;

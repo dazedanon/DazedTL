@@ -21,6 +21,7 @@ class Backend {
     this.serial = 0;
     this.stopping = false;
     this.diagnostics = diagnostics;
+    /** @type {NodeJS.ProcessEnv} */
     const env = {
       ...process.env,
       PYTHON_DOTENV_DISABLED: "1",
@@ -113,14 +114,14 @@ class Backend {
           ),
         );
       }
-      response.error
-        ? task.reject(
-            Object.assign(new Error(response.error.message), {
-              code: response.error.code,
-              details: response.error.details,
-            }),
-          )
-        : task.resolve(response.result);
+      if (response.error)
+        task.reject(
+          Object.assign(new Error(response.error.message), {
+            code: response.error.code,
+            details: response.error.details,
+          }),
+        );
+      else task.resolve(response.result);
     });
     this.process.on("error", (error) => {
       diagnostics.failure("backend.spawn-failed", error, {
@@ -176,11 +177,11 @@ class Backend {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         this.process.kill();
-        resolve();
+        resolve(undefined);
       }, 12000);
       this.process.once("exit", () => {
         clearTimeout(timeout);
-        resolve();
+        resolve(undefined);
       });
       this.process.stdin.end();
     });

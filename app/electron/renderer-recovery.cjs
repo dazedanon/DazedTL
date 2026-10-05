@@ -50,7 +50,7 @@ function rendererRecovery(
         }
         if (choice.response !== 2) break;
         try {
-          clipboard.writeText(diagnostics.report());
+          await clipboard.writeText(diagnostics.report());
           feedback = "Diagnostics copied.";
         } catch {
           feedback = "Diagnostics could not be copied. Try again.";
