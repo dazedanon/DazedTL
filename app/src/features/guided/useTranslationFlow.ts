@@ -25,6 +25,9 @@ export type TranslationFlowState = {
   namesApproved?: boolean;
   error?: string;
 };
+/** Working stages; the others show a result or an approval inside the dialog. */
+export const flowLoading = (state: TranslationFlowState) =>
+  ["preparing", "estimating", "batch", "canceling"].includes(state.stage);
 type Session = {
   state: TranslationFlowState;
   advanced: boolean;
@@ -292,6 +295,7 @@ export function useTranslationFlow(options: Options) {
   return {
     state,
     active: !!state || action.busy,
+    pending: action.busy || (!!state && flowLoading(state)),
     busy: action.busy || !!current.current?.finished,
     claimed: claimed.current,
     start,

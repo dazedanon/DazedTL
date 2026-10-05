@@ -1854,8 +1854,9 @@ function Workspace({
         (phase === "advanced" && !advancedReady) ||
         (phase === "variables" && state.comparisons.status !== "ready");
       const estimating = translationFlow.active;
+      // The open dialog owns its result or approval; only its work is pending here.
       const preparing =
-        estimating ||
+        translationFlow.pending ||
         (action.busy &&
           ["translate:prepare", actionKey("start", { mode, phase })].includes(
             action.key,

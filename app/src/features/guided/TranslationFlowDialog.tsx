@@ -4,7 +4,7 @@ import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { TranslationReviewContent } from "./TranslationReview";
-import type { useTranslationFlow } from "./useTranslationFlow";
+import { flowLoading, type useTranslationFlow } from "./useTranslationFlow";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
 import { api } from "../../api/client";
 import { ExpandableText } from "../../ui/ExpandableText";
@@ -22,9 +22,7 @@ export function TranslationFlowDialog({
 }) {
   const value = flow.state;
   if (!value) return null;
-  const loading = ["preparing", "estimating", "batch", "canceling"].includes(
-    value.stage,
-  );
+  const loading = flowLoading(value);
   const translatingNames =
     value.stage === "batch" &&
     value.namesApproved &&
