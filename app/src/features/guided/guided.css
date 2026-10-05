@@ -39,6 +39,7 @@ main.editor-main.guided-main { padding: 0; }
 .request-reader h4 { font-size:var(--font-small); font-weight:500; color:var(--muted); margin:var(--space-3) 0 var(--space-2); }
 .request-reader p { margin:var(--space-2) 0; }
 .request-references { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.request-failure { margin-top:var(--space-2); overflow-wrap:anywhere; }
 .request-reader pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible; max-height:none; margin:var(--space-2) 0 var(--space-4); font-size:var(--font-small); }
 .request-reader details { margin-block:var(--space-3); }
 .request-source-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-5); }

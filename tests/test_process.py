@@ -632,16 +632,26 @@ class ProcessTests(unittest.TestCase):
                     self.assertEqual(process_view.payload(root, 0)['state'], 'submitted')
             (root/'log/batch_state.json').unlink()
             write_json(root/'log/batch_history.json', {'batches': [{'id': 'batch-fixture', 'custom_ids': {'req-000000': 'a'},
-                        'api_status': 'completed', 'request_counts': {'errored': 1}, 'provider_errors': [{'message': 'Unsupported temperature'}]}]})
+                        'api_status': 'completed', 'request_counts': {'errored': 1}, 'provider_errors': [{'message': 'Batch stopped'}]}]})
             frozen = (root/'log/batch_requests.json').read_bytes()
             value = process_view.summary(root, {'mode': 'batch', 'completed': [], 'appliedOutputs': []})
             self.assertEqual((value['prepared'], value['submitted'], value['remaining'], value['received'], value['failed']), (2, 1, 1, 0, 1))
             self.assertTrue(value['retryBlocked'])  # Missing manifest/count proof remains unresolved.
             self.assertIsNone(value['usage'])
+            # A request error must stay beside its own response; a Batch-wide
+            # error must not be assigned to an unsent request with no ID.
+            history = process_view.saved(root, 'batch_history.json')
+            history['batches'][0]['provider_errors'].append({'custom_id': 'req-000000', 'message': 'Unsupported temperature'})
+            write_json(root/'log/batch_history.json', history)
+            value = process_view.summary(root, {'mode': 'batch'})
+            self.assertEqual(value['runErrors'], ['Batch stopped'])
+            self.assertEqual(value['errors'], ['Batch stopped', 'Unsupported temperature'])
             provider = SimpleNamespace(_openai_batch_body=lambda _provider, params: params)
             with patch.dict('sys.modules', {'util.batch_providers': provider}):
                 self.assertEqual(process_view.payload(root, 0)['exact']['custom_id'], 'req-000000')
+                self.assertEqual(process_view.payload(root, 0)['error']['message'], 'Unsupported temperature')
                 self.assertEqual(process_view.payload(root, 1)['state'], 'queued')
+                self.assertIsNone(process_view.payload(root, 1)['error'])
                 # Per-request usage must not inherit whole-Batch totals, or
                 # turn missing/invalid provider counts into zero-token usage.
                 self.assertIsNone(process_view.payload(root, 0)['usage'])
@@ -755,3 +765,8 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(process_view.payload(temporary, 0)['state'], 'validated')
             self.assertEqual(process_view.payload(temporary, 0)['usage'],
                              {'input_tokens': 12, 'output_tokens': 3, 'total_tokens': 15})
+            # Live request failures likewise must not become run-wide errors.
+            evidence.update('rejected', error=json.dumps({'message': 'Response did not match the source IDs.'}))
+            self.assertIn('Response did not match the source IDs.', summary()['errors'])
+            self.assertEqual(summary()['runErrors'], [])
+            self.assertEqual(process_view.payload(temporary, 0)['error']['message'], 'Response did not match the source IDs.')

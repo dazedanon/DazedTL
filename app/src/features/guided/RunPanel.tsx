@@ -141,18 +141,15 @@ export default function RunPanel({
             Resume with saved settings
           </Button>
         ) : null}
-        {job.status === "complete" &&
-          Object.keys(job.outputs || {}).length > 0 && (
-            <>
-              {apply && <Button
+        {job.status === "complete" && Object.keys(job.outputs || {}).length > 0 && apply && (
+              <Button
                 size="comfortable"
                 variant="primary"
                 onClick={apply}
                 disabled={busy}
               >
                 Review & apply outputs
-              </Button>}
-            </>
+              </Button>
           )}
       </div>
       <Message message={error} />

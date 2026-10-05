@@ -679,8 +679,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? inspected.mode === "batch" ? "Batches" : "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
       <ProcessPanel job={inspected} initialRequest={inspectionTarget} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
         readNames={offset => api.guided.nameResults(project.id, inspected.id, offset)}
-        actions={<ActionList compact>
-          {canResumeRun(inspected) && <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>}
+        actions={canResumeRun(inspected) && <ActionList compact>
+          <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>
         </ActionList>} />
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {!inspected.process && <>{inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}{inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}{!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}</>}

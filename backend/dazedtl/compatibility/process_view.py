@@ -401,7 +401,7 @@ def summary(root, job):
     # aggregate still drives existing outcome/guard calculations.
     run_errors = [clean_message(error.get('message')) for batch in batches
                   for error in (batch.get('provider_errors') or [])
-                  if error.get('message') and error.get('custom_id') not in (batch.get('custom_ids') or {})]
+                  if error.get('message') and (batch.get('custom_ids') or {}).get(error.get('custom_id')) not in requests]
     received = len(results)
     prepared = len(requests)
     validated = None
