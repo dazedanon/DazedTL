@@ -66,9 +66,13 @@
       "refresh": true
     },
     "connection_check": {
-      "refresh": false
+      "refresh": true
     },
     "settings_model_defaults": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "openrouter_hosts": {
       "refresh": false,
       "duringClose": false
     },

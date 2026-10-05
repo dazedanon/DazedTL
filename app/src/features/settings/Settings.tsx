@@ -101,6 +101,7 @@ export default function Settings() {
               connection={editConnection}
               providers={config.providers}
               running={running}
+              checksEnabled={config.checksEnabled}
               save={async (input) => {
                 await draft.saveConnection(input);
                 action.succeed("Connection saved.");
@@ -146,6 +147,9 @@ export default function Settings() {
                         <DetailRow label="Provider">
                           {provider?.label || "Choose a provider"}
                         </DetailRow>
+                        {current.provider === "openrouter" && current.openrouter_host && (
+                          <DetailRow label="Host">{current.openrouter_host}</DetailRow>
+                        )}
                         <DetailRow label="API key">
                           {current.keyless
                             ? "Not required"

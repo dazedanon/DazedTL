@@ -405,8 +405,10 @@ class Guided:
         _, native = self.record(project_id)
         if run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
             raise ValueError('Choose a Batch belonging to this project.')
-        from dazedtl.compatibility.batch_control import receipt, binding
+        from dazedtl.compatibility.batch_control import receipt, binding, can_cancel
         batch = receipt(self.backend.manual.folder(run_id), batch_id)
+        if not can_cancel(batch['provider']):
+            raise ValueError('OpenRouter does not expose Batch cancellation. Submitted work continues at the provider.')
         job = self.backend.manual.jobs[run_id]
         token = uuid.uuid4().hex
         value = {'token': token, 'runId': run_id, 'batchId': batch_id, 'provider': batch['provider'],
@@ -459,6 +461,9 @@ class Guided:
         root = self.backend.manual.folder(run_id)
         if saved(root, 'batch_state.json').get('status') != 'fetched':
             collect(root, lambda batch: self.settings.batch_connection(batch, plan))
+        if job.pop('dazedtl_batch_results_error', None):
+            self.backend.manual.save(job)
+            self.batch_monitor.settled.discard(run_id)
         if no_successful_results(root):
             raise ValueError('This Batch has no successful responses to save. Use Translate for a fresh estimate.')
         self.settings.prepare_engine(resume=plan)

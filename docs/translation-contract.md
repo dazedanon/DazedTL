@@ -113,7 +113,7 @@ Preserve valid authorization on resume when the exact frozen plan and quote stil
 
 Live and Batch use the same compiled content. Batch runs retain correlation IDs, provider job IDs,
 request-level state and receipts. Pausing stops locally at a checkpoint; it does not cancel a remote job.
-Use stop --cancel-provider to request Batch cancellation. Available completed rows remain recoverable.
+Use stop --cancel-provider when the run's `can_cancel_provider` capability allows Batch cancellation. OpenRouter rejects that operation; ordinary stop pauses local work and prevents later submissions while already submitted jobs continue. Available completed rows remain recoverable. See [OpenRouter setup and recovery](../README.md#api-setup) for its result-retention limitations.
 Record actual token usage separately from the estimate.
 
 An uncertain request is never sent again automatically. Attach a matching Batch job with attach-batch;

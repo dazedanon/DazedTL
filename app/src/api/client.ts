@@ -206,4 +206,5 @@ export const api = {
     request("connection_select", { revision, connection_id }),
   checkConnection: (revision: number, connection_id: string) =>
     request("connection_check", { revision, connection_id }),
+  openrouterHosts: (model: string) => request("openrouter_hosts", { model }),
 };

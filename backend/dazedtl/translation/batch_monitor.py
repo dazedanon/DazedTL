@@ -6,6 +6,7 @@ import threading
 
 from dazedtl.compatibility import batch_control
 from dazedtl.compatibility.batch_continuation import BatchContinuationError
+from dazedtl.compatibility.openrouter_batch import ResultsUnavailable
 from dazedtl.compatibility.preparations import temporary
 from dazedtl.compatibility.process_view import saved
 
@@ -49,6 +50,13 @@ class BatchMonitor:
             except BatchContinuationError as error:
                 with self.backend.lock:
                     self.views[identity] = {'state': 'blocked', 'message': str(error)}
+            except ResultsUnavailable as error:
+                with self.backend.lock:
+                    self.views[identity] = {'state': 'blocked', 'message': str(error)}
+                    job = self.backend.manual.jobs.get(identity)
+                    if job and not self.backend.manual.controller(identity).running():
+                        job['dazedtl_batch_results_error'] = str(error)
+                        self.backend.manual.save(job)
             except Exception:
                 # Provider errors can contain credentials; keep background
                 # feedback fixed and retain the last successful observation.
@@ -106,6 +114,9 @@ class BatchMonitor:
                 self.views.pop(identity, None)
                 return
             plan = self._owned(identity)
+            if job.get('dazedtl_batch_results_error'):
+                self.views[identity] = {'state': 'blocked', 'message': job['dazedtl_batch_results_error']}
+                return
             # The approval covers the entire frozen queue. A local app close
             # does not revoke it or turn the first provider chunk into the run.
             remaining = batch_control.unsent_requests(root)
@@ -138,7 +149,7 @@ class BatchMonitor:
         if state != 'fetched':
             observed = []
             for batch in batches:
-                with batch_control.connection(batch, resolve) as provider:
+                with batch_control.connection(batch, resolve, receipt_root=root) as provider:
                     current = provider.status(batch['id'])
                 observed.append({'id': batch['id'], 'status': current['api_status'], 'counts': current.get('counts') or {}})
             with self.backend.lock:
@@ -154,7 +165,7 @@ class BatchMonitor:
         if (plan.get('dazedtl_request_policy') or {}).get('refusalRetry'):
             from dazedtl.compatibility.batch_refusals import advance_guided
             outcome = advance_guided(root, plan, resolve, commit=lambda: self._commit(identity, plan),
-                                     allow_submit=job.get('status') != 'canceled' and not job.get('dazedtl_batch_cancellations'))
+                                     allow_submit=job.get('status') != 'canceled' and not job.get('dazedtl_batch_cancellations') and not job.get('dazedtl_batch_stopped'))
             if not outcome['ready']:
                 with self.backend.lock:
                     self.views[identity] = {'state': 'blocked' if outcome.get('uncertain') else 'monitoring',

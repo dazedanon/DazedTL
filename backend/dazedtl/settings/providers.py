@@ -2,8 +2,9 @@
 
 from datetime import datetime, timezone
 import json
+import re
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -88,6 +89,53 @@ def unchecked():
     return {"status": "not_checked", "message": "Saved, not checked", "checkedAt": None}
 
 
+def openrouter_host(value):
+    """An empty host preserves automatic routing; otherwise use a provider slug."""
+    if not isinstance(value, str) or len(value) > 200:
+        raise ValueError("Choose a valid OpenRouter host.")
+    value = value.strip().lower()
+    if value and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*", value):
+        raise ValueError("Choose a valid OpenRouter host.")
+    return value
+
+
+def openrouter_hosts(model=""):
+    """Read model-specific hosts (or the legacy public catalog), without credentials."""
+    if (not isinstance(model, str) or len(model) > 200
+            or model and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*", model)):
+        raise ValueError("Choose a valid OpenRouter model in Preferences before loading its hosts.")
+    path = "/models/" + quote(model, safe="/") + "/endpoints" if model else "/providers"
+    try:
+        deadline = time.monotonic() + 8
+        with httpx.Client(timeout=httpx.Timeout(3, connect=3), follow_redirects=False) as client:
+            with client.stream("GET", PROVIDERS["openrouter"]["endpoint"] + path,
+                               headers={"Accept": "application/json", "Accept-Encoding": "identity"}) as response:
+                response.raise_for_status()
+                content = bytearray()
+                for chunk in response.iter_raw(chunk_size=65536):
+                    content.extend(chunk)
+                    if len(content) > 1_000_000 or time.monotonic() > deadline:
+                        raise ValueError("OpenRouter's host list was too large or took too long. Try again.")
+        data = json.loads(content).get("data")
+        if model and (not isinstance(data, dict) or data.get("id") != model):
+            raise ValueError
+        rows = data.get("endpoints") if model else data
+        if not isinstance(rows, list) or len(rows) > 512:
+            raise ValueError
+        hosts = {}
+        for row in rows:
+            slug = openrouter_host(row["tag"].split("/")[0] if model else row["slug"])
+            name = row["provider_name"] if model else row["name"]
+            if not slug or not isinstance(name, str) or not 0 < len(name.strip()) <= 200 or any(ord(char) < 32 for char in name):
+                raise ValueError
+            hosts[slug] = {"slug": slug, "name": name.strip()}
+        return sorted(hosts.values(), key=lambda host: (host["name"].casefold(), host["slug"]))
+    except httpx.HTTPError:
+        raise ValueError("OpenRouter's host list could not be loaded. Check your connection and try again.") from None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ValueError("OpenRouter returned an unavailable or invalid host list. Try again later.") from None
+
+
 def check(connection):
     """A bounded model-list request; no inference, retries, or redirects.
 
@@ -117,7 +165,7 @@ def check(connection):
     byte_limit = 8_000_000 if openrouter else 2_000_000
     model_limit = 2000 if openrouter else 250
 
-    def result(status, message, models=None):
+    def result(status, message, models=None, catalog=None):
         return {
             "check": {
                 "status": status,
@@ -125,6 +173,7 @@ def check(connection):
                 "checkedAt": datetime.now(timezone.utc).isoformat(),
             },
             "models": models,
+            **({"catalog": catalog} if catalog is not None else {}),
         }
 
     try:
@@ -194,6 +243,7 @@ def check(connection):
                 for row in rows
                 if 0 < len(row["id"]) <= 200
                 and not any(ord(char) < 32 for char in row["id"])
+                and not (openrouter and row["id"].endswith(":batch"))
             }
         )[:model_limit]
         official = any(
@@ -202,11 +252,17 @@ def check(connection):
             if name != "custom"
         )
         if official and not connection["keyless"]:
-            return result(
+            from .openrouter import catalog, check_endpoints
+            known = catalog(rows) if openrouter else None
+            value = result(
                 "verified",
                 "Authentication verified. Model availability and usage limits can still vary.",
                 models,
+                known,
             )
+            if openrouter:
+                value["batch_endpoints"] = check_endpoints(connection, known)
+            return value
         return result(
             "reachable",
             "Server reached. This check does not prove that a custom server enforces API-key authentication.",
@@ -217,7 +273,7 @@ def check(connection):
             "unavailable",
             "The connection timed out. Check the server address and network, then try again.",
         )
-    except httpx.TransportError:
+    except httpx.HTTPError:
         return result(
             "unavailable",
             "The server could not be reached securely. Check the address, network, and certificate.",

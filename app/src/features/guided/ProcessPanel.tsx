@@ -191,6 +191,8 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
                 <div><dt>Files</dt><dd>{job.files?.join(", ") || "Not recorded"}</dd></div>
                 <div><dt>Outputs</dt><dd>{job.availableOutputs == null ? "Availability not recorded" : `${job.availableOutputs.length} saved`}{job.partialOutputs?.length ? ` · ${job.partialOutputs.length} partial` : ""}{process.appliedFiles ? ` · ${process.appliedFiles} applied` : ""}</dd></div>
                 {process.usage && <div><dt>Usage</dt><dd>{Object.entries(process.usage).filter(([,count]) => count > 0).map(([key,count]) => `${count.toLocaleString()} ${key.replaceAll("_", " ")}`).join(" · ")}</dd></div>}
+                {process.billing?.openrouter_cost != null && <div><dt>OpenRouter charge collected</dt><dd>${process.billing.openrouter_cost.toFixed(5)}</dd></div>}
+                {process.billing?.upstream_inference_cost != null && <div><dt>BYOK inference estimate</dt><dd>${process.billing.upstream_inference_cost.toFixed(5)} · billed separately by the host</dd></div>}
               </dl>
               {!!process.validationIssues?.length && <div className="translation-error">{process.validationIssues.map(issue => <p key={issue.file}>{issue.file}: {issue.rejected ? `${issue.rejected} requests rejected during validation.` : "Validation mismatches were recorded; request-level details are unavailable for this older run."}</p>)}</div>}
               {!!process.uncertain && <p className="translation-error">{process.uncertain} uncertain submissions. Check provider receipts before retrying.</p>}

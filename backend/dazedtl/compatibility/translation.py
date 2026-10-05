@@ -13,6 +13,7 @@ from dazedtl.storage import write_json, write_bytes
 from dazedtl.translation.files import digest
 from dazedtl.translation.requests import output_schema
 from . import request_parameters
+from .openrouter_batch import ResultsUnavailable
 
 
 class ProviderFailure(RuntimeError):
@@ -28,7 +29,7 @@ def provider_errors(function):
     def call(*args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except ProviderFailure:
+        except (ProviderFailure, ResultsUnavailable):
             raise
         except Exception as error:
             raise ProviderFailure(function.__name__, error) from error
@@ -141,6 +142,10 @@ class TranslationEngine:
 
     def payload(self, request, configuration):
         from util.translation import buildClaudeRequest, buildOpenAIRequest
+        from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
+        strict_router = configuration.get("openrouterStructuredOutputs")
+        if strict_router is not None and (strict_router != STRUCTURED_OUTPUTS or configuration["provider"] != "openrouter"):
+            raise ValueError("This run's structured-output policy is invalid or unsupported.")
         context = request["context"]
         instructions = [context["request_instructions"],
                         "Return only a JSON object mapping each supplied source ID to its translated string. "
@@ -167,17 +172,36 @@ class TranslationEngine:
             params["response_format"] = ({"type": "json_object"} if configuration["provider"] in {"custom", "mistral", "openrouter"} else
                                          {"type": "json_schema", "json_schema": {"name": "translation", "strict": True,
                                                                                  "schema": output_schema(request["sources"])}})
-        return request_parameters.provider_defaults(params, configuration.get("generationParameters"))
+        if configuration["provider"] == "openrouter":
+            if strict_router:
+                params = request_parameters.structured_output(params, output_schema(request["sources"]),
+                    name="translation", live=configuration["mode"] != "batch")
+            params = request_parameters.host_routing(params, configuration.get("openrouterHost", ""))
+            if strict_router and configuration['mode'] == 'batch':
+                params = request_parameters.batch_routing(params, configuration.get('openrouterBatch'))
+        params = request_parameters.provider_defaults(params, configuration.get("generationParameters"))
+        return request_parameters.completion_budget(params, configuration.get("maxOutputTokens"))
 
     def token_count(self, text):
         import tiktoken
         return len(tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=()))
 
     def batch_supported(self, configuration):
+        if configuration.get("provider") == "openrouter":
+            from dazedtl.settings.openrouter import validate_policy
+            policy = configuration.get("openrouterBatch")
+            return "openrouter" if policy and validate_policy(policy, configuration["model"]) else None
+        from .openrouter_batch import is_route
+        if is_route(configuration.get("endpoint")):
+            return None
         from util.batch_providers import detect_batch_provider
         return detect_batch_provider(configuration["model"], api_url=configuration["endpoint"], api_provider=configuration["protocol"])
 
     def batch_limits(self, configuration):
+        if configuration.get("provider") == "openrouter":
+            from dazedtl.settings.openrouter import validate_policy
+            policy = validate_policy(configuration.get("openrouterBatch"), configuration["model"])
+            return [policy["max_requests"], policy["max_bytes"] - 4096, None]
         from util.batch_providers import batch_limits
         from util.translation import _openai_batch_token_limit
         from urllib.parse import urlsplit
@@ -399,11 +423,17 @@ def google_batch_client(secret):
 class TranslationProvider:
     """One isolated worker's provider connection; no SDK-level paid retries."""
     @provider_errors
-    def __init__(self, configuration, secret):
+    def __init__(self, configuration, secret, *, receipt_root=None):
         from .provider_responses import install
         install()
         from util.batch_providers import get_client
         self.configuration = configuration
+        if configuration.get("provider", configuration["protocol"]) == "openrouter" and configuration["mode"] == "batch":
+            from .openrouter_batch import Client
+            self.provider = "openrouter"
+            self.client = Client(secret, api_url=configuration["endpoint"], policy=configuration.get("openrouterBatch"), receipt_root=receipt_root)
+            self.google = None
+            return
         self.provider = configuration["protocol"] if configuration["protocol"] in {"anthropic", "gemini"} else "openai"
         self.client = get_client(self.provider, api_key=secret, api_url=configuration["endpoint"], max_retries=0)
         extra = {"timeout": 45, "max_retries": 0}
@@ -468,7 +498,7 @@ class TranslationProvider:
     def collect_terminal(self, identity, mapping):
         """Keep successful paid rows from a canceled/expired compatible Batch job."""
         from util.batch_providers import _download_file_text, _openai_result
-        if self.provider == "anthropic":
+        if self.provider in {"anthropic", "openrouter"}:
             return self.collect(identity, mapping)
         batch = self.client.batches.retrieve(identity)
         results, errors, usage = {}, [], {"input_tokens": 0, "output_tokens": 0}

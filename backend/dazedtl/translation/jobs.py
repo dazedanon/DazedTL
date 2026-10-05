@@ -159,6 +159,7 @@ class RunStore:
             "requests": len(job["states"]), "batches": [{key: chunk.get(key) for key in ("id", "state", "api_status", "counts", "cancel_error")} for chunk in job["batches"]],
             "qa_requests": job.get("qa_requests", []),
             "stop_requested": self.stopped(job["id"]),
+            "can_cancel_provider": (job.get("quote") or {}).get("provider") != "openrouter",
             "cancel_requested": self.cancel_requested(job["id"]),
             "issues": [{"id": key, **value} for key, value in job["states"].items() if value["state"] in {"failed", "uncertain"}],
         }

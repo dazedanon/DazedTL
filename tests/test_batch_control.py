@@ -37,6 +37,12 @@ class BatchControlTests(unittest.TestCase):
                 self.assertEqual(provider.cancel.call_count, 1)
             self.assertEqual(before, {path: path.read_bytes() for path in root.rglob('*') if path.is_file()})
             provider.submit.assert_not_called(); provider.live.assert_not_called()
+            batch['provider'] = 'openrouter'
+            write_json(root/'log/batch_history.json', {'batches': [batch]})
+            with patch.object(batch_control, 'TranslationProvider') as create:
+                with self.assertRaisesRegex(ValueError, 'does not expose Batch cancellation'):
+                    batch_control.cancel(root, 'paid', batch_control.binding(batch), resolve)
+                create.assert_not_called()
 
     def test_terminal_collection_keeps_paid_successes_and_releases_only_proven_unsuccessful_requests(self):
         with TemporaryDirectory() as directory:

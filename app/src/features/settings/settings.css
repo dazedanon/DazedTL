@@ -27,6 +27,9 @@
   flex-shrink: 0;
   padding: 7px;
 }
+.connection-host-actions {
+  margin-top: var(--space-2);
+}
 .connection-keyless {
   display: flex;
   flex-direction: row;

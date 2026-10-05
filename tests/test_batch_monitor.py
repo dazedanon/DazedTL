@@ -41,6 +41,30 @@ class BatchMonitorTests(unittest.TestCase):
         guided = SimpleNamespace(backend=backend, settings=settings, projects=SimpleNamespace(data={'projects': [owner]}))
         return BatchMonitor(guided), job, owner
 
+    def test_openrouter_missing_results_block_consumption_and_survive_monitor_restart(self):
+        # Provider completion/retention expiry must not become a consume/retry
+        # loop or authorize replacement calls after reopening the application.
+        from dazedtl.compatibility.openrouter_batch import ResultsUnavailable
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            batch = {'id': 'paid', 'provider': 'openrouter', 'custom_ids': {'one': 'key'}}
+            write_json(root/'log/batch_history.json', {'batches': [batch]})
+            write_json(root/'log/batch_state.json', {'status': 'submitted', 'batches': [batch]})
+            provider = Mock()
+            provider.status.return_value = {'api_status': 'completed', 'counts': {'succeeded': 1}}
+            provider.collect_terminal.side_effect = ResultsUnavailable('Results expired; saved receipts were retained.')
+            with patch.object(batch_control, 'TranslationProvider', return_value=provider):
+                monitor.tick()
+                self.assertEqual(monitor.views['run']['state'], 'blocked')
+                self.assertIn('expired', job['dazedtl_batch_results_error'])
+                self.assertEqual(read_json(root/'log/batch_state.json')['status'], 'submitted')
+                previous = provider.status.call_count
+                BatchMonitor(monitor.guided).tick()
+                self.assertEqual(provider.status.call_count, previous)
+                monitor.backend.manual.consume_batch.assert_not_called()
+                provider.submit.assert_not_called()
+
     def test_refused_batch_reopens_its_retry_before_consume_without_resubmission(self):
         # Automatic collection must wait for an already authorized clarification
         # Batch and retain its receipt across app restart, without a Live fallback.

@@ -52,7 +52,7 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
   }
   function cancel(batch: ProviderBatch, job: Job) {
     const key = "batch:cancel:" + batch.id;
-    return batchOutcome(batch, job).pending && !["cancelling", "canceling"].includes(batch.status) && <ActionControl label="Cancel Batch" variant="quiet" disabled={action.busy}
+    return batch.canCancel !== false && batchOutcome(batch, job).pending && !["cancelling", "canceling"].includes(batch.status) && <ActionControl label="Cancel Batch" variant="quiet" disabled={action.busy}
       pending={action.busy && action.key === key} pendingText="Reading cancellation scope…" error={action.key === key ? action.error : ""}
       onClick={() => action.run(async () => setCancellation(await api.guided.batchCancelPreview(projectId, job.id, batch.id)), "", key)} />;
   }
@@ -70,7 +70,7 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
           {groups.map(group => <section className="history-day" key={group.day} aria-label={group.date}><h3>{group.date}</h3>
             {group.jobs.map(job => {
               const rows = batchMonitorRows(job), applied = applicationJob(job);
-              const collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id;
+              const collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id, stopKey = "batch:stop:" + job.id;
               return <section key={job.id} className="batch-history-run" aria-label={`${historyPhase(job)} Batch ${job.id}`}
                 ref={element => { if (job.id === focusRun) focused.current = element; }}>
                 <ActionList compact>{rows.map((row, index) => <ActionRow key={row.batch?.id || job.id} label={<div className="batch-current">
@@ -83,11 +83,17 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
                   {row.batch && cancel(row.batch, job)}
                   {index === 0 && <>
                     <Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Inspect</Button>
+                    {!!job.process?.batches?.some(batch => batch.provider === "openrouter") && (job.process?.remaining ?? 0) > 0 && <ActionControl
+                      label={job.process?.queueStopped ? "Continue queued work" : "Stop queued work"} variant="quiet" disabled={action.busy || job.process?.queueStopped && !job.process?.queueCanContinue}
+                      pending={action.busy && action.key === stopKey} pendingText={job.process?.queueStopped ? "Continuing queued work…" : "Stopping queued work…"}
+                      error={action.key === stopKey ? action.error : ""} notice={action.key === stopKey ? action.notice : ""}
+                      onClick={() => action.run(() => job.process?.queueStopped ? api.resume(projectId, job.id) : api.stop(projectId, job.id),
+                        job.process?.queueStopped ? "Continuing the approved queue." : "Queued work stopped. Submitted Batches continue at OpenRouter.", stopKey)} />}
                     {!!job.process?.validationIssues?.length && <Button variant="quiet" disabled={blocking} onClick={() => {
                       const rejected = job.process?.requests?.find(request => request.state === "rejected");
                       inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
                     }}>Review issues</Button>}
-                    {canRetrySaving(job) && <ActionControl label="Retry saving results" pending={action.busy && action.key === collectKey} disabled={action.busy} pendingText="Saving responses…"
+                    {(canRetrySaving(job) || !!job.process?.resultsUnavailable) && <ActionControl label={job.process?.resultsUnavailable ? "Retry collection" : "Retry saving results"} pending={action.busy && action.key === collectKey} disabled={action.busy} pendingText="Collecting responses…"
                       error={action.key === collectKey ? action.error : ""} notice={action.key === collectKey ? action.notice : ""}
                       onClick={() => action.run(() => api.guided.batchCollect(projectId, job.id), "Saving collected responses.", collectKey)} />}
                     {job.status === "complete" && <ActionControl label="Reapply" disabled={disabled || action.busy || !canReapplyBatch(job)}

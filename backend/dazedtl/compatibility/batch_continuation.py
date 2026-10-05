@@ -111,6 +111,7 @@ def install_worker(root, plan):
     from util.batch_history import record_submit
     root = Path(root)
     native = getattr(providers.submit_batch, '_dazedtl_native', providers.submit_batch)
+    active_task = None
 
     def approved():
         job = read_json(project_path(root, 'job.json'))
@@ -153,6 +154,11 @@ def install_worker(root, plan):
         # Clarifications already have their own durable submission journal.
         if not requests or not all(str(row.get('custom_id', '')).startswith('req-') for row in requests):
             return native(provider, requests, **kwargs)
+        if provider == 'openrouter':
+            job = read_json(project_path(root, 'job.json'))
+            if (active_task is not None and active_task.should_stop or job.get('dazedtl_batch_stopped')
+                    or job.get('dazedtl_batch_cancellations') or job.get('status') == 'canceled'):
+                raise InterruptedError('Stopped before another OpenRouter Batch submission. Already submitted work remains at the provider.')
         approval = approved()
         recover_receipt()
         queued = queue(root)
@@ -197,6 +203,22 @@ def install_worker(root, plan):
         return native_wait(task, estimate)
     wait._dazedtl_native = native_wait
     TranslationTask._wait_batch_submit = wait
+    if (plan.get('dazedtl_request_policy') or {}).get('openrouterBatch'):
+        native_poll = TranslationTask._run_batch_poll_fetch
+        if getattr(native_poll, '_dazedtl_openrouter_poll', False):
+            native_poll = native_poll.__wrapped__
+
+        @wraps(native_poll)
+        def poll(task):
+            nonlocal active_task
+            active_task = task
+            try:
+                return native_poll(task)
+            finally:
+                active_task = None
+
+        poll._dazedtl_openrouter_poll = True
+        TranslationTask._run_batch_poll_fetch = poll
     # A crash after the returned job ID but before native checkpointing is
     # repaired from the journal; an unknown HTTP outcome remains protected.
     with translation._batch_submit_lock():

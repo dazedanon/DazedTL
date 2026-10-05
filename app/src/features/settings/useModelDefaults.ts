@@ -3,14 +3,14 @@ import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { ModelDefaults } from "../../api/contracts";
 
-export function useModelDefaults(connectionId: string, model: string) {
+export function useModelDefaults(connectionId: string, model: string, checkedAt?: string | null, host = "") {
   const [attempt, retry] = useState(0);
   const [result, setResult] = useState<{
     key: string;
     value?: ModelDefaults;
     error?: string;
   }>();
-  const key = JSON.stringify([connectionId, model, attempt]);
+  const key = JSON.stringify([connectionId, model, checkedAt, host, attempt]);
   useEffect(() => {
     if (!model) return;
     let active = true;

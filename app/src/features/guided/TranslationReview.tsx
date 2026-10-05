@@ -21,7 +21,7 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
   const writes = numeric(value.cache_write_tokens) && value.cache_write_tokens > 0;
   const reads = numeric(value.cache_read_tokens) && value.cache_read_tokens > 0;
   const caching = writes || reads || numeric(value.batch_cached_cost) && value.batch_cached_cost !== value.batch_nocache_cost;
-  const prices = batch ? [["Without prompt caching", value.batch_nocache_cost], ["With prompt caching (estimated)", caching ? value.batch_cached_cost : undefined]] as const : [];
+  const prices = batch && caching ? [["Without prompt caching", value.batch_nocache_cost], ["With prompt caching (estimated)", value.batch_cached_cost]] as const : [];
   return <section className="translation-cost-review" aria-label="Estimated cost">
     <div className="translation-cost-total">
       <span>Estimated {batch ? "Batch" : "Live"} cost</span>
@@ -67,6 +67,7 @@ export function TranslationReviewContent({ projectId, job, preview, busy, pendin
       <p className="translation-review-model">{job?.model || preview?.run?.model || "Saved model"} <span>· {batch ? "Batch" : speakerReview ? "Live · names and labels only" : "Live"}</span></p>
       {speakersBeforeBatch && <p className="translation-review-notice">Translate these names and labels with Live first. File text remains on Batch and receives its own cost review afterward.</p>}
       <TranslationCost value={detail} mode={batch ? "batch" : "translate"} />
+      {batch && detail.provider === "openrouter" && <p className="translation-review-notice">OpenRouter uses a 24-hour completion window. Submitted Batches cannot be canceled through this app. Prices exclude any separate BYOK fees.</p>}
       <section className="translation-review-scope" aria-label="Prepared scope">
         <h3>{speakerReview && "Names and labels from "}{files.length} selected {files.length === 1 ? "file" : "files"}</h3>
         {files.length <= 8 ? <ul className="guided-preview-paths">{files.map(name => <li key={name}>{name}</li>)}</ul> : <div className="guided-preview-files"><VirtualList items={files} itemKey={pathKey} label="Selected files" empty={null}>{name => <div className="guided-preview-path">{name}</div>}</VirtualList></div>}

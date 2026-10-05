@@ -93,6 +93,7 @@ class CompatibilityContracts(unittest.TestCase):
             return {**deepcopy(baseline), 'model': model, 'temperature': 0,
                     'frequency_penalty': 0.05, 'reasoning_effort': 'none'}
         translation.buildOpenAIRequest = translation.buildClaudeRequest = native
+        translation._translation_completion_limit = lambda *_args, **_kwargs: 8192
         translation._openai_batch_token_limit = lambda: 600_000
         native_allowance = translation._openai_batch_token_limit
         quote = {'model': 'gpt-6.1-sol', 'provider': 'openai', 'input_tokens': 98_016, 'output_tokens': 4_617,
@@ -140,6 +141,36 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(batch_body, live)
                     self.assertEqual(translation.buildClaudeRequest(model), live)
             self.assertEqual({name: (root/name).read_bytes() for name in frozen}, frozen)
+            # Host pinning must reach every new payload without replacing
+            # unrelated SDK fields or persisting into automatic/legacy runs.
+            baseline['extra_body'] = {'prompt_cache_key': 'fixture-cache'}
+            plan['settings'].update(API_PROVIDER='openai', api='https://openrouter.ai/api/v1')
+            plan['dazedtl_request_policy'] = {**policy, 'openrouterHost': 'deepinfra'}
+            write_json(root/'plan.json', plan)
+            for _ in range(2):
+                environment.prepare(root)
+                expected_body = {**baseline['extra_body'], 'provider': {'only': ['deepinfra'], 'allow_fallbacks': False}}
+                self.assertEqual(translation.buildOpenAIRequest('fixture')['extra_body'], expected_body)
+                self.assertEqual(translation.buildClaudeRequest('fixture')['extra_body'], baseline['extra_body'])
+            # A new allowance reaches every transport and the late Mistral
+            # override, but the saved request body is never rewritten on resume.
+            for allowance in (32768, 16384):
+                plan['dazedtl_request_policy'] = {**policy, 'maxOutputTokens': allowance, 'openrouterHost': 'deepinfra'}
+                write_json(root/'plan.json', plan)
+                for _ in range(2):
+                    environment.prepare(root)
+                    for builder in (translation.buildOpenAIRequest, translation.buildClaudeRequest):
+                        payload = builder('fixture')
+                        self.assertEqual(payload['max_completion_tokens'], allowance)
+                        self.assertEqual(payload['messages'], baseline['messages'])
+                        self.assertNotIn('reasoning_effort', payload)
+                    self.assertEqual(translation._translation_completion_limit('short text', ceiling=8192), allowance)
+                self.assertEqual((root/'log/batch_requests.json').read_bytes(), frozen['log/batch_requests.json'])
+            plan['settings']['api'] = 'https://api.openai.com/v1'
+            write_json(root/'plan.json', plan)
+            with self.assertRaisesRegex(ValueError, 'requires an OpenRouter connection'):
+                environment.prepare(root)
+            plan['settings']['api'] = 'https://openrouter.ai/api/v1'
             # A saved per-model allowance must reach the submitter, survive
             # repeated preparation, and never leak into an older frozen run.
             from dazedtl.settings.preferences import DEFAULT_BATCH_INPUT_TOKENS
@@ -149,6 +180,7 @@ class CompatibilityContracts(unittest.TestCase):
                 for _ in range(2):
                     environment.prepare(root)
                     self.assertEqual(translation._openai_batch_token_limit(), allowance)
+                    self.assertEqual(translation.buildOpenAIRequest('fixture')['extra_body'], baseline['extra_body'])
             for legacy in ({key: value for key, value in policy.items() if key != 'generationParameters'}, None):
                 if legacy is None:
                     plan.pop('dazedtl_request_policy')
@@ -158,6 +190,7 @@ class CompatibilityContracts(unittest.TestCase):
                 environment.prepare(root)
                 self.assertIs(translation._openai_batch_token_limit, native_allowance)
                 self.assertEqual(translation.buildOpenAIRequest('gpt-6.1-sol'), native('gpt-6.1-sol'))
+                self.assertEqual(translation._translation_completion_limit('short text'), 8192)
                 if legacy is None:
                     self.assertIs(translation.estimateBatchCost, native_estimate)
             plan['dazedtl_request_policy'] = {**policy, 'generationParameters': 'unsupported-future-policy'}
@@ -166,6 +199,40 @@ class CompatibilityContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'invalid or unsupported'):
                 environment.prepare(root)
             self.assertEqual(native_prepare.call_count, before)
+
+    def test_openrouter_batch_lifts_the_frozen_host_and_rejects_mixed_routes_before_submission(self):
+        # Batch routing belongs before the requests array in the batch header;
+        # per-row routing must never be dropped or silently combined.
+        from dazedtl.compatibility.openrouter_batch import Client
+        from dazedtl.compatibility.request_parameters import host_routing
+        from dazedtl.settings.openrouter import TRANSPORT
+        package, providers = ModuleType('util'), ModuleType('util.batch_providers')
+        providers._openai_batch_body = lambda _, params: {**{key: value for key, value in params.items() if key != 'extra_body'},
+                                                        **params.get('extra_body', {})}
+        client = Client.__new__(Client)
+        client.policy = {'transport': TRANSPORT, 'model': 'fixture-model', 'input': 1, 'output': 2,
+                         'max_requests': 100, 'max_bytes': 10000}
+        client.request = Mock(return_value={'id': 'batch-fixture'})
+        client.archive = Mock()
+        base = {'model': 'fixture-model', 'messages': [{'role': 'user', 'content': 'Translate this source.'}]}
+        with patch.dict(sys.modules, {'util': package, 'util.batch_providers': providers}):
+            for host in ('', 'deepinfra'):
+                rows = [{'custom_id': key, 'params': host_routing(base, host)} for key in ('first', 'second')]
+                client.submit(rows)
+                sent = client.request.call_args.kwargs['body']
+                self.assertEqual(sent.get('provider'), {'only': ['deepinfra']} if host else None)
+                self.assertEqual(list(sent)[-1], 'requests')
+                self.assertTrue(all('provider' not in row['body'] for row in sent['requests']))
+                self.assertEqual(rows[0]['params'], host_routing(base, host))
+            client.request.reset_mock()
+            for other in ('', 'novita'):
+                with self.assertRaisesRegex(ValueError, 'same host'):
+                    client.submit([{'custom_id': 'first', 'params': host_routing(base, 'deepinfra')},
+                                   {'custom_id': 'second', 'params': host_routing(base, other)}])
+            with self.assertRaisesRegex(ValueError, 'exclusive host'):
+                client.submit([{'custom_id': 'first', 'params': {**base, 'extra_body': {
+                    'provider': {'only': ['deepinfra'], 'allow_fallbacks': True}}}}])
+            client.request.assert_not_called()
 
     def test_declined_speaker_preflight_retains_provider_work_and_resets_retry_phase(self):
         # The native worker reports several failures with the same canceled message.
@@ -556,9 +623,12 @@ class ManualJobs:
                     for batch in batches]
         context_module.request_contexts = contexts
         skill_module.ctx = lambda *_args, **_kwargs: "Field guidance"
-        provider_module.buildClaudeRequest = lambda **kwargs: {"captured": kwargs}
+        provider_module.buildClaudeRequest = lambda **kwargs: {"captured": kwargs, "max_tokens": 8192}
         provider_module.buildOpenAIRequest = lambda **kwargs: {"captured": kwargs, "temperature": 0,
-                                                              "frequency_penalty": 0.05, "reasoning_effort": "none"}
+                                                              "model": kwargs['model'],
+                                                              "max_tokens": 8192,
+                                                              "frequency_penalty": 0.05, "reasoning_effort": "none",
+                                                              "extra_body": {"prompt_cache_key": "fixture-cache"}}
         modules = {module.__name__: module for module in (package, context_module, skill_module, provider_module)}
         engine = TranslationEngine.__new__(TranslationEngine)
         engine.project = lambda *_args: None
@@ -572,12 +642,16 @@ class ManualJobs:
             self.assertEqual(row["context"]["line_kinds"], {"line": "dialogue"})
             self.assertEqual(row["context"]["qa_notes"], {"line": note})
             for provider, protocol, mode in (("openai", "openai", "live"), ("anthropic", "anthropic", "batch"),
-                                             ("openrouter", "openai", "live")):
+                                             ("openrouter", "openai", "live"), ("gemini", "gemini", "batch"),
+                                             ("mistral", "mistral", "live"), ("custom", "openai", "live")):
                 with self.subTest(protocol=protocol):
                     payload = engine.payload(row, {"protocol": protocol, "provider": provider,
                                                   "mode": mode, "model": "fixture", "endpoint": "https://provider.invalid/v1",
+                                                  "openrouterHost": "deepinfra",
+                                                  "maxOutputTokens": 32768,
                                                   "generationParameters": GENERATION_PARAMETERS})
                     self.assertFalse({'temperature', 'frequency_penalty', 'reasoning_effort'} & payload.keys())
+                    self.assertEqual(payload['max_tokens'], 32768)
                     sent = payload["captured"]
                     self.assertEqual(sent["user"], row["context"]["user"])
                     self.assertIn(note, sent["user"])
@@ -586,6 +660,29 @@ class ManualJobs:
                     self.assertIn("Two people at the gate", sent["request_instructions"])
                     if provider == "openrouter":
                         self.assertEqual(payload['response_format'], {'type': 'json_object'})
+                        self.assertEqual(payload['extra_body'], {'prompt_cache_key': 'fixture-cache',
+                            'provider': {'only': ['deepinfra'], 'allow_fallbacks': False}})
+                    else:
+                        self.assertNotIn('provider', payload.get('extra_body', {}))
+
+            # New OpenRouter plans require the exact source-ID schema on both
+            # transports; the legacy branch above retains its saved JSON mode.
+            from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT
+            from dazedtl.translation.requests import output_schema
+            router_policy = {'transport': TRANSPORT, 'model': 'deepseek/fixture', 'host': '', 'input': 1, 'output': 2,
+                             'max_requests': 100, 'max_bytes': 10000, 'structuredOutputs': STRUCTURED_OUTPUTS,
+                             'providers': ['deepinfra', 'fireworks']}
+            for mode in ('live', 'batch'):
+                for host in ('', 'deepinfra'):
+                    batch_policy = {**router_policy, 'host': host, 'providers': [host] if host else router_policy['providers']}
+                    payload = engine.payload(row, {'protocol': 'openai', 'provider': 'openrouter', 'mode': mode,
+                        'model': 'deepseek/fixture', 'endpoint': 'https://openrouter.ai/api/v1', 'openrouterHost': host,
+                        'openrouterStructuredOutputs': STRUCTURED_OUTPUTS, 'openrouterBatch': batch_policy})
+                    self.assertEqual(payload['response_format'], {'type': 'json_schema', 'json_schema': {
+                        'name': 'translation', 'strict': True, 'schema': output_schema(row['sources'])}})
+                    expected = ({'require_parameters': True, **({'only': [host], 'allow_fallbacks': False} if host else {})}
+                                if mode == 'live' else {'only': batch_policy['providers'], 'allow_fallbacks': False})
+                    self.assertEqual(payload['extra_body'], {'prompt_cache_key': 'fixture-cache', 'provider': expected})
 
     def test_native_update_completion_property_survives_public_serialization(self):
         @dataclass

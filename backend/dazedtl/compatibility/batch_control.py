@@ -8,6 +8,11 @@ from .process_view import saved, evidence_root, queue, batch_results
 from .translation import TranslationProvider
 
 TERMINAL = {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'}
+PROVIDERS = {'openai', 'anthropic', 'gemini', 'openrouter'}
+
+
+def can_cancel(provider):
+    return provider in PROVIDERS - {'openrouter'}
 
 
 def unsent_requests(root):
@@ -42,7 +47,7 @@ def receipt(root, identity):
                 original = receipt(root, record['original_id'])
                 batch = {**original, 'id': identity, 'custom_ids': {item['custom_id']: item['key'] for item in retry['items']}}
                 break
-    if not batch or batch.get('provider') not in {'openai', 'anthropic', 'gemini'} or not isinstance(batch.get('custom_ids'), dict) or not batch['custom_ids']:
+    if not batch or batch.get('provider') not in PROVIDERS or not isinstance(batch.get('custom_ids'), dict) or not batch['custom_ids']:
         raise ValueError('Choose a submitted Batch with retained request IDs.')
     return batch
 
@@ -52,9 +57,9 @@ def binding(batch):
 
 
 @contextmanager
-def connection(batch, resolve):
+def connection(batch, resolve, *, receipt_root=None):
     value = resolve(batch)
-    provider = TranslationProvider({**value, 'protocol': batch['provider'], 'mode': 'batch'}, value['secret'] or 'not-needed')
+    provider = TranslationProvider({**value, 'protocol': batch['provider'], 'mode': 'batch'}, value['secret'] or 'not-needed', receipt_root=receipt_root)
     try:
         yield provider
     finally:
@@ -68,6 +73,8 @@ def connection(batch, resolve):
 
 def cancel(root, identity, expected, resolve):
     batch = receipt(root, identity)
+    if not can_cancel(batch['provider']):
+        raise ValueError('OpenRouter does not expose Batch cancellation. Submitted work continues at the provider.')
     if binding(batch) != expected:
         raise ValueError('This Batch changed. Review cancellation again.')
     with connection(batch, resolve) as provider:
@@ -95,9 +102,9 @@ def collect(root, resolve, *, commit=nullcontext):
     results = deepcopy(saved(evidence, 'batch_results.json'))
     results = results.get('results', results)
     for batch in batches:
-        if batch.get('provider') not in {'openai', 'anthropic', 'gemini'} or not isinstance(batch.get('custom_ids'), dict) or not batch['custom_ids']:
+        if batch.get('provider') not in PROVIDERS or not isinstance(batch.get('custom_ids'), dict) or not batch['custom_ids']:
             raise ValueError('A provider Batch is missing its request mapping.')
-        with connection(batch, resolve) as provider:
+        with connection(batch, resolve, receipt_root=evidence) as provider:
             status = provider.status(batch['id'])
             if status['api_status'] not in TERMINAL:
                 raise ValueError('The provider is still working. Keep monitoring until every Batch finishes or cancels.')

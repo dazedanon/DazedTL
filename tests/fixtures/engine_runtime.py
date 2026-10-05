@@ -156,16 +156,152 @@ try:
     with app.backend.context():
         from util import translation
         from util.batch_providers import detect_batch_provider
-        # Namespaced Claude/GPT IDs must stay on OpenRouter's Live transport;
-        # the preset must never select a native provider or its Batch API.
+        # A schema-rejecting API must never cause a second, weaker request.
+        # Exercise the real native fallback and the DeepSeek builder exception
+        # in this existing offline process, including restoration for old runs.
+        import httpx
+        from openai import BadRequestError
+        from unittest.mock import Mock
+        from dazedtl.compatibility import structured_outputs
+        from dazedtl.compatibility.request_parameters import configure_builders
+        from dazedtl.settings.preferences import GENERATION_PARAMETERS
+        original_call_code = translation.translateText.__code__
+        with patch.dict(os.environ, {'API_PROVIDER': 'openai', 'api': 'https://openrouter.ai/api/v1'}):
+            for _ in range(2):
+                structured_outputs.configure(translation, True)
+                configure_builders(translation, GENERATION_PARAMETERS, structured_outputs=True, openrouter_host='deepinfra')
+            for model in ('deepseek/fixture', 'anthropic/claude-fixture', 'openai/gpt-4.1'):
+                params = translation.buildOpenAIRequest('Translate.', '{"Line1":"薬"}', [], 0, 'json', model, numLines=1)
+                assert params['response_format']['json_schema'] == {
+                    'name': 'translation_response', 'strict': True, 'schema': translation.createTranslationSchema(1)}
+                assert params['extra_body']['provider'] == {'only': ['deepinfra'], 'allow_fallbacks': False, 'require_parameters': True}
+            rejected = BadRequestError('Unsupported response format', response=httpx.Response(400,
+                request=httpx.Request('POST', 'https://provider.invalid/v1/chat/completions')), body={'code': 'unsupported'})
+            good = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"Line1":"Potion"}'))], usage=None)
+            for error in (rejected, RuntimeError('Invalid schema')):
+                send = Mock(side_effect=[error, good])
+                with patch.object(translation.openai, 'chat', SimpleNamespace(completions=SimpleNamespace(create=send))):
+                    try:
+                        translation.translateText('Translate.', '{"Line1":"薬"}', [], 0, 'json', 'deepseek/fixture', numLines=1)
+                    except type(error) as actual:
+                        assert actual is error
+                    else:
+                        raise AssertionError('Strict OpenRouter work accepted a schema downgrade.')
+                assert send.call_count == 1
+            structured_outputs.configure(translation, False)
+            configure_builders(translation, None)
+            assert translation.translateText.__code__ is original_call_code
+            legacy = translation.buildOpenAIRequest('Translate.', '薬', [], 0, 'json', 'deepseek/fixture', numLines=1)
+            assert legacy['response_format'] == {'type': 'json_object'}
+            assert 'provider' not in legacy.get('extra_body', {})
+        # Namespaced Claude/GPT IDs retain OpenRouter's transport identity;
+        # Batch must never use native OpenAI/Anthropic upload endpoints.
         for model in ('anthropic/claude-sonnet-4.5', 'openai/gpt-4.1'):
             route = {'model': model, 'API_PROVIDER': 'openai', 'api': 'https://openrouter.ai/api/v1'}
             app.backend.validate_route(route)
-            assert not app.backend.provider_defaults(route)['batch_supported']
-            assert detect_batch_provider(model, api_url=route['api'], api_provider='openai') is None
+            assert app.backend.provider_defaults(route)['batch_supported']
+            assert detect_batch_provider(model, api_url=route['api'], api_provider='openai') == 'openrouter'
             params = translation.buildOpenAIRequest('Translate.', '薬', [], 0, 'json', model,
                 numLines=1, api_provider='openai', api_url=route['api'])
             assert params['model'] == model and 'max_tokens' in params and 'max_completion_tokens' not in params
+        from dazedtl.compatibility.request_parameters import configure_builders
+        from dazedtl.settings.preferences import GENERATION_PARAMETERS
+        configure_builders(translation, GENERATION_PARAMETERS, max_output_tokens=32768)
+        for protocol, endpoint, model, field in (
+            ('openai', 'https://api.openai.com/v1', 'gpt-6-sol', 'max_completion_tokens'),
+            ('openai', 'https://openrouter.ai/api/v1', 'z-ai/glm-5.3-flash', 'max_tokens'),
+            ('gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-3.8-flash', 'max_tokens'),
+            ('mistral', 'https://api.mistral.ai/v1', 'mistral-medium', 'max_tokens'),
+            ('openai', 'https://fixture.invalid/v1', 'local-model', 'max_tokens')):
+            params = translation.buildOpenAIRequest('Translate.', '薬', [], 0, 'json', model,
+                numLines=1, api_provider=protocol, api_url=endpoint)
+            assert params[field] == 32768 and '薬' in json.dumps(params, ensure_ascii=False), params
+        assert translation.buildClaudeRequest('Translate.', '薬', [], 'json', 'claude-sonnet-5.5')['max_tokens'] == 32768
+        configure_builders(translation, None)
+        # Real native collect -> submit -> fetch -> consume must reach the
+        # installed inline adapter, including aliases already bound by history.
+        # Reuse this offline process instead of paying another startup cost.
+        import httpx
+        from util import batch_history, batch_providers
+        from dazedtl.compatibility import openrouter_batch, openrouter_pricing
+        from dazedtl.settings.openrouter import TRANSPORT, STRUCTURED_OUTPUTS
+        from dazedtl.compatibility.request_parameters import batch_routing
+        router_root = temporary / 'router-batch'
+        router_root.mkdir()
+        os.chdir(router_root)
+        router_model = 'google/fixture'
+        router_policy = {'transport': TRANSPORT, 'model': router_model, 'host': '', 'input': .8, 'output': 3,
+                         'structuredOutputs': STRUCTURED_OUTPUTS, 'providers': ['google-vertex'],
+                         'cache_read': .2, 'cache_write': None, 'max_requests': 1000, 'max_bytes': 10_000_000}
+        sent_batches = []
+        def router_response(req):
+            if req.method == 'POST' and req.url.path == '/api/v1/batches':
+                sent_batches.append(json.loads(req.content))
+                assert all(row['body']['max_tokens'] == 32768 for row in sent_batches[-1]['requests'])
+                assert sent_batches[-1]['provider'] == {'only': ['google-vertex']}
+                return httpx.Response(202, json={'id': f'paid-router-{len(sent_batches)}', 'status': 'validating'})
+            assert req.method == 'GET' and req.url.path.startswith('/api/v1/batches/paid-router-'), req.url
+            identity = req.url.path.rsplit('/', 1)[-1]
+            rows = sent_batches[int(identity.rsplit('-', 1)[-1]) - 1]['requests']
+            return httpx.Response(200, json={'id': identity, 'status': 'completed',
+                'request_counts': {'total': len(rows), 'completed': len(rows), 'failed': 0},
+                'usage': {'cost': .001}, 'results': [{'custom_id': row['custom_id'], 'response': {'status_code': 200,
+                    'body': {'choices': [{'message': {'content': json.dumps({key: 'Potion' for key in
+                        row['body']['response_format']['json_schema']['schema']['required']})}}],
+                             'usage': {'prompt_tokens': 10, 'completion_tokens': 4, 'prompt_tokens_details': {'cached_tokens': 2}}}}}
+                    for row in rows]})
+        original_http = httpx.Client
+        originals = {name: getattr(translation, name) for name in ('estimateCostComparison', 'translateAI', 'calculateCost')}
+        with patch.dict(os.environ, {'API_PROVIDER': 'openai', 'key': 'fixture-key', 'api': openrouter_batch.BASE_URL, 'model': router_model}), \
+             patch.multiple(openrouter_batch, _worker_policy=router_policy, _worker_root=router_root, _worker_configured=True), \
+             patch.object(httpx, 'Client', side_effect=lambda **kwargs: original_http(**{**kwargs, 'transport': httpx.MockTransport(router_response)})), \
+             patch.multiple(translation, **originals, _batch_results=None, _batch_queue_pending={}, _global_accurate_cost=0,
+                            getPricingConfig=lambda *_: {'inputAPICost': 2, 'outputAPICost': 8, 'batchSize': 2, 'frequencyPenalty': 0}), \
+             patch.object(batch_history, '_price_usage', batch_history._price_usage):
+            openrouter_pricing.configure(translation, router_policy)
+            structured_outputs.configure(translation, True)
+            configure_builders(translation, GENERATION_PARAMETERS, max_output_tokens=32768,
+                               structured_outputs=True, batch=True, openrouter_batch=router_policy)
+            config = translation.TranslationConfig(model=router_model, prompt='Translate the supplied text.', vocab='', batchSize=2,
+                useSfxReference=False, logFilePath=str(router_root/'log/translation.txt'), mismatchLogPath=str(router_root/'log/mismatches.txt'))
+            translation.set_batch_phase('collect')
+            translation.translateAI(['薬'], [], config)
+            translation.translateAI(['回復', '毒'], [], config)
+            estimate = translation.estimateBatchCost()
+            assert estimate['provider'] == 'openrouter', estimate
+            assert abs(estimate['batch_nocache_cost'] - (estimate['input_tokens'] * .8 + estimate['output_tokens'] * 3) / 1_000_000) < 1e-12, estimate
+            assert translation.submitTranslationBatches(['Items.json'], estimate) == ['paid-router-1', 'paid-router-2']
+            assert [len(batch['requests']) for batch in sent_batches] == [1, 1]
+            assert [len(batch['requests'][0]['body']['response_format']['json_schema']['schema']['required'])
+                    for batch in sent_batches] == [1, 2]
+            assert translation.checkTranslationBatchStatuses(False)[0]
+            assert translation.fetchTranslationBatches() == (2, 0)
+            translation.set_batch_phase('consume')
+            translation.begin_file_cost_tracking(config.model)
+            translated = translation.translateAI(['薬'], [], config)
+            assert translated[0] == ['Potion'], translated
+            assert abs(parser.calculateCost(10, 4, config.model) - (8 * .8 + 2 * .2 + 4 * 3) / 1_000_000) < 1e-12
+            assert len(sent_batches) == 2
+            translation.set_batch_phase(None)
+            openrouter_pricing.configure(translation, None)
+            configure_builders(translation, None)
+            structured_outputs.configure(translation, False)
+            from dazedtl.compatibility.translation import TranslationProvider
+            compiled_root = router_root/'compiled'
+            compiled_root.mkdir()
+            provider = TranslationProvider({'provider': 'openrouter', 'protocol': 'openai', 'mode': 'batch',
+                'endpoint': openrouter_batch.BASE_URL, 'model': router_model, 'openrouterBatch': router_policy},
+                'fixture-key', receipt_root=compiled_root)
+            try:
+                assert provider.provider == 'openrouter'
+                assert provider.submit([{'custom_id': 'dtl-compiled',
+                    'params': batch_routing(sent_batches[0]['requests'][0]['body'], router_policy)}])['id'] == 'paid-router-3'
+                assert provider.status('paid-router-3')['ended']
+                received, errors, usage = provider.collect('paid-router-3', {'dtl-compiled': 'compiled-request'})
+                assert not errors and json.loads(received['compiled-request']['text']) == {'Line1': 'Potion'}
+                assert usage['openrouter_cost'] == .001 and len(sent_batches) == 3
+            finally:
+                provider.client.close()
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.compatibility.process_view import source_values, payload, summary

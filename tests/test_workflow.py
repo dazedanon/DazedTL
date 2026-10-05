@@ -88,6 +88,7 @@ class WorkflowTests(unittest.TestCase):
         self.settings_data = settings_data
         self.settings = SimpleNamespace(
             _read=lambda: deepcopy(settings_data), _connection=Settings._connection, _configured=Settings._configured,
+            model_defaults=lambda *_args, **_kwargs: {},
             adapter=SimpleNamespace(allow_providers=False, running=lambda: False, workflows=SimpleNamespace(projects={}), validate_route=lambda _value: None),
             prepare_engine=lambda: None,
         )

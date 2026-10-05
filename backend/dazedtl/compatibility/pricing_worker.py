@@ -14,7 +14,7 @@ def catalog(value):
         raise ValueError("Invalid pricing catalog.")
     keys = ("input_cost_per_token", "output_cost_per_token")
     return {
-        name: {key: row[key] for key in keys}
+        name: {**{key: row[key] for key in keys}, 'max_output_tokens': output_limit(row.get('max_output_tokens'))}
         for name, row in value.items()
         if isinstance(name, str)
         and isinstance(row, dict)
@@ -25,6 +25,18 @@ def catalog(value):
             for key in keys
         )
     }
+
+
+def output_limit(value):
+    return value if type(value) is int and 0 < value <= 9_007_199_254_740_991 else None
+
+
+def model_output_limit(prices, model):
+    # Limits must come from this model, not the native price resolver's fuzzy
+    # prefix fallback, which can price an alias using a different model family.
+    name = str(model).strip().lower().removeprefix('models/')
+    row = prices.get(name) or prices.get(name.rsplit('/', 1)[-1]) or {}
+    return output_limit(row.get('max_output_tokens'))
 
 
 def resolve(cache, model, online):
@@ -53,7 +65,7 @@ def resolve(cache, model, online):
         except (ValueError, OSError, AttributeError):
             cached = None
     now = time.time()
-    if online and (cached is None or now - cached["fetched_at"] > 86400):
+    if online and (cached is None or cached.get('version') != 2 or now - cached["fetched_at"] > 86400):
         try:
             started, data = time.monotonic(), bytearray()
             with httpx.Client(
@@ -70,7 +82,7 @@ def resolve(cache, model, online):
                         if len(data) > 20_000_000 or time.monotonic() - started > 6:
                             raise ValueError("Pricing catalog exceeds its read limit.")
             prices = catalog(json.loads(data))
-            cached = {"fetched_at": now, "prices": prices}
+            cached = {"version": 2, "fetched_at": now, "prices": prices}
             from dazedtl.storage import write_json
 
             write_json(cache, cached)
@@ -96,13 +108,14 @@ def resolve(cache, model, online):
         "model": model,
         "inputRate": config["inputAPICost"] if valid_rates else None,
         "outputRate": config["outputAPICost"] if valid_rates else None,
+        "maxOutputTokens": model_output_limit(cached['prices'], model) if cached else None,
         "source": origin,
         "updatedAt": datetime.fromtimestamp(
             cached["fetched_at"], timezone.utc
         ).isoformat()
         if catalog_rate
         else None,
-        "stale": bool(catalog_rate and now - cached["fetched_at"] > 86400),
+        "stale": bool(catalog_rate and (cached.get('version') != 2 or now - cached["fetched_at"] > 86400)),
     }
 
 

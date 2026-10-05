@@ -58,6 +58,7 @@ def requests(root, job):
                         and manifests.get(batch.get('id')) == mapping
                         and all(type(counts.get(key)) is int and counts[key] == 0
                                 for key in ('processing', 'succeeded'))
+                        and all(type(counts.get(key, 0)) is int and counts.get(key, 0) >= 0 for key in ('errored', 'canceled', 'expired'))
                         and sum(counts.get(key, 0) for key in ('errored', 'canceled', 'expired')) == len(mapping))
             # A successful provider receipt proves submission while the native
             # runner waits for other batches before downloading their responses.

@@ -15,6 +15,8 @@ def activate():
         sys.path.insert(0, source)
     from .resources import install
     install()
+    from .openrouter_batch import install as install_openrouter
+    install_openrouter()
     from .formatting import install as install_formatting
     install_formatting()
     return ENGINE_ROOT

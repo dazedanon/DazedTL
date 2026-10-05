@@ -17,14 +17,14 @@ from dazedtl.translation.files import digest, read_json
 
 
 class BatchContinuationTests(unittest.TestCase):
-    def fixture(self, root):
+    def fixture(self, root, provider='openai'):
         plan = {'mode': 'batch', 'selected': ['Map001.json'], 'settings': {'model': 'fixture', 'api': 'https://fixture.invalid'},
                 'key_name': 'saved-key', 'workflow': {'id': 'project'}}
         write_json(root/'plan.json', plan)
-        requests = {key: {'provider': 'openai', 'payload': json.dumps({'Line1': key}), 'params': {'model': 'fixture', 'messages': [{'role': 'user', 'content': key}]}}
+        requests = {key: {'provider': provider, 'payload': json.dumps({'Line1': key}), 'params': {'model': 'fixture', 'messages': [{'role': 'user', 'content': key}]}}
                     for key in ('one', 'two')}
-        quote = {'requests': 2, 'provider': 'openai', 'model': 'fixture'}
-        state = {'status': 'queued', 'run_id': 'frozen-run', 'model': 'fixture', 'provider': 'openai', 'endpoint': 'https://fixture.invalid',
+        quote = {'requests': 2, 'provider': provider, 'model': 'fixture'}
+        state = {'status': 'queued', 'run_id': 'frozen-run', 'model': 'fixture', 'provider': provider, 'endpoint': 'https://fixture.invalid',
                  'file_set': ['Map001.json'], 'batches': [], 'queued_request_count': 2, 'cost_estimate': quote}
         job = {'id': 'run', 'mode': 'batch', 'files': ['Map001.json'], 'estimate': quote, 'plan_hash': digest((root/'plan.json').read_bytes()),
                'dazedtl_approved': True, 'dazedtl_submission_intent': True, 'status': 'stopped'}
@@ -112,6 +112,44 @@ class BatchContinuationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'uncertain'):
                     continuation.install_worker(root, plan)
                 self.assertEqual(create.call_count, 2)
+
+    def test_openrouter_stops_later_creates_after_control_pipe_closes_but_recovers_returned_id(self):
+        # Native submission can contain several chunks. Losing the owning
+        # task while one HTTP call is running must stop the next paid create.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            job, plan, requests, _ = self.fixture(root, 'openrouter')
+            plan['dazedtl_request_policy'] = {'openrouterBatch': {'transport': 'openrouter-batch-v1'}}
+            write_json(root/'plan.json', plan)
+            job['plan_hash'] = digest((root/'plan.json').read_bytes())
+            job[continuation.APPROVAL] = continuation.binding(root, job, plan)
+            write_json(root/'job.json', job)
+            util, translation, providers, task, history = [ModuleType(name) for name in
+                ('util', 'util.translation', 'util.batch_providers', 'util.translation_task', 'util.batch_history')]
+            util.translation, util.batch_providers = translation, providers
+            translation._batch_submit_lock = nullcontext
+            create = Mock(return_value={'id': 'paid'})
+            create._dazedtl_native = create
+            providers.submit_batch = create
+            providers.get_client = lambda _: SimpleNamespace(with_options=lambda **_: object())
+            def native_poll(owner):
+                providers.submit_batch('openrouter', [{'custom_id': 'req-000000', 'params': requests['one']['params']}])
+                owner.should_stop = True
+                providers.submit_batch('openrouter', [{'custom_id': 'req-000001', 'params': requests['two']['params']}])
+            task.TranslationTask = type('Task', (), {'_wait_batch_submit': lambda *_: True, '_run_batch_poll_fetch': native_poll})
+            history.record_submit = lambda batches, **fields: write_json(root/'log/batch_history.json', {'batches': [{**fields, **row} for row in batches]})
+            with patch.dict(sys.modules, {item.__name__: item for item in (util, translation, providers, task, history)}):
+                continuation.install_worker(root, plan)
+                with self.assertRaises(InterruptedError):
+                    task.TranslationTask._run_batch_poll_fetch(SimpleNamespace(should_stop=False))
+                self.assertEqual(create.call_count, 1)
+                continuation.install_worker(root, plan)
+                self.assertEqual(read_json(root/'log/batch_state.json')['batches'][0]['id'], 'paid')
+                job['dazedtl_batch_stopped'] = True
+                write_json(root/'job.json', job)
+                with self.assertRaises(InterruptedError):
+                    providers.submit_batch('openrouter', [{'custom_id': 'req-000001', 'params': requests['two']['params']}])
+                self.assertEqual(create.call_count, 1)
 
     def test_later_chunks_extend_settled_clarifications_without_losing_or_repeating_them(self):
         with TemporaryDirectory() as directory:

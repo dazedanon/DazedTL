@@ -24,7 +24,8 @@ export default function ModelOptionsEditor({
   edit: (model: string, value: ModelOptions) => void;
 }) {
   const model = config.values.model.trim();
-  const defaults = useModelDefaults(config.activeConnectionId, model);
+  const defaults = useModelDefaults(config.activeConnectionId, model, connection?.check.checkedAt, connection?.openrouter_host);
+  const openrouter = connection?.provider === "openrouter";
   const value = { ...automatic, ...(Object.hasOwn(config.modelOptions, model) ? config.modelOptions[model] : {}) };
   const change = (patch: Partial<ModelOptions>) =>
     edit(model, { ...value, ...patch });
@@ -40,7 +41,7 @@ export default function ModelOptionsEditor({
     : "";
   const source =
     resolved?.source === "catalog"
-      ? `Model catalog${resolved.stale ? " (outdated cache)" : ""}${catalogDate ? ` · ${catalogDate}` : ""}`
+      ? `${openrouter && connection?.openrouter_host ? "Selected host" : "Model catalog"}${resolved.stale ? " (outdated cache)" : ""}${catalogDate ? ` · ${catalogDate}` : ""}`
       : "Built-in engine rates";
   return (
     <>
@@ -99,6 +100,19 @@ export default function ModelOptionsEditor({
             )}
           </FieldRow>
         )}
+        <FieldRow id="output-token-allowance" label="Output token allowance"
+          help="Maximum generated tokens per request, including reasoning. Lower model or host limits take precedence. Blank uses the default. Applies to new runs.">
+          {control => <input {...control} className="short-control" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1}
+            placeholder={config.defaultOutputTokens == null ? "Default" : `Default (${Math.min(config.defaultOutputTokens, resolved?.maxOutputTokens ?? config.defaultOutputTokens).toLocaleString()})`}
+            value={value.maxOutputTokens ?? ""}
+            onPaste={event => {
+              const pasted = event.clipboardData.getData("text").trim();
+              if (!/^\d{1,3}(?:[,\u00a0\u202f ]\d{3})+$/.test(pasted)) return;
+              event.preventDefault();
+              change({ maxOutputTokens: Number(pasted.replace(/[,\s]/g, "")) });
+            }}
+            onChange={event => change({ maxOutputTokens: event.target.value === "" ? null : Number(event.target.value) })} />}
+        </FieldRow>
         {connection?.provider === "openai" && <FieldRow
           id="batch-input-tokens"
           label="Batch token allowance"
@@ -141,7 +155,7 @@ export default function ModelOptionsEditor({
                 <FieldRow
                   key={key}
                   id={key}
-                  label={key === "inputRate" ? "Input" : "Output"}
+                  label={key === "inputRate" ? openrouter ? "Live input" : "Input" : openrouter ? "Live output" : "Output"}
                 >
                   {(control) => (
                     <input
@@ -177,27 +191,47 @@ export default function ModelOptionsEditor({
               {resolved.inputRate !== null && resolved.outputRate !== null ? (
                 <>
                   <span>
-                    Input <strong>${amount(resolved.inputRate)}</strong>
+                    {openrouter ? "Live input" : "Input"} <strong>${amount(resolved.inputRate)}</strong>
                   </span>
                   <span>
-                    Output <strong>${amount(resolved.outputRate)}</strong>
+                    {openrouter ? "Live output" : "Output"} <strong>${amount(resolved.outputRate)}</strong>
                   </span>
                   <small>{source}</small>
                 </>
               ) : (
                 <p>
-                  No rates are available for this model. Enter custom rates
-                  before estimating or translating.
+                  {openrouter ? "Check the connection to load OpenRouter prices, or enter custom Live rates." : "No rates are available for this model. Enter custom rates before estimating or translating."}
                 </p>
               )}
             </div>
           )
         )}
         <p className="settings-note">
-          Base rates before cache and batch adjustments. Custom servers may
-          charge different rates.
+          {openrouter ? "Live rates apply to names and labels translated before a Batch. Actual charges depend on the serving host and account settings." : "Base rates before cache and batch adjustments. Custom servers may charge different rates."}
         </p>
       </Section>
+      {openrouter && <Section title="Batch pricing" hint="USD per million tokens">
+        {resolved && !resolved.batchSupported && <p className="settings-note">{resolved.batchReason}</p>}
+        <FieldRow id="batch-pricing-mode" label="Batch estimate rates">
+          {control => <select {...control} value={value.batchPricing ?? "automatic"} onChange={event => change({
+            batchPricing: event.target.value as "automatic" | "custom",
+            batchInputRate: value.batchInputRate ?? resolved?.batchInputRate ?? null,
+            batchOutputRate: value.batchOutputRate ?? resolved?.batchOutputRate ?? null,
+          })}><option value="automatic">Automatic</option><option value="custom">Custom rates</option></select>}
+        </FieldRow>
+        {value.batchPricing === "custom" ? <div className="paired-settings custom-rates">
+          {(["batchInputRate", "batchOutputRate"] as const).map(key => <FieldRow key={key} id={key} label={key === "batchInputRate" ? "Batch input" : "Batch output"}>
+            {control => <input {...control} className="short-control" type="number" min={0} max={1000000} step="0.000001" required
+              value={value[key] ?? ""} onChange={event => change({ [key]: event.target.value === "" ? "" : Number(event.target.value) })} />}
+          </FieldRow>)}
+        </div> : resolved?.batchSupported && <div className="effective-rates" role="status">
+          {resolved.batchInputRate != null && resolved.batchOutputRate != null ? <>
+            <span>Batch input <strong>${amount(resolved.batchInputRate)}</strong></span>
+            <span>Batch output <strong>${amount(resolved.batchOutputRate)}</strong></span>
+          </> : <p>Batch prices are unavailable. Enter both custom Batch rates before submitting.</p>}
+        </div>}
+        <p className="settings-note">These are the Batch rates; no additional 50% discount is applied. Custom prices do not enable an unsupported model or host.</p>
+      </Section>}
       {defaults.loading && (
         <p className="settings-note" role="status">
           Loading model defaults…

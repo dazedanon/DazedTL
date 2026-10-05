@@ -148,9 +148,14 @@ def quote(requests, configuration, count_tokens):
     outputs = sum(max(1, math.ceil(count_tokens(json.dumps(item["sources"], ensure_ascii=False)) * 2.5)) for item in requests)
     live = (inputs * rates["input"] + outputs * rates["output"]) / 1_000_000
     factor = rates["batch_factor"]
+    batch = live * factor if factor is not None else None
+    if configuration.get("openrouterBatch"):
+        from dazedtl.settings.openrouter import validate_policy
+        policy = validate_policy(configuration["openrouterBatch"], configuration["model"])
+        batch = (inputs * policy["input"] + outputs * policy["output"]) / 1_000_000
     return {"requests": len(requests), "units": sum(len(item["sources"]) for item in requests),
             "input_tokens": inputs, "output_tokens": outputs, "live_cost": live,
-            "batch_cost": live * factor if factor is not None else None,
-            "cost": live * factor if configuration["mode"] == "batch" and factor is not None else live,
+            "batch_cost": batch,
+            "cost": batch if configuration["mode"] == "batch" and batch is not None else live,
             "model": configuration["model"], "provider": configuration["provider"],
             "rates": rates, "basis": "Complete compiled requests; 2.5× source-token output allowance, no assumed cache savings. Provider reasoning, retries, and images are additional."}

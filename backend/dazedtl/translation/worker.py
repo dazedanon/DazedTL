@@ -95,7 +95,7 @@ def run_locked(workspace, identity, store):
                 write_json(report_path, report)
                 last_report = time.monotonic()
 
-            provider = TranslationProvider(plan["configuration"], worker_secret(workspace, plan["configuration"]))
+            provider = TranslationProvider(plan["configuration"], worker_secret(workspace, plan["configuration"]), receipt_root=store.folder(identity))
             while True:
                 runner = Runner(store, identity, provider, current, progress)
                 runner.step()

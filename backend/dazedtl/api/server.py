@@ -210,6 +210,42 @@ class Application:
     def settings_model_defaults(self, connection_id, model):
         return self.settings.model_defaults(connection_id, model)
 
+    def prepare_model_pricing(self, name, params):
+        """Only explicit price/estimate actions may perform public price reads."""
+        explicit = name == 'settings_model_defaults'
+        prepares = (name == 'guided_preview' and params.get('action') == 'start'
+                    or name == 'translation_compile' or name == 'images_editor_translation_preview')
+        if not explicit and not prepares:
+            return
+        with self.backend.lock:
+            if self.closing:
+                raise ValueError('The app is closing. Reopen it before preparing requests.')
+            if name == 'translation_compile':
+                _record, project = self.translation.project(params.get('project_id'))
+                if project.read()['options']['mode'] == 'agent':
+                    return
+            lookup = self.settings.pricing_lookup(connection_id=params.get('connection_id') if explicit else None,
+                                                  model=params.get('model') if explicit else None, explicit=explicit)
+        if lookup is None:
+            return
+        from dazedtl.settings.openrouter import live_prices
+        try:
+            prices = live_prices(lookup['model'], lookup['host'])
+        except ValueError:
+            with self.backend.lock:
+                active = self.settings.pricing_selection(lookup)
+                cached = self.settings.model_defaults(active['id'], lookup['model'])
+                if cached['inputRate'] is not None and cached['outputRate'] is not None:
+                    return  # Retain the labeled stale quote when its route still matches.
+            raise
+        with self.backend.lock:
+            if self.closing:
+                raise ValueError('The app closed while reading prices. Try again after reopening it.')
+            self.settings.retain_prices(lookup, prices)
+
+    def openrouter_hosts(self, model=""):
+        return self.settings.openrouter_hosts(model)
+
     def settings_revert(self, revision, connection_id):
         return self.settings.revert(revision, connection_id)
 
@@ -249,6 +285,7 @@ def serve(args, diagnostics):
         },
         "settings_draft": (app.settings_draft, lambda value, _params: value),
         "settings_model_defaults": (app.settings_model_defaults, lambda value, _params: value),
+        "openrouter_hosts": (app.openrouter_hosts, lambda value, _params: views.openrouter_hosts(value)),
         "guided_phase_select": (
             app.guided.phase_select,
             lambda value, params: views.guided(value, params["project_id"]),
@@ -300,7 +337,8 @@ def serve(args, diagnostics):
         if name not in methods:
             raise ValueError("Unknown project operation.")
         handler, present = methods[name]
-        if name == "connection_check":
+        app.prepare_model_pricing(name, params)
+        if name in {"connection_check", "openrouter_hosts"}:
             return present(handler(**params), params)
         with app.backend.context(), app.translation.engine.context():
             if app.closing:

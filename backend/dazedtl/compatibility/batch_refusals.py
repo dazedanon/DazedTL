@@ -74,15 +74,22 @@ def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, 
             continue
         if any(key not in queued for key in mapping.values()):
             raise ValueError('The original Batch payloads are unavailable for clarification.')
-        with (connection or batch_control.connection)(batch, resolve) as provider:
+        connect = connection or (lambda batch, resolve: batch_control.connection(batch, resolve, receipt_root=root))
+        with connect(batch, resolve) as provider:
             from util.batch_providers import batch_limits
             from .batch_window import reserve_clarification
             state = saved(root, 'batch_state.json')
             limit = state.get('batch_token_allowance') or state.get('sequential_token_limit') or (
                 (plan.get('dazedtl_request_policy') or {}).get('batchInputTokens') if batch['provider'] == 'openai' else None)
+            limits = batch_limits(batch['provider'])
+            if batch['provider'] == 'openrouter':
+                from dazedtl.settings.openrouter import validate_policy
+                frozen = (plan.get('dazedtl_request_policy') or {}).get('openrouterBatch')
+                validate_policy(frozen, plan['settings']['model'])
+                limits = (frozen['max_requests'], frozen['max_bytes'] - 4096)
             result = advance(root, batch['id'], {key: queued[key]['params'] for key in mapping.values()},
                              part, batch.get('usage') or {}, provider,
-                             limits=(*batch_limits(batch['provider']), limit),
+                             limits=(*limits, limit),
                              input_tokens=provider.input_tokens, commit=commit, allow_submit=allow_submit,
                              reserve=lambda items: reserve_clarification(root, plan, items, provider.input_tokens, limit))
         pending.extend(result['batches'])

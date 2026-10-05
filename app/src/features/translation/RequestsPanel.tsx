@@ -68,6 +68,8 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 cached input tokens
               </p>
             )}
+            {job.usage.openrouter_cost != null && <p className="muted">OpenRouter charge collected: {money(job.usage.openrouter_cost)}
+              {job.usage.upstream_inference_cost != null && ` · BYOK inference estimate: ${money(job.usage.upstream_inference_cost)} (billed separately by the host)`}</p>}
             {job.quote && (
               <div className="translation-quote">
                 <strong>
@@ -86,6 +88,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                   · Rates: {job.quote.rates.source}
                 </p>
                 <small>{job.quote.basis}</small>
+                {job.mode === "batch" && job.quote.provider === "openrouter" && <p className="muted">OpenRouter uses a 24-hour window. Submitted Batches cannot be canceled through this app; pausing stops local work and future submissions.</p>}
               </div>
             )}
             <div className="actions">
@@ -131,7 +134,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                     : "Pause at checkpoint"}
                 </Button>
               )}
-              {job.mode === "batch" && job.status !== "complete" && (
+              {job.mode === "batch" && job.can_cancel_provider !== false && job.status !== "complete" && (
                 <Button
                   disabled={action.busy || job.cancel_requested}
                   onClick={() =>

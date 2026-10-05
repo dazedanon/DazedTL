@@ -275,7 +275,7 @@ Additional project instructions:
         limits = None
         if cfg["mode"] != "agent":
             batch_provider = self.engine.batch_supported(cfg)
-            cfg["rates"]["batch_factor"] = 0.5 if batch_provider else None
+            cfg["rates"]["batch_factor"] = 0.5 if batch_provider and batch_provider != "openrouter" else None
             if cfg["mode"] == "batch" and not batch_provider:
                 raise ValueError("This route does not support Batch execution. Choose a supported connection or explicitly select Live.")
             limits = self.engine.batch_limits(cfg) if batch_provider else None
@@ -346,6 +346,8 @@ Additional project instructions:
             job, plan = self.jobs.store.load(run_id, project_id)
             if plan["kind"] != "translation" or plan["configuration"]["mode"] != "batch":
                 raise ValueError("Provider cancellation applies to Batch runs.")
+            if plan["configuration"].get("provider") == "openrouter":
+                raise ValueError("OpenRouter does not expose Batch cancellation. Pause locally to stop future submissions; submitted work continues at the provider.")
             if job["status"] == "complete":
                 return self.jobs.store.view(job)
             write_json(self.jobs.store.folder(run_id) / "cancel.json", {"requested": True})

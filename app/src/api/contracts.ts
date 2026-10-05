@@ -79,6 +79,10 @@ export interface NameTranslationPage {
   rows: NameTranslation["rows"]; total: number; offset: number; nextOffset: number | null;
 }
 export interface RunProcess {
+  resultsUnavailable?: string | null;
+  queueStopped?: boolean;
+  queueCanContinue?: boolean;
+  billing?: { openrouter_cost?: number; upstream_inference_cost?: number } | null;
   noRequestFiles?: string[];
   monitoring?: { state: "monitoring" | "collecting" | "error" | "save_error" | "blocked"; message: string; checkedAt?: string };
   resultsCollected?: boolean;
@@ -93,7 +97,7 @@ export interface RunProcess {
   requests?: { index: number; state: string; file?: string | null; sourceItems: number; clarificationOf?: number; preview?: string; providerFinished?: boolean }[];
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
-  batches?: { id: string; status: string; provider?: string; total?: number | null; requestIndices?: number[]; clarification?: boolean; originalBatchId?: string; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
+  batches?: { id: string; status: string; provider?: string; canCancel?: boolean; total?: number | null; requestIndices?: number[]; clarification?: boolean; originalBatchId?: string; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
   errors: string[]; usage?: Record<string, number> | null;
 }
 export interface BatchCancellation {
@@ -239,6 +243,7 @@ export interface GuidedState {
     model: string;
     defaultMode: RunMode;
     batchSupported: boolean;
+    batchReason?: string;
     ready: boolean;
     enabled: boolean;
   };
@@ -307,6 +312,7 @@ export interface TranslationJob {
   requests: number;
   stop_requested: boolean;
   cancel_requested: boolean;
+  can_cancel_provider?: boolean;
   batches: {
     id: string;
     state: string;
@@ -449,9 +455,13 @@ export interface PreferenceValues {
 export interface ModelOptions {
   entriesPerRequest: number | "" | null;
   batchInputTokens?: number | null;
+  maxOutputTokens?: number | null;
   pricing: "automatic" | "custom";
   inputRate: number | "" | null;
   outputRate: number | "" | null;
+  batchPricing?: "automatic" | "custom";
+  batchInputRate?: number | "" | null;
+  batchOutputRate?: number | "" | null;
 }
 export interface ModelDefaults {
   model: string;
@@ -460,12 +470,18 @@ export interface ModelDefaults {
   source: "catalog" | "engine_default" | "unavailable";
   updatedAt: string | null;
   stale: boolean;
+  maxOutputTokens?: number | null;
+  batchSupported?: boolean;
+  batchReason?: string;
+  batchInputRate?: number | null;
+  batchOutputRate?: number | null;
 }
 export interface Settings {
   revision: number;
   values: PreferenceValues;
   modelOptions: Record<string, ModelOptions>;
   defaultEntriesPerRequest: number;
+  defaultOutputTokens?: number;
   defaultBatchInputTokens?: number;
   activeConnectionId: string;
   connections: Connection[];
@@ -486,6 +502,7 @@ export interface Connection {
   protocol: ProviderProtocol;
   endpoint: string;
   organization: string;
+  openrouter_host?: string;
   keyless: boolean;
   has_secret: boolean;
   needsSetup: boolean;
@@ -511,6 +528,7 @@ export interface ConnectionInput {
   secret: string;
   endpoint: string;
   organization: string;
+  openrouter_host?: string;
   keyless: boolean;
   reuse_secret: boolean;
 }
@@ -692,6 +710,10 @@ export interface RpcContract {
   settings_model_defaults: {
     request: { connection_id: string; model: string };
     response: ModelDefaults;
+  };
+  openrouter_hosts: {
+    request: { model?: string };
+    response: { slug: string; name: string }[];
   };
   settings_draft: { request: PreferencesRequest; response: Saved };
   settings_revert: {

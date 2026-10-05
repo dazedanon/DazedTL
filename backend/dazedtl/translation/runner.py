@@ -132,6 +132,9 @@ class Runner:
             limit = self.plan["batch_limits"]
             import json
             chunks, chunk, size, tokens = [], [], 0, 0
+            schema = None
+            same_schema = (self.plan['configuration'].get('openrouterStructuredOutputs')
+                           and self.plan['configuration']['model'].startswith('google/'))
             token_limit = limit[2] if len(limit) > 2 else None
             for index, row in enumerate(pending):
                 item = {"custom_id": "dtl-" + self.job["id"][:12] + "-" + str(index), "request": row["id"]}
@@ -139,10 +142,12 @@ class Runner:
                 request_tokens = row.get("input_tokens", 0)
                 if length > limit[1] or token_limit and request_tokens > token_limit:
                     raise ValueError("A request exceeds the provider's Batch file limit. Split the scene with source context.")
-                if chunk and (len(chunk) >= limit[0] or size + length > limit[1] or token_limit and tokens + request_tokens > token_limit):
+                if chunk and (len(chunk) >= limit[0] or size + length > limit[1] or token_limit and tokens + request_tokens > token_limit
+                              or same_schema and schema != row['params'].get('response_format')):
                     chunks.append({"state": "pending", "id": "", "items": chunk})
                     chunk, size, tokens = [], 0, 0
                 chunk.append(item)
+                schema = row['params'].get('response_format')
                 size += length
                 tokens += request_tokens
             if chunk:
@@ -252,8 +257,9 @@ class Runner:
                     input_tokens=getattr(self.provider, 'input_tokens', lambda _: 0), commit=retry_commit)
                 chunk['clarification_batches'] = retried['batches']
                 if not retried['ready']:
-                    chunk['usage'] = {key: value + sum(batch.get('usage', {}).get(key, 0) for batch in retried['batches'])
-                                      for key, value in usage.items()}
+                    usage_keys = set(usage).union(*(batch.get('usage', {}) for batch in retried['batches']))
+                    chunk['usage'] = {key: usage.get(key, 0) + sum(batch.get('usage', {}).get(key, 0) for batch in retried['batches'])
+                                      for key in usage_keys}
                     for identity, response in responses.items():
                         if not refused(response, self.requests[identity]['sources'].values()):
                             self.accept(identity, response)
@@ -270,7 +276,7 @@ class Runner:
                 elif self.job["states"][identity]["state"] != "accepted":
                     self.job["states"][identity] = {"state": "failed", "message": "No successful response was returned for this request."}
             chunk.update(state="complete", usage=usage)
-            self.job["usage"] = {key: sum(item.get("usage", {}).get(key, 0) for item in self.job["batches"]) for key in usage}
+            self.record_batch_usage()
             self.save()
             if any(self.job["states"][item["request"]]["state"] == "failed" for item in chunk["items"]):
                 self.save("needs_attention", "Some returned translations need attention. Later batches have not been submitted.")

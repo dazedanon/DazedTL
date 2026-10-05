@@ -17,6 +17,11 @@ class ModelDefaults:
         self.online = online
         self.cache = {}
 
+    def cached(self, model):
+        """Known model metadata without a resolver or network read."""
+        value = self.cache.get(model)
+        return deepcopy(value[1]) if value else {}
+
     def describe(self, model):
         model = text(model, "model ID", required=True)
         previous = self.cache.get(model)

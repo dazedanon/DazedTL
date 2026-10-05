@@ -239,6 +239,30 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
         self.assertTrue(all(Results(self.game).get(row) for row in plan["requests"]))
 
+    def test_google_structured_batches_split_before_submission_and_keep_saved_groups(self):
+        # Google rejects different response schemas in one Batch. Splitting
+        # must retain ownership and leave matching schemas together on resume.
+        from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
+        from dazedtl.translation.requests import output_schema
+        rows = [logical_request({'id': key, 'sources': {'line' if index == 0 else 'other': '薬'}}, {})
+                for index, key in enumerate(('one', 'two', 'three'))]
+        for row in rows:
+            row['params'] = {'model': 'google/fixture', 'messages': [], 'response_format': {'type': 'json_schema',
+                'json_schema': {'name': 'translation', 'strict': True,
+                                'schema': output_schema(row['sources'])}}}
+        plan = {'version': 1, 'kind': 'translation', 'source': str(self.game), 'complete': True, 'requests': rows,
+                'configuration': {'mode': 'batch', 'model': 'google/fixture', 'openrouterStructuredOutputs': STRUCTURED_OUTPUTS},
+                'batch_limits': [50, 100000]}
+        job = self.store.create('project', plan, {'cost': 1})
+        self.store.authorize(job)
+        provider = BatchProvider()
+        for _ in range(2):
+            Runner(self.store, job['id'], provider, lambda: None).step()
+        current, _ = self.store.load(job['id'])
+        self.assertEqual([[item['request'] for item in chunk['items']] for chunk in current['batches']],
+                         [['one'], ['two', 'three']])
+        self.assertEqual(provider.calls, 1)
+
     def test_batch_refusals_retry_only_rejected_rows_in_batch_and_keep_original_usage(self):
         # A Batch refusal must not become a Live call, resend successful rows,
         # or reset its retry allowance when polling resumes in another worker.

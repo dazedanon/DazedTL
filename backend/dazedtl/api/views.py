@@ -80,6 +80,7 @@ def guided(value, project_id):
             'connection': value['provider']['connection'],
             'defaultMode': value['provider']['default_mode'],
             'batchSupported': value['provider']['batch_supported'],
+            'batchReason': value['provider'].get('batch_reason', ''),
             'ready': value['provider']['credential_ready'],
             'enabled': value['allow_providers'],
         },
@@ -91,8 +92,12 @@ def speaker_scan(value):
 
 
 def settings(value):
-    return pick(value, ('revision', 'values', 'modelOptions', 'defaultEntriesPerRequest', 'defaultBatchInputTokens', 'draft',
+    return pick(value, ('revision', 'values', 'modelOptions', 'defaultEntriesPerRequest', 'defaultOutputTokens', 'defaultBatchInputTokens', 'draft',
                         'activeConnectionId', 'connections', 'providers', 'checksEnabled'))
+
+
+def openrouter_hosts(value):
+    return [pick(host, ('slug', 'name')) for host in value]
 
 
 def preview(value):

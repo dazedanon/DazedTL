@@ -3,12 +3,12 @@ import { ChevronDown } from "lucide-react";
 
 type Props = Omit<ComponentProps<"input">, "value" | "onChange" | "list"> & {
   value: string;
-  options: readonly string[];
+  options: readonly (string | { value: string; label: string })[];
   onChange: (value: string) => void;
 };
 
-/** Editable suggestions in a bounded top-layer popup, independent of page overflow. */
-export function ComboBox({ value, options, onChange, disabled, ...props }: Props) {
+/** Editable suggestions or read-only selection in a bounded top-layer popup. */
+export function ComboBox({ value, options, onChange, disabled, readOnly, ...props }: Props) {
   const listId = useId();
   const input = useRef<HTMLInputElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -16,13 +16,14 @@ export function ComboBox({ value, options, onChange, disabled, ...props }: Props
   const [open, setOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState<string | null>(null);
-  const matches = options.filter(option => showAll || option.toLowerCase().includes(value.toLowerCase()));
-  const activeIndex = active === null ? -1 : matches.indexOf(active);
+  const entries = options.map(option => typeof option === "string" ? { value: option, label: option } : option);
+  const matches = entries.filter(option => readOnly || showAll || option.label.toLowerCase().includes(value.toLowerCase()));
+  const activeIndex = active === null ? -1 : matches.findIndex(option => option.value === active);
   const expanded = open && !disabled && options.length > 0;
 
   function show(all = false) {
     setShowAll(all);
-    setActive(null);
+    setActive(readOnly && entries.some(option => option.value === value) ? value : null);
     setOpen(true);
   }
 
@@ -90,11 +91,12 @@ export function ComboBox({ value, options, onChange, disabled, ...props }: Props
       <input
         {...props}
         ref={input}
-        value={value}
+        value={readOnly ? entries.find(option => option.value === value)?.label ?? value : value}
+        readOnly={readOnly}
         disabled={disabled}
         role="combobox"
         autoComplete="off"
-        aria-autocomplete="list"
+        aria-autocomplete={readOnly ? "none" : "list"}
         aria-expanded={expanded}
         aria-controls={expanded ? listId : undefined}
         aria-activedescendant={expanded && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
@@ -110,12 +112,15 @@ export function ComboBox({ value, options, onChange, disabled, ...props }: Props
             const index = !expanded || activeIndex < 0
               ? event.key === "ArrowDown" ? 0 : matches.length - 1
               : Math.max(0, Math.min(matches.length - 1, activeIndex + (event.key === "ArrowDown" ? 1 : -1)));
-            setActive(matches[index] ?? null);
-          } else if (expanded && event.key === "Enter") {
+            setActive(matches[index]?.value ?? null);
+          } else if (expanded && (event.key === "Enter" || readOnly && event.key === " ")) {
             // Choosing a suggestion must not also submit the containing form.
             event.preventDefault();
-            if (activeIndex >= 0) choose(matches[activeIndex]);
+            if (activeIndex >= 0) choose(matches[activeIndex].value);
             else setOpen(false);
+          } else if (readOnly && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            show(true);
           } else if (expanded && event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
@@ -141,9 +146,9 @@ export function ComboBox({ value, options, onChange, disabled, ...props }: Props
         <div ref={list} id={listId} popover="manual" role="listbox" className="combobox-list"
           aria-label="Suggestions" onMouseDown={event => event.preventDefault()}>
           {matches.map((option, index) => (
-            <div key={option} id={`${listId}-${index}`} role="option"
+            <div key={option.value} id={`${listId}-${index}`} role="option"
               aria-selected={index === activeIndex} className="combobox-option"
-              onClick={() => choose(option)}>{option}</div>
+              onClick={() => choose(option.value)}>{option.label}</div>
           ))}
           {!matches.length && <div className="combobox-empty" role="status">No matching suggestions.</div>}
         </div>

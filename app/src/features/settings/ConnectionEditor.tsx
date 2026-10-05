@@ -13,17 +13,20 @@ import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
+import { OpenRouterHost } from "./OpenRouterHost";
 
 export default function ConnectionEditor({
   connection,
   providers,
   running,
+  checksEnabled,
   save,
   cancel,
 }: {
   connection?: Connection;
   providers: Settings["providers"];
   running: boolean;
+  checksEnabled: boolean;
   save: (input: ConnectionInput) => Promise<unknown>;
   cancel: () => void;
 }) {
@@ -35,6 +38,7 @@ export default function ConnectionEditor({
     endpoint: connection?.endpoint || "",
     keyless: connection?.keyless || false,
     organization: connection?.organization || "",
+    openrouter_host: connection?.openrouter_host || "",
     reuse_secret: false,
   };
   const [value, setValue] = useState(initial);
@@ -55,6 +59,7 @@ export default function ConnectionEditor({
     [],
   );
   const custom = value.provider === "custom";
+  const hostModel = connection?.provider === "openrouter" ? connection.model : "";
   const definition = providers.find((item) => item.id === value.provider);
   const sameRoute =
     connection?.provider === value.provider &&
@@ -79,6 +84,7 @@ export default function ConnectionEditor({
       reuse_secret: false,
       keyless: false,
       organization: "",
+      openrouter_host: "",
     }));
   }
   async function submit(event: React.FormEvent) {
@@ -135,6 +141,11 @@ export default function ConnectionEditor({
                 </select>
               )}
             </FieldRow>
+            {value.provider === "openrouter" && (
+              <OpenRouterHost key={hostModel} model={hostModel}
+                value={value.openrouter_host} disabled={disabled} checksEnabled={checksEnabled}
+                onChange={openrouter_host => setValue(current => ({ ...current, openrouter_host }))} />
+            )}
             {!value.keyless && (
               <FieldRow
                 id="connection-secret"

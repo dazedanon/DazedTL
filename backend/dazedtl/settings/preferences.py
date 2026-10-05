@@ -5,6 +5,7 @@ import math
 
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
+DEFAULT_OUTPUT_TOKENS = 32_768
 # Below the 500k Tier 1 Batch queue limit published for GPT-5.5 Pro;
 # source and account-limit caveats live in docs/architecture.md.
 DEFAULT_BATCH_INPUT_TOKENS = 400_000
@@ -25,6 +26,16 @@ def batch_input_tokens(value):
     if value is not None and (type(value) is not int or not 1 <= value <= 9_007_199_254_740_991):
         raise ValueError("Batch token allowance must be a positive whole number of input tokens.")
     return value
+
+
+def output_tokens(value):
+    if value is not None and (type(value) is not int or not 1 <= value <= 9_007_199_254_740_991):
+        raise ValueError("The output token allowance must be a positive whole number.")
+    return value
+
+
+def output_allowance(value=None, *limits):
+    return min([output_tokens(value) or DEFAULT_OUTPUT_TOKENS, *(output_tokens(limit) for limit in limits if limit is not None)])
 
 
 def text(value, label, *, required=False):
@@ -52,11 +63,16 @@ def values(value, *, draft=False, connection=False):
 
 def options(value, *, draft=False):
     # Existing version-two preferences and recovery drafts can omit the override.
-    if not isinstance(value, dict) or set(value) not in (set(DEFAULT_OPTIONS), set(DEFAULT_OPTIONS) - {"batchInputTokens"}):
+    optional = {"batchInputTokens", "maxOutputTokens", "batchPricing", "batchInputRate", "batchOutputRate"}
+    if (not isinstance(value, dict) or not set(DEFAULT_OPTIONS).difference(optional).issubset(value)
+            or set(value) - set(DEFAULT_OPTIONS) - optional):
         raise ValueError("Invalid model options.")
     batch_input_tokens(value.get("batchInputTokens"))
+    output_tokens(value.get('maxOutputTokens'))
     if value["pricing"] not in ("automatic", "custom"):
         raise ValueError("Choose automatic pricing or custom rates.")
+    if value.get("batchPricing", "automatic") not in ("automatic", "custom"):
+        raise ValueError("Choose automatic Batch pricing or custom Batch rates.")
     entries = value["entriesPerRequest"]
     if (
         entries is not None
@@ -64,11 +80,12 @@ def options(value, *, draft=False):
         and (type(entries) is not int or not 1 <= entries <= 100)
     ):
         raise ValueError("Entries per request must be a whole number from 1 to 100.")
-    for name in ("inputRate", "outputRate"):
-        rate = value[name]
+    for name in ("inputRate", "outputRate", "batchInputRate", "batchOutputRate"):
+        rate = value.get(name)
+        custom = value.get("batchPricing", "automatic") == "custom" if name.startswith("batch") else value["pricing"] == "custom"
         if rate is None or draft and rate == "":
-            if not draft and value["pricing"] == "custom":
-                raise ValueError("Enter both custom rates; use 0 for a free model.")
+            if not draft and custom:
+                raise ValueError("Enter both custom Batch rates; use 0 for a free model." if name.startswith("batch") else "Enter both custom rates; use 0 for a free model.")
         elif (
             type(rate) not in (int, float)
             or not math.isfinite(rate)

@@ -288,7 +288,7 @@ def fresh_start(root, job):
         submitted = []
         for batch in batches:
             counts = batch.get('request_counts', {})
-            if (batch.get('provider') not in {'openai', 'anthropic', 'gemini'} or
+            if (batch.get('provider') not in {'openai', 'anthropic', 'gemini', 'openrouter'} or
                     batch.get('api_status') != ('ended' if batch.get('provider') == 'anthropic' else 'completed') or
                     any(type(counts.get(key)) is not int or counts[key] != 0
                         for key in ('processing', 'succeeded', 'canceled', 'expired')) or
@@ -451,6 +451,7 @@ def summary(root, job):
             if status in {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'}:
                 counts = cancellation.get('counts') or {}
         receipts.append({'id': batch['id'], 'status': status, 'provider': batch.get('provider'),
+                         'canCancel': batch.get('provider') != 'openrouter',
                          'total': len(batch['custom_ids']) if isinstance(batch.get('custom_ids'), dict) else None,
                          'requestIndices': sorted({request_indices[key] for key in (batch.get('custom_ids') or {}).values() if key in request_indices}),
                          'counts': counts})
@@ -459,10 +460,17 @@ def summary(root, job):
         for batch in record['batches']:
             if batch['id']:
                 receipts.append({'id': batch['id'], 'status': batch.get('api_status', 'validating'),
+                                 'canCancel': original.get('provider') != 'openrouter',
                                  'provider': original.get('provider'), 'total': len(batch['items']), 'counts': batch.get('counts', {}),
                                  'clarification': True, 'originalBatchId': record['original_id'],
                                  'requestIndices': sorted({request_indices[item['key']] for item in batch['items'] if item['key'] in request_indices})})
+    billed = [batch.get('usage') or {} for batch in batches] + [batch.get('usage') or {} for record in clarifications for batch in record['batches']]
+    billing = {key: sum(row[key] for row in billed if type(row.get(key)) in (int, float) and math.isfinite(row[key]) and row[key] >= 0)
+               for key in ('openrouter_cost', 'upstream_inference_cost') if any(type(row.get(key)) in (int, float) and math.isfinite(row[key]) and row[key] >= 0 for row in billed)}
     return {'mode': job.get('mode'), 'prepared': prepared,
+            'resultsUnavailable': job.get('dazedtl_batch_results_error'),
+            'billing': billing or None, 'queueStopped': bool(job.get('dazedtl_batch_stopped')),
+            'queueCanContinue': bool(job.get('dazedtl_batch_stopped') and job.get('status') in {'stopped', 'interrupted', 'failed'}),
             'resultsCollected': batch_state(root).get('status') == 'fetched',
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
@@ -552,6 +560,11 @@ def batch_payload(index, total, entry, custom_id, params, response, state, error
     provider = entry.get('provider', 'openai')
     params = _openai_batch_body(provider, params) if provider != 'anthropic' else params
     exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if provider != 'anthropic' else {'custom_id': custom_id, 'params': params}
+    if provider == 'openrouter':
+        from .openrouter_batch import envelope
+        params = dict(params)
+        routing = params.pop('provider', None)
+        exact = envelope(params.get('model'), [{'custom_id': custom_id, 'body': params}], routing)
     return {'index': index, 'total': total, 'state': state, 'response': response, 'error': error,
             'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
             'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
@@ -640,6 +653,8 @@ def provider_details(root, resolve_connection):
         binding = resolve_connection(batch)
         client = batch_providers.get_client(batch['provider'], api_key=binding['secret'] or 'not-needed',
                                             api_url=binding['endpoint'], max_retries=0)
+        if batch['provider'] == 'openrouter':
+            client.receipt_root = Path(evidence_root(root))
         if hasattr(client, 'with_options'):
             options = {'organization': binding['organization'] or None} if batch['provider'] in {'openai', 'gemini'} else {}
             client = client.with_options(timeout=20, max_retries=0, **options)
