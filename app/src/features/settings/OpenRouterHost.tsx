@@ -28,9 +28,10 @@ export function OpenRouterHost({
     () => hostLists.get(model) ?? null,
   );
   const mounted = useRef(false);
+  const { run } = action;
   const load = useCallback(
     (notice = "") =>
-      action.run(async () => {
+      run(async () => {
         const hosts = await api.openrouterHosts(model);
         hostLists.delete(model);
         hostLists.set(model, hosts);
@@ -38,7 +39,7 @@ export function OpenRouterHost({
           hostLists.delete(hostLists.keys().next().value!);
         if (mounted.current) setHosts(hosts);
       }, notice),
-    [model, action.run],
+    [model, run],
   );
   useEffect(() => {
     mounted.current = true;

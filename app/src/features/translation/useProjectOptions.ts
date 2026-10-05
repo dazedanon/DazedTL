@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { api } from "../../api/client";
 import type { ProjectOptions, TranslationState } from "../../api/contracts";
 import { useDraft } from "../../state/useDraft";
@@ -15,6 +15,8 @@ export function useProjectOptions(
     persist: (value) =>
       api.translation.draft(state.projectId, "options", value),
   });
+  // A newer saved revision replaces the draft once it is clean and idle.
+  const adoptSaved = useEffectEvent(() => draft.session.adopt(saved));
   const observed = useRef(state.revision);
   const pending = useRef(false);
   useEffect(() => {
@@ -24,7 +26,7 @@ export function useProjectOptions(
     }
     if (pending.current && !draft.dirty && !draft.committing) {
       pending.current = false;
-      draft.session.adopt(saved);
+      adoptSaved();
     }
   }, [state.revision, draft.dirty, draft.committing]);
   async function save() {

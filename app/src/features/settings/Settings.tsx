@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Check, KeyRound, Plus, ShieldCheck } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
+import { useOnChange } from "../../state/useOnChange";
 import { flushDrafts } from "../../state/leaveGuards";
 import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
@@ -26,19 +27,18 @@ export default function Settings() {
   const draft = useSettingsDraft(action.report);
   const { config } = draft;
   const [section, setSection] = useState<SectionId>("api");
-  const [editor, setEditor] = useState<string | null>(null);
   const busy = action.busy || draft.committing;
   const running = !!application.snapshot?.application.running;
   const current = config?.connections.find(
     (item) => item.id === config.activeConnectionId,
   );
-  const previousConnection = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (previousConnection.current !== current?.id) {
-      previousConnection.current = current?.id;
-      if (current?.needsSetup) setEditor(current.id);
-    }
-  }, [current?.id, current?.needsSetup]);
+  // A newly active connection that still needs setup opens its editor.
+  const [editor, setEditor] = useState<string | null>(() =>
+    current?.needsSetup ? current.id : null,
+  );
+  useOnChange(current?.id, (id) => {
+    if (id && current?.needsSetup) setEditor(id);
+  });
   const editId =
     editor ?? (config && !config.connections.length ? "new" : null);
   const editConnection = config?.connections.find((item) => item.id === editId);

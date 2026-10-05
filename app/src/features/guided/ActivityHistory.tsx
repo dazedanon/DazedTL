@@ -46,12 +46,12 @@ export function operationSummary(job: Job): string {
 }
 
 export function projectActivity(
-  state: GuidedState,
-  translation: TranslationState,
+  operations: GuidedState["operations"],
+  jobs: TranslationState["jobs"],
 ): Job[] {
   return [
-    ...state.operations,
-    ...translation.jobs
+    ...operations,
+    ...jobs
       .filter((job) => job.kind === "operation")
       .map((job) => ({
         id: job.id,
@@ -126,7 +126,7 @@ export function ActivityHistory({
     [state.runs],
   );
   const operations = useMemo(
-    () => projectActivity(state, translation),
+    () => projectActivity(state.operations, translation.jobs),
     [state.operations, translation.jobs],
   );
   const rows = useMemo(

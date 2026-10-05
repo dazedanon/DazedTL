@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Check, FolderOpen, LoaderCircle } from "lucide-react";
 import { api } from "../../api/client";
 import type {
@@ -268,7 +274,7 @@ function Workspace({
   );
   const [preview, setPreview] = useState<Preview | null>(null);
   const [attemptedPreview, setAttemptedPreview] = useState("");
-  const previewRequest = useRef<{
+  const [previewRequest, setPreviewRequest] = useState<{
     name: string;
     options: Record<string, unknown>;
     files?: string[];
@@ -301,7 +307,8 @@ function Workspace({
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const historyControl = useRef<HTMLButtonElement>(null);
-  const inspectorReturnFocus = useRef<HTMLElement | null>(null);
+  const [inspectorReturnFocus, setInspectorReturnFocus] =
+    useState<HTMLElement | null>(null);
   useEffect(() => {
     bodyRef.current?.scrollTo(0, 0);
     headingRef.current?.focus({ preventScroll: true });
@@ -379,7 +386,7 @@ function Workspace({
     state.estimates[target]?.current
       ? state.estimates[target]?.job
       : null;
-  const activity = projectActivity(state, translation);
+  const activity = projectActivity(state.operations, translation.jobs);
   const activeOperation = activity.find((item) =>
     ["ready", "running", "waiting"].includes(item.status),
   );
@@ -597,6 +604,9 @@ function Workspace({
       </Button>
     );
   const feedback = (key: string, pendingText = "Working…") => {
+    // feedback() runs only while rendering; the footer reads this render's
+    // registry to avoid repeating errors already shown beside a control.
+    // oxlint-disable-next-line react/immutability
     feedbackKeys.add(key);
     return {
       pending: action.busy && action.key === key,
@@ -685,11 +695,11 @@ function Workspace({
           inspectOnly && ["release", "release_patch"].includes(name),
         );
         const result = await preparePreview(name, options, files);
-        previewRequest.current = {
+        setPreviewRequest({
           name,
           options: { ...options },
           files: files && [...files],
-        };
+        });
         const prepareBatch = name === "start" && options.mode === "batch";
         if ((!result.confirmation || prepareBatch) && !inspectOnly)
           await execute(result);
@@ -701,7 +711,7 @@ function Workspace({
   const refreshPreview = () =>
     action.run(
       async () => {
-        const request = previewRequest.current;
+        const request = previewRequest;
         if (request)
           setPreview(
             await preparePreview(request.name, request.options, request.files),
@@ -760,6 +770,7 @@ function Workspace({
     preview,
     submission,
     position.step,
+    translationFlow.claimed,
   ]);
   const task = (
     name: string,
@@ -936,8 +947,9 @@ function Workspace({
   );
   const inspect = (item: Job | null, target?: RequestInspectionTarget) => {
     const current = document.activeElement;
-    inspectorReturnFocus.current =
-      current instanceof HTMLElement ? current : historyControl.current;
+    setInspectorReturnFocus(
+      current instanceof HTMLElement ? current : historyControl.current,
+    );
     setInspectionTarget(target);
     setInspected(item);
   };
@@ -1138,20 +1150,27 @@ function Workspace({
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
   const aceNeedsExport = state.engine === "ACE" && !state.files.length;
+  // An observed baseline completion clears tracking and navigates once;
+  // navigation cannot run during render.
+  const followBaseline = useEffectEvent(
+    (saved: (typeof translation.jobs)[number] | undefined) => {
+      if (saved?.status === "complete" && baseline) {
+        setBaselineRun(null);
+        setBaselineNotice(
+          `Version ${translation.git?.original_version || "baseline"} saved. Prepare complete.`,
+        );
+        void move("context", "names");
+      } else if (
+        saved &&
+        ["failed", "stopped", "interrupted", "canceled"].includes(saved.status)
+      )
+        setBaselineRun(null);
+    },
+  );
   useEffect(() => {
     if (!baselineRun || action.busy || taskId !== "baseline") return;
-    const saved = translation.jobs.find((item) => item.id === baselineRun);
-    if (saved?.status === "complete" && baseline) {
-      setBaselineRun(null);
-      setBaselineNotice(
-        `Version ${translation.git?.original_version || "baseline"} saved. Prepare complete.`,
-      );
-      void move("context", "names");
-    } else if (
-      saved &&
-      ["failed", "stopped", "interrupted", "canceled"].includes(saved.status)
-    )
-      setBaselineRun(null);
+    // oxlint-disable-next-line react/set-state-in-effect
+    followBaseline(translation.jobs.find((item) => item.id === baselineRun));
   }, [baselineRun, translation.jobs, baseline, taskId, action.busy]);
   const applyRun = (current: Job) => (
     <Button
@@ -3917,7 +3936,7 @@ function Workspace({
           projectId={project.id}
           job={inspected}
           target={inspectionTarget}
-          returnFocus={inspectorReturnFocus.current}
+          returnFocus={inspectorReturnFocus}
           close={() => {
             setInspected(null);
             setInspectionTarget(undefined);
@@ -3941,7 +3960,7 @@ function Workspace({
           reapply={async (item) => {
             const options = { run_id: item.id };
             const result = await preparePreview("export_selected", options);
-            previewRequest.current = { name: "export_selected", options };
+            setPreviewRequest({ name: "export_selected", options });
             setInspectRelease(false);
             setPreview(result);
           }}
@@ -4316,8 +4335,7 @@ function Workspace({
               <Button
                 variant="primary"
                 disabled={
-                  !reviewEstimateCurrent ||
-                  (previewUsed && !previewRequest.current)
+                  !reviewEstimateCurrent || (previewUsed && !previewRequest)
                 }
                 pending={action.busy}
                 onClick={() =>

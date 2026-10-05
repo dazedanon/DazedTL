@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import type {
   Connection,
@@ -44,14 +44,18 @@ export default function ConnectionEditor({
   const [value, setValue] = useState(initial);
   const [revealed, setRevealed] = useState(false);
   const action = useAction();
-  const dirty = useRef(false);
+  const dirty = JSON.stringify(value) !== JSON.stringify(initial);
+  // The leave guard is registered once and reads the latest dirty state.
+  const unsaved = useRef(dirty);
+  useLayoutEffect(() => {
+    unsaved.current = dirty;
+  });
   const pending = useRef<Promise<unknown> | null>(null);
-  dirty.current = JSON.stringify(value) !== JSON.stringify(initial);
   useEffect(
     () =>
       registerLeaveGuard(async () => {
         if (pending.current) await pending.current;
-        if (dirty.current)
+        if (unsaved.current)
           throw new Error(
             "Save or cancel the connection changes before leaving.",
           );
@@ -98,7 +102,7 @@ export default function ConnectionEditor({
         provider: value.provider as Provider,
         connection_id: connection?.id,
       });
-      dirty.current = false;
+      unsaved.current = false;
       setValue((current) => ({ ...current, secret: "" }));
       cancel();
     });
@@ -107,7 +111,7 @@ export default function ConnectionEditor({
     pending.current = null;
   }
   function discard() {
-    dirty.current = false;
+    unsaved.current = false;
     setValue(initial);
     action.clear();
     setRevealed(false);
@@ -339,7 +343,7 @@ export default function ConnectionEditor({
                 ? "Connections can be changed after the current run finishes."
                 : action.busy
                   ? "Saving connection…"
-                  : dirty.current
+                  : dirty
                     ? "Unsaved connection changes"
                     : "The key is stored only when you save this connection.")}
           </div>
@@ -352,7 +356,7 @@ export default function ConnectionEditor({
           type="submit"
           variant="primary"
           pending={action.busy}
-          disabled={running || !dirty.current || !value.provider}
+          disabled={running || !dirty || !value.provider}
         >
           Save connection
         </Button>

@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { api } from "../../api/client";
 import { messageOf } from "../../api/errors";
 import type { GuidedState, Job, Phase, Preview } from "../../api/contracts";
@@ -50,9 +56,18 @@ type Options = {
 /** One visible operation, driven by the existing observer and guarded actions. */
 export function useTranslationFlow(options: Options) {
   const latest = useRef(options);
-  latest.current = options;
+  useLayoutEffect(() => {
+    latest.current = options;
+  });
   const current = useRef<Session | null>(null);
   const [state, setState] = useState<TranslationFlowState | null>(null);
+  // Sessions keep `finished` as the guard against repeated submissions; this
+  // copy only lets render show the current session as busy.
+  const [finished, setFinished] = useState(false);
+  function markFinished(session: Session, value: boolean) {
+    session.finished = value;
+    if (current.current === session) setFinished(value);
+  }
   const action = useAction({
     after: async () => {
       try {
@@ -60,7 +75,7 @@ export function useTranslationFlow(options: Options) {
       } catch (error) {
         const session = current.current;
         if (session) {
-          session.finished = false;
+          markFinished(session, false);
           session.canceled = false;
           change(session, { stage: "error", error: messageOf(error) });
         }
@@ -68,7 +83,7 @@ export function useTranslationFlow(options: Options) {
       }
     },
   });
-  const claimed = useRef(new Set<string>());
+  const [claimed, setClaimed] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(
     () => () => {
       if (current.current) current.current.canceled = true;
@@ -85,12 +100,13 @@ export function useTranslationFlow(options: Options) {
     if (current.current === session) {
       current.current = null;
       setState(null);
+      setFinished(false);
     }
   }
   async function abandon(session: Session) {
     const id = session.state.runId || session.state.estimateId;
     if (id) await api.guided.discardPreparation(options.projectId, id);
-    session.finished = true;
+    markFinished(session, true);
   }
   const canceled = (session: Session) =>
     session.canceled || current.current !== session;
@@ -133,6 +149,7 @@ export function useTranslationFlow(options: Options) {
     };
     current.current = session;
     setState(session.state);
+    setFinished(false);
     void perform(session, async () => {
       await latest.current.save();
       if (canceled(session)) return;
@@ -150,7 +167,8 @@ export function useTranslationFlow(options: Options) {
         change(session, { stage: "estimating", job: estimate });
     });
   }
-  useEffect(() => {
+  // Follows the observed estimate or preparation for the current session.
+  const follow = useEffectEvent(() => {
     const session = current.current;
     if (!session || session.canceled || session.finished || action.busy) return;
     const value = session.state;
@@ -207,7 +225,7 @@ export function useTranslationFlow(options: Options) {
           }
           const run = await api.execute(options.projectId, preview.token);
           session.state.runId = run.id;
-          claimed.current.add(run.id);
+          setClaimed((previous) => new Set(previous).add(run.id));
           if (!canceled(session)) change(session, { stage: "batch" });
         });
       }
@@ -230,15 +248,19 @@ export function useTranslationFlow(options: Options) {
         change(session, { stage: "empty", job });
       else if (job && job !== value.job) change(session, { job });
     }
-  }, [
-    options.state.runs,
-    options.state.estimates,
-    options.dirty,
-    options.phase,
-    options.mode,
-    action.busy,
-    state,
-  ]);
+  });
+  useEffect(
+    () => follow(),
+    [
+      options.state.runs,
+      options.state.estimates,
+      options.dirty,
+      options.phase,
+      options.mode,
+      action.busy,
+      state,
+    ],
+  );
   function cancel() {
     const session = current.current;
     if (!session) return;
@@ -279,11 +301,11 @@ export function useTranslationFlow(options: Options) {
               namesApproved: true,
               decision: undefined,
             });
-          else session.finished = true;
+          else markFinished(session, true);
         } else if (approved && value.preview) {
           const run = await api.execute(options.projectId, value.preview.token);
           session.state.runId = run.id;
-          session.finished = true;
+          markFinished(session, true);
         } else await abandon(session);
       },
       false,
@@ -296,8 +318,8 @@ export function useTranslationFlow(options: Options) {
     state,
     active: !!state || action.busy,
     pending: action.busy || (!!state && flowLoading(state)),
-    busy: action.busy || !!current.current?.finished,
-    claimed: claimed.current,
+    busy: action.busy || finished,
+    claimed,
     start,
     cancel,
     answer,

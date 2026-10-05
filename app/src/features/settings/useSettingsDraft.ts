@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { api } from "../../api/client";
 import type {
   Settings,
@@ -67,6 +67,7 @@ export function useSettingsDraft(report: (error: unknown) => void) {
       draft: recover && draft ? { ...baseline, ...draft } : undefined,
     };
   }
+  const reportLoad = useEffectEvent((error: unknown) => report(error));
   useEffect(() => {
     let active = true;
     api
@@ -77,7 +78,7 @@ export function useSettingsDraft(report: (error: unknown) => void) {
           draft.session.adopt(loaded.saved, loaded.draft);
         }
       })
-      .catch(report);
+      .catch(reportLoad);
     return () => {
       active = false;
     };

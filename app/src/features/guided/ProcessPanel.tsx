@@ -21,6 +21,8 @@ import { RunLog, RunTechnical } from "./RunTechnical";
 import { RequestFailure } from "./RequestFailure";
 import { providerBatchActive } from "./batchView";
 import { InspectedFile } from "./InspectedFile";
+import { useOnChange } from "../../state/useOnChange";
+import { useRead } from "../../state/useRead";
 
 const formatted = (value: unknown) =>
   typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -131,15 +133,10 @@ function RequestProcess({
     request: number;
     attempt: number;
   } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [fileOpened, setFileOpened] = useState<string>();
   const [unlinkedFile, setUnlinkedFile] = useState(initialRequest?.file);
   const reader = useRef<HTMLDivElement>(null);
-  const payloadReader = useRef(readPayload);
-  payloadReader.current = readPayload;
   const tabId = useId();
   const attemptTabId = useId();
   const batches = process.batches || [];
@@ -187,40 +184,24 @@ function RequestProcess({
       return next;
     });
   }
-  useEffect(() => {
-    let current = true;
-    if (index == null || !payloadReader.current) {
-      setBusy(false);
-      setRetrying(false);
-      setError("");
-      setPayload(null);
-      return;
-    }
-    setBusy(true);
-    setError("");
-    void payloadReader
-      .current(index)
-      .then((value) => {
-        if (current) setPayload(value);
-      })
-      .catch((failure) => {
-        if (current)
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : "Saved request unavailable.",
-          );
-      })
-      .finally(() => {
-        if (current) {
-          setBusy(false);
-          setRetrying(false);
-        }
-      });
-    return () => {
-      current = false;
-    };
-  }, [index, retry, receiptRevision]);
+  const payloadRead = useRead(
+    index == null || !readPayload ? null : `${index}:${receiptRevision}`,
+    () => readPayload!(index!),
+  );
+  // The request stays visible while receipt changes refresh it.
+  useOnChange(payloadRead.value, (value) => {
+    if (value) setPayload(value);
+  });
+  const busy = payloadRead.pending;
+  const error =
+    payloadRead.error === undefined
+      ? ""
+      : payloadRead.error instanceof Error
+        ? payloadRead.error.message
+        : "Saved request unavailable.";
+  useOnChange(busy, (now) => {
+    if (!now) setRetrying(false);
+  });
   const requestPayload =
     payload && payload.index === index
       ? payloadForBatch(
@@ -296,9 +277,9 @@ function RequestProcess({
       : tabs;
   const contentTab =
     view.tab === "file" && !(projectId && selectedFile) ? "source" : view.tab;
-  useEffect(() => {
-    if (contentTab === "file") setFileOpened(selectedFile || undefined);
-  }, [contentTab, selectedFile]);
+  // The file reader stays mounted after its tab opens, keeping search and paging.
+  if (contentTab === "file" && fileOpened !== (selectedFile || undefined))
+    setFileOpened(selectedFile || undefined);
   const legacyIssues = (process.validationIssues || []).filter(
     (issue) =>
       (!selectedFile || issue.file === selectedFile) &&
@@ -562,7 +543,7 @@ function RequestProcess({
                 disabled={busy}
                 onClick={() => {
                   setRetrying(true);
-                  setRetry((value) => value + 1);
+                  payloadRead.retry();
                 }}
               >
                 {retrying ? "Reading request…" : "Retry reading request"}

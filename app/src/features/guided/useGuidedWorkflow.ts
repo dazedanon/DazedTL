@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import type { GuidedState } from "../../api/contracts";
 import { api } from "../../api/client";
 import { useDraft } from "../../state/useDraft";
@@ -18,7 +18,8 @@ export function useGuidedWorkflow(
     report,
   });
   const observed = useRef(saved);
-  useEffect(() => {
+  // Reconciles a newer saved revision with the draft; runs when either changes.
+  const reconcileSaved = useEffectEvent(() => {
     if (observed.current.revision === saved.revision || draft.committing)
       return;
     const before = observed.current;
@@ -54,7 +55,11 @@ export function useGuidedWorkflow(
         })
         .catch(report);
     }
-  }, [saved.revision, draft.dirty, draft.committing]);
+  });
+  useEffect(
+    () => reconcileSaved(),
+    [saved.revision, draft.dirty, draft.committing],
+  );
   const save = () =>
     draft.session.commit(
       async (value) => ({

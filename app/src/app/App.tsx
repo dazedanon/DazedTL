@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   House,
   Route,
@@ -30,17 +30,17 @@ export default function App() {
   const state = application.snapshot?.application;
   const action = useAction({ after: application.settle });
   const [picker, setPicker] = useState(false);
+  // Settings stays mounted after its first visit so its session survives.
   const [settingsOpened, setSettingsOpened] = useState(false);
-  useEffect(() => {
-    if (state?.screen === "settings") setSettingsOpened(true);
-  }, [state?.screen]);
+  if (state?.screen === "settings" && !settingsOpened) setSettingsOpened(true);
+  const loaded = !!state;
+  const reportReady = useEffectEvent((error: unknown) => action.report(error));
   const ready = useRef(false);
   useEffect(() => {
-    if (state && !ready.current) {
-      ready.current = true;
-      window.dazedtl.ready().catch(action.report);
-    }
-  }, [!!state]);
+    if (!loaded || ready.current) return;
+    ready.current = true;
+    window.dazedtl.ready().catch(reportReady);
+  }, [loaded]);
   const open = () =>
     action.run(async () => {
       const source = await window.dazedtl.chooseFolder();
