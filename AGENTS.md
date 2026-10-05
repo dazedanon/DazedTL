@@ -16,7 +16,7 @@
 
 ## Documentation
 
-- Keep README for setup and current limitations, architecture for boundaries and decision rationale, and AGENTS for working rules.
+- Keep README for setup and current limitations, the [user guide](docs/user-guide.md) for using the app, architecture for boundaries and decision rationale, and AGENTS for working rules.
 - Keep each fact in one place; link to authoritative code or documentation instead of copying it.
 - Update affected documentation in the same change; remove obsolete guidance.
 - Add a document only for a distinct reader need that existing documentation cannot serve concisely.

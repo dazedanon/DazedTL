@@ -1,53 +1,23 @@
 # DazedTL
 
-An Electron application migrating the existing DazedTL translation engine into a new interface.
+DazedTL is a desktop app for translating games with its bundled translation engine.
+RPG Maker MV/MZ and Ace games use a guided seven-stage workflow, and Len's method lets a coding assistant translate any game through the running app.
+The [user guide](docs/user-guide.md) covers both workflows.
 
-## Current scope
+## Current limitations
 
-RPG Maker MV/MZ has a **Translation** workspace following the working Qt workflow:
-**Prepare → Names & context → Translate → Plugin text → Images → Apply & Fitting → Release**.
-Each stage opens a focused task. The app sidebar stays in place; workflow navigation becomes
-compact in smaller windows. File selection supports search, groups, map names when available,
-and keyboard ranges across its virtualized list. Filtering preserves checked files.
-Selecting a game is enough: the app prepares selected working copies automatically from its current files and carries saved translation progress forward. Reopening the project preserves those copies.
-Each run and application review uses the selected scope.
-**Run history → Inspect** tracks Batch requests and automatic progress updates alongside Live runs. The same inspector opens from each file’s inspect icon, with its linked request selected and current file contents available. Batch controls include reviewed provider cancellation, queue continuation, collection recovery and reviewed reapplication of saved output. Approved unchanged Batch queues continue after reopening the app or an interrupted connection, skipping requests with retained provider receipts. Finished responses, including partial results from canceled Batches, remain available for collection; cancellation and superseding approvals prevent automatic continuation. Files covered by active or unresolved Batch work stay locked against source reloads; previews remain available.
-Saved runs are searchable in **Run history** on Translate; **History** also includes other project activity. Saved run status does not block a new translation; its cost review notes possible duplicate charges when earlier requests overlap.
-Translate separates **Database files → Maps & events → Event / plugin codes**. Each **Translate** click prepares a fresh local estimate and opens the cost review. New unapproved preparations are temporary: declining discards them, and only approved runs enter saved history. Inspect source and matched context, approve the charge, or decline; Batch reviews open automatically when prepared. If the estimate finds no new API requests, an explicit result explains that saved files were checked again and no API charges occurred.
-One shared file selector handles large scopes, search, Ctrl/Cmd toggles and Shift ranges. Inspect works independently of selection. Source shows prepared text and context; Response and Technical show retained replies, token metrics and the API payload. File contents remains available when no request has been prepared. Prior approved attempts are available in Run history. Saved output remains available for read-only comparison, with recorded per-file cost and processing time; older runs may have missing figures.
-Apply explicitly overwrites checked game files that have saved output. It does not merge or synchronize files automatically. **Options** provides task-specific settings and opens the translated folder or reloads checked files from the current game; reload archives previous working copies and invalidates their cached results.
-Preparation and translated work survive navigation and reopening. Live resumes from verified partial JSON checkpoints and retained validated responses; Batch retains its frozen request grouping and provider receipts. Saved partial files remain separate from game files until you choose Apply.
-Files with validation mismatches show a warning instead of ordinary saved progress. Open Inspect and choose Review issues to read rejected requests and their responses; older records may only identify the file. Technical shows retained failure details; an older run may have no recorded reason. Valid translations are kept while rejected requests retain their original text. Translate prepares a fresh estimate for remaining work with the usual cost review.
-Older duplicate choice responses appear under **Unused** when the app can verify which other response supplied the saved menu text. Their request view links to that response; missing evidence remains unresolved.
-Ace adds archive extraction, Sinflower RV2JSON conversion, and native repacking around those same JSON phases.
-Its bundled executables require Windows for native conversion and are cached in the app profile.
-Release verifies saved packing evidence against current JSON and native bytes.
-WOLF's guided workflow is deferred.
+- WOLF's guided workflow is deferred; other engines are supported only through Len's method.
+- Ace's bundled native converters run only on Windows.
+- Real provider billing and native game playtesting still need validation.
+- Application distribution is pending, so DazedTL runs from a checkout.
 
-Len's method follows the maintained engine skills, with shared project context,
-saved progress, inspectable requests, and Agent, Live API, and API Batch execution.
-Any game folder can be opened for investigation. Its engine-specific extraction, fitting,
-native reconstruction, and runtime QA remain the coding assistant's responsibility through the skills and tools.
-Existing phased RPG Maker jobs retain their recovery path in Translation. Resume an
-unfinished API run before starting another phase or estimate so its provider work stays attached.
-Real provider billing and native game playtesting still need validation;
-application distribution is pending.
+## Setup
 
-Images opens a shared project Image Manager with retained selection, scoped discovery and editing tasks, and saved assistant reports.
-The assistant identifies relevant images before selected copies are made editable; **Choose images myself** bypasses discovery.
-Copying a task uses the clipboard and does not dispatch an assistant or start provider work.
-The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
-Ace archive extraction is separate.
-The optional text editor retains boxes, source text and translations, supports installed local OCR, and uses the existing estimate and approval process for native Image Text runs.
-
-## Development launch
-
-This checkout includes its engine code, worker helpers, tokenizers, native tools and
-translation toolkit. No DazedMTLTool installation or sibling engine checkout is required.
-See [resource ownership](docs/architecture.md#ownership) for the engine and shared prompt
-locations, saved-run compatibility and override behavior.
+This checkout includes its engine code, worker helpers, tokenizers, native tools and translation toolkit.
+No DazedMTLTool installation or sibling engine checkout is required.
+See [resource ownership](docs/architecture.md#ownership) for the engine and shared prompt locations, saved-run compatibility and override behavior.
 Use the Node and Python versions in [.node-version](.node-version) and [.python-version](.python-version), and the npm version in [app/package.json](app/package.json).
-Setup installs locked dependencies into this checkout's own `app/node_modules` and `.venv`.
+Setup installs locked dependencies, including the formatting tools, into this checkout's own `app/node_modules` and `.venv`.
 Launching, building, and testing also accept newer Node releases within the pinned major version.
 
 ```sh
@@ -68,120 +38,6 @@ Projects, credentials, and runs live in its workspace outside this checkout.
 | `DAZEDTL_NEXT_PROFILE` | Electron profile location |
 | `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
 
-## API setup
-
-In Settings, choose a provider, paste its API key, and save the connection.
-**Check connection** requests the provider's model list without generating text.
-For **OpenRouter**, save an OpenRouter API key, check the connection, then choose or enter its full base model ID (such as `anthropic/claude-sonnet-4.5`) in Preferences. Live and Batch share the existing translation workflow. Automatic Live prices load when opening model options or preparing an estimate, including the selected host's rates; older verified connections do not need manual prices. **Check connection** caches the authenticated model catalog. Saving a different model or host automatically checks its schema-capable Batch endpoints and prices, including for Automatic routing. Advanced model options also checks the model being viewed without changing the saved selection. Matching saved checks are reused; **Check again** remains available to refresh the account catalog or retry a failed check. Advanced model options accepts separate custom Batch rates when necessary; they do not enable an unsupported model or host. New runs freeze these choices for recovery.
-New OpenRouter runs request strict [Structured Outputs](https://openrouter.ai/docs/guides/features/structured-outputs) using the translation schema, including required source IDs and string values. Incompatible endpoints fail instead of silently switching to plain JSON. Saved runs keep their original request policy; prepare a fresh estimate to use strict schemas.
-OpenRouter's [Batch API](https://openrouter.ai/docs/batch-quickstart) uses a 24-hour window and does not expose cancellation. **Stop queued work** prevents further Guided submissions while submitted work continues; available results are collected automatically. **Continue queued work** resumes the unchanged approved queue after its ownership and receipts are checked. Results unavailable from a terminal or expired provider record remain blocked for inspection or **Retry collection**, without automatic resubmission. Verified downloaded responses remain available locally after provider retention expires. Technical separates collected OpenRouter charges from any separately billed BYOK inference estimate.
-To choose OpenRouter's hosting provider, select the connection's model in Preferences, then edit the connection and choose **Host**. Its supported hosts load automatically into a bounded, scrollable list; **Refresh hosts** checks the list again. **Automatic** lets OpenRouter choose among compatible endpoints; a selected host is exclusive, so an unavailable host returns an error instead of falling back elsewhere. The public list does not override account privacy or routing restrictions. Changes apply to new runs; saved runs retain their original host and prices.
-Choose the connection's model under Preferences; Advanced model options starts at 50 entries per request, with a custom override for each connection and model, plus automatic or custom estimate rates.
-Options are remembered separately for each connection and model; each new run retains its resolved size and rates for resume.
-New API runs default to **32,768 output tokens per request**, reduced to a known model or host limit when lower. **Advanced model options → Output token allowance** overrides it for the selected connection and model; leave blank for the default. This covers reasoning and visible output on providers that share that budget. It is a maximum, not a target; longer generated responses or reasoning can increase actual cost. Existing saved runs retain their original allowance, so prepare a fresh estimate to use the new default.
-For OpenAI, **Advanced model options → Batch token allowance** shows a conservative default when blank; override it with the model’s Batch queue limit from [OpenAI Limits](https://platform.openai.com/settings/organization/limits). For Guided translation, it caps estimated input tokens across active Batches on the same connection and model. Multiple chunks are submitted while capacity remains, and any completed chunk can free room for more. Leave headroom for other jobs sharing the account limit. Changes apply to new runs, while saved runs keep their original limit. Published model limits and account-specific restrictions can differ; the [default rationale](docs/architecture.md#persistence-and-settings) explains its scope.
-Automatic rates identify their catalog or built-in source; unknown prices require custom rates, with 0 supported for free models.
-Existing app-local settings are retained in backups during migration; connections with an unknown provider need your review.
-
-## Diagnostics and recovery
-
-**Copy diagnostics** in the sidebar copies versions and recent error metadata, including when the backend cannot start.
-Local diagnostic logs live under the profile's `diagnostics/` folder, capped at three 64 KiB files per process; credentials, request bodies, game text, and raw stderr are excluded.
-If a view fails, its recovery panel offers **Try again**, **Copy diagnostics**, and **Reload interface** while the surrounding navigation remains available. Retry and reload first save pending recovery drafts; a failed save keeps the recovery action blocked and retryable.
-If the renderer freezes or exits, a native dialog offers to wait, copy diagnostics, or reload the interface. Reloading keeps the backend and running jobs; a forced reload can lose edits that have not reached recovery storage. Recovery never resubmits the failed action.
-Project-format upgrades retain the original `projects.json` in workspace `backups/` before atomic replacement; the current registry format is version 4.
-To restore a project backup, close the app, retain the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
-
-See [architecture](docs/architecture.md) for code ownership, [AGENTS.md](AGENTS.md) for contribution rules, and the [migration record](docs/migration.md) for historical provenance.
-
-## Translate a game
-
-Open an MV/MZ or Ace game and choose **Translation**. Preserve the original, prepare
-runtime files, then review the file list and game version for Git setup.
-In **Context → Investigation**, use **Copy investigation task** and paste it into your coding assistant.
-It identifies speaker formats, runs the local name scanner with evidenced rules, then uses the
-names and actor/variable lookups to investigate the glossary, characters, voice and game context.
-The scanner makes no API requests. **Add game folder** includes an earlier game as a read-only,
-best-effort terminology reference in the next copied task; no prepared translation format is required.
-**View names** opens the saved scan, and **Detection settings** contains speaker rules and overrides.
-Optional API name translation is available from the name-scan panel.
-Edit the resulting files in **Guidance**. Measured character limits are saved automatically during investigation; **Layout** shows the saved values and allows manual adjustments. Re-copy the task after changing reference folders.
-In **Translate**, all supported files start selected. Translate database names first, then maps, CommonEvents and Troops; narrow the scope if you want to test an early scene.
-**Event / plugin codes** investigates variables, plugin commands, scripts and labels before translation.
-Translate audited assignments first, then review and update comparisons from their saved literal mappings.
-Apply and playtest an early scene before expanding. Batch pauses for cost approval before submission.
-Enable only the investigation's confirmed codes, variable IDs, plugin handlers, and script patterns; skip the phase if none are needed.
-
-Review accumulated outputs before applying them.
-You can apply saved partial translations while Batch work is unfinished; untranslated text stays as saved, and later results require another Apply.
-Rewrap requires a completed scan with the same files and settings.
-Optional QA and game tools stay in **Apply & Fitting**.
-Its Tools view installs or updates TL Inspector and Forge for MV/MZ and applies their settings.
-**Release** builds a clean game or local patch ZIP.
-Packaging has no manual-review checklist.
-A patch scope preview is followed by its automatic local checkpoint and workspace backup; a clean game ZIP leaves the working game untouched.
-Destinations stay outside the game, app workspace and engine.
-Existing archives require replacement approval. Package contents and the finished archive
-are checked before the app offers its folder. These checks do not claim that the game passed QA.
-Configured public GameUpdate metadata retains the engine's clean-commit and upstream checks;
-the app does not publish or push automatically.
-
-To use **Len's method**, select a translation mode, set the image scope and project instructions,
-then copy the starting prompt into a coding assistant with access to the game and engine checkout.
-Keep DazedTL open: the prompt's project helper uses the running app to save state and control its jobs.
-The same prompt resumes saved work. The app observes the assistant's saved reports; it does not host or keep that assistant running.
-
-The helper preserves the selected source, establishes the original/translation Git branches,
-records the game version, and prepares shared guidance before compiling translation requests.
-API runs require review of their complete request set and cost estimate. Inspect the actual context,
-source text and accepted outputs under Requests & results. Pausing a Batch run stops local polling;
-Cancel provider batch requests remote cancellation and retains any completed results available from the provider.
-An uncertain submission is never retried automatically. Reconcile its provider job or review an uncertain Live request before preparing another quote.
-
-Request inspection shows each line's text type and known or unknown speaker. Unknown speakers are allowed;
-specific source ambiguities appear as review notes beside the translation, with links from the run to affected requests.
-Check those notes against the source before marking the request source-checked. A correction makes that review pending again.
-
-For a new official release, **Game updates** stages a separate copy for comparison. Finish its
-engine-specific preparation before previewing the update. Len's manual checkpoint and patch
-controls remain under **Advanced setup & patch tools**.
-Ordinary MV/MZ writes preserve existing Japanese in _original. Rebasing source metadata after an update requires the exact current original-branch bytes and commit.
-Native formats use their engine's source/injection sidecars. Keep the selected game available throughout the work.
-
-Working records and guidance stay in the game's ignored .dazedtl folder; Git tracks the runtime patch and matching originals.
-Source and workspace snapshots share a deduplicated store in .dazedtl/backups/v2. Unchanged files are stored once; unchanged snapshots are reused.
-The entire .dazedtl/backups directory is excluded from workspace snapshots, and .dazedtl stays out of Git and release packages.
-Keep that backup directory together when moving the game. Existing full-copy backups in the app workspace remain readable and are never deleted automatically.
-**Translation → Project tools → Backups & recovery** keeps backup locations and recovery choices
-outside the guided steps. Choose game files or translation project files before selecting a saved
-copy. **Project tools → Game updates** is for carrying a translation to a newer official release;
-it guides preparation, comparison, and application separately from file recovery.
-If a backup is deleted or becomes unreadable, its status changes to unavailable. Creating a
-replacement saves the game's current files; it does not recover the deleted original.
-After a successful fresh source backup, references to deleted workspace backups and deleted engine
-investigations are archived automatically, clearing their stale warnings without a separate cleanup step.
-A local patch does not publish a repository.
-GameUpdate's public commit marker is included only when the existing updater checks can verify it against the configured tracked branch.
-
-In **Backups & recovery**, choose **Recover files…**, then select game files or translation project files and a saved copy.
-Restore writes a verified copy into a new folder outside the game; existing folders are never overwritten.
-Source snapshots restore game files. Workspace snapshots restore the contents of .dazedtl, including guidance,
-accepted translations, custom tools and image work, but not the backup store itself.
-Connections, app-owned runs and their provider state remain in the app profile.
-
-If the app profile is unavailable, inspect and restore the portable store from this checkout:
-
-```bash
-python scripts/backups.py --game "/path/to/game" list
-python scripts/backups.py --game "/path/to/game" verify --id SNAPSHOT_ID
-python scripts/backups.py --game "/path/to/game" restore --id SNAPSHOT_ID --destination "/path/to/new-recovery-folder"
-```
-
-Add `--legacy-backups "/path/to/old/workspace/backups/PROJECT_ID"` before the command to include older full-copy backups.
-Do not edit the store's objects or remove snapshot files manually; several restore points can share the same content.
-
-Engine adapter authors and assistant integrations should use the [translation contract](docs/translation-contract.md).
-
 ## Development checks
 
 Run the full behavior suite from this checkout with `node scripts/test.mjs` (or `npm test` from `app`).
@@ -189,9 +45,16 @@ It uses the local Python environment and Node's built-in test runner, with one e
 The runner reports the five slowest Python tests to make runtime regressions visible.
 Tests use temporary workspaces and controlled API responses; no provider, game folder, credentials, or sibling checkout is needed.
 
-For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py`
-or `node --test --test-isolation=none tests/application.test.ts` from the root.
+For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
 Run `node scripts/build.mjs` separately for the formatting check, TypeScript checking and the renderer build.
 Launching builds a missing renderer without the formatting check.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 To skip the one-time formatting commit in local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
+## Documentation
+
+- The [user guide](docs/user-guide.md) explains the app's workflows, API setup, backups and diagnostics.
+- [Architecture](docs/architecture.md) covers code ownership, boundaries and design decisions.
+- The [translation contract](docs/translation-contract.md) is for engine adapter authors and assistant integrations.
+- [AGENTS.md](AGENTS.md) holds contribution rules.
+- The [migration record](docs/migration.md) keeps historical provenance.
