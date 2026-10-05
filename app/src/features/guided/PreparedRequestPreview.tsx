@@ -1,6 +1,5 @@
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { api } from "../../api/client";
-import type { RunPayload } from "../../api/contracts";
 import { messageOf } from "../../api/errors";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
@@ -10,6 +9,8 @@ import { Tabs, TabPanel } from "../../ui/Tabs";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { RequestText } from "./RequestSource";
 import { RequestContext } from "./RequestContext";
+import { useOnChange } from "../../state/useOnChange";
+import { useRead } from "../../state/useRead";
 
 const tabs = [
   { id: "text", label: "Text" },
@@ -32,35 +33,17 @@ export function PreparedRequestPreview({
   const tabId = useId();
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("text");
   const [index, setIndex] = useState(0);
-  const [payload, setPayload] = useState<RunPayload | null>(null);
+  const request = useRead(`${projectId}:${runId}:${index}`, () =>
+    api.guided.payload(projectId, runId, index),
+  );
+  // The request count stays visible while the next request loads.
   const [total, setTotal] = useState(0);
-  const [pending, setPending] = useState(true);
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let current = true;
-    setPending(true);
-    setError("");
-    setPayload(null);
-    void api.guided
-      .payload(projectId, runId, index)
-      .then((value) => {
-        if (current) {
-          setPayload(value);
-          setTotal(value.total);
-        }
-      })
-      .catch((failure) => {
-        if (current) setError(messageOf(failure));
-      })
-      .finally(() => {
-        if (current) setPending(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [projectId, runId, index, retry]);
-  const visible = payload?.index === index ? payload : null;
+  useOnChange(request.value?.total, (value) => {
+    if (value !== undefined) setTotal(value);
+  });
+  const visible = request.value?.index === index ? request.value : null;
+  const pending = request.pending;
+  const error = request.error === undefined ? "" : messageOf(request.error);
   return (
     <Modal
       label="Preview request"
@@ -121,9 +104,7 @@ export function PreparedRequestPreview({
               {error ? (
                 <>
                   <Message message={error} />
-                  <Button onClick={() => setRetry((value) => value + 1)}>
-                    Try again
-                  </Button>
+                  <Button onClick={request.retry}>Try again</Button>
                 </>
               ) : !visible ? (
                 <p className="muted" role="status">

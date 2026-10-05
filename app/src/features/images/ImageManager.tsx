@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   CheckCircle2,
   Circle,
@@ -36,6 +43,8 @@ import { ThumbnailQueue, useImageGrid, useThumbnail } from "./useImageGrid";
 import { ImageCompare } from "./ImageCompare";
 import { ImageApply } from "./ImageApply";
 import { ImageFolders } from "./ImageFolders";
+import { useOnChange } from "../../state/useOnChange";
+import { useRead } from "../../state/useRead";
 import "./images.css";
 
 export interface ImageManagerProps {
@@ -49,25 +58,11 @@ export interface ImageManagerProps {
 }
 
 export function ImageManager(props: ImageManagerProps) {
-  const [initial, setInitial] = useState<ImageManagerState | null>(null);
-  const [error, setError] = useState("");
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  useEffect(() => {
-    let alive = true;
-    setInitial(null);
-    setError("");
-    void imagesApi
-      .state(props.projectId)
-      .then((state) => {
-        if (alive) setInitial(state);
-      })
-      .catch((error) => {
-        if (alive) setError(messageOf(error));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [props.projectId, loadAttempt]);
+  const loaded = useRead(props.projectId, () =>
+    imagesApi.state(props.projectId),
+  );
+  const initial = loaded.value;
+  const error = loaded.error === undefined ? "" : messageOf(loaded.error);
   if (!initial || initial.projectId !== props.projectId)
     return (
       <section className="image-manager image-manager-loading">
@@ -83,11 +78,7 @@ export function ImageManager(props: ImageManagerProps) {
             ? "Image Manager could not load."
             : "Loading saved image work…"}
         </p>
-        {error && (
-          <Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
-            Retry
-          </Button>
-        )}
+        {error && <Button onClick={loaded.retry}>Retry</Button>}
       </section>
     );
   return <Manager key={props.projectId} {...props} initial={initial} />;
@@ -211,13 +202,17 @@ function Manager({
   });
   const value = draft.value || imageDraft(state);
   const manual = value.view.workflowMode === "manual";
-  useEffect(() => {
+  const applyInitialMode = useEffectEvent(() => {
     if (initialMode)
       draft.session.edit((current) => ({
         ...current,
         view: { ...current.view, workflowMode: initialMode },
       }));
-  }, []);
+  });
+  useEffect(() => applyInitialMode(), []);
+  const reportCompare = useEffectEvent((error: unknown) =>
+    action.report(error, "compare"),
+  );
   useEffect(() => {
     if (!value.view.currentImage) return;
     let alive = true;
@@ -230,8 +225,8 @@ function Manager({
       .then((result) => {
         if (alive && result.items[0]) setCompare(result.items[0]);
       })
-      .catch((error) => {
-        if (alive) action.report(error, "compare");
+      .catch((error: unknown) => {
+        if (alive) reportCompare(error);
       });
     return () => {
       alive = false;
@@ -243,10 +238,11 @@ function Manager({
   const viewport = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 1000, height: 600 });
   const [scroll, setScroll] = useState(value.view.scroll);
+  const savedScroll = useEffectEvent(() => value.view.scroll);
   useLayoutEffect(() => {
     const element = viewport.current;
     if (!element) return;
-    element.scrollTop = value.view.scroll;
+    element.scrollTop = savedScroll();
     const observer = new ResizeObserver(([entry]) =>
       setDimensions({
         width: entry.contentRect.width,
@@ -277,7 +273,7 @@ function Manager({
     range.start,
     range.end,
   );
-  useEffect(() => setTotal(grid.total), [grid.total]);
+  useOnChange(grid.total, setTotal);
   const change = (patch: Partial<ImageDraft>) =>
     draft.session.edit((current) => ({ ...current, ...patch }));
   const changeView = (patch: Partial<ImageDraft["view"]>, reset = false) => {
@@ -317,8 +313,15 @@ function Manager({
     )
       setListRevision((value) => value + 1);
   };
+  const observe = useEffectEvent(applyObserved);
+  const reportObservation = useEffectEvent((error: unknown) =>
+    action.report(error),
+  );
   useEffect(() => {
-    if (observed) void applyObserved(observed);
+    // Pushed observer state also updates the external draft session, which
+    // cannot change during render.
+    // oxlint-disable-next-line react/set-state-in-effect
+    if (observed) void observe(observed);
   }, [observed]);
   useEffect(() => {
     if (observed || observationKey === undefined) return;
@@ -326,13 +329,13 @@ function Manager({
     void imagesApi
       .state(projectId)
       .then((next) => {
-        if (alive) void applyObserved(next);
+        if (alive) void observe(next);
       })
-      .catch(action.report);
+      .catch(reportObservation);
     return () => {
       alive = false;
     };
-  }, [observationKey, projectId]);
+  }, [observed, observationKey, projectId]);
   const perform = async (
     name: string,
     options: Record<string, unknown> = {},
@@ -368,18 +371,21 @@ function Manager({
       name,
     );
   };
-  const initialScan = useRef(false);
-  useEffect(() => {
+  const scanNewInventory = useEffectEvent(() => {
     if (
-      !initialScan.current &&
       state.profile.supported &&
       !state.inventoryRevision &&
       !state.counts.indexed &&
       !state.job
-    ) {
-      initialScan.current = true;
+    )
       void perform("scan");
-    }
+  });
+  // A project's first visit indexes its images once.
+  const initialScan = useRef(false);
+  useEffect(() => {
+    if (initialScan.current) return;
+    initialScan.current = true;
+    scanNewInventory();
   }, []);
   const saveFolder = () =>
     action.run(

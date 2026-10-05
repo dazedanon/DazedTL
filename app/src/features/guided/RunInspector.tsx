@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { BatchCancellation, Job } from "../../api/contracts";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
@@ -17,6 +17,7 @@ import { RunLog } from "./RunTechnical";
 import { batchOutcome, canRetrySaving, canReapplyBatch } from "./batchView";
 import type { RequestBatch } from "./requestView";
 import { observedRun } from "./translationView";
+import { useRead } from "../../state/useRead";
 
 export function RunInspector({
   projectId,
@@ -46,35 +47,20 @@ export function RunInspector({
   const [cancellation, setCancellation] = useState<BatchCancellation | null>(
     null,
   );
-  const [detail, setDetail] = useState<Job | null>(null);
-  const [readError, setReadError] = useState("");
-  const [reading, setReading] = useState(false);
-  const [retry, setRetry] = useState(0);
   const jobId = summary?.id;
+  // The key is null without a job, so the read only runs with one.
+  const inspection = useRead(jobId ? `${projectId}:${jobId}` : null, () =>
+    api.guided.inspect(projectId, jobId!),
+  );
+  const detail = inspection.value ?? null;
+  const reading = inspection.pending;
+  const readError =
+    inspection.error === undefined
+      ? ""
+      : inspection.error instanceof Error
+        ? inspection.error.message
+        : "Saved run unavailable.";
   const job = observedRun(detail, summary || undefined) || summary;
-  useEffect(() => {
-    if (!jobId) return;
-    let current = true;
-    setReading(true);
-    setReadError("");
-    void api.guided
-      .inspect(projectId, jobId)
-      .then((value) => {
-        if (current) setDetail(value);
-      })
-      .catch((error) => {
-        if (current)
-          setReadError(
-            error instanceof Error ? error.message : "Saved run unavailable.",
-          );
-      })
-      .finally(() => {
-        if (current) setReading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [projectId, jobId, retry]);
   const feedback = (key: string, pendingText: string) => ({
     pending: action.busy && action.key === key,
     pendingText,
@@ -332,11 +318,7 @@ export function RunInspector({
         )}
         <Message message={readError} />
         {readError && (
-          <Button
-            variant="quiet"
-            pending={reading}
-            onClick={() => setRetry((value) => value + 1)}
-          >
+          <Button variant="quiet" pending={reading} onClick={inspection.retry}>
             Retry reading run
           </Button>
         )}

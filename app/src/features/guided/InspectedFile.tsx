@@ -15,5 +15,5 @@ export function InspectedFile({
       api.guided.filePreview(projectId, file, offset, query),
     [projectId, file],
   );
-  return <WorkingFileText read={read} />;
+  return <WorkingFileText source={`${projectId}:${file}`} read={read} />;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { NameTranslation, NameTranslationPage } from "../../api/contracts";
 import { messageOf } from "../../api/errors";
@@ -6,6 +6,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
+import { useRead } from "../../state/useRead";
 
 type Reader = (offset: number) => Promise<NameTranslationPage>;
 
@@ -62,33 +63,10 @@ export function NameTranslationFeedback({
 }
 
 function NameResults({ read, close }: { read: Reader; close: () => void }) {
-  const reader = useRef(read);
-  reader.current = read;
   const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState<NameTranslationPage | null>(null);
-  const [pending, setPending] = useState(true);
-  const [error, setError] = useState("");
-  const [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let current = true;
-    setPending(true);
-    setError("");
-    setPage(null);
-    void reader
-      .current(offset)
-      .then((value) => {
-        if (current) setPage(value);
-      })
-      .catch((failure) => {
-        if (current) setError(messageOf(failure));
-      })
-      .finally(() => {
-        if (current) setPending(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [offset, retry]);
+  const names = useRead(String(offset), () => read(offset));
+  const page = names.value;
+  const error = names.error === undefined ? "" : messageOf(names.error);
   return (
     <Modal
       label="Translated names and labels"
@@ -103,14 +81,12 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
           Saved in this run’s glossary for the file translation. These entries
           let you review the wording.
         </p>
-        {pending ? (
+        {names.pending ? (
           <p role="status">Reading saved translations…</p>
         ) : error ? (
           <>
             <Message message={error} />
-            <Button onClick={() => setRetry((value) => value + 1)}>
-              Try again
-            </Button>
+            <Button onClick={names.retry}>Try again</Button>
           </>
         ) : (
           page && (
@@ -145,13 +121,13 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
         {page && page.total > 50 && (
           <>
             <Button
-              disabled={pending || offset === 0}
+              disabled={names.pending || offset === 0}
               onClick={() => setOffset((value) => Math.max(0, value - 50))}
             >
               Previous
             </Button>
             <Button
-              disabled={pending || page.nextOffset == null}
+              disabled={names.pending || page.nextOffset == null}
               onClick={() => setOffset(page.nextOffset!)}
             >
               Next

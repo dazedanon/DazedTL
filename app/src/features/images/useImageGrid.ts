@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import type {
@@ -10,6 +10,19 @@ import type {
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 8;
+type Grid = {
+  pages: Map<number, ImageAsset[]>;
+  total: number;
+  selectedMatched: number;
+  error: string;
+};
+type Loaded = Grid & { scope: object };
+const emptyGrid: Grid = {
+  pages: new Map(),
+  total: 0,
+  selectedMatched: 0,
+  error: "",
+};
 export function useImageGrid(
   projectId: string,
   view: ImageView,
@@ -18,10 +31,6 @@ export function useImageGrid(
   start: number,
   end: number,
 ) {
-  const [pages, setPages] = useState<Map<number, ImageAsset[]>>(new Map());
-  const [summary, setSummary] = useState({ total: 0, selectedMatched: 0 });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const scope = useMemo(
     () => ({
       projectId,
@@ -42,23 +51,20 @@ export function useImageGrid(
       selectionRevision,
     ],
   );
-  const ticket = useRef(0);
+  // Results are tagged with their scope, so a new scope starts empty without
+  // resetting state inside an effect.
+  const [loaded, setLoaded] = useState<Loaded>({ scope, ...emptyGrid });
+  const grid = loaded.scope === scope ? loaded : emptyGrid;
   const cache = useRef(new Map<number, ImageAsset[]>());
   const pending = useRef(new Set<number>());
   const demand = useRef<number[]>([]);
   const active = useRef(0);
-  const scopeRef = useRef(scope);
   const pump = useRef<() => void>(() => {});
   useEffect(() => {
-    const generation = ++ticket.current;
-    scopeRef.current = scope;
+    let current = true;
     cache.current = new Map();
     pending.current = new Set();
     demand.current = [0];
-    setPages(new Map());
-    setSummary({ total: 0, selectedMatched: 0 });
-    setError("");
-    setLoading(true);
     pump.current = () => {
       while (active.current < 2 && demand.current.length) {
         const offset = demand.current.shift()!;
@@ -67,7 +73,7 @@ export function useImageGrid(
         active.current++;
         void imagesApi
           .list(
-            projectId,
+            scope.projectId,
             {
               query: scope.query,
               folder: scope.folder,
@@ -76,62 +82,75 @@ export function useImageGrid(
               offset,
               limit: PAGE_SIZE,
             },
-            () => ticket.current === generation,
+            () => current,
           )
           .then((reply: ImageList) => {
-            if (ticket.current !== generation) return;
+            if (!current) return;
             cache.current.delete(offset);
             cache.current.set(offset, reply.items);
             while (cache.current.size > MAX_PAGES)
               cache.current.delete(cache.current.keys().next().value!);
-            setPages(new Map(cache.current));
-            setSummary({
+            setLoaded({
+              scope,
+              pages: new Map(cache.current),
               total: reply.total,
               selectedMatched: reply.selectedMatched,
+              error: "",
             });
-            setError("");
           })
           .catch((error: unknown) => {
-            if (ticket.current === generation) setError(messageOf(error));
+            if (current)
+              setLoaded((previous) => ({
+                ...(previous.scope === scope ? previous : emptyGrid),
+                scope,
+                error: messageOf(error),
+              }));
           })
           .finally(() => {
             active.current--;
-            if (ticket.current === generation) pending.current.delete(offset);
-            if (ticket.current === generation)
-              setLoading(active.current > 0 || demand.current.length > 0);
+            if (current) pending.current.delete(offset);
             pump.current();
           });
       }
     };
     pump.current();
     return () => {
-      ticket.current++;
+      current = false;
       demand.current = [];
     };
   }, [scope]);
+  const needed: number[] = [];
+  for (
+    let offset = Math.floor(start / PAGE_SIZE) * PAGE_SIZE;
+    offset < Math.max(end, 1);
+    offset += PAGE_SIZE
+  )
+    needed.push(offset);
+  const missing = needed.filter((offset) => !grid.pages.has(offset));
+  const missingKey = missing.join(",");
   useEffect(() => {
-    const needed: number[] = [];
-    for (
-      let offset = Math.floor(start / PAGE_SIZE) * PAGE_SIZE;
-      offset < Math.max(end, 1);
-      offset += PAGE_SIZE
-    )
-      needed.push(offset);
-    demand.current = needed.filter(
-      (offset) => !cache.current.has(offset) && !pending.current.has(offset),
-    );
-    if (demand.current.length) {
-      setLoading(true);
-      pump.current();
-    }
-  }, [start, end, scope, pages]);
+    demand.current = missingKey
+      .split(",")
+      .filter(Boolean)
+      .map(Number)
+      .filter(
+        (offset) => !cache.current.has(offset) && !pending.current.has(offset),
+      );
+    if (demand.current.length) pump.current();
+  }, [missingKey, scope]);
   const items: { index: number; asset: ImageAsset }[] = [];
   for (let index = start; index < end; index++) {
-    const page = pages.get(Math.floor(index / PAGE_SIZE) * PAGE_SIZE);
+    const page = grid.pages.get(Math.floor(index / PAGE_SIZE) * PAGE_SIZE);
     const asset = page?.[index % PAGE_SIZE];
     if (asset) items.push({ index, asset });
   }
-  return { ...summary, items, loading, error };
+  return {
+    total: grid.total,
+    selectedMatched: grid.selectedMatched,
+    items,
+    loading: !grid.error && missing.length > 0,
+    error: grid.error,
+  };
 }
 
 /** A project-local queue with bounded outstanding reads and decoded image cache. */
@@ -223,10 +242,18 @@ export function useThumbnail(
   asset: ImageAsset,
   size: number,
 ) {
-  const [pixels, setPixels] = useState<ImagePixels | null>(null);
-  useEffect(() => {
-    setPixels(null);
-    return queue.get(asset, size, setPixels);
-  }, [queue, asset.id, asset.sourceHash, asset.candidateHash, size]);
-  return pixels;
+  const key = [asset.id, asset.sourceHash, asset.candidateHash, size].join(":");
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    pixels: ImagePixels | null;
+  } | null>(null);
+  // Asset objects are recreated by list reads; the key names the image itself.
+  const subscribe = useEffectEvent(
+    (done: (value: ImagePixels | null) => void) => queue.get(asset, size, done),
+  );
+  useEffect(
+    () => subscribe((pixels) => setLoaded({ key, pixels })),
+    [queue, key],
+  );
+  return loaded?.key === key ? loaded.pixels : null;
 }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { ImageAsset, ImagePixels } from "../../api/imageContracts";
+import { useState } from "react";
+import type { ImageAsset } from "../../api/imageContracts";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { Button } from "../../ui/Button";
@@ -8,6 +8,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { imageClassificationLabels, imageStatus } from "./imageSelection";
+import { useRead } from "../../state/useRead";
 
 export function ImageCompare({
   projectId,
@@ -29,36 +30,33 @@ export function ImageCompare({
     options?: Record<string, unknown>,
   ) => Promise<void>;
 }) {
-  const [source, setSource] = useState<ImagePixels | null>(null);
-  const [candidate, setCandidate] = useState<ImagePixels | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const images = useRead(
+    [projectId, asset.id, asset.sourceHash, asset.candidateHash].join(":"),
+    (signal) =>
+      Promise.all([
+        imagesApi.pixels(
+          projectId,
+          asset.id,
+          "original",
+          0,
+          () => !signal.aborted,
+        ),
+        asset.candidateHash
+          ? imagesApi.pixels(
+              projectId,
+              asset.id,
+              "candidate",
+              0,
+              () => !signal.aborted,
+            )
+          : Promise.resolve(null),
+      ]),
+  );
+  const [source, candidate] = images.value ?? [null, null];
+  const loadError = images.error === undefined ? "" : messageOf(images.error);
   const [zoom, setZoom] = useState(0);
   const [background, setBackground] = useState("checker");
   const [comment, setComment] = useState("");
-  useEffect(() => {
-    let alive = true;
-    setSource(null);
-    setCandidate(null);
-    setLoadError("");
-    void Promise.all([
-      imagesApi.pixels(projectId, asset.id, "original", 0, () => alive),
-      asset.candidateHash
-        ? imagesApi.pixels(projectId, asset.id, "candidate", 0, () => alive)
-        : Promise.resolve(null),
-    ])
-      .then(([original, edited]) => {
-        if (alive) {
-          setSource(original);
-          setCandidate(edited);
-        }
-      })
-      .catch((error) => {
-        if (alive) setLoadError(messageOf(error));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [projectId, asset.id, asset.sourceHash, asset.candidateHash]);
   return (
     <Modal
       label={`Compare ${asset.filename}`}

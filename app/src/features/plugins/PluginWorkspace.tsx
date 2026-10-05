@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { FileCode2, Search, TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { pluginsApi } from "../../api/plugins";
 import type {
-  PluginDetail,
   PluginList,
   PluginPreview,
   PluginState,
@@ -11,6 +16,8 @@ import type {
 } from "../../api/pluginContracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
+import { useOnChange } from "../../state/useOnChange";
+import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionSlot } from "../../ui/ActionSlot";
@@ -69,13 +76,11 @@ export function PluginWorkspace({
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
-  const copiedRequest = useRef("");
+  const [copiedRequest, setCopiedRequest] = useState("");
   const [state, setState] = useState<PluginState | null>(observed || null);
   const stateRef = useRef(state);
-  const [list, setList] = useState<PluginList | null>(null),
-    [detail, setDetail] = useState<PluginDetail | null>(null);
-  const [loading, setLoading] = useState(false),
-    [preview, setPreview] = useState<PluginPreview | null>(null);
+  const [list, setList] = useState<PluginList | null>(null);
+  const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [manual, setManual] = useState<{
       paths: string[];
       ids?: string[];
@@ -108,91 +113,94 @@ export function PluginWorkspace({
     },
   });
   const view = draft.value || state?.view;
-  useEffect(() => {
-    if (observed?.projectId !== projectId) return;
+  const adoptObserved = useEffectEvent((next: PluginState) => {
+    if (next.projectId !== projectId) return;
     if (
       draft.session.getSnapshot().dirty ||
       draft.session.getSnapshot().committing ||
       action.busy
     )
       return;
-    const changed = stateRef.current?.revision !== observed.revision;
-    stateRef.current = observed;
-    setState(observed);
-    if (changed) draft.session.adopt(observed.view);
+    const changed = stateRef.current?.revision !== next.revision;
+    stateRef.current = next;
+    setState(next);
+    if (changed) draft.session.adopt(next.view);
+  });
+  useEffect(() => {
+    // Pushed observer state also updates the external draft session, which
+    // cannot change during render. Busy work defers adoption until it ends.
+    // oxlint-disable-next-line react/set-state-in-effect
+    if (observed) adoptObserved(observed);
   }, [observed, action.busy]);
+  const report = useEffectEvent((error: unknown, key = "") =>
+    action.report(error, key),
+  );
+  const loadInitial = useEffectEvent((alive: () => boolean) => {
+    if (state) return;
+    void pluginsApi
+      .state(projectId)
+      .then((next) => {
+        if (!alive()) return;
+        stateRef.current = next;
+        setState(next);
+        draft.session.adopt(next.view);
+      })
+      .catch((error: unknown) => report(error));
+  });
   useEffect(() => {
     let alive = true;
-    if (!state)
-      void pluginsApi
-        .state(projectId)
-        .then((next) => {
-          if (alive) {
-            stateRef.current = next;
-            setState(next);
-            draft.session.adopt(next.view);
-          }
-        })
-        .catch(action.report);
+    loadInitial(() => alive);
     return () => {
       alive = false;
     };
   }, [projectId]);
-  useEffect(() => {
-    if (!state || !view) return;
-    let alive = true;
-    setLoading(true);
-    void pluginsApi
-      .list(
+  const files = useRead(
+    state && view
+      ? JSON.stringify([
+          projectId,
+          state.observationRevision,
+          view.query,
+          view.filter,
+          view.selectedOnly,
+          view.offset,
+        ])
+      : null,
+    (signal) =>
+      pluginsApi.list(
         projectId,
         {
-          query: view.query,
-          filter: view.filter,
-          selected_only: view.selectedOnly,
-          offset: view.offset,
+          query: view!.query,
+          filter: view!.filter,
+          selected_only: view!.selectedOnly,
+          offset: view!.offset,
           limit: 100,
         },
-        () => alive,
-      )
-      .then((next) => {
-        if (alive) {
-          setList(next);
-          setLoading(false);
-        }
-      })
-      .catch((error) => {
-        if (alive) {
-          action.report(error, "list");
-          setLoading(false);
-        }
-      });
-    return () => {
-      alive = false;
-    };
-  }, [
-    projectId,
-    state?.observationRevision,
-    view?.query,
-    view?.filter,
-    view?.selectedOnly,
-    view?.offset,
-  ]);
+        () => !signal.aborted,
+      ),
+  );
+  // The current page stays visible while the next one loads.
+  useOnChange(files.value, (value) => {
+    if (value) setList(value);
+  });
+  const loading = files.pending;
   useEffect(() => {
-    setDetail(null);
-    if (!view?.currentFile) return;
-    let alive = true;
-    void pluginsApi
-      .detail(projectId, view.currentFile, () => alive)
-      .then((next) => {
-        if (alive) setDetail(next);
-      })
-      .catch((error) => {
-        if (alive) action.report(error, "detail");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [projectId, view?.currentFile, state?.observationRevision]);
+    if (files.error !== undefined) report(files.error, "list");
+  }, [files.error]);
+  const selected = useRead(
+    view?.currentFile
+      ? JSON.stringify([
+          projectId,
+          view.currentFile,
+          state?.observationRevision,
+        ])
+      : null,
+    (signal) =>
+      pluginsApi.detail(projectId, view!.currentFile, () => !signal.aborted),
+  );
+  const detail = selected.value ?? null;
+  useEffect(() => {
+    if (selected.error !== undefined) report(selected.error, "detail");
+  }, [selected.error]);
   const edit = (patch: Partial<PluginView>) =>
     draft.session.edit((current) => ({ ...current, ...patch }));
   const busy = disabled || action.busy || draft.committing;
@@ -214,7 +222,7 @@ export function PluginWorkspace({
           }
           if (reply.text) {
             await window.dazedtl.copyText(reply.text);
-            copiedRequest.current = reply.state?.activeRequest || "";
+            setCopiedRequest(reply.state?.activeRequest || "");
           }
           if (reply.preview) setPreview(reply.preview);
           return { saved: reply.state?.view || current };
@@ -304,7 +312,7 @@ export function PluginWorkspace({
             disabled={busy}
             {...feedback("plugin_task")}
             notice={
-              state.activeRequest === copiedRequest.current
+              state.activeRequest === copiedRequest
                 ? feedback("plugin_task").notice
                 : ""
             }

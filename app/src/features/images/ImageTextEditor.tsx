@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
@@ -19,6 +19,7 @@ import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
 import { ExpandableText } from "../../ui/ExpandableText";
 import "./image-editor.css";
+import { useRead } from "../../state/useRead";
 
 export interface ImageTextEditorProps {
   projectId: string;
@@ -53,36 +54,11 @@ const colourChannels = (value: string) => [
 
 export function ImageTextEditor(props: ImageTextEditorProps) {
   const scopeKey = JSON.stringify(props.assetIds);
-  const [loaded, setLoaded] = useState<{
-    projectId: string;
-    scopeKey: string;
-    state: ImageEditorState;
-  } | null>(null);
-  const generation = useRef(0);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let alive = true;
-    const ticket = ++generation.current;
-    setLoaded(null);
-    setError("");
-    void api.images
-      .editorState(props.projectId, props.assetIds)
-      .then((next) => {
-        if (alive && ticket === generation.current)
-          setLoaded({ projectId: props.projectId, scopeKey, state: next });
-      })
-      .catch((error) => {
-        if (alive && ticket === generation.current) setError(messageOf(error));
-      });
-    return () => {
-      alive = false;
-      generation.current++;
-    };
-  }, [props.projectId, scopeKey]);
-  const initial =
-    loaded?.projectId === props.projectId && loaded.scopeKey === scopeKey
-      ? loaded.state
-      : null;
+  const editor = useRead(JSON.stringify([props.projectId, scopeKey]), () =>
+    api.images.editorState(props.projectId, props.assetIds),
+  );
+  const initial = editor.value ?? null;
+  const error = editor.error === undefined ? "" : messageOf(editor.error);
   if (!initial)
     return (
       <Modal
@@ -101,30 +77,7 @@ export function ImageTextEditor(props: ImageTextEditorProps) {
               ? "The selected images could not open."
               : "Loading saved text and image work…"}
           </p>
-          {error && (
-            <Button
-              onClick={() => {
-                const ticket = ++generation.current;
-                setError("");
-                void api.images
-                  .editorState(props.projectId, props.assetIds)
-                  .then((next) => {
-                    if (ticket === generation.current)
-                      setLoaded({
-                        projectId: props.projectId,
-                        scopeKey,
-                        state: next,
-                      });
-                  })
-                  .catch((error) => {
-                    if (ticket === generation.current)
-                      setError(messageOf(error));
-                  });
-              }}
-            >
-              Retry
-            </Button>
-          )}
+          {error && <Button onClick={editor.retry}>Retry</Button>}
         </div>
       </Modal>
     );
@@ -159,11 +112,6 @@ function Editor({
     y2: number;
   } | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const [pixels, setPixels] = useState({
-    source: "",
-    candidate: "",
-    error: "",
-  });
   const [nativeState, setNativeState] =
     useState<ImageNativeTranslationState | null>(null);
   const [selectedRun, setSelectedRun] = useState("");
@@ -197,13 +145,15 @@ function Editor({
   const image = state.images.find((image) => image.assetId === imageId);
   const current = edits.find((image) => image.assetId === imageId);
   const block = current?.blocks.find((block) => block.id === selected[0]);
+  const firstSelected = selected[0];
   useEffect(() => {
     if (detailsPanel.current) detailsPanel.current.scrollTop = 0;
-  }, [imageId, selected[0]]);
+  }, [imageId, firstSelected]);
   const busy = action.busy || draft.committing;
   const refreshNative = async () => {
     setNativeState(await api.images.editorTranslationState(projectId));
   };
+  const report = useEffectEvent((error: unknown) => action.report(error));
   const nativeRead = useRef(false);
   useEffect(() => {
     if (!translationOpen || busy || draft.dirty || nativeRead.current) return;
@@ -214,8 +164,8 @@ function Editor({
       .then((next) => {
         if (alive) setNativeState(next);
       })
-      .catch((error) => {
-        if (alive) action.report(error);
+      .catch((error: unknown) => {
+        if (alive) report(error);
       })
       .finally(() => {
         nativeRead.current = false;
@@ -224,30 +174,38 @@ function Editor({
       alive = false;
     };
   }, [projectId, observationKey, translationOpen, busy, draft.dirty]);
-  useEffect(() => {
-    if (!image) return;
-    let alive = true;
-    setPixels({ source: "", candidate: "", error: "" });
-    void Promise.all([
-      imagesApi.pixels(projectId, image.assetId, "original", 0, () => alive),
-      imagesApi.pixels(projectId, image.assetId, "candidate", 0, () => alive),
-    ])
-      .then(([source, candidate]) => {
-        if (alive)
-          setPixels({
-            source: source.url || "",
-            candidate: candidate.url || "",
-            error: "",
-          });
-      })
-      .catch((error) => {
-        if (alive)
-          setPixels({ source: "", candidate: "", error: messageOf(error) });
-      });
-    return () => {
-      alive = false;
-    };
-  }, [projectId, imageId, image?.sourceHash, image?.candidateHash]);
+  const images = useRead(
+    image
+      ? JSON.stringify([
+          projectId,
+          imageId,
+          image.sourceHash,
+          image.candidateHash,
+        ])
+      : null,
+    (signal) =>
+      Promise.all([
+        imagesApi.pixels(
+          projectId,
+          image!.assetId,
+          "original",
+          0,
+          () => !signal.aborted,
+        ),
+        imagesApi.pixels(
+          projectId,
+          image!.assetId,
+          "candidate",
+          0,
+          () => !signal.aborted,
+        ),
+      ]),
+  );
+  const pixels = {
+    source: images.value?.[0].url || "",
+    candidate: images.value?.[1].url || "",
+    error: images.error === undefined ? "" : messageOf(images.error),
+  };
 
   function edit(update: (image: ImageEditorSave) => ImageEditorSave) {
     draft.session.edit((images) =>
