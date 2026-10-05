@@ -27,7 +27,13 @@ export function Button({
       disabled={disabled || pending}
       aria-busy={pending || undefined}
     >
-      {pending && <LoaderCircle size={14} className="ui-button-spinner" aria-hidden="true" />}
+      {pending && (
+        <LoaderCircle
+          size={14}
+          className="ui-button-spinner"
+          aria-hidden="true"
+        />
+      )}
       {children}
     </button>
   );

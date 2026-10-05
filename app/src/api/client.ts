@@ -17,16 +17,66 @@ import type {
 export const api = {
   images: {
     ...imagesApi,
-    editorState: (project_id: string, asset_ids: string[] = []) => request("images_editor_state", { project_id, asset_ids }),
-    editorSave: (project_id: string, revision: string, images: ImageEditorSave[], asset_ids: string[] = []) => request("images_editor_save", { project_id, revision, images, asset_ids }),
-    editorAction: (project_id: string, revision: string, action: string, asset_ids: string[], args: Record<string, unknown> = {}) => request("images_editor_action", { project_id, revision, action, asset_ids, arguments: args }),
-    editorTranslationState: (project_id: string) => request("images_editor_translation_state", { project_id }),
-    editorTranslationPreview: (project_id: string, mode: "estimate" | "translate" | "batch") => request("images_editor_translation_preview", { project_id, mode }),
-    editorTranslationStart: (project_id: string, token: string, approved = false) => request("images_editor_translation_start", { project_id, token, approved }),
-    editorTranslationAction: (project_id: string, run_id: string, action: string, args: Record<string, unknown> = {}) => request("images_editor_translation_action", { project_id, run_id, action, arguments: args }),
+    editorState: (project_id: string, asset_ids: string[] = []) =>
+      request("images_editor_state", { project_id, asset_ids }),
+    editorSave: (
+      project_id: string,
+      revision: string,
+      images: ImageEditorSave[],
+      asset_ids: string[] = [],
+    ) =>
+      request("images_editor_save", {
+        project_id,
+        revision,
+        images,
+        asset_ids,
+      }),
+    editorAction: (
+      project_id: string,
+      revision: string,
+      action: string,
+      asset_ids: string[],
+      args: Record<string, unknown> = {},
+    ) =>
+      request("images_editor_action", {
+        project_id,
+        revision,
+        action,
+        asset_ids,
+        arguments: args,
+      }),
+    editorTranslationState: (project_id: string) =>
+      request("images_editor_translation_state", { project_id }),
+    editorTranslationPreview: (
+      project_id: string,
+      mode: "estimate" | "translate" | "batch",
+    ) => request("images_editor_translation_preview", { project_id, mode }),
+    editorTranslationStart: (
+      project_id: string,
+      token: string,
+      approved = false,
+    ) =>
+      request("images_editor_translation_start", {
+        project_id,
+        token,
+        approved,
+      }),
+    editorTranslationAction: (
+      project_id: string,
+      run_id: string,
+      action: string,
+      args: Record<string, unknown> = {},
+    ) =>
+      request("images_editor_translation_action", {
+        project_id,
+        run_id,
+        action,
+        arguments: args,
+      }),
   },
   translation: {
-    speakers: (project_id: string, scan = false) => request("translation_speakers", { project_id, scan }),
+    speakers: (project_id: string, scan = false) =>
+      request("translation_speakers", { project_id, scan }),
     resolve: (
       project_id: string,
       run_id: string,
@@ -131,35 +181,110 @@ export const api = {
   execute: (project_id: string, token: string) =>
     request("guided_execute", { project_id, token }),
   guided: {
-    outputFolder: (project_id: string) => request("guided_output_folder", { project_id }),
-    eventTextRequest: (project_id: string) => request("guided_event_text_request", { project_id }),
-    eventTextReview: (project_id: string, revision: number, binding: string | null, report_id: string | null, manual_reason: string, risk_accepted: boolean) => request("guided_event_text_review", { project_id, revision, binding, report_id, manual_reason, risk_accepted }),
-    eventTextView: (project_id: string, view: import("./contracts").EventTextState["view"]) => request("guided_event_text_view", { project_id, view }),
-    eventTextPicker: (project_id: string, value: import("./contracts").EventTextState["picker"]) => request("guided_event_text_picker", { project_id, value }),
-    comparisonsReview: (project_id: string, fingerprint: string | null, accepted: boolean) => request("guided_comparisons_review", { project_id, fingerprint, accepted }),
-    applySpeakers: (project_id: string, revision: number, report_id: string, reset = false) => request("guided_apply_speakers", { project_id, revision, report_id, reset }),
-    inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
-    payload: (project_id: string, run_id: string, index: number) => request("guided_payload", { project_id, run_id, index }),
-    nameResults: (project_id: string, run_id: string, offset = 0) => request("guided_name_results", { project_id, run_id, offset }),
-    filePreview: (project_id: string, name: string, offset = 0, query = "") => request("guided_file_preview", { project_id, name, offset, query }),
-    discardPreparation: (project_id: string, run_id: string) => request("guided_discard_preparation", { project_id, run_id }),
-    batchCancelPreview: (project_id: string, run_id: string, batch_id: string) => request("guided_batch_cancel_preview", { project_id, run_id, batch_id }),
-    batchCancel: (project_id: string, token: string) => request("guided_batch_cancel", { project_id, token }),
-    batchCollect: (project_id: string, run_id: string) => request("guided_batch_collect", { project_id, run_id }),
-    form: (project_id: string, value: GuidedForm) => request("guided_form", { project_id, value }),
-    position: (project_id: string, step: GuidedStep, task?: string, document?: string) => request("guided_position", { project_id, step, task, document }),
-    draft: (project_id: string, value: GuidedPreferences | null) => request("guided_options_draft", { project_id, value }),
-    save: (project_id: string, revision: number, values: GuidedOptions) => request("guided_save_options", { project_id, revision, values }),
-    context: (project_id: string, retry_layout = false) => request("guided_context_status", { project_id, retry_layout }),
-    referenceAdd: (project_id: string, folder: string) => request("guided_reference_add", { project_id, folder }),
-    referenceRemove: (project_id: string, reference_id: string) => request("guided_reference_remove", { project_id, reference_id }),
-    reviewContext: (project_id: string, name: string, revision: string, choice: "empty" | "review" | "layout") => request("guided_context_review", { project_id, name, revision, choice }),
-    skill: (project_id: string, name: string) => request("guided_skill", { project_id, name }),
+    outputFolder: (project_id: string) =>
+      request("guided_output_folder", { project_id }),
+    eventTextRequest: (project_id: string) =>
+      request("guided_event_text_request", { project_id }),
+    eventTextReview: (
+      project_id: string,
+      revision: number,
+      binding: string | null,
+      report_id: string | null,
+      manual_reason: string,
+      risk_accepted: boolean,
+    ) =>
+      request("guided_event_text_review", {
+        project_id,
+        revision,
+        binding,
+        report_id,
+        manual_reason,
+        risk_accepted,
+      }),
+    eventTextView: (
+      project_id: string,
+      view: import("./contracts").EventTextState["view"],
+    ) => request("guided_event_text_view", { project_id, view }),
+    eventTextPicker: (
+      project_id: string,
+      value: import("./contracts").EventTextState["picker"],
+    ) => request("guided_event_text_picker", { project_id, value }),
+    comparisonsReview: (
+      project_id: string,
+      fingerprint: string | null,
+      accepted: boolean,
+    ) =>
+      request("guided_comparisons_review", {
+        project_id,
+        fingerprint,
+        accepted,
+      }),
+    applySpeakers: (
+      project_id: string,
+      revision: number,
+      report_id: string,
+      reset = false,
+    ) =>
+      request("guided_apply_speakers", {
+        project_id,
+        revision,
+        report_id,
+        reset,
+      }),
+    inspect: (project_id: string, run_id: string) =>
+      request("guided_inspect", { project_id, run_id }),
+    payload: (project_id: string, run_id: string, index: number) =>
+      request("guided_payload", { project_id, run_id, index }),
+    nameResults: (project_id: string, run_id: string, offset = 0) =>
+      request("guided_name_results", { project_id, run_id, offset }),
+    filePreview: (project_id: string, name: string, offset = 0, query = "") =>
+      request("guided_file_preview", { project_id, name, offset, query }),
+    discardPreparation: (project_id: string, run_id: string) =>
+      request("guided_discard_preparation", { project_id, run_id }),
+    batchCancelPreview: (
+      project_id: string,
+      run_id: string,
+      batch_id: string,
+    ) =>
+      request("guided_batch_cancel_preview", { project_id, run_id, batch_id }),
+    batchCancel: (project_id: string, token: string) =>
+      request("guided_batch_cancel", { project_id, token }),
+    batchCollect: (project_id: string, run_id: string) =>
+      request("guided_batch_collect", { project_id, run_id }),
+    form: (project_id: string, value: GuidedForm) =>
+      request("guided_form", { project_id, value }),
+    position: (
+      project_id: string,
+      step: GuidedStep,
+      task?: string,
+      document?: string,
+    ) => request("guided_position", { project_id, step, task, document }),
+    draft: (project_id: string, value: GuidedPreferences | null) =>
+      request("guided_options_draft", { project_id, value }),
+    save: (project_id: string, revision: number, values: GuidedOptions) =>
+      request("guided_save_options", { project_id, revision, values }),
+    context: (project_id: string, retry_layout = false) =>
+      request("guided_context_status", { project_id, retry_layout }),
+    referenceAdd: (project_id: string, folder: string) =>
+      request("guided_reference_add", { project_id, folder }),
+    referenceRemove: (project_id: string, reference_id: string) =>
+      request("guided_reference_remove", { project_id, reference_id }),
+    reviewContext: (
+      project_id: string,
+      name: string,
+      revision: string,
+      choice: "empty" | "review" | "layout",
+    ) =>
+      request("guided_context_review", { project_id, name, revision, choice }),
+    skill: (project_id: string, name: string) =>
+      request("guided_skill", { project_id, name }),
   },
   answer: (project_id: string, token: string, approved: boolean) =>
     request("guided_answer", { project_id, token, approved }),
-  stop: (project_id: string, run_id?: string) => request("guided_stop", { project_id, ...(run_id ? { run_id } : {}) }),
-  resume: (project_id: string, run_id?: string) => request("guided_resume", { project_id, ...(run_id ? { run_id } : {}) }),
+  stop: (project_id: string, run_id?: string) =>
+    request("guided_stop", { project_id, ...(run_id ? { run_id } : {}) }),
+  resume: (project_id: string, run_id?: string) =>
+    request("guided_resume", { project_id, ...(run_id ? { run_id } : {}) }),
   draft: (project_id: string, documents: Documents) =>
     request("guided_draft", { project_id, documents }),
   saveDocument: (

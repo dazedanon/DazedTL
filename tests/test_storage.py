@@ -1,4 +1,5 @@
 """Regression coverage for retaining recoverable state during storage failures."""
+
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -30,21 +31,29 @@ class StorageTests(unittest.TestCase):
                 raise ValueError("Missing title")
 
         expected = {"version": 2, "title": "example", "items": ["saved"]}
-        self.assertEqual(read_versioned_json(self.path, {"version": 2}, {1: upgrade}, validate), expected)
+        self.assertEqual(
+            read_versioned_json(self.path, {"version": 2}, {1: upgrade}, validate),
+            expected,
+        )
         self.assertEqual(json.loads(self.path.read_bytes()), expected)
         backups = list((self.root / "backups").iterdir())
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original)
-        self.assertEqual(read_versioned_json(self.path, {"version": 2}, {1: upgrade}, validate), expected)
+        self.assertEqual(
+            read_versioned_json(self.path, {"version": 2}, {1: upgrade}, validate),
+            expected,
+        )
         self.assertEqual(calls, [1])
         self.assertEqual(list((self.root / "backups").iterdir()), backups)
 
     def test_unreadable_or_unsupported_state_is_never_replaced(self):
-        for original in (b'{broken', b'[]', b'{"version":99,"saved":"keep"}'):
+        for original in (b"{broken", b"[]", b'{"version":99,"saved":"keep"}'):
             with self.subTest(original=original):
                 self.path.write_bytes(original)
                 with self.assertRaises(WorkspaceError):
-                    read_versioned_json(self.path, {"version": 2}, {}, lambda value: None)
+                    read_versioned_json(
+                        self.path, {"version": 2}, {}, lambda value: None
+                    )
                 self.assertEqual(self.path.read_bytes(), original)
                 self.assertFalse((self.root / "backups").exists())
 
@@ -57,12 +66,19 @@ class StorageTests(unittest.TestCase):
 
         self.path.write_bytes(original)
         with self.assertRaises(WorkspaceError) as error:
-            read_versioned_json(self.path, {"version": 2}, {1: invalid}, lambda value: None)
+            read_versioned_json(
+                self.path, {"version": 2}, {1: invalid}, lambda value: None
+            )
         self.assertEqual(error.exception.code, "workspace_upgrade")
         self.assertEqual(self.path.read_bytes(), original)
         with patch("dazedtl.storage.write_bytes", side_effect=OSError("No space")):
             with self.assertRaises(WorkspaceError) as error:
-                read_versioned_json(self.path, {"version": 2}, {1: lambda value: value}, lambda value: None)
+                read_versioned_json(
+                    self.path,
+                    {"version": 2},
+                    {1: lambda value: value},
+                    lambda value: None,
+                )
         self.assertEqual(error.exception.code, "workspace_backup")
         self.assertEqual(self.path.read_bytes(), original)
 
@@ -77,7 +93,12 @@ class StorageTests(unittest.TestCase):
 
         with patch("dazedtl.storage.write_bytes", side_effect=backup_then_edit):
             with self.assertRaises(WorkspaceError):
-                read_versioned_json(self.path, {"version": 2}, {1: lambda value: value}, lambda value: None)
+                read_versioned_json(
+                    self.path,
+                    {"version": 2},
+                    {1: lambda value: value},
+                    lambda value: None,
+                )
         self.assertEqual(self.path.read_bytes(), newer)
         self.assertEqual(next((self.root / "backups").iterdir()).read_bytes(), original)
 

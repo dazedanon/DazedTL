@@ -111,14 +111,18 @@ app.whenReady().then(() => {
   });
   const fitMinimumSize = () => {
     if (!window || window.isDestroyed()) return;
-    const size = windowSize(screen.getDisplayMatching(window.getBounds()).workAreaSize);
+    const size = windowSize(
+      screen.getDisplayMatching(window.getBounds()).workAreaSize,
+    );
     const [width, height] = window.getMinimumSize();
     if (width !== size.minWidth || height !== size.minHeight)
       window.setMinimumSize(size.minWidth, size.minHeight);
   };
   window.on("move", fitMinimumSize);
   screen.on("display-metrics-changed", fitMinimumSize);
-  window.once("closed", () => screen.off("display-metrics-changed", fitMinimumSize));
+  window.once("closed", () =>
+    screen.off("display-metrics-changed", fitMinimumSize),
+  );
   window.once("ready-to-show", () => {
     fitMinimumSize();
     window.maximize();
@@ -131,8 +135,13 @@ app.whenReady().then(() => {
     diagnostics,
   );
   const recovery = rendererRecovery(window, {
-    diagnostics, dialog, clipboard, closing: () => closing || quit,
-    beforeReload: () => { ready = false; },
+    diagnostics,
+    dialog,
+    clipboard,
+    closing: () => closing || quit,
+    beforeReload: () => {
+      ready = false;
+    },
   });
   window.webContents.on(
     "did-fail-load",
@@ -153,7 +162,10 @@ app.whenReady().then(() => {
     closing = true;
     const token = (closeToken = ++closeSerial);
     if (recovery.failed()) {
-      void closeProblem("The interface cannot save changes right now. Keep it open to recover, or discard unsaved changes and close.", token).catch(error => {
+      void closeProblem(
+        "The interface cannot save changes right now. Keep it open to recover, or discard unsaved changes and close.",
+        token,
+      ).catch((error) => {
         diagnostics.failure("desktop.error", error, { operation: "native" });
         if (token !== closeToken) return;
         closing = false;
@@ -197,12 +209,17 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("dazedtl:renderer-error", (event, failure) => {
     trusted(event);
-    if (!["render", "error", "unhandledrejection"].includes(failure?.reason)) return;
-    diagnostics.record("renderer.error", { reason: failure.reason, causes: failure.causes });
+    if (!["render", "error", "unhandledrejection"].includes(failure?.reason))
+      return;
+    diagnostics.record("renderer.error", {
+      reason: failure.reason,
+      causes: failure.causes,
+    });
   });
   ipcMain.handle("dazedtl:reload-interface", (event) => {
     trusted(event);
-    if (closing || quit) throw new Error("Wait for the close request to finish.");
+    if (closing || quit)
+      throw new Error("Wait for the close request to finish.");
     recovery.reload();
   });
   ipcMain.handle("dazedtl:call", async (event, version, method, params) => {
@@ -229,16 +246,24 @@ app.whenReady().then(() => {
           ? result?.application?.project
           : result?.project;
       if (selected?.source) currentSource = selected.source;
-      if (method === "guided_export" || method === "guided_output_folder") outputs.add(result.path);
+      if (method === "guided_export" || method === "guided_output_folder")
+        outputs.add(result.path);
       if (method === "workspace_snapshot") {
         backupFolders.clear();
-        for (const key of ["source_backup", "prepared_source", "workspace_backup"]) {
+        for (const key of [
+          "source_backup",
+          "prepared_source",
+          "workspace_backup",
+        ]) {
           const backup = result?.translation?.lifecycle?.[key];
           if (backup?.available === true && typeof backup.path === "string")
             backupFolders.add(backup.path);
         }
         for (const artifact of result?.guided?.artifacts || []) {
-          if (artifact.available === true && typeof artifact.folder === "string")
+          if (
+            artifact.available === true &&
+            typeof artifact.folder === "string"
+          )
             outputs.add(artifact.folder);
         }
       }
@@ -278,7 +303,8 @@ app.whenReady().then(() => {
   ipcMain.handle("dazedtl:choose-editor", async (event) => {
     trusted(event);
     const selected = await dialog.showOpenDialog(window, {
-      title: "Choose a code editor", properties: ["openFile"],
+      title: "Choose a code editor",
+      properties: ["openFile"],
     });
     return selected.canceled ? null : selected.filePaths[0];
   });
@@ -292,14 +318,18 @@ app.whenReady().then(() => {
           : kind === "workspace"
             ? backend.workspace
             : kind === "backup"
-              ? (backupFolders.has(target) ? target : "")
+              ? backupFolders.has(target)
+                ? target
+                : ""
               : outputs.has(target)
                 ? target
                 : "";
     if (!folder || !fs.statSync(folder).isDirectory())
       throw new Error("Choose an available folder.");
     if (kind === "backup" && fs.realpathSync(folder) !== path.resolve(folder))
-      throw new Error("The backup location changed. Refresh its status before opening it.");
+      throw new Error(
+        "The backup location changed. Refresh its status before opening it.",
+      );
     if (
       kind === "projectWorkspace" &&
       !fs

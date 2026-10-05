@@ -18,20 +18,35 @@ def local_ocr():
     if spec is None or not spec.origin:
         return {"available": False, "detail": "Local RapidOCR is not installed."}
     models = sorted(Path(spec.origin).parent.glob("models/*.onnx"))
-    weights = {kind: next((path for path in models if f"_{kind}" in path.name.lower()), None)
-               for kind in ("det", "rec", "cls")}
+    weights = {
+        kind: next((path for path in models if f"_{kind}" in path.name.lower()), None)
+        for kind in ("det", "rec", "cls")
+    }
     if not all(weights.values()):
-        return {"available": False, "detail": "Local RapidOCR model files are missing. No models are downloaded."}
-    return {"available": True, "detail": "RapidOCR uses installed local model files.",
-            "weights": {key: str(value) for key, value in weights.items()}}
+        return {
+            "available": False,
+            "detail": "Local RapidOCR model files are missing. No models are downloaded.",
+        }
+    return {
+        "available": True,
+        "detail": "RapidOCR uses installed local model files.",
+        "weights": {key: str(value) for key, value in weights.items()},
+    }
 
 
 @lru_cache(maxsize=1)
 def fonts():
     from util.imagetools.fonts import available_fonts, font_name
     from dazedtl.translation.files import digest
-    return [{"id": digest(str(path).encode())[:24], "label": font_name(str(path)), "path": str(path)}
-            for path in available_fonts()]
+
+    return [
+        {
+            "id": digest(str(path).encode())[:24],
+            "label": font_name(str(path)),
+            "path": str(path),
+        }
+        for path in available_fonts()
+    ]
 
 
 def _job(root, work, originals):
@@ -54,7 +69,11 @@ def load(root, work, images):
     from util.imagetools.job import ImageEntry
     import json
 
-    originals = {item["relative"]: Path(item["original"]) for item in images if item.get("original")}
+    originals = {
+        item["relative"]: Path(item["original"])
+        for item in images
+        if item.get("original")
+    }
     job = _job(Path(root), Path(work), originals)
     if job.path.is_file():
         data = json.loads(job.path.read_text(encoding="utf-8"))
@@ -70,6 +89,7 @@ def set_entry(job, value):
     from util.imagetools.style import Style, measure
     from PIL import Image
     import numpy as np
+
     entry = ImageEntry.from_dict(value)
     with Image.open(job.source_path(entry)) as original:
         pixels = np.array(original.convert("RGBA"))
@@ -85,6 +105,7 @@ def set_entry(job, value):
 
 def image_size(path):
     from PIL import Image
+
     with Image.open(path) as image:
         if image.format != "PNG" or getattr(image, "n_frames", 1) != 1:
             raise ValueError("The native editor requires a single-frame PNG.")
@@ -106,7 +127,9 @@ def ocr(job, entry):
 
     with Image.open(job.source_path(entry)) as original:
         source = np.array(original.convert("RGBA"))
-    engine = RapidOCR(**{f"{kind}_model_path": path for kind, path in status["weights"].items()})
+    engine = RapidOCR(
+        **{f"{kind}_model_path": path for kind, path in status["weights"].items()}
+    )
     result, _elapsed = engine(source[:, :, :3].copy())
     lines = []
     for polygon, text, _confidence in result or []:
@@ -116,16 +139,22 @@ def ocr(job, entry):
             lines.append(Line(text, box))
     entry.adopt(Reading(blocks=group_lines(lines), engine="rapidocr"))
     from util.imagetools.job import apply_flags
+
     apply_flags(entry)
 
 
 def exchange(job, relatives, path):
     from util.imagetools.exchange import build
+
     scoped = deepcopy(job)
-    scoped.images = [entry for entry in scoped.images if entry.relpath in set(relatives)]
+    scoped.images = [
+        entry for entry in scoped.images if entry.relpath in set(relatives)
+    ]
     payload = build(scoped)
     if not payload["images"]:
-        raise ValueError("Confirm at least one image with source text before translation.")
+        raise ValueError(
+            "Confirm at least one image with source text before translation."
+        )
     # Never mirror into the frozen engine's files directory or another project.
     write_json(path, payload)
     return payload
@@ -133,9 +162,20 @@ def exchange(job, relatives, path):
 
 def _verify_pixels(job, entry, expected_candidate, expected_original):
     from dazedtl.translation.files import digest
-    for path, expected in ((job.image_path(entry), expected_candidate), (job.source_path(entry), expected_original)):
-        if path.is_symlink() or not path.is_file() or expected and digest(path.read_bytes()) != expected:
-            raise ValueError("Image pixels changed during editing. Reload before rendering or restoring.")
+
+    for path, expected in (
+        (job.image_path(entry), expected_candidate),
+        (job.source_path(entry), expected_original),
+    ):
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or expected
+            and digest(path.read_bytes()) != expected
+        ):
+            raise ValueError(
+                "Image pixels changed during editing. Reload before rendering or restoring."
+            )
 
 
 def render(job, entry, *, expected_candidate=None, expected_original=None):
@@ -151,17 +191,31 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
     with Image.open(source_path) as original:
         mode = original.mode
         source = np.array(original.convert("RGBA"))
-        metadata = {key: original.info[key] for key in ("icc_profile", "dpi", "exif") if key in original.info}
+        metadata = {
+            key: original.info[key]
+            for key in ("icc_profile", "dpi", "exif")
+            if key in original.info
+        }
         colour_key = original.info.get("transparency")
     if mode not in {"RGB", "RGBA", "L", "LA"}:
-        raise ValueError("Indexed PNGs need the assistant image route to preserve their palette.")
+        raise ValueError(
+            "Indexed PNGs need the assistant image route to preserve their palette."
+        )
     if colour_key is not None:
-        raise ValueError("Colour-key PNGs need the assistant image route to preserve their transparency.")
+        raise ValueError(
+            "Colour-key PNGs need the assistant image route to preserve their transparency."
+        )
     ensure(source, entry)
     catalog = {item["id"]: item["path"] for item in fonts()}
-    names = {block.block_id: block.style.font for block in entry.blocks if block.style is not None and block.style.font}
+    names = {
+        block.block_id: block.style.font
+        for block in entry.blocks
+        if block.style is not None and block.style.font
+    }
     if any(name not in catalog for name in names.values()):
-        raise ValueError("The saved font is unavailable. Choose an installed font before rendering.")
+        raise ValueError(
+            "The saved font is unavailable. Choose an installed font before rendering."
+        )
     for block in entry.blocks:
         if block.style is not None:
             # Background repair in this tool is deterministic OpenCV only.
@@ -170,7 +224,12 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
             if block.style.font:
                 block.style.font = catalog[block.style.font]
     try:
-        result = render_entry(source, entry, paint=load_layer(job, entry, source.shape), cut=load_cut(job, entry, source.shape))
+        result = render_entry(
+            source,
+            entry,
+            paint=load_layer(job, entry, source.shape),
+            cut=load_cut(job, entry, source.shape),
+        )
     finally:
         for block in entry.blocks:
             if block.block_id in names:
@@ -185,8 +244,15 @@ def render(job, entry, *, expected_candidate=None, expected_original=None):
         write_bytes(original_path, job.image_path(entry).read_bytes())
     write_bytes(job.image_path(entry), output.getvalue())
     entry.status = "rendered"
-    return [{"blockId": note.block_id, "ok": note.ok, "message": note.message, "tight": note.tight}
-            for note in result.notes]
+    return [
+        {
+            "blockId": note.block_id,
+            "ok": note.ok,
+            "message": note.message,
+            "tight": note.tight,
+        }
+        for note in result.notes
+    ]
 
 
 def undo(job, entry, *, expected_candidate=None, expected_original=None):
@@ -195,4 +261,8 @@ def undo(job, entry, *, expected_candidate=None, expected_original=None):
     if not original.is_file():
         raise ValueError("There is no preserved original to restore.")
     write_bytes(job.image_path(entry), original.read_bytes())
-    entry.status = "translated" if all(block.target_text or block.skip for block in entry.blocks) else "confirmed"
+    entry.status = (
+        "translated"
+        if all(block.target_text or block.skip for block in entry.blocks)
+        else "confirmed"
+    )

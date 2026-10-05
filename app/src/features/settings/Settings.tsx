@@ -147,9 +147,12 @@ export default function Settings() {
                         <DetailRow label="Provider">
                           {provider?.label || "Choose a provider"}
                         </DetailRow>
-                        {current.provider === "openrouter" && current.openrouter_host && (
-                          <DetailRow label="Host">{current.openrouter_host}</DetailRow>
-                        )}
+                        {current.provider === "openrouter" &&
+                          current.openrouter_host && (
+                            <DetailRow label="Host">
+                              {current.openrouter_host}
+                            </DetailRow>
+                          )}
                         <DetailRow label="API key">
                           {current.keyless
                             ? "Not required"

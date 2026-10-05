@@ -6,11 +6,19 @@ from pathlib import Path
 from dazedtl.storage import write_json
 from .files import digest, project_path, read_json
 
-LABELS = {"format_data": "Format game data", "format_plugins": "Format plugins.js", "gameupdate": "Create GameUpdate files"}
+LABELS = {
+    "format_data": "Format game data",
+    "format_plugins": "Format plugins.js",
+    "gameupdate": "Create GameUpdate files",
+}
 
 
 def actions(native):
-    return ["format_data", *(["format_plugins"] if native.get("plugins") else []), "gameupdate"]
+    return [
+        "format_data",
+        *(["format_plugins"] if native.get("plugins") else []),
+        "gameupdate",
+    ]
 
 
 def has_data(native):
@@ -19,7 +27,11 @@ def has_data(native):
 
 def require_data(native):
     if not has_data(native):
-        message = "Convert the native Ace data to JSON first, then return to preparation." if native.get("engine") == "ACE" else "No game JSON is available. Check the selected game's data folder before preparation."
+        message = (
+            "Convert the native Ace data to JSON first, then return to preparation."
+            if native.get("engine") == "ACE"
+            else "No game JSON is available. Check the selected game's data folder before preparation."
+        )
         raise ValueError(message)
 
 
@@ -36,25 +48,47 @@ def fingerprint(native, observed=None):
         if path.is_file():
             relative = path.relative_to(root).as_posix()
             checked = project_path(root, relative)
-            files[relative] = observed(checked) if observed else digest(checked.read_bytes())
+            files[relative] = (
+                observed(checked) if observed else digest(checked.read_bytes())
+            )
     return digest(files)
 
 
 def state(native, folder, *, active=False, observed=None):
     path = project_path(folder, "preparation.json", exists=False)
     saved = read_json(path) if path.exists() else {}
-    valid = (has_data(native) and saved.get("project_id") == native["id"] and saved.get("source") == native["source"]
-             and (active or saved.get("fingerprint") == fingerprint(native, observed)))
-    stages = [{"action": name, "label": LABELS[name], "status": "pending", "message": ""} for name in actions(native)]
+    valid = (
+        has_data(native)
+        and saved.get("project_id") == native["id"]
+        and saved.get("source") == native["source"]
+        and (active or saved.get("fingerprint") == fingerprint(native, observed))
+    )
+    stages = [
+        {"action": name, "label": LABELS[name], "status": "pending", "message": ""}
+        for name in actions(native)
+    ]
     if valid:
         for row in stages:
-            previous = next((item for item in saved.get("stages", []) if item.get("action") == row["action"]), None)
+            previous = next(
+                (
+                    item
+                    for item in saved.get("stages", [])
+                    if item.get("action") == row["action"]
+                ),
+                None,
+            )
             if previous:
                 row.update(previous)
                 if row["status"] == "running" and not active:
-                    row.update(status="interrupted", message="Preparation stopped before this stage finished.")
-    return {"complete": all(row["status"] == "complete" for row in stages), "stages": stages,
-            "configuration": saved.get("configuration", "") if valid else ""}
+                    row.update(
+                        status="interrupted",
+                        message="Preparation stopped before this stage finished.",
+                    )
+    return {
+        "complete": all(row["status"] == "complete" for row in stages),
+        "stages": stages,
+        "configuration": saved.get("configuration", "") if valid else "",
+    }
 
 
 def configuration(native):
@@ -73,16 +107,37 @@ def run(plan, log, execute, guard):
     value = state(native, folder)
     selected = actions(native) if plan["action"] == "prepare_game" else [plan["action"]]
     path = project_path(folder, "preparation.json", exists=False)
+
     def save():
-        write_json(path, {**value, "project_id": native["id"], "source": native["source"], "fingerprint": fingerprint(native)})
+        write_json(
+            path,
+            {
+                **value,
+                "project_id": native["id"],
+                "source": native["source"],
+                "fingerprint": fingerprint(native),
+            },
+        )
+
     for row in value["stages"]:
-        if row["action"] not in selected or plan["action"] == "prepare_game" and row["status"] == "complete":
+        if (
+            row["action"] not in selected
+            or plan["action"] == "prepare_game"
+            and row["status"] == "complete"
+        ):
             continue
         row.update(status="running", message="")
         save()
         try:
-            log(row["label"] + "…")  # The worker checks cancellation before every stage.
-            current = {**deepcopy(plan), "action": row["action"], "label": row["label"], "guard": guard(native, folder)}
+            log(
+                row["label"] + "…"
+            )  # The worker checks cancellation before every stage.
+            current = {
+                **deepcopy(plan),
+                "action": row["action"],
+                "label": row["label"],
+                "guard": guard(native, folder),
+            }
             result = execute(current, log)
             if isinstance(result, dict) and result.get("ok") is False:
                 raise ValueError(result.get("message") or row["label"] + " failed.")
@@ -91,7 +146,10 @@ def run(plan, log, execute, guard):
                 value["configuration"] = configuration(native)
             save()
         except Exception as error:
-            row.update(status="stopped" if isinstance(error, InterruptedError) else "failed", message=str(error))
+            row.update(
+                status="stopped" if isinstance(error, InterruptedError) else "failed",
+                message=str(error),
+            )
             save()
             raise
     value["complete"] = all(row["status"] == "complete" for row in value["stages"])

@@ -25,7 +25,9 @@ class BackupMissing(ValueError):
 
 def _cancel(stopped):
     if stopped():
-        raise InterruptedError("Backup operation stopped; existing snapshots were retained.")
+        raise InterruptedError(
+            "Backup operation stopped; existing snapshots were retained."
+        )
 
 
 def _linked(path):
@@ -33,10 +35,15 @@ def _linked(path):
 
 
 def _relative(name):
-    if (not isinstance(name, str) or not name or "\\" in name or ":" in name
-            or any(ord(char) < 32 for char in name)
-            or any(part in {"", ".", ".."} for part in name.split("/"))
-            or PurePosixPath(name).is_absolute()):
+    if (
+        not isinstance(name, str)
+        or not name
+        or "\\" in name
+        or ":" in name
+        or any(ord(char) < 32 for char in name)
+        or any(part in {"", ".", ".."} for part in name.split("/"))
+        or PurePosixPath(name).is_absolute()
+    ):
         raise ValueError("Backup entries must use safe relative file paths.")
     return name
 
@@ -48,7 +55,9 @@ def _child(root, name):
     for part in _relative(name).split("/"):
         path /= part
         if _linked(path):
-            raise ValueError("Backup operations cannot follow symbolic links or junctions.")
+            raise ValueError(
+                "Backup operations cannot follow symbolic links or junctions."
+            )
     return path
 
 
@@ -63,7 +72,9 @@ def _store(root, *, create=False):
     marker = _child(root, "store.json")
     if not marker.exists() and create:
         if root.exists() and any(root.iterdir()):
-            raise ValueError("This backup directory contains unrecognized files. They were left unchanged.")
+            raise ValueError(
+                "This backup directory contains unrecognized files. They were left unchanged."
+            )
         root.mkdir(parents=True, exist_ok=True)
         write_json(marker, {"version": 2})
     if read_json(marker, limit=4096) != {"version": 2}:
@@ -87,27 +98,43 @@ def _hash_file(path, stopped=lambda: False):
 
 def _signature(path):
     value = path.stat()
-    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns,
-            value.st_ctime_ns, stat.S_IMODE(value.st_mode) & 0o777)
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+        stat.S_IMODE(value.st_mode) & 0o777,
+    )
 
 
 def _inventory(source, source_game, stopped):
     files, directories = {}, []
+
     def failed(error):
         raise error
+
     for directory, names, entries in os.walk(source, followlinks=False, onerror=failed):
         _cancel(stopped)
         relative = Path(directory).relative_to(source)
         if relative == Path("."):
-            excluded = {".git", ".dazedtl"} if source_game else ({"backups"} if source.name == ".dazedtl" else set())
+            excluded = (
+                {".git", ".dazedtl"}
+                if source_game
+                else ({"backups"} if source.name == ".dazedtl" else set())
+            )
             names[:] = [name for name in names if name not in excluded]
             entries = [name for name in entries if name not in excluded]
         for name in names + entries:
             path = Path(directory) / name
             _relative(path.relative_to(source).as_posix())
             if _linked(path):
-                raise ValueError("Backup stopped at a symbolic link or junction. Preserve that source explicitly.")
-        directories.extend((Path(directory) / name).relative_to(source).as_posix() for name in names)
+                raise ValueError(
+                    "Backup stopped at a symbolic link or junction. Preserve that source explicitly."
+                )
+        directories.extend(
+            (Path(directory) / name).relative_to(source).as_posix() for name in names
+        )
         for name in entries:
             path = Path(directory) / name
             if not stat.S_ISREG(path.stat().st_mode):
@@ -123,10 +150,19 @@ def _object(root, fingerprint):
 
 
 def _identity(value):
-    return digest({key: value[key] for key in ("kind", "files", "sizes", "modes", "directories")})
+    return digest(
+        {key: value[key] for key in ("kind", "files", "sizes", "modes", "directories")}
+    )
 
 
-def snapshot(source, destination, *, source_game=False, stopped=lambda: False, progress=lambda _count, _path: None):
+def snapshot(
+    source,
+    destination,
+    *,
+    source_game=False,
+    stopped=lambda: False,
+    progress=lambda _count, _path: None,
+):
     source = Path(source).resolve(strict=True)
     destination = Path(destination).absolute()
     if not source.is_dir():
@@ -134,13 +170,17 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
     if destination.is_relative_to(source):
         permitted = source / (STORE_RELATIVE if source_game else "backups/v2")
         if destination != permitted or not source_game and source.name != ".dazedtl":
-            raise ValueError("Only the managed .dazedtl/backups/v2 store may be inside a snapshot source.")
+            raise ValueError(
+                "Only the managed .dazedtl/backups/v2 store may be inside a snapshot source."
+            )
         _child(source, destination.relative_to(source).as_posix())
     destination = destination.resolve()
     if destination.is_relative_to(source):
         permitted = source / (STORE_RELATIVE if source_game else "backups/v2")
         if destination != permitted or not source_game and source.name != ".dazedtl":
-            raise ValueError("Keep nested backups in the managed .dazedtl/backups/v2 store.")
+            raise ValueError(
+                "Keep nested backups in the managed .dazedtl/backups/v2 store."
+            )
     if source.is_relative_to(destination):
         raise ValueError("The snapshot source cannot be inside its backup store.")
     root = _store(destination, create=True)
@@ -151,9 +191,16 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
         before, directories = _inventory(source, source_game, stopped)
         if not before:
             raise ValueError("There are no files to back up.")
-        value = {"version": 2, "source": str(source), "kind": "source" if source_game else "workspace",
-                 "created": datetime.now(timezone.utc).isoformat(), "files": {}, "sizes": {}, "modes": {},
-                 "directories": directories}
+        value = {
+            "version": 2,
+            "source": str(source),
+            "kind": "source" if source_game else "workspace",
+            "created": datetime.now(timezone.utc).isoformat(),
+            "files": {},
+            "sizes": {},
+            "modes": {},
+            "directories": directories,
+        }
         added, verified = 0, set()
         for index, (name, signature) in enumerate(sorted(before.items()), 1):
             _cancel(stopped)
@@ -161,8 +208,13 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
             fingerprint = _hash_file(path, stopped)
             output = _object(root, fingerprint)
             if output.exists():
-                if fingerprint not in verified and _hash_file(output, stopped) != fingerprint:
-                    raise ValueError("Stored backup content is damaged. Preserve the store and recover it from a trusted copy.")
+                if (
+                    fingerprint not in verified
+                    and _hash_file(output, stopped) != fingerprint
+                ):
+                    raise ValueError(
+                        "Stored backup content is damaged. Preserve the store and recover it from a trusted copy."
+                    )
             else:
                 temporary = _child(root, "temporary/" + uuid.uuid4().hex)
                 try:
@@ -173,7 +225,9 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
                         outgoing.flush()
                         os.fsync(outgoing.fileno())
                     if _hash_file(temporary, stopped) != fingerprint:
-                        raise ValueError("A source file changed during backup. Retry when its writer finishes.")
+                        raise ValueError(
+                            "A source file changed during backup. Retry when its writer finishes."
+                        )
                     output.parent.mkdir(exist_ok=True)
                     temporary.replace(output)
                     created.append(output)
@@ -182,12 +236,16 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
                     temporary.unlink(missing_ok=True)
             verified.add(fingerprint)
             if _signature(path) != signature:
-                raise ValueError("A source file changed during backup. Retry when its writer finishes.")
+                raise ValueError(
+                    "A source file changed during backup. Retry when its writer finishes."
+                )
             value["files"][name] = fingerprint
             value["sizes"][name], value["modes"][name] = signature[2], signature[5]
             progress(index, name)
         if _inventory(source, source_game, stopped) != (before, directories):
-            raise ValueError("The source inventory changed during backup. No snapshot was published.")
+            raise ValueError(
+                "The source inventory changed during backup. No snapshot was published."
+            )
         _cancel(stopped)
         value["fingerprint"] = _identity(value)
         value["id"] = value["fingerprint"][:32]
@@ -196,7 +254,9 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
         if reused:
             previous = manifest(final)
             if previous["fingerprint"] != value["fingerprint"]:
-                raise ValueError("The existing snapshot identity is inconsistent; it was not replaced.")
+                raise ValueError(
+                    "The existing snapshot identity is inconsistent; it was not replaced."
+                )
             value = previous
         else:
             temporary = _child(root, "temporary/" + uuid.uuid4().hex)
@@ -209,9 +269,17 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
                     shutil.rmtree(temporary)
         published = True
         total = sum(value["sizes"].values())
-        return {"id": value["id"], "path": str(final), "files": len(value["files"]), "kind": value["kind"],
-                "version": 2, "bytes_total": total, "bytes_added": added, "bytes_reused": total - added,
-                "reused_snapshot": reused}
+        return {
+            "id": value["id"],
+            "path": str(final),
+            "files": len(value["files"]),
+            "kind": value["kind"],
+            "version": 2,
+            "bytes_total": total,
+            "bytes_added": added,
+            "bytes_reused": total - added,
+            "reused_snapshot": reused,
+        }
     finally:
         try:
             if not published:
@@ -224,11 +292,23 @@ def snapshot(source, destination, *, source_game=False, stopped=lambda: False, p
 def manifest(directory, source=None):
     directory = Path(directory)
     value = read_json(_child(directory, "manifest.json"))
-    if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2}:
+    if (
+        not isinstance(value, dict)
+        or type(value.get("version")) is not int
+        or value["version"] not in {1, 2}
+    ):
         raise ValueError("Unsupported backup manifest.")
-    if value.get("id") != directory.name or not _ID.fullmatch(directory.name) or value.get("kind") not in {"source", "workspace"}:
+    if (
+        value.get("id") != directory.name
+        or not _ID.fullmatch(directory.name)
+        or value.get("kind") not in {"source", "workspace"}
+    ):
         raise ValueError("Invalid backup identity or kind.")
-    if not isinstance(value.get("source"), str) or not value['source'] or not isinstance(value.get("created"), str):
+    if (
+        not isinstance(value.get("source"), str)
+        or not value["source"]
+        or not isinstance(value.get("created"), str)
+    ):
         raise ValueError("Invalid backup provenance.")
     files = value.get("files")
     if not isinstance(files, dict) or not files:
@@ -246,8 +326,16 @@ def manifest(directory, source=None):
         _store(directory.parent.parent)
         for key, maximum in (("sizes", None), ("modes", 0o777)):
             values = value.get(key)
-            if not isinstance(values, dict) or set(values) != set(files) or any(
-                type(item) is not int or item < 0 or maximum is not None and item > maximum for item in values.values()
+            if (
+                not isinstance(values, dict)
+                or set(values) != set(files)
+                or any(
+                    type(item) is not int
+                    or item < 0
+                    or maximum is not None
+                    and item > maximum
+                    for item in values.values()
+                )
             ):
                 raise ValueError("Invalid backup file metadata.")
         directories = value.get("directories")
@@ -259,14 +347,22 @@ def manifest(directory, source=None):
                 raise ValueError("A backup path cannot be both a file and a directory.")
         if len(set(directories)) != len(directories):
             raise ValueError("Duplicate backup directories.")
-        if value.get("fingerprint") != _identity(value) or value["fingerprint"][:32] != value["id"]:
-            raise ValueError("The snapshot manifest changed. Its original content is required for recovery.")
+        if (
+            value.get("fingerprint") != _identity(value)
+            or value["fingerprint"][:32] != value["id"]
+        ):
+            raise ValueError(
+                "The snapshot manifest changed. Its original content is required for recovery."
+            )
     return value
 
 
 def _stored_file(directory, value, name):
-    return (_object(Path(directory).parent.parent, value["files"][name]) if value["version"] == 2
-            else _child(Path(directory), "files/" + name))
+    return (
+        _object(Path(directory).parent.parent, value["files"][name])
+        if value["version"] == 2
+        else _child(Path(directory), "files/" + name)
+    )
 
 
 def _available_objects(directory, value, stopped):
@@ -280,9 +376,12 @@ def _available_objects(directory, value, stopped):
             if prefix not in shards:
                 shards[prefix] = _child(root, prefix)
             info = (shards[prefix] / fingerprint).lstat()
-            if (not stat.S_ISREG(info.st_mode)
-                    or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
-                raise ValueError("Backup content is missing or is no longer a regular file.")
+            if not stat.S_ISREG(info.st_mode) or getattr(
+                info, "st_file_attributes", 0
+            ) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+                raise ValueError(
+                    "Backup content is missing or is no longer a regular file."
+                )
             objects[fingerprint] = info.st_size
         if objects[fingerprint] != value["sizes"][name]:
             raise ValueError("Backup content has changed size.")
@@ -298,7 +397,9 @@ def verify(directory, *, source=None, full=True, stopped=lambda: False):
         _cancel(stopped)
         path = _stored_file(directory, value, name)
         if not path.is_file() or _linked(path):
-            raise ValueError("Backup content is missing or is no longer a regular file.")
+            raise ValueError(
+                "Backup content is missing or is no longer a regular file."
+            )
         if value["version"] == 2 and path.stat().st_size != value["sizes"][name]:
             raise ValueError("Backup content has changed size.")
         if full and path not in checked and _hash_file(path, stopped) != fingerprint:
@@ -324,10 +425,18 @@ def _extract(directory, value, target, names, stopped, progress):
             writer.flush()
             os.fsync(writer.fileno())
         if copied.hexdigest() != value["files"][name]:
-            raise ValueError("Backup content failed its integrity check. No restore was published.")
+            raise ValueError(
+                "Backup content failed its integrity check. No restore was published."
+            )
         if _hash_file(output, stopped) != value["files"][name]:
-            raise ValueError("Restored content failed its integrity check. No restore was published.")
-        mode = value["modes"][name] if value["version"] == 2 else stat.S_IMODE(incoming.stat().st_mode)
+            raise ValueError(
+                "Restored content failed its integrity check. No restore was published."
+            )
+        mode = (
+            value["modes"][name]
+            if value["version"] == 2
+            else stat.S_IMODE(incoming.stat().st_mode)
+        )
         output.chmod(mode)
         progress(index, name)
 
@@ -336,7 +445,11 @@ def _extract(directory, value, target, names, stopped, progress):
 def materialized(directory, *, files=None, stopped=lambda: False):
     """Supply verified normal files to engine tools without retaining another copy."""
     value = manifest(directory)
-    names = list(value["files"]) if files is None else [name for name in files if name in value["files"]]
+    names = (
+        list(value["files"])
+        if files is None
+        else [name for name in files if name in value["files"]]
+    )
     with tempfile.TemporaryDirectory(prefix="dazedtl-restore-") as temporary:
         target = Path(temporary)
         if files is None:
@@ -346,20 +459,36 @@ def materialized(directory, *, files=None, stopped=lambda: False):
         yield target, value
 
 
-def restore(directory, destination, *, stopped=lambda: False, progress=lambda _count, _path: None):
+def restore(
+    directory,
+    destination,
+    *,
+    stopped=lambda: False,
+    progress=lambda _count, _path: None,
+):
     value = manifest(directory)
     target = Path(destination).expanduser().absolute()
     if _linked(target) or target.exists():
-        raise ValueError("Restore into a new directory; existing files are never overwritten.")
+        raise ValueError(
+            "Restore into a new directory; existing files are never overwritten."
+        )
     parent = target.parent.resolve(strict=True)
     target = parent / target.name
-    store = Path(directory).parent.parent.resolve() if value["version"] == 2 else Path(directory).resolve()
+    store = (
+        Path(directory).parent.parent.resolve()
+        if value["version"] == 2
+        else Path(directory).resolve()
+    )
     original = Path(value["source"]).resolve()
     roots = [store, original]
     if store.parts[-3:] == (".dazedtl", "backups", "v2"):
         roots.append(store.parents[2])
-    if any(target.is_relative_to(root) or root.is_relative_to(target) for root in roots):
-        raise ValueError("Restore into a separate directory outside the source and backup store.")
+    if any(
+        target.is_relative_to(root) or root.is_relative_to(target) for root in roots
+    ):
+        raise ValueError(
+            "Restore into a separate directory outside the source and backup store."
+        )
     recovery = tempfile.TemporaryDirectory(prefix=".dazedtl-restore-", dir=parent)
     temporary = Path(recovery.name)
     try:
@@ -368,9 +497,17 @@ def restore(directory, destination, *, stopped=lambda: False, progress=lambda _c
         _extract(directory, value, temporary, list(value["files"]), stopped, progress)
         _cancel(stopped)
         if target.exists() or _linked(target):
-            raise ValueError("The restore destination appeared during recovery. It was left unchanged.")
+            raise ValueError(
+                "The restore destination appeared during recovery. It was left unchanged."
+            )
         temporary.rename(target)
-        return {"path": str(target), "files": len(value["files"]), "kind": value["kind"], "id": value["id"], "restored": True}
+        return {
+            "path": str(target),
+            "files": len(value["files"]),
+            "kind": value["kind"],
+            "id": value["id"],
+            "restored": True,
+        }
     finally:
         recovery.cleanup()
 
@@ -378,8 +515,11 @@ def restore(directory, destination, *, stopped=lambda: False, progress=lambda _c
 def lookup(game, legacy_root, identity):
     if not isinstance(identity, str) or not _ID.fullmatch(identity):
         raise ValueError("Choose a saved backup ID.")
-    for path in (_child(store_path(game), "snapshots/" + identity), _child(legacy_root, identity),
-                 _child(legacy_root, "snapshots/" + identity)):
+    for path in (
+        _child(store_path(game), "snapshots/" + identity),
+        _child(legacy_root, identity),
+        _child(legacy_root, "snapshots/" + identity),
+    ):
         try:
             path.stat()
         except FileNotFoundError:
@@ -398,7 +538,12 @@ def record_status(game, record, *, kind):
         if value["kind"] != kind:
             raise ValueError("The saved backup has the wrong content type.")
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        result.update(available=False, issue=str(exc) if isinstance(exc, ValueError) else "The saved backup could not be read.")
+        result.update(
+            available=False,
+            issue=str(exc)
+            if isinstance(exc, ValueError)
+            else "The saved backup could not be read.",
+        )
     else:
         result.update(available=True, issue="")
     return result
@@ -417,9 +562,25 @@ def catalog(game, legacy_root):
                 continue
             try:
                 value = manifest(folder)
-                rows.append({"id": value["id"], "kind": value["kind"], "created": value.get("created", ""),
-                             "files": len(value["files"]), "version": value["version"],
-                             "bytes_total": sum(value["sizes"].values()) if value["version"] == 2 else None})
+                rows.append(
+                    {
+                        "id": value["id"],
+                        "kind": value["kind"],
+                        "created": value.get("created", ""),
+                        "files": len(value["files"]),
+                        "version": value["version"],
+                        "bytes_total": sum(value["sizes"].values())
+                        if value["version"] == 2
+                        else None,
+                    }
+                )
             except (OSError, ValueError, TypeError):
-                warnings.append("Backup " + folder.name + " could not be read; its files were retained.")
-    return {"snapshots": sorted(rows, key=lambda row: row["created"], reverse=True), "warnings": warnings}
+                warnings.append(
+                    "Backup "
+                    + folder.name
+                    + " could not be read; its files were retained."
+                )
+    return {
+        "snapshots": sorted(rows, key=lambda row: row["created"], reverse=True),
+        "warnings": warnings,
+    }

@@ -10,11 +10,18 @@ from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 METHODS = {"guided", "len", "translation"}
 SCREENS = {"overview", "translation", "guided", "manual", "settings"}
 SCHEMA_VERSION = 4
+
+
 def upgrade_v1(value):
-    if not isinstance(value.get("projects"), list) or any(
-        not isinstance(project, dict) or project.get("method") not in {"guided", "len"}
-        for project in value["projects"]
-    ) or value.get("screen") not in {"overview", "guided", "settings"}:
+    if (
+        not isinstance(value.get("projects"), list)
+        or any(
+            not isinstance(project, dict)
+            or project.get("method") not in {"guided", "len"}
+            for project in value["projects"]
+        )
+        or value.get("screen") not in {"overview", "guided", "settings"}
+    ):
         raise ValueError("Invalid version-one project registry.")
     upgraded = deepcopy(value)
     if upgraded["screen"] == "guided":
@@ -149,5 +156,9 @@ class Projects:
         return {
             "project": self.current,
             "screen": self.data["screen"],
-            "recent": sorted(self.data["projects"], key=lambda p: p.get("last_opened", ""), reverse=True)[:8],
+            "recent": sorted(
+                self.data["projects"],
+                key=lambda p: p.get("last_opened", ""),
+                reverse=True,
+            )[:8],
         }

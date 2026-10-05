@@ -195,22 +195,47 @@ class Settings:
     def batch_connection(self, batch, plan):
         """Resolve the submitted account without using the current selection."""
         name = batch.get("key_name") or plan.get("key_name")
-        connection = next((item for item in self._read()["connections"]
-                           if item["runtime_name"] == name), None)
+        connection = next(
+            (
+                item
+                for item in self._read()["connections"]
+                if item["runtime_name"] == name
+            ),
+            None,
+        )
         if not self._configured(connection):
-            raise ValueError("This Batch's saved connection is unavailable. Restore that connection in Settings to read its status.")
+            raise ValueError(
+                "This Batch's saved connection is unavailable. Restore that connection in Settings to read its status."
+            )
         frozen = plan.get("settings", {})
         endpoint = batch.get("endpoint") or frozen.get("api")
         protocol = "openai" if batch["provider"] == "openrouter" else batch["provider"]
-        if (not endpoint or providers.route(protocol, endpoint) !=
-                providers.route(connection["protocol"], providers.address(connection))
-                or batch["provider"] == "openrouter" and connection["provider"] != "openrouter"
-                or connection["organization"] != frozen.get("organization", "")):
-            raise ValueError("This Batch's saved provider, server, or organization changed. Restore its original connection before reading status.")
-        return {"secret": connection["secret"], "keyless": connection["keyless"],
-                "endpoint": endpoint, "organization": connection["organization"],
-                **({"openrouterBatch": (plan.get("dazedtl_request_policy") or {}).get("openrouterBatch")}
-                   if batch["provider"] == "openrouter" else {})}
+        if (
+            not endpoint
+            or providers.route(protocol, endpoint)
+            != providers.route(connection["protocol"], providers.address(connection))
+            or batch["provider"] == "openrouter"
+            and connection["provider"] != "openrouter"
+            or connection["organization"] != frozen.get("organization", "")
+        ):
+            raise ValueError(
+                "This Batch's saved provider, server, or organization changed. Restore its original connection before reading status."
+            )
+        return {
+            "secret": connection["secret"],
+            "keyless": connection["keyless"],
+            "endpoint": endpoint,
+            "organization": connection["organization"],
+            **(
+                {
+                    "openrouterBatch": (plan.get("dazedtl_request_policy") or {}).get(
+                        "openrouterBatch"
+                    )
+                }
+                if batch["provider"] == "openrouter"
+                else {}
+            ),
+        }
 
     def _import(self):
         saved, vault, draft = self.adapter.import_settings()
@@ -384,13 +409,19 @@ class Settings:
 
     def guided_configuration(self, mode):
         from .execution import configuration
+
         state = self._read()
-        return {**configuration(self, mode), "engine_settings": self._values(state),
-                "stateGrouping": "compatible-states-v1", "choiceCollection": preferences.CHOICE_COLLECTION,
-                "speakerContext": preferences.SPEAKER_CONTEXT}
+        return {
+            **configuration(self, mode),
+            "engine_settings": self._values(state),
+            "stateGrouping": "compatible-states-v1",
+            "choiceCollection": preferences.CHOICE_COLLECTION,
+            "speakerContext": preferences.SPEAKER_CONTEXT,
+        }
 
     def connection_summary(self):
         from .execution import connection_summary
+
         return connection_summary(self)
 
     def translation_defaults(self):
@@ -402,65 +433,124 @@ class Settings:
         result = self.adapter.provider_defaults(values)
         if active and active["provider"] == "openrouter" and values["model"]:
             defaults = openrouter.describe(active, values["model"])
-            result.update(batch_supported=defaults["batchSupported"], batch_reason=defaults["batchReason"],
-                          default_mode=("batch" if defaults["batchSupported"] else "translate") if self.adapter.allow_providers else "estimate")
-        elif values.get("api", "").rstrip("/") == providers.PROVIDERS["openrouter"]["endpoint"]:
-            result.update(batch_supported=False, batch_reason="Choose the OpenRouter connection preset for Batch.",
-                          default_mode="translate" if self.adapter.allow_providers else "estimate")
+            result.update(
+                batch_supported=defaults["batchSupported"],
+                batch_reason=defaults["batchReason"],
+                default_mode=("batch" if defaults["batchSupported"] else "translate")
+                if self.adapter.allow_providers
+                else "estimate",
+            )
+        elif (
+            values.get("api", "").rstrip("/")
+            == providers.PROVIDERS["openrouter"]["endpoint"]
+        ):
+            result.update(
+                batch_supported=False,
+                batch_reason="Choose the OpenRouter connection preset for Batch.",
+                default_mode="translate"
+                if self.adapter.allow_providers
+                else "estimate",
+            )
         return result
 
-    def model_defaults(self, connection_id, model, *, cached_only=False, batch_endpoints=None):
+    def model_defaults(
+        self, connection_id, model, *, cached_only=False, batch_endpoints=None
+    ):
         state = self._read()
         if connection_id != state["active"]:
             raise ValueError("The active connection changed. Reopen Settings.")
         active = self._connection(state)
         if active and active["provider"] == "openrouter":
             if batch_endpoints is not None:
-                active = {**active, 'batch_endpoints': batch_endpoints}
+                active = {**active, "batch_endpoints": batch_endpoints}
             value = openrouter.describe(active, model)
-            cached = self._openrouter_prices.get((active['id'], model, active.get('openrouter_host', '')))
+            cached = self._openrouter_prices.get(
+                (active["id"], model, active.get("openrouter_host", ""))
+            )
             if cached:
-                value.update({key: item for key, item in cached[1].items() if key != 'host'}, stale=time.monotonic() - cached[0] > 600)
+                value.update(
+                    {key: item for key, item in cached[1].items() if key != "host"},
+                    stale=time.monotonic() - cached[0] > 600,
+                )
             return value
         if cached_only:
-            cached = getattr(getattr(self.adapter, 'model_defaults', None), 'cached', None)
+            cached = getattr(
+                getattr(self.adapter, "model_defaults", None), "cached", None
+            )
             return cached(model) if cached is not None else {}
         return self.adapter.model_defaults.describe(model)
 
     def batch_lookup(self, *, connection_id=None, model=None):
         """Select a targeted endpoint read; observations never call this."""
         active = self._connection(self._read())
-        if connection_id is not None and connection_id != (active['id'] if active else ''):
-            raise ValueError('The active connection changed. Reopen Settings.')
-        if (not active or active['provider'] != 'openrouter' or not self.adapter.allow_providers
-                or not self._configured(active) or active['check']['status'] != 'verified'):
+        if connection_id is not None and connection_id != (
+            active["id"] if active else ""
+        ):
+            raise ValueError("The active connection changed. Reopen Settings.")
+        if (
+            not active
+            or active["provider"] != "openrouter"
+            or not self.adapter.allow_providers
+            or not self._configured(active)
+            or active["check"]["status"] != "verified"
+        ):
             return None
-        model = active['model'] if model is None else preferences.text(model, 'model ID', required=True)
-        row = active.get('catalog', {}).get(model + ':batch', {}) if ':' not in model else {}
-        if not model or not row.get('text') or not row.get('json'):
+        model = (
+            active["model"]
+            if model is None
+            else preferences.text(model, "model ID", required=True)
+        )
+        row = (
+            active.get("catalog", {}).get(model + ":batch", {})
+            if ":" not in model
+            else {}
+        )
+        if not model or not row.get("text") or not row.get("json"):
             return None
-        endpoints = active.get('batch_endpoints', {})
-        if (endpoints.get('model') == model and endpoints.get('host') == active.get('openrouter_host', '')
-                and 'providers' in endpoints and not endpoints.get('error')):
+        endpoints = active.get("batch_endpoints", {})
+        if (
+            endpoints.get("model") == model
+            and endpoints.get("host") == active.get("openrouter_host", "")
+            and "providers" in endpoints
+            and not endpoints.get("error")
+        ):
             return None
-        return {'connection': active, 'model': model}
+        return {"connection": active, "model": model}
 
     def retain_batch_endpoints(self, lookup, endpoints, *, persist):
         state = self._read()
-        active, previous = self._connection(state), lookup['connection']
-        keys = ('id', 'provider', 'protocol', 'endpoint', 'secret', 'keyless', 'organization',
-                'model', 'openrouter_host', 'check', 'catalog', 'batch_endpoints')
+        active, previous = self._connection(state), lookup["connection"]
+        keys = (
+            "id",
+            "provider",
+            "protocol",
+            "endpoint",
+            "secret",
+            "keyless",
+            "organization",
+            "model",
+            "openrouter_host",
+            "check",
+            "catalog",
+            "batch_endpoints",
+        )
         if not active or any(active.get(key) != previous.get(key) for key in keys):
             if persist:
                 return None  # A completed save must not overwrite a newer selection.
-            raise ValueError('The connection or model changed while checking Batch support. Try again.')
+            raise ValueError(
+                "The connection or model changed while checking Batch support. Try again."
+            )
         openrouter.validate_endpoints(endpoints)
-        if endpoints.get('model') != lookup['model'] or endpoints.get('host') != active.get('openrouter_host', ''):
-            raise ValueError('The Batch endpoints do not match the selected model and host.')
+        if endpoints.get("model") != lookup["model"] or endpoints.get(
+            "host"
+        ) != active.get("openrouter_host", ""):
+            raise ValueError(
+                "The Batch endpoints do not match the selected model and host."
+            )
         if persist:
-            if lookup['model'] != active['model']:
-                raise ValueError('Only the saved model can retain Batch availability.')
-            active['batch_endpoints'] = endpoints
+            if lookup["model"] != active["model"]:
+                raise ValueError("Only the saved model can retain Batch availability.")
+            active["batch_endpoints"] = endpoints
             self._write(state, bump=False)
         return endpoints
 
@@ -468,35 +558,66 @@ class Settings:
         """Choose an optional public read while the caller holds the app lock."""
         state = self._read()
         active = self._connection(state)
-        if not active or active['provider'] != 'openrouter' or not self.adapter.allow_providers:
+        if (
+            not active
+            or active["provider"] != "openrouter"
+            or not self.adapter.allow_providers
+        ):
             return None
-        if connection_id is not None and connection_id != active['id']:
-            raise ValueError('The active connection changed. Reopen Settings.')
-        model = active['model'] if model is None else preferences.text(model, 'model ID', required=True)
+        if connection_id is not None and connection_id != active["id"]:
+            raise ValueError("The active connection changed. Reopen Settings.")
+        model = (
+            active["model"]
+            if model is None
+            else preferences.text(model, "model ID", required=True)
+        )
         if not model:
             return None
-        options = active['model_options'].get(model, preferences.DEFAULT_OPTIONS)
-        if not explicit and options['pricing'] == 'custom':
+        options = active["model_options"].get(model, preferences.DEFAULT_OPTIONS)
+        if not explicit and options["pricing"] == "custom":
             return None
-        known = self.model_defaults(active['id'], model)
-        if known['inputRate'] is not None and known['outputRate'] is not None and not known['stale']:
+        known = self.model_defaults(active["id"], model)
+        if (
+            known["inputRate"] is not None
+            and known["outputRate"] is not None
+            and not known["stale"]
+        ):
             return None
-        return {'connection': {key: active.get(key, '') for key in ('id', 'provider', 'protocol', 'endpoint', 'model', 'openrouter_host')},
-                'model': model, 'host': active.get('openrouter_host', '')}
+        return {
+            "connection": {
+                key: active.get(key, "")
+                for key in (
+                    "id",
+                    "provider",
+                    "protocol",
+                    "endpoint",
+                    "model",
+                    "openrouter_host",
+                )
+            },
+            "model": model,
+            "host": active.get("openrouter_host", ""),
+        }
 
     def pricing_selection(self, lookup):
         state = self._read()
         active = self._connection(state)
-        if not active or any(active.get(key, '') != value for key, value in lookup['connection'].items()):
-            raise ValueError('The connection or model changed while reading prices. Try again with the current selection.')
+        if not active or any(
+            active.get(key, "") != value for key, value in lookup["connection"].items()
+        ):
+            raise ValueError(
+                "The connection or model changed while reading prices. Try again with the current selection."
+            )
         return active
 
     def retain_prices(self, lookup, prices):
         """A late lookup cannot replace another connection/model's defaults."""
         active = self.pricing_selection(lookup)
-        if prices['model'] != lookup['model'] or prices['host'] != lookup['host']:
-            raise ValueError('The returned prices do not match the selected model and host.')
-        key = (active['id'], lookup['model'], lookup['host'])
+        if prices["model"] != lookup["model"] or prices["host"] != lookup["host"]:
+            raise ValueError(
+                "The returned prices do not match the selected model and host."
+            )
+        key = (active["id"], lookup["model"], lookup["host"])
         self._openrouter_prices.pop(key, None)
         self._openrouter_prices[key] = (time.monotonic(), deepcopy(prices))
         while len(self._openrouter_prices) > 64:
@@ -521,8 +642,14 @@ class Settings:
             )
         connection = self._connection(state)
         normalized = preferences.values(values, connection=connection is not None)
-        if connection and connection["provider"] == "openrouter" and ":batch" in normalized["model"]:
-            raise ValueError("Save the base OpenRouter model ID, then choose Batch as the translation method.")
+        if (
+            connection
+            and connection["provider"] == "openrouter"
+            and ":batch" in normalized["model"]
+        ):
+            raise ValueError(
+                "Save the base OpenRouter model ID, then choose Batch as the translation method."
+            )
         configured = preferences.model_options(model_options)
         state["values"]["language"] = normalized["language"]
         if connection:
@@ -609,9 +736,15 @@ class Settings:
         old = self._connection(state, connection_id) if connection_id else None
         if connection_id and old is None:
             raise ValueError("That saved connection is no longer available.")
-        host = providers.openrouter_host(
-            openrouter_host if openrouter_host is not None else (old or {}).get("openrouter_host", "")
-        ) if provider == "openrouter" else ""
+        host = (
+            providers.openrouter_host(
+                openrouter_host
+                if openrouter_host is not None
+                else (old or {}).get("openrouter_host", "")
+            )
+            if provider == "openrouter"
+            else ""
+        )
         endpoint = providers.endpoint(endpoint)
         if provider != "custom":
             protocol = providers.PROVIDERS[provider]["protocol"]
@@ -684,8 +817,16 @@ class Settings:
             "model_options": old["model_options"] if old and same_route else {},
             "check": old["check"] if unchanged else providers.unchecked(),
             "models": old["models"] if unchanged else [],
-            **({"catalog": old.get("catalog", {})} if unchanged and old and provider == "openrouter" else {}),
-            **({"batch_endpoints": old.get("batch_endpoints", {})} if unchanged and old and provider == "openrouter" else {}),
+            **(
+                {"catalog": old.get("catalog", {})}
+                if unchanged and old and provider == "openrouter"
+                else {}
+            ),
+            **(
+                {"batch_endpoints": old.get("batch_endpoints", {})}
+                if unchanged and old and provider == "openrouter"
+                else {}
+            ),
         }
         state["connections"] = (
             [
@@ -740,7 +881,11 @@ class Settings:
             latest["catalog"] = result["catalog"]
             latest["batch_endpoints"] = result.get("batch_endpoints", {})
             # A new authenticated catalog supersedes earlier public quotes.
-            self._openrouter_prices = {key: value for key, value in self._openrouter_prices.items() if key[0] != connection_id}
+            self._openrouter_prices = {
+                key: value
+                for key, value in self._openrouter_prices.items()
+                if key[0] != connection_id
+            }
         self._write(current, bump=False)
         return self.describe()
 
@@ -814,7 +959,9 @@ class Settings:
                 active["model_options"] if active else state["model_options"]
             ).get(values["model"], preferences.DEFAULT_OPTIONS)
             custom = configured["pricing"] == "custom"
-            defaults = self.model_defaults(state["active"], values["model"], cached_only=custom)
+            defaults = self.model_defaults(
+                state["active"], values["model"], cached_only=custom
+            )
             input_rate = configured["inputRate"] if custom else defaults["inputRate"]
             output_rate = configured["outputRate"] if custom else defaults["outputRate"]
             if input_rate is None or output_rate is None:
@@ -829,7 +976,9 @@ class Settings:
                 "version": 1,
                 "model": values["model"],
                 "generationParameters": preferences.GENERATION_PARAMETERS,
-                "maxOutputTokens": preferences.output_allowance(configured.get('maxOutputTokens'), defaults.get("maxOutputTokens")),
+                "maxOutputTokens": preferences.output_allowance(
+                    configured.get("maxOutputTokens"), defaults.get("maxOutputTokens")
+                ),
                 "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",
                 "choiceCollection": preferences.CHOICE_COLLECTION,
@@ -841,17 +990,39 @@ class Settings:
                 "updatedAt": None if custom else defaults["updatedAt"],
             }
             if active and active["provider"] == "openrouter":
-                self.adapter.manual.request_policy["openrouterStructuredOutputs"] = openrouter.STRUCTURED_OUTPUTS
-                self.adapter.manual.request_policy["openrouterBatch"] = openrouter.policy(
-                    active, values["model"], configured, required=mode == "batch")
-                if mode == 'batch':
-                    batch_limit = self.adapter.manual.request_policy['openrouterBatch'].get('max_output')
-                    self.adapter.manual.request_policy['maxOutputTokens'] = preferences.output_allowance(
-                        self.adapter.manual.request_policy['maxOutputTokens'], batch_limit)
-            if (active and active["provider"] == "openai") or configured.get("batchInputTokens") is not None:
-                self.adapter.manual.request_policy["batchInputTokens"] = configured.get("batchInputTokens") or preferences.DEFAULT_BATCH_INPUT_TOKENS
-            if active and active["provider"] == "openrouter" and active.get("openrouter_host"):
-                self.adapter.manual.request_policy["openrouterHost"] = active["openrouter_host"]
+                self.adapter.manual.request_policy["openrouterStructuredOutputs"] = (
+                    openrouter.STRUCTURED_OUTPUTS
+                )
+                self.adapter.manual.request_policy["openrouterBatch"] = (
+                    openrouter.policy(
+                        active, values["model"], configured, required=mode == "batch"
+                    )
+                )
+                if mode == "batch":
+                    batch_limit = self.adapter.manual.request_policy[
+                        "openrouterBatch"
+                    ].get("max_output")
+                    self.adapter.manual.request_policy["maxOutputTokens"] = (
+                        preferences.output_allowance(
+                            self.adapter.manual.request_policy["maxOutputTokens"],
+                            batch_limit,
+                        )
+                    )
+            if (active and active["provider"] == "openai") or configured.get(
+                "batchInputTokens"
+            ) is not None:
+                self.adapter.manual.request_policy["batchInputTokens"] = (
+                    configured.get("batchInputTokens")
+                    or preferences.DEFAULT_BATCH_INPUT_TOKENS
+                )
+            if (
+                active
+                and active["provider"] == "openrouter"
+                and active.get("openrouter_host")
+            ):
+                self.adapter.manual.request_policy["openrouterHost"] = active[
+                    "openrouter_host"
+                ]
             values.update(batchsize=entries)
         self.adapter.install_settings(
             state["revision"], values, state["legacy"]["engines"], vault

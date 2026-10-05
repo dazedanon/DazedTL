@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 if __name__ == "__main__":
     from dazedtl.compatibility.runtime import activate
+
     activate()
     from dazedtl.compatibility.worker_policy import install
     from desktop.backend import manual_worker

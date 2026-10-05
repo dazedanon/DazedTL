@@ -20,7 +20,9 @@ export function Tabs<T extends string>({
   disabled?: boolean;
 }) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
-  const focusable = items.find((item) => item.id === value && !item.disabled) || items.find((item) => !item.disabled);
+  const focusable =
+    items.find((item) => item.id === value && !item.disabled) ||
+    items.find((item) => !item.disabled);
   return (
     <div role="tablist" aria-label={label} className="ui-tabs">
       {items.map((item) => (

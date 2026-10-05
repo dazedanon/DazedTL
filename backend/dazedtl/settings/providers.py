@@ -94,28 +94,45 @@ def openrouter_host(value):
     if not isinstance(value, str) or len(value) > 200:
         raise ValueError("Choose a valid OpenRouter host.")
     value = value.strip().lower()
-    if value and not re.fullmatch(r"[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*", value):
+    if value and not re.fullmatch(
+        r"[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*", value
+    ):
         raise ValueError("Choose a valid OpenRouter host.")
     return value
 
 
 def openrouter_hosts(model=""):
     """Read model-specific hosts (or the legacy public catalog), without credentials."""
-    if (not isinstance(model, str) or len(model) > 200
-            or model and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*", model)):
-        raise ValueError("Choose a valid OpenRouter model in Preferences before loading its hosts.")
+    if (
+        not isinstance(model, str)
+        or len(model) > 200
+        or model
+        and not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:-]*", model
+        )
+    ):
+        raise ValueError(
+            "Choose a valid OpenRouter model in Preferences before loading its hosts."
+        )
     path = "/models/" + quote(model, safe="/") + "/endpoints" if model else "/providers"
     try:
         deadline = time.monotonic() + 8
-        with httpx.Client(timeout=httpx.Timeout(3, connect=3), follow_redirects=False) as client:
-            with client.stream("GET", PROVIDERS["openrouter"]["endpoint"] + path,
-                               headers={"Accept": "application/json", "Accept-Encoding": "identity"}) as response:
+        with httpx.Client(
+            timeout=httpx.Timeout(3, connect=3), follow_redirects=False
+        ) as client:
+            with client.stream(
+                "GET",
+                PROVIDERS["openrouter"]["endpoint"] + path,
+                headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            ) as response:
                 response.raise_for_status()
                 content = bytearray()
                 for chunk in response.iter_raw(chunk_size=65536):
                     content.extend(chunk)
                     if len(content) > 1_000_000 or time.monotonic() > deadline:
-                        raise ValueError("OpenRouter's host list was too large or took too long. Try again.")
+                        raise ValueError(
+                            "OpenRouter's host list was too large or took too long. Try again."
+                        )
         data = json.loads(content).get("data")
         if model and (not isinstance(data, dict) or data.get("id") != model):
             raise ValueError
@@ -126,14 +143,25 @@ def openrouter_hosts(model=""):
         for row in rows:
             slug = openrouter_host(row["tag"].split("/")[0] if model else row["slug"])
             name = row["provider_name"] if model else row["name"]
-            if not slug or not isinstance(name, str) or not 0 < len(name.strip()) <= 200 or any(ord(char) < 32 for char in name):
+            if (
+                not slug
+                or not isinstance(name, str)
+                or not 0 < len(name.strip()) <= 200
+                or any(ord(char) < 32 for char in name)
+            ):
                 raise ValueError
             hosts[slug] = {"slug": slug, "name": name.strip()}
-        return sorted(hosts.values(), key=lambda host: (host["name"].casefold(), host["slug"]))
+        return sorted(
+            hosts.values(), key=lambda host: (host["name"].casefold(), host["slug"])
+        )
     except httpx.HTTPError:
-        raise ValueError("OpenRouter's host list could not be loaded. Check your connection and try again.") from None
+        raise ValueError(
+            "OpenRouter's host list could not be loaded. Check your connection and try again."
+        ) from None
     except (ValueError, TypeError, KeyError, AttributeError):
-        raise ValueError("OpenRouter returned an unavailable or invalid host list. Try again later.") from None
+        raise ValueError(
+            "OpenRouter returned an unavailable or invalid host list. Try again later."
+        ) from None
 
 
 def check(connection):
@@ -160,8 +188,13 @@ def check(connection):
         headers["OpenAI-Organization"] = connection["organization"]
     # OpenRouter's public catalog cannot verify a key. Its account-filtered
     # list requires authentication and defaults to text-output models.
-    url = base + ("/models/user" if openrouter else
-                  "/v1/models?limit=250" if protocol == "anthropic" else "/models")
+    url = base + (
+        "/models/user"
+        if openrouter
+        else "/v1/models?limit=250"
+        if protocol == "anthropic"
+        else "/models"
+    )
     byte_limit = 8_000_000 if openrouter else 2_000_000
     model_limit = 2000 if openrouter else 250
 
@@ -253,6 +286,7 @@ def check(connection):
         )
         if official and not connection["keyless"]:
             from .openrouter import catalog, check_endpoints
+
             known = catalog(rows) if openrouter else None
             value = result(
                 "verified",

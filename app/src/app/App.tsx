@@ -31,7 +31,9 @@ export default function App() {
   const action = useAction({ after: application.settle });
   const [picker, setPicker] = useState(false);
   const [settingsOpened, setSettingsOpened] = useState(false);
-  useEffect(() => { if (state?.screen === "settings") setSettingsOpened(true); }, [state?.screen]);
+  useEffect(() => {
+    if (state?.screen === "settings") setSettingsOpened(true);
+  }, [state?.screen]);
   const ready = useRef(false);
   useEffect(() => {
     if (state && !ready.current) {
@@ -63,7 +65,10 @@ export default function App() {
       application.navigate(screen);
       // Linking a new Guided project is real setup work. Existing pages use
       // their observed data and do not send a navigation request to Python.
-      if (["guided", "manual"].includes(screen) && !application.snapshot?.guided) {
+      if (
+        ["guided", "manual"].includes(screen) &&
+        !application.snapshot?.guided
+      ) {
         await api.navigate(screen);
       }
     });
@@ -110,22 +115,36 @@ export default function App() {
               <House size={18} />
               Overview
             </Button>
-            {state?.project && <>
-              <Button size="comfortable" aria-current={["guided", "manual"].includes(state.screen) ? "page" : undefined}
-                disabled={action.busy || !["MVMZ", "ACE"].includes(state.project.engine)} onClick={() => navigate("guided")}>
-                <ListChecks size={18} />Translation
-              </Button>
-              <Button
-                size="comfortable"
-                aria-current={
-                  state.screen === "translation" ? "page" : undefined
-                }
-                onClick={() => navigate("translation")}
-              >
-                <Route size={18} />
-                Len's method
-              </Button>
-            </>}
+            {state?.project && (
+              <>
+                <Button
+                  size="comfortable"
+                  aria-current={
+                    ["guided", "manual"].includes(state.screen)
+                      ? "page"
+                      : undefined
+                  }
+                  disabled={
+                    action.busy ||
+                    !["MVMZ", "ACE"].includes(state.project.engine)
+                  }
+                  onClick={() => navigate("guided")}
+                >
+                  <ListChecks size={18} />
+                  Translation
+                </Button>
+                <Button
+                  size="comfortable"
+                  aria-current={
+                    state.screen === "translation" ? "page" : undefined
+                  }
+                  onClick={() => navigate("translation")}
+                >
+                  <Route size={18} />
+                  Len's method
+                </Button>
+              </>
+            )}
           </nav>
           <div className="sidebar-bottom">
             <DiagnosticsAction />
@@ -144,10 +163,10 @@ export default function App() {
             state?.screen === "guided" || state?.screen === "manual"
               ? "editor-main guided-main"
               : state?.screen === "settings"
-              ? "editor-main"
-              : state?.screen === "overview"
-                ? "overview-main"
-                : undefined
+                ? "editor-main"
+                : state?.screen === "overview"
+                  ? "overview-main"
+                  : undefined
           }
         >
           <Message
@@ -161,39 +180,81 @@ export default function App() {
                   }
             }
           />
-          {(settingsOpened || state?.screen === "settings") && <div hidden={state?.screen !== "settings"} style={{ display: "contents" }}><ErrorBoundary label="Settings"><Settings /></ErrorBoundary></div>}
-          <ErrorBoundary resetKey={`${state?.project?.id}:${state?.screen}`} label="This view">
-          {!state ? (
-            <p className="muted">
-              {error
-                ? "Your workspace could not be opened."
-                : "Opening your workspace…"}
-            </p>
-          ) : state.screen === "overview" ? (
-            <Overview
-              state={state}
-              busy={action.busy}
-              open={open}
-              select={select}
-              go={navigate}
-              report={action.report}
-            />
-          ) : state.screen === "settings" ? null : state.project && (state.screen === "guided" || state.screen === "manual") ? (
-            <GuidedWorkflow key={state.project.id} project={state.project} opening={action.busy} settings={() => navigate("settings")}
-              backups={(target) => application.snapshot?.translation ? <BackupsPanel state={application.snapshot.translation} actionTarget={target} /> : null}
-              versions={(actions) => application.snapshot?.translation ? <VersionsPanel guided project={state.project!} state={application.snapshot.translation} onBackups={actions.backups} onPrepare={actions.prepare} onCheckpoint={actions.checkpoint} actionTarget={actions.target} /> : null} />
-          ) : state.project ? (
-            <Translation
-              key={state.project.id}
-              project={state.project}
-              settings={() => navigate("settings")}
-              legacy={
-                application.snapshot?.guided ? (
-                  <Button variant="primary" onClick={() => navigate("guided")}>Open Translation and saved runs</Button>
-                ) : null
-              }
-            />
-          ) : null}
+          {(settingsOpened || state?.screen === "settings") && (
+            <div
+              hidden={state?.screen !== "settings"}
+              style={{ display: "contents" }}
+            >
+              <ErrorBoundary label="Settings">
+                <Settings />
+              </ErrorBoundary>
+            </div>
+          )}
+          <ErrorBoundary
+            resetKey={`${state?.project?.id}:${state?.screen}`}
+            label="This view"
+          >
+            {!state ? (
+              <p className="muted">
+                {error
+                  ? "Your workspace could not be opened."
+                  : "Opening your workspace…"}
+              </p>
+            ) : state.screen === "overview" ? (
+              <Overview
+                state={state}
+                busy={action.busy}
+                open={open}
+                select={select}
+                go={navigate}
+                report={action.report}
+              />
+            ) : state.screen === "settings" ? null : state.project &&
+              (state.screen === "guided" || state.screen === "manual") ? (
+              <GuidedWorkflow
+                key={state.project.id}
+                project={state.project}
+                opening={action.busy}
+                settings={() => navigate("settings")}
+                backups={(target) =>
+                  application.snapshot?.translation ? (
+                    <BackupsPanel
+                      state={application.snapshot.translation}
+                      actionTarget={target}
+                    />
+                  ) : null
+                }
+                versions={(actions) =>
+                  application.snapshot?.translation ? (
+                    <VersionsPanel
+                      guided
+                      project={state.project!}
+                      state={application.snapshot.translation}
+                      onBackups={actions.backups}
+                      onPrepare={actions.prepare}
+                      onCheckpoint={actions.checkpoint}
+                      actionTarget={actions.target}
+                    />
+                  ) : null
+                }
+              />
+            ) : state.project ? (
+              <Translation
+                key={state.project.id}
+                project={state.project}
+                settings={() => navigate("settings")}
+                legacy={
+                  application.snapshot?.guided ? (
+                    <Button
+                      variant="primary"
+                      onClick={() => navigate("guided")}
+                    >
+                      Open Translation and saved runs
+                    </Button>
+                  ) : null
+                }
+              />
+            ) : null}
           </ErrorBoundary>
         </main>
       </div>

@@ -15,7 +15,11 @@ type MissingManifestMethods = AssertNever<
 export type ProtocolCoverage = MissingClientMethods | MissingManifestMethods;
 type Envelope =
   | { version: number; ok: true; value: unknown }
-  | { version: number; ok: false; error: { code: ErrorCode; message: string; details?: unknown } };
+  | {
+      version: number;
+      ok: false;
+      error: { code: ErrorCode; message: string; details?: unknown };
+    };
 declare global {
   interface Window {
     dazedtl: {
@@ -28,7 +32,8 @@ declare global {
       chooseFolder(): Promise<string | null>;
       chooseEditor(): Promise<string | null>;
       openFolder(
-        kind: "project" | "workspace" | "projectWorkspace" | "output" | "backup",
+        kind:
+          "project" | "workspace" | "projectWorkspace" | "output" | "backup",
         path?: string,
       ): Promise<void>;
       onClose(handler: () => Promise<void>, cancelled: () => void): () => void;
@@ -69,7 +74,11 @@ export async function request<M extends Method>(
           "protocol",
           "The backend returned an invalid error response.",
         );
-      throw new ApiError(reply.error.code, reply.error.message, reply.error.details);
+      throw new ApiError(
+        reply.error.code,
+        reply.error.message,
+        reply.error.details,
+      );
     }
     if (!("value" in reply))
       throw new ApiError(

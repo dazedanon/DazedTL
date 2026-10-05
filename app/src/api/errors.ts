@@ -20,5 +20,8 @@ export function messageOf(error: unknown): string {
 }
 export type RendererFailure = {
   reason: "render" | "error" | "unhandledrejection";
-  causes: { type: string; frames: { file: string; line: number; column: number; function: string }[] }[];
+  causes: {
+    type: string;
+    frames: { file: string; line: number; column: number; function: string }[];
+  }[];
 };

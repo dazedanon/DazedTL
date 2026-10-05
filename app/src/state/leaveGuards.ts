@@ -10,7 +10,10 @@ export async function flushDrafts() {
 }
 
 /** A failed unmount save must remain retryable by navigation or crash recovery. */
-export function retainDraft(session: { flush: () => Promise<void>; dispose: () => Promise<void> }) {
+export function retainDraft(session: {
+  flush: () => Promise<void>;
+  dispose: () => Promise<void>;
+}) {
   let released = false;
   const unregister = registerLeaveGuard(async () => {
     await session.flush();

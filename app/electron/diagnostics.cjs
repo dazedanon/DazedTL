@@ -64,7 +64,9 @@ function safeRecord(record) {
               ? frame.file
               : "external",
           line: Number.isSafeInteger(frame?.line) ? frame.line : 0,
-          ...(Number.isSafeInteger(frame?.column) ? { column: frame.column } : {}),
+          ...(Number.isSafeInteger(frame?.column)
+            ? { column: frame.column }
+            : {}),
           function: identifier(frame?.function) || "unknown",
         })),
     }));

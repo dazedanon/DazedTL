@@ -38,7 +38,11 @@ export function useAction({
     setNotice(message);
   }, []);
   const run = useCallback(
-    async <T>(task: () => Promise<T>, message = "", actionKey = ""): Promise<Result<T>> => {
+    async <T>(
+      task: () => Promise<T>,
+      message = "",
+      actionKey = "",
+    ): Promise<Result<T>> => {
       if (pending.current) return { ok: false };
       pending.current = true;
       setKey(actionKey);

@@ -1,6 +1,10 @@
 import { ApiError, messageOf } from "../api/errors.ts";
 import type { Screen, WorkspaceSnapshot } from "../api/contracts";
-import { Navigation, type NavigationChange, type NavigationStorage } from "./navigation.ts";
+import {
+  Navigation,
+  type NavigationChange,
+  type NavigationStorage,
+} from "./navigation.ts";
 
 export interface ApplicationSource {
   snapshot: () => Promise<WorkspaceSnapshot>;
@@ -51,15 +55,24 @@ export class ApplicationStore {
   navigate = (screen: Screen) => {
     if (!this.observed) throw new Error("Wait for the workspace to open.");
     this.navigation.navigate(this.observed, screen);
-    this.publish({ ...this.value, snapshot: this.navigation.observe(this.observed) });
+    this.publish({
+      ...this.value,
+      snapshot: this.navigation.observe(this.observed),
+    });
   };
   navigateGuided = (projectId: string, change: NavigationChange) => {
     if (!this.observed) throw new Error("Wait for the workspace to open.");
     this.navigation.guided(this.observed, projectId, change);
-    this.publish({ ...this.value, snapshot: this.navigation.observe(this.observed) });
+    this.publish({
+      ...this.value,
+      snapshot: this.navigation.observe(this.observed),
+    });
   };
   /** Only mutations need a fresh observation before an action reports success. */
-  settle = () => this.publishedEpoch === this.epoch && !this.mutations ? Promise.resolve() : this.refresh();
+  settle = () =>
+    this.publishedEpoch === this.epoch && !this.mutations
+      ? Promise.resolve()
+      : this.refresh();
   start() {
     if (this.started) return;
     this.started = true;
@@ -135,7 +148,11 @@ export class ApplicationStore {
         if (ticket === this.epoch && !this.mutations && this.started) {
           this.observed = snapshot;
           this.publishedEpoch = ticket;
-          this.publish({ snapshot: this.navigation.observe(snapshot), error: "", stopped: false });
+          this.publish({
+            snapshot: this.navigation.observe(snapshot),
+            error: "",
+            stopped: false,
+          });
         }
       } catch (error) {
         if (ticket === this.epoch && this.started)

@@ -8,7 +8,17 @@ from dazedtl.storage import write_json
 
 
 def digest(value):
-    raw = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    raw = (
+        value
+        if isinstance(value, bytes)
+        else json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
     return hashlib.sha256(raw).hexdigest()
 
 
@@ -22,8 +32,13 @@ def unique_object(pairs):
 
 
 def decode_json(raw):
-    return json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique_object,
-                      parse_constant=lambda _value: (_ for _ in ()).throw(ValueError("JSON numbers must be finite.")))
+    return json.loads(
+        raw.decode("utf-8-sig"),
+        object_pairs_hook=unique_object,
+        parse_constant=lambda _value: (_ for _ in ()).throw(
+            ValueError("JSON numbers must be finite.")
+        ),
+    )
 
 
 def read_json(path, *, limit=128_000_000):
@@ -40,8 +55,12 @@ def project_path(root, relative, *, exists=True):
     if not isinstance(relative, str) or not relative or "\\" in relative:
         raise ValueError("Use a project-relative path with forward slashes.")
     child = Path(relative)
-    if child.is_absolute() or any(part.casefold() in {"..", ".git"} for part in child.parts):
-        raise ValueError("Files must stay inside the selected game and outside Git internals.")
+    if child.is_absolute() or any(
+        part.casefold() in {"..", ".git"} for part in child.parts
+    ):
+        raise ValueError(
+            "Files must stay inside the selected game and outside Git internals."
+        )
     path = root
     for part in child.parts:
         path /= part
@@ -71,8 +90,14 @@ def evidence(root, paths):
 
 
 def verify_evidence(root, expected):
-    if not isinstance(expected, dict) or not expected or evidence(root, list(expected)) != expected:
-        raise ValueError("Source or guidance changed. Compile and review a new request plan.")
+    if (
+        not isinstance(expected, dict)
+        or not expected
+        or evidence(root, list(expected)) != expected
+    ):
+        raise ValueError(
+            "Source or guidance changed. Compile and review a new request plan."
+        )
 
 
 def write_project_json(root, relative, value):

@@ -23,7 +23,9 @@ from dazedtl.translation.compilation import verify_compilation
 
 
 def run(workspace, identity, owner_pid, owner_token):
-    store = RunStore(workspace, owner_alive=lambda: alive(workspace, owner_pid, owner_token))
+    store = RunStore(
+        workspace, owner_alive=lambda: alive(workspace, owner_pid, owner_token)
+    )
     try:
         lock = WorkspaceLock(store.folder(identity))
     except WorkspaceError:
@@ -39,28 +41,57 @@ def run(workspace, identity, owner_pid, owner_token):
 def run_locked(workspace, identity, store):
     job, plan = store.load(identity)
     engine = TranslationEngine(workspace / "engine")
-    os.environ.update(PYTHON_DOTENV_DISABLED="1", DAZEDTL_DESKTOP_WORKSPACE=str(engine.profile))
+    os.environ.update(
+        PYTHON_DOTENV_DISABLED="1", DAZEDTL_DESKTOP_WORKSPACE=str(engine.profile)
+    )
     try:
         with engine.context():
             if plan["kind"] == "operation":
                 if plan.get("evidence"):
                     verify_evidence(plan["source"], plan["evidence"])
                 last_update = 0.0
+
                 def update(message):
                     nonlocal last_update
                     if store.stopped(identity):
-                        raise InterruptedError("Stopped at an operation checkpoint; completed writes and backups were retained.")
+                        raise InterruptedError(
+                            "Stopped at an operation checkpoint; completed writes and backups were retained."
+                        )
                     if time.monotonic() - last_update >= 0.5:
                         job["message"] = str(message)[:1000]
                         store.save(job)
                         last_update = time.monotonic()
-                result = execute(engine, workspace, job, plan, lambda: store.stopped(identity), update)
+
+                result = execute(
+                    engine,
+                    workspace,
+                    job,
+                    plan,
+                    lambda: store.stopped(identity),
+                    update,
+                )
                 # Native dataclasses can contain Paths; public records contain only JSON.
-                result = json.loads(json.dumps(result, default=lambda value: str(value) if isinstance(value, Path) else (_ for _ in ()).throw(TypeError())))
-                job.update(status="complete", message=plan["label"] + " completed.", result=result)
+                result = json.loads(
+                    json.dumps(
+                        result,
+                        default=lambda value: (
+                            str(value)
+                            if isinstance(value, Path)
+                            else (_ for _ in ()).throw(TypeError())
+                        ),
+                    )
+                )
+                job.update(
+                    status="complete",
+                    message=plan["label"] + " completed.",
+                    result=result,
+                )
                 store.save(job)
                 return
-            if not store.authorized(job) or plan["configuration"]["mode"] not in {"live", "batch"}:
+            if not store.authorized(job) or plan["configuration"]["mode"] not in {
+                "live",
+                "batch",
+            }:
                 raise ValueError("This worker requires an approved API run.")
 
             checked_compiler = None
@@ -69,10 +100,17 @@ def run_locked(workspace, identity, store):
                 nonlocal checked_compiler
                 project = ProjectWorkspace(plan["source"])
                 if scope(project.read()["options"]) != plan["scope_sha256"]:
-                    raise ValueError("Project scope changed. Preserve these results and prepare a new remaining-work quote.")
+                    raise ValueError(
+                        "Project scope changed. Preserve these results and prepare a new remaining-work quote."
+                    )
                 verify_evidence(project.root, plan["evidence"])
                 engine.verify_bindings(project.root, plan["original_bindings"])
-                require_baseline(engine, project.root, plan["options"], lifecycle(workspace, job["project_id"]))
+                require_baseline(
+                    engine,
+                    project.root,
+                    plan["options"],
+                    lifecycle(workspace, job["project_id"]),
+                )
                 if checked_compiler != engine.compiler_fingerprint():
                     checked_compiler = verify_compilation(engine, plan)
 
@@ -84,18 +122,35 @@ def run_locked(workspace, identity, store):
                     return
                 verify_evidence(plan["source"], plan["evidence"])
                 engine.verify_bindings(plan["source"], plan["original_bindings"])
-                report_path = project_path(plan["source"], WORK + "/progress-report.json", exists=False)
-                report = read_json(report_path) if report_path.exists() else {"phases": {}}
+                report_path = project_path(
+                    plan["source"], WORK + "/progress-report.json", exists=False
+                )
+                report = (
+                    read_json(report_path) if report_path.exists() else {"phases": {}}
+                )
                 relative, changed = Results(plan["source"]).export(plan)
                 report.update(text=relative, inputs=list(plan["evidence"]))
                 if changed:
-                    report.update(phase="translation", blocker="", next_action="Continue saved work, then fit, inject and perform QA.")
-                    report.setdefault("phases", {}).update(translation="active", injection="pending", qa="pending", patch="pending")
+                    report.update(
+                        phase="translation",
+                        blocker="",
+                        next_action="Continue saved work, then fit, inject and perform QA.",
+                    )
+                    report.setdefault("phases", {}).update(
+                        translation="active",
+                        injection="pending",
+                        qa="pending",
+                        patch="pending",
+                    )
                 engine.progress(plan["source"], plan["options"], report)
                 write_json(report_path, report)
                 last_report = time.monotonic()
 
-            provider = TranslationProvider(plan["configuration"], worker_secret(workspace, plan["configuration"]), receipt_root=store.folder(identity))
+            provider = TranslationProvider(
+                plan["configuration"],
+                worker_secret(workspace, plan["configuration"]),
+                receipt_root=store.folder(identity),
+            )
             while True:
                 runner = Runner(store, identity, provider, current, progress)
                 runner.step()

@@ -32,12 +32,17 @@ _REFUSAL = re.compile(
 _BARE_REFUSAL = re.compile(
     r"^(?:sorry[,.!]?\s*|i(?:'m| am) sorry[,.!]?\s*)?(?:but\s+)?"
     r"i\s+(?:can(?:not|'t)|am unable to)\s+(?:help|assist|comply)\s+with\s+"
-    r"(?:this|that|your)\s+(?:request|translation)\b", re.IGNORECASE,
+    r"(?:this|that|your)\s+(?:request|translation)\b",
+    re.IGNORECASE,
 )
 
 
 def field(value, key, default=None):
-    return value.get(key, default) if isinstance(value, dict) else getattr(value, key, default)
+    return (
+        value.get(key, default)
+        if isinstance(value, dict)
+        else getattr(value, key, default)
+    )
 
 
 def text_refusal(text, sources=()):
@@ -52,9 +57,15 @@ def text_refusal(text, sources=()):
         value = json.loads(text.removeprefix("```json\n").removesuffix("\n```"))
     except ValueError:
         return False
-    values = value.get("translations", list(value.values())) if isinstance(value, dict) else value
+    values = (
+        value.get("translations", list(value.values()))
+        if isinstance(value, dict)
+        else value
+    )
     return isinstance(values, list) and any(
-        isinstance(item, str) and item not in sources and _REFUSAL.search(item.strip().replace("’", "'"))
+        isinstance(item, str)
+        and item not in sources
+        and _REFUSAL.search(item.strip().replace("’", "'"))
         for item in values
     )
 
@@ -66,21 +77,27 @@ def refused(response, sources=()):
     if choices:
         choice = choices[0]
         message = field(choice, "message", {})
-        return bool(field(message, "refusal") or field(choice, "finish_reason") == "content_filter"
-                    or text_refusal(field(message, "content"), sources))
+        return bool(
+            field(message, "refusal")
+            or field(choice, "finish_reason") == "content_filter"
+            or text_refusal(field(message, "content"), sources)
+        )
     return text_refusal(field(response, "text"), sources)
 
 
 def refusal_reason(response):
-    choices = field(response, 'choices', []) or []
-    message = field(choices[0], 'message', {}) if choices else response
-    return ' '.join(str(field(message, key) or '') for key in ('refusal', 'text', 'content'))
+    choices = field(response, "choices", []) or []
+    message = field(choices[0], "message", {}) if choices else response
+    return " ".join(
+        str(field(message, key) or "") for key in ("refusal", "text", "content")
+    )
 
 
 def clarifiable(response, sources=()):
     # An explicit child-safety refusal must not trigger an age-relabeling retry.
-    return refused(response, sources) and not re.search(r'\bjfdisaofoiw\b',
-                                                        refusal_reason(response), re.IGNORECASE)
+    return refused(response, sources) and not re.search(
+        r"\bjfdisaofoiw\b", refusal_reason(response), re.IGNORECASE
+    )
 
 
 def clarified(params):

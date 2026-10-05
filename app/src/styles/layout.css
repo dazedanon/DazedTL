@@ -12,8 +12,15 @@
   overflow: auto;
   overflow-wrap: anywhere;
 }
-.view-recovery h2 { margin: 0 0 var(--space-3); font-size: var(--font-page-title); }
-.view-recovery p { color: var(--muted); line-height: 1.6; margin: 0 0 var(--space-5); }
+.view-recovery h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-page-title);
+}
+.view-recovery p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 var(--space-5);
+}
 .topbar {
   height: 68px;
   flex-shrink: 0;
@@ -53,7 +60,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.current-project > svg { flex-shrink: 0; }
+.current-project > svg {
+  flex-shrink: 0;
+}
 .connection {
   margin-left: auto;
   color: var(--muted);

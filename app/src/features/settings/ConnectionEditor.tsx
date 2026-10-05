@@ -59,7 +59,8 @@ export default function ConnectionEditor({
     [],
   );
   const custom = value.provider === "custom";
-  const hostModel = connection?.provider === "openrouter" ? connection.model : "";
+  const hostModel =
+    connection?.provider === "openrouter" ? connection.model : "";
   const definition = providers.find((item) => item.id === value.provider);
   const sameRoute =
     connection?.provider === value.provider &&
@@ -75,7 +76,8 @@ export default function ConnectionEditor({
     setValue((current) => ({
       ...current,
       provider,
-      protocol: providers.find((item) => item.id === provider)?.protocol || "openai",
+      protocol:
+        providers.find((item) => item.id === provider)?.protocol || "openai",
       endpoint:
         provider === "custom" && connection?.needsSetup
           ? connection.endpoint
@@ -142,9 +144,16 @@ export default function ConnectionEditor({
               )}
             </FieldRow>
             {value.provider === "openrouter" && (
-              <OpenRouterHost key={hostModel} model={hostModel}
-                value={value.openrouter_host} disabled={disabled} checksEnabled={checksEnabled}
-                onChange={openrouter_host => setValue(current => ({ ...current, openrouter_host }))} />
+              <OpenRouterHost
+                key={hostModel}
+                model={hostModel}
+                value={value.openrouter_host}
+                disabled={disabled}
+                checksEnabled={checksEnabled}
+                onChange={(openrouter_host) =>
+                  setValue((current) => ({ ...current, openrouter_host }))
+                }
+              />
             )}
             {!value.keyless && (
               <FieldRow
@@ -294,25 +303,29 @@ export default function ConnectionEditor({
                   )}
                 </FieldRow>
               )}
-              {value.protocol === "openai" && value.provider !== "openrouter" && (
-                <FieldRow
-                  id="connection-organization"
-                  label="Organization ID"
-                  help="Optional for OpenAI organization-specific access."
-                >
-                  {(control) => (
-                    <input
-                      {...control}
-                      value={value.organization}
-                      maxLength={200}
-                      placeholder="Provider default"
-                      onChange={(event) =>
-                        setValue({ ...value, organization: event.target.value })
-                      }
-                    />
-                  )}
-                </FieldRow>
-              )}
+              {value.protocol === "openai" &&
+                value.provider !== "openrouter" && (
+                  <FieldRow
+                    id="connection-organization"
+                    label="Organization ID"
+                    help="Optional for OpenAI organization-specific access."
+                  >
+                    {(control) => (
+                      <input
+                        {...control}
+                        value={value.organization}
+                        maxLength={200}
+                        placeholder="Provider default"
+                        onChange={(event) =>
+                          setValue({
+                            ...value,
+                            organization: event.target.value,
+                          })
+                        }
+                      />
+                    )}
+                  </FieldRow>
+                )}
             </details>
           </fieldset>
         </Section>

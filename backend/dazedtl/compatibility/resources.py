@@ -4,28 +4,30 @@ from pathlib import Path
 
 
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
-SHARED_FILES = frozenset({
-    "skills/system.md",
-    "translation_contexts.json",
-    "glossary_base.txt",
-    "sfx_reference/j_ono.json",
-    "skills/ace_script_translation.md",
-    "skills/character_identity.md",
-    "skills/evaluation_csv_review.md",
-    "skills/evaluation_pairwise_review.md",
-    "skills/image_translation.md",
-    "skills/localization_investigation.md",
-    "skills/plugin_translation.md",
-    "skills/post_update_translation.md",
-    "skills/project_setup.md",
-    "skills/risky_codes.md",
-    "skills/rpgmaker_translation_qa.md",
-    "skills/wolf_precheck_repair.md",
-    "skills/wolf_speakers.md",
-    "skills/wrap_config.md",
-    "skills/build-game-walkthrough/SKILL.md",
-    "skills/setup-generic-game/SKILL.md",
-})
+SHARED_FILES = frozenset(
+    {
+        "skills/system.md",
+        "translation_contexts.json",
+        "glossary_base.txt",
+        "sfx_reference/j_ono.json",
+        "skills/ace_script_translation.md",
+        "skills/character_identity.md",
+        "skills/evaluation_csv_review.md",
+        "skills/evaluation_pairwise_review.md",
+        "skills/image_translation.md",
+        "skills/localization_investigation.md",
+        "skills/plugin_translation.md",
+        "skills/post_update_translation.md",
+        "skills/project_setup.md",
+        "skills/risky_codes.md",
+        "skills/rpgmaker_translation_qa.md",
+        "skills/wolf_precheck_repair.md",
+        "skills/wolf_speakers.md",
+        "skills/wrap_config.md",
+        "skills/build-game-walkthrough/SKILL.md",
+        "skills/setup-generic-game/SKILL.md",
+    }
+)
 
 
 def install():
@@ -62,7 +64,9 @@ def install():
             return selected
         bundled = DATA_ROOT / relative
         if bundled.is_symlink() or not bundled.is_file():
-            raise FileNotFoundError("DazedTL translation resource missing or invalid: " + relative)
+            raise FileNotFoundError(
+                "DazedTL translation resource missing or invalid: " + relative
+            )
         return bundled
 
     resolve._dazedtl_resources = True

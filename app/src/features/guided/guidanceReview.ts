@@ -1,10 +1,18 @@
 import type { ContextSetup, Documents } from "../../api/contracts";
 
 export const coreGuidance = ["glossary", "quirks", "game"];
-export const guidanceTitle = (name: string) => ({ glossary: "Glossary", quirks: "Style & quirks", game: "Game context" })[name] || name.replace("custom:", "Skill: ");
+export const guidanceTitle = (name: string) =>
+  ({ glossary: "Glossary", quirks: "Style & quirks", game: "Game context" })[
+    name
+  ] || name.replace("custom:", "Skill: ");
 
 export function guidanceNames(documents: Documents, drafts: Documents) {
-  return [...coreGuidance, ...[...new Set([...Object.keys(documents), ...Object.keys(drafts)])].filter((name) => name.startsWith("custom:"))];
+  return [
+    ...coreGuidance,
+    ...[...new Set([...Object.keys(documents), ...Object.keys(drafts)])].filter(
+      (name) => name.startsWith("custom:"),
+    ),
+  ];
 }
 
 export function guidanceAvailability(documents: ContextSetup["documents"]) {
@@ -13,7 +21,10 @@ export function guidanceAvailability(documents: ContextSetup["documents"]) {
 }
 
 /** Report successful document writes if a later save fails. */
-export async function saveGuidanceSet(names: string[], save: (name: string) => Promise<Documents>) {
+export async function saveGuidanceSet(
+  names: string[],
+  save: (name: string) => Promise<Documents>,
+) {
   const savedNames: string[] = [];
   for (const name of names) {
     try {
@@ -22,7 +33,10 @@ export async function saveGuidanceSet(names: string[], save: (name: string) => P
     } catch (error) {
       if (!savedNames.length) throw error;
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Saved ${savedNames.map(guidanceTitle).join(", ")}. ${message} Remaining drafts are retained.`, { cause: error });
+      throw new Error(
+        `Saved ${savedNames.map(guidanceTitle).join(", ")}. ${message} Remaining drafts are retained.`,
+        { cause: error },
+      );
     }
   }
 }

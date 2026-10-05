@@ -112,9 +112,24 @@ function Workspace({
   const text = progress?.metrics.text;
   const latest = state.jobs[0];
   if (imageManager) {
-    if (editorAssets) return <ImageTextEditor projectId={project.id} assetIds={editorAssets} observationKey={application.snapshot} onClose={() => setEditorAssets(null)} />;
-    return <ImageManager projectId={project.id} observed={application.snapshot?.images} backLabel="Back to Len’s method"
-      onClose={() => setImageManager(false)} onOpenEditor={setEditorAssets} />;
+    if (editorAssets)
+      return (
+        <ImageTextEditor
+          projectId={project.id}
+          assetIds={editorAssets}
+          observationKey={application.snapshot}
+          onClose={() => setEditorAssets(null)}
+        />
+      );
+    return (
+      <ImageManager
+        projectId={project.id}
+        observed={application.snapshot?.images}
+        backLabel="Back to Len’s method"
+        onClose={() => setImageManager(false)}
+        onOpenEditor={setEditorAssets}
+      />
+    );
   }
   return (
     <PageLayout
@@ -136,7 +151,17 @@ function Workspace({
               <FolderOpen size={16} />
               Workspace
             </Button>
-            <Button disabled={disabled} onClick={() => action.run(async () => { await flushDrafts(); setImageManager(true); })}>Image Manager</Button>
+            <Button
+              disabled={disabled}
+              onClick={() =>
+                action.run(async () => {
+                  await flushDrafts();
+                  setImageManager(true);
+                })
+              }
+            >
+              Image Manager
+            </Button>
             <Button variant="primary" disabled={disabled} onClick={copy}>
               <Clipboard size={16} />
               {draft.dirty
@@ -203,7 +228,10 @@ function Workspace({
                 </p>
                 {draft.value.options.mode !== "agent" && (
                   <div className="translation-connection">
-                    <dl className="translation-facts" aria-label="Current API selection">
+                    <dl
+                      className="translation-facts"
+                      aria-label="Current API selection"
+                    >
                       <div>
                         <dt>Connection</dt>
                         <dd>{state.connection?.name || "Not selected"}</dd>
@@ -369,7 +397,13 @@ function Workspace({
               <dl className="translation-facts">
                 <div>
                   <dt>Source backup</dt>
-                  <dd>{state.lifecycle.source_backup?.available === false ? "Unavailable" : state.lifecycle.source_backup ? "Saved" : "Pending"}</dd>
+                  <dd>
+                    {state.lifecycle.source_backup?.available === false
+                      ? "Unavailable"
+                      : state.lifecycle.source_backup
+                        ? "Saved"
+                        : "Pending"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Original / translation branches</dt>

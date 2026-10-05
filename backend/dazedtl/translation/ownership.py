@@ -16,16 +16,23 @@ def alive(workspace, pid, token):
         return True
     import ctypes
     from ctypes import wintypes
+
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     kernel.OpenProcess.restype = wintypes.HANDLE
-    kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel.GetExitCodeProcess.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    )
     kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
     handle = kernel.OpenProcess(0x1000, False, pid)
     if not handle:
         return False
     try:
         status = wintypes.DWORD()
-        return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(status))) and status.value == 259
+        return (
+            bool(kernel.GetExitCodeProcess(handle, ctypes.byref(status)))
+            and status.value == 259
+        )
     finally:
         kernel.CloseHandle(handle)

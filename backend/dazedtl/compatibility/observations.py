@@ -16,8 +16,14 @@ def stamp(path):
     except FileNotFoundError:
         return None
     if stat.S_ISLNK(value.st_mode):
-        raise ValueError('Observed run artifacts cannot be symbolic links.')
-    return value.st_mode, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns
+        raise ValueError("Observed run artifacts cannot be symbolic links.")
+    return (
+        value.st_mode,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
 
 
 def process_stamp(root):
@@ -28,14 +34,14 @@ def process_stamp(root):
     Imported Batch roots use the uncached reader instead.
     """
     rows = [(str(root), stamp(root))]
-    for name in ('plan.json', 'job.json', 'log', 'files', 'translated'):
+    for name in ("plan.json", "job.json", "log", "files", "translated"):
         pending = [root / name]
         while pending:
             path = pending.pop()
             signature = stamp(path)
             rows.append((str(path), signature))
             if len(rows) > 4096:
-                raise ValueError('Run observation exceeds the display cache limit.')
+                raise ValueError("Run observation exceeds the display cache limit.")
             if signature and stat.S_ISDIR(signature[0]):
                 pending.extend(sorted(path.iterdir(), reverse=True))
     return tuple(rows)
@@ -69,8 +75,8 @@ class RunObservations:
             return backend.saved_run_configuration(identity)
 
         def read():
-            path = backend.manual.folder(identity) / 'plan.json'
-            signature = (stamp(path), backend.manual.jobs[identity].get('plan_hash'))
+            path = backend.manual.folder(identity) / "plan.json"
+            signature = (stamp(path), backend.manual.jobs[identity].get("plan_hash"))
             cached = self.plans.get(path)
             if cached and cached[0] == signature:
                 self.plans.move_to_end(path)
@@ -78,9 +84,19 @@ class RunObservations:
             plan = backend.saved_run_configuration(identity)
             # Do not retain source text, prompts or continuation payloads just
             # to display ownership and file status.
-            value = {key: plan[key] for key in ('workflow', 'files', 'selected', 'mode',
-                     'dazedtl_source_versions', 'batch_link') if key in plan}
-            value['settings'] = {'language': plan.get('settings', {}).get('language')}
+            value = {
+                key: plan[key]
+                for key in (
+                    "workflow",
+                    "files",
+                    "selected",
+                    "mode",
+                    "dazedtl_source_versions",
+                    "batch_link",
+                )
+                if key in plan
+            }
+            value["settings"] = {"language": plan.get("settings", {}).get("language")}
             if signature[0] == stamp(path):
                 self.plans[path] = (signature, value)
                 self.plans.move_to_end(path)
@@ -88,10 +104,10 @@ class RunObservations:
                     self.plans.popitem(last=False)
             return value
 
-        return self.once(('plan', identity), read)
+        return self.once(("plan", identity), read)
 
     def process(self, root, job, plan):
-        if self.session is None or not plan or plan.get('batch_link'):
+        if self.session is None or not plan or plan.get("batch_link"):
             return process_view.summary(root, job)
         root = Path(root)
         try:
@@ -109,11 +125,11 @@ class RunObservations:
             unchanged = False
         previous = self.processes.pop(root, None)
         if previous:
-            self.request_rows -= len(previous[1]['requests'])
-        if unchanged and len(value['requests']) <= 20_000:
+            self.request_rows -= len(previous[1]["requests"])
+        if unchanged and len(value["requests"]) <= 20_000:
             self.processes[root] = (signature, deepcopy(value))
-            self.request_rows += len(value['requests'])
+            self.request_rows += len(value["requests"])
             while len(self.processes) > 128 or self.request_rows > 20_000:
                 _, removed = self.processes.popitem(last=False)
-                self.request_rows -= len(removed[1]['requests'])
+                self.request_rows -= len(removed[1]["requests"])
         return value

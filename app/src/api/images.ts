@@ -6,8 +6,42 @@ const pixelRead = readQueue(4);
 
 export const imagesApi = {
   state: (project_id: string) => request("images_state", { project_id }),
-  list: (project_id: string, options: { query?: string; folder?: string; filter?: string; offset?: number; limit?: number; selected_only?: boolean; asset_id?: string } = {}, current?: () => boolean) => metadataRead(() => request("images_list", { project_id, ...options }), current),
-  update: (project_id: string, revision: string, changes: Partial<ImageDraft>) => request("images_update", { project_id, revision, changes }),
-  action: (project_id: string, action: string, options: Record<string, unknown> = {}) => request("images_action", { project_id, action, options }),
-  pixels: (project_id: string, asset_id: string, variant: "source" | "original" | "candidate" = "source", size = 0, current?: () => boolean) => pixelRead(() => request("images_preview", { project_id, asset_id, variant, size }), current),
+  list: (
+    project_id: string,
+    options: {
+      query?: string;
+      folder?: string;
+      filter?: string;
+      offset?: number;
+      limit?: number;
+      selected_only?: boolean;
+      asset_id?: string;
+    } = {},
+    current?: () => boolean,
+  ) =>
+    metadataRead(
+      () => request("images_list", { project_id, ...options }),
+      current,
+    ),
+  update: (
+    project_id: string,
+    revision: string,
+    changes: Partial<ImageDraft>,
+  ) => request("images_update", { project_id, revision, changes }),
+  action: (
+    project_id: string,
+    action: string,
+    options: Record<string, unknown> = {},
+  ) => request("images_action", { project_id, action, options }),
+  pixels: (
+    project_id: string,
+    asset_id: string,
+    variant: "source" | "original" | "candidate" = "source",
+    size = 0,
+    current?: () => boolean,
+  ) =>
+    pixelRead(
+      () => request("images_preview", { project_id, asset_id, variant, size }),
+      current,
+    ),
 };

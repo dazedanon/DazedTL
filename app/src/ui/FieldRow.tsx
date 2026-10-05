@@ -27,15 +27,25 @@ export function FieldRow({
     undefined;
   return (
     <div className="field-row">
-      {help && helpDisplay === "popover" ? <div className="field-label field-label--help"><label htmlFor={id}>{label}</label>
-        <HelpPopover id={`${id}-help`} label={label}>{help}</HelpPopover></div> : <label htmlFor={id}>{label}</label>}
+      {help && helpDisplay === "popover" ? (
+        <div className="field-label field-label--help">
+          <label htmlFor={id}>{label}</label>
+          <HelpPopover id={`${id}-help`} label={label}>
+            {help}
+          </HelpPopover>
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       <div className={`field-control${wide ? " field-control--wide" : ""}`}>
         {children({
           id,
           "aria-describedby": description,
           "aria-invalid": error ? true : undefined,
         })}
-        {help && helpDisplay === "text" && <small id={`${id}-help`}>{help}</small>}
+        {help && helpDisplay === "text" && (
+          <small id={`${id}-help`}>{help}</small>
+        )}
         {error && (
           <small className="field-error" id={`${id}-error`} role="alert">
             {error}

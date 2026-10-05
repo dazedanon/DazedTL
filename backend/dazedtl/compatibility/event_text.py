@@ -7,12 +7,30 @@ from pathlib import Path
 
 from dazedtl.translation.files import digest
 
-CODES = ("CODE122", "CODE357", "CODE355655", "CODE356", "CODE657", "CODE320", "CODE324", "CODE325", "CODE108")
+CODES = (
+    "CODE122",
+    "CODE357",
+    "CODE355655",
+    "CODE356",
+    "CODE657",
+    "CODE320",
+    "CODE324",
+    "CODE325",
+    "CODE108",
+)
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
 FIELDS = (*CODES, "CODE122_VAR_RANGES", *SELECTORS.values())
-LABELS = ("Variable assignments (122)", "MZ plugin commands (357)", "Script text (355/655)",
-          "MV plugin commands (356)", "Picture labels (657)", "Actor name changes (320)",
-          "Nickname changes (324)", "Profile changes (325)", "Comment labels (108)")
+LABELS = (
+    "Variable assignments (122)",
+    "MZ plugin commands (357)",
+    "Script text (355/655)",
+    "MV plugin commands (356)",
+    "Picture labels (657)",
+    "Actor name changes (320)",
+    "Nickname changes (324)",
+    "Profile changes (325)",
+    "Comment labels (108)",
+)
 COVERAGE = {
     "CODE122": "IDs select the assignment's starting variable only. Check its entire start/end range, operation, expression, and every internal use. The parser replaces the expression with a quoted translation.",
     "CODE357": "Registered plugin names match headers by substring and use fixed argument keys across commands. Built-in handlers also apply. Individual commands or argument keys cannot be excluded here.",
@@ -29,7 +47,13 @@ COVERAGE = {
 def _literals(tree):
     result = {}
     for node in tree.body:
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+        targets = (
+            node.targets
+            if isinstance(node, ast.Assign)
+            else [node.target]
+            if isinstance(node, ast.AnnAssign)
+            else []
+        )
         for target in targets:
             if isinstance(target, ast.Name):
                 try:
@@ -40,9 +64,14 @@ def _literals(tree):
 
 
 def _builtins(tree, key, subject):
-    branches = [node for node in ast.walk(tree) if isinstance(node, ast.If)
-                and key in {item.id for item in ast.walk(node.test) if isinstance(item, ast.Name)}
-                and "codeList" in ast.unparse(node.test)]
+    branches = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.If)
+        and key
+        in {item.id for item in ast.walk(node.test) if isinstance(item, ast.Name)}
+        and "codeList" in ast.unparse(node.test)
+    ]
     branch = max(branches, key=lambda node: len(node.body), default=None)
     if not branch:
         return []
@@ -52,16 +81,36 @@ def _builtins(tree, key, subject):
     for statement in branch.body:
         node = statement
         while isinstance(node, ast.If):
-            names = {item.id for item in ast.walk(node.test) if isinstance(item, ast.Name)}
-            if subject in names and not any(name.startswith("ENABLED_") for name in names):
-                for comparison in (item for item in ast.walk(node.test) if isinstance(item, ast.Compare)):
+            names = {
+                item.id for item in ast.walk(node.test) if isinstance(item, ast.Name)
+            }
+            if subject in names and not any(
+                name.startswith("ENABLED_") for name in names
+            ):
+                for comparison in (
+                    item
+                    for item in ast.walk(node.test)
+                    if isinstance(item, ast.Compare)
+                ):
                     operands = [comparison.left, *comparison.comparators]
-                    if any(isinstance(item, ast.Name) and item.id == subject for item in operands):
-                        found.extend(item.value for item in operands if isinstance(item, ast.Constant) and isinstance(item.value, str))
+                    if any(
+                        isinstance(item, ast.Name) and item.id == subject
+                        for item in operands
+                    ):
+                        found.extend(
+                            item.value
+                            for item in operands
+                            if isinstance(item, ast.Constant)
+                            and isinstance(item.value, str)
+                        )
             # The preserved MV choice handler has an unconditional string test.
             # Its actual regex guard is inside the body; it still belongs to
             # the coarse source switch and has no independent control.
-            elif key == "CODE356" and isinstance(node.test, ast.Constant) and isinstance(node.test.value, str):
+            elif (
+                key == "CODE356"
+                and isinstance(node.test, ast.Constant)
+                and isinstance(node.test.value, str)
+            ):
                 found.append(node.test.value)
             node = node.orelse[0] if len(node.orelse) == 1 else None
     return sorted(set(found))
@@ -80,24 +129,69 @@ def _catalog(path, modified, changed, size):
     for key, label in zip(CODES, LABELS):
         choices, builtins = [], []
         if key == "CODE357":
-            choices = [{"id": name, "group": "Message and picture text" if any(arg.lower() in {"text", "message", "messagetext"} for arg in args) else "Other plugin text",
-                        "details": "Header substring: " + name + "; fixed argument keys: " + ", ".join(args)}
-                       for name, (args, _font) in sorted(handlers.items())]
+            choices = [
+                {
+                    "id": name,
+                    "group": "Message and picture text"
+                    if any(
+                        arg.lower() in {"text", "message", "messagetext"}
+                        for arg in args
+                    )
+                    else "Other plugin text",
+                    "details": "Header substring: "
+                    + name
+                    + "; fixed argument keys: "
+                    + ", ".join(args),
+                }
+                for name, (args, _font) in sorted(handlers.items())
+            ]
             builtins = _builtins(tree, key, "headerString")
         elif key == "CODE355655":
-            choices = [{"id": name, "group": "Variable assignments" if "gameVariables" in name else "Multiline scripts" if multiline else "Single-line scripts",
-                        "details": ("Multiline" if multiline else "Single-line") + "; last regex capture is translated: " + regex}
-                       for name, (regex, multiline) in sorted(patterns.items())]
+            choices = [
+                {
+                    "id": name,
+                    "group": "Variable assignments"
+                    if "gameVariables" in name
+                    else "Multiline scripts"
+                    if multiline
+                    else "Single-line scripts",
+                    "details": ("Multiline" if multiline else "Single-line")
+                    + "; last regex capture is translated: "
+                    + regex,
+                }
+                for name, (regex, multiline) in sorted(patterns.items())
+            ]
             builtins = _builtins(tree, key, "jaString")
         elif key == "CODE356":
             builtins = _builtins(tree, key, "jaString")
         elif key == "CODE108":
-            function = next((node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_code108_match"), None)
+            function = next(
+                (
+                    node
+                    for node in tree.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "_code108_match"
+                ),
+                None,
+            )
             for statement in function.body if function else []:
-                if isinstance(statement, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "patterns" for target in statement.targets):
-                    builtins = [marker for marker, _regex in ast.literal_eval(statement.value)]
-        controls.append({"key": key, "label": label, "coverage": COVERAGE[key], "selector": SELECTORS.get(key),
-                         "choices": choices, "builtins": builtins})
+                if isinstance(statement, ast.Assign) and any(
+                    isinstance(target, ast.Name) and target.id == "patterns"
+                    for target in statement.targets
+                ):
+                    builtins = [
+                        marker for marker, _regex in ast.literal_eval(statement.value)
+                    ]
+        controls.append(
+            {
+                "key": key,
+                "label": label,
+                "coverage": COVERAGE[key],
+                "selector": SELECTORS.get(key),
+                "choices": choices,
+                "builtins": builtins,
+            }
+        )
     return {"fingerprint": digest(raw), "source": str(path), "controls": controls}
 
 
@@ -106,7 +200,9 @@ def catalog(source):
     if path.is_symlink():
         raise ValueError("The installed event-text registry must be a regular file.")
     stat = path.stat()
-    return deepcopy(_catalog(str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))
+    return deepcopy(
+        _catalog(str(path), stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+    )
 
 
 def validate_options(options, source):

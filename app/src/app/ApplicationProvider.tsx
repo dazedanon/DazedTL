@@ -48,6 +48,12 @@ export function useApplication() {
   const store = useContext(Context);
   if (!store) throw new Error("ApplicationProvider is required.");
   const value = useSyncExternalStore(store.subscribe, store.getSnapshot);
-  return { ...value, refresh: store.refresh, settle: store.settle, navigate: store.navigate,
-    navigateGuided: store.navigateGuided, clearError: store.clearError };
+  return {
+    ...value,
+    refresh: store.refresh,
+    settle: store.settle,
+    navigate: store.navigate,
+    navigateGuided: store.navigateGuided,
+    clearError: store.clearError,
+  };
 }

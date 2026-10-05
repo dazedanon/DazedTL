@@ -16,7 +16,9 @@ def format_json_files(directory, log=None):
             try:
                 original = path.read_bytes()
                 document = json.loads(original.decode("utf-8-sig"))
-                output = json.dumps(document, indent=4, ensure_ascii=False).encode("utf-8")
+                output = json.dumps(document, indent=4, ensure_ascii=False).encode(
+                    "utf-8"
+                )
                 # Compare and write bytes: universal-newline reads hide CRLF,
                 # and platform text writes can reintroduce it on Windows.
                 if output != original:

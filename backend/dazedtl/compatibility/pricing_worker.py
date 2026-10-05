@@ -14,7 +14,10 @@ def catalog(value):
         raise ValueError("Invalid pricing catalog.")
     keys = ("input_cost_per_token", "output_cost_per_token")
     return {
-        name: {**{key: row[key] for key in keys}, 'max_output_tokens': output_limit(row.get('max_output_tokens'))}
+        name: {
+            **{key: row[key] for key in keys},
+            "max_output_tokens": output_limit(row.get("max_output_tokens")),
+        }
         for name, row in value.items()
         if isinstance(name, str)
         and isinstance(row, dict)
@@ -34,13 +37,14 @@ def output_limit(value):
 def model_output_limit(prices, model):
     # Limits must come from this model, not the native price resolver's fuzzy
     # prefix fallback, which can price an alias using a different model family.
-    name = str(model).strip().lower().removeprefix('models/')
-    row = prices.get(name) or prices.get(name.rsplit('/', 1)[-1]) or {}
-    return output_limit(row.get('max_output_tokens'))
+    name = str(model).strip().lower().removeprefix("models/")
+    row = prices.get(name) or prices.get(name.rsplit("/", 1)[-1]) or {}
+    return output_limit(row.get("max_output_tokens"))
 
 
 def resolve(cache, model, online):
     from dazedtl.compatibility.runtime import activate
+
     activate()
     import util.translation as translation
     import httpx
@@ -65,7 +69,11 @@ def resolve(cache, model, online):
         except (ValueError, OSError, AttributeError):
             cached = None
     now = time.time()
-    if online and (cached is None or cached.get('version') != 2 or now - cached["fetched_at"] > 86400):
+    if online and (
+        cached is None
+        or cached.get("version") != 2
+        or now - cached["fetched_at"] > 86400
+    ):
         try:
             started, data = time.monotonic(), bytearray()
             with httpx.Client(
@@ -108,14 +116,19 @@ def resolve(cache, model, online):
         "model": model,
         "inputRate": config["inputAPICost"] if valid_rates else None,
         "outputRate": config["outputAPICost"] if valid_rates else None,
-        "maxOutputTokens": model_output_limit(cached['prices'], model) if cached else None,
+        "maxOutputTokens": model_output_limit(cached["prices"], model)
+        if cached
+        else None,
         "source": origin,
         "updatedAt": datetime.fromtimestamp(
             cached["fetched_at"], timezone.utc
         ).isoformat()
         if catalog_rate
         else None,
-        "stale": bool(catalog_rate and (cached.get('version') != 2 or now - cached["fetched_at"] > 86400)),
+        "stale": bool(
+            catalog_rate
+            and (cached.get("version") != 2 or now - cached["fetched_at"] > 86400)
+        ),
     }
 
 
@@ -124,7 +137,5 @@ if __name__ == "__main__":
     request = json.load(sys.stdin)
     # Imports and existing engine messages cannot pollute the response protocol.
     with redirect_stdout(sys.stderr):
-        result = resolve(
-            Path(sys.argv[1]), request["model"], request["online"]
-        )
+        result = resolve(Path(sys.argv[1]), request["model"], request["online"])
     print(json.dumps(result, allow_nan=False))

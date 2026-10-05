@@ -3,12 +3,7 @@ import { PageLayout, PageHeader } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { Button } from "../../ui/Button";
 import { JobStatus } from "../../ui/JobStatus";
-import {
-  ArrowRight,
-  Folder,
-  FolderOpen,
-  Settings2,
-} from "lucide-react";
+import { ArrowRight, Folder, FolderOpen, Settings2 } from "lucide-react";
 import type { AppState, Screen } from "../../api/contracts";
 
 const engines: Record<string, string> = {
@@ -85,18 +80,31 @@ export default function Overview({
                     variant="primary"
                     disabled={busy || (!project.available && state.running)}
                     onClick={() =>
-                      project.available ? go(["MVMZ", "ACE"].includes(project.engine) ? "guided" : "translation") : open()
+                      project.available
+                        ? go(
+                            ["MVMZ", "ACE"].includes(project.engine)
+                              ? "guided"
+                              : "translation",
+                          )
+                        : open()
                     }
                   >
-                    {project.available && ["MVMZ", "ACE"].includes(project.engine) ? "Open Translation" : project.next_label}
+                    {project.available &&
+                    ["MVMZ", "ACE"].includes(project.engine)
+                      ? "Open Translation"
+                      : project.next_label}
                     <ArrowRight size={15} />
                   </Button>
                 </dd>
               </div>
             </dl>
-            {project.available && ["MVMZ", "ACE"].includes(project.engine) && <div className="actions overview-workflow-actions">
-              <Button disabled={busy} onClick={() => go("translation")}>Open Len's method</Button>
-            </div>}
+            {project.available && ["MVMZ", "ACE"].includes(project.engine) && (
+              <div className="actions overview-workflow-actions">
+                <Button disabled={busy} onClick={() => go("translation")}>
+                  Open Len's method
+                </Button>
+              </div>
+            )}
           </>
         ) : (
           <div className="overview-empty">

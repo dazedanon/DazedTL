@@ -10,25 +10,65 @@ import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
 import { Diagnostics } from "../app/electron/diagnostics.cjs";
 import { rendererFailure } from "../app/src/app/rendererErrors.ts";
 
-const turn = () => new Promise<void>(resolve => setImmediate(resolve));
+const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 function recoveryFixture() {
-  const contents = new EventEmitter(), window = new EventEmitter();
-  const prompts: { options: any; answer: (value: { response: number }) => void }[] = [];
+  const contents = new EventEmitter(),
+    window = new EventEmitter();
+  const prompts: {
+    options: any;
+    answer: (value: { response: number }) => void;
+  }[] = [];
   const events: string[] = [];
-  let crashed = false, closing = false;
-  Object.assign(contents, { isDestroyed: () => false, isCrashed: () => crashed,
-    forcefullyCrashRenderer: () => { events.push("kill"); crashed = true; contents.emit("render-process-gone", {}, { reason: "killed", exitCode: 0 }); },
-    reload: () => events.push("reload") });
+  let crashed = false,
+    closing = false;
+  Object.assign(contents, {
+    isDestroyed: () => false,
+    isCrashed: () => crashed,
+    forcefullyCrashRenderer: () => {
+      events.push("kill");
+      crashed = true;
+      contents.emit(
+        "render-process-gone",
+        {},
+        { reason: "killed", exitCode: 0 },
+      );
+    },
+    reload: () => events.push("reload"),
+  });
   Object.assign(window, { webContents: contents, isDestroyed: () => false });
   const recovery = rendererRecovery(window, {
-    diagnostics: { record: (event: string) => events.push(event), failure: () => events.push("failure"), report: () => "safe diagnostics" },
+    diagnostics: {
+      record: (event: string) => events.push(event),
+      failure: () => events.push("failure"),
+      report: () => "safe diagnostics",
+    },
     clipboard: { writeText: (text: string) => events.push(text) },
-    beforeReload: () => events.push("reset-ready"), closing: () => closing,
-    dialog: { showMessageBox: (_window: unknown, options: unknown) => new Promise(resolve => prompts.push({ options, answer: resolve })) },
+    beforeReload: () => events.push("reset-ready"),
+    closing: () => closing,
+    dialog: {
+      showMessageBox: (_window: unknown, options: unknown) =>
+        new Promise((resolve) => prompts.push({ options, answer: resolve })),
+    },
   });
-  return { window, contents, prompts, events, recovery, close: () => { closing = true; },
-    crash: () => { crashed = true; contents.emit("render-process-gone", {}, { reason: "crashed", exitCode: 1 }); } };
+  return {
+    window,
+    contents,
+    prompts,
+    events,
+    recovery,
+    close: () => {
+      closing = true;
+    },
+    crash: () => {
+      crashed = true;
+      contents.emit(
+        "render-process-gone",
+        {},
+        { reason: "crashed", exitCode: 1 },
+      );
+    },
+  };
 }
 
 test("renderer recovery offers one native prompt and replaces a hung interface only on explicit reload", async () => {
@@ -39,10 +79,16 @@ test("renderer recovery offers one native prompt and replaces a hung interface o
   assert.equal(f.events.includes("reload"), false);
   f.prompts[0].answer({ response: 1 });
   await turn();
-  assert.deepEqual(f.events.slice(-5), ["reset-ready", "renderer.reload", "kill", "renderer.gone", "reload"]);
+  assert.deepEqual(f.events.slice(-5), [
+    "reset-ready",
+    "renderer.reload",
+    "kill",
+    "renderer.gone",
+    "reload",
+  ]);
   assert.equal(f.prompts.length, 1); // The intentional process replacement cannot open a second prompt.
   f.recovery.reload();
-  assert.equal(f.events.filter(event => event === "reload").length, 1);
+  assert.equal(f.events.filter((event) => event === "reload").length, 1);
   f.contents.emit("did-finish-load");
   assert.equal(f.recovery.failed(), false);
 });
@@ -58,7 +104,10 @@ test("crash recovery can copy diagnostics, and stale dialog responses cannot rel
   await turn();
   assert.ok(crashed.events.includes("reload"));
   assert.equal(crashed.events.includes("kill"), false);
-  for (const finish of [(f: ReturnType<typeof recoveryFixture>) => f.window.emit("responsive"), (f: ReturnType<typeof recoveryFixture>) => f.close()]) {
+  for (const finish of [
+    (f: ReturnType<typeof recoveryFixture>) => f.window.emit("responsive"),
+    (f: ReturnType<typeof recoveryFixture>) => f.close(),
+  ]) {
     const f = recoveryFixture();
     f.window.emit("unresponsive");
     finish(f);
@@ -69,37 +118,79 @@ test("crash recovery can copy diagnostics, and stale dialog responses cannot rel
 });
 
 test("renderer diagnostics retain useful code coordinates without messages, paths, or arbitrary rejection data", (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dazedtl-diagnostics-"));
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "dazedtl-diagnostics-"),
+  );
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const error = new TypeError("private game text\n    at private (/assets/not-code.js:1:2)");
+  const error = new TypeError(
+    "private game text\n    at private (/assets/not-code.js:1:2)",
+  );
   error.stack = `${error.name}: ${error.message}\n    at render (file:///private/home/app/dist/assets/index-abc.js:25:617)\n    at secret (file:///private/credentials.json:12:3)`;
   const fields = rendererFailure(error, "render");
-  assert.deepEqual(fields.causes, [{ type: "TypeError", frames: [{ file: "app/renderer/assets/index-abc.js", line: 25, column: 617, function: "unknown" }] }]);
+  assert.deepEqual(fields.causes, [
+    {
+      type: "TypeError",
+      frames: [
+        {
+          file: "app/renderer/assets/index-abc.js",
+          line: 25,
+          column: 617,
+          function: "unknown",
+        },
+      ],
+    },
+  ]);
   const diagnostics = new Diagnostics(directory, { app: "fixture" }, root);
-  diagnostics.record("renderer.error", { ...fields, message: error.message, stack: error.stack });
+  diagnostics.record("renderer.error", {
+    ...fields,
+    message: error.message,
+    stack: error.stack,
+  });
   const report = diagnostics.report();
   assert.match(report, /renderer.error/);
   assert.match(report, /index-abc.js/);
   assert.doesNotMatch(report, /private|credentials|not-code/);
-  assert.deepEqual(rendererFailure({ message: "secret", stack: "private" }, "unhandledrejection").causes, [{ type: "Error", frames: [] }]);
+  assert.deepEqual(
+    rendererFailure(
+      { message: "secret", stack: "private" },
+      "unhandledrejection",
+    ).causes,
+    [{ type: "Error", frames: [] }],
+  );
 });
 
 test("desktop bounds fit scaled work areas without enlarging the default window on 4K displays", () => {
-  for (const area of [{width:3840,height:2100},{width:1920,height:1020},{width:1024,height:540},{width:768,height:460}]) {
+  for (const area of [
+    { width: 3840, height: 2100 },
+    { width: 1920, height: 1020 },
+    { width: 1024, height: 540 },
+    { width: 768, height: 460 },
+  ]) {
     const bounds = windowSize(area);
     assert.ok(bounds.width <= area.width && bounds.height <= area.height);
-    assert.ok(bounds.minWidth <= bounds.width && bounds.minHeight <= bounds.height);
+    assert.ok(
+      bounds.minWidth <= bounds.width && bounds.minHeight <= bounds.height,
+    );
   }
-  assert.deepEqual(windowSize({width:3840,height:2100}), windowSize({width:1920,height:1020}));
+  assert.deepEqual(
+    windowSize({ width: 3840, height: 2100 }),
+    windowSize({ width: 1920, height: 1020 }),
+  );
 });
 
 test("Node updates can launch the app while setup retains its exact runtime pin", () => {
-  const expected = fs.readFileSync(path.join(root, ".node-version"), "utf8").trim();
+  const expected = fs
+    .readFileSync(path.join(root, ".node-version"), "utf8")
+    .trim();
   const [major, minor, patch] = expected.split(".").map(Number);
   const descriptor = Object.getOwnPropertyDescriptor(process.versions, "node")!;
   const cases = [
     { version: expected, supported: true, exact: true },
-    { version: `${major}.${minor}.${patch + 1}`, supported: true, exact: false },
+    {
+      version: `${major}.${minor}.${patch + 1}`,
+      supported: true,
+      exact: false,
+    },
     { version: `${major}.${minor + 1}.0`, supported: true, exact: false },
     { version: `${major}.${minor - 1}.0`, supported: false, exact: false },
     { version: `${major + 1}.0.0`, supported: false, exact: false },
@@ -108,11 +199,16 @@ test("Node updates can launch the app while setup retains its exact runtime pin"
   ];
   try {
     for (const { version, supported, exact } of cases) {
-      Object.defineProperty(process.versions, "node", { ...descriptor, value: version });
+      Object.defineProperty(process.versions, "node", {
+        ...descriptor,
+        value: version,
+      });
       if (supported) assert.doesNotThrow(() => requireNode(), version);
       else assert.throws(() => requireNode(), /Use Node/, version);
-      if (exact) assert.doesNotThrow(() => requireNode({ exact: true }), version);
-      else assert.throws(() => requireNode({ exact: true }), /for setup/, version);
+      if (exact)
+        assert.doesNotThrow(() => requireNode({ exact: true }), version);
+      else
+        assert.throws(() => requireNode({ exact: true }), /for setup/, version);
     }
   } finally {
     Object.defineProperty(process.versions, "node", descriptor);

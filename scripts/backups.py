@@ -14,7 +14,11 @@ from dazedtl.translation import backups
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game", required=True, type=Path)
-    parser.add_argument("--legacy-backups", type=Path, help="Optional older profile backup directory for this project")
+    parser.add_argument(
+        "--legacy-backups",
+        type=Path,
+        help="Optional older profile backup directory for this project",
+    )
     commands = parser.add_subparsers(dest="action", required=True)
     commands.add_parser("list")
     verify = commands.add_parser("verify")
@@ -25,7 +29,9 @@ def main():
     args = parser.parse_args()
     try:
         game = args.game.expanduser().resolve(strict=True)
-        legacy = args.legacy_backups or backups.store_path(game) / "legacy-not-configured"
+        legacy = (
+            args.legacy_backups or backups.store_path(game) / "legacy-not-configured"
+        )
         if args.action == "list":
             result = backups.catalog(game, legacy)
         else:
@@ -35,8 +41,12 @@ def main():
                 result = {"id": value["id"], "verified_files": len(value["files"])}
             else:
                 destination = args.destination.expanduser().absolute()
-                if destination.resolve().is_relative_to(game) or game.is_relative_to(destination.resolve()):
-                    raise ValueError("Choose a new restore folder outside the selected game.")
+                if destination.resolve().is_relative_to(game) or game.is_relative_to(
+                    destination.resolve()
+                ):
+                    raise ValueError(
+                        "Choose a new restore folder outside the selected game."
+                    )
                 result = backups.restore(path, destination)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

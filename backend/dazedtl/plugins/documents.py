@@ -9,23 +9,33 @@ import subprocess
 from dazedtl.translation.files import digest, unique_object
 
 JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
-TOKENS = re.compile(r"\$\{[^}]*\}|#\{[^}]*\}|\\(?:[A-Za-z]+\[[^\]]*\]|[A-Za-z.!|^><{}$]|[nrtbfv0])|%(?:\d+\$)?[-+0 #]*\d*(?:\.\d+)?[a-zA-Z%]|\{\d+\}")
+TOKENS = re.compile(
+    r"\$\{[^}]*\}|#\{[^}]*\}|\\(?:[A-Za-z]+\[[^\]]*\]|[A-Za-z.!|^><{}$]|[nrtbfv0])|%(?:\d+\$)?[-+0 #]*\d*(?:\.\d+)?[a-zA-Z%]|\{\d+\}"
+)
 
 
 def decode(value):
-    return json.loads(value, object_pairs_hook=unique_object, parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Non-finite JSON")))
+    return json.loads(
+        value,
+        object_pairs_hook=unique_object,
+        parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Non-finite JSON")),
+    )
 
 
 def leaves(value, path=(), depth=0):
     """Keep a decode marker for every serialization layer, including encoded scalars."""
     if depth > 24:
-        raise ValueError("Parameter serialization exceeds 24 layers; investigate it separately.")
+        raise ValueError(
+            "Parameter serialization exceeds 24 layers; investigate it separately."
+        )
     if isinstance(value, str):
         try:
             inner = decode(value)
         except (ValueError, TypeError):
-            if re.match(r'^\s*(?:\{\s*"|\[\s*["\[{])',value):
-                raise ValueError("A JSON-shaped parameter does not decode; retain it for investigation.")
+            if re.match(r'^\s*(?:\{\s*"|\[\s*["\[{])', value):
+                raise ValueError(
+                    "A JSON-shaped parameter does not decode; retain it for investigation."
+                )
             yield list(path), value
         else:
             if isinstance(inner, (dict, list, str)):
@@ -53,9 +63,13 @@ def replace_leaf(value, path, target):
         changed = replace_leaf(decoded, rest, target)
         return json.dumps(changed, ensure_ascii=False, separators=(",", ":"))
     if isinstance(value, dict) and key in value:
-        value = dict(value); value[key] = replace_leaf(value[key], rest, target); return value
+        value = dict(value)
+        value[key] = replace_leaf(value[key], rest, target)
+        return value
     if isinstance(value, list) and type(key) is int and 0 <= key < len(value):
-        value = list(value); value[key] = replace_leaf(value[key], rest, target); return value
+        value = list(value)
+        value[key] = replace_leaf(value[key], rest, target)
+        return value
     raise ValueError("The decoded parameter path changed.")
 
 
@@ -76,7 +90,9 @@ def same_tree(before, after, changes, path=(), depth=0):
             same_tree(left, right, changes, (*path, "$decode"), depth + 1)
         elif tuple(path) in changes:
             if after != changes[tuple(path)]:
-                raise ValueError("A decoded replacement differs from its reported target.")
+                raise ValueError(
+                    "A decoded replacement differs from its reported target."
+                )
         elif before != after:
             raise ValueError("An unapproved decoded parameter leaf changed.")
     elif isinstance(before, dict):
@@ -100,18 +116,31 @@ class Documents:
         if js:
             node = shutil.which("node")
             if not node:
-                raise ValueError("Install the application's supported Node runtime to validate JavaScript without executing it.")
-            response = subprocess.run([node, str(Path(__file__).with_name("syntax.cjs"))],
-                input=json.dumps({"files": js}, ensure_ascii=False).encode(), capture_output=True, timeout=max(10, len(js) * 6))
+                raise ValueError(
+                    "Install the application's supported Node runtime to validate JavaScript without executing it."
+                )
+            response = subprocess.run(
+                [node, str(Path(__file__).with_name("syntax.cjs"))],
+                input=json.dumps({"files": js}, ensure_ascii=False).encode(),
+                capture_output=True,
+                timeout=max(10, len(js) * 6),
+            )
             if response.returncode:
-                raise ValueError("The local syntax parser is unavailable. Check the application dependencies.")
+                raise ValueError(
+                    "The local syntax parser is unavailable. Check the application dependencies."
+                )
             result.update((row["path"], row) for row in decode(response.stdout))
         for row in files:
             if row["kind"] == "json":
                 try:
                     result[row["path"]] = json_document(row["path"], row["source"])
                 except ValueError as exc:
-                    result[row["path"]] = {"path":row["path"],"issues":["JSON syntax: "+str(exc)],"literals":[],"plugins":[]}
+                    result[row["path"]] = {
+                        "path": row["path"],
+                        "issues": ["JSON syntax: " + str(exc)],
+                        "literals": [],
+                        "plugins": [],
+                    }
         return result
 
 
@@ -119,47 +148,103 @@ def json_document(path, source):
     value = decode(source)
     literals, cursor = [], 0
     decoder = json.JSONDecoder(object_pairs_hook=unique_object)
+
     def space():
         nonlocal cursor
-        while cursor < len(source) and source[cursor].isspace(): cursor += 1
+        while cursor < len(source) and source[cursor].isspace():
+            cursor += 1
+
     def walk(logical):
         nonlocal cursor
-        space(); start = cursor
-        if source[cursor] == '{':
-            cursor += 1; space()
-            if source[cursor] != '}':
+        space()
+        start = cursor
+        if source[cursor] == "{":
+            cursor += 1
+            space()
+            if source[cursor] != "}":
                 while True:
-                    space(); key, end = decoder.raw_decode(source, cursor); cursor = end; space(); cursor += 1
-                    walk([*logical, key]); space()
-                    if source[cursor] == '}': break
+                    space()
+                    key, end = decoder.raw_decode(source, cursor)
+                    cursor = end
+                    space()
+                    cursor += 1
+                    walk([*logical, key])
+                    space()
+                    if source[cursor] == "}":
+                        break
                     cursor += 1
             cursor += 1
-        elif source[cursor] == '[':
-            cursor += 1; space(); index = 0
-            if source[cursor] != ']':
+        elif source[cursor] == "[":
+            cursor += 1
+            space()
+            index = 0
+            if source[cursor] != "]":
                 while True:
-                    walk([*logical, index]); index += 1; space()
-                    if source[cursor] == ']': break
+                    walk([*logical, index])
+                    index += 1
+                    space()
+                    if source[cursor] == "]":
+                        break
                     cursor += 1
             cursor += 1
         else:
-            item, end = decoder.raw_decode(source, cursor); cursor = end
+            item, end = decoder.raw_decode(source, cursor)
+            cursor = end
             if isinstance(item, str):
-                literals.append({"start":len(source[:start].encode()), "end":len(source[:end].encode()), "raw":source[start:end],
-                    "value":item, "path":logical, "kind":"literal", "protected":False, "expressions":[], "line":source[:start].count('\n')+1})
+                literals.append(
+                    {
+                        "start": len(source[:start].encode()),
+                        "end": len(source[:end].encode()),
+                        "raw": source[start:end],
+                        "value": item,
+                        "path": logical,
+                        "kind": "literal",
+                        "protected": False,
+                        "expressions": [],
+                        "line": source[:start].count("\n") + 1,
+                    }
+                )
+
     walk([])
-    return {"path":path, "issues":[], "literals":literals, "plugins":[], "value":value}
+    return {
+        "path": path,
+        "issues": [],
+        "literals": literals,
+        "plugins": [],
+        "value": value,
+    }
 
 
 def occurrences(path, raw, parsed):
-    fingerprint = digest(raw); rows = []
+    fingerprint = digest(raw)
+    rows = []
     for index, literal in enumerate(parsed["literals"]):
         values = leaves(literal["value"])
         for logical, value in values:
-            if not JAPANESE.search(value): continue
-            identity = digest({"path":path,"hash":fingerprint,"span":[literal["start"],literal["end"]],"logical":logical})[:24]
-            rows.append({"id":identity, "file":path, "token":index, "logical":logical, "value":value, "line":literal["line"],
-                         "start":literal["start"], "end":literal["end"], "protected":literal["protected"], "kind":literal["kind"]})
+            if not JAPANESE.search(value):
+                continue
+            identity = digest(
+                {
+                    "path": path,
+                    "hash": fingerprint,
+                    "span": [literal["start"], literal["end"]],
+                    "logical": logical,
+                }
+            )[:24]
+            rows.append(
+                {
+                    "id": identity,
+                    "file": path,
+                    "token": index,
+                    "logical": logical,
+                    "value": value,
+                    "line": literal["line"],
+                    "start": literal["start"],
+                    "end": literal["end"],
+                    "protected": literal["protected"],
+                    "kind": literal["kind"],
+                }
+            )
     return rows
 
 
@@ -168,37 +253,68 @@ def validate(raw, candidate, original, current, approved, targets):
         raise ValueError("Syntax check failed: " + current["issues"][0])
     left, right = original["literals"], current["literals"]
     if len(left) != len(right):
-        raise ValueError("Literal inventory changed; unrelated code or new literals are not allowed.")
+        raise ValueError(
+            "Literal inventory changed; unrelated code or new literals are not allowed."
+        )
     by_token = {}
     for row in approved:
-        if row["id"] not in targets: continue
+        if row["id"] not in targets:
+            continue
         target = targets[row["id"]]
         if not isinstance(target, str) or len(target) > 100_000:
             raise ValueError("Provide a bounded decoded target string.")
-        if TOKENS.findall(row["value"]) != TOKENS.findall(target) or any(row['value'].count(char)!=target.count(char) for char in '\n\t\r'):
-            raise ValueError("Control codes, interpolation or placeholders changed: " + row["id"])
+        if TOKENS.findall(row["value"]) != TOKENS.findall(target) or any(
+            row["value"].count(char) != target.count(char) for char in "\n\t\r"
+        ):
+            raise ValueError(
+                "Control codes, interpolation or placeholders changed: " + row["id"]
+            )
         if JAPANESE.search(target):
-            raise ValueError("Approved occurrence still contains Japanese; revise it or explicitly retain/exclude it.")
+            raise ValueError(
+                "Approved occurrence still contains Japanese; revise it or explicitly retain/exclude it."
+            )
         by_token.setdefault(row["token"], {})[tuple(row["logical"])] = target
     before, after, bpos, apos = [], [], 0, 0
     for index, (a, b) in enumerate(zip(left, right)):
-        if a["kind"] != b["kind"] or a.get("expressions") != b.get("expressions") or a["protected"] != b["protected"]:
+        if (
+            a["kind"] != b["kind"]
+            or a.get("expressions") != b.get("expressions")
+            or a["protected"] != b["protected"]
+        ):
             raise ValueError("Literal kind, embedded code or semantic context changed.")
-        before.append(raw[bpos:a["start"]]); after.append(candidate[apos:b["start"]])
+        before.append(raw[bpos : a["start"]])
+        after.append(candidate[apos : b["start"]])
         if index in by_token:
-            if a["protected"]: raise ValueError("A protected code literal cannot be translated.")
+            if a["protected"]:
+                raise ValueError("A protected code literal cannot be translated.")
             if a["kind"] == "default":
-                if '\n' in b["value"]: raise ValueError("Metadata defaults must remain on their original line.")
+                if "\n" in b["value"]:
+                    raise ValueError(
+                        "Metadata defaults must remain on their original line."
+                    )
                 same_tree(a["value"], b["value"], by_token[index])
             else:
                 if a["raw"][0] != b["raw"][0] or a["raw"][-1] != b["raw"][-1]:
                     raise ValueError("Literal quote style changed.")
                 same_tree(a["value"], b["value"], by_token[index])
-            before.append(b'<approved-text>'); after.append(b'<approved-text>')
+            before.append(b"<approved-text>")
+            after.append(b"<approved-text>")
         else:
-            before.append(raw[a["start"]:a["end"]]); after.append(candidate[b["start"]:b["end"]])
+            before.append(raw[a["start"] : a["end"]])
+            after.append(candidate[b["start"] : b["end"]])
         bpos, apos = a["end"], b["end"]
-    before.append(raw[bpos:]); after.append(candidate[apos:])
-    if b''.join(before) != b''.join(after):
-        raise ValueError("Bytes outside approved literal spans changed. Restore unrelated code and formatting.")
-    return {"boundaries":True,"protectedLookups":True,"structure":True,"syntax":True,"decodedTargets":True,"controlTokens":True,"residual":True}
+    before.append(raw[bpos:])
+    after.append(candidate[apos:])
+    if b"".join(before) != b"".join(after):
+        raise ValueError(
+            "Bytes outside approved literal spans changed. Restore unrelated code and formatting."
+        )
+    return {
+        "boundaries": True,
+        "protectedLookups": True,
+        "structure": True,
+        "syntax": True,
+        "decodedTargets": True,
+        "controlTokens": True,
+        "residual": True,
+    }

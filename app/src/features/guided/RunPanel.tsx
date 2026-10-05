@@ -18,9 +18,16 @@ export function Estimate({ value }: { value: Record<string, unknown> }) {
   return (
     <dl className="estimate">
       {fields
-        .filter(([key]) => typeof value[key] === "number" &&
-          !(key === "request_count" && typeof value.requests === "number") &&
-          !(key === "batch_cost" && typeof value.batch_cached_cost === "number" && value.batch_cost === value.batch_cached_cost))
+        .filter(
+          ([key]) =>
+            typeof value[key] === "number" &&
+            !(key === "request_count" && typeof value.requests === "number") &&
+            !(
+              key === "batch_cost" &&
+              typeof value.batch_cached_cost === "number" &&
+              value.batch_cost === value.batch_cached_cost
+            ),
+        )
         .map(([key, label]) => (
           <div key={key}>
             <dt>{label}</dt>
@@ -63,18 +70,74 @@ export default function RunPanel({
   return (
     <section className="ui-section run-panel">
       <div className="section-heading">
-        {!hideTitle && <h2>{job.mode === "estimate" ? "Cost estimate" : "Translation run"}</h2>}
+        {!hideTitle && (
+          <h2>
+            {job.mode === "estimate" ? "Cost estimate" : "Translation run"}
+          </h2>
+        )}
         <span className="badge">{job.status}</span>
       </div>
       <p>{job.message}</p>
-      <ProcessPanel job={job} readPayload={projectId ? index => api.guided.payload(projectId, job.id, index) : undefined}
-        readNames={projectId ? offset => api.guided.nameResults(projectId, job.id, offset) : undefined} />
-      {job.files && <details><summary>Frozen file scope</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
-      {job.eventTextReview && <details><summary>Saved event text review</summary>
-        <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
-        {job.eventTextReview.settings && <dl>{Object.entries(job.eventTextReview.settings).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value)}</dd></div>)}</dl>}
-      </details>}
-      {active && job.mode === "batch" && <p className="muted">Submitted Batches are monitored automatically. Open Run history to inspect progress.</p>}
+      <ProcessPanel
+        job={job}
+        readPayload={
+          projectId
+            ? (index) => api.guided.payload(projectId, job.id, index)
+            : undefined
+        }
+        readNames={
+          projectId
+            ? (offset) => api.guided.nameResults(projectId, job.id, offset)
+            : undefined
+        }
+      />
+      {job.files && (
+        <details>
+          <summary>Frozen file scope</summary>
+          <ul>
+            {job.files.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {job.eventTextReview && (
+        <details>
+          <summary>Saved event text review</summary>
+          <p>
+            {job.eventTextReview.literalBased
+              ? "Reviewed literal-based comparison coverage."
+              : job.eventTextReview.manual?.length
+                ? "Manual overrides: " +
+                  job.eventTextReview.manual.join(", ") +
+                  ". Reason: " +
+                  job.eventTextReview.reason
+                : "Reviewed investigation recommendations."}
+          </p>
+          {job.eventTextReview.settings && (
+            <dl>
+              {Object.entries(job.eventTextReview.settings).map(
+                ([key, value]) => (
+                  <div key={key}>
+                    <dt>{key}</dt>
+                    <dd>
+                      {Array.isArray(value)
+                        ? value.join(", ") || "None"
+                        : String(value)}
+                    </dd>
+                  </div>
+                ),
+              )}
+            </dl>
+          )}
+        </details>
+      )}
+      {active && job.mode === "batch" && (
+        <p className="muted">
+          Submitted Batches are monitored automatically. Open Run history to
+          inspect progress.
+        </p>
+      )}
       {job.progress && (
         <>
           <progress
@@ -87,7 +150,12 @@ export default function RunPanel({
           </p>
         </>
       )}
-      {job.estimate && <details><summary>Cost estimate</summary><Estimate value={job.estimate} /></details>}
+      {job.estimate && (
+        <details>
+          <summary>Cost estimate</summary>
+          <Estimate value={job.estimate} />
+        </details>
+      )}
       {job.approval && (
         <div className="approval">
           <h3>
@@ -133,23 +201,38 @@ export default function RunPanel({
       )}
       <div className="actions">
         {active && job.mode !== "batch" ? (
-          <Button size="comfortable" disabled={busy} pending={pendingKey === "run:stop"} onClick={stop}>
+          <Button
+            size="comfortable"
+            disabled={busy}
+            pending={pendingKey === "run:stop"}
+            onClick={stop}
+          >
             Stop after current work
           </Button>
         ) : canResumeRun(job) ? (
-          <Button size="comfortable" disabled={busy || job.process?.retryBlocked && !(job.mode === "batch" && job.phase?.startsWith("poll"))} onClick={resume}>
+          <Button
+            size="comfortable"
+            disabled={
+              busy ||
+              (job.process?.retryBlocked &&
+                !(job.mode === "batch" && job.phase?.startsWith("poll")))
+            }
+            onClick={resume}
+          >
             Resume with saved settings
           </Button>
         ) : null}
-        {job.status === "complete" && Object.keys(job.outputs || {}).length > 0 && apply && (
-              <Button
-                size="comfortable"
-                variant="primary"
-                onClick={apply}
-                disabled={busy}
-              >
-                Review & apply outputs
-              </Button>
+        {job.status === "complete" &&
+          Object.keys(job.outputs || {}).length > 0 &&
+          apply && (
+            <Button
+              size="comfortable"
+              variant="primary"
+              onClick={apply}
+              disabled={busy}
+            >
+              Review & apply outputs
+            </Button>
           )}
       </div>
       <Message message={error} />

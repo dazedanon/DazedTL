@@ -42,15 +42,31 @@ class RunStore:
         job = read_json(folder / "job.json")
         if not isinstance(job, dict) or job.get("version") != 1:
             raise ValueError("Unsupported saved run record.")
-        if job.get("id") != identity or project_id is not None and job.get("project_id") != project_id:
+        if (
+            job.get("id") != identity
+            or project_id is not None
+            and job.get("project_id") != project_id
+        ):
             raise ValueError("This run belongs to another project.")
-        if not isinstance(job.get("states"), dict) or not isinstance(job.get("unit_counts"), dict) or not isinstance(job.get("fingerprints"), dict):
+        if (
+            not isinstance(job.get("states"), dict)
+            or not isinstance(job.get("unit_counts"), dict)
+            or not isinstance(job.get("fingerprints"), dict)
+        ):
             raise ValueError("The saved run index is incomplete.")
-        if set(job["states"]) != set(job["unit_counts"]) or set(job["states"]) != set(job["fingerprints"]):
-            raise ValueError("The saved run index no longer matches its request states.")
+        if set(job["states"]) != set(job["unit_counts"]) or set(job["states"]) != set(
+            job["fingerprints"]
+        ):
+            raise ValueError(
+                "The saved run index no longer matches its request states."
+            )
         if job["kind"] == "operation" and "action" not in job:
             plan = read_json(folder / "plan.json")
-            if not isinstance(plan, dict) or plan.get("version") != 1 or digest(plan) != job["plan_sha256"]:
+            if (
+                not isinstance(plan, dict)
+                or plan.get("version") != 1
+                or digest(plan) != job["plan_sha256"]
+            ):
                 raise ValueError("The saved operation plan changed.")
             job["action"] = plan.get("action")
             # Enrich older indexes once, retaining their original timestamps and plan.
@@ -61,7 +77,11 @@ class RunStore:
         folder = self.folder(identity)
         job = self.record(identity, project_id)
         plan = read_json(folder / "plan.json")
-        if not isinstance(plan, dict) or plan.get("version") != 1 or digest(plan) != job["plan_sha256"]:
+        if (
+            not isinstance(plan, dict)
+            or plan.get("version") != 1
+            or digest(plan) != job["plan_sha256"]
+        ):
             raise ValueError("The saved request plan changed. It cannot be executed.")
         return job, plan
 
@@ -78,20 +98,52 @@ class RunStore:
         if plan["kind"] == "translation":
             results = Results(plan["source"])
             for request in plan["requests"]:
-                states[request["id"]] = {"state": "accepted" if results.get(request) else "pending", "message": ""}
-        job = {"version": 1, "id": identity, "project_id": project_id, "source": plan["source"],
-               "kind": plan["kind"], "label": plan.get("label", "Translation"), "created": now(), "updated": now(),
-               "status": "ready", "message": "Ready", "plan_sha256": digest(plan), "states": states,
-               "mode": plan.get("configuration", {}).get("mode"),
-               "action": plan.get("action") if plan["kind"] == "operation" else None,
-               "unit_counts": {row["id"]: len(row["sources"]) for row in plan.get("requests", [])},
-               "fingerprints": {row["id"]: row["fingerprint"] for row in plan.get("requests", [])},
-               "qa_requests": [{"id": row["id"], "index": index, "notes": len(row["context"].get("qa_notes", {}))}
-                               for index, row in enumerate(plan.get("requests", [])) if row["context"].get("qa_notes")],
-               "quote": quote, "approval_token": uuid.uuid4().hex if quote is not None else "",
-               "approved": False, "batches": [], "result": None, "usage": {}}
+                states[request["id"]] = {
+                    "state": "accepted" if results.get(request) else "pending",
+                    "message": "",
+                }
+        job = {
+            "version": 1,
+            "id": identity,
+            "project_id": project_id,
+            "source": plan["source"],
+            "kind": plan["kind"],
+            "label": plan.get("label", "Translation"),
+            "created": now(),
+            "updated": now(),
+            "status": "ready",
+            "message": "Ready",
+            "plan_sha256": digest(plan),
+            "states": states,
+            "mode": plan.get("configuration", {}).get("mode"),
+            "action": plan.get("action") if plan["kind"] == "operation" else None,
+            "unit_counts": {
+                row["id"]: len(row["sources"]) for row in plan.get("requests", [])
+            },
+            "fingerprints": {
+                row["id"]: row["fingerprint"] for row in plan.get("requests", [])
+            },
+            "qa_requests": [
+                {
+                    "id": row["id"],
+                    "index": index,
+                    "notes": len(row["context"].get("qa_notes", {})),
+                }
+                for index, row in enumerate(plan.get("requests", []))
+                if row["context"].get("qa_notes")
+            ],
+            "quote": quote,
+            "approval_token": uuid.uuid4().hex if quote is not None else "",
+            "approved": False,
+            "batches": [],
+            "result": None,
+            "usage": {},
+        }
         if states and all(item["state"] == "accepted" for item in states.values()):
-            job.update(status="complete", message="All requested translations are already saved.")
+            job.update(
+                status="complete",
+                message="All requested translations are already saved.",
+            )
         self.save(job)
         return job
 
@@ -103,9 +155,16 @@ class RunStore:
             raise ValueError("The approval key must be a regular workspace file.")
         if not key.exists():
             write_bytes(key, secrets.token_bytes(32))
-        receipt = {"run_id": job["id"], "project_id": job["project_id"], "plan_sha256": job["plan_sha256"],
-                   "quote_sha256": digest(job["quote"]), "approved_at": now()}
-        receipt["signature"] = hmac.new(key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256).hexdigest()
+        receipt = {
+            "run_id": job["id"],
+            "project_id": job["project_id"],
+            "plan_sha256": job["plan_sha256"],
+            "quote_sha256": digest(job["quote"]),
+            "approved_at": now(),
+        }
+        receipt["signature"] = hmac.new(
+            key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256
+        ).hexdigest()
         write_json(self.folder(job["id"]) / "authorization.json", receipt)
         job["approved"] = True
         self.save(job)
@@ -117,10 +176,23 @@ class RunStore:
             return False
         receipt = read_json(path, limit=4096)
         signature = receipt.pop("signature", "")
-        expected = {"run_id": job["id"], "project_id": job["project_id"], "plan_sha256": job["plan_sha256"],
-                    "quote_sha256": digest(job["quote"]), "approved_at": receipt.get("approved_at")}
-        return receipt == expected and isinstance(signature, str) and hmac.compare_digest(
-            signature, hmac.new(key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256).hexdigest())
+        expected = {
+            "run_id": job["id"],
+            "project_id": job["project_id"],
+            "plan_sha256": job["plan_sha256"],
+            "quote_sha256": digest(job["quote"]),
+            "approved_at": receipt.get("approved_at"),
+        }
+        return (
+            receipt == expected
+            and isinstance(signature, str)
+            and hmac.compare_digest(
+                signature,
+                hmac.new(
+                    key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256
+                ).hexdigest(),
+            )
+        )
 
     def list(self, project_id):
         result = []
@@ -131,7 +203,11 @@ class RunStore:
             try:
                 value = self.record(path.parent.name)
             except (ValueError, OSError, KeyError, TypeError):
-                self.warnings.append("Saved run " + path.parent.name + " could not be read; its files were retained.")
+                self.warnings.append(
+                    "Saved run "
+                    + path.parent.name
+                    + " could not be read; its files were retained."
+                )
                 continue
             if project_id is None or value.get("project_id") == project_id:
                 result.append(value)
@@ -148,24 +224,78 @@ class RunStore:
         write_json(self.folder(identity) / "stop.json", {"requested": now()})
 
     def view(self, job):
-        counts = {state: sum(row["state"] == state for row in job["states"].values())
-                  for state in ("pending", "sending", "queued", "accepted", "failed", "uncertain")}
-        return {key: job[key] for key in ("id", "project_id", "kind", "label", "status", "message", "created", "updated",
-                                         "quote", "approval_token", "approved", "result", "usage")} | {
+        counts = {
+            state: sum(row["state"] == state for row in job["states"].values())
+            for state in (
+                "pending",
+                "sending",
+                "queued",
+                "accepted",
+                "failed",
+                "uncertain",
+            )
+        }
+        return {
+            key: job[key]
+            for key in (
+                "id",
+                "project_id",
+                "kind",
+                "label",
+                "status",
+                "message",
+                "created",
+                "updated",
+                "quote",
+                "approval_token",
+                "approved",
+                "result",
+                "usage",
+            )
+        } | {
             # Retired terminal labels do not alter stored receipts or retry guards.
-            "status": job["status"] if job["status"] in {
-                "ready", "running", "waiting", "complete", "failed", "uncertain", "stopped", "interrupted", "canceled"
-            } else "failed",
-            "mode": job["mode"], "action": job.get("action"), "counts": counts,
+            "status": job["status"]
+            if job["status"]
+            in {
+                "ready",
+                "running",
+                "waiting",
+                "complete",
+                "failed",
+                "uncertain",
+                "stopped",
+                "interrupted",
+                "canceled",
+            }
+            else "failed",
+            "mode": job["mode"],
+            "action": job.get("action"),
+            "counts": counts,
             "approved": self.authorized(job),
             "units": sum(job["unit_counts"].values()),
-            "accepted_units": sum(count for identity, count in job["unit_counts"].items() if job["states"][identity]["state"] == "accepted"),
-            "requests": len(job["states"]), "batches": [{key: chunk.get(key) for key in ("id", "state", "api_status", "counts", "cancel_error")} for chunk in job["batches"]],
+            "accepted_units": sum(
+                count
+                for identity, count in job["unit_counts"].items()
+                if job["states"][identity]["state"] == "accepted"
+            ),
+            "requests": len(job["states"]),
+            "batches": [
+                {
+                    key: chunk.get(key)
+                    for key in ("id", "state", "api_status", "counts", "cancel_error")
+                }
+                for chunk in job["batches"]
+            ],
             "qa_requests": job.get("qa_requests", []),
             "stop_requested": self.stopped(job["id"]),
-            "can_cancel_provider": (job.get("quote") or {}).get("provider") != "openrouter",
+            "can_cancel_provider": (job.get("quote") or {}).get("provider")
+            != "openrouter",
             "cancel_requested": self.cancel_requested(job["id"]),
-            "issues": [{"id": key, **value} for key, value in job["states"].items() if value["state"] in {"failed", "uncertain"}],
+            "issues": [
+                {"id": key, **value}
+                for key, value in job["states"].items()
+                if value["state"] in {"failed", "uncertain"}
+            ],
         }
 
     def overlapping(self, project_id, fingerprints, exclude=None):
@@ -173,10 +303,20 @@ class RunStore:
             if job["id"] == exclude or job["kind"] != "translation":
                 continue
             for identity, fingerprint in job["fingerprints"].items():
-                if fingerprint in fingerprints and job["states"][identity]["state"] in {"sending", "queued", "uncertain"}:
-                    raise ValueError("Matching work is still in flight or uncertain in run " + job["id"] + ". Reconcile that run first.")
+                if fingerprint in fingerprints and job["states"][identity]["state"] in {
+                    "sending",
+                    "queued",
+                    "uncertain",
+                }:
+                    raise ValueError(
+                        "Matching work is still in flight or uncertain in run "
+                        + job["id"]
+                        + ". Reconcile that run first."
+                    )
         if self.warnings:
-            raise ValueError("An unreadable saved run must be recovered before submitting more work.")
+            raise ValueError(
+                "An unreadable saved run must be recovered before submitting more work."
+            )
 
 
 class Jobs:
@@ -190,12 +330,19 @@ class Jobs:
         # The app owns workers. A previous process must not be restarted implicitly.
         for value in self.store.list(None):
             if value["status"] in {"running", "waiting"}:
-                value.update(status="interrupted", message="The app closed. Resume to reconcile saved work.")
+                value.update(
+                    status="interrupted",
+                    message="The app closed. Resume to reconcile saved work.",
+                )
                 self.store.save(value)
 
     def running(self, project_id=None):
         self.reconcile()
-        if any(project_id is None or self.store.record(identity)["project_id"] == project_id for identity in self.processes):
+        if any(
+            project_id is None
+            or self.store.record(identity)["project_id"] == project_id
+            for identity in self.processes
+        ):
             return True
         for job in self.store.list(project_id):
             if job["status"] not in {"running", "waiting", "interrupted"}:
@@ -215,7 +362,10 @@ class Jobs:
             self.processes.pop(identity)
             job, _plan = self.store.load(identity)
             if job["status"] in {"running", "waiting"}:
-                job.update(status="interrupted", message="The worker exited before completion. Resume to reconcile receipts before sending more work.")
+                job.update(
+                    status="interrupted",
+                    message="The worker exited before completion. Resume to reconcile receipts before sending more work.",
+                )
                 self.store.save(job)
 
     def start(self, identity, project_id):
@@ -224,41 +374,99 @@ class Jobs:
         if identity in self.processes or job["status"] == "complete":
             return self.store.view(job)
         if self.running(project_id):
-            raise ValueError("Wait for this project's current operation to reach a checkpoint.")
+            raise ValueError(
+                "Wait for this project's current operation to reach a checkpoint."
+            )
         try:
             lock = WorkspaceLock(self.store.folder(identity))
         except WorkspaceError as exc:
-            raise ValueError("A previous worker is still finishing this run. Wait for its saved checkpoint.") from exc
+            raise ValueError(
+                "A previous worker is still finishing this run. Wait for its saved checkpoint."
+            ) from exc
         else:
             lock.close()
         if plan["kind"] == "translation":
             if plan["configuration"]["mode"] == "agent":
-                raise ValueError("Use the starting prompt and import the agent's saved results.")
+                raise ValueError(
+                    "Use the starting prompt and import the agent's saved results."
+                )
             if not self.allow_providers:
                 raise ValueError("Provider execution is disabled in this app session.")
             if not self.store.authorized(job):
-                raise ValueError("Review and approve this run's exact estimate before execution.")
-            self.store.overlapping(project_id, {row["fingerprint"] for row in plan["requests"]}, exclude=identity)
+                raise ValueError(
+                    "Review and approve this run's exact estimate before execution."
+                )
+            self.store.overlapping(
+                project_id,
+                {row["fingerprint"] for row in plan["requests"]},
+                exclude=identity,
+            )
         if job["status"] == "uncertain":
-            raise ValueError("Reconcile the uncertain provider submission before resuming.")
+            raise ValueError(
+                "Reconcile the uncertain provider submission before resuming."
+            )
         stop = self.store.folder(identity) / "stop.json"
         stop.unlink(missing_ok=True)
         job.update(status="running", message="Starting from saved checkpoints.")
         self.store.save(job)
-        environment = {key: value for key, value in os.environ.items() if key in {
-            "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
-            "LOCALAPPDATA", "HOME", "USERPROFILE", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM"}}
-        environment.update(PYTHON_DOTENV_DISABLED="1", PYTHONNOUSERSITE="1", PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1")
-        arguments = [sys.executable, "-I", "-B", str(Path(__file__).with_name("worker.py")),
-                     "--workspace", str(self.store.workspace), "--run", identity,
-                     "--owner-pid", str(os.getpid()), "--owner-token", self.owner_token]
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key
+            in {
+                "PATH",
+                "SYSTEMROOT",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "TMPDIR",
+                "LANG",
+                "LC_ALL",
+                "LD_LIBRARY_PATH",
+                "DYLD_LIBRARY_PATH",
+                "LOCALAPPDATA",
+                "HOME",
+                "USERPROFILE",
+                "GIT_CONFIG_GLOBAL",
+                "GIT_CONFIG_NOSYSTEM",
+                "GIT_ATTR_NOSYSTEM",
+            }
+        }
+        environment.update(
+            PYTHON_DOTENV_DISABLED="1",
+            PYTHONNOUSERSITE="1",
+            PYTHONUTF8="1",
+            PYTHONDONTWRITEBYTECODE="1",
+        )
+        arguments = [
+            sys.executable,
+            "-I",
+            "-B",
+            str(Path(__file__).with_name("worker.py")),
+            "--workspace",
+            str(self.store.workspace),
+            "--run",
+            identity,
+            "--owner-pid",
+            str(os.getpid()),
+            "--owner-token",
+            self.owner_token,
+        ]
         try:
             # Only structured job records cross into the UI; raw provider output is never logged.
-            self.processes[identity] = subprocess.Popen(arguments, cwd=self.store.folder(identity), env=environment,
-                                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                                        start_new_session=os.name != "nt")
+            self.processes[identity] = subprocess.Popen(
+                arguments,
+                cwd=self.store.folder(identity),
+                env=environment,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=os.name != "nt",
+            )
         except OSError:
-            job.update(status="failed", message="The worker could not start; no requests were submitted.")
+            job.update(
+                status="failed",
+                message="The worker could not start; no requests were submitted.",
+            )
             self.store.save(job)
             raise
         return self.store.view(job)
@@ -269,7 +477,9 @@ class Jobs:
             job, _plan = self.store.load(identity)
             self.store.stop(identity, job["project_id"])
         deadline = time.monotonic() + 4
-        while time.monotonic() < deadline and any(process.poll() is None for process in self.processes.values()):
+        while time.monotonic() < deadline and any(
+            process.poll() is None for process in self.processes.values()
+        ):
             time.sleep(0.05)
         for process in self.processes.values():
             if process.poll() is None:

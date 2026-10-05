@@ -15,18 +15,38 @@ from dazedtl.translation.service import OPERATIONS
 def call(workspace, method, params):
     path = Path(workspace).expanduser().resolve() / "agent-connection.json"
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
-        raise ValueError("Open DazedTL with this workspace before continuing the project.")
+        raise ValueError(
+            "Open DazedTL with this workspace before continuing the project."
+        )
     connection = json.loads(path.read_text(encoding="utf-8"))
-    protocol = json.loads((Path(__file__).resolve().parents[1] / "backend/dazedtl/api/protocol.json").read_text(encoding="utf-8"))
-    if connection["version"] != protocol["version"] or type(connection.get("port")) is not int or not 1 <= connection["port"] <= 65535:
+    protocol = json.loads(
+        (
+            Path(__file__).resolve().parents[1] / "backend/dazedtl/api/protocol.json"
+        ).read_text(encoding="utf-8")
+    )
+    if (
+        connection["version"] != protocol["version"]
+        or type(connection.get("port")) is not int
+        or not 1 <= connection["port"] <= 65535
+    ):
         raise ValueError("Restart DazedTL and use its current project helper.")
-    request = urllib.request.Request("http://127.0.0.1:" + str(connection["port"]) + "/rpc",
-        data=json.dumps({"version": protocol["version"], "method": method, "params": params}).encode("utf-8"),
-        headers={"Authorization": "Bearer " + connection["token"], "Content-Type": "application/json"}, method="POST")
+    request = urllib.request.Request(
+        "http://127.0.0.1:" + str(connection["port"]) + "/rpc",
+        data=json.dumps(
+            {"version": protocol["version"], "method": method, "params": params}
+        ).encode("utf-8"),
+        headers={
+            "Authorization": "Bearer " + connection["token"],
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
     # Credentials for the local control endpoint must never pass through a proxy.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *_args, **_kwargs):
             return None
+
     client = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     try:
         with client.open(request, timeout=120) as response:
@@ -50,37 +70,88 @@ def main():
     parser.add_argument("--project", required=True)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("state")
-    commands.add_parser("images", help="Read the selected project's indexed images, scoped handoffs and saved reports")
-    plugins = commands.add_parser("plugins", help="Read plugin work or continue the copied agent task after saving its report")
-    plugins.add_argument("--continue-request", help="Exact active request ID; checks the report and returns the next stage without publishing game files")
+    commands.add_parser(
+        "images",
+        help="Read the selected project's indexed images, scoped handoffs and saved reports",
+    )
+    plugins = commands.add_parser(
+        "plugins",
+        help="Read plugin work or continue the copied agent task after saving its report",
+    )
+    plugins.add_argument(
+        "--continue-request",
+        help="Exact active request ID; checks the report and returns the next stage without publishing game files",
+    )
     commands.add_parser("prepare")
-    commands.add_parser("backups", help="List local restore points and older profile backups")
-    speakers = commands.add_parser("speakers", help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls")
+    commands.add_parser(
+        "backups", help="List local restore points and older profile backups"
+    )
+    speakers = commands.add_parser(
+        "speakers",
+        help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
+    )
     speakers.add_argument("--scan", action="store_true")
-    commands.add_parser("event-text", help="Read the current Other event text investigation request and validated findings")
-    commands.add_parser("context", help="Read verified context investigation results and current document revisions")
+    commands.add_parser(
+        "event-text",
+        help="Read the current Other event text investigation request and validated findings",
+    )
+    commands.add_parser(
+        "context",
+        help="Read verified context investigation results and current document revisions",
+    )
     commands.add_parser("plan-format")
     identify = commands.add_parser("identify")
     identify.add_argument("--engine", required=True)
     identify.add_argument("--evidence", required=True)
-    legacy = commands.add_parser("legacy", help="Recover the selected game's saved phased run")
-    legacy.add_argument("--action", choices=("resume", "stop", "answer", "export"), required=True)
+    legacy = commands.add_parser(
+        "legacy", help="Recover the selected game's saved phased run"
+    )
+    legacy.add_argument(
+        "--action", choices=("resume", "stop", "answer", "export"), required=True
+    )
     legacy.add_argument("--token", default="")
     legacy.add_argument("--approved", action="store_true")
-    operation = commands.add_parser("operation", help="Start a saved engine/setup/delivery operation; inspect its ID with run")
+    operation = commands.add_parser(
+        "operation",
+        help="Start a saved engine/setup/delivery operation; inspect its ID with run",
+    )
     operation.add_argument("action", choices=sorted(OPERATIONS))
-    operation.epilog = "Arguments by operation: " + "; ".join(name + " (" + ", ".join(sorted(fields)) + ")" for name, (_label, fields) in OPERATIONS.items())
-    operation.add_argument("--arguments", default="{}", help="JSON object; use --arguments-file for complex paths")
+    operation.epilog = "Arguments by operation: " + "; ".join(
+        name + " (" + ", ".join(sorted(fields)) + ")"
+        for name, (_label, fields) in OPERATIONS.items()
+    )
+    operation.add_argument(
+        "--arguments",
+        default="{}",
+        help="JSON object; use --arguments-file for complex paths",
+    )
     operation.add_argument("--arguments-file", type=Path)
     compile_plan = commands.add_parser("compile")
     compile_plan.add_argument("--input", required=True)
-    for name in ("run", "stop", "start", "request", "accept", "review", "attach-batch", "resolve-uncertain"):
+    for name in (
+        "run",
+        "stop",
+        "start",
+        "request",
+        "accept",
+        "review",
+        "attach-batch",
+        "resolve-uncertain",
+    ):
         child = commands.add_parser(name)
         child.add_argument("--run", required=True)
         if name == "stop":
-            child.add_argument("--cancel-provider", action="store_true", help="Request provider cancellation and retain completed results")
+            child.add_argument(
+                "--cancel-provider",
+                action="store_true",
+                help="Request provider cancellation and retain completed results",
+            )
         if name == "start":
-            child.add_argument("--approve", default="", help="Exact quote token, only after the user's spending authorization")
+            child.add_argument(
+                "--approve",
+                default="",
+                help="Exact quote token, only after the user's spending authorization",
+            )
         if name == "request":
             child.add_argument("--index", type=int, required=True)
             child.add_argument("--output", type=Path)
@@ -91,7 +162,11 @@ def main():
         if name in {"review", "resolve-uncertain"}:
             child.add_argument("--request-sha256", required=True)
         if name == "resolve-uncertain":
-            child.add_argument("--retry-reviewed", action="store_true", help="Only after checking whether the previous Live request was billed")
+            child.add_argument(
+                "--retry-reviewed",
+                action="store_true",
+                help="Only after checking whether the previous Live request was billed",
+            )
         if name == "attach-batch":
             child.add_argument("--index", type=int, required=True)
             child.add_argument("--provider-job", required=True)
@@ -100,17 +175,32 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "plan-format":
-            result = {"version": 2, "complete": False, "inputs": [".dazedtl/len-method/work/source-units.json"], "batches": [{
-                "id": "scene-01", "sources": {"scene-01/line-1": "はい。"}, "speakers": {"scene-01/line-1": None},
-                "kinds": {"scene-01/line-1": "dialogue"}, "qa_notes": {},
-                "source_context": "", "scene_context": "", "constraints": {"scene-01/line-1": {"tokens": []}}}]}
+            result = {
+                "version": 2,
+                "complete": False,
+                "inputs": [".dazedtl/len-method/work/source-units.json"],
+                "batches": [
+                    {
+                        "id": "scene-01",
+                        "sources": {"scene-01/line-1": "はい。"},
+                        "speakers": {"scene-01/line-1": None},
+                        "kinds": {"scene-01/line-1": "dialogue"},
+                        "qa_notes": {},
+                        "source_context": "",
+                        "scene_context": "",
+                        "constraints": {"scene-01/line-1": {"tokens": []}},
+                    }
+                ],
+            }
         else:
             params = {"project_id": args.project}
             method = "translation_" + args.command.replace("-", "_")
             if args.command == "images":
                 method = "images_state"
             if args.command == "plugins":
-                method = "plugins_continue" if args.continue_request else "plugins_state"
+                method = (
+                    "plugins_continue" if args.continue_request else "plugins_state"
+                )
                 if args.continue_request:
                     params["request_id"] = args.continue_request
             if hasattr(args, "run"):
@@ -140,9 +230,18 @@ def main():
             if args.command == "speakers":
                 params["scan"] = args.scan
             if args.command == "legacy":
-                params.update(action=args.action, token=args.token, approved=args.approved)
+                params.update(
+                    action=args.action, token=args.token, approved=args.approved
+                )
             if args.command == "operation":
-                params.update(action=args.action, arguments=json.loads(args.arguments_file.read_text(encoding="utf-8") if args.arguments_file else args.arguments))
+                params.update(
+                    action=args.action,
+                    arguments=json.loads(
+                        args.arguments_file.read_text(encoding="utf-8")
+                        if args.arguments_file
+                        else args.arguments
+                    ),
+                )
             result = call(args.workspace, method, params)
         rendered = json.dumps(result, ensure_ascii=False, indent=2)
         if getattr(args, "output", None):

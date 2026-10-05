@@ -1,6 +1,12 @@
 export type ImageDiscoveryScope = "all" | "folders" | "selected";
 export type ImageEntryMode = "discovery" | "manual" | "findings" | "review";
-export type ImageClassification = "recommended" | "uncertain" | "no_text" | "already_english" | "not_examined" | "excluded";
+export type ImageClassification =
+  | "recommended"
+  | "uncertain"
+  | "no_text"
+  | "already_english"
+  | "not_examined"
+  | "excluded";
 export interface ImageView {
   query: string;
   status: string;
@@ -77,7 +83,13 @@ export interface ImageManagerState {
   projectId: string;
   name: string;
   engine: string;
-  profile: { id: string; label: string; imageRoot?: string; supported: boolean; reason?: string };
+  profile: {
+    id: string;
+    label: string;
+    imageRoot?: string;
+    supported: boolean;
+    reason?: string;
+  };
   source: string;
   revision: string;
   observationRevision?: string;
@@ -92,7 +104,14 @@ export interface ImageManagerState {
   warnings: string[];
   editableRoot?: string;
   supported?: boolean;
-  job?: { id?: string; status: string; message?: string; current?: number; total?: number; progress?: { current: number; total: number; file?: string } } | null;
+  job?: {
+    id?: string;
+    status: string;
+    message?: string;
+    current?: number;
+    total?: number;
+    progress?: { current: number; total: number; file?: string };
+  } | null;
 }
 export interface ImageDraft {
   selection: string[];
@@ -110,7 +129,13 @@ export interface ImageList {
 export interface ImagePreview {
   token: string;
   action: string;
-  assets: { id: string; path: string; destination: string; sourceHash: string; candidateHash: string }[];
+  assets: {
+    id: string;
+    path: string;
+    destination: string;
+    sourceHash: string;
+    candidateHash: string;
+  }[];
   blocked: { id: string; path: string; reason: string }[];
   included: number;
   count: number;

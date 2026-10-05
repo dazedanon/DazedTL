@@ -12,13 +12,15 @@ export function JobStatus({
   // Older saved operations also carry generic completion wording. Keep any
   // useful detail following it without repeating the heading and state.
   const message = job.message.trim();
-  const completion = job.status === "complete"
-    ? [
-      `${job.label} completed.`,
-      `Completed: ${job.label}`,
-    ].find((prefix) => message === prefix ||
-      (message.startsWith(prefix) && /^\s/.test(message.slice(prefix.length))))
-    : undefined;
+  const completion =
+    job.status === "complete"
+      ? [`${job.label} completed.`, `Completed: ${job.label}`].find(
+          (prefix) =>
+            message === prefix ||
+            (message.startsWith(prefix) &&
+              /^\s/.test(message.slice(prefix.length))),
+        )
+      : undefined;
   const detail = completion ? message.slice(completion.length).trim() : message;
 
   return (
@@ -35,7 +37,8 @@ export function JobStatus({
           ) : job.status === "complete" ? (
             <Check size={15} aria-hidden="true" />
           ) : null}
-          {compact && !active && "Last run: "}{job.status.replaceAll("_", " ")}
+          {compact && !active && "Last run: "}
+          {job.status.replaceAll("_", " ")}
         </span>
       </div>
       {detail && <p>{detail}</p>}

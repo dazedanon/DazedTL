@@ -13,7 +13,9 @@ export function requireNode({ exact = false } = {}) {
     .trim();
   const current = process.versions.node;
   const [major, minor, patch] = expected.split(".").map(Number);
-  const [currentMajor, currentMinor, currentPatch] = current.split(".").map(Number);
+  const [currentMajor, currentMinor, currentPatch] = current
+    .split(".")
+    .map(Number);
   const compatible =
     /^\d+\.\d+\.\d+$/.test(current) &&
     currentMajor === major &&

@@ -43,17 +43,27 @@ class Application:
         self.backend = ExistingBackend(self.workspace / "engine", allow_providers)
         with self.backend.context():
             self.settings = Settings(self.workspace, self.backend)
-        self.translation = Translation(self.workspace, self.projects, self.settings,
-                                       TranslationEngine(self.workspace / "engine"))
-        self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
-        self.images = ImageService(self.projects, self.translation, self.settings, self.backend)
+        self.translation = Translation(
+            self.workspace,
+            self.projects,
+            self.settings,
+            TranslationEngine(self.workspace / "engine"),
+        )
+        self.guided = Guided(
+            self.backend, self.projects, self.settings, self.translation
+        )
+        self.images = ImageService(
+            self.projects, self.translation, self.settings, self.backend
+        )
         self.plugins = PluginService(self.projects, self.translation, self.backend)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.legacy_actions = {
             "resume": lambda identity: views.job(self.guided.resume(identity)),
             "stop": lambda identity: views.job(self.guided.stop(identity)),
-            "answer": lambda identity, token, approved: views.job(self.guided.answer(identity, token, approved)),
+            "answer": lambda identity, token, approved: views.job(
+                self.guided.answer(identity, token, approved)
+            ),
             "export": self.guided.export,
         }
         self.guided.batch_monitor.start()
@@ -61,8 +71,11 @@ class Application:
     def state(self):
         value = self.projects.state()
         project = value["project"]
-        value.update(running=self.backend.running() or self.translation.jobs.running(), provider_ready=self.settings.ready(),
-                     observing=bool(project))
+        value.update(
+            running=self.backend.running() or self.translation.jobs.running(),
+            provider_ready=self.settings.ready(),
+            observing=bool(project),
+        )
         if project:
             project = dict(project)
             project.update(
@@ -81,36 +94,65 @@ class Application:
                 try:
                     native = self.backend.workflows.state(project["backend_id"])
                 except (ValueError, OSError, KeyError):
-                    project.update(status="Saved phased work unavailable", detail="The saved job reference was retained for recovery.")
+                    project.update(
+                        status="Saved phased work unavailable",
+                        detail="The saved job reference was retained for recovery.",
+                    )
                     value["project"] = project
                     return value
                 job = native["manual_job"]
                 latest = native["jobs"][0] if native["jobs"] else None
                 if native["project"].get("imported"):
                     project.update(
-                        status="Translation workspace ready", detail="Review the selected scope and saved guidance before starting a run.", next_label="Continue translation"
+                        status="Translation workspace ready",
+                        detail="Review the selected scope and saved guidance before starting a run.",
+                        next_label="Continue translation",
                     )
                 if latest and latest["status"] == "running":
-                    project.update(status="Preparing files", detail=latest["label"], next_label="View progress")
+                    project.update(
+                        status="Preparing files",
+                        detail=latest["label"],
+                        next_label="View progress",
+                    )
                 elif job:
                     if job["status"] == "waiting":
-                        project.update(status="Approval needed", detail="Review the pending request to continue.", next_label="Review request")
+                        project.update(
+                            status="Approval needed",
+                            detail="Review the pending request to continue.",
+                            next_label="Review request",
+                        )
                     elif job["status"] == "running":
                         project.update(
-                            status="Batch awaiting results" if job["mode"] == "batch" and job["phase"].startswith("poll") else "Translation running",
+                            status="Batch awaiting results"
+                            if job["mode"] == "batch"
+                            and job["phase"].startswith("poll")
+                            else "Translation running",
                             detail="",
                             next_label="View progress",
                         )
                     elif job["status"] == "complete":
                         project.update(
-                            status="Estimate ready" if job["mode"] == "estimate" else "Translation ready", detail="", next_label="Review results"
+                            status="Estimate ready"
+                            if job["mode"] == "estimate"
+                            else "Translation ready",
+                            detail="",
+                            next_label="Review results",
                         )
                     elif job["status"] == "canceled":
-                        project.update(status="Translation workspace ready", detail="Review scope and guidance before starting a run.", next_label="Continue translation")
+                        project.update(
+                            status="Translation workspace ready",
+                            detail="Review scope and guidance before starting a run.",
+                            next_label="Continue translation",
+                        )
                     else:
-                        project.update(status="Run ended", detail="", next_label="Review run")
+                        project.update(
+                            status="Run ended", detail="", next_label="Review run"
+                        )
                 elif latest and latest["status"] in {"failed", "interrupted"}:
-                    project.update(status="Preparation " + latest["status"], next_label="Review progress")
+                    project.update(
+                        status="Preparation " + latest["status"],
+                        next_label="Review progress",
+                    )
             value["project"] = project
         return value
 
@@ -127,30 +169,73 @@ class Application:
                 project["engine"] = self.translation.engine.detect(project["source"])
                 if current["jobs"]:
                     job = current["jobs"][0]
-                    project.update(status=job["label"] + " · " + job["status"].replace("_", " "), detail=job["message"],
-                                   operation=views.pick(job, ("label", "status", "message")))
+                    project.update(
+                        status=job["label"] + " · " + job["status"].replace("_", " "),
+                        detail=job["message"],
+                        operation=views.pick(job, ("label", "status", "message")),
+                    )
                 elif current["progress"] and current["progress"].get("phase"):
-                    project.update(status="Last reported: " + current["progress"]["phase"], detail=current["progress"].get("next_action", ""))
+                    project.update(
+                        status="Last reported: " + current["progress"]["phase"],
+                        detail=current["progress"].get("next_action", ""),
+                    )
                 else:
-                    project.update(status="Ready for project setup", detail="Choose a translation mode and prepare the starting prompt.")
+                    project.update(
+                        status="Ready for project setup",
+                        detail="Choose a translation mode and prepare the starting prompt.",
+                    )
                 if project.get("backend_id"):
-                    legacy = views.guided(self.guided.state(project["id"]), project["id"])
+                    legacy = views.guided(
+                        self.guided.state(project["id"]), project["id"]
+                    )
                     run = legacy["run"]
-                    active_tool = next((job for job in legacy["operations"] if job["status"] == "running"), None)
+                    active_tool = next(
+                        (
+                            job
+                            for job in legacy["operations"]
+                            if job["status"] == "running"
+                        ),
+                        None,
+                    )
                     if active_tool:
-                        project.update(status=active_tool["label"], detail=active_tool["message"],
-                                       operation=views.pick(active_tool, ("label", "status", "message")))
+                        project.update(
+                            status=active_tool["label"],
+                            detail=active_tool["message"],
+                            operation=views.pick(
+                                active_tool, ("label", "status", "message")
+                            ),
+                        )
                     elif run and run["status"] in {"running", "waiting"}:
-                        project.update(status="Guided run · " + run["status"], detail=run["message"],
-                                       operation={"label": "Guided run", **views.pick(run, ("status", "message"))})
+                        project.update(
+                            status="Guided run · " + run["status"],
+                            detail=run["message"],
+                            operation={
+                                "label": "Guided run",
+                                **views.pick(run, ("status", "message")),
+                            },
+                        )
                     elif not current["jobs"] and not current["progress"]:
-                        project.update(status="Guided workflow ready", detail="Continue from " + legacy["step"] + ".")
-                elif project["engine"] in {"MVMZ", "ACE"} and not current["jobs"] and not current["progress"]:
-                    project.update(status="Ready for guided setup", detail="Preserve the original, prepare game files, and choose a translation scope.")
+                        project.update(
+                            status="Guided workflow ready",
+                            detail="Continue from " + legacy["step"] + ".",
+                        )
+                elif (
+                    project["engine"] in {"MVMZ", "ACE"}
+                    and not current["jobs"]
+                    and not current["progress"]
+                ):
+                    project.update(
+                        status="Ready for guided setup",
+                        detail="Preserve the original, prepare game files, and choose a translation scope.",
+                    )
             except (ValueError, OSError) as exc:
                 error = str(exc)
                 project.pop("operation", None)
-                project.update(status="Project unavailable", detail=error, next_label="Open translation")
+                project.update(
+                    status="Project unavailable",
+                    detail=error,
+                    next_label="Open translation",
+                )
         images, image_error = None, ""
         if project and project["available"]:
             try:
@@ -163,16 +248,30 @@ class Application:
                 plugins = self.plugins.state(project["id"])
             except (ValueError, OSError) as exc:
                 plugin_error = str(exc)
-        return {"application": views.application(state), "translation": current, "translationError": error, "guided": legacy,
-                "images": images, "imagesError": image_error, "plugins": plugins, "pluginsError": plugin_error}
+        return {
+            "application": views.application(state),
+            "translation": current,
+            "translationError": error,
+            "guided": legacy,
+            "images": images,
+            "imagesError": image_error,
+            "plugins": plugins,
+            "pluginsError": plugin_error,
+        }
 
     def open_project(self, source):
         root = Path(source).expanduser().resolve(strict=True)
         if not root.is_dir() or root == root.parent:
             raise ValueError("Choose a game folder.")
-        for protected in (self.backend.source, self.workspace, Path(__file__).resolve().parents[3]):
+        for protected in (
+            self.backend.source,
+            self.workspace,
+            Path(__file__).resolve().parents[3],
+        ):
             if root.is_relative_to(protected) or protected.is_relative_to(root):
-                raise ValueError("Choose a game folder separate from application and workspace storage.")
+                raise ValueError(
+                    "Choose a game folder separate from application and workspace storage."
+                )
         detected = {"source": str(root), "engine": self.translation.engine.detect(root)}
         self.projects.open(detected)
         return self.state()
@@ -210,54 +309,77 @@ class Application:
             if self.closing:
                 if persist:
                     return None
-                raise ValueError('The app is closing. Reopen it before checking model defaults.')
-            lookup = self.settings.batch_lookup(connection_id=connection_id, model=model)
+                raise ValueError(
+                    "The app is closing. Reopen it before checking model defaults."
+                )
+            lookup = self.settings.batch_lookup(
+                connection_id=connection_id, model=model
+            )
         endpoints = None
         if lookup is not None:
             from dazedtl.settings.openrouter import check_endpoints
-            connection = {**lookup['connection'], 'model': lookup['model']}
-            endpoints = check_endpoints(connection, connection['catalog'])
+
+            connection = {**lookup["connection"], "model": lookup["model"]}
+            endpoints = check_endpoints(connection, connection["catalog"])
         with self.backend.context(), self.translation.engine.context():
             if self.closing:
                 if persist:
                     return None
-                raise ValueError('The app closed while checking model defaults. Try again after reopening it.')
+                raise ValueError(
+                    "The app closed while checking model defaults. Try again after reopening it."
+                )
             if lookup is not None:
-                endpoints = self.settings.retain_batch_endpoints(lookup, endpoints, persist=persist)
+                endpoints = self.settings.retain_batch_endpoints(
+                    lookup, endpoints, persist=persist
+                )
             if not persist:
-                return self.settings.model_defaults(connection_id, model, batch_endpoints=endpoints)
+                return self.settings.model_defaults(
+                    connection_id, model, batch_endpoints=endpoints
+                )
 
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
-        explicit = name == 'settings_model_defaults'
-        prepares = (name == 'guided_preview' and params.get('action') == 'start'
-                    or name == 'translation_compile' or name == 'images_editor_translation_preview')
+        explicit = name == "settings_model_defaults"
+        prepares = (
+            name == "guided_preview"
+            and params.get("action") == "start"
+            or name == "translation_compile"
+            or name == "images_editor_translation_preview"
+        )
         if not explicit and not prepares:
             return
         with self.backend.lock:
             if self.closing:
-                raise ValueError('The app is closing. Reopen it before preparing requests.')
-            if name == 'translation_compile':
-                _record, project = self.translation.project(params.get('project_id'))
-                if project.read()['options']['mode'] == 'agent':
+                raise ValueError(
+                    "The app is closing. Reopen it before preparing requests."
+                )
+            if name == "translation_compile":
+                _record, project = self.translation.project(params.get("project_id"))
+                if project.read()["options"]["mode"] == "agent":
                     return
-            lookup = self.settings.pricing_lookup(connection_id=params.get('connection_id') if explicit else None,
-                                                  model=params.get('model') if explicit else None, explicit=explicit)
+            lookup = self.settings.pricing_lookup(
+                connection_id=params.get("connection_id") if explicit else None,
+                model=params.get("model") if explicit else None,
+                explicit=explicit,
+            )
         if lookup is None:
             return
         from dazedtl.settings.openrouter import live_prices
+
         try:
-            prices = live_prices(lookup['model'], lookup['host'])
+            prices = live_prices(lookup["model"], lookup["host"])
         except ValueError:
             with self.backend.lock:
                 active = self.settings.pricing_selection(lookup)
-                cached = self.settings.model_defaults(active['id'], lookup['model'])
-                if cached['inputRate'] is not None and cached['outputRate'] is not None:
+                cached = self.settings.model_defaults(active["id"], lookup["model"])
+                if cached["inputRate"] is not None and cached["outputRate"] is not None:
                     return  # Retain the labeled stale quote when its route still matches.
             raise
         with self.backend.lock:
             if self.closing:
-                raise ValueError('The app closed while reading prices. Try again after reopening it.')
+                raise ValueError(
+                    "The app closed while reading prices. Try again after reopening it."
+                )
             self.settings.retain_prices(lookup, prices)
 
     def openrouter_hosts(self, model=""):
@@ -301,8 +423,14 @@ def serve(args, diagnostics):
             )
         },
         "settings_draft": (app.settings_draft, lambda value, _params: value),
-        "settings_model_defaults": (app.settings_model_defaults, lambda value, _params: value),
-        "openrouter_hosts": (app.openrouter_hosts, lambda value, _params: views.openrouter_hosts(value)),
+        "settings_model_defaults": (
+            app.settings_model_defaults,
+            lambda value, _params: value,
+        ),
+        "openrouter_hosts": (
+            app.openrouter_hosts,
+            lambda value, _params: views.openrouter_hosts(value),
+        ),
         "guided_phase_select": (
             app.guided.phase_select,
             lambda value, params: views.guided(value, params["project_id"]),
@@ -318,36 +446,110 @@ def serve(args, diagnostics):
             )
             for name in ("execute", "answer", "stop", "resume", "inspect")
         },
-        "guided_output_folder": (app.guided.output_folder, lambda value, _params: value),
+        "guided_output_folder": (
+            app.guided.output_folder,
+            lambda value, _params: value,
+        ),
         "guided_payload": (app.guided.payload, lambda value, _params: value),
         "guided_name_results": (app.guided.name_results, lambda value, _params: value),
         "guided_file_preview": (app.guided.file_preview, lambda value, _params: value),
-        "guided_discard_preparation": (app.guided.discard_preparation, lambda value, _params: value),
-        "guided_provider_details": (app.guided.provider_details, lambda value, _params: value),
-        "guided_batch_cancel_preview": (app.guided.batch_cancel_preview, lambda value, _params: value),
+        "guided_discard_preparation": (
+            app.guided.discard_preparation,
+            lambda value, _params: value,
+        ),
+        "guided_provider_details": (
+            app.guided.provider_details,
+            lambda value, _params: value,
+        ),
+        "guided_batch_cancel_preview": (
+            app.guided.batch_cancel_preview,
+            lambda value, _params: value,
+        ),
         "guided_batch_cancel": (app.guided.batch_cancel, lambda value, _params: value),
-        "guided_batch_collect": (app.guided.batch_collect, lambda value, _params: views.job(value)),
-        "translation_speakers": (app.guided.speakers, lambda value, _params: views.speaker_scan(value)),
-        **{"guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
-           for name in ("position", "options_draft", "save_options", "apply_speakers", "skill", "form", "context_status", "context_review", "reference_add", "reference_remove", "event_text_request", "event_text_review", "event_text_view", "event_text_picker", "comparisons_review")},
+        "guided_batch_collect": (
+            app.guided.batch_collect,
+            lambda value, _params: views.job(value),
+        ),
+        "translation_speakers": (
+            app.guided.speakers,
+            lambda value, _params: views.speaker_scan(value),
+        ),
+        **{
+            "guided_" + name: (getattr(app.guided, name), lambda value, _params: value)
+            for name in (
+                "position",
+                "options_draft",
+                "save_options",
+                "apply_speakers",
+                "skill",
+                "form",
+                "context_status",
+                "context_review",
+                "reference_add",
+                "reference_remove",
+                "event_text_request",
+                "event_text_review",
+                "event_text_view",
+                "event_text_picker",
+                "comparisons_review",
+            )
+        },
         "guided_draft": (app.guided.draft, lambda value, _params: value),
         "guided_save_document": (
             app.guided.save_document,
             lambda value, _params: views.documents(value),
         ),
     }
-    for name in ("state", "save", "draft", "documents", "save_document", "prepare", "backups", "compile", "run", "request",
-                 "start", "stop", "accept", "review", "progress", "operation", "attach_batch", "resolve_uncertain", "identify", "legacy"):
-        methods["translation_" + name] = (getattr(app.translation, name), lambda value, _params: value)
+    for name in (
+        "state",
+        "save",
+        "draft",
+        "documents",
+        "save_document",
+        "prepare",
+        "backups",
+        "compile",
+        "run",
+        "request",
+        "start",
+        "stop",
+        "accept",
+        "review",
+        "progress",
+        "operation",
+        "attach_batch",
+        "resolve_uncertain",
+        "identify",
+        "legacy",
+    ):
+        methods["translation_" + name] = (
+            getattr(app.translation, name),
+            lambda value, _params: value,
+        )
     for name in ("state", "list", "update", "action", "preview"):
-        methods["images_" + name] = (getattr(app.images, name), lambda value, _params: value)
+        methods["images_" + name] = (
+            getattr(app.images, name),
+            lambda value, _params: value,
+        )
     for name in ("state", "list", "detail", "update", "action"):
-        methods["plugins_" + name] = (getattr(app.plugins, name), lambda value, _params: value)
-    methods["plugins_continue"] = (app.plugins.continue_task, lambda value, _params: value)
+        methods["plugins_" + name] = (
+            getattr(app.plugins, name),
+            lambda value, _params: value,
+        )
+    methods["plugins_continue"] = (
+        app.plugins.continue_task,
+        lambda value, _params: value,
+    )
     for name in ("state", "save", "action"):
-        methods["images_editor_" + name] = (getattr(app.image_editor, name), lambda value, _params: value)
+        methods["images_editor_" + name] = (
+            getattr(app.image_editor, name),
+            lambda value, _params: value,
+        )
     for name in ("state", "preview", "start", "action"):
-        methods["images_editor_translation_" + name] = (getattr(app.image_native, name), lambda value, _params: value)
+        methods["images_editor_translation_" + name] = (
+            getattr(app.image_native, name),
+            lambda value, _params: value,
+        )
 
     def dispatch(name, params):
         if name not in methods:
@@ -358,7 +560,9 @@ def serve(args, diagnostics):
             return present(handler(**params), params)
         with app.backend.context(), app.translation.engine.context():
             if app.closing:
-                raise ValueError("The app is closing. Reopen it to resume saved project work.")
+                raise ValueError(
+                    "The app is closing. Reopen it to resume saved project work."
+                )
             value = present(handler(**params), params)
         if name in {"settings_save", "connection_save", "connection_select"}:
             app.resolve_batch_support(persist=True)

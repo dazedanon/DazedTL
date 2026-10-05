@@ -7,7 +7,7 @@ import threading
 def configure(module, enabled):
     if module is None:
         return
-    previous = getattr(module, '_dazedtl_choice_pass', None)
+    previous = getattr(module, "_dazedtl_choice_pass", None)
     if not enabled:
         if previous:
             module.searchCodes, module._choice_current = previous
@@ -20,7 +20,7 @@ def configure(module, enabled):
 
     @wraps(native_search)
     def search(page, pbar, jobList, filename):
-        previous = getattr(local, 'second_pass', False)
+        previous = getattr(local, "second_pass", False)
         local.second_pass = bool(jobList)
         try:
             return native_search(page, pbar, jobList, filename)
@@ -33,7 +33,11 @@ def configure(module, enabled):
         # they still contain Japanese on pass two; returning no eligible value
         # avoids a second request without writing placeholder translations.
         # The same skip prevents an extra consume/retry after a rejected chunk.
-        return '' if getattr(local, 'second_pass', False) else native_current(command, index)
+        return (
+            ""
+            if getattr(local, "second_pass", False)
+            else native_current(command, index)
+        )
 
     module._dazedtl_choice_pass = (native_search, native_current)
     module.searchCodes, module._choice_current = search, current

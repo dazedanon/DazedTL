@@ -47,32 +47,69 @@ export function DocumentEditor({
 }) {
   const labelFor = (name: string) => titles?.[name] || title(name);
   const [current, setName] = useState("glossary");
-  const available = (names || [...new Set([...Object.keys(documents), ...Object.keys(drafts)])]).filter((name) => documents[name] || drafts[name]);
+  const available = (
+    names || [...new Set([...Object.keys(documents), ...Object.keys(drafts)])]
+  ).filter((name) => documents[name] || drafts[name]);
   const preferred = selectedName || current;
-  const name = available.includes(preferred) ? preferred : available[0] || preferred;
+  const name = available.includes(preferred)
+    ? preferred
+    : available[0] || preferred;
   const document = drafts[name] || documents[name];
   return (
-    <fieldset disabled={disabled} className={`document-editor${focused ? " document-editor--focused" : ""}${fill ? " document-editor--fill" : ""}`}>
-      {focused ? available.length > 1 && <Tabs id="guidance-documents" label="Guidance documents" value={name}
-        items={available.filter((key) => !tabNames || tabNames.includes(key)).map((key) => ({ id: key, label: tabLabel ? tabLabel(key) : labelFor(key) + (drafts[key] ? " · Draft" : "") }))}
-        onChange={select || setName} disabled={disabled} /> : <label>
-        Document
-        <select value={name} onChange={(event) => (select || setName)(event.target.value)}>
-          {available.map((key) => (
-            <option key={key} value={key}>
-              {labelFor(key)}
-              {drafts[key] ? " · Draft" : ""}
-            </option>
-          ))}
-        </select>
-      </label>}
+    <fieldset
+      disabled={disabled}
+      className={`document-editor${focused ? " document-editor--focused" : ""}${fill ? " document-editor--fill" : ""}`}
+    >
+      {focused ? (
+        available.length > 1 && (
+          <Tabs
+            id="guidance-documents"
+            label="Guidance documents"
+            value={name}
+            items={available
+              .filter((key) => !tabNames || tabNames.includes(key))
+              .map((key) => ({
+                id: key,
+                label: tabLabel
+                  ? tabLabel(key)
+                  : labelFor(key) + (drafts[key] ? " · Draft" : ""),
+              }))}
+            onChange={select || setName}
+            disabled={disabled}
+          />
+        )
+      ) : (
+        <label>
+          Document
+          <select
+            value={name}
+            onChange={(event) => (select || setName)(event.target.value)}
+          >
+            {available.map((key) => (
+              <option key={key} value={key}>
+                {labelFor(key)}
+                {drafts[key] ? " · Draft" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {document && (
-        <div className="document-editor-content" role={focused && available.length > 1 ? "tabpanel" : undefined}
+        <div
+          className="document-editor-content"
+          role={focused && available.length > 1 ? "tabpanel" : undefined}
           id={focused ? `guidance-documents-panel-${name}` : undefined}
-          aria-labelledby={focused && available.length > 1 ? `guidance-documents-tab-${name}` : undefined}>
+          aria-labelledby={
+            focused && available.length > 1
+              ? `guidance-documents-tab-${name}`
+              : undefined
+          }
+        >
           {before?.(name)}
           <textarea
-            aria-label={focused ? labelFor(name) + " text" : "Game context text"}
+            aria-label={
+              focused ? labelFor(name) + " text" : "Game context text"
+            }
             rows={fill ? 4 : focused ? 9 : 16}
             spellCheck={false}
             value={document.text}
@@ -80,18 +117,20 @@ export function DocumentEditor({
               edit(name, event.target.value, document.revision)
             }
           />
-          {showActions && <div className="actions">
-            <Button
-              variant="primary"
-              disabled={!drafts[name]}
-              onClick={() => save(name)}
-            >
-              Save context
-            </Button>
-            <Button disabled={!drafts[name]} onClick={() => discard(name)}>
-              Discard draft
-            </Button>
-          </div>}
+          {showActions && (
+            <div className="actions">
+              <Button
+                variant="primary"
+                disabled={!drafts[name]}
+                onClick={() => save(name)}
+              >
+                Save context
+              </Button>
+              <Button disabled={!drafts[name]} onClick={() => discard(name)}>
+                Discard draft
+              </Button>
+            </div>
+          )}
         </div>
       )}
       {showActions && !!Object.keys(drafts).length && (
