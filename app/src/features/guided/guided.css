@@ -258,6 +258,16 @@ main.editor-main.guided-main {
   flex-direction: column;
   gap: var(--space-4);
 }
+.run-technical > section > :first-child {
+  margin-top: 0;
+}
+.run-technical > section > :last-child {
+  margin-bottom: 0;
+}
+/* Saved activity has no sheet layout gap below its heading. */
+.request-inspector-heading + .run-technical {
+  margin-top: var(--space-4);
+}
 .run-detail-summary {
   display: grid;
   gap: var(--space-2);

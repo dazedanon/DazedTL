@@ -91,47 +91,6 @@ export default function RunPanel({
             : undefined
         }
       />
-      {job.files && (
-        <details>
-          <summary>Frozen file scope</summary>
-          <ul>
-            {job.files.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {job.eventTextReview && (
-        <details>
-          <summary>Saved event text review</summary>
-          <p>
-            {job.eventTextReview.literalBased
-              ? "Reviewed literal-based comparison coverage."
-              : job.eventTextReview.manual?.length
-                ? "Manual overrides: " +
-                  job.eventTextReview.manual.join(", ") +
-                  ". Reason: " +
-                  job.eventTextReview.reason
-                : "Reviewed investigation recommendations."}
-          </p>
-          {job.eventTextReview.settings && (
-            <dl>
-              {Object.entries(job.eventTextReview.settings).map(
-                ([key, value]) => (
-                  <div key={key}>
-                    <dt>{key}</dt>
-                    <dd>
-                      {Array.isArray(value)
-                        ? value.join(", ") || "None"
-                        : String(value)}
-                    </dd>
-                  </div>
-                ),
-              )}
-            </dl>
-          )}
-        </details>
-      )}
       {active && job.mode === "batch" && (
         <p className="muted">
           Submitted Batches are monitored automatically. Open Run history to
@@ -149,12 +108,6 @@ export default function RunPanel({
             {job.progress.file}
           </p>
         </>
-      )}
-      {job.estimate && (
-        <details>
-          <summary>Cost estimate</summary>
-          <Estimate value={job.estimate} />
-        </details>
       )}
       {job.approval && (
         <div className="approval">
@@ -236,12 +189,6 @@ export default function RunPanel({
           )}
       </div>
       <Message message={error} />
-      {!!job.log?.length && (
-        <details>
-          <summary>Run log</summary>
-          <pre>{job.log.join("\n")}</pre>
-        </details>
-      )}
     </section>
   );
 }

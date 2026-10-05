@@ -9,6 +9,7 @@ export function ExpandableText({
   truncate = true,
   fill = false,
   limit = 480,
+  tail = false,
 }: {
   text: string;
   label: string;
@@ -16,13 +17,18 @@ export function ExpandableText({
   truncate?: boolean;
   fill?: boolean;
   limit?: number;
+  /** Excerpt the end instead, for logs whose latest lines explain the outcome. */
+  tail?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
-  const excerpt = truncate
-    ? text.split("\n").slice(0, 6).join("\n").slice(0, limit).trimEnd()
-    : text;
-  const shortened = truncate && excerpt.length < text.trimEnd().length;
+  const content = text.trimEnd();
+  const excerpt = !truncate
+    ? text
+    : tail
+      ? content.split("\n").slice(-6).join("\n").slice(-limit)
+      : content.split("\n").slice(0, 6).join("\n").slice(0, limit).trimEnd();
+  const shortened = truncate && excerpt.length < content.length;
   return (
     <div
       className={`expandable-text expandable-text--${appearance}${fill ? " expandable-text--fill" : ""}`}
@@ -34,7 +40,7 @@ export function ExpandableText({
         tabIndex={fill ? 0 : undefined}
         aria-label={fill ? label : undefined}
       >
-        {shortened && !expanded ? excerpt + "…" : text}
+        {!shortened || expanded ? text : tail ? "…\n" + excerpt : excerpt + "…"}
       </pre>
       {shortened && (
         <Button

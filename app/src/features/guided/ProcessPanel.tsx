@@ -17,7 +17,7 @@ import {
   payloadForBatch,
   type RequestBatch,
 } from "./requestView";
-import { RunTechnical } from "./RunTechnical";
+import { RunLog, RunTechnical } from "./RunTechnical";
 import { RequestFailure } from "./RequestFailure";
 import { providerBatchActive } from "./batchView";
 import { InspectedFile } from "./InspectedFile";
@@ -685,6 +685,7 @@ function RequestProcess({
                       />
                     </section>
                   )}
+                  <RunLog log={job.log} />
                 </div>
               ) : initialRequest && view.index < 0 ? (
                 <p className="muted">

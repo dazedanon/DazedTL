@@ -226,7 +226,8 @@ File-only legacy validation evidence stays explicitly scoped to its file without
 The searchable request picker lists only request numbers and outcomes for the selected group; Up/Down highlights choices and Enter opens one.
 Search text is local to the open picker and never changes request selection or triggers a read until a choice is committed.
 The picker is the sole request navigation control and has no hidden failure or file filters.
-Raw worker logs are not a separate content view; retained log evidence remains available to the compatibility readers.
+Raw worker logs are not a separate content view: Technical ends with the retained log tail, which the compatibility readers still use as evidence.
+Other-activity records open with their status, saved result and log in the same presentation.
 Request selection and tabs persist locally without storing payloads in browser preferences.
 Navigation stays outside the single content reader, with stable dimensions and request controls across tabs.
 The inspector has no separate provider-check control or transient remote status overlay; tab changes never contact the provider.
@@ -406,6 +407,7 @@ ComboBox choice labels hide automatic text-selection highlighting while retainin
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
+Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.

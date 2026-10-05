@@ -10,8 +10,10 @@ import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { ExpandableText } from "../../ui/ExpandableText";
+import { JobStatus } from "../../ui/JobStatus";
 import { ProcessPanel, type RequestInspectionTarget } from "./ProcessPanel";
 import { InspectedFile } from "./InspectedFile";
+import { RunLog } from "./RunTechnical";
 import { batchOutcome, canRetrySaving, canReapplyBatch } from "./batchView";
 import type { RequestBatch } from "./requestView";
 import { observedRun } from "./translationView";
@@ -245,7 +247,7 @@ export function RunInspector({
               ? "Inspect run"
               : target?.file
                 ? "Inspect file"
-                : job?.label || "Saved activity"}
+                : "Inspect activity"}
           </h2>
           <div className="request-heading-actions">
             <Button variant="quiet" disabled={action.busy} onClick={history}>
@@ -286,20 +288,46 @@ export function RunInspector({
           </>
         ) : (
           job && (
-            <>
-              {job.files && (
-                <p>
-                  {job.files.length} files frozen · {job.model} · {job.mode}
+            <div className="run-technical">
+              <section>
+                <JobStatus
+                  job={{
+                    label: job.label || "Saved activity",
+                    status: job.status,
+                    message: job.message,
+                  }}
+                />
+                <p className="muted">
+                  {job.created &&
+                    `${new Date(job.created).toLocaleString()} · `}
+                  <code>{job.id}</code>
                 </p>
+                {!!job.files?.length && (
+                  <dl className="run-detail-summary">
+                    <div>
+                      <dt>Files</dt>
+                      <dd>
+                        <ExpandableText
+                          text={job.files.join(", ")}
+                          label="Activity files"
+                          appearance="inline"
+                        />
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+              </section>
+              {job.result && (
+                <section>
+                  <h3>Saved result</h3>
+                  <ExpandableText
+                    text={JSON.stringify(job.result, null, 2)}
+                    label="Saved result"
+                  />
+                </section>
               )}
-              {job.result && <pre>{JSON.stringify(job.result, null, 2)}</pre>}
-              {!!job.log.length && (
-                <details>
-                  <summary>Diagnostic log</summary>
-                  <pre>{job.log.join("\n")}</pre>
-                </details>
-              )}
-            </>
+              <RunLog log={job.log} />
+            </div>
           )
         )}
         <Message message={readError} />

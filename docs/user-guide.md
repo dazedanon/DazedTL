@@ -61,7 +61,7 @@ Reloading archives previous working copies and their cached results.
 
 **Run history** on Translate lists approved runs, including failed and canceled ones; **History** also includes other project activity.
 **Inspect**, or a file's inspect icon, opens the request inspector.
-**Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage and the exact API payload.
+**Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage, the exact API payload and the run log.
 **File contents** shows the file's current text even when no request was prepared.
 The inspector also holds Batch controls: provider cancellation, queue continuation, collection recovery and reviewed reapplication of saved output.
 Finished responses, including partial results from canceled Batches, stay available for collection.

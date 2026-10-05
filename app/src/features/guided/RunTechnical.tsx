@@ -31,7 +31,11 @@ export function RunTechnical({
     ["failed", "interrupted"].includes(job.status) &&
     job.message
   ) {
-    errors.push(job.message.replace(" See the run log.", ""));
+    errors.push(
+      job.log?.length
+        ? job.message
+        : job.message.replace(" See the run log.", ""),
+    );
   }
   const outputs = [
     job.availableOutputs?.length && `${job.availableOutputs.length} saved`,
@@ -118,5 +122,16 @@ export function RunTechnical({
       <NameTranslationFeedback value={job.nameTranslation} read={readNames} />
       {actions}
     </div>
+  );
+}
+
+/** The worker's retained output tail, kept with run evidence instead of routine views. */
+export function RunLog({ log }: { log?: string[] }) {
+  if (!log?.length) return null;
+  return (
+    <section>
+      <h3>Run log</h3>
+      <ExpandableText text={log.join("\n")} label="Run log" tail />
+    </section>
   );
 }
