@@ -18,6 +18,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
+import { ExpandableText } from "../../ui/ExpandableText";
 import "./image-editor.css";
 
 export interface ImageTextEditorProps {
@@ -1108,6 +1109,14 @@ function Editor({
                         message: job.message,
                       }}
                     />
+                    {["failed", "interrupted"].includes(job.status) &&
+                      !!job.log?.length && (
+                        <ExpandableText
+                          text={job.log.join("\n")}
+                          label="Run log"
+                          tail
+                        />
+                      )}
                     {job.progress && (
                       <progress
                         value={job.progress.current}
@@ -1191,12 +1200,6 @@ function Editor({
                           Save output copy
                         </Button>
                       </div>
-                    )}
-                    {!!job.log?.length && (
-                      <details>
-                        <summary>Run log</summary>
-                        <pre>{job.log.join("\n")}</pre>
-                      </details>
                     )}
                   </>
                 )}

@@ -6,6 +6,7 @@ import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
+import { ExpandableText } from "../../ui/ExpandableText";
 import { imageClassificationLabels, imageStatus } from "./imageSelection";
 
 export function ImageCompare({
@@ -176,51 +177,34 @@ export function ImageCompare({
         ) : asset.blockedReason ? (
           <p className="muted">{asset.blockedReason}</p>
         ) : null}
-        <details className="image-details">
-          <summary>Details and validation</summary>
-          <dl>
-            <dt>Discovery</dt>
-            <dd>
-              {imageClassificationLabels[asset.classification] ||
-                asset.classification}
-            </dd>
-            <dt>Reason</dt>
-            <dd>{asset.reason || "No saved finding."}</dd>
-            <dt>AI review evidence</dt>
-            <dd>{asset.reviewEvidence || "No saved AI review."}</dd>
-            <dt>Source hash</dt>
-            <dd>
-              <code>{asset.sourceHash}</code>
-            </dd>
-            <dt>Candidate hash</dt>
-            <dd>
-              <code>{asset.candidateHash || "None"}</code>
-            </dd>
-            <dt>Runtime destination</dt>
-            <dd>{asset.destination}</dd>
+        {(asset.reason || (asset.aiReviewed && asset.reviewEvidence)) && (
+          <dl className="image-evidence">
+            {asset.reason && (
+              <>
+                <dt>Discovery</dt>
+                <dd>
+                  <ExpandableText
+                    text={`${imageClassificationLabels[asset.classification] || asset.classification} · ${asset.reason}`}
+                    label="Discovery finding"
+                    appearance="inline"
+                  />
+                </dd>
+              </>
+            )}
+            {asset.aiReviewed && asset.reviewEvidence && (
+              <>
+                <dt>AI review</dt>
+                <dd>
+                  <ExpandableText
+                    text={asset.reviewEvidence}
+                    label="AI review evidence"
+                    appearance="inline"
+                  />
+                </dd>
+              </>
+            )}
           </dl>
-          {asset.checks && Object.keys(asset.checks).length ? (
-            <ul>
-              {Object.entries(asset.checks).map(([name, passed]) => (
-                <li key={name}>
-                  <strong>
-                    {name}:{" "}
-                    {asset.candidateHash
-                      ? passed
-                        ? "Passed"
-                        : "Failed"
-                      : "Pending"}
-                  </strong>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>
-              Apply rechecks the source and candidate. No detailed validation
-              report is available for this image.
-            </p>
-          )}
-        </details>
+        )}
         <label className="image-revision-comment">
           Revision notes
           <textarea

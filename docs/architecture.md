@@ -374,6 +374,7 @@ Discovery reports bind project, inventory revision, exact scope and source hashe
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
+Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
 Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
 Publication freezes candidate bytes and journals the reviewed source, output and original-backup hashes before writing runtime files.
 Restart reconciles only those exact authorized bytes, records partial or conflicting publication honestly, and retains reviewed restore for recovered outputs.
@@ -384,6 +385,7 @@ Clipboard handoffs never claim an external assistant is running.
 The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
 Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
 Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.
+These runs have no run inspector, so a failed run's log tail appears beside its status.
 Import revalidates the exported source scope and copies targets only; rendering still requires structural validation and image review before runtime application.
 
 ## UI and state decisions

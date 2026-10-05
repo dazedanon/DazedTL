@@ -59,7 +59,7 @@ export function ImageApply({
         <p>
           {restore
             ? "Verified backups replace these runtime assets. Editable copies remain available."
-            : "Originals are backed up. Source files and edited images are validated again before this batch is applied."}
+            : "Originals are backed up. Source files and edited images are validated again, and nothing is applied unless every included image passes."}
         </p>
         <div
           className="image-apply-files"
@@ -155,22 +155,6 @@ export function ImageApply({
             )}
           </section>
         )}
-        <details className="image-details">
-          <summary>Details and recovery</summary>
-          <p>
-            If any included image fails validation, this batch is not applied. A
-            publishing failure attempts to restore runtime replacements; any
-            recovery failure is reported.
-          </p>
-          {Array.isArray(preview.backups) && !!preview.backups.length && (
-            <ul>
-              {preview.backups.map((path) => (
-                <li key={path}>{path}</li>
-              ))}
-            </ul>
-          )}
-          <p>Approval applies only to these source and candidate versions.</p>
-        </details>
       </div>
       <ActionBar feedback={<Message message={error} />}>
         <Button disabled={busy} onClick={onDismiss}>
