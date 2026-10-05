@@ -124,10 +124,10 @@ export function GuidedImages({
       </ActionList>
       <p className="muted">
         {state?.discovery.lastReport
-          ? `Last saved discovery report: ${state.discovery.lastReport}`
+          ? `Last saved discovery report: ${new Date(state.discovery.lastReport).toLocaleString()}`
           : "No discovery report yet"}
         {state?.editing.lastReport
-          ? ` · Last saved image report: ${state.editing.lastReport}`
+          ? ` · Last saved image report: ${new Date(state.editing.lastReport).toLocaleString()}`
           : ""}
       </p>
     </section>

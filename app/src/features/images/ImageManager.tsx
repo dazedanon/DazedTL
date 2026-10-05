@@ -590,7 +590,9 @@ function Manager({
             {counts.notExamined.toLocaleString()} not examined
           </Button>
           {lastReport ? (
-            <span>Last saved report: {lastReport}</span>
+            <span>
+              Last saved report: {new Date(lastReport).toLocaleString()}
+            </span>
           ) : state.editing.status === "awaiting_results" ||
             state.discovery.status === "awaiting_results" ? (
             <span>Awaiting saved assistant results.</span>
