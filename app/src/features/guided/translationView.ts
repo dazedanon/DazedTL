@@ -1,4 +1,4 @@
-import type { Job, Phase, RunPayload } from "../../api/contracts.ts";
+import type { GuidedState, Job, Phase, RunPayload } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
@@ -57,6 +57,17 @@ export function fileRun(runs: Job[], phase: Phase, name: string, retired: readon
   const matches = runs.filter(run => run.logicalPhase === phase && run.mode !== "estimate" && !retired.includes(run.id)
     && !run.retiredFiles?.includes(name) && run.files?.includes(name));
   return matches.find(activeRun) || matches[0];
+}
+/** Task progress covers the whole file group, independently of the next action's selection. */
+export function translationTaskComplete(state: Pick<GuidedState, "files" | "runs" | "sourceStatus">, phase: "database" | "dialogue") {
+  const files = state.files.filter(file => file.group === phase);
+  return files.length > 0 && files.every(({ name }) => {
+    if (state.sourceStatus.changed.includes(name)) return false;
+    const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+    if (!run || run.temporary || activeRun(run) || run.partialOutputs?.includes(name)) return false;
+    return fileStatus(name, run).tone === "success"
+      || run.mode === "batch" && !run.outputs?.[name] && !!run.process?.noRequestFiles?.includes(name);
+  });
 }
 /** Status follows current work; metrics follow the last run that changed this file. */
 export function fileMetricRun(runs: Job[], phase: Phase, name: string, retired: readonly string[] = []) {

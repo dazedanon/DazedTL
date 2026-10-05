@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
-import type { Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
+import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
+import { completeForSelection, estimateFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -41,6 +41,50 @@ test("opening a file outside the current selection uses that file's retained req
   assert.equal(filePreviewRun("Unknown.json", current, estimate, previous), undefined);
   assert.equal(filePreviewRun("Items.json", previous, estimate, current, false), current);
   assert.equal(filePreviewRun("Items.json", previous, estimate, undefined, false), estimate);
+});
+
+// Clearing selection or finishing in separate runs must not erase task progress;
+// completing only a selected subset must not certify the entire file group.
+test("main-text tasks combine verified files across runs independently of selection", () => {
+  const items: Job = { id: "items", logicalPhase: "database", mode: "batch", status: "complete", message: "", log: [],
+    files: ["Items.json"], outputs: { "Items.json": "hash" }, availableOutputs: ["Items.json"], appliedOutputs: ["Items.json"] };
+  const actors = { ...items, id: "actors", keptForHistory: true, files: ["Actors.json"], outputs: { "Actors.json": "hash" }, availableOutputs: ["Actors.json"], appliedOutputs: [] };
+  const empty = { ...items, id: "empty", files: ["Armors.json"], outputs: {}, availableOutputs: [], process: { noRequestFiles: ["Armors.json"], errors: [] } };
+  const state = { files: [{ name: "Items.json", group: "database" }, { name: "Actors.json", group: "database" }, { name: "Armors.json", group: "database" }, { name: "Map001.json", group: "dialogue" }],
+    runs: [empty, actors, items], sourceStatus: { changed: [], ready: [] }, preferences: { values: { selected: [] } } } as unknown as GuidedState;
+  for (const selected of [[], ["Items.json"], ["Items.json", "Actors.json", "Armors.json"], ["Map001.json"]]) {
+    state.preferences.values.selected = selected;
+    assert.equal(translationTaskComplete(state, "database"), true);
+    assert.equal(translationTaskComplete(state, "dialogue"), false);
+  }
+  assert.equal(translationTaskComplete({ ...state, runs: [empty, items] }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, files: [] }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, runs: [{ ...items, mode: "estimate" }, ...state.runs] }, "database"), true);
+  assert.equal(translationTaskComplete({ ...state, runs: [actors, items, { ...empty, process: { errors: [] } }] }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, runs: [actors, items, { ...empty, outputs: { "Armors.json": "missing" } }] }, "database"), false);
+  const maps = { ...items, id: "maps", logicalPhase: "dialogue" as const, files: ["Map001.json"], outputs: { "Map001.json": "hash" }, availableOutputs: ["Map001.json"] };
+  assert.equal(translationTaskComplete({ ...state, runs: [maps, ...state.runs] }, "dialogue"), true);
+  assert.equal(translationTaskComplete({ ...state, runs: [maps, ...state.runs].map(run => ({ ...run, logicalPhase: "advanced" })) }, "dialogue"), false);
+});
+
+// Historical success cannot hide unfinished replacement work, unavailable output,
+// or a source reload, including when the active worker is an older attempt.
+test("main-text completion respects current file ownership and output validity", () => {
+  const saved: Job = { id: "saved", logicalPhase: "database", mode: "translate", status: "complete", message: "", log: [],
+    files: ["Items.json"], outputs: { "Items.json": "hash" }, availableOutputs: ["Items.json"], appliedOutputs: ["Items.json"] };
+  const state = { files: [{ name: "Items.json", group: "database" }], runs: [saved], sourceStatus: { changed: [], ready: [] } } as Pick<GuidedState, "files" | "runs" | "sourceStatus">;
+  for (const patch of [
+    { status: "running" }, { status: "waiting" }, { temporary: true },
+    { partialOutputs: ["Items.json"] }, { availableOutputs: [] },
+    { status: "failed", outputs: {}, availableOutputs: [], keptForHistory: true },
+    { mode: "batch", status: "interrupted", phase: "poll_status" },
+  ]) {
+    assert.equal(translationTaskComplete({ ...state, runs: [{ ...saved, ...patch, id: "new" }, saved] }, "database"), false, JSON.stringify(patch));
+  }
+  assert.equal(translationTaskComplete({ ...state, runs: [saved, { ...saved, id: "resumed", status: "running" }] }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, sourceStatus: { ...state.sourceStatus, changed: ["Items.json"] } }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, sourceStatus: { ...state.sourceStatus, retired: [saved.id] } }, "database"), false);
+  assert.equal(translationTaskComplete({ ...state, runs: [{ ...saved, retiredFiles: ["Items.json"] }] }, "database"), false);
 });
 
 test("request comparisons reject misaligned or unvalidated Live responses and mismatched Batch keys", () => {

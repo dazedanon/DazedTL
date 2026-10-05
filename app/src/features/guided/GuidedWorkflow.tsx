@@ -18,7 +18,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { Modal } from "../../ui/Modal";
 import { Section } from "../../ui/Section";
 import { Tabs } from "../../ui/Tabs";
-import { activeRun, blockingBatches, canResumeRun, completeForSelection, estimateRequestCount, needsSubmissionReview, phaseRun, translationStopLabel, observedRun } from "./translationView";
+import { activeRun, blockingBatches, canResumeRun, completeForSelection, estimateRequestCount, needsSubmissionReview, phaseRun, translationTaskComplete, translationStopLabel, observedRun } from "./translationView";
 import { VirtualList } from "../../ui/VirtualList";
 import { ActivityHistory, projectActivity } from "./ActivityHistory";
 import { EngineOptions } from "./EngineOptions";
@@ -353,8 +353,9 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const applyRun = (current: Job) => <Button variant="primary" disabled={disabled || !current.outputsAvailable || !baseline} onClick={() => review("export_selected", {}, Object.keys(current.outputs || {}))}>Apply translated output</Button>;
   const nextRun = (current: Job) => <Button disabled={action.busy} onClick={() => stepTask(current.logicalPhase === "database" ? "dialogue" : current.logicalPhase === "dialogue" ? "audit" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "variables" : "plugins")}>{current.logicalPhase === "database" ? "Continue to maps & events" : current.logicalPhase === "dialogue" ? "Continue to event / plugin codes" : current.logicalPhase === "advanced" && state.comparisons.status !== "not_needed" ? "Review comparisons" : "Continue to plugin text"}</Button>;
   const phaseComplete = (target: Phase) => {
+    if (target === "database" || target === "dialogue") return translationTaskComplete(state, target);
     const saved = state.phaseRuns[target];
-    return !!saved && completeForSelection(saved, (target === "database" ? databaseFiles : eventFiles).map(file => file.name));
+    return !!saved && completeForSelection(saved, eventFiles.map(file => file.name));
   };
   const completed = new Set<string>([...(preserved ? ["backup"] : []), ...(baseline ? ["baseline"] : []), ...(applied ? ["apply"] : []), ...(phaseComplete("database") ? ["database"] : []), ...(phaseComplete("dialogue") ? ["dialogue"] : []), ...(phaseComplete("advanced") && (state.comparisons.status === "not_needed" || state.comparisons.status === "ready" && phaseComplete("variables")) ? ["other-event-text"] : []),
     ...(investigation.every(row => row.saved) ? ["names"] : []), ...(guidance.complete ? ["guidance"] : []), ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []), ...(preparationComplete || baseline ? ["format"] : []), ...(state.tools?.inspector.installed && state.tools.forge.installed ? ["tools"] : [])]);
