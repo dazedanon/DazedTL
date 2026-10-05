@@ -1024,7 +1024,10 @@ class GuidedTests(unittest.TestCase):
         # The app's restored monitor is current activity even though the saved
         # native worker remains stopped and cannot be resumed to send work.
         self.guided.batch_monitor.views[job['id']] = {'state': 'monitoring', 'message': ''}
-        self.assertEqual(self.guided.run_view(job['id'])['status'], 'running')
+        from dazedtl.api.views import job as public_job
+        observed = public_job(self.guided.run_view(job['id']))
+        self.assertEqual(observed['status'], 'running')
+        self.assertEqual(observed['workerStatus'], 'stopped')
         self.assertEqual(job['status'], 'stopped')
         self.guided.batch_monitor.views.clear()
         # Reload is repeatable even while a saved Batch is running, collecting,

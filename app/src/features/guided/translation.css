@@ -78,7 +78,6 @@
 .translation-file-status { display:flex; align-items:center; gap:var(--space-2); font-size:var(--font-small); color:var(--muted); }
 .translation-file-status svg,.translation-file-status [aria-hidden="true"] { flex-shrink:0; }
 .translation-file-status.success { color:var(--color-success); }.translation-file-status.warning { color:var(--color-warning); }.translation-file-status.active { color:var(--accent); }
-.translation-file-status .translation-status-link { display:flex; align-items:center; gap:var(--space-2); color:inherit; font:inherit; padding:0; min-height:0; text-align:left; }
 .translation-file-cost,.translation-file-time { text-align:right; font-size:var(--font-small); font-variant-numeric:tabular-nums; color:var(--muted); }
 .translation-action-scope { flex:1; min-width:0; font-size:var(--font-small); line-height:1.5; }
 .translation-action-scope small { display:block; color:var(--muted); font:inherit; }

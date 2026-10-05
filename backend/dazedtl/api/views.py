@@ -24,7 +24,7 @@ def documents(value):
 def job(value):
     if value is None:
         return None
-    result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
+    result = pick(value, ('id', 'status', 'workerStatus', 'message', 'label', 'mode', 'phase', 'model', 'files',
                           'progress', 'itemProgress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'availableOutputs', 'changedOutputs', 'partialOutputs', 'retiredFiles', 'eventTextReview', 'approval', 'action', 'result', 'created', 'updated',
                           'logicalPhase', 'scopeComplete', 'appliedOutputs', 'process', 'preparationMode', 'temporary', 'nameTranslation', 'repeatSubmission'))
     result.setdefault('log', [])

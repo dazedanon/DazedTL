@@ -7,7 +7,7 @@ from inspect import signature
 from pathlib import Path
 import sqlite3
 import threading
-from .process_view import clean_message, source_values
+from .process_view import source_values
 from .request_scope import identities, columns, source_locations
 from dazedtl.translation.files import digest
 
@@ -146,17 +146,12 @@ class Evidence:
             try:
                 return guarded_call(*args, **kwargs)
             except Exception as error:
-                # SDK exceptions can contain credentials or source text. Retain
-                # only structured status/code/param, never str(exception).
-                body = getattr(error, 'body', {}) or {}
-                if isinstance(body, dict):
-                    body = body.get('error', body)
-                detail = {key: body.get(key) for key in ('code', 'param', 'type')} if isinstance(body, dict) else {}
-                detail['status'] = getattr(error, 'status_code', None)
-                if isinstance(body, dict) and body.get('message'):
-                    secret = getattr(getattr(translation, 'openai', None), 'api_key', '') or ''
-                    detail['message'] = clean_message(body['message'], secret)
-                status = detail['status']
+                from .provider_responses import error_evidence
+                secret = getattr(getattr(translation, 'openai', None), 'api_key', '') or ''
+                detail = error_evidence(error, secret)
+                # Keep the existing submission classification: recovered inner
+                # errors are display evidence, not new authority to retry.
+                status = getattr(error, 'status_code', None)
                 self.update('failed' if status in {400, 401, 403, 404, 405, 413, 415, 422, 429} else 'uncertain', error=json.dumps(detail))
                 raise
         translation.translateText = call

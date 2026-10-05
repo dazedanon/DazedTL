@@ -182,12 +182,12 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
               {job.eventTextReview && <section><h3>Event text review</h3><ExpandableText text={formatted(job.eventTextReview)} label="Event text review" /></section>}
             </div> : selectedBatch?.provider && !requests.length ? <p className="muted">The saved receipt does not identify this batch’s requests. Technical contains the retained receipts and failure details.</p>
             : view.tab === "response" ? <>
-              {visiblePayload && <RequestFailure payload={visiblePayload} />}
+              {visiblePayload && <RequestFailure payload={visiblePayload} details />}
               {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}
               {visiblePayload?.responseOrigin === "log" && <p className="muted">Final attempt recovered from the saved validation log. Earlier retry bodies were not retained.</p>}
               {!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Technical contains any retained failure details."}</p>
                 : comparison ? comparison
-                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted" role="status">{selected?.providerFinished && visiblePayload.state === "submitted" ? "Waiting to download the response." : ["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for response." : visiblePayload.state === "uncertain" ? "No response recorded. Submission could not be confirmed." : ["failed", "rejected"].includes(visiblePayload.state) ? "No response was retained for this attempt." : "The original response was not retained."}</p>}
+                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : visiblePayload.error != null ? null : <p className="muted" role="status">{selected?.providerFinished && visiblePayload.state === "submitted" ? "Waiting to download the response." : ["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for response." : visiblePayload.state === "uncertain" ? "No response recorded. Submission could not be confirmed." : ["failed", "rejected"].includes(visiblePayload.state) ? "No response was retained for this attempt." : "The original response was not retained."}</p>}
             </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh to try again." : "No request payload is available. Technical contains the retained run record."}</p>
               : <RequestSource payload={visiblePayload} />}
           </TabPanel>

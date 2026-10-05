@@ -276,6 +276,9 @@ class Guided:
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
+        # Background monitoring is public run activity, not a resumed worker.
+        # Preserve the actual worker state for per-file ownership and progress.
+        job['workerStatus'] = job['status']
         plan = {}
         if job.get('mode') in {'translate', 'offline'} and job.get('item_progress'):
             job['itemProgress'] = dict(job['item_progress'])

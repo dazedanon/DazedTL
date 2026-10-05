@@ -233,12 +233,13 @@ def batch_state(root):
     return {**previous, **current, 'batches': list(manifests.values())}
 
 
-def clean_message(value, secret=''):
-    text = str(value or '')[:2000]
+def clean_message(value, secret='', *, limit=2000):
+    text = str(value or '')
     if secret:
         text = text.replace(secret, '[credential removed]')
     text = re.sub(r'(?i)(Bearer\s+|api[_-]?key[=: ]+)[^\s,;]+', r'\1[credential removed]', text)
-    return re.sub(r'\bsk-[A-Za-z0-9_-]+', '[credential removed]', text)
+    text = re.sub(r'\bsk-[A-Za-z0-9_-]+', '[credential removed]', text)
+    return text[:limit]
 
 
 def source_values(params):
@@ -516,7 +517,9 @@ def phase_feedback(job):
         if job.get('status') == 'running' and requests:
             message = ('Waiting for the provider response.' if any(row['state'] == 'submitted' for row in requests)
                        else 'Processing translation responses and saving progress.')
-            return {'phase': 'translate', 'message': message, 'itemProgress': None}
+            # Keep the worker's current filename for per-file activity. Its
+            # native command totals are not translation request percentages.
+            return {'phase': 'translate', 'message': message}
     if job.get('mode') != 'batch' or job.get('status') not in {'running', 'waiting', 'stopped', 'interrupted'}:
         return {}
     phase = str(job.get('phase', ''))

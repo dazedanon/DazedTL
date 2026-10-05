@@ -18,6 +18,77 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_live_provider_errors_retain_sanitized_bodies_without_changing_submission_guards(self):
+        # OpenRouter's useful failure was in metadata.raw; retaining only its
+        # generic message hid the cause. Wrapped SDK and text errors also lost
+        # their bodies. Retention must not expose secrets or authorize a retry.
+        secret = 'fixture-private-value'
+        raw = json.dumps({'error': 'Unsupported response schema', 'api_key': 'nested-private-value',
+                          'detail': 'x' * 2200 + ' tail detail', 'authorization': 'Bearer hidden'})
+        nested = {'error': {'message': 'Provider returned error', 'code': 400,
+                  'metadata': {'provider_name': 'Fixture host', 'raw': raw,
+                               'echo': secret, 'X-API-Key': 'header-private-value'}}}
+        cases = [('nested', nested, 400, False), ('wrapped', nested, 400, True),
+                 ('text', 'Upstream unavailable\nBearer sk-fixture-token\n' + secret, 502, False),
+                 ('http_body', None, 503, False), ('transport', None, None, False),
+                 ('bounded', 'x' * 63_998 + secret + 'tail' * 1000, 500, False)]
+        with TemporaryDirectory() as temporary:
+            for name, body, status, wrapped in cases:
+                with self.subTest(name=name):
+                    root = Path(temporary) / name
+                    evidence = Evidence(root, 'translate')
+                    failure = RuntimeError('Private exception request headers must not be saved: ' + secret)
+                    failure.body, failure.status_code = body, status
+                    if name == 'http_body':
+                        failure.response = SimpleNamespace(text='<html>Gateway unavailable</html>')
+                    params = {'model': 'fixture', 'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}
+                    calls = []
+                    def native(user):
+                        calls.append(user)
+                        evidence.record(params)
+                        if wrapped:
+                            try:
+                                raise failure
+                            except RuntimeError:
+                                raise ValueError('Native wrapper also contains private request details')
+                        raise failure
+                    translation = SimpleNamespace(queue_batch_request=lambda *_: 'unused',
+                        _write_request_debug_log=lambda *_: None, translateText=native, translateAI=lambda text: None,
+                        openai=SimpleNamespace(api_key=secret))
+                    evidence.install(translation)
+                    with self.assertRaises((RuntimeError, ValueError)):
+                        translation.translateText('{"Line1":"薬"}')
+                    payload = process_view.payload(root, 0)
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(payload['state'], 'failed' if status == 400 and not wrapped else 'uncertain')
+                    self.assertIsNone(payload['response'])
+                    self.assertIsNone(payload['translations'])
+                    self.assertIsNone(payload['usage'])
+                    detail = payload['error']
+                    self.assertEqual(detail['status'], status)
+                    retained = json.dumps(detail)
+                    for private in (secret, 'nested-private-value', 'header-private-value', 'sk-fixture-token',
+                                    'Bearer hidden', 'Private exception', 'Native wrapper'):
+                        self.assertNotIn(private, retained)
+                    if name in {'nested', 'wrapped'}:
+                        metadata = detail['body']['error']['metadata']
+                        self.assertEqual(metadata['provider_name'], 'Fixture host')
+                        self.assertEqual(json.loads(metadata['raw'])['error'], 'Unsupported response schema')
+                        self.assertTrue(json.loads(metadata['raw'])['detail'].endswith('tail detail'))
+                    elif name == 'text':
+                        self.assertIn('Upstream unavailable', detail['body'])
+                    elif name == 'http_body':
+                        self.assertEqual(detail['body'], '<html>Gateway unavailable</html>')
+                    elif name == 'transport':
+                        self.assertNotIn('body', detail)
+                    elif name == 'bounded':
+                        self.assertTrue(detail['body'].endswith('[response truncated]'))
+                        self.assertLess(len(detail['body']), 64_100)
+                    # Reading the saved failure cannot change its receipt.
+                    before = evidence.path.read_bytes()
+                    self.assertEqual(process_view.payload(root, 0)['error'], detail)
+                    self.assertEqual(evidence.path.read_bytes(), before)
+
     def test_live_clarification_groups_require_exact_ownership_and_preserve_each_receipt(self):
         # Interleaved retries used to become unrelated selector rows. Grouping
         # must preserve both bodies/usage and never merge similar game requests.
@@ -728,15 +799,20 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(process_view.phase_feedback(job), {})
         job.update(mode='translate', status='running', phase='translate')
         self.assertEqual(process_view.phase_feedback(job), {})
-        job.update(phase='preparing', process={'requests': [{'state': 'submitted'}]}, itemProgress={'current': 25, 'total': 5887})
+        job.update(phase='preparing', process={'requests': [{'state': 'submitted'}]},
+                   itemProgress={'file': 'Map010.json', 'current': 25, 'total': 5887})
         live = process_view.phase_feedback(job)
         self.assertEqual(live['phase'], 'translate')
-        self.assertIsNone(live['itemProgress'])
+        self.assertEqual({**job, **live}['itemProgress'], job['itemProgress'])
         self.assertIn('Waiting', live['message'])
+        # Rejected receipts do not end the worker's parsing of this file.
+        job['process']['requests'] = [{'state': 'rejected'}]
+        self.assertEqual({**job, **process_view.phase_feedback(job)}['itemProgress'], job['itemProgress'])
         job.update(status='complete', process={'validationIssues': [{'file': 'Map001.json'}]})
         finished = process_view.phase_feedback(job)
         self.assertEqual(finished['phase'], 'done')
         self.assertIsNone(finished['progress'])
+        self.assertIsNone(finished['itemProgress'])
         self.assertIn('rejected', finished['message'])
 
     def test_live_receipt_usage_and_validation_are_separate_from_preparation(self):

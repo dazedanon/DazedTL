@@ -5,6 +5,7 @@ import {
   type ApplicationSource,
 } from "../app/src/app/applicationStore.ts";
 import type { GuidedState, Project, WorkspaceSnapshot } from "../app/src/api/contracts.ts";
+import { fileRun, fileStatus } from "../app/src/features/guided/translationView.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const snapshot = (ready = false): WorkspaceSnapshot => ({
@@ -121,11 +122,18 @@ const projectSnapshot = (id: string): WorkspaceSnapshot => ({
 
 test("navigation completes during an outstanding observation without losing newer project evidence", async (t) => {
   const initial = projectSnapshot("one");
+  initial.guided!.runs = [
+    { id: "new", status: "complete", workerStatus: "complete", mode: "batch", logicalPhase: "dialogue", files: ["Map001.json"],
+      availableOutputs: ["Map001.json"], message: "", log: [] },
+    { id: "old", status: "stopped", workerStatus: "stopped", mode: "batch", logicalPhase: "dialogue", files: ["Map001.json"], message: "", log: [] },
+  ];
+  const status = () => fileStatus("Map001.json", fileRun(store.getSnapshot().snapshot!.guided!.runs, "dialogue", "Map001.json"));
   const pending = Promise.withResolvers<WorkspaceSnapshot>();
   let calls = 0;
   const { store } = setup(() => ++calls === 1 ? Promise.resolve(initial) : pending.promise);
   t.after(() => store.stop());
   store.start(); await store.refresh();
+  const before = status();
   const reading = store.refresh();
   store.navigate("guided");
   store.navigateGuided("one", { step: "translate", task: "dialogue", eventView: "sources", textView: "fitting", contextDocument: "game" });
@@ -135,7 +143,10 @@ test("navigation completes during an outstanding observation without losing newe
   assert.equal(settled, true);
   assert.equal(calls, 2);
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
-  pending.resolve({ ...initial, application: { ...initial.application, provider_ready: true } });
+  assert.deepEqual(status(), before);
+  pending.resolve({ ...initial, application: { ...initial.application, provider_ready: true }, guided: { ...initial.guided!, runs: [
+    initial.guided!.runs[0], { ...initial.guided!.runs[1], status: "running", process: { errors: [], monitoring: { state: "monitoring", message: "Checking provider" } } },
+  ] } });
   await reading;
   const value = store.getSnapshot().snapshot!;
   assert.equal(value.application.screen, "guided");
@@ -144,6 +155,7 @@ test("navigation completes during an outstanding observation without losing newe
   assert.equal(value.guided?.contextDocument, "game");
   assert.equal(value.guided?.eventText.view, "sources");
   assert.equal(value.guided?.form.text.view, "fitting");
+  assert.deepEqual(status(), before);
 });
 
 test("workflow views persist per project and storage failures leave the previous view usable", async (t) => {

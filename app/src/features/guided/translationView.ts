@@ -1,6 +1,7 @@
 import type { GuidedState, Job, Phase, RunPayload, RunProcess } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
+const activeWorker = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.workerStatus ?? run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
 export const providerBatchActive = (status: string) => ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(status);
 export const requestStateLabel = (state: string) => ({ unused: "Unused duplicate", rejected: "Validation failed",
@@ -69,7 +70,7 @@ export function preparationFollowup(id: string, runs: Job[], answeredApproval?: 
 export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]) {
   const own = runs.filter(run => run.logicalPhase === phase)
     .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
-  const latest = own.find(run => run.mode !== "estimate" && activeRun(run)) || own[0];
+  const latest = own.find(run => run.mode !== "estimate" && activeWorker(run)) || own[0];
   // Check scope after choosing the latest attempt. Falling back by overlap
   // revives old failures when selection changes or an estimate replaces them.
   return latest && latest.mode !== "estimate"
@@ -82,7 +83,7 @@ export function completeForSelection(run: Job, selected: readonly string[]) {
   return !!run.scopeComplete && selected.length > 0 && run.files?.length === selected.length && selected.every(name => run.files!.includes(name) && !run.partialOutputs?.includes(name) && !run.retiredFiles?.includes(name));
 }
 export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, previous?: Job, estimateCurrent = true) {
-  if (run?.files?.includes(name) && activeRun(run)) return run;
+  if (run?.files?.includes(name) && activeWorker(run)) return run;
   if (estimateCurrent && estimate?.files?.includes(name)) return estimate;
   if (run?.files?.includes(name) && run.scopeComplete) return run;
   const saved = previous?.files?.includes(name) ? previous : undefined;
@@ -93,7 +94,7 @@ export function filePreviewRun(name: string, run?: Job, estimate?: Job | null, p
 export function fileRun(runs: Job[], phase: Phase, name: string, retired: readonly string[] = []) {
   const matches = runs.filter(run => run.logicalPhase === phase && run.mode !== "estimate" && !retired.includes(run.id)
     && !run.retiredFiles?.includes(name) && run.files?.includes(name));
-  return matches.find(activeRun) || matches[0];
+  return matches.find(activeWorker) || matches[0];
 }
 /** Task progress covers the whole file group, independently of the next action's selection. */
 export function translationTaskComplete(state: Pick<GuidedState, "files" | "runs" | "sourceStatus">, phase: "database" | "dialogue") {
@@ -101,10 +102,10 @@ export function translationTaskComplete(state: Pick<GuidedState, "files" | "runs
   return files.length > 0 && files.every(({ name }) => {
     if (state.sourceStatus.changed.includes(name)) return false;
     const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
-    if (!run || run.temporary || activeRun(run) || run.partialOutputs?.includes(name)) return false;
+    if (!run || run.temporary || activeWorker(run) || run.partialOutputs?.includes(name)) return false;
     // Completion remains conservative even when a retained file can be shown
     // normally while an interrupted Batch still has unfinished run work.
-    if (run.mode === "batch" && ["stopped", "interrupted"].includes(run.status)
+    if (run.mode === "batch" && ["stopped", "interrupted"].includes(run.workerStatus ?? run.status)
       && (run.phase?.startsWith("poll") || run.process?.resultsCollected)) return false;
     return fileStatus(name, run).tone === "success"
       || run.mode === "batch" && !run.outputs?.[name] && !!run.process?.noRequestFiles?.includes(name);
@@ -116,7 +117,7 @@ export function fileMetricRun(runs: Job[], phase: Phase, name: string, retired: 
     && !retired.includes(run.id) && !run.retiredFiles?.includes(name) && run.files?.includes(name));
   const changed = (run: Job) => run.changedOutputs !== undefined ? run.changedOutputs.includes(name)
     : !run.process?.noRequestFiles?.includes(name) && !!run.process?.fileMetrics?.[name];
-  return matches.find(run => activeRun(run) && changed(run)) || matches.find(changed);
+  return matches.find(run => activeWorker(run) && changed(run)) || matches.find(changed);
 }
 /** Unsettled Batches remain visible independently of Apply and working-file reloads. */
 export function unsettledBatches(runs: Job[], selected: readonly string[]) {
@@ -129,21 +130,22 @@ export function unsettledBatches(runs: Job[], selected: readonly string[]) {
 }
 /** File receipts and verified output own the row; run diagnostics stay in Inspect. */
 export function fileStatus(name: string, run?: Job) {
-  const idle = { label: "", tone: "idle", symbol: "", pending: false };
+  const idle = { label: "Not started", tone: "idle", symbol: "·", pending: false };
+  const complete = { label: "Complete", tone: "success", symbol: "✓", pending: false };
   const progress = { label: "In progress", tone: "active", symbol: "◷", pending: true };
   const incomplete = { label: "Incomplete", tone: "idle", symbol: "◐", pending: false };
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return idle;
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
   const noRequests = run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
-  if (noRequests && !saved && !run.outputs?.[name]) return idle;
+  if (noRequests && !saved && !run.outputs?.[name]) return complete;
   if (run.temporary) {
-    return activeRun(run) ? { ...progress, pending: !run.approval } : idle;
+    return activeWorker(run) ? { ...progress, pending: !run.approval } : idle;
   }
   const rows = groupedRequests(run.process?.requests?.filter(row => row.file === name) || []);
   const states = rows.map(row => row.state);
   const partial = run.partialOutputs?.includes(name) || run.process?.validationIssues?.some(issue => issue.file === name);
-  const working = activeRun(run);
-  if (!noRequests && run.status !== "complete") {
+  const working = activeWorker(run);
+  if (!noRequests && (run.workerStatus ?? run.status) !== "complete") {
     if (working && run.approval) return { ...progress, pending: false };
     const submitted = rows.filter(row => row.state === "submitted");
     if (run.mode === "batch" && submitted.length) {
@@ -160,13 +162,15 @@ export function fileStatus(name: string, run?: Job) {
     if (working && states.some(state => ["queued", "prepared"].includes(state))) return progress;
     if (!saved || partial && working) {
       if (working && states.some(state => ["received", "validated"].includes(state)) && (run.mode !== "batch" || run.phase === "consume")) return progress;
-      if (working && run.mode !== "batch" && run.progress?.file === name) return progress;
+      // Item progress identifies the file still being parsed between requests,
+      // including after rejection; progress.file is the last finished file.
+      if (working && run.mode !== "batch" && run.itemProgress?.file === name) return progress;
     }
   }
   if (saved && partial) return incomplete;
   if (saved) return run.appliedOutputs?.includes(name)
-    ? { ...idle, label: "Applied", tone: "success", symbol: "✓" }
-    : { ...idle, label: "Translated", tone: "success", symbol: "✓" };
+    ? { ...complete, label: "Applied" }
+    : complete;
   if (run.outputs?.[name]) return { ...incomplete, tone: "warning", symbol: "!" };
   if (partial || states.length) return incomplete;
   if (working && run.mode !== "batch") return progress;

@@ -32,6 +32,7 @@ export type Documents = Record<
 export interface Job {
   id: string;
   status: string;
+  workerStatus?: string;
   message: string;
   created?: string;
   updated?: string;
