@@ -3,3 +3,5 @@
 efb9d11a58f4a1b8a624677ccac8062fb88e6fbc
 # docs: reflow architecture and contract to one sentence per line
 a43006c6094dd744e60640c9ee7f3a33084131c9
+# style: apply Ruff's safe lint fixes
+167144302759fc300ccaa904b32a565aec888475
