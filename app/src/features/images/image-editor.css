@@ -261,6 +261,7 @@
 }
 .native-image-editor > .action-bar {
   flex: 0 0 auto;
+  padding-inline: var(--space-4);
 }
 @media (max-width: 1100px) {
   .native-editor-body {

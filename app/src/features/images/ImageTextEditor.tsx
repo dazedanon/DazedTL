@@ -1117,40 +1117,12 @@ function Editor({
                           tail
                         />
                       )}
-                    {job.progress && (
+                    {nativeState?.activeId === job.id && job.progress && (
                       <progress
                         value={job.progress.current}
                         max={job.progress.total || 1}
                       />
                     )}
-                    {nativeState?.activeId === job.id ? (
-                      <Button
-                        disabled={busy}
-                        onClick={() => {
-                          void nativeAction("stop");
-                        }}
-                      >
-                        {job.mode === "batch"
-                          ? "Pause monitoring"
-                          : "Stop after current work"}
-                      </Button>
-                    ) : [
-                        "failed",
-                        "stopped",
-                        "interrupted",
-                        "canceled",
-                      ].includes(job.status) ? (
-                      <Button
-                        disabled={busy}
-                        onClick={() =>
-                          job.mode === "estimate"
-                            ? void nativeAction("resume", { approved: false })
-                            : setResumeReview(true)
-                        }
-                      >
-                        Resume saved run
-                      </Button>
-                    ) : null}
                     {job.approval && (
                       <div className="native-editor-approval">
                         <strong>Review provider Batch submission</strong>
@@ -1203,17 +1175,45 @@ function Editor({
                     )}
                   </>
                 )}
-                <Button
-                  disabled={busy}
-                  onClick={() => {
-                    void action.run(
-                      refreshNative,
-                      "Saved native run refreshed.",
-                    );
-                  }}
-                >
-                  Refresh saved run
-                </Button>
+                <div className="actions">
+                  {job && nativeState?.activeId === job.id ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => {
+                        void nativeAction("stop");
+                      }}
+                    >
+                      {job.mode === "batch"
+                        ? "Pause monitoring"
+                        : "Stop after current work"}
+                    </Button>
+                  ) : job &&
+                    ["failed", "stopped", "interrupted", "canceled"].includes(
+                      job.status,
+                    ) ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        job.mode === "estimate"
+                          ? void nativeAction("resume", { approved: false })
+                          : setResumeReview(true)
+                      }
+                    >
+                      Resume saved run
+                    </Button>
+                  ) : null}
+                  <Button
+                    disabled={busy}
+                    onClick={() => {
+                      void action.run(
+                        refreshNative,
+                        "Saved native run refreshed.",
+                      );
+                    }}
+                  >
+                    Refresh saved run
+                  </Button>
+                </div>
               </>
             )}
           </section>
