@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, LoaderCircle } from "lucide-react";
 import type { Job, NameTranslationPage, RunPayload } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { ComboBox } from "../../ui/ComboBox";
@@ -13,6 +13,7 @@ import { requestAttempt, translatedLines } from "./translationView";
 import { requestOutcome, requestBatches, requestBatchOutcome, payloadForBatch, type RequestBatch } from "./requestView";
 import { RunTechnical } from "./RunTechnical";
 import { RequestFailure } from "./RequestFailure";
+import { providerBatchActive } from "./batchView";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 function responseText(response: unknown) {
@@ -60,10 +61,9 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
   const [attemptSelection, setAttemptSelection] = useState<{ request: number; attempt: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [refreshed, setRefreshed] = useState(false);
-  const [refresh, setRefresh] = useState(0);
+  const [retry, setRetry] = useState(0);
+  const [retrying, setRetrying] = useState(false);
   const reader = useRef<HTMLDivElement>(null);
-  const refreshedIndex = useRef<number | null>(null);
   const payloadReader = useRef(readPayload);
   payloadReader.current = readPayload;
   const tabId = useId();
@@ -76,6 +76,10 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
   const requests = selectedBatch?.rows || [];
   const selected = requests.find(row => row.indices.includes(view.index)) || requests[0];
   const index = selected?.index;
+  // Follow the shared observer's receipt changes, including a clarification
+  // that changes provider state without changing the grouped request state.
+  const receiptRevision = JSON.stringify([selected?.indices, selected?.state, selected?.providerFinished,
+    selectedProviders.map(batch => [batch.id, batch.status])]);
   function change(value: Partial<InspectorView>) {
     setView(previous => {
       const next = { ...previous, ...value };
@@ -85,25 +89,26 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
   }
   useEffect(() => {
     let current = true;
-    if (index == null || !payloadReader.current) { setBusy(false); setError(""); setPayload(null); return; }
-    setBusy(true); setError(""); setRefreshed(false);
-    void payloadReader.current(index).then(value => { if (current) { setPayload(value); setRefreshed(refreshedIndex.current === index); } })
+    if (index == null || !payloadReader.current) { setBusy(false); setRetrying(false); setError(""); setPayload(null); return; }
+    setBusy(true); setError("");
+    void payloadReader.current(index).then(value => { if (current) setPayload(value); })
       .catch(failure => { if (current) setError(failure instanceof Error ? failure.message : "Saved request unavailable."); })
-      .finally(() => { if (current) setBusy(false); });
+      .finally(() => { if (current) { setBusy(false); setRetrying(false); } });
     return () => { current = false; };
-  }, [index, refresh, selected?.state, selected?.indices.length]);
+  }, [index, retry, receiptRevision]);
   const requestPayload = payload && payload.index === index ? payloadForBatch(payload, selectedProviders.length ? selectedProviders.map(batch => batch.id) : undefined) : null;
   const attempts = requestPayload?.responseAttempts || [];
   const attemptIndex = Math.max(0, Math.min(attempts.length - 1, attemptSelection && attemptSelection.request === index ? attemptSelection.attempt : attempts.length - 1));
   const visiblePayload = requestPayload && requestAttempt(requestPayload, attemptIndex);
   useEffect(() => { reader.current?.scrollTo(0, 0); }, [index, view.tab, attemptIndex]);
-  const choose = (number: number) => { refreshedIndex.current = null; change({ index: number }); setRefreshed(false); };
+  const choose = (number: number) => change({ index: number });
   function openBatch(batch: RequestBatch) {
-    refreshedIndex.current = null;
     setAttemptSelection(null);
     change({ batch: batch.id, index: batch.rows[0]?.index || 0, tab: "source" });
   }
   const selectionOutcome = selected && (visiblePayload ? requestOutcome({ ...visiblePayload, providerFinished: selected.providerFinished }) : selected.outcome);
+  const atProvider = (visiblePayload?.state || selected?.state) === "submitted" && !selected?.providerFinished
+    && (job.mode !== "batch" || selectedProviders.some(batch => providerBatchActive(batch.status)));
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
   const selectedFile = selected?.file || initialRequest?.file;
@@ -145,9 +150,10 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
                   description: row.outcome.label }))}
                 onChange={value => choose(Number(value))} />
             </div>
-            {selectionOutcome && <span className="request-outcome" data-state={selectionOutcome.group}>{selectionOutcome.label}</span>}
+            {selectionOutcome && <span className="request-outcome" data-state={selectionOutcome.group} role="status">
+              {atProvider && <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" />}{selectionOutcome.label}
+            </span>}
           </div>
-          {readPayload && <Button variant="quiet" aria-label="Refresh request" pending={busy} disabled={busy || index == null} onClick={() => { refreshedIndex.current = index ?? null; setRefresh(value => value + 1); }}>{!busy && <RefreshCw size={14} aria-hidden="true" />}{busy ? "Reading…" : refreshed ? "Updated" : "Refresh"}</Button>}
         </div>
         <Tabs id={tabId} label="Request content" items={tabs} value={view.tab} onChange={tab => change({ tab })} />
         {attempts.length > 1 && <Tabs id={attemptTabId} label="Request attempt" value={String(attemptIndex)}
@@ -158,6 +164,8 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
           id={attempts.length > 1 ? `${attemptTabId}-panel-${attemptIndex}` : undefined}
           aria-labelledby={attempts.length > 1 ? `${attemptTabId}-tab-${attemptIndex}` : undefined}>
           <Message message={error} />
+          {(error || retrying) && readPayload && <Button variant="quiet" pending={retrying} disabled={busy}
+            onClick={() => { setRetrying(true); setRetry(value => value + 1); }}>{retrying ? "Reading request…" : "Retry reading request"}</Button>}
           {selectedFile && <p className="request-selection-file muted">{selectedFile}</p>}
           {view.tab !== "source" && legacyIssues.map(issue => <p className="translation-error" key={issue.file}>{issue.file}: validation mismatches were recorded, but this older run did not retain which request failed.</p>)}
           {visiblePayload?.unused && <div className="request-unused">
@@ -185,10 +193,10 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
               {visiblePayload && <RequestFailure payload={visiblePayload} details />}
               {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}
               {visiblePayload?.responseOrigin === "log" && <p className="muted">Final attempt recovered from the saved validation log. Earlier retry bodies were not retained.</p>}
-              {!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Technical contains any retained failure details."}</p>
+              {!visiblePayload ? error || retrying ? null : <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Technical contains any retained failure details."}</p>
                 : comparison ? comparison
                 : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : visiblePayload.error != null ? null : <p className="muted" role="status">{selected?.providerFinished && visiblePayload.state === "submitted" ? "Waiting to download the response." : ["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for response." : visiblePayload.state === "uncertain" ? "No response recorded. Submission could not be confirmed." : ["failed", "rejected"].includes(visiblePayload.state) ? "No response was retained for this attempt." : "The original response was not retained."}</p>}
-            </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh to try again." : "No request payload is available. Technical contains the retained run record."}</p>
+            </> : !visiblePayload ? error || retrying ? null : <p className="muted" role="status">{busy ? "Reading saved request…" : "No request payload is available. Technical contains the retained run record."}</p>
               : <RequestSource payload={visiblePayload} />}
           </TabPanel>
         </div>
