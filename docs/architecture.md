@@ -194,6 +194,7 @@ Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionLi
 action-column width, token-based gaps, wrapping text, and a stacked layout based on available
 container width. The compact variant fits shorter actions to their content and stacks in narrower containers. Rows grow with feedback rather than fixing heights or clipping content.
 Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
+The [preparation formatting adapter](../backend/dazedtl/compatibility/formatting.py) writes JSON and `plugins.js` as UTF-8 with LF on every platform, matching translated JSON and fitting output. Byte comparisons normalize already-formatted CRLF/CR files too, preventing whole-file line-ending diffs on Apply. Runtime activation installs these writers without changing the engine bytes used by saved-run signatures; frozen outputs and exact backup/restore bytes remain authoritative.
 Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click;
 the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and source refresh retain their review requirements.

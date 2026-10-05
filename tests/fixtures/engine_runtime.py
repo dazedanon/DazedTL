@@ -45,6 +45,18 @@ try:
         # A real saved run's pre-relocation signature must still pass the native
         # resume guard. Updating engine behavior needs its own recovery decision.
         assert signature("RPG Maker MV/MZ") == "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa"
+        # Real engine preparation imports must reach the LF adapter, including
+        # a file whose only difference is CRLF (hidden by read_text()).
+        from util.dazedformat import format_json_files
+        from util.project_preparation import format_plugins_js
+        prepared = temporary / "formatting"
+        prepared.mkdir()
+        (prepared / "Items.json").write_bytes(b'{\r\n    "name": "Potion"\r\n}')
+        (prepared / "plugins.js").write_bytes(b"var $plugins = [];\r\n")
+        assert format_json_files(prepared) == (1, [])
+        format_plugins_js(prepared / "plugins.js")
+        assert (prepared / "Items.json").read_bytes() == b'{\n    "name": "Potion"\n}'
+        assert (prepared / "plugins.js").read_bytes() == b"var $plugins = [];\n"
         assert runtime_data_file(PROMPT_PATH).is_relative_to(root / "backend/dazedtl/data")
         assert load_system_prompt() and load_project_setup("rpgmaker")
         manual = app.backend.manual
