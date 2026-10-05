@@ -857,11 +857,11 @@ try:
         )
     )
     assert refusal["refusal"] and refusal["prompt_tokens"] == 5
-    for name, module in list(sys.modules.items()):
-        if name.startswith(("util.", "modules.", "desktop.backend.")) and getattr(
-            module, "__file__", None
-        ):
-            assert Path(module.__file__).is_relative_to(ENGINE_ROOT), name
+    for module_name, module in list(sys.modules.items()):
+        if module_name.startswith(
+            ("util.", "modules.", "desktop.backend.")
+        ) and getattr(module, "__file__", None):
+            assert Path(module.__file__).is_relative_to(ENGINE_ROOT), module_name
     print(
         "Bundled startup, frozen guidance, saved-run signature and isolated parser estimation passed."
     )

@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import process_view, request_scope, state_requests
@@ -1286,7 +1287,7 @@ class ProcessTests(unittest.TestCase):
         # exact writer association, glossary separation and no duplicate consume.
         counts = [1] * 15 + [3] * 20 + [5] * 3 + [2] + [3] * 4 + [4] * 2
         fields = ["name", "description", "message1", "message2", "message3", "message4"]
-        data = [None] + [
+        data: list[Any] = [None] + [
             {
                 "id": i + 1,
                 **{

@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import batch_control
@@ -30,7 +31,7 @@ class BatchMonitorTests(unittest.TestCase):
                 "unsent": {"payload": '{"Line1":"盾"}', "params": {}},
             },
         )
-        job = {"id": "run", "mode": "batch", "status": "stopped"}
+        job: dict[str, Any] = {"id": "run", "mode": "batch", "status": "stopped"}
         source = str(root / "game")
         owner = {"id": "project", "backend_id": "native", "source": source}
         lock = threading.RLock()

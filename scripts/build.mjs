@@ -31,6 +31,7 @@ const checks = [
     { env: { OXLINT_TSGOLINT_PATH: tsgolint } },
   ),
   { command: ruff, args: ["check", "--quiet", "."] },
+  node("pyright/index.js", []),
   node("typescript/bin/tsc", ["-p", "app/electron"]),
 ];
 const build = [
