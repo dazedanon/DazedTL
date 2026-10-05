@@ -80,8 +80,7 @@ def read(root, job):
         plan_path = project_path(root, 'plan.json', exists=False)
         if not value and not names and not plan_path.exists():
             return None
-        stat = plan_path.stat()
-        plan = _read_cached(str(plan_path), stat.st_mtime_ns, stat.st_size)
+        plan = _read_cached(str(plan_path), file_stamp(plan_path))
         if not isinstance(plan, dict):
             raise ValueError('The saved run plan is invalid.')
         if not value and not names and not plan.get('dazedtl_reused_names'):

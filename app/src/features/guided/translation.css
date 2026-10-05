@@ -107,6 +107,8 @@
 .translation-flow-loading { display:grid; place-items:center; }
 .translation-flow-progress,.translation-flow-activity { display:grid; justify-items:center; gap:var(--space-3); text-align:center; min-width:0; max-width:100%; }
 .translation-flow-progress { gap:var(--space-4); }
+.translation-flow-file { display:grid; justify-items:center; gap:var(--space-1); max-width:100%; min-width:0; }
+.translation-flow-file .expandable-text { max-width:100%; text-align:center; }
 .translation-flow-progress > .name-translation-feedback { justify-content:center; }
 .translation-flow-loading small { color:var(--muted); }
 .translation-review-heading { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); }

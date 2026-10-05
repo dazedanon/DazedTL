@@ -50,8 +50,8 @@ def choice_outputs(source, source_stamp, output, output_stamp):
 
 def saved_choices(root, filename):
     plan_path, job_path = project_path(root, 'plan.json'), project_path(root, 'job.json')
-    plan = _read_cached(str(plan_path), plan_path.stat().st_mtime_ns, plan_path.stat().st_size)
-    job = _read_cached(str(job_path), job_path.stat().st_mtime_ns, job_path.stat().st_size)
+    plan = _read_cached(str(plan_path), file_stamp(plan_path))
+    job = _read_cached(str(job_path), file_stamp(job_path))
     if (plan.get('engine') not in {'MVMZ', 'RPG Maker MV/MZ'}
             or (plan.get('dazedtl_request_policy') or {}).get('choiceCollection')
             or job.get('plan_hash') != _verified_digest(str(plan_path), file_stamp(plan_path))):

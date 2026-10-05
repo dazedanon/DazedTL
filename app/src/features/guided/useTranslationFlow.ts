@@ -78,7 +78,7 @@ export function useTranslationFlow(options: Options) {
       // Retain the ID even after cancellation so a late reply is discarded,
       // never followed into another preparation or paid submission.
       session.state.estimateId = estimate.id;
-      if (!canceled(session)) change(session, { stage: "estimating" });
+      if (!canceled(session)) change(session, { stage: "estimating", job: estimate });
     });
   }
   useEffect(() => {
@@ -88,14 +88,17 @@ export function useTranslationFlow(options: Options) {
     if (value.stage === "estimating" && value.estimateId && !session.advanced) {
       const result = estimateFollowup(value.estimateId, options.state.estimates[value.phase], options.state.runs,
         options.dirty || value.phase !== options.phase || value.mode !== options.mode);
-      if (result.kind === "waiting") return;
+      if (result.kind === "waiting") {
+        if (result.job && result.job !== value.job) change(session, { job: result.job });
+        return;
+      }
       session.advanced = true;
       if (result.kind === "failed" || result.kind === "stale") {
         change(session, { stage: "error", error: result.kind === "stale" ? "The selection or guidance changed. Prepare a fresh estimate." : result.job?.message || "The estimate could not finish." });
       } else if (result.kind === "empty" && value.phase !== "variables") {
         change(session, { stage: "empty", job: result.job! });
       } else {
-        change(session, { stage: "batch" });
+        change(session, { stage: "batch", job: undefined });
         void perform(session, async () => {
           const preview = await api.preview(options.projectId, "start", undefined, { mode: value.mode });
           if (canceled(session)) return;

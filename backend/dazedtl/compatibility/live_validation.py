@@ -13,11 +13,11 @@ from .process_view import _ledger_records, _read_cached, _verified_digest, file_
 def finished_files(root):
     try:
         job_path, plan_path = (project_path(root, name) for name in ('job.json', 'plan.json'))
-        job = _read_cached(str(job_path), job_path.stat().st_mtime_ns, job_path.stat().st_size)
+        job = _read_cached(str(job_path), file_stamp(job_path))
         if (job.get('mode') != 'translate' or job.get('status') != 'complete'
                 or job.get('plan_hash') != _verified_digest(str(plan_path), file_stamp(plan_path))):
             return frozenset()
-        plan = _read_cached(str(plan_path), plan_path.stat().st_mtime_ns, plan_path.stat().st_size)
+        plan = _read_cached(str(plan_path), file_stamp(plan_path))
         if plan.get('mode') != 'translate' or set(plan.get('selected', [])) != set(job.get('files', [])):
             return frozenset()
         complete = set(job.get('completed', [])) & set(plan.get('selected', [])) - set(job.get('errors', {}))

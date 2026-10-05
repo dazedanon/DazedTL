@@ -18,6 +18,9 @@ class GuidedRuns:
         self.comparison_files = {}
 
     def records(self, project_id):
+        return self.guided.observations.once(('records', project_id), lambda: self._records(project_id))
+
+    def _records(self, project_id):
         path = self.guided.path(project_id, "runs")
         records = read_json(path).get("runs", {}) if path.exists() else {}
         jobs = getattr(getattr(self.guided.backend, 'manual', None), 'jobs', {})
@@ -84,17 +87,18 @@ class GuidedRuns:
     def inputs(self, project_id, native, phase, mode, *, guard=None):
         names = self.files(native, phase)
         inputs = self.guided.inputs(native)
-        sources = inputs.sources(names, inputs.record()["inputs"], self.guided.observed_digest)
+        record = inputs.record()
+        sources = inputs.sources(names, record["inputs"], self.guided.observed_digest)
         guard = guard if guard is not None else self.guided.backend.guided_guard(native, inputs.folder)
         # Native guards include other phases' work. Their selections and outputs
         # are independent; only shared frozen context belongs in every quote.
         context = {key: value for key, value in guard.items()
                    if key not in {"data", "files", "translated", "variables"}}
-        versions = {name: inputs.record().get("file_versions", {}).get(name, "") for name in names}
-        configuration = self.guided.settings.guided_configuration(mode)
+        versions = {name: record.get("file_versions", {}).get(name, "") for name in names}
+        configuration = self.guided.observations.once(('configuration', mode), lambda: self.guided.settings.guided_configuration(mode))
         reused_names = self.name_reuse(native, configuration.get('language'))
         value = {"file_versions": versions, "version": 1, "project": project_id, "phase": phase, "mode": mode,
-                 "source": sources, "source_pass": inputs.record().get("last_refresh"), "files": names,
+                 "source": sources, "source_pass": record.get("last_refresh"), "files": names,
                  "working": {name: digest(self.working_bytes(native, name, sources[name])) for name in names},
                  "configuration": configuration,
                  "reused_names": reused_names,
@@ -113,6 +117,9 @@ class GuidedRuns:
         return {"fingerprint": digest(value), "source": sources, "files": names, "phase": phase, "mode": mode, "review": review, "file_versions": versions, "reused_names": reused_names}
 
     def name_reuse(self, native, language):
+        return self.guided.observations.once(('names', native['id'], language), lambda: self._name_reuse(native, language))
+
+    def _name_reuse(self, native, language):
         from dazedtl.compatibility.preparations import temporary
         from dazedtl.compatibility.speaker_results import reusable, RECEIPT
         if not language:
@@ -128,7 +135,7 @@ class GuidedRuns:
             if not (job.get('estimate') or {}).get('speakers') and not (root / 'log' / RECEIPT).is_file():
                 continue
             try:
-                plan = self.guided.backend.saved_run_configuration(identity)
+                plan = self.guided.run_configuration(identity)
                 if ((plan.get('workflow') or {}).get('id') != native['id']
                         or (plan.get('settings') or {}).get('language') != language
                         or any(versions.get(name, '') != plan.get('dazedtl_source_versions', {}).get(name, '') for name in job.get('files', []))):

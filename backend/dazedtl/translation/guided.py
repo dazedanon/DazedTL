@@ -58,6 +58,8 @@ class Guided:
         self.batch_confirmations = {}
         self.observed_files = {}
         self.layout_failures = {}
+        from dazedtl.compatibility.observations import RunObservations
+        self.observations = RunObservations()
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
         from .batch_monitor import BatchMonitor
@@ -243,6 +245,12 @@ class Guided:
                             native_exports=native["engine"] == "ACE")
 
     def owned_runs(self, native):
+        return self.observations.once(('owned', native['id']), lambda: self._owned_runs(native))
+
+    def run_configuration(self, identity):
+        return self.observations.configuration(self.backend, identity)
+
+    def _owned_runs(self, native):
         owner = next((item for item in self.projects.data['projects'] if item.get('backend_id') == native['id']), None)
         recorded = list(self.runs.records(owner['id'])) if owner else []
         # Older runs may precede the registry. Their frozen workflow ownership is
@@ -250,7 +258,7 @@ class Guided:
         historical = []
         for identity in getattr(getattr(self.backend, 'manual', None), 'jobs', {}):
             try:
-                if (self.backend.saved_run_configuration(identity).get('workflow') or {}).get('id') == native['id']:
+                if (self.run_configuration(identity).get('workflow') or {}).get('id') == native['id']:
                     historical.append(identity)
             except (OSError, ValueError, KeyError):
                 pass
@@ -265,6 +273,7 @@ class Guided:
 
     def run_view(self, identity, *, compact=False):
         job = dict(self.backend.manual.jobs[identity])
+        plan = {}
         if job.get('mode') in {'translate', 'offline'} and job.get('item_progress'):
             job['itemProgress'] = dict(job['item_progress'])
         from dazedtl.compatibility.preparations import temporary
@@ -274,7 +283,7 @@ class Guided:
         try:
             root = self.backend.manual.folder(identity)
             folder = root / "translated"
-            plan = self.backend.saved_run_configuration(identity)
+            plan = self.run_configuration(identity)
             if (root / "plan.json").is_file() and job.get("plan_hash") == digest((root / "plan.json").read_bytes()):
                 from dazedtl.compatibility.checkpoints import outputs as checkpoint_outputs, can_collect_outputs
                 job["outputs"] = {**job.get("outputs", {}), **(checkpoint_outputs(root, plan) if can_collect_outputs(job) else {})}
@@ -287,7 +296,6 @@ class Guided:
             job["availableOutputs"] = [name for name, expected in job.get("outputs", {}).items()
                                        if project_path(folder, name).is_file() and self.observed_digest(project_path(folder, name)) == expected]
             job["outputsAvailable"] = bool(job.get("outputs")) and len(job["availableOutputs"]) == len(job["outputs"])
-            plan = self.backend.saved_run_configuration(identity)
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
             project = next((item for item in self.projects.data["projects"] if item.get("backend_id") == workflow.get("id")), None)
@@ -312,9 +320,8 @@ class Guided:
             job["log"] = []
         from dazedtl.compatibility.speaker_results import summary as name_summary
         job['nameTranslation'] = name_summary(self.backend.manual.folder(identity), self.backend.manual.jobs[identity])
-        from dazedtl.compatibility.process_view import summary
         try:
-            job["process"] = summary(self.backend.manual.folder(identity), job)
+            job["process"] = self.observations.process(self.backend.manual.folder(identity), job, plan)
             rejected_files = {row['file'] for row in job['process'].get('validationIssues', [])}
             job['partialOutputs'] = sorted(set(job.get('partialOutputs', [])) | (rejected_files & set(job.get('outputs', {}))))
         except (OSError, ValueError, KeyError):
@@ -587,6 +594,10 @@ class Guided:
         return self.preferences(result["project"])
 
     def state(self, project_id):
+        with self.observations.read():
+            return self._state(project_id)
+
+    def _state(self, project_id):
         context = self.context_status(project_id)
         project, native = self.record(project_id)
         value = self.backend.workflows.state(native["id"])
