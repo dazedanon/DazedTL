@@ -3,7 +3,7 @@
 ## Changes
 
 - Preserve existing user changes and the sibling DazedMTLTool repository.
-- Keep changes focused; preserve engine parsing, context, and translation behavior during migration.
+- Keep changes focused; preserve engine parsing, context, and translation behavior.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
 - Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
 - Use the Qt GUI as the guided workflow reference, following the [reference and runtime distinction](docs/architecture.md#ownership).
@@ -25,8 +25,9 @@
 
 ## Testing
 
-- Automated testing is enabled. Run node scripts/test.mjs for foundation or shared behavior changes; use focused targets while iterating.
-- Builds, static checks, and visual review are allowed when relevant to the change.
+- Run `node scripts/test.mjs` (Python and frontend suites, timed against the budget below) for foundation or shared behavior changes.
+  While iterating, run single files with `node --test tests/<name>.test.ts` or `.venv/bin/python -m unittest tests.<module>`.
+- Run `node scripts/build.mjs` (TypeScript type check, then Vite build) for frontend changes; there is no separate linter.
 - UI changes require visual review of affected layouts against the [responsive layout guidance](docs/architecture.md#workflow-and-shared-presentation). Check resizing and reflow where relevant. Exercise long labels/paths and idle, pending, success, and error states; check alignment, text-to-action gaps, clipping, overflow, and redundant status text. Report unverified states.
 - For navigation or observer changes, verify that switching already-loaded views with clean drafts completes while a backend read is stalled, sends no navigation or refresh RPC, and survives a late snapshot. Reuse the [observer tests](tests/application.test.ts); retain draft recovery, project ownership, and execution guards.
 - Use shared layout primitives and spacing tokens, including ActionList/ActionRow for repeated action rows. Fix reusable layout defects in the shared primitive; do not compensate with per-button widths, fixed text heights, or clipped feedback.
@@ -38,7 +39,7 @@
 - Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior.
 - Keep tests hermetic with small generated or committed fixtures; no real providers, user games, credentials, or local workspace dependencies.
 - The full test suite has a hard 10-second wall-clock budget, including runner startup, fixtures, and teardown; builds and dependency installation are separate.
-- Measure the full suite before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
+- Measure the full suite with `node scripts/test.mjs`, which prints its runtime, before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
 - If added coverage reaches the limit, report the overrun and present the same choices before proceeding with more tests.
 - Do not bypass the budget by silently deleting or skipping tests, splitting suites, weakening checks, or raising the limit.
 - Do not optimize for test counts or coverage percentages; report checks run, relevant runtime results, and unverified behavior.
