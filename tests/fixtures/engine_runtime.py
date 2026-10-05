@@ -1,6 +1,7 @@
 """An offline startup and parser probe using only a generated miniature game."""
 
 import json
+from copy import deepcopy
 import os
 from pathlib import Path
 import socket
@@ -70,6 +71,85 @@ try:
     assert (game / "Items.json").read_bytes() == original
     frozen = manual.folder(job["id"]) / "context/system.md"
     assert frozen.read_bytes() == (root / "backend/dazedtl/data/skills/system.md").read_bytes()
+    # Already-translated 101 names used to disappear from requests. Bracketed
+    # tutorial prose also took the short-name prompt and became a bogus label.
+    # Exercise the real two-pass parser in this existing offline process.
+    with app.backend.context():
+        run_settings = json.loads((manual.folder(job['id']) / 'plan.json').read_text())['settings']
+        os.environ.update({key: str(value).lower() if isinstance(value, bool) else str(value)
+                           for key, value in run_settings.items()})
+        from modules import rpgmakermvmz as parser
+        from dazedtl.compatibility.worker_policy import configure_states
+        from dazedtl.settings.preferences import CHOICE_COLLECTION, SPEAKER_CONTEXT
+
+        def command(code, parameters, **extra):
+            return {'code': code, 'indent': 0, 'parameters': parameters, **extra}
+
+        def name(value, **extra):
+            return command(101, ['', 0, 0, 2, value], **extra)
+
+        calls, names = [], []
+        def translate(text, history, *args):
+            calls.append((deepcopy(text), history))
+            return [[r'[Carry the \C[6]Recovery Charm\C[0] to block one attack.]'
+                     if '回復のお守り' in value else '[Hana]: Hello.' for value in text], [0, 0]]
+
+        def speaker(value):
+            names.append(value)
+            return ['Hana', [0, 0]]
+
+        def parse(commands):
+            calls.clear(); names.clear()
+            page = {'list': deepcopy(commands + [command(0, [])])}
+            parser.searchCodes(page, SimpleNamespace(update=lambda *_: None), [], 'Map001.json')
+            return page['list']
+
+        options = dict(CODE101=True, CODE401=True, IGNORETLTEXT=True, PRESERVEORIGINAL=True,
+                       FIRSTLINESPEAKERS=False, INLINE401SPEAKERS=False, FACENAME101=False,
+                       AUTONAMEPOPUP101=False, SPEAKER_PARSE_MODE=False, FIXTEXTWRAP=False,
+                       translateAI=translate, getSpeaker=speaker)
+        policy = {'choiceCollection': CHOICE_COLLECTION, 'speakerContext': SPEAKER_CONTEXT}
+        with patch.multiple(parser, **options):
+            for generation in (policy, policy, {}, policy):
+                configure_states({'engine': 'MVMZ'}, temporary, generation)
+                commands = [name(r'\C[2]【Hana】\C[0]', _original='花'), command(401, ['こんにちは']),
+                            name(''), command(401, ['地の文']),
+                            name('Hana'), command(401, ['話します']),
+                            name('花'), command(401, ['Already translated.'], _original='訳済み'),
+                            name(''), command(401, ['誰かの言葉'])]
+                result = parse(commands)
+                expected = (['[Hana]: こんにちは', '地の文', '[Hana]: 話します', '誰かの言葉'] if generation else
+                            ['こんにちは', '地の文', '話します', '[Hana]: 誰かの言葉'])
+                assert calls == [(expected, '')], calls
+                assert names == ['花'], names
+                assert result[0] == commands[0] and result[4] == commands[4], result
+                assert result[1]['parameters'] == ['Hello.'] and result[1]['_original'] == 'こんにちは', result
+                assert result[7] == commands[7], result
+
+            tutorial = r'[道具屋の\C[6]「回復のお守り」\C[0]を持っていれば攻撃を一回だけ防げる]'
+            result = parse([name(''), command(401, [tutorial], _original=tutorial),
+                            command(401, ['[Already translated.]'], _original='[回復薬を使うと体力が回復する]')])
+            assert names == [], names
+            assert len(calls) == 1 and isinstance(calls[0][0], list) and calls[0][1] == '', calls
+            assert r'\C[6]' in calls[0][0][0] and r'\C[0]' in calls[0][0][0] and '回復のお守り' in calls[0][0][0], calls
+            assert result[1]['parameters'] == [r'[Carry the \C[6]Recovery Charm\C[0] to block one attack.]'], result
+            assert result[1]['_original'] == tutorial, result
+            assert result[2]['parameters'] == ['[Already translated.]'] and result[2]['_original'] == '[回復薬を使うと体力が回復する]', result
+
+            # Actual standalone nameplates still supply context and retain
+            # their display wrappers; code 101 off still means no 101 prefix.
+            for label in ('花', 'Hana', r'\C[2]花\C[0]'):
+                parse([name(''), command(401, [f'[{label}]']), command(401, ['こんにちは'], _original='こんにちは')])
+                assert calls == [(['[Hana]: こんにちは'], '')], calls
+                assert names, label
+            parse([name('Hana'), command(401, ['こんにちは']), command(401, ['元気ですか'])])
+            assert calls == [(['[Hana]: こんにちは\n元気ですか'], '')], calls
+            parse([name(r'\N[1]'), command(401, ['こんにちは'])])
+            assert calls == [([r'[\N[1]]: こんにちは'], '')] and not names, calls
+            with patch.object(parser, 'CODE101', False):
+                parse([name('Hana'), command(401, ['こんにちは'])])
+                assert calls == [(['こんにちは'], '')] and not names, calls
+        configure_states({'engine': 'MVMZ'}, temporary, None)
     # A map call can contain a malformed attempt, an accepted retry, a refused
     # chunk, and another success. Keep every body and only its own validation;
     # refusal loops must preserve source without making more provider calls.

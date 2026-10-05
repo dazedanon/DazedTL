@@ -371,7 +371,8 @@ class Settings:
         from .execution import configuration
         state = self._read()
         return {**configuration(self, mode), "engine_settings": self._values(state),
-                "stateGrouping": "compatible-states-v1", "choiceCollection": preferences.CHOICE_COLLECTION}
+                "stateGrouping": "compatible-states-v1", "choiceCollection": preferences.CHOICE_COLLECTION,
+                "speakerContext": preferences.SPEAKER_CONTEXT}
 
     def connection_summary(self):
         from .execution import connection_summary
@@ -704,6 +705,7 @@ class Settings:
                 "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",
                 "choiceCollection": preferences.CHOICE_COLLECTION,
+                "speakerContext": preferences.SPEAKER_CONTEXT,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

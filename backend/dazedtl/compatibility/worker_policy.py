@@ -7,10 +7,10 @@ import time
 import sys
 
 from dazedtl.storage import write_json
-from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS, batch_input_tokens
+from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS, SPEAKER_CONTEXT, batch_input_tokens
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 from .request_parameters import configure_builders
-from . import state_requests, batch_pricing, choice_requests
+from . import state_requests, batch_pricing, choice_requests, speaker_context
 from .run_evidence import Evidence
 
 
@@ -29,6 +29,10 @@ def configure_batch_allowance(translation, policy):
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
+        # Choice handling wraps searchCodes; unwrap it before selecting the
+        # frozen speaker implementation, then reinstall in the same order.
+        choice_requests.configure(module, False)
+        speaker_context.configure(module, bool(policy and policy.get('speakerContext') == SPEAKER_CONTEXT))
         choice_requests.configure(module, bool(policy and policy.get('choiceCollection') == CHOICE_COLLECTION))
         if policy and policy.get("stateGrouping") == state_requests.POLICY:
             state_requests.configure(module, sys.modules["util.translation"], root, policy["entriesPerRequest"])
@@ -79,6 +83,7 @@ def install(*, coordinator=False):
             or policy.get("refusalRetry") not in (None, REFUSAL_POLICY)
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
+            or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or type(policy.get("entriesPerRequest")) is not int
             or not 1 <= policy["entriesPerRequest"] <= 100
             or plan["settings"]["batchsize"] != policy["entriesPerRequest"]
