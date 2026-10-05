@@ -218,6 +218,38 @@ export function fileRun(
   );
   return matches.find(activeWorker) || matches[0];
 }
+/** An estimate without requests settles a file until newer work includes it. */
+export function settledWithoutRequests(
+  state: Pick<GuidedState, "sourceStatus">,
+  phase: Phase,
+  name: string,
+  run?: Job,
+) {
+  const checked = state.sourceStatus.noRequests?.[phase]?.[name];
+  return (
+    !!checked && (!run || (!activeWorker(run) && (run.created || "") < checked))
+  );
+}
+/** Run-scoped tasks are also complete when every selected file needs nothing. */
+export function selectionSettled(
+  state: Pick<GuidedState, "runs" | "sourceStatus">,
+  phase: Phase,
+  names: readonly string[],
+) {
+  return (
+    names.length > 0 &&
+    names.every(
+      (name) =>
+        !state.sourceStatus.changed.includes(name) &&
+        settledWithoutRequests(
+          state,
+          phase,
+          name,
+          fileRun(state.runs, phase, name, state.sourceStatus.retired),
+        ),
+    )
+  );
+}
 /** Task progress covers the whole file group, independently of the next action's selection. */
 export function translationTaskComplete(
   state: Pick<GuidedState, "files" | "runs" | "sourceStatus">,
@@ -229,6 +261,7 @@ export function translationTaskComplete(
     files.every(({ name }) => {
       if (state.sourceStatus.changed.includes(name)) return false;
       const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+      if (settledWithoutRequests(state, phase, name, run)) return true;
       if (
         !run ||
         run.temporary ||
@@ -301,7 +334,7 @@ export function unsettledBatches(runs: Job[], selected: readonly string[]) {
   );
 }
 /** File receipts and verified output own the row; run diagnostics stay in Inspect. */
-export function fileStatus(name: string, run?: Job) {
+export function fileStatus(name: string, run?: Job, settled = false) {
   const idle = {
     label: "Not started",
     tone: "idle",
@@ -326,6 +359,7 @@ export function fileStatus(name: string, run?: Job) {
     symbol: "◐",
     pending: false,
   };
+  if (settled) return complete;
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
     return idle;
   const saved =

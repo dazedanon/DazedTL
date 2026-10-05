@@ -318,6 +318,8 @@ Existing Live resumes retain their frozen settings and require explicit review; 
 New remaining work requires a fresh estimate and spending review.
 The compact footer keeps Translate and available Apply actions beside the selected scope.
 Translate immediately opens one stable estimate dialog; preparation, cost approval, no-work results and actionable failures stay inside it.
+An estimate without requests is a result, not a preparation to cancel: each selected file with no text left to translate shows Complete for that phase until a newer attempt includes it or a resync replaces it, and Close only closes.
+Text reused from earlier responses still needs a run to write it, so it never completes a file this way.
 The existing observer advances only that dialog’s owned estimate, and a canceled late reply cannot open a review or start paid work.
 Saved active runs do not disable Translate or lock its file selection and mode; only the current preparation/action owns pending feedback.
 Selecting more files or clicking Translate again retains the engine’s skip-translated behavior.

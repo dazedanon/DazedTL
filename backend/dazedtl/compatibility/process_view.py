@@ -499,6 +499,26 @@ def _prepared_files(root, signature):
     )
 
 
+def translatable_files(root):
+    """Files in which an estimate found source text, including fully reused text.
+
+    Without the list, or with text not bound to a file, no file is cleared.
+    """
+    connection = ledger(root)
+    if connection is None:
+        return None
+    with closing(connection):
+        if not connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='translatable_files'"
+        ).fetchone():
+            return None
+        names = [
+            name
+            for (name,) in connection.execute("SELECT filename FROM translatable_files")
+        ]
+    return frozenset(names) if all(names) else None
+
+
 def no_request_files(root, job, items):
     """Negative file evidence needs a finished, fully instrumented collection.
 

@@ -241,6 +241,8 @@ export const api = {
       request("guided_file_preview", { project_id, name, offset, query }),
     discardPreparation: (project_id: string, run_id: string) =>
       request("guided_discard_preparation", { project_id, run_id }),
+    settleEmptyEstimate: (project_id: string, run_id: string) =>
+      request("guided_settle_empty_estimate", { project_id, run_id }),
     batchCancelPreview: (
       project_id: string,
       run_id: string,

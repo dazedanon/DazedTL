@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 from inspect import signature
 from pathlib import Path
+import re
 import sqlite3
 import threading
 from .process_view import source_values
@@ -45,6 +46,16 @@ def keep_aligned_partial_results(module):
     module.translateAI = translate
 
 
+def source_text(value, config):
+    """Source-language text, which the shared translator sends; it cleans the rest."""
+    pattern = getattr(config, "langRegex", None)
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and (pattern is None or re.search(pattern, value) is not None)
+    )
+
+
 class Evidence:
     def __init__(self, root, mode, plan=None):
         self.path = Path(root) / "log/dazedtl-process.sqlite3"
@@ -53,6 +64,7 @@ class Evidence:
         self.plan = plan or {}
         self.reused = dict(self.plan.get("dazedtl_continuation", {}))
         self.root, self.locations = Path(root), {}
+        self.translatable, self.translatable_lock = set(), threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -74,6 +86,12 @@ class Evidence:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS validated_provenance (identity TEXT PRIMARY KEY, filename TEXT)"
             )
+            if mode == "estimate":
+                # Reused responses need no request, so only this list proves
+                # that a file without one has no text left to translate.
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS translatable_files (filename TEXT PRIMARY KEY)"
+                )
             for key, source, response in connection.execute(
                 "SELECT identity,source,response FROM validated_items"
             ):
@@ -94,6 +112,16 @@ class Evidence:
                 yield connection
         finally:
             connection.close()
+
+    def found_text(self, filename):
+        with self.translatable_lock:
+            if filename in self.translatable:
+                return
+            with self.connect() as connection:
+                connection.execute(
+                    "INSERT OR IGNORE INTO translatable_files VALUES (?)", (filename,)
+                )
+            self.translatable.add(filename)
 
     def prepared(self, params, state="prepared", *, clarification_of=None):
         with self.connect() as connection:
@@ -317,6 +345,10 @@ class Evidence:
             text = bound.arguments.get("text")
             filename = bound.arguments.get("filename")
             values = text if isinstance(text, list) else [text]
+            if self.mode == "estimate" and any(
+                source_text(value, bound.arguments.get("config")) for value in values
+            ):
+                self.found_text(filename)
             if not all(isinstance(value, str) for value in values):
                 return native_ai(*args, **kwargs)
             if filename not in self.locations:

@@ -710,6 +710,24 @@ class ProcessTests(unittest.TestCase):
                 ["Potion", "Poison"],
             )
             self.assertEqual(sent, [["毒"]])
+            # An estimate needs no request for reused text, but the file still
+            # has text to write and must not look finished. Translated names
+            # the grouped map-name pass sends unfiltered need nothing.
+            estimate_root = Path(temporary) / "estimate"
+            write_json(estimate_root / "files/Items.json", data)
+            self.assertIsNone(process_view.translatable_files(root))
+            estimated = translator()
+            estimated.translateAI = lambda text, history, config, filename: (
+                sent.append(text) or [text, [0, 0]]
+            )
+            Evidence(estimate_root, "estimate", plan).install(estimated)
+            config = SimpleNamespace(langRegex="[぀-ヿ一-鿿]")
+            estimated.translateAI(["薬"], [], config, "Items.json")
+            estimated.translateAI(["Village"], [], config, "Map001.json")
+            self.assertEqual(sent, [["毒"], ["Village"]])
+            self.assertEqual(
+                process_view.translatable_files(estimate_root), {"Items.json"}
+            )
             # A failed segment before a reusable span must not discard earlier
             # successes, omit its usage, or prevent the later segment running.
             retry_root = Path(temporary) / "mixed"

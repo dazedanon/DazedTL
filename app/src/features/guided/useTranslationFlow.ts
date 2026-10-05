@@ -176,6 +176,18 @@ export function useTranslationFlow(options: Options) {
         });
       } else if (result.kind === "empty" && value.phase !== "variables") {
         change(session, { stage: "empty", job: result.job! });
+        // The finished check is the result, not a preparation to cancel. The
+        // backend keeps it as file status and discards the estimate itself.
+        void perform(
+          session,
+          async () => {
+            await api.guided.settleEmptyEstimate(
+              options.projectId,
+              value.estimateId!,
+            );
+          },
+          false,
+        );
       } else {
         change(session, { stage: "batch", job: undefined });
         void perform(session, async () => {
@@ -233,7 +245,11 @@ export function useTranslationFlow(options: Options) {
       finish(session);
       return;
     }
-    if (session.state.stage === "error") {
+    if (
+      session.state.stage === "error" ||
+      (session.state.stage === "empty" &&
+        session.state.job?.mode === "estimate")
+    ) {
       finish(session);
       return;
     }

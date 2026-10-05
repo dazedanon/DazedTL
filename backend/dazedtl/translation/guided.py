@@ -773,6 +773,73 @@ class Guided:
         write_json(self.path(project_id, "runs"), {"version": 1, "runs": records})
         return {"discarded": True}
 
+    def settle_empty_estimate(self, project_id, run_id):
+        """Keep a current estimate without requests as file status, then discard it.
+
+        Files whose text was only reused from earlier responses still need a
+        run to write it, so they keep the status of their existing work.
+        """
+        from dazedtl.compatibility.process_view import translatable_files
+
+        _, native = self.record(project_id)
+        if self.resyncing(native):
+            raise ValueError(
+                "Wait for the working files to finish resyncing before closing this estimate."
+            )
+        record = self.runs.records(project_id).get(run_id)
+        job = self.backend.manual.jobs.get(run_id)
+        if (
+            not record
+            or not job
+            or job.get("mode") != "estimate"
+            or run_id not in self.owned_runs(native)
+        ):
+            raise ValueError("Choose an estimate belonging to this project.")
+        quote, _ = self.runs.quote(
+            project_id,
+            native,
+            record["phase"],
+            self.preferences(native)["values"]["mode"],
+        )
+        estimate = job.get("estimate") or {}
+        requests = estimate.get("requests", estimate.get("request_count"))
+        if (
+            (quote["job"] or {}).get("id") != run_id
+            or not quote["current"]
+            or type(requests) is not int
+            or requests
+        ):
+            raise ValueError(
+                "The selection or guidance changed. Prepare a fresh estimate."
+            )
+        found = translatable_files(self.backend.manual.folder(run_id))
+        settled = (
+            []
+            if found is None
+            else [
+                name
+                for name in record["files"]
+                if name not in found
+                and name not in job.get("errors", {})
+                and name not in job.get("mismatches", {})
+            ]
+        )
+        self.inputs(native).settle(
+            record["phase"],
+            {name: record["file_versions"][name] for name in settled},
+            job["created"],
+        )
+        self.discard_preparation(project_id, run_id)
+        return {"files": settled}
+
+    def resyncing(self, native):
+        return any(
+            job.get("project_id") == native["id"]
+            and job.get("action") == "refresh_sources"
+            and job.get("status") in {"ready", "running", "waiting"}
+            for job in self.backend.operations.jobs.values()
+        )
+
     def payload(self, project_id, run_id, index):
         _, native = self.record(project_id)
         if (
@@ -1174,6 +1241,7 @@ class Guided:
             [row["name"] for row in native["files"]], self.observed_digest
         )
         source_status["retired"] = inputs.record().get("retired_runs", [])
+        source_status["noRequests"] = inputs.no_requests()
         prepared = list(dict.fromkeys([*native["imported"], *source_status["ready"]]))
         if prepared != native["imported"]:
             native["imported"] = prepared
@@ -2091,12 +2159,7 @@ class Guided:
         preparation_mode=None,
     ):
         _, native = self.record(project_id)
-        if any(
-            job.get("project_id") == native["id"]
-            and job.get("action") == "refresh_sources"
-            and job.get("status") in {"ready", "running", "waiting"}
-            for job in self.backend.operations.jobs.values()
-        ):
+        if self.resyncing(native):
             raise ValueError(
                 "Wait for the working files to finish resyncing before preparing translation."
             )

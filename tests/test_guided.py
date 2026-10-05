@@ -482,6 +482,46 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reopened.stop(self.identity, "foreign-run")
 
+    def test_empty_estimate_settles_only_files_without_text_until_resync(self):
+        # Protect resynced, already translated files from staying Not started
+        # after an empty estimate, without completing files whose text was
+        # only reused and still needs a run to write it.
+        from dazedtl.compatibility.run_evidence import Evidence
+
+        names = ["Items.json", "States.json"]
+        write_json(self.source / "States.json", [{"name": "毒"}])
+        self.backend.phase_files = lambda _native, _phase: names
+        self.native["selected"] = list(names)
+        inputs = self.guided.inputs(self.native)
+        inputs.prepare(names)
+        self.backend.manual.discard_preparation = Mock()
+        paid = self.seed_estimate()
+        with self.assertRaisesRegex(ValueError, "fresh estimate"):
+            self.guided.settle_empty_estimate(self.identity, paid)
+        identity = self.seed_estimate()
+        job = self.backend.manual.jobs[identity]
+        job.update(estimate={"requests": 0}, created="2026-10-05T12:00:00+00:00")
+        Evidence(self.backend.manual.folder(identity), "estimate").found_text(
+            "States.json"
+        )
+        self.assertEqual(
+            self.guided.settle_empty_estimate(self.identity, identity),
+            {"files": ["Items.json"]},
+        )
+        self.backend.manual.discard_preparation.assert_called_once_with(identity)
+        self.assertNotIn(identity, self.guided.runs.records(self.identity))
+        self.assertEqual(
+            inputs.no_requests(), {"database": {"Items.json": job["created"]}}
+        )
+        inputs.prepare(
+            ["Items.json"],
+            refresh=True,
+            expected=inputs.sources(
+                ["Items.json"], inputs.record()["inputs"], fresh=True
+            ),
+        )
+        self.assertEqual(inputs.no_requests(), {"database": {}})
+
     def test_independent_selection_and_refresh_do_not_reuse_a_retired_quote(self):
         write_json(self.source / "Map001.json", {"events": []})
         self.backend.phase_files = lambda _native, phase: (

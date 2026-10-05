@@ -19,6 +19,7 @@ import {
   fileMetricRun,
   fileStatus,
   phaseRun,
+  settledWithoutRequests,
   translationTaskComplete,
   unsettledBatches,
   needsSubmissionReview,
@@ -556,6 +557,57 @@ test("main-text tasks combine verified files across runs independently of select
   }
   assert.equal(
     translationTaskComplete({ ...state, runs: [empty, items] }, "database"),
+    false,
+  );
+  // A closed estimate without requests completes a resynced file that has no
+  // run; only an older, idle attempt may coexist with that result.
+  const checked = "2026-10-05T12:00:00+00:00";
+  const settled = {
+    ...state,
+    runs: [actors, items],
+    sourceStatus: {
+      changed: [],
+      ready: [],
+      noRequests: { database: { "Armors.json": checked } },
+    },
+  } as unknown as GuidedState;
+  assert.equal(translationTaskComplete(settled, "database"), true);
+  assert.equal(
+    fileStatus(
+      "Armors.json",
+      undefined,
+      settledWithoutRequests(settled, "database", "Armors.json"),
+    ).label,
+    "Complete",
+  );
+  const armors = { ...empty, id: "armors", process: { errors: [] } };
+  for (const [created, status, complete] of [
+    ["2026-10-05T11:00:00+00:00", "failed", true],
+    ["2026-10-05T11:00:00+00:00", "running", false],
+    ["2026-10-05T13:00:00+00:00", "failed", false],
+  ] as const)
+    assert.equal(
+      translationTaskComplete(
+        {
+          ...settled,
+          runs: [{ ...armors, created, status }, actors, items],
+        },
+        "database",
+      ),
+      complete,
+      `${status} attempt at ${created}`,
+    );
+  assert.equal(
+    translationTaskComplete(
+      {
+        ...settled,
+        sourceStatus: {
+          ...settled.sourceStatus,
+          noRequests: { advanced: { "Armors.json": checked } },
+        },
+      },
+      "database",
+    ),
     false,
   );
   assert.equal(

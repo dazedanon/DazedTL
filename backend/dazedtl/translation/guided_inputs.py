@@ -55,6 +55,37 @@ class GuidedInputs:
             )
         return value
 
+    def settle(self, phase, versions, checked):
+        """Record files a finished estimate found without text to translate."""
+        if not versions:
+            return
+        record = self.record()
+        settled = record.get("no_requests", {})
+        rows = {
+            name: {"version": version, "checked": checked}
+            for name, version in versions.items()
+        }
+        write_json(
+            self.index,
+            {
+                **record,
+                "no_requests": {**settled, phase: {**settled.get(phase, {}), **rows}},
+            },
+        )
+
+    def no_requests(self):
+        """Settled files by phase, until a resync gives them a new version."""
+        record = self.record()
+        versions = record.get("file_versions", {})
+        return {
+            phase: {
+                name: row["checked"]
+                for name, row in rows.items()
+                if row["version"] == versions.get(name, "")
+            }
+            for phase, rows in record.get("no_requests", {}).items()
+        }
+
     def sources(self, names, previous, fingerprint=None, *, fresh=False):
         fingerprint = fingerprint or (lambda path: digest(path.read_bytes()))
         paths = {

@@ -165,6 +165,9 @@
     "guided_discard_preparation": {
       "refresh": true
     },
+    "guided_settle_empty_estimate": {
+      "refresh": true
+    },
     "guided_provider_details": {
       "refresh": false
     },

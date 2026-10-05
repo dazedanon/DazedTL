@@ -35,6 +35,7 @@ import {
   completeForSelection,
   estimateRequestCount,
   phaseRun,
+  selectionSettled,
   translationTaskComplete,
   translationStopLabel,
   observedRun,
@@ -1200,12 +1201,10 @@ function Workspace({
     if (target === "database" || target === "dialogue")
       return translationTaskComplete(state, target);
     const saved = state.phaseRuns[target];
+    const names = eventFiles.map((file) => file.name);
     return (
-      !!saved &&
-      completeForSelection(
-        saved,
-        eventFiles.map((file) => file.name),
-      )
+      (!!saved && completeForSelection(saved, names)) ||
+      selectionSettled(state, target, names)
     );
   };
   const completed = new Set<string>([

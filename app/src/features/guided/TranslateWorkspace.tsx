@@ -14,6 +14,7 @@ import {
   fileMetricRun,
   fileStatus,
   groupedRequests,
+  settledWithoutRequests,
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
@@ -161,7 +162,11 @@ export function TranslateWorkspace({
               ),
               details: (row) => {
                 const fileOwner = owner(row.name),
-                  status = fileStatus(row.name, fileOwner);
+                  status = fileStatus(
+                    row.name,
+                    fileOwner,
+                    settledWithoutRequests(state, phase, row.name, fileOwner),
+                  );
                 const metricRun = fileMetricRun(
                     state.runs,
                     phase,

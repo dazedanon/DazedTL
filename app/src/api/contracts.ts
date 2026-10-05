@@ -443,7 +443,13 @@ export interface GuidedState {
       variables: string[];
     }[];
   };
-  sourceStatus: { ready: string[]; changed: string[]; retired?: string[] };
+  sourceStatus: {
+    ready: string[];
+    changed: string[];
+    retired?: string[];
+    /** Estimate start time per phase and file found without text to translate. */
+    noRequests?: Partial<Record<Phase, Record<string, string>>>;
+  };
   readiness: {
     publications: {
       id: string;
@@ -1293,6 +1299,10 @@ export interface RpcContract {
   guided_discard_preparation: {
     request: { project_id: string; run_id: string };
     response: { discarded: boolean };
+  };
+  guided_settle_empty_estimate: {
+    request: { project_id: string; run_id: string };
+    response: { files: string[] };
   };
   guided_provider_details: {
     request: { project_id: string; run_id: string };
