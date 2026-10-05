@@ -128,26 +128,22 @@ export function unsettledBatches(runs: Job[], selected: readonly string[]) {
 }
 /** File receipts and verified output own the row; run diagnostics stay in Inspect. */
 export function fileStatus(name: string, run?: Job) {
-  const ready = { label: "Ready", tone: "idle", symbol: "·" };
-  if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return ready;
+  const idle = { label: "", tone: "idle", symbol: "", pending: false };
+  const progress = { label: "In progress", tone: "active", symbol: "◷", pending: true };
+  const incomplete = { label: "Incomplete", tone: "idle", symbol: "◐", pending: false };
+  if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name)) return idle;
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
   const noRequests = run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
-  if (noRequests && !saved && !run.outputs?.[name]) return { label: "No new requests", tone: "idle", symbol: "–" };
+  if (noRequests && !saved && !run.outputs?.[name]) return idle;
   if (run.temporary) {
-    return activeRun(run)
-      ? { label: run.approval ? "Review cost" : "Preparing", tone: "active", symbol: "◷" }
-      : ready;
+    return activeRun(run) ? { ...progress, pending: !run.approval } : idle;
   }
   const rows = groupedRequests(run.process?.requests?.filter(row => row.file === name) || []);
   const states = rows.map(row => row.state);
   const partial = run.partialOutputs?.includes(name) || run.process?.validationIssues?.some(issue => issue.file === name);
-  const received = states.filter(state => ["received", "validated", "rejected", "saved"].includes(state)).length;
-  // Map command totals and translated text units are not comparable. Count
-  // actual returned requests, including rejected attempts, without a percentage.
-  const translating = run.mode === "translate" && received ? `Translating · ${received} received` : "Translating";
   const working = activeRun(run);
   if (!noRequests && run.status !== "complete") {
-    if (working && run.approval) return { label: "Review cost", tone: "active", symbol: "◷" };
+    if (working && run.approval) return { ...progress, pending: false };
     const submitted = rows.filter(row => row.state === "submitted");
     if (run.mode === "batch" && submitted.length) {
       // A retained submission protects against duplicate charges; it does not
@@ -155,37 +151,25 @@ export function fileStatus(name: string, run?: Job) {
       // Batch receipts, including any clarification under the original index.
       const batches = run.process?.batches || [];
       const belongs = (batch: typeof batches[number], row: typeof submitted[number]) => batch.requestIndices?.includes(row.indices.at(-1)!);
-      const pending = batches.filter(batch => providerBatchActive(batch.status) && submitted.some(row => belongs(batch, row)));
-      if (pending.length) return {
-        label: pending.some(batch => !["cancelling", "canceling"].includes(batch.status)) ? "In Batch" : "Canceling",
-        tone: "active", symbol: "◷",
-      };
+      if (batches.some(batch => providerBatchActive(batch.status) && submitted.some(row => belongs(batch, row)))) return progress;
       const finished = submitted.every(row => row.providerFinished && batches.some(batch => belongs(batch, row) && ["completed", "ended"].includes(batch.status)));
-      if (finished) return { label: run.process?.monitoring?.state === "collecting" ? "Receiving results" : "Awaiting results", tone: "active", symbol: "◷" };
+      if (finished) return progress;
     }
-    if (working && run.mode !== "batch" && submitted.length) return { label: translating, tone: "active", symbol: "◷" };
-    if (working && states.some(state => ["queued", "prepared"].includes(state)))
-      return { label: run.mode !== "batch" && run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
+    if (working && run.mode !== "batch" && submitted.length) return progress;
+    if (working && states.some(state => ["queued", "prepared"].includes(state))) return progress;
     if (!saved || partial && working) {
-      if (states.some(state => ["received", "validated"].includes(state))) {
-        if (working && run.mode !== "batch") return { label: translating, tone: "active", symbol: "◷" };
-        if (working && run.phase === "consume") return { label: "Saving results", tone: "active", symbol: "◷" };
-        if (!saved) return { label: "Results received", tone: "idle", symbol: "◐" };
-      }
-      if (working && run.mode !== "batch" && run.progress?.file === name)
-        return { label: translating, tone: "active", symbol: "◷" };
+      if (working && states.some(state => ["received", "validated"].includes(state)) && (run.mode !== "batch" || run.phase === "consume")) return progress;
+      if (working && run.mode !== "batch" && run.progress?.file === name) return progress;
     }
   }
-  if (saved && partial) return { label: "Partial output", tone: "idle", symbol: "◐" };
+  if (saved && partial) return incomplete;
   if (saved) return run.appliedOutputs?.includes(name)
-    ? { label: "Applied", tone: "success", symbol: "✓" }
-    : { label: "Saved", tone: "success", symbol: "✓" };
-  if (run.outputs?.[name]) return { label: "Output unavailable", tone: "warning", symbol: "!" };
-  if (partial || states.some(state => ["failed", "rejected", "uncertain", "submitted"].includes(state)))
-    return { label: "No saved output", tone: "idle", symbol: "·" };
-  if (received) return { label: "Results received", tone: "idle", symbol: "◐" };
-  if (working && run.mode !== "batch") return { label: "Queued", tone: "active", symbol: "◷" };
-  return { label: "No saved output", tone: "idle", symbol: "·" };
+    ? { ...idle, label: "Applied", tone: "success", symbol: "✓" }
+    : { ...idle, label: "Translated", tone: "success", symbol: "✓" };
+  if (run.outputs?.[name]) return { ...incomplete, tone: "warning", symbol: "!" };
+  if (partial || states.length) return incomplete;
+  if (working && run.mode !== "batch") return progress;
+  return idle;
 }
 
 /** Pair only an exact line-key match or the validated Live result of equal length. */

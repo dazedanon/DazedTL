@@ -46,7 +46,7 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
   function status(outcome: ReturnType<typeof batchMonitorRows>[number]) {
     const state = outcome.active ? "active" : outcome.failed ? "warning" : outcome.successful ? "complete" : "unknown";
     const Icon = outcome.active ? LoaderCircle : outcome.failed ? AlertTriangle : outcome.successful ? Check : CircleHelp;
-    return <><strong className="batch-activity" data-state={state}><Icon size={14} className={outcome.active ? "job-status-spinner" : undefined} aria-hidden="true" />{outcome.label}</strong><small>{outcome.summary}</small></>;
+    return <strong className="batch-activity" data-state={state}><Icon size={14} className={outcome.active ? "job-status-spinner" : undefined} aria-hidden="true" />{outcome.label}</strong>;
   }
   function cancel(batch: ProviderBatch, job: Job) {
     const key = "batch:cancel:" + batch.id;
@@ -68,17 +68,19 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
               const collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id, stopKey = "batch:stop:" + job.id;
               return <section key={job.id} className="batch-history-run" aria-label={`${historyPhase(job)} Batch ${job.id}`}
                 ref={element => { if (job.id === focusRun) focused.current = element; }}>
-                <ActionList compact>{rows.map((row, index) => <ActionRow key={row.batch?.id || job.id} label={<div className="batch-current">
-                  <strong>{historyPhase(job)}</strong>
-                  {job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
-                  {row.name && <span>{row.name}</span>}
-                  {status(row)}
-                  {row.detail && <small>{row.detail}</small>}
-                  {row.batch?.canCancel === false && <small title="This provider does not support cancellation through its Batch API. Submitted requests continue.">Cannot cancel at provider</small>}
-                  {index === 0 && !!job.process?.validationIssues?.length && <small><Button variant="link" disabled={blocking} onClick={() => {
-                    const rejected = job.process?.requests?.find(request => request.state === "rejected");
-                    inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
-                  }}>Review issues</Button></small>}
+                <ActionList>{rows.map((row, index) => <ActionRow key={row.batch?.id || job.id} label={<div className="history-entry">
+                  <div className="history-identity"><div><strong>{historyPhase(job)}</strong></div>
+                    <small>{job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}{row.name && <span>{row.name}</span>}</small>
+                  </div>
+                  <div className="history-scope">{row.summary && <span>{row.summary}</span>}{row.detail && <small>{row.detail}</small>}</div>
+                  <div className="history-outcome">
+                    {status(row)}
+                    {row.batch?.canCancel === false && <small title="This provider does not support cancellation through its Batch API. Submitted requests continue.">Cannot cancel at provider</small>}
+                    {index === 0 && !!job.process?.validationIssues?.length && <small><Button variant="link" disabled={blocking} onClick={() => {
+                      const rejected = job.process?.requests?.find(request => request.state === "rejected");
+                      inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
+                    }}>Review issues</Button></small>}
+                  </div>
                 </div>}><div className="actions">
                   {row.batch && cancel(row.batch, job)}
                   {index === 0 && <>

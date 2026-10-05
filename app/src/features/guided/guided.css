@@ -67,10 +67,11 @@ main.editor-main.guided-main { padding: 0; }
 .history-filters select { max-width:100%; }
 .history-list { overflow:auto; min-height:0; padding-right:var(--space-2); scrollbar-gutter:stable; }
 .history-day { container:history-day / inline-size; }
-.history-day + .history-day { margin-top:var(--space-2); }
 .history-day h3 { position:sticky; top:0; z-index:1; background:var(--color-step-selected); border-bottom:1px solid var(--color-control-border); margin:0; padding:var(--space-1) var(--space-2); color:var(--color-navigation-text); font-size:var(--font-control); font-weight:600; }
 .history-day .action-list { gap:0; }
 .history-day .action-row { padding:var(--space-2) 0; border-bottom:1px solid var(--line); }
+.history-day > .action-list > .action-row:last-child,
+.history-day > .batch-history-run:last-child { border-bottom:0; }
 .history-day .action-row-label { container:history-row / inline-size; }
 .history-entry { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,.9fr); align-items:start; gap:var(--space-4); line-height:calc(var(--font-control) * 1.5); }
 .history-entry > div { min-width:0; display:grid; align-content:start; gap:var(--space-1); }
@@ -358,9 +359,7 @@ main.editor-main.guided-main { padding: 0; }
 .batch-history-run { padding:var(--space-3) 0; border-bottom:1px solid var(--line); }
 .batch-history-run .action-list { gap:var(--space-3); }
 .batch-history-run .action-row { padding:0; border:0; }
-.batch-current { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-3); align-items:baseline; }
-.batch-current > span, .batch-current > small, .batch-current > time { color:var(--muted); font-size:var(--font-small); }
-.batch-current > time { white-space:nowrap; font-variant-numeric:tabular-nums; }
+.batch-history-run .action-row > .actions { justify-content:flex-end; }
 .batch-run-files { overflow-wrap:anywhere; font-size:var(--font-small); color:var(--muted); }
 .batch-activity { display:inline-flex; align-items:center; gap:var(--space-1); }
 .batch-activity svg { flex-shrink:0; }
@@ -368,3 +367,6 @@ main.editor-main.guided-main { padding: 0; }
 .batch-activity[data-state="complete"] { color:var(--color-success); }
 .batch-activity[data-state="warning"] { color:var(--color-warning); }
 .batch-activity[data-state="unknown"] { color:var(--muted); }
+@container history-day (max-width:36rem) {
+  .batch-history-run .action-row > .actions { justify-content:flex-start; }
+}

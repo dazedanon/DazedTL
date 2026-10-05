@@ -5,7 +5,7 @@ import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
 import { FileSelection } from "./FileSelection";
 import { TranslationInspector } from "./TranslationInspector";
-import { activeRun, filePreviewRun, fileRun, fileMetricRun, fileStatus } from "./translationView";
+import { filePreviewRun, fileRun, fileMetricRun, fileStatus } from "./translationView";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
@@ -44,8 +44,7 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
             details: row => {
               const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner);
               const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
-              const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
-              const statusText = status.label !== "Ready" && <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
+              const statusText = status.label && <>{status.pending ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
               const validation = fileOwner?.process?.validationIssues?.some(issue => issue.file === row.name);
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}>
                 {statusText && validation && fileOwner ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · Review rejected requests for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => {
