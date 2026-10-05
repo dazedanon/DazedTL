@@ -89,7 +89,7 @@ export function batchMonitorRows(job: Job) {
     batch,
     name: batch.clarification ? "Clarification retry" : `Batch ${batches.filter(row => !row.clarification).indexOf(batch) + 1}`,
     ...batchOutcome(batch, job),
-    detail: [unsent, problem ? "Needs attention" : ""].filter(Boolean).join(" · "),
+    detail: unsent,
   }));
 
   const active = batchInProgress(job), outcome = historyOutcome(job);
@@ -98,7 +98,7 @@ export function batchMonitorRows(job: Job) {
   const label = active
     ? job.phase === "poll_capacity" ? "Waiting for capacity" : job.phase === "consume" ? "Saving results"
       : activeRun(job) && remaining && monitor !== "collecting" ? "Sending next batch" : "Receiving results"
-    : remaining ? "Incomplete" : problem ? "Needs attention" : issues ? "Needs review"
+    : remaining ? "Incomplete" : problem ? "Failed" : issues ? "Needs review"
       : !batches.length ? "Receipt unavailable" : outcome.kind === "active" ? "Needs review" : outcome.label;
   return [{
     batch: undefined, name: "", label, active,

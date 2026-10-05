@@ -132,9 +132,16 @@ class PluginTests(unittest.TestCase):
         write_json(request['report'],report);self.service.action(self.identity,'refresh_findings')
         value=self.service.load(self.identity)
         self.assertTrue({excluded,uncertain['id'],omitted['id']}.isdisjoint(value['selection']))
-        attention=self.service.list(self.identity,filter='attention')['items']
-        self.assertEqual({row['path'] for row in attention},{'www/js/plugins.js','www/js/plugins/PluginA.js'})
-        self.assertEqual(self.service.state(self.identity)['counts']['needsReview'],2)
+        uncertain_files=[row for row in self.service.list(self.identity)['items'] if row['uncertain']]
+        self.assertEqual({row['path'] for row in uncertain_files},{'www/js/plugins.js','www/js/plugins/PluginA.js'})
+        # Retired saved filters must not hide the inventory or alter text scope.
+        value['view'].update(filter='retired_filter', offset=100)
+        self.service.save(self.identity, value)
+        state = self.service.state(self.identity)
+        self.assertEqual(state['view']['filter'], 'all')
+        self.assertEqual(state['view']['offset'], 0)
+        self.assertEqual(self.service.load(self.identity)['selection'], value['selection'])
+        self.assertEqual(self.service.list(self.identity, filter='retired_filter')['total'], state['counts']['files'])
         before={path:(self.game/path).read_bytes() for path in value['files']}
         task=self.service.action(self.identity,'translation_task')
         self.assertEqual(self.service.state(self.identity)['counts']['selectedNotPrepared'],0)

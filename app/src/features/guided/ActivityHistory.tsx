@@ -47,9 +47,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
     .sort((a, b) => (b.created || "").localeCompare(a.created || "")), [tab, runs, estimates, operations]);
   const outcomes = useMemo(() => new Map(rows.map(job => [job.id, historyOutcome(job)])), [rows]);
   const current = useMemo(() => new Set((["database", "dialogue", "advanced", "variables", "speakers"] as const).map(phase => phaseRun(state.runs, phase)?.id)), [state.runs]);
-  const needsReview = (job: Job) => ["review", "approval", "missing"].includes(outcomes.get(job.id)!.kind);
-  const attention = rows.filter(needsReview).length;
-  const matching = rows.filter(job => (filter === "all" || filter === "attention" && needsReview(job)
+  const matching = rows.filter(job => (filter === "all"
     || filter === "active" && activeRun(job) || filter === "saved" && outcomes.get(job.id)?.kind === "saved"
     || filter === "failed" && ["failed", "interrupted"].includes(job.status)
     || filter === "canceled" && ["canceled", "cancelled", "stopped"].includes(job.status))
@@ -66,8 +64,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
       { id: "estimates", label: <>Estimates <span className="history-tab-count">{estimates.length}</span></> }, { id: "operations", label: "Other activity" }]}
       value={tab} onChange={value => { setTab(value); setFilter("all"); setVisible(30); }} />
     <div className="history-filters"><input type="search" aria-label="Search history" placeholder="Search files, model or task…" value={query} onChange={event => { setQuery(event.target.value); setVisible(30); }} />
-      <select aria-label="History status" value={filter} onChange={event => { setFilter(event.target.value); setVisible(30); }}><option value="all">All statuses</option><option value="attention">Needs review</option><option value="active">In progress</option>{tab === "runs" && <option value="saved">Output saved</option>}<option value="failed">Failed / interrupted</option><option value="canceled">Canceled / stopped</option></select>
-      {!!attention && <Button variant="quiet" className="history-attention-filter" aria-pressed={filter === "attention"} onClick={() => { setFilter(filter === "attention" ? "all" : "attention"); setVisible(30); }}><AlertTriangle size={14} aria-hidden="true" />{attention} {attention === 1 ? "needs" : "need"} review</Button>}
+      <select aria-label="History status" value={filter} onChange={event => { setFilter(event.target.value); setVisible(30); }}><option value="all">All statuses</option><option value="active">In progress</option>{tab === "runs" && <option value="saved">Output saved</option>}<option value="failed">Failed / interrupted</option><option value="canceled">Canceled / stopped</option></select>
     </div>
     <div key={`${tab}-${filter}-${query}`} className="history-list" role="tabpanel" id={`activity-history-panel-${tab}`} aria-labelledby={`activity-history-tab-${tab}`}>
       {!matching.length && <div className="history-empty"><p className="muted">{rows.length ? "No records match these filters." : `No ${tab === "runs" ? "translation runs" : tab === "estimates" ? "estimates" : "other activity"} saved yet.`}</p>{rows.length > 0 && <Button variant="quiet" onClick={reset}>Clear filters</Button>}</div>}

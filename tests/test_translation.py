@@ -175,16 +175,29 @@ class TranslationTests(unittest.TestCase):
         self.assertIsNotNone(Results(self.game).get(plan["requests"][0]))
         self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
 
-    def test_uncertain_live_call_is_never_retried_implicitly(self):
-        job, _plan = self.run_record()
-        provider = LiveProvider(TimeoutError())
-        Runner(self.store, job["id"], provider, lambda: None).step()
-        Runner(self.store, job["id"], provider, lambda: None).step()
-        current, _plan = self.store.load(job["id"])
-        self.assertEqual(provider.calls, 1)
-        self.assertEqual(current["status"], "uncertain")
-        with self.assertRaises(ValueError):
-            self.store.overlapping("project", {request()["fingerprint"]})
+    def test_failed_or_uncertain_live_call_is_never_retried_implicitly(self):
+        rejection = ValueError('Provider rejected the request')
+        rejection.status_code = 404
+        for error, status in ((TimeoutError(), 'uncertain'), (rejection, 'failed')):
+            with self.subTest(status=status):
+                job, plan = self.run_record(requests=[request(speaker=status)])
+                provider = LiveProvider(error)
+                Runner(self.store, job["id"], provider, lambda: None).step()
+                current, _plan = self.store.load(job["id"])
+                self.assertEqual(current['status'], status)
+                # Reading a retired terminal label must keep the receipt and
+                # request state authoritative, including the duplicate guard.
+                current['status'] = 'retired_status'
+                self.store.save(current)
+                before = (self.store.folder(job['id']) / 'job.json').read_bytes()
+                self.assertEqual(self.store.view(current)['status'], 'failed')
+                self.assertEqual((self.store.folder(job['id']) / 'job.json').read_bytes(), before)
+                Runner(self.store, job["id"], provider, lambda: None).step()
+                self.assertEqual(provider.calls, 1)
+                self.assertEqual(self.store.load(job["id"])[0]["status"], status)
+                if status == 'uncertain':
+                    with self.assertRaises(ValueError):
+                        self.store.overlapping("project", {plan['requests'][0]['fingerprint']})
 
     def test_refusal_clarification_is_bounded_and_retains_both_paid_attempts(self):
         # A refusal in valid JSON used to pass output validation. A repeated

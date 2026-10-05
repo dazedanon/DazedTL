@@ -27,7 +27,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
   if (job.approval) return { kind: "approval", label: "Review cost", detail: prepared != null ? `${count(prepared, "request")} prepared` : "Approval required" };
   if (activeRun(job)) return { kind: "active", label: job.mode === "estimate" ? "Estimating" : job.phase === "poll_capacity" ? "Waiting for capacity" : job.mode === "batch" && job.phase?.startsWith("poll") ? "At provider" : "In progress", detail: evidence };
   if (needsSubmissionReview(job)) return { kind: "review", label: "Check submission", detail: process?.uncertain ? `${count(process.uncertain, "uncertain request")}` : evidence };
-  if (job.status === "failed" || job.status === "needs_attention") return { kind: "failed", label: "Failed", detail: evidence };
+  if (job.status === "failed") return { kind: "failed", label: "Failed", detail: evidence };
   if (job.status === "interrupted" || job.status === "stopped") return { kind: "stopped", label: job.status === "stopped" ? "Stopped" : "Interrupted", detail: evidence };
   if (job.status === "canceled" || job.status === "cancelled") return { kind: "canceled", label: "Canceled", detail: evidence };
   if (job.mode === "estimate") return { kind: "estimate", label: "Estimate ready", detail: prepared != null ? `${count(prepared, "request")} planned` : "Request count not recorded" };

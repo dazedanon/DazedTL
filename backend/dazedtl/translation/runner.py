@@ -98,7 +98,7 @@ class Runner:
                 self.job["states"][identity] = {"state": "failed" if certain else "uncertain",
                     "message": "Provider rejected the request (HTTP " + str(status) + ")." if certain else
                                "The request outcome is uncertain. It will not be sent again automatically."}
-                self.save("needs_attention" if certain else "uncertain", self.job["states"][identity]["message"])
+                self.save("failed" if certain else "uncertain", self.job["states"][identity]["message"])
                 return
             self.accept(identity, response)
             if (clarifiable(response, request["sources"].values())
@@ -121,7 +121,7 @@ class Runner:
                     certain = type(status) is int and 400 <= status < 500
                     self.job["states"][identity] = {"state": "failed" if certain else "uncertain",
                         "message": "The clarification retry failed. Review the saved request before further paid work."}
-                    self.save("needs_attention" if certain else "uncertain", self.job["states"][identity]["message"])
+                    self.save("failed" if certain else "uncertain", self.job["states"][identity]["message"])
                     return
                 self.accept(identity, response)
         self.finish()
@@ -192,7 +192,7 @@ class Runner:
                             "message": "Provider rejected submission (HTTP " + str(code) + ")." if certain else "Submission outcome is uncertain; inspect the provider job list."}
                     if certain:
                         chunk["state"] = "rejected"
-                    self.save("needs_attention" if certain else "uncertain", "Review the rejected submission." if certain else "The provider submission must be reconciled before retrying.")
+                    self.save("failed" if certain else "uncertain", "Review the rejected submission." if certain else "The provider submission must be reconciled before retrying.")
                     return
             if cancel and not chunk.get("cancel_requested"):
                 try:
@@ -226,7 +226,7 @@ class Runner:
                     if self.job["states"][item["request"]]["state"] != "accepted":
                         self.job["states"][item["request"]] = {"state": "failed", "message": "Provider job ended with " + status["api_status"] + "."}
                 chunk.update(state="complete", usage=usage)
-                self.save("needs_attention", "The provider batch failed. Review remaining work before paying for a retry.")
+                self.save("failed", "The provider batch failed. Review remaining work before paying for a retry.")
                 return
             mapping = {item["custom_id"]: item["request"] for item in chunk["items"]}
             responses, errors, usage = self.provider.collect(chunk["id"], mapping)
@@ -279,7 +279,7 @@ class Runner:
             self.record_batch_usage()
             self.save()
             if any(self.job["states"][item["request"]]["state"] == "failed" for item in chunk["items"]):
-                self.save("needs_attention", "Some returned translations need attention. Later batches have not been submitted.")
+                self.save("failed", "Some returned translations failed validation. Later batches have not been submitted.")
                 return
         self.finish()
 
@@ -288,7 +288,7 @@ class Runner:
         if states <= {"accepted"}:
             self.save("complete", "All requested translations are saved. Injection and runtime QA remain separate checkpoints.")
         else:
-            self.save("uncertain" if "uncertain" in states else "needs_attention", "Review unresolved requests before continuing.")
+            self.save("uncertain" if "uncertain" in states else "failed", "Review unresolved requests before continuing.")
 
     def step(self):
         self.recover()

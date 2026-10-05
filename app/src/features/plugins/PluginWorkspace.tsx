@@ -97,17 +97,12 @@ export function PluginWorkspace({projectId,observed,error,footerTarget,continueC
     </ActionList>
     <Message message={error||(!actionKeys.includes(action.key)&&!inspecting?action.error:"")} />
     {state.originalIssue&&<div className="plugin-prerequisite"><TriangleAlert size={15}/><span>{state.originalIssue}</span></div>}
-    {investigated&&counts.needsReview>0&&<div className="plugin-attention">
-      <div><strong>{counts.needsReview} {counts.needsReview===1?"file needs":"files need"} attention</strong><p>Uncertain text stays out of translation. Open a file for the agent’s findings and any failed checks.</p></div>
-      <Button onClick={()=>{edit({filter:"attention",query:"",selectedOnly:false,offset:0});setShowFiles(true);}}>Show items needing attention</Button>
-    </div>}
-    {state.findings.status==="current"&&!counts.selected&&!counts.needsReview&&<p className="muted">{counts.recommended?"All confirmed text is excluded. You can change these choices in the file list.":"No active plugin text needs translation. You can continue to Images."}</p>}
     {investigated&&state.findings.status==="partial"&&<p className="muted">Some investigation remains unresolved. Your agent can continue from the same task after resolving the reported issues.</p>}
     {!!counts.files&&<section className="plugin-files" aria-label="Plugin files">
       <div className="plugin-files-heading"><Button variant="quiet" aria-expanded={showFiles} aria-controls="plugin-file-list" onClick={()=>setShowFiles(!showFiles)}>{showFiles?"Hide files":"Show files & text"}</Button><span className="muted">{counts.files} files found{counts.latent?` · ${counts.latent} inactive / default locations`:""}</span></div>
       {showFiles&&<div id="plugin-file-list">
         <div className="plugin-filters"><label className="plugin-search"><Search size={15}/><input aria-label="Search plugins" placeholder="Search plugin or file…" value={view.query} onChange={event=>edit({query:event.target.value,offset:0})}/></label>
-          <select aria-label="Plugin status" value={view.filter} onChange={event=>edit({filter:event.target.value,offset:0})}>{["all","attention","ready","selected","needs_revision","latent","unresolved","stale","applied","not_investigated","not_needed"].map(status=><option key={status} value={status}>{status==="all"?"All files":status==="attention"?"Needs attention":pluginStatus(status)}</option>)}</select>
+          <select aria-label="Plugin status" value={view.filter} onChange={event=>edit({filter:event.target.value,offset:0})}>{["all","ready","selected","needs_revision","latent","unresolved","stale","applied","not_investigated","not_needed"].map(status=><option key={status} value={status}>{status==="all"?"All files":pluginStatus(status)}</option>)}</select>
           <label className="plugin-selected-filter"><input type="checkbox" checked={view.selectedOnly} onChange={event=>edit({selectedOnly:event.target.checked,offset:0})}/>Included only</label>
         </div>
         <div className="plugin-table-scroll" aria-busy={loading}><table className="plugin-table"><thead><tr><th>Plugin / file</th><th>Text</th><th>Status</th></tr></thead><tbody>{list?.items.map(row=><tr key={row.path}>

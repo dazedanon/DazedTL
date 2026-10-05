@@ -30,7 +30,7 @@ saved state and runs before retrying a mutation or paid submission.
 Use state before starting. It reports the portable options, current Git and backup state, saved progress,
 pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
-Operation commands return saved job IDs; inspect them with run until they finish or need attention.
+Operation commands return saved job IDs; inspect them with run until they complete, fail, stop, or await approval or provider results.
 
 Source backup precedes runtime preparation. RPG Maker preparation uses the existing shared helper;
 Ace and other formats require their engine's extraction/conversion route first.

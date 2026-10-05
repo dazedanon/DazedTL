@@ -4,7 +4,6 @@ import { Section } from "../../ui/Section";
 import { Button } from "../../ui/Button";
 import { JobStatus } from "../../ui/JobStatus";
 import {
-  AlertCircle,
   ArrowRight,
   Folder,
   FolderOpen,
@@ -123,22 +122,6 @@ export default function Overview({
           </div>
         )}
       </Section>
-      {!!project?.attention?.length && (
-        <Section
-          className="overview-attention"
-          id="overview-attention"
-          title={
-            <>
-              <AlertCircle size={15} />
-              Needs attention
-            </>
-          }
-        >
-          {project.attention.map((text, index) => (
-            <p key={index}>{text}</p>
-          ))}
-        </Section>
-      )}
       <Section title="Quickstart" id="overview-quickstart">
         <div className="overview-actions">
           {project && (

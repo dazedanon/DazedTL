@@ -7,7 +7,7 @@ export interface PluginOccurrence {
 export interface PluginRow {
   path: string; plugin: string; enabled: boolean|null; kind: string; sourceHash: string; issue: string;
   selected: number; visible: number; latent: number; occurrences: number; recommended: number; manual: number;
-  uncertain: number; needsReview: boolean;
+  uncertain: number;
   status: string; changed: number; reason: string; candidateHash: string; working: string; ready: boolean;
 }
 export interface PluginView { mode: "scope"|"working"; query: string; filter: string; selectedOnly: boolean; currentFile: string; offset: number }
@@ -17,7 +17,7 @@ export interface PluginReceipt { id: string; mode: string; saved: string; status
 export interface PluginState {
   projectId: string; revision: string; observationRevision: string; supported: boolean; limitation: string;
   layout: string; source: string; view: PluginView;
-  counts: {files:number;selectedFiles:number;selectedNotPrepared:number;selected:number;recommended:number;ready:number;blocked:number;applied:number;latent:number;needsReview:number};
+  counts: {files:number;selectedFiles:number;selectedNotPrepared:number;selected:number;recommended:number;ready:number;blocked:number;applied:number;latent:number};
   findings: {status:string;errors:string[];accepted?:number;reported?:number;expected?:number};
   editing: {status:string;errors:string[];accepted?:number;reported?:number;expected?:number};
   originalIssue: string; originalBackup: string; receipts: PluginReceipt[]; requestPaths: Record<string,string>; activeRequest: string;

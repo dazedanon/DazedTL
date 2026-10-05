@@ -152,7 +152,7 @@ def main():
             result = engine.handleMVMZ(filename, False)
             if result == "Fail" or engine.MISMATCH:
                 exchange("file_error", file=filename, message="The production adapter preserved source text for invalid results. Review or retry this file.")
-                raise WorkerStopped("A file needs attention before continuing.")
+                raise WorkerStopped("File translation failed validation.")
             output = root / "translated" / filename
             if not output.is_file():
                 raise WorkerStopped("The production adapter did not write its expected output.")

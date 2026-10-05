@@ -70,7 +70,6 @@ class Application:
                 status="Project open",
                 detail="Choose the next task for this project.",
                 next_label="Continue setup",
-                attention=[],
             )
             if not project["available"]:
                 project.update(
@@ -91,8 +90,6 @@ class Application:
                     project.update(
                         status="Translation workspace ready", detail="Review the selected scope and saved guidance before starting a run.", next_label="Continue translation"
                     )
-                if native["project"].get("collection_error"):
-                    project["attention"].append(native["project"]["collection_error"])
                 if latest and latest["status"] == "running":
                     project.update(status="Preparing files", detail=latest["label"], next_label="View progress")
                 elif job:
@@ -111,11 +108,9 @@ class Application:
                     elif job["status"] == "canceled":
                         project.update(status="Translation workspace ready", detail="Review scope and guidance before starting a run.", next_label="Continue translation")
                     else:
-                        project.update(status="Run needs attention", detail="", next_label="Review run")
-                        project["attention"].append(job["message"])
+                        project.update(status="Run ended", detail="", next_label="Review run")
                 elif latest and latest["status"] in {"failed", "interrupted"}:
-                    project.update(status="Preparation needs attention", next_label="Review progress")
-                    project["attention"].append(latest["message"])
+                    project.update(status="Preparation " + latest["status"], next_label="Review progress")
             value["project"] = project
         return value
 
@@ -138,7 +133,6 @@ class Application:
                     project.update(status="Last reported: " + current["progress"]["phase"], detail=current["progress"].get("next_action", ""))
                 else:
                     project.update(status="Ready for project setup", detail="Choose a translation mode and prepare the starting prompt.")
-                project["attention"].extend(current["warnings"])
                 if project.get("backend_id"):
                     legacy = views.guided(self.guided.state(project["id"]), project["id"])
                     run = legacy["run"]
@@ -156,7 +150,7 @@ class Application:
             except (ValueError, OSError) as exc:
                 error = str(exc)
                 project.pop("operation", None)
-                project.update(status="Project needs attention", detail=error, next_label="Open translation")
+                project.update(status="Project unavailable", detail=error, next_label="Open translation")
         images, image_error = None, ""
         if project and project["available"]:
             try:

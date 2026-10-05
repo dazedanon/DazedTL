@@ -8,13 +8,9 @@
 .plugin-workspace .action-row { padding:var(--space-5) 0; border-bottom:1px solid var(--line); }
 .plugin-workspace .action-row:first-child { padding-top:0; }
 .plugin-workspace .action-control-feedback:empty { display:none; }
-.plugin-prerequisite,.plugin-attention { display:flex; align-items:flex-start; gap:var(--space-3); }
+.plugin-prerequisite { display:flex; align-items:flex-start; gap:var(--space-3); }
 .plugin-prerequisite { color:var(--color-warning); line-height:1.5; }
 .plugin-prerequisite svg { flex-shrink:0; }
-.plugin-attention { justify-content:space-between; flex-wrap:wrap; border-left:2px solid var(--color-warning); padding-left:var(--space-3); }
-.plugin-attention > div { flex:1 1 20rem; }
-.plugin-attention strong { color:var(--color-warning); }
-.plugin-attention p { color:var(--muted); margin:var(--space-1) 0 0; line-height:1.5; }
 .plugin-files { min-width:0; }
 .plugin-files-heading,.plugin-filters,.plugin-table-count { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; }
 .plugin-files-heading { justify-content:space-between; font-size:var(--font-small); }

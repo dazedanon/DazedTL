@@ -20,6 +20,7 @@ from .documents import Documents, JAPANESE, decode, leaves, occurrences, validat
 WORK = ".dazedtl/plugin-work"
 DISPOSITIONS = {"visible", "latent", "protected", "editor_only", "non_visible", "unresolved"}
 VIEW = {"mode":"scope", "query":"", "filter":"all", "selectedOnly":False, "currentFile":"", "offset":0}
+FILTERS = {'all', 'ready', 'selected', 'needs_revision', 'latent', 'unresolved', 'stale', 'applied', 'not_investigated', 'not_needed'}
 DATABASE_JSON = {"Actors.json", "Classes.json", "Skills.json", "Items.json", "Weapons.json", "Armors.json",
                  "Enemies.json", "Troops.json", "States.json", "Animations.json", "Tilesets.json", "System.json",
                  "CommonEvents.json", "MapInfos.json"}
@@ -70,6 +71,8 @@ class PluginService:
         value = deepcopy(saved[1]) if saved and saved[0] == signature else read_json(path, limit=64_000_000)
         if value.get("version") != 1 or value.get("projectId") != project_id:
             raise ValueError("Plugin state belongs to a different project or version. Its files were retained.")
+        if value['view']['filter'] not in FILTERS:
+            value['view'].update(filter='all', offset=0)
         self.cache[project_id] = (signature, deepcopy(value))
         return value
 
@@ -244,13 +247,12 @@ class PluginService:
         uncertain = sum(not item['protected'] and (not item.get('finding') or
                         item['finding']['disposition']=='unresolved' or
                         item['finding']['disposition'] in {'visible','latent'} and not item['finding']['safe']) for item in items)
-        needs_review = bool(uncertain or row.get('issue') or row.get('stale') or status in {'needs_revision','partial'})
         if uncertain and not count and not result and not row.get('stale'): status = 'unresolved'
         if row.get('stale'): status = 'stale'
         if row.get('issue'): status = 'unresolved'
         return {key:row.get(key) for key in ('path','plugin','enabled','kind','sourceHash','issue')} | {
             'selected':count,'visible':len(visible),'latent':len(latent),'occurrences':len(items),'status':status,
-            'uncertain':uncertain,'needsReview':needs_review,
+            'uncertain':uncertain,
             'recommended':sum(not item['protected'] and not item['latent'] and item.get('finding',{}).get('disposition')=='visible'
                               and item.get('finding',{}).get('safe') is True and not row.get('stale') and not row.get('issue') for item in items),
             'manual':sum(item['id'] in value['manual'] for item in items),'changed':len(result.get('targets',{})),
@@ -292,8 +294,7 @@ class PluginService:
             counts = {'files':len(rows),'selectedFiles':sum(row['selected']>0 for row in rows), 'selected':len(value['selection']),
                       'recommended':sum(row['recommended'] for row in rows),'ready':sum(row['selected']>0 and row['ready'] for row in rows),
                       'blocked':sum(row['selected']>0 and not row['ready'] and row['status']!='applied' for row in rows),
-                      'applied':sum(row['applied'] for row in rows),'latent':sum(row['latent'] for row in rows),
-                      'needsReview':sum(row['needsReview'] for row in rows)}
+                      'applied':sum(row['applied'] for row in rows),'latent':sum(row['latent'] for row in rows)}
             counts['selectedNotPrepared']=sum(row['selected']>0 and not row['working'] for row in rows)
             return {'projectId':project_id,'revision':self.revision(value),'observationRevision':digest(value),
                     'supported':project['engine']=='MVMZ','limitation':'Ace Ruby scripts need parser and native packing support; this workspace cannot publish them.' if project['engine']=='ACE' else '',
@@ -305,11 +306,12 @@ class PluginService:
 
     def list(self, project_id, query='', filter='all', selected_only=False, offset=0, limit=100):
         bounded(query,'Search',500); bounded(filter,'Filter',30)
+        if filter not in FILTERS: filter = 'all'
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=200: raise ValueError("Choose a bounded plugin table range.")
         with self.lock:
             value = self.load(project_id); self.observe(project_id,value); rows = [self.public_row(value,row) for row in value['files'].values()]
             rows = [row for row in rows if query.casefold() in (row['path']+' '+row['plugin']).casefold()
-                    and (filter=='all' or filter=='attention' and row['needsReview'] or row['status']==filter) and (not selected_only or row['selected'])]
+                    and (filter=='all' or row['status']==filter) and (not selected_only or row['selected'])]
             rows.sort(key=lambda row:row['path'])
             return {'items':rows[offset:offset+limit],'total':len(rows),'selectedMatched':sum(row['selected']>0 for row in rows),'offset':offset,'limit':limit}
 
@@ -349,6 +351,7 @@ class PluginService:
                     if type(item) is not int or not 0<=item<=1_000_000: raise ValueError("Invalid table position.")
                 else: bounded(item,'Plugin view',2000)
             if view.get('mode',value['view']['mode']) not in {'scope','working'}: raise ValueError("Choose scope or working copies.")
+            if view.get('filter',value['view']['filter']) not in FILTERS: view = {**view, 'filter':'all', 'offset':0}
             value['view'].update(view); self.save(project_id,value)
             return self.state(project_id)
 
@@ -501,9 +504,11 @@ class PluginService:
             self.save(project_id,value)
             state=self.state(project_id)
             if not result:
-                attention=state['counts']['needsReview'] or state['counts']['blocked'] or value['findings']['status']=='partial'
-                result={'stage':'needs_attention' if attention else 'complete',
-                        'message':'Saved work checked. Resolve reported uncertainty or failed checks; runtime Apply remains in the app.' if attention else 'Plugin work checked. Review and apply available translations in the app.'}
+                incomplete=state['counts']['blocked'] or value['findings']['status']=='partial' or any(
+                    row['uncertain'] or row['issue'] or row['status'] in {'stale','needs_revision','partial'}
+                    for row in (self.public_row(value, row) for row in value['files'].values()))
+                result={'stage':'partial' if incomplete else 'complete',
+                        'message':'Saved work checked. Resolve reported uncertainty or failed checks; runtime Apply remains in the app.' if incomplete else 'Plugin work checked. Review and apply available translations in the app.'}
             return {**result,'state':state}
 
     def current_sources(self, project_id, value, rows):

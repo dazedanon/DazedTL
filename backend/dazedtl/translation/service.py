@@ -356,7 +356,7 @@ Additional project instructions:
             for row in job["states"].values():
                 if row["state"] == "pending":
                     row.update(state="failed", message="Canceled before submission.")
-            job.update(status="needs_attention", message="Canceled before submission; no requests were sent.")
+            job.update(status="canceled", message="Canceled before submission; no requests were sent.")
             self.jobs.store.save(job)
             return self.jobs.store.view(job)
         self.jobs.store.stop(run_id, project_id)
@@ -531,7 +531,7 @@ Additional project instructions:
         if not request or job["states"][batch_id]["state"] != "uncertain":
             raise ValueError("Choose the exact unresolved Live request.")
         job["states"][batch_id] = {"state": "failed", "message": "Uncertain outcome reviewed. A new remaining-work quote is required before another attempt."}
-        job.update(status="needs_attention", message="Outcome reviewed. Compile and approve a new quote for remaining work.")
+        job.update(status="failed", message="Outcome reviewed. Compile and approve a new quote for remaining work.")
         self.jobs.store.save(job)
         return self.jobs.store.view(job)
 

@@ -16,7 +16,6 @@ export interface Project {
   detail?: string;
   operation?: Pick<TranslationJob, "label" | "status" | "message">;
   next_label?: string;
-  attention?: string[];
 }
 export interface AppState {
   project: Project | null;

@@ -9,7 +9,7 @@ test("a new or failed release attempt cannot offer an older comparison for appli
   const stage = job("stage-1", "stage_update", { official: "/prepared/1", version: "1.1" });
   const preview = job("preview-1", "version_preview", { source_root: "/prepared/1", version: "1.1", proposed_tree: "tree", original_commit: "original", translation_commit: "translated" });
   assert.equal(versionSession([preview, stage], git).preview?.id, preview.id);
-  for (const status of ["running", "failed", "needs_attention", "complete"]) {
+  for (const status of ["running", "failed", "complete"]) {
     const newer = job("stage-2", "stage_update", { official: "/prepared/2", version: "1.2" }, status);
     assert.equal(versionSession([newer, preview, stage], git).preview, undefined);
     assert.equal(versionSession([preview, newer, stage], git).preview, undefined);

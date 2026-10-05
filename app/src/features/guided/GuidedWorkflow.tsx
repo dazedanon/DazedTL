@@ -34,7 +34,7 @@ import { BatchMonitor } from "./BatchMonitor";
 import { TranslationOptions } from "./TranslationOptions";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
-import { initialPosition, runPhase, runStage, stagesFor, taskForStage, unfinishedRun } from "./workflow";
+import { initialPosition, runPhase, runStage, stagesFor, taskForStage } from "./workflow";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { guidanceAvailability, guidanceNames, saveGuidanceSet } from "./guidanceReview";
 import { GuidanceReview } from "./GuidanceReview";
@@ -141,7 +141,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const sourceBackup = translation.lifecycle.source_backup;
   const preserved = !!sourceBackup && sourceBackup.available !== false;
   const baseline = preserved && !!translation.git?.configured;
-  const job = state.run, unfinished = unfinishedRun(state);
+  const job = state.run;
   const findings = state.speakerSetup;
   const scan = state.speakerScan;
   const discovery = state.contextSetup;
@@ -293,7 +293,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       pending={action.busy && action.key === name || !!active}
       notice={!active && current?.status === "complete" && current.id === started[name]?.id
         ? `${typeof current.result?.files === "number" ? fileCount(current.result.files) : "Files"} resynced.` : ""}
-      error={action.key === name && action.error || current && ["failed", "needs_attention", "interrupted"].includes(current.status) && current.message || ""}
+      error={action.key === name && action.error || current && ["failed", "interrupted"].includes(current.status) && current.message || ""}
       onClick={() => review(name, options, files)} />;
     if (localFeedback) return <Button variant={variant} pending={!!active || action.busy && action.key === actionKey(name, options)} disabled={disabled || blocked} onClick={() => review(name, options, files)}>{label}</Button>;
     if (localOperation?.action === name) return <Button variant={variant} pending disabled>{label}</Button>;
@@ -482,7 +482,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
-        {(pendingBatches.length > 0 || current?.mode === "batch" && activeRun(current) && !current.approval) && <Button onClick={() => openBatches(pendingBatches[0]?.id || current?.id)}>View Batches</Button>}
         {current?.approval && <Button disabled={disabled} onClick={() => setSubmission(current)}>Review cost</Button>}
         {stopLabel && <Button variant="quiet" disabled={disabled} pending={action.busy && action.key === "run:stop"}
           onClick={() => action.run(() => api.stop(project.id, current!.id), "Stop requested. Saved work is retained.", "run:stop")}>{stopLabel}</Button>}
@@ -606,8 +605,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       <WorkflowNavigation stages={stages} step={position.step} completed={completed} disabled={disabled} move={move} taskFor={stage => taskForStage(state, stage)} />
       <div className="guided-task-workspace">
         {showTaskTabs && <nav className="guided-task-nav" aria-label={`${stage.title} tasks`}><Tabs id={taskTabsId} label={`${stage.title} tasks`} value={taskId} disabled={disabled} onChange={stepTask} items={stage.tasks.map(item => ({ id: item.id, label: <>{completed.has(item.id) && <span aria-label="Complete">✓</span>}{item.title}</> }))} /></nav>}
-        {unfinished && taskId !== "run" && (position.step !== "translate" || runPhase(state) !== phase) && !["prepare", "context"].includes(position.step) && <div className="guided-attention"><span>{job?.mode === "speakers" ? "Saved name translation" : "Saved translation run"} · {job?.status}</span><Button onClick={() => job?.mode === "speakers" ? move("context", "run") : stepTask(runPhase(state) === "advanced" ? "advanced-run" : runPhase(state))}>Open saved run</Button></div>}
-        {activeOperation && !localOperation && !(position.step === "translate" && activeOperation.action === "refresh_sources") && !(taskId === "names" && activeOperation.action === "speaker_scan") && <div className="guided-attention"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
+        {activeOperation && !localOperation && !(position.step === "translate" && activeOperation.action === "refresh_sources") && !(taskId === "names" && activeOperation.action === "speaker_scan") && <div className="guided-operation"><JobStatus compact job={{ ...activeOperation, label: activeOperation.label || "Current operation" }} /><Button disabled={action.busy} onClick={() => stopOperation(activeOperation)}>Stop operation</Button></div>}
         <PageBody ref={bodyRef} role={showTaskTabs && selectedTask ? "tabpanel" : undefined} id={showTaskTabs && selectedTask ? `${taskTabsId}-panel-${taskId}` : undefined} aria-labelledby={showTaskTabs && selectedTask ? `${taskTabsId}-tab-${taskId}` : undefined} className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}>
           {position.step !== "translate" && (position.step !== "context" || taskId === "run") && <div className="guided-task-heading"><div className="guided-task-location"><span>{stage.title}{taskId === "plugins" ? "" : taskIndex >= 0 ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}` : " · Saved run"}</span><Button variant="quiet" onClick={() => setPanel("tasks")}>All tasks</Button></div>
             <h2 ref={headingRef} tabIndex={-1}>{taskId === "apply" && taskView === "qa" ? "Text QA · optional" : taskId === "apply" && taskView === "tools" ? "Game tools · optional" : selectedTask?.title || phaseLabels[runPhase(state)] + " run"}</h2>{selectedTask?.description && <p>{selectedTask.description}</p>}{taskId === "other-event-text" && <p className="muted">{{audit: "Investigation", sources: "Findings & source choices", "advanced-run": "Translation", variables: "Comparison updates"}[state.eventText.view]}</p>}</div>}

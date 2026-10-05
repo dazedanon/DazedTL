@@ -260,7 +260,7 @@ class TranslationEngine:
         from util.version_update import GitWorkflowError
         if isinstance(error, (ValueError, OSError, GitWorkflowError, ProviderFailure)):
             return str(error)
-        return "Operation needs attention (" + type(error).__name__ + "). Saved receipts were retained."
+        return "Operation failed (" + type(error).__name__ + "). Saved receipts were retained."
 
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
         from util.project_preparation import prepare_rpgmaker

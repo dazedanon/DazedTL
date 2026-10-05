@@ -152,6 +152,10 @@ class RunStore:
                   for state in ("pending", "sending", "queued", "accepted", "failed", "uncertain")}
         return {key: job[key] for key in ("id", "project_id", "kind", "label", "status", "message", "created", "updated",
                                          "quote", "approval_token", "approved", "result", "usage")} | {
+            # Retired terminal labels do not alter stored receipts or retry guards.
+            "status": job["status"] if job["status"] in {
+                "ready", "running", "waiting", "complete", "failed", "uncertain", "stopped", "interrupted", "canceled"
+            } else "failed",
             "mode": job["mode"], "action": job.get("action"), "counts": counts,
             "approved": self.authorized(job),
             "units": sum(job["unit_counts"].values()),

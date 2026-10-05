@@ -88,7 +88,7 @@ export function VersionsPanel({ project, state, guided = false, onBackups, onPre
       {session.stale && <p className="banner">The current game changed after the last comparison. Preview it again before applying the update.</p>}
       <details><summary>Release used for comparison</summary><p className="translation-path">{String(stage?.result?.official || preview?.result?.source_root)}</p></details>
       <ActionSlot target={actionTarget}>{control("version_preview", "Preview changes", { official: stage?.result?.official || preview?.result?.source_root, version: resultVersion }, !state.git?.worktree_clean, true)}<Button variant="quiet" disabled={disabled} onClick={chooseNew}>Choose a different release</Button></ActionSlot>
-    </Section> : choosing || session.stage && ["failed", "needs_attention", "interrupted", "stopped"].includes(session.stage.status) && session.stage.id !== dismissedAttempt ? <Section title="Choose the new official release">
+    </Section> : choosing || session.stage && ["failed", "interrupted", "stopped"].includes(session.stage.status) && session.stage.id !== dismissedAttempt ? <Section title="Choose the new official release">
       <p>Choose an extracted, complete release from the game’s developer. The app prepares a separate copy for comparison.</p>
       <fieldset className="version-form" disabled={disabled}>
         <FieldRow id="update-official-folder" label="New official game folder">{(props) => <div className="version-folder"><input {...props} value={official} onChange={(event) => setOfficial(event.target.value)} /><Button onClick={() => browse(setOfficial)}>Choose folder</Button></div>}</FieldRow>

@@ -9,7 +9,7 @@ def project(value):
     if value is None:
         return None
     return pick(value, ('id', 'name', 'source', 'engine', 'engine_label', 'method', 'phase', 'available',
-                        'status', 'detail', 'operation', 'next_label', 'attention'))
+                        'status', 'detail', 'operation', 'next_label'))
 
 
 def application(value):

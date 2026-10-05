@@ -406,6 +406,11 @@ pre {
   min-height: var(--control-height);
   padding: var(--control-padding);
 }
+.ui-button.link-button {
+  font-size: inherit;
+  min-height: auto;
+  padding: 0;
+}
 .ui-button--comfortable {
   font-size: var(--font-body);
   padding: 10px 15px;
@@ -550,7 +555,6 @@ pre {
   color: var(--color-success);
 }
 .job-status-state[data-state="failed"],
-.job-status-state[data-state="needs_attention"],
 .job-status-state[data-state="interrupted"] {
   color: var(--color-error-text);
 }
@@ -633,7 +637,12 @@ pre {
 .action-row > .actions {
   margin-top: 0;
   min-width: 0;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.action-row > .actions > * {
+  flex-shrink: 0;
+  max-width: 100%;
 }
 .action-row-label {
   min-width: 0;
@@ -642,6 +651,10 @@ pre {
   font-weight: 500;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.action-row-label > small {
+  display: block;
+  margin-top: var(--space-1);
 }
 .action-row > .action-control,
 .action-row > .action-control > button {
@@ -664,9 +677,14 @@ pre {
   gap: var(--space-3);
 }
 .action-list--compact > .action-row > :last-child:not(.action-row-label) { justify-self: end; }
+.action-list--compact > .action-row > .actions { justify-content: flex-end; }
 .action-row:has(> .action-row-label:only-child) { grid-template-columns: minmax(0, 1fr); }
 .action-list--compact .action-row-label { padding-top: 0; }
 .action-list--compact > .action-row:has(.action-control-feedback:not(:empty)) { align-items: start; }
+@container (max-width: 36rem) {
+  .action-list--compact > .action-row:has(> .actions) { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .action-list--compact > .action-row > .actions:last-child { justify-self: start; justify-content: flex-start; }
+}
 @container (max-width: 20rem) {
   .action-list--compact > .action-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
   .action-list--compact > .action-row > :last-child:not(.action-row-label) { justify-self: start; }

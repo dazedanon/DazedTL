@@ -20,7 +20,7 @@ export function ActionControl({
   const control = useRef<HTMLDivElement>(null);
   const feedback = useRef<HTMLDivElement>(null);
   const invoked = useRef(false);
-  const failure = error || (job && ["failed", "needs_attention", "interrupted"].includes(job.status) ? job.message || job.status : "");
+  const failure = error || (job && ["failed", "interrupted"].includes(job.status) ? job.message || job.status : "");
   useEffect(() => {
     if (failure && !pending && !active && invoked.current) {
       invoked.current = false;
@@ -29,7 +29,7 @@ export function ActionControl({
       }
     }
   }, [failure, pending, active]);
-  const failed = !!error || !!job && ["failed", "needs_attention", "interrupted"].includes(job.status);
+  const failed = !!error || !!job && ["failed", "interrupted"].includes(job.status);
   const succeeded = !failed && (job?.status === "complete" || !!notice);
   return <div className={`action-control${inline ? " action-control--inline" : ""}`} ref={control}>
     <Button {...button} pending={pending || !!active}

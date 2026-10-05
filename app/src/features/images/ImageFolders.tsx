@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../ui/Button";
 
-export function ImageFolders({ folders, indexed, folder, ready, blocked, onChoose, onStatus }: {
-  folders: { path: string; count: number }[]; indexed: number; folder: string; ready: number; blocked: number;
+export function ImageFolders({ folders, indexed, folder, ready, onChoose, onStatus }: {
+  folders: { path: string; count: number }[]; indexed: number; folder: string; ready: number;
   onChoose: (path: string) => void; onStatus: (status: string) => void;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
@@ -29,6 +29,6 @@ export function ImageFolders({ folders, indexed, folder, ready, blocked, onChoos
         <div className="image-folder-window" style={{ transform: `translateY(${first * rowHeight}px)` }}>{folders.slice(first, last).map((item, index) => <div key={item.path} ref={index === 0 ? sample : undefined}><Button variant="quiet" aria-label={item.path} aria-pressed={folder === item.path} title={item.path} onClick={() => onChoose(item.path)}><span className="image-folder-name"><strong>{item.path === "." ? "Root images" : item.path.split("/").at(-1)}</strong><small>{item.path.includes("/") ? item.path.slice(0, item.path.lastIndexOf("/")) : "Game root"}</small></span><span>{item.count.toLocaleString()}</span></Button></div>)}</div>
       </div>
     </div>
-    <div className="image-folder-views"><Button variant="quiet" onClick={() => onStatus("ready")}>Ready to apply <span>{ready}</span></Button><Button variant="quiet" onClick={() => onStatus("blocked")}>Needs attention <span>{blocked}</span></Button></div>
+    <div className="image-folder-views"><Button variant="quiet" onClick={() => onStatus("ready")}>Ready to apply <span>{ready}</span></Button></div>
   </aside>;
 }

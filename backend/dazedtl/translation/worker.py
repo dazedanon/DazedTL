@@ -114,7 +114,7 @@ def run_locked(workspace, identity, store):
         job, _plan = store.load(identity)
         # Provider exceptions can contain request bodies or auth details; retain only their class.
         message = engine.error_message(exc)
-        job.update(status="needs_attention", message=message)
+        job.update(status="failed", message=message)
         store.save(job)
 
 

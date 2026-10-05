@@ -171,7 +171,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
             )}
             {!!job.issues.length && (
               <details>
-                <summary>{job.issues.length} requests need attention</summary>
+                <summary>{job.issues.length} request errors</summary>
                 <ul>
                   {job.issues.map((issue) => (
                     <li key={issue.id}>

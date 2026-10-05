@@ -103,17 +103,6 @@ main.overview-main {
   font-size: 12px;
   line-height: 1.5;
 }
-.overview-attention h2 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--color-warning);
-}
-.overview-attention p {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 7px 0 0;
-}
 .overview-recents > h2 {
   margin-bottom: 4px;
 }
