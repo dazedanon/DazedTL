@@ -164,7 +164,7 @@ class TranslationEngine:
             params["output_config"] = {"format": {"type": "json_schema", "schema": output_schema(request["sources"])}}
         else:
             params = buildOpenAIRequest(**shared, penalty=0, api_provider=configuration["protocol"], api_url=configuration["endpoint"])
-            params["response_format"] = ({"type": "json_object"} if configuration["provider"] in {"custom", "mistral"} else
+            params["response_format"] = ({"type": "json_object"} if configuration["provider"] in {"custom", "mistral", "openrouter"} else
                                          {"type": "json_schema", "json_schema": {"name": "translation", "strict": True,
                                                                                  "schema": output_schema(request["sources"])}})
         return request_parameters.provider_defaults(params, configuration.get("generationParameters"))
@@ -182,7 +182,9 @@ class TranslationEngine:
         from util.translation import _openai_batch_token_limit
         from urllib.parse import urlsplit
         native_openai = configuration["protocol"] == "openai" and urlsplit(configuration["endpoint"]).hostname == "api.openai.com"
-        return [*batch_limits(self.batch_supported(configuration)), _openai_batch_token_limit() if native_openai else None]
+        from dazedtl.settings.preferences import batch_input_tokens
+        allowance = batch_input_tokens(configuration.get("batchInputTokens"))
+        return [*batch_limits(self.batch_supported(configuration)), (allowance or _openai_batch_token_limit()) if native_openai else None]
 
     def input_tokens(self, parameters):
         from util.translation import _estimate_openai_batch_input_tokens
@@ -487,10 +489,3 @@ class TranslationProvider:
                 else:
                     errors.append(custom)
         return results, errors, usage
-
-    @provider_errors
-    def cancel(self, identity):
-        from util.batch_providers import cancel_batch
-        result = cancel_batch(self.provider, identity, client=self.client)
-        result.pop("raw", None)
-        return result

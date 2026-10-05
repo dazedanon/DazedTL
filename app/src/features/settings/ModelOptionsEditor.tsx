@@ -6,6 +6,7 @@ import { useModelDefaults } from "./useModelDefaults";
 
 const automatic: ModelOptions = {
   entriesPerRequest: null,
+  batchInputTokens: null,
   pricing: "automatic",
   inputRate: null,
   outputRate: null,
@@ -24,9 +25,7 @@ export default function ModelOptionsEditor({
 }) {
   const model = config.values.model.trim();
   const defaults = useModelDefaults(config.activeConnectionId, model);
-  const value = Object.hasOwn(config.modelOptions, model)
-    ? config.modelOptions[model]
-    : automatic;
+  const value = { ...automatic, ...(Object.hasOwn(config.modelOptions, model) ? config.modelOptions[model] : {}) };
   const change = (patch: Partial<ModelOptions>) =>
     edit(model, { ...value, ...patch });
   if (!model)
@@ -100,6 +99,21 @@ export default function ModelOptionsEditor({
             )}
           </FieldRow>
         )}
+        {connection?.provider === "openai" && <FieldRow
+          id="batch-input-tokens"
+          label="Batch token allowance"
+          help="Total estimated input tokens across active Guided Batches on this connection and model. Available capacity is filled automatically. Leave headroom for other jobs sharing the account. Applies to new runs."
+        >
+          {(control) => <input {...control} className="short-control" type="number" min={1} max={Number.MAX_SAFE_INTEGER} step={1}
+            placeholder={config.defaultBatchInputTokens == null ? "Default" : `Default (${config.defaultBatchInputTokens.toLocaleString()})`} value={value.batchInputTokens ?? ""}
+            onPaste={event => {
+              const pasted = event.clipboardData.getData("text").trim();
+              if (!/^\d{1,3}(?:[,\u00a0\u202f ]\d{3})+$/.test(pasted)) return;
+              event.preventDefault();
+              change({ batchInputTokens: Number(pasted.replace(/[,\s]/g, "")) });
+            }}
+            onChange={event => change({ batchInputTokens: event.target.value === "" ? null : Number(event.target.value) })} />}
+        </FieldRow>}
       </Section>
       <Section title="Pricing" hint="USD per million tokens">
         <FieldRow id="pricing-mode" label="Estimate rates">

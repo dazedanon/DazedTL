@@ -8,13 +8,12 @@ import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { Tabs } from "../../ui/Tabs";
-import { ExpandableText } from "../../ui/ExpandableText";
 import { useAction } from "../../state/useAction";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import { historyDate, historyDay, historyPhase } from "./historyView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
-import { batchInProgress, batchOutcome, batchRuns, canRetrySaving, canReapplyBatch, totalBatchProgress, type ProviderBatch } from "./batchView";
+import { batchMonitorRows, batchOutcome, batchRuns, canRetrySaving, canReapplyBatch, type ProviderBatch } from "./batchView";
 
 export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reapply, applicationJob, disabled }: {
   projectId: string; runs: Job[]; focusRun?: string; close: () => void; inspect: (job: Job, target?: RequestInspectionTarget) => void;
@@ -46,8 +45,7 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
       setVisible(value => Math.max(value, limit));
     }
   }, [focusRun, jobs.length, limit]);
-  function status(batch: ProviderBatch, job: Job) {
-    const outcome = batchOutcome(batch, job);
+  function status(outcome: ReturnType<typeof batchMonitorRows>[number]) {
     const state = outcome.active ? "active" : outcome.failed ? "warning" : outcome.successful ? "complete" : "unknown";
     const Icon = outcome.active ? LoaderCircle : outcome.failed ? AlertTriangle : outcome.successful ? Check : CircleHelp;
     return <><strong className="batch-activity" data-state={state}><Icon size={14} className={outcome.active ? "job-status-spinner" : undefined} aria-hidden="true" />{outcome.label}</strong><small>{outcome.summary}</small></>;
@@ -71,47 +69,34 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
             {query && <Button variant="quiet" onClick={() => setQuery("")}>Clear search</Button>}</div>}
           {groups.map(group => <section className="history-day" key={group.day} aria-label={group.date}><h3>{group.date}</h3>
             {group.jobs.map(job => {
-              const batches = job.process?.batches || [], single = batches.length === 1 && !job.process?.remaining;
-              const total = totalBatchProgress(batches, job.process?.remaining || 0), active = batchInProgress(job);
-              const monitoring = job.process?.monitoring, applied = applicationJob(job);
+              const rows = batchMonitorRows(job), applied = applicationJob(job);
               const collectKey = "batch:collect:" + job.id, reapplyKey = "batch:reapply:" + job.id;
-              const issue = monitoring && ["error", "blocked"].includes(monitoring.state) ? monitoring.message
-                : canRetrySaving(job) ? "Collected responses could not be saved." : "";
               return <section key={job.id} className="batch-history-run" aria-label={`${historyPhase(job)} Batch ${job.id}`}
                 ref={element => { if (job.id === focusRun) focused.current = element; }}>
-                <ActionList><ActionRow label={<div className="history-entry">
-                  <div className="history-identity"><div><strong>{historyPhase(job)}</strong></div><small>
-                    {job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
-                    <ExpandableText text={job.model || "Saved model"} label="Model name" appearance="inline" limit={52} /></small></div>
-                  <div className="history-scope"><span>{job.files?.length || 0} {job.files?.length === 1 ? "file" : "files"}</span><small><ExpandableText text={job.files?.join(", ") || "Scope not recorded"} label="Files in this run" appearance="inline" limit={64} /></small></div>
-                  <div className="history-outcome batch-provider-row">{single ? status(batches[0], job) : <>
-                    <strong>{!batches.length ? "Receipt unavailable" : total.finished != null && total.total != null ? `${total.finished.toLocaleString()}/${total.total.toLocaleString()} finished` : "Counts unavailable"}</strong>
-                    {!!job.process?.remaining && <small>{job.process.remaining.toLocaleString()} {active ? "queued" : "not sent"}</small>}
-                  </>}
-                    {active && (total.finished == null || total.finished !== total.total) && <progress aria-label="Total finished requests" max={total.total || 1} value={total.finished} />}
-                  </div>
+                <ActionList compact>{rows.map((row, index) => <ActionRow key={row.batch?.id || job.id} label={<div className="batch-current">
+                  <strong>{historyPhase(job)}</strong>
+                  {job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}
+                  {row.name && <span>{row.name}</span>}
+                  {status(row)}
+                  {row.detail && <small>{row.detail}</small>}
                 </div>}><div className="actions">
-                  <Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Inspect</Button>
-                  {single && cancel(batches[0], job)}
-                  {job.status === "complete" && <ActionControl label="Reapply" disabled={disabled || action.busy || !canReapplyBatch(job)}
-                    pending={action.busy && action.key === reapplyKey} pendingText="Preparing saved output…"
-                    title={!canReapplyBatch(job) ? "Saved output is unavailable for this Batch." : "Review and apply this Batch’s saved output to the game."}
-                    error={action.key === reapplyKey ? action.error : ""} job={applied?.status === "complete" ? undefined : applied}
-                    notice={applied?.status === "complete" ? "Batch output applied." : ""}
-                    onClick={() => action.run(() => reapply(job), "", reapplyKey)} />}
-                </div></ActionRow>
-                {!single && batches.map((batch, index) => <ActionRow key={batch.id} label={<div className="batch-provider-heading"><span>{batch.clarification ? "Clarification retry" : `Batch ${batches.slice(0, index + 1).filter(row => !row.clarification).length}`}</span>{status(batch, job)}</div>}>{cancel(batch, job)}</ActionRow>)}
-                {!!job.process?.validationIssues?.length && <ActionRow label={<small className="translation-error">
-                  {job.process.rejected ? `${job.process.rejected} translations rejected.` : "Translation validation failed."} Original text was kept for rejected requests.
-                </small>}><Button variant="quiet" onClick={() => {
-                  const rejected = job.process?.requests?.find(request => request.state === "rejected");
-                  inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
-                }}>Review issues</Button></ActionRow>}
-                {issue && <ActionRow label={<small className="translation-error" role="alert">{issue}</small>}>
-                  {canRetrySaving(job) && <ActionControl label="Retry saving results" pending={action.busy && action.key === collectKey} disabled={action.busy} pendingText="Saving responses…"
-                    error={action.key === collectKey ? action.error : ""} notice={action.key === collectKey ? action.notice : ""}
-                    onClick={() => action.run(() => api.guided.batchCollect(projectId, job.id), "Saving collected responses.", collectKey)} />}
-                </ActionRow>}
+                  {row.batch && cancel(row.batch, job)}
+                  {index === 0 && <>
+                    <Button variant="quiet" disabled={blocking} onClick={() => inspect(job)}>Inspect</Button>
+                    {!!job.process?.validationIssues?.length && <Button variant="quiet" disabled={blocking} onClick={() => {
+                      const rejected = job.process?.requests?.find(request => request.state === "rejected");
+                      inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
+                    }}>Review issues</Button>}
+                    {canRetrySaving(job) && <ActionControl label="Retry saving results" pending={action.busy && action.key === collectKey} disabled={action.busy} pendingText="Saving responses…"
+                      error={action.key === collectKey ? action.error : ""} notice={action.key === collectKey ? action.notice : ""}
+                      onClick={() => action.run(() => api.guided.batchCollect(projectId, job.id), "Saving collected responses.", collectKey)} />}
+                    {job.status === "complete" && <ActionControl label="Reapply" disabled={disabled || action.busy || !canReapplyBatch(job)}
+                      pending={action.busy && action.key === reapplyKey} pendingText="Preparing saved output…"
+                      title={!canReapplyBatch(job) ? "Saved output is unavailable for this Batch." : "Review and apply this Batch’s saved output to the game."}
+                      error={action.key === reapplyKey ? action.error : ""} job={applied?.status === "complete" ? undefined : applied}
+                      notice={applied?.status === "complete" ? "Batch output applied." : ""}
+                      onClick={() => action.run(() => reapply(job), "", reapplyKey)} />}</>}
+                </div></ActionRow>)}
                 </ActionList>
               </section>;
             })}

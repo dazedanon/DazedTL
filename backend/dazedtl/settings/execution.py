@@ -35,6 +35,8 @@ def configuration(settings, mode):
              "entries_per_request": selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST,
              "rates": {"input": input_rate, "output": output_rate, "batch_factor": None,
                        "source": "custom" if selected["pricing"] == "custom" else defaults["source"]}}
+    if connection["provider"] == "openai" or selected.get("batchInputTokens") is not None:
+        value["batchInputTokens"] = preferences.batch_input_tokens(selected.get("batchInputTokens")) or preferences.DEFAULT_BATCH_INPUT_TOKENS
     # Keep the same route validation as the preserved engine before building requests.
     settings.adapter.validate_route({"model": value["model"], "API_PROVIDER": value["protocol"], "api": value["endpoint"]})
     return value

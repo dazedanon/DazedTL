@@ -5,15 +5,25 @@ import math
 
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
+# Below the 500k Tier 1 Batch queue limit published for GPT-5.5 Pro;
+# source and account-limit caveats live in docs/architecture.md.
+DEFAULT_BATCH_INPUT_TOKENS = 400_000
 GENERATION_PARAMETERS = "provider-defaults-v1"
 CHOICE_COLLECTION = "event-choices-once-v1"
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,
+    "batchInputTokens": None,
     "pricing": "automatic",
     "inputRate": None,
     "outputRate": None,
 }
+
+
+def batch_input_tokens(value):
+    if value is not None and (type(value) is not int or not 1 <= value <= 9_007_199_254_740_991):
+        raise ValueError("Batch token allowance must be a positive whole number of input tokens.")
+    return value
 
 
 def text(value, label, *, required=False):
@@ -40,8 +50,10 @@ def values(value, *, draft=False, connection=False):
 
 
 def options(value, *, draft=False):
-    if not isinstance(value, dict) or set(value) != set(DEFAULT_OPTIONS):
+    # Existing version-two preferences and recovery drafts can omit the override.
+    if not isinstance(value, dict) or set(value) not in (set(DEFAULT_OPTIONS), set(DEFAULT_OPTIONS) - {"batchInputTokens"}):
         raise ValueError("Invalid model options.")
+    batch_input_tokens(value.get("batchInputTokens"))
     if value["pricing"] not in ("automatic", "custom"):
         raise ValueError("Choose automatic pricing or custom rates.")
     entries = value["entriesPerRequest"]
@@ -66,7 +78,7 @@ def options(value, *, draft=False):
             )
         elif round(rate, 6) != rate:
             raise ValueError("Use at most six decimal places for estimate rates.")
-    return deepcopy(value)
+    return {**DEFAULT_OPTIONS, **deepcopy(value)}
 
 
 def model_options(value, *, draft=False):

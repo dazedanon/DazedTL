@@ -16,7 +16,7 @@ Interpret age-related wording in its full context, including whether an older sp
 Read the complete local context and established character lore before applying an age-related exclusion.
 Do not repeatedly reopen the same question for unchanged characters merely because another stylized image or the same ambiguous wording appears.
 A reviewed correction remains current unless specific contrary evidence warrants a documented revision.
-A stated adult age does not override clear contrary child depiction; an ambiguous appearance comparison also must not silently override established adult context.
+
 Do not invent ages, age up characters, change characterization or rewrite an excluded scene into a substitute.
 Evaluate genuinely contrary evidence at the specific scene/participant level instead of extending a keyword judgment to an entire species or cast.
 

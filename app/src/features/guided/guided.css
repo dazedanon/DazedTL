@@ -365,14 +365,13 @@ main.editor-main.guided-main { padding: 0; }
 .batch-history-run { padding:var(--space-3) 0; border-bottom:1px solid var(--line); }
 .batch-history-run .action-list { gap:var(--space-3); }
 .batch-history-run .action-row { padding:0; border:0; }
-.batch-provider-heading { display:flex; flex-wrap:wrap; gap:var(--space-2); align-items:baseline; }
-.batch-provider-heading > span, .batch-provider-heading > small { color:var(--muted); font-size:var(--font-small); }
+.batch-current { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-3); align-items:baseline; }
+.batch-current > span, .batch-current > small, .batch-current > time { color:var(--muted); font-size:var(--font-small); }
+.batch-current > time { white-space:nowrap; font-variant-numeric:tabular-nums; }
 .batch-run-files { overflow-wrap:anywhere; font-size:var(--font-small); color:var(--muted); }
-.batch-provider-row { min-width:0; }
 .batch-activity { display:inline-flex; align-items:center; gap:var(--space-1); }
 .batch-activity svg { flex-shrink:0; }
 .batch-activity[data-state="active"] { color:var(--accent); }
 .batch-activity[data-state="complete"] { color:var(--color-success); }
 .batch-activity[data-state="warning"] { color:var(--color-warning); }
 .batch-activity[data-state="unknown"] { color:var(--muted); }
-.batch-provider-row progress { width:100%; display:block; margin:var(--space-2) 0 0; }

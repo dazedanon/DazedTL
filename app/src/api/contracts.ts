@@ -448,6 +448,7 @@ export interface PreferenceValues {
 }
 export interface ModelOptions {
   entriesPerRequest: number | "" | null;
+  batchInputTokens?: number | null;
   pricing: "automatic" | "custom";
   inputRate: number | "" | null;
   outputRate: number | "" | null;
@@ -465,9 +466,10 @@ export interface Settings {
   values: PreferenceValues;
   modelOptions: Record<string, ModelOptions>;
   defaultEntriesPerRequest: number;
+  defaultBatchInputTokens?: number;
   activeConnectionId: string;
   connections: Connection[];
-  providers: { id: Provider; label: string; defaultEndpoint: string }[];
+  providers: { id: Provider; label: string; protocol: ProviderProtocol; defaultEndpoint: string }[];
   checksEnabled: boolean;
   draft?: {
     values: PreferenceValues;
@@ -475,8 +477,8 @@ export interface Settings {
   };
 }
 
-export type Provider = "openai" | "anthropic" | "gemini" | "mistral" | "custom";
-export type ProviderProtocol = Exclude<Provider, "custom">;
+export type Provider = "openai" | "openrouter" | "anthropic" | "gemini" | "mistral" | "custom";
+export type ProviderProtocol = "openai" | "anthropic" | "gemini" | "mistral";
 export interface Connection {
   id: string;
   name: string;

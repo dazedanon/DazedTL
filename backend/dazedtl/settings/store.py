@@ -335,12 +335,14 @@ class Settings:
             "values": values,
             "modelOptions": model_options,
             "defaultEntriesPerRequest": preferences.DEFAULT_ENTRIES_PER_REQUEST,
+            "defaultBatchInputTokens": preferences.DEFAULT_BATCH_INPUT_TOKENS,
             "activeConnectionId": state["active"],
             "connections": connections,
             "providers": [
                 {
                     "id": name,
                     "label": definition["label"],
+                    "protocol": definition["protocol"],
                     "defaultEndpoint": definition["endpoint"],
                 }
                 for name, definition in providers.PROVIDERS.items()
@@ -502,7 +504,7 @@ class Settings:
             raise ValueError(
                 "Enter an OpenAI-compatible server URL. Use the Anthropic provider for its native API."
             )
-        if protocol != "openai":
+        if protocol != "openai" or provider == "openrouter":
             organization = ""
         if any(ord(char) < 32 for char in secret + organization):
             raise ValueError(
@@ -708,6 +710,8 @@ class Settings:
                 "source": "custom" if custom else defaults["source"],
                 "updatedAt": None if custom else defaults["updatedAt"],
             }
+            if (active and active["provider"] == "openai") or configured.get("batchInputTokens") is not None:
+                self.adapter.manual.request_policy["batchInputTokens"] = configured.get("batchInputTokens") or preferences.DEFAULT_BATCH_INPUT_TOKENS
             values.update(batchsize=entries)
         self.adapter.install_settings(
             state["revision"], values, state["legacy"]["engines"], vault

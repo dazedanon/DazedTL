@@ -76,11 +76,15 @@ def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, 
             raise ValueError('The original Batch payloads are unavailable for clarification.')
         with (connection or batch_control.connection)(batch, resolve) as provider:
             from util.batch_providers import batch_limits
+            from .batch_window import reserve_clarification
+            state = saved(root, 'batch_state.json')
+            limit = state.get('batch_token_allowance') or state.get('sequential_token_limit') or (
+                (plan.get('dazedtl_request_policy') or {}).get('batchInputTokens') if batch['provider'] == 'openai' else None)
             result = advance(root, batch['id'], {key: queued[key]['params'] for key in mapping.values()},
                              part, batch.get('usage') or {}, provider,
-                             limits=(*batch_limits(batch['provider']), saved(root, 'batch_state.json').get('sequential_token_limit')
-                                     or ((plan.get('dazedtl_request_policy') or {}).get('batchInputTokens') if batch['provider'] == 'openai' else None)),
-                             input_tokens=provider.input_tokens, commit=commit, allow_submit=allow_submit)
+                             limits=(*batch_limits(batch['provider']), limit),
+                             input_tokens=provider.input_tokens, commit=commit, allow_submit=allow_submit,
+                             reserve=lambda items: reserve_clarification(root, plan, items, provider.input_tokens, limit))
         pending.extend(result['batches'])
         if not result['ready']:
             return {**result, 'batches': pending}
@@ -146,7 +150,7 @@ def install_worker(root, plan):
                     break
                 if outcome.get('uncertain'):
                     raise ValueError('The clarification Batch needs provider reconciliation before resuming.')
-                task._emit_batch_phase('poll_status', [
+                task._emit_batch_phase('poll_capacity' if outcome.get('waiting_capacity') else 'poll_status', [
                     {'id': batch['id'], 'api_status': batch.get('api_status', 'validating'), 'counts': batch.get('counts', {}),
                      'request_count': len(batch['items'])} for batch in outcome['batches'] if batch['id']])
                 for _ in range(300):

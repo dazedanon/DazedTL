@@ -3,8 +3,9 @@
 from copy import deepcopy
 from pathlib import Path
 import shutil
+import sys
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -1015,8 +1016,15 @@ class GuidedTests(unittest.TestCase):
         job['status'] = 'running'
         provider = Mock()
         provider.status.return_value = {'api_status': 'in_progress'}
-        provider.cancel.return_value = {'id': batch['id'], 'status': 'cancelling'}
-        with patch.object(batch_control, 'TranslationProvider', return_value=provider):
+        # A successful provider cancellation used to crash before saving its
+        # acknowledgement: the native helper returns api_status, not status.
+        # Exercise the real adapter instead of mocking away that contract.
+        provider.provider = 'openai'
+        native = ModuleType('util.batch_providers')
+        native.cancel_batch = Mock(return_value={'id': batch['id'], 'api_status': 'cancelling', 'raw': object()})
+        adapter = batch_control.TranslationProvider
+        provider.cancel.side_effect = lambda identity: adapter.cancel(provider, identity)
+        with patch.object(batch_control, 'TranslationProvider', return_value=provider), patch.dict(sys.modules, {'util.batch_providers': native}):
             review = self.guided.batch_cancel_preview(self.identity, job['id'], batch['id'])
             other = self.projects.open({'source': str(self.root/'other-batch-project'), 'engine': 'MVMZ'})
             with self.assertRaises(ValueError): self.guided.batch_cancel(other['id'], review['token'])
@@ -1030,7 +1038,12 @@ class GuidedTests(unittest.TestCase):
             self.guided.batch_cancel(self.identity, review['token'])
             with self.assertRaises(ValueError): self.guided.batch_cancel(self.identity, review['token'])
             provider.cancel.assert_called_once_with(batch['id'])
+            native.cancel_batch.assert_called_once_with('openai', batch['id'], client=provider.client)
             self.assertEqual(job['dazedtl_batch_cancellations'][batch['id']]['status'], 'cancelling')
+            self.backend.manual.save.assert_called_with(job)
+            # A stale worker poll cannot replace the just-acknowledged status.
+            job['phase'], job['batch_detail'] = 'poll_status', [{'id': batch['id'], 'api_status': 'in_progress'}]
+            self.assertEqual(self.guided.run_view(job['id'])['process']['batches'][0]['status'], 'cancelling')
             with self.assertRaises(ValueError): self.guided.batch_collect(self.identity, job['id'])
             job['status'] = 'stopped'
             provider.status.return_value = {'api_status': 'cancelled', 'counts': {'succeeded': 1, 'processing': 0, 'canceled': 0}}

@@ -91,7 +91,7 @@ def speaker_scan(value):
 
 
 def settings(value):
-    return pick(value, ('revision', 'values', 'modelOptions', 'defaultEntriesPerRequest', 'draft',
+    return pick(value, ('revision', 'values', 'modelOptions', 'defaultEntriesPerRequest', 'defaultBatchInputTokens', 'draft',
                         'activeConnectionId', 'connections', 'providers', 'checksEnabled'))
 
 

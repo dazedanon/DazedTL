@@ -93,6 +93,8 @@ class CompatibilityContracts(unittest.TestCase):
             return {**deepcopy(baseline), 'model': model, 'temperature': 0,
                     'frequency_penalty': 0.05, 'reasoning_effort': 'none'}
         translation.buildOpenAIRequest = translation.buildClaudeRequest = native
+        translation._openai_batch_token_limit = lambda: 600_000
+        native_allowance = translation._openai_batch_token_limit
         quote = {'model': 'gpt-6.1-sol', 'provider': 'openai', 'input_tokens': 98_016, 'output_tokens': 4_617,
                  'cache_read_tokens': 86_528, 'cache_write_tokens': 11_360, 'uses_prompt_cache': True,
                  'batch_nocache_cost': .121101, 'batch_cached_cost': .0460658}
@@ -138,6 +140,15 @@ class CompatibilityContracts(unittest.TestCase):
                     self.assertEqual(batch_body, live)
                     self.assertEqual(translation.buildClaudeRequest(model), live)
             self.assertEqual({name: (root/name).read_bytes() for name in frozen}, frozen)
+            # A saved per-model allowance must reach the submitter, survive
+            # repeated preparation, and never leak into an older frozen run.
+            from dazedtl.settings.preferences import DEFAULT_BATCH_INPUT_TOKENS
+            for allowance in (8_000_000, DEFAULT_BATCH_INPUT_TOKENS):
+                plan['dazedtl_request_policy'] = {**policy, 'batchInputTokens': allowance}
+                write_json(root/'plan.json', plan)
+                for _ in range(2):
+                    environment.prepare(root)
+                    self.assertEqual(translation._openai_batch_token_limit(), allowance)
             for legacy in ({key: value for key, value in policy.items() if key != 'generationParameters'}, None):
                 if legacy is None:
                     plan.pop('dazedtl_request_policy')
@@ -145,6 +156,7 @@ class CompatibilityContracts(unittest.TestCase):
                     plan['dazedtl_request_policy'] = legacy
                 write_json(root/'plan.json', plan)
                 environment.prepare(root)
+                self.assertIs(translation._openai_batch_token_limit, native_allowance)
                 self.assertEqual(translation.buildOpenAIRequest('gpt-6.1-sol'), native('gpt-6.1-sol'))
                 if legacy is None:
                     self.assertIs(translation.estimateBatchCost, native_estimate)
@@ -559,9 +571,10 @@ class ManualJobs:
             row = rows[0]
             self.assertEqual(row["context"]["line_kinds"], {"line": "dialogue"})
             self.assertEqual(row["context"]["qa_notes"], {"line": note})
-            for protocol, mode in (("openai", "live"), ("anthropic", "batch")):
+            for provider, protocol, mode in (("openai", "openai", "live"), ("anthropic", "anthropic", "batch"),
+                                             ("openrouter", "openai", "live")):
                 with self.subTest(protocol=protocol):
-                    payload = engine.payload(row, {"protocol": protocol, "provider": protocol,
+                    payload = engine.payload(row, {"protocol": protocol, "provider": provider,
                                                   "mode": mode, "model": "fixture", "endpoint": "https://provider.invalid/v1",
                                                   "generationParameters": GENERATION_PARAMETERS})
                     self.assertFalse({'temperature', 'frequency_penalty', 'reasoning_effort'} & payload.keys())
@@ -571,6 +584,8 @@ class ManualJobs:
                     self.assertEqual(sent["history"], source_context)
                     self.assertIn("Approved names and voice", sent["vocab_text"])
                     self.assertIn("Two people at the gate", sent["request_instructions"])
+                    if provider == "openrouter":
+                        self.assertEqual(payload['response_format'], {'type': 'json_object'})
 
     def test_native_update_completion_property_survives_public_serialization(self):
         @dataclass

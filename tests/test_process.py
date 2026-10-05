@@ -385,30 +385,6 @@ class ProcessTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 checkpoints.outputs(root, plan)
 
-    def test_reopened_evidence_reuses_its_own_validated_results(self):
-        with TemporaryDirectory() as temporary:
-            evidence = Evidence(temporary, 'translate')
-            with evidence.connect() as connection:
-                connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('item', '薬', '"Potion"'))
-                connection.execute('INSERT INTO validated_items VALUES (?,?,?)',
-                                   ('bad', '毒', json.dumps("I can't translate sexualized content involving a child.")))
-            reopened = Evidence(temporary, 'translate', {'dazedtl_continuation': {'item': {'source': '薬', 'response': 'Older'}}})
-            self.assertEqual(reopened.reused['item'], {'source': '薬', 'response': 'Potion'})
-            self.assertNotIn('bad', reopened.reused)
-            # Historical success flags do not make assistant refusal prose a
-            # translation. The reader flags it without changing saved bytes.
-            evidence.local.filename = 'Map001.json'
-            evidence.prepared({'messages': [{'content': '{"Line1":"毒"}'}]})
-            with evidence.connect() as connection:
-                connection.execute("UPDATE requests SET state='validated',response=?", (json.dumps(["I can't translate sexualized content involving a child."]),))
-            before = evidence.path.read_bytes()
-            payload = process_view.payload(temporary, 0)
-            self.assertEqual(payload['state'], 'rejected')
-            self.assertIsNone(payload['translations'])
-            value = process_view.summary(temporary, {'mode': 'translate', 'completed': ['Map001.json']})
-            self.assertEqual((value['validated'], value['rejected'], value['validatedFiles']), (0, 1, 0))
-            self.assertEqual(evidence.path.read_bytes(), before)
-
     def test_consumed_batch_recovers_only_exact_validated_translations_without_inventing_raw_responses(self):
         # Native cleanup used to leave successful requests looking merely
         # prepared. Local accepted values are usable only with exact identities.

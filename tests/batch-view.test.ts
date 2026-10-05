@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Job } from "../app/src/api/contracts.ts";
-import { batchInProgress, batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome, totalBatchProgress } from "../app/src/features/guided/batchView.ts";
+import { batchInProgress, batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome, batchMonitorRows, totalBatchProgress } from "../app/src/features/guided/batchView.ts";
 
 test("Total Batch progress retains completed requests when another provider batch starts", () => {
   const completed = { id: "first", status: "completed", total: 74, counts: { succeeded: 74 } };
@@ -70,6 +70,10 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   const missing = { ...paused, process: { retryBlocked: true, errors: [] } };
   assert.equal(batchRuns([missing]).length, 0);
   assert.equal(batchRuns([missing], true).length, 1);
+  const capacity = { ...missing, status: "running", phase: "poll_capacity", process: { remaining: 450, errors: [] } };
+  assert.deepEqual(batchRuns([capacity]), [capacity]);
+  assert.equal(batchMonitorRows(capacity)[0].active, true);
+  assert.equal(batchMonitorRows(capacity)[0].failed, false);
   // Failed provider work used to remain In progress solely because its
   // recovery guard, stale worker phase or monitor state was still present.
   for (const status of ["failed", "expired", "cancelled", "canceled", "completed", "ended", "unknown"]) {
@@ -91,4 +95,33 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   for (const state of ["error", "blocked", "save_error"] as const) {
     assert.equal(batchInProgress({ ...paused, process: { ...paused.process!, batches: [successful], monitoring: { state, message: "" } } }), false);
   }
+});
+
+test("Compact Batch rows retain active clarification controls and cannot hide unfinished work behind completed chunks", () => {
+  const completed = { id: "original", status: "completed", total: 62, counts: { succeeded: 62 } };
+  const retry = { id: "retry", status: "in_progress", total: 5, counts: { succeeded: 1 }, clarification: true };
+  const job = { id: "run", mode: "batch", status: "stopped", phase: "poll_status",
+    process: { batches: [completed, retry], remaining: 388, errors: [] } } as Job;
+  const rows = batchMonitorRows(job);
+  assert.deepEqual(rows.map(row => row.batch?.id), ["retry"]);
+  assert.equal(rows[0].active, true);
+  assert.equal(rows[0].successful, false);
+  const next = { ...completed, id: "next", status: "validating", counts: {} };
+  // Concurrent providers must retain all cancellation targets, even if a later receipt is terminal.
+  assert.deepEqual(batchMonitorRows({ ...job, process: { ...job.process!, batches: [completed, retry, next, completed] } }).map(row => row.batch?.id), ["retry", "next"]);
+  const finished = { ...job, status: "complete", outputs: { "Map001.json": "saved" }, outputsAvailable: true,
+    process: { ...job.process!, remaining: 0, batches: [completed, { ...retry, status: "completed", counts: { succeeded: 5 } }] } };
+  assert.equal(batchMonitorRows(finished).length, 1);
+  assert.equal(batchMonitorRows(finished)[0].successful, true);
+  assert.match(batchMonitorRows(finished)[0].summary, /^62\b/); // Retries must not inflate original request totals.
+  for (const process of [{ ...finished.process, remaining: 388 },
+    { ...finished.process, monitoring: { state: "blocked" as const, message: "Review retained receipts" } },
+    { ...finished.process, rejected: 1, validationIssues: [{ file: "Map001.json", rejected: 1 }] }]) {
+    const [row] = batchMonitorRows({ ...finished, process });
+    assert.equal(row.successful, false);
+    assert.equal(row.failed, true);
+    assert.equal(row.active, false);
+  }
+  assert.equal(batchMonitorRows({ ...finished, status: "running", phase: "consume" })[0].active, true);
+  assert.equal(batchMonitorRows({ ...job, process: { batches: [{ ...completed, status: "unknown", counts: {} }], errors: [] } })[0].successful, false);
 });

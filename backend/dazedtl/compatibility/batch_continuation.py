@@ -149,6 +149,7 @@ def install_worker(root, plan):
 
     @wraps(native)
     def submit(provider, requests, **kwargs):
+        input_tokens = kwargs.pop('_dazedtl_input_tokens', None)
         # Clarifications already have their own durable submission journal.
         if not requests or not all(str(row.get('custom_id', '')).startswith('req-') for row in requests):
             return native(provider, requests, **kwargs)
@@ -166,14 +167,19 @@ def install_worker(root, plan):
         if submitted.intersection(mapping.values()):
             raise BatchContinuationError('This Batch request already has a provider receipt.')
         path = project_path(root, 'log/' + JOURNAL, exists=False)
-        intent = {'approval': approval, 'custom_ids': mapping, 'receipt': None}
+        state = saved(root, 'batch_state.json')
+        intent = {'approval': approval, 'custom_ids': mapping, 'receipt': None,
+                  'key_name': plan['key_name'], 'endpoint': state['endpoint'], 'model': state['model'],
+                  'estimated_input_tokens': input_tokens}
         write_json(path, {'intent': intent})
         client = kwargs.get('client') or providers.get_client(provider)
         kwargs['client'] = client.with_options(max_retries=0)
         result = native(provider, requests, **kwargs)
         state = saved(root, 'batch_state.json')
-        info = {**result, 'custom_ids': mapping, 'provider': provider, 'run_id': approval['run_id'],
+        info = {**result, 'custom_ids': mapping, 'provider': provider, 'run_id': approval['run_id'], 'model': state['model'],
                 'key_name': plan['key_name'], 'endpoint': state['endpoint'], 'cache_key_version': state.get('cache_key_version')}
+        if input_tokens is not None:
+            info['estimated_input_tokens'] = input_tokens
         intent['receipt'] = info
         write_json(path, {'intent': intent})
         return result
@@ -195,3 +201,5 @@ def install_worker(root, plan):
     # repaired from the journal; an unknown HTTP outcome remains protected.
     with translation._batch_submit_lock():
         recover_receipt()
+    from .batch_window import install_worker as install_batch_window
+    install_batch_window(root, plan, translation, providers, TranslationTask, approved, recover_receipt, record_submit)

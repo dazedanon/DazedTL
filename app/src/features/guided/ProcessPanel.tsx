@@ -96,7 +96,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
       .finally(() => { if (current) setBusy(false); });
     return () => { current = false; };
   }, [index, refresh, selected?.state, selected?.indices.length]);
-  const requestPayload = payload?.index === index ? payloadForBatch(payload, selectedProviders.length ? selectedProviders.map(batch => batch.id) : undefined) : null;
+  const requestPayload = payload && payload.index === index ? payloadForBatch(payload, selectedProviders.length ? selectedProviders.map(batch => batch.id) : undefined) : null;
   const attempts = requestPayload?.responseAttempts || [];
   const attemptIndex = Math.max(0, Math.min(attempts.length - 1, attemptSelection && attemptSelection.request === index ? attemptSelection.attempt : attempts.length - 1));
   const visiblePayload = requestPayload && requestAttempt(requestPayload, attemptIndex);
@@ -185,6 +185,8 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
             {!runView && selectedBatch?.provider && !requests.length ? <p className="muted">The saved receipt does not identify this batch’s requests.</p> : view.tab === "run" ? <>
               <NameTranslationFeedback value={job.nameTranslation} read={readNames} />
               {!!process.errors.length && <Message message={process.errors.join(" · ")} />}
+              {!!process.monitoring?.message && ["error", "blocked", "save_error"].includes(process.monitoring.state)
+                && !process.errors.includes(process.monitoring.message) && <Message message={process.monitoring.message} />}
               <dl className="run-detail-summary">
                 <div><dt>Files</dt><dd>{job.files?.join(", ") || "Not recorded"}</dd></div>
                 <div><dt>Outputs</dt><dd>{job.availableOutputs == null ? "Availability not recorded" : `${job.availableOutputs.length} saved`}{job.partialOutputs?.length ? ` · ${job.partialOutputs.length} partial` : ""}{process.appliedFiles ? ` · ${process.appliedFiles} applied` : ""}</dd></div>

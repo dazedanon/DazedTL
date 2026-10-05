@@ -75,6 +75,17 @@ try:
     # refusal loops must preserve source without making more provider calls.
     with app.backend.context():
         from util import translation
+        from util.batch_providers import detect_batch_provider
+        # Namespaced Claude/GPT IDs must stay on OpenRouter's Live transport;
+        # the preset must never select a native provider or its Batch API.
+        for model in ('anthropic/claude-sonnet-4.5', 'openai/gpt-4.1'):
+            route = {'model': model, 'API_PROVIDER': 'openai', 'api': 'https://openrouter.ai/api/v1'}
+            app.backend.validate_route(route)
+            assert not app.backend.provider_defaults(route)['batch_supported']
+            assert detect_batch_provider(model, api_url=route['api'], api_provider='openai') is None
+            params = translation.buildOpenAIRequest('Translate.', '薬', [], 0, 'json', model,
+                numLines=1, api_provider='openai', api_url=route['api'])
+            assert params['model'] == model and 'max_tokens' in params and 'max_completion_tokens' not in params
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.compatibility.process_view import source_values, payload, summary

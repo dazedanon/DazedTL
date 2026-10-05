@@ -25,7 +25,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
     received ? `${received.toLocaleString()} received` : ""].filter(Boolean).join(" · ");
   const evidence = [output, requestDetail].filter(Boolean).join(" · ") || (prepared != null ? `${count(prepared, "request")} prepared` : "Request counts not recorded");
   if (job.approval) return { kind: "approval", label: "Review cost", detail: prepared != null ? `${count(prepared, "request")} prepared` : "Approval required" };
-  if (activeRun(job)) return { kind: "active", label: job.mode === "estimate" ? "Estimating" : job.mode === "batch" && job.phase?.startsWith("poll") ? "At provider" : "In progress", detail: evidence };
+  if (activeRun(job)) return { kind: "active", label: job.mode === "estimate" ? "Estimating" : job.phase === "poll_capacity" ? "Waiting for capacity" : job.mode === "batch" && job.phase?.startsWith("poll") ? "At provider" : "In progress", detail: evidence };
   if (needsSubmissionReview(job)) return { kind: "review", label: "Check submission", detail: process?.uncertain ? `${count(process.uncertain, "uncertain request")}` : evidence };
   if (job.status === "failed" || job.status === "needs_attention") return { kind: "failed", label: "Failed", detail: evidence };
   if (job.status === "interrupted" || job.status === "stopped") return { kind: "stopped", label: job.status === "stopped" ? "Stopped" : "Interrupted", detail: evidence };

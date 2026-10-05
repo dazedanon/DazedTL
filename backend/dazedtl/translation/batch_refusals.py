@@ -26,7 +26,8 @@ def save(path, record):
 
 
 def advance(root, batch_id, requests, responses, usage, provider, *,
-            limits=(50_000, 200_000_000), input_tokens=lambda _: 0, commit=nullcontext, allow_submit=True):
+            limits=(50_000, 200_000_000), input_tokens=lambda _: 0, commit=nullcontext, allow_submit=True,
+            reserve=lambda _items: nullcontext(True)):
     path = project_path(root, 'log/clarifications/' + digest(batch_id) + '.json', exists=False)
     if path.exists():
         record = read_json(path)
@@ -67,22 +68,24 @@ def advance(root, batch_id, requests, responses, usage, provider, *,
                 batch['state'] = 'failed'
                 save(path, record)
                 continue
-            with commit():
-                batch['state'] = 'sending'
-                save(path, record)
-            try:
-                result = provider.submit([{key: item[key] for key in ('custom_id', 'params')} for item in batch['items']])
-            except Exception as exc:
-                status = getattr(exc, 'status_code', None)
-                if type(status) is int and 400 <= status < 500:
-                    batch['state'] = 'failed'
+            with reserve(batch['items']) as available:
+                if not available:
+                    return {'ready': False, 'waiting_capacity': True, 'batches': record['batches']}
+                with commit():
+                    batch['state'] = 'sending'
                     save(path, record)
-                    continue
-                raise
-            # Always retain a returned paid receipt, even if the app closed
-            # during submission. Ownership is checked again before consume.
-            batch.update(id=result['id'], state='submitted')
-            save(path, record)
+                try:
+                    result = provider.submit([{key: item[key] for key in ('custom_id', 'params')} for item in batch['items']])
+                except Exception as exc:
+                    status = getattr(exc, 'status_code', None)
+                    if type(status) is int and 400 <= status < 500:
+                        batch['state'] = 'failed'
+                        save(path, record)
+                        continue
+                    raise
+                # Retain returned IDs before releasing shared token capacity.
+                batch.update(id=result['id'], state='submitted')
+                save(path, record)
             return {'ready': False, 'batches': record['batches']}
         status = provider.status(batch['id'])
         batch.update(api_status=status['api_status'], counts=status.get('counts') or {})

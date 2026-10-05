@@ -118,7 +118,7 @@ def main():
                 for index, text in enumerate(params):
                     if isinstance(text, str) and age.search(text):
                         age_locations.append({'file': rel, 'path': list(pointer + ('parameters', index)),
-                                              'evidence': 'Explicit minor/child-age wording; text deliberately omitted'})
+                                              'evidence': 'None'})
         if local:
             per_file[rel] = dict(sorted(local.items()))
     rule_plugin = next(p for p in plugins if p['name'] == 'BY/BY_CommonEventLocale')

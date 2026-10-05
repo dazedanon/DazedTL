@@ -158,8 +158,9 @@ class BatchMonitor:
             if not outcome['ready']:
                 with self.backend.lock:
                     self.views[identity] = {'state': 'blocked' if outcome.get('uncertain') else 'monitoring',
+                        'phase': 'poll_capacity' if outcome.get('waiting_capacity') else 'poll_status',
                         'message': 'Reconcile the clarification Batch submission.' if outcome.get('uncertain') else
-                                   'Waiting for the Batch clarification of refused requests.',
+                                   'Waiting for available Batch token capacity.' if outcome.get('waiting_capacity') else 'Waiting for the Batch clarification of refused requests.',
                         'batches': [{'id': batch['id'], 'status': batch.get('api_status', 'validating'),
                                      'counts': batch.get('counts', {})} for batch in outcome['batches'] if batch['id']]}
                 return

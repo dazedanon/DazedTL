@@ -337,8 +337,8 @@ class Guided:
         if monitoring and monitoring['state'] in {'monitoring', 'collecting'}:
             # Public activity follows the app-owned monitor, without rewriting
             # the stopped native worker or granting it submission authority.
-            job.update(status='running', phase='poll_status', approval=None,
-                       message='Downloading Batch results.' if monitoring['state'] == 'collecting' else 'Waiting for provider results. Monitoring continues automatically.')
+            job.update(status='running', phase=monitoring.get('phase', 'poll_status'), approval=None,
+                       message=monitoring.get('message') or ('Downloading Batch results.' if monitoring['state'] == 'collecting' else 'Waiting for provider results. Monitoring continues automatically.'))
         if job['temporary']:
             # Collection can write local scratch JSON before any paid request.
             # It is never saved translation output available to the user.

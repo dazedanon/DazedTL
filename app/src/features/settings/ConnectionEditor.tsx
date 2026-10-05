@@ -70,10 +70,7 @@ export default function ConnectionEditor({
     setValue((current) => ({
       ...current,
       provider,
-      protocol:
-        provider === "custom"
-          ? "openai"
-          : (provider as ConnectionInput["protocol"]),
+      protocol: providers.find((item) => item.id === provider)?.protocol || "openai",
       endpoint:
         provider === "custom" && connection?.needsSetup
           ? connection.endpoint
@@ -286,7 +283,7 @@ export default function ConnectionEditor({
                   )}
                 </FieldRow>
               )}
-              {value.protocol === "openai" && (
+              {value.protocol === "openai" && value.provider !== "openrouter" && (
                 <FieldRow
                   id="connection-organization"
                   label="Organization ID"

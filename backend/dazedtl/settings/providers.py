@@ -14,6 +14,11 @@ PROVIDERS = {
         "protocol": "openai",
         "endpoint": "https://api.openai.com/v1",
     },
+    "openrouter": {
+        "label": "OpenRouter",
+        "protocol": "openai",
+        "endpoint": "https://openrouter.ai/api/v1",
+    },
     "anthropic": {
         "label": "Anthropic",
         "protocol": "anthropic",
@@ -90,9 +95,11 @@ def check(connection):
     https://platform.claude.com/docs/en/api/models/list
     https://ai.google.dev/gemini-api/docs/openai#list-models
     https://docs.mistral.ai/api/endpoint/models
+    https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails
     """
     protocol = connection["protocol"]
     base = route(protocol, address(connection))[1]
+    openrouter = infer_provider(protocol, base) == "openrouter"
     headers = {"Accept": "application/json", "Accept-Encoding": "identity"}
     if not connection["keyless"]:
         if protocol == "anthropic":
@@ -101,9 +108,14 @@ def check(connection):
             )
         else:
             headers["Authorization"] = "Bearer " + connection["secret"]
-    if connection.get("organization") and protocol == "openai":
+    if connection.get("organization") and protocol == "openai" and not openrouter:
         headers["OpenAI-Organization"] = connection["organization"]
-    url = base + ("/v1/models?limit=250" if protocol == "anthropic" else "/models")
+    # OpenRouter's public catalog cannot verify a key. Its account-filtered
+    # list requires authentication and defaults to text-output models.
+    url = base + ("/models/user" if openrouter else
+                  "/v1/models?limit=250" if protocol == "anthropic" else "/models")
+    byte_limit = 8_000_000 if openrouter else 2_000_000
+    model_limit = 2000 if openrouter else 250
 
     def result(status, message, models=None):
         return {
@@ -155,7 +167,7 @@ def check(connection):
                 content = bytearray()
                 for chunk in response.iter_raw(chunk_size=65536):
                     content.extend(chunk)
-                    if len(content) > 2_000_000 or time.monotonic() > deadline:
+                    if len(content) > byte_limit or time.monotonic() > deadline:
                         return result(
                             "unavailable",
                             "The model list was too large or took too long. Try again later.",
@@ -183,7 +195,7 @@ def check(connection):
                 if 0 < len(row["id"]) <= 200
                 and not any(ord(char) < 32 for char in row["id"])
             }
-        )[:250]
+        )[:model_limit]
         official = any(
             route(protocol, base) == route(item["protocol"], item["endpoint"])
             for name, item in PROVIDERS.items()

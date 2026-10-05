@@ -497,6 +497,8 @@ def phase_feedback(job):
     if job.get('mode') != 'batch' or job.get('status') not in {'running', 'waiting', 'stopped', 'interrupted'}:
         return {}
     phase = str(job.get('phase', ''))
+    if phase == 'poll_capacity':
+        return {'message': 'Waiting for available Batch token capacity.', 'progress': None}
     if phase.startswith('poll'):
         paused = job.get('status') in {'stopped', 'interrupted'}
         batches = (job.get('process') or {}).get('batches', [])

@@ -7,11 +7,23 @@ import time
 import sys
 
 from dazedtl.storage import write_json
-from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS
+from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS, batch_input_tokens
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 from .request_parameters import configure_builders
 from . import state_requests, batch_pricing, choice_requests
 from .run_evidence import Evidence
+
+
+def configure_batch_allowance(translation, policy):
+    native = getattr(translation._openai_batch_token_limit, '_dazedtl_native', translation._openai_batch_token_limit)
+    allowance = batch_input_tokens((policy or {}).get('batchInputTokens'))
+    if allowance is None:
+        translation._openai_batch_token_limit = native
+    else:
+        def limit():
+            return allowance
+        limit._dazedtl_native = native
+        translation._openai_batch_token_limit = limit
 
 
 def configure_states(plan, root, policy):
@@ -53,6 +65,7 @@ def install(*, coordinator=False):
         if policy is None:
             result = native_prepare(root)
             import util.translation as translation
+            configure_batch_allowance(translation, None)
             batch_pricing.configure(translation, False)
             configure_builders(translation, None)
             configure_states(plan, grouping_root, None)
@@ -79,6 +92,7 @@ def install(*, coordinator=False):
             raise ValueError(
                 "This run's saved model options are invalid or unsupported."
             )
+        batch_input_tokens(policy.get('batchInputTokens'))
         model = policy["model"].strip().lower().removeprefix("models/")
         prices = {
             model: {
@@ -96,6 +110,7 @@ def install(*, coordinator=False):
         write_json(cache, {"fetched_at": time.time(), "prices": prices})
         result = native_prepare(root)
         import util.translation as translation
+        configure_batch_allowance(translation, policy)
 
         # Long-running batches must retain these rates after the normal cache TTL.
         translation._load_litellm_pricing = lambda: prices
