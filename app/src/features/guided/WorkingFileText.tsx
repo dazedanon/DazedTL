@@ -156,7 +156,8 @@ export function WorkingFileText({
         {page && page.total > 0 && (
           <span>
             {page.offset + 1}–{page.offset + page.rows.length} of{" "}
-            {page.total.toLocaleString()} fields
+            {page.total.toLocaleString()}{" "}
+            {page.total === 1 ? "field" : "fields"}
           </span>
         )}
         {page && (page.nextOffset != null || offsets.length > 1) && (
