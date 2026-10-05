@@ -621,7 +621,6 @@ pre {
   gap: 6px;
   color: var(--muted);
   font-size: var(--font-small);
-  text-transform: capitalize;
 }
 .job-status-state[data-state="running"],
 .job-status-state[data-state="waiting"] {

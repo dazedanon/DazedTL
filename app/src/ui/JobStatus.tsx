@@ -1,6 +1,9 @@
 import { Check, LoaderCircle } from "lucide-react";
 import type { TranslationJob } from "../api/contracts";
 
+const sentence = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1);
+
 export function JobStatus({
   job,
   compact = false,
@@ -22,6 +25,7 @@ export function JobStatus({
         )
       : undefined;
   const detail = completion ? message.slice(completion.length).trim() : message;
+  const state = job.status.replaceAll("_", " ");
 
   return (
     <div className="job-status-status" role="status" aria-atomic="true">
@@ -37,8 +41,7 @@ export function JobStatus({
           ) : job.status === "complete" ? (
             <Check size={15} aria-hidden="true" />
           ) : null}
-          {compact && !active && "Last run: "}
-          {job.status.replaceAll("_", " ")}
+          {compact && !active ? `Last run: ${state}` : sentence(state)}
         </span>
       </div>
       {detail && <p>{detail}</p>}
