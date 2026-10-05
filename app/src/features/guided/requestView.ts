@@ -3,18 +3,6 @@ import { groupedRequests } from "./translationView.ts";
 import { batchOutcome, type ProviderBatch } from "./batchView.ts";
 
 type Request = NonNullable<RunProcess["requests"]>[number];
-export const requestFilters = [
-  { id: "all", label: "All" }, { id: "finished", label: "Finished" },
-  { id: "pending", label: "Pending" }, { id: "failed", label: "Failed" },
-] as const;
-export type RequestFilter = typeof requestFilters[number]["id"];
-export function requestFilter(value: string): RequestFilter {
-  if (value === "rejected") return "failed";
-  if (value === "unused") return "finished";
-  if (["unsent", "unresolved"].includes(value)) return "pending";
-  return requestFilters.some(filter => filter.id === value) ? value as RequestFilter : "all";
-}
-
 /** A provider count never identifies a row; only a bound receipt can do that. */
 export function requestOutcome(row: Pick<Request, "state" | "providerFinished">) {
   if (row.state === "failed" || row.state === "rejected") return { group: "failed", label: row.state === "failed" ? "Failed" : "Validation failed" } as const;
@@ -38,13 +26,6 @@ export function requestRows(rows: NonNullable<RunProcess["requests"]>): RequestR
   }
   return [...files.values()].flat();
 }
-export function matchesRequest(row: RequestRow, filter: RequestFilter, query: string) {
-  const text = query.trim().toLocaleLowerCase();
-  return (filter === "all" || row.outcome.group === filter)
-    && (!text || (/^#?\d+$/.test(text) ? row.number === Number(text.replace("#", ""))
-      : `${row.file || ""}\n${row.preview || ""}`.toLocaleLowerCase().includes(text)));
-}
-
 export type RequestBatch = {
   id: string; label: string; rows: RequestRow[];
   provider?: ProviderBatch; clarifications: ProviderBatch[];

@@ -1374,6 +1374,17 @@ class Guided:
             raise ValueError("No translated folder is available for this project.")
         return {"path": str(folder)}
 
+    def export(self, project_id, run_id=None):
+        """Retained for the legacy-run recovery helper, not the Guided UI."""
+        self.idle()
+        _, native = self.record(project_id)
+        identity = run_id if run_id is not None else self.job(project_id)["id"]
+        if not isinstance(identity, str) or identity not in self.owned_runs(native):
+            raise ValueError("Choose a saved run belonging to this project.")
+        if (self.backend.saved_run_configuration(identity).get("workflow") or {}).get("id") != native["id"]:
+            raise ValueError("This saved output belongs to another project.")
+        return self.backend.manual.export(identity)
+
     def draft(self, project_id, documents):
         _, native = self.record(project_id)
         current = self.backend.workflows.state(native["id"]).get("draft", {})

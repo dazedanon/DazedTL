@@ -452,10 +452,11 @@ pre {
 }
 .combobox {
   position: relative;
+  min-width: 0;
   width: 100%;
   max-width: 380px;
 }
-.field-control .combobox > input {
+.combobox > input {
   width: 100%;
   padding-right: var(--space-8);
 }
@@ -490,6 +491,13 @@ pre {
 }
 .combobox-option {
   cursor: pointer;
+}
+.combobox-option-description {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-small);
+  line-height: 1.4;
 }
 .combobox-option:hover, .combobox-option[aria-selected="true"] {
   background: var(--color-navigation-selected);

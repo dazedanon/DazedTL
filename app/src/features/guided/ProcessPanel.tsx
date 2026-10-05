@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import type { Job, NameTranslationPage, RunPayload } from "../../api/contracts";
 import { Button } from "../../ui/Button";
+import { ComboBox } from "../../ui/ComboBox";
 import { Message } from "../../ui/Feedback";
 import { Tabs, TabPanel } from "../../ui/Tabs";
 import { RequestSource } from "./RequestSource";
@@ -9,7 +10,7 @@ import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
 import { requestAttempt, translatedLines } from "./translationView";
-import { matchesRequest, requestFilter, requestOutcome, requestBatches, requestBatchOutcome, payloadForBatch, type RequestFilter, type RequestBatch } from "./requestView";
+import { requestOutcome, requestBatches, requestBatchOutcome, payloadForBatch, type RequestBatch } from "./requestView";
 import { RunTechnical } from "./RunTechnical";
 import { RequestFailure } from "./RequestFailure";
 
@@ -23,18 +24,18 @@ function responseText(response: unknown) {
 const tabs = [{ id: "source", label: "Source" }, { id: "response", label: "Response" },
   { id: "json", label: "Technical" }] as const;
 type Tab = typeof tabs[number]["id"];
-type InspectorView = { index: number; tab: Tab; filter: RequestFilter; query: string; batch: string | null };
+type InspectorView = { index: number; tab: Tab; batch: string | null };
 export type RequestInspectionTarget = { file: string; index: number; validation?: boolean };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
 function savedView(id: string): InspectorView {
-  const fallback: InspectorView = { index: 0, tab: "source", filter: "all", query: "", batch: null };
+  const fallback: InspectorView = { index: 0, tab: "source", batch: null };
   try {
     const value = JSON.parse(localStorage.getItem(inspectorKey(id)) || "null");
     if (value && ["run", "log"].includes(value.tab)) value.tab = "json";
     if (value?.batch === "run-details") value.batch = null;
     if (!value || !Number.isSafeInteger(value.index) || value.index < 0
-      || !tabs.some(tab => tab.id === value.tab) || typeof value.filter !== "string" || typeof value.query !== "string") return fallback;
-    return { index: value.index, tab: value.tab, filter: requestFilter(value.filter), query: value.query.slice(0, 200), batch: typeof value.batch === "string" ? value.batch : null };
+      || !tabs.some(tab => tab.id === value.tab)) return fallback;
+    return { index: value.index, tab: value.tab, batch: typeof value.batch === "string" ? value.batch : null };
   } catch { return fallback; }
 }
 export function runLabel(job: Job) {
@@ -52,7 +53,7 @@ export function ProcessPanel(props: Props) {
 function RequestProcess({ job, readPayload, readNames, initialRequest, actions }: Props) {
   const process = job.process!;
   const [view, setView] = useState<InspectorView>(() => initialRequest
-    ? { index: initialRequest.index, tab: initialRequest.validation ? process.rejected ? "response" : "json" : "source", filter: initialRequest.validation && process.rejected ? "failed" : "all", query: initialRequest.file,
+    ? { index: initialRequest.index, tab: initialRequest.validation ? process.rejected ? "response" : "json" : "source",
         batch: requestBatches(process, job.mode).find(batch => batch.rows.some(row => row.indices.includes(initialRequest.index)))?.id || null }
     : savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
@@ -73,8 +74,7 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
     || (view.batch === null ? groups[0] : ["unsent", "unlinked"].includes(view.batch || "") ? groups.find(batch => batch.rows.some(row => row.indices.includes(view.index))) : undefined) : groups[0];
   const selectedProviders = selectedBatch?.provider ? [selectedBatch.provider, ...selectedBatch.clarifications] : [];
   const requests = selectedBatch?.rows || [];
-  const matching = requests.filter(row => matchesRequest(row, view.filter, view.query));
-  const selected = matching.find(row => row.indices.includes(view.index)) || matching[0];
+  const selected = requests.find(row => row.indices.includes(view.index)) || requests[0];
   const index = selected?.index;
   function change(value: Partial<InspectorView>) {
     setView(previous => {
@@ -97,24 +97,15 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
   const attemptIndex = Math.max(0, Math.min(attempts.length - 1, attemptSelection && attemptSelection.request === index ? attemptSelection.attempt : attempts.length - 1));
   const visiblePayload = requestPayload && requestAttempt(requestPayload, attemptIndex);
   useEffect(() => { reader.current?.scrollTo(0, 0); }, [index, view.tab, attemptIndex]);
-  const position = matching.findIndex(row => row.index === index);
-  function refine(value: Partial<InspectorView>) {
-    const next = { ...view, ...value };
-    const rows = requests.filter(row => matchesRequest(row, next.filter, next.query));
-    const target = rows.find(row => row.index === index) || rows[0];
-    if (target?.index !== index) refreshedIndex.current = null;
-    change({ ...value, ...(target ? { index: target.index } : {}) });
-  }
-  const choose = (number: number, filters?: Pick<InspectorView, "filter" | "query">) => { refreshedIndex.current = null; change({ ...filters, index: number }); setRefreshed(false); };
+  const choose = (number: number) => { refreshedIndex.current = null; change({ index: number }); setRefreshed(false); };
   function openBatch(batch: RequestBatch) {
     refreshedIndex.current = null;
     setAttemptSelection(null);
-    change({ batch: batch.id, index: batch.rows[0]?.index || 0, query: "", filter: "all", tab: "source" });
+    change({ batch: batch.id, index: batch.rows[0]?.index || 0, tab: "source" });
   }
   const selectionOutcome = selected && (visiblePayload && attempts.length ? requestOutcome(visiblePayload) : selected.outcome);
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
-  const failedRequests = requests.filter(row => row.outcome.group === "failed").length;
   const selectedFile = selected?.file || initialRequest?.file;
   const legacyIssues = (process.validationIssues || []).filter(issue => (!selectedFile || issue.file === selectedFile)
     && !process.requests?.some(row => row.file === issue.file && row.state === "rejected"));
@@ -146,15 +137,16 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
         <div className="request-selection">
           <div className="request-selection-summary">
             {selectedBatch && job.mode === "batch" && <strong>{selectedBatch.label}</strong>}
-            <div className="request-pager" role="group" aria-label="Cycle requests">
-              <Button variant="quiet" aria-label="Previous request" disabled={position <= 0} onClick={() => choose(matching[position - 1].index)}><ChevronLeft size={16} aria-hidden="true" /></Button>
-              <span aria-live="polite">{selected ? `Request ${position + 1} of ${matching.length}` : "No requests"}</span>
-              <Button variant="quiet" aria-label="Next request" disabled={position < 0 || position >= matching.length - 1} onClick={() => choose(matching[position + 1].index)}><ChevronRight size={16} aria-hidden="true" /></Button>
+            <div className="request-picker">
+              <ComboBox key={selectedBatch?.id || "requests"} selectionOnly aria-label="Choose request"
+                value={index == null ? "" : String(index)} placeholder="No requests" disabled={!requests.length}
+                options={requests.map((row, position) => ({ value: String(row.index), label: `Request ${position + 1} of ${requests.length}`,
+                  searchText: [`Request ${position + 1}`, row.outcome.label, row.file, row.preview].filter(Boolean).join("\n"),
+                  description: [row.outcome.label, row.file, row.preview].filter(Boolean).join(" · ") }))}
+                onChange={value => choose(Number(value))} />
             </div>
             {selectionOutcome && <span className="request-outcome" data-state={selectionOutcome.group}>{selectionOutcome.label}</span>}
           </div>
-          {failedRequests > 0 && view.filter !== "failed" && <Button variant="quiet" onClick={() => refine({ filter: "failed", tab: "response", query: "" })}>Failed requests ({failedRequests})</Button>}
-          {(view.filter !== "all" || view.query) && <Button variant="quiet" onClick={() => refine({ filter: "all", query: "" })}>Show all requests</Button>}
           {readPayload && <Button variant="quiet" aria-label="Refresh request" pending={busy} disabled={busy || index == null} onClick={() => { refreshedIndex.current = index ?? null; setRefresh(value => value + 1); }}>{!busy && <RefreshCw size={14} aria-hidden="true" />}{busy ? "Reading…" : refreshed ? "Updated" : "Refresh"}</Button>}
         </div>
         <Tabs id={tabId} label="Request content" items={tabs} value={view.tab} onChange={tab => change({ tab })} />
@@ -171,7 +163,7 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
           {visiblePayload?.unused && <div className="request-unused">
             <p className="muted">This extra choice response was not used. The saved file uses the validated responses below.</p>
             <div className="request-references">{visiblePayload.unused.appliedRequests.filter(index => requests.some(row => row.index === index && ["validated", "saved"].includes(row.state))).map(index =>
-              <Button key={index} variant="quiet" onClick={() => choose(index, { filter: "all", query: selected?.file || "" })}>View used request {index + 1}</Button>)}</div>
+              <Button key={index} variant="quiet" onClick={() => choose(index)}>View used request {index + 1}</Button>)}</div>
           </div>}
           <TabPanel id={tabId} value={view.tab}>
             {view.tab === "json" ? <div className="request-technical-content">

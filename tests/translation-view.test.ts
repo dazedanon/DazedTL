@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
-import { matchesRequest, requestRows, requestFilter, requestBatches, requestBatchOutcome, payloadForBatch } from "../app/src/features/guided/requestView.ts";
+import { requestRows, requestBatches, requestBatchOutcome, payloadForBatch } from "../app/src/features/guided/requestView.ts";
 import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
 
 test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
@@ -29,7 +29,7 @@ test("clarification selection groups stable receipt indices and keeps each attem
   assert.equal(requestAttempt(first, 0), first);
 });
 
-test("request filters identify finished receipts, keep file groups and search source previews without losing receipt indices", () => {
+test("request choices identify finished receipts and retain file groups, previews and receipt indices", () => {
   const rows = requestRows([
     { index: 0, file: "CommonEvents.json", state: "submitted", sourceItems: 1, preview: "The locked door", providerFinished: true },
     { index: 1, file: "Map001.json", state: "received", sourceItems: 1, preview: "A silver key" },
@@ -41,14 +41,10 @@ test("request filters identify finished receipts, keep file groups and search so
     { index: 7, file: "Other.json", state: "failed", sourceItems: 1 },
   ]);
   assert.deepEqual(rows.map(row => row.index), [0, 2, 5, 1, 3, 4, 7]);
-  assert.deepEqual(rows.filter(row => matchesRequest(row, "finished", "")).map(row => row.index), [0, 1]);
-  assert.deepEqual(rows.filter(row => matchesRequest(row, "failed", "")).map(row => row.index), [7]);
-  assert.deepEqual(rows.filter(row => matchesRequest(row, "pending", "common")).map(row => row.index), [2, 5]);
-  assert.deepEqual(rows.filter(row => matchesRequest(row, "all", " SILVER ")).map(row => row.index), [1]);
-  assert.deepEqual(rows.filter(row => matchesRequest(row, "all", "#3")).map(row => row.index), [2]);
-  assert.equal(rows.filter(row => matchesRequest(row, "finished", "absent")).length, 0);
-  assert.equal(requestFilter("unresolved"), "pending");
-  assert.equal(requestFilter("rejected"), "failed");
+  assert.deepEqual(rows.filter(row => row.outcome.group === "finished").map(row => row.index), [0, 1]);
+  assert.deepEqual(rows.filter(row => row.outcome.group === "failed").map(row => row.index), [7]);
+  assert.deepEqual(rows.filter(row => row.outcome.group === "pending").map(row => row.index), [2, 5, 3, 4]);
+  assert.equal(rows.find(row => row.index === 1)?.preview, "A silver key");
   // The latest attempt must not inherit a finished marker from its parent.
   const retry = requestRows([{ index: 0, state: "submitted", providerFinished: true, sourceItems: 1 },
     { index: 1, state: "submitted", clarificationOf: 0, sourceItems: 1 }]);
