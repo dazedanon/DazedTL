@@ -61,8 +61,7 @@ export function ComboBox({ value, options, onChange, disabled, readOnly, selecti
       const above = Math.max(0, rect.top - margin - gap);
       const cap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 18 * zoom;
       const upwards = below < Math.min(cap, popup.scrollHeight * zoom) && above > below;
-      const desiredWidth = selectionOnly ? Math.max(rect.width, parseFloat(getComputedStyle(document.documentElement).fontSize) * 28 * zoom) : rect.width;
-      const width = Math.min(desiredWidth, window.innerWidth - margin * 2);
+      const width = Math.min(rect.width, window.innerWidth - margin * 2);
       popup.style.width = `${width / zoom}px`;
       popup.style.left = `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin)) / zoom}px`;
       popup.style.setProperty("--combobox-available-height", `${(upwards ? above : below) / zoom}px`);

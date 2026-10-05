@@ -141,8 +141,8 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
               <ComboBox key={selectedBatch?.id || "requests"} selectionOnly aria-label="Choose request"
                 value={index == null ? "" : String(index)} placeholder="No requests" disabled={!requests.length}
                 options={requests.map((row, position) => ({ value: String(row.index), label: `Request ${position + 1} of ${requests.length}`,
-                  searchText: [`Request ${position + 1}`, row.outcome.label, row.file, row.preview].filter(Boolean).join("\n"),
-                  description: [row.outcome.label, row.file, row.preview].filter(Boolean).join(" · ") }))}
+                  searchText: `Request ${position + 1}\n${row.outcome.label}`,
+                  description: row.outcome.label }))}
                 onChange={value => choose(Number(value))} />
             </div>
             {selectionOutcome && <span className="request-outcome" data-state={selectionOutcome.group}>{selectionOutcome.label}</span>}
