@@ -80,7 +80,13 @@
 .translation-reader details:first-child { margin-top:var(--space-2); }
 .guided-sheet.translation-review { width:min(740px,calc(100vw - var(--space-8))); }
 .guided-sheet.translation-review:has(.translation-review-body),
-.guided-sheet.translation-flow { height:min(680px,calc(100dvh - var(--space-8))); }
+.guided-sheet.translation-flow,
+.guided-sheet.prepared-request-preview { height:min(680px,calc(100dvh - var(--space-8))); }
+.prepared-request-body { overflow:hidden; }
+.prepared-request-body > :not(.request-reader) { flex-shrink:0; }
+.prepared-request-body > p { margin:0; font-size:var(--font-small); }
+.prepared-request-navigation { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-2); }
+.prepared-request-navigation .actions { gap:var(--space-2); }
 .translation-flow-loading { display:grid; place-items:center; }
 .translation-flow-loading > div { display:grid; justify-items:center; gap:var(--space-3); text-align:center; }
 .translation-flow-loading small { color:var(--muted); }

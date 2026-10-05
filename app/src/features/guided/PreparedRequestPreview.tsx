@@ -1,0 +1,58 @@
+import { useEffect, useId, useState } from "react";
+import { api } from "../../api/client";
+import type { RunPayload } from "../../api/contracts";
+import { messageOf } from "../../api/errors";
+import { ActionBar } from "../../ui/ActionBar";
+import { Button } from "../../ui/Button";
+import { Message } from "../../ui/Feedback";
+import { Modal } from "../../ui/Modal";
+import { Tabs, TabPanel } from "../../ui/Tabs";
+import { ExpandableText } from "../../ui/ExpandableText";
+import { RequestSource } from "./RequestSource";
+
+const tabs = [{ id: "text", label: "Text & context" }, { id: "payload", label: "API payload" }] as const;
+
+/** Reads the reviewed run only; opening or closing never prepares or submits work. */
+export function PreparedRequestPreview({ projectId, runId, estimate, close }: {
+  projectId: string; runId: string; estimate: boolean; close: () => void;
+}) {
+  const tabId = useId();
+  const [tab, setTab] = useState<typeof tabs[number]["id"]>("text");
+  const [index, setIndex] = useState(0);
+  const [payload, setPayload] = useState<RunPayload | null>(null);
+  const [total, setTotal] = useState(0);
+  const [pending, setPending] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let current = true;
+    setPending(true); setError(""); setPayload(null);
+    void api.guided.payload(projectId, runId, index).then(value => {
+      if (current) { setPayload(value); setTotal(value.total); }
+    }).catch(failure => { if (current) setError(messageOf(failure)); })
+      .finally(() => { if (current) setPending(false); });
+    return () => { current = false; };
+  }, [projectId, runId, index, retry]);
+  const visible = payload?.index === index ? payload : null;
+  return <Modal label="Preview request" className="guided-sheet translation-review prepared-request-preview" onDismiss={close}>
+    <header className="guided-sheet-heading"><h2>Preview request</h2></header>
+    <div className="guided-sheet-body payload-inspector prepared-request-body">
+      <p className="muted">{estimate ? "Text prepared for the local estimate. Final requests may reflect resolved speaker names." : "Prepared Batch request, before submission."}</p>
+      <div className="prepared-request-navigation">
+        <strong>{total ? `Request ${index + 1} of ${total}` : "Prepared request"}</strong>
+        {total > 1 && <div className="actions"><Button variant="quiet" disabled={index === 0} onClick={() => setIndex(value => value - 1)}>Previous</Button>
+          <Button variant="quiet" disabled={index >= total - 1} onClick={() => setIndex(value => value + 1)}>Next</Button></div>}
+      </div>
+      <Tabs id={tabId} label="Preview content" items={tabs} value={tab} onChange={setTab} />
+      <div className="request-reader" key={`${index}:${tab}`} tabIndex={0} aria-label="Prepared request content" aria-busy={pending}>
+        <TabPanel id={tabId} value={tab}>
+          {error ? <><Message message={error} /><Button onClick={() => setRetry(value => value + 1)}>Try again</Button></>
+            : !visible ? <p className="muted" role="status">Reading prepared request…</p>
+            : tab === "text" ? <RequestSource payload={visible} />
+            : <ExpandableText text={JSON.stringify(visible.exact, null, 2) ?? "Not recorded"} label="API payload" />}
+        </TabPanel>
+      </div>
+    </div>
+    <ActionBar feedback={null}><Button onClick={close}>Back to review</Button></ActionBar>
+  </Modal>;
+}

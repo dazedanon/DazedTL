@@ -725,10 +725,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <label className="toggle"><input type="checkbox" checked={comparisonsAccepted} onChange={(event) => setComparisonsAccepted(event.target.checked)} />I checked every matched use, including internal references and logic, and accept these literal-based updates.</label>
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setComparisonReview(false)}>Cancel</Button><Button variant="primary" disabled={!comparisonsAccepted || !state.comparisons.matches} pending={action.busy} onClick={() => action.run(async () => { await save(); await api.guided.comparisonsReview(project.id, state.comparisons.fingerprint, true); setComparisonReview(false); }, "Comparison coverage reviewed.", "event-text:comparisons")}>Confirm comparison coverage</Button></ActionBar>
     </Modal>}
-    <TranslationFlowDialog flow={translationFlow} approvalCurrent={!translationFlow.state?.job?.approval || state.runs.some(run => run.approval?.token === translationFlow.state?.job?.approval?.token)}
+    <TranslationFlowDialog projectId={project.id} flow={translationFlow} approvalCurrent={!translationFlow.state?.job?.approval || state.runs.some(run => run.approval?.token === translationFlow.state?.job?.approval?.token)}
       remaining={remainingFiles} otherFiles={() => { const files = remainingFiles; edit("selected", values.selected.filter(name => !translationFlow.state?.conflict?.files.includes(name))); translationFlow.dismiss(); translationFlow.start(files); }}
       inspect={id => { translationFlow.dismiss(); const run = state.runs.find(item => item.id === id); if (run?.mode === "batch" && run.process?.batches?.length) openBatches(run.id); else if (run) inspect(run); else setHistory("all"); }} />
-    {submission?.approval && <TranslationReview job={submission} busy={action.busy} pendingKey={action.key} disabled={disabled}
+    {submission?.approval && <TranslationReview projectId={project.id} job={submission} busy={action.busy} pendingKey={action.key} disabled={disabled}
       approvalCurrent={state.runs.some(run => run.approval?.token === submission.approval!.token)}
       error={action.key.startsWith("run:answer:") ? action.error : ""} close={() => setSubmission(null)}
       answer={approved => action.run(async () => { await api.answer(project.id, submission.approval!.token, approved); setSubmission(null); }, approved ? "" : "Submission declined.", "run:answer:" + approved)} />}

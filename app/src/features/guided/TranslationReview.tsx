@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { X } from "lucide-react";
 import type { Job, Preview } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
@@ -5,6 +6,7 @@ import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { VirtualList } from "../../ui/VirtualList";
+import { PreparedRequestPreview } from "./PreparedRequestPreview";
 
 const numeric = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const count = (value: unknown) => numeric(value) ? value.toLocaleString() : "—";
@@ -37,7 +39,7 @@ export function TranslationCost({ value, mode }: { value: Record<string, unknown
 }
 
 type ReviewProps = {
-  job?: Job; preview?: Preview; busy: boolean; pendingKey: string; disabled: boolean; approvalCurrent: boolean; error: string;
+  projectId: string; job?: Job; preview?: Preview; busy: boolean; pendingKey: string; disabled: boolean; approvalCurrent: boolean; error: string;
   close: () => void; answer: (approved: boolean) => void;
 };
 export function TranslationReview(props: ReviewProps & { job: Job }) {
@@ -46,10 +48,12 @@ export function TranslationReview(props: ReviewProps & { job: Job }) {
     <TranslationReviewContent {...props} />
   </Modal>;
 }
-export function TranslationReviewContent({ job, preview, busy, pendingKey, disabled, approvalCurrent, error, close, answer }: ReviewProps) {
+export function TranslationReviewContent({ projectId, job, preview, busy, pendingKey, disabled, approvalCurrent, error, close, answer }: ReviewProps) {
+  const [inspecting, setInspecting] = useState(false);
   const detail = job?.approval?.detail || preview?.estimate?.value;
   if (!detail) return null;
   const batch = !preview && job?.approval?.kind === "batch", files = job?.files || preview?.paths || [];
+  const requestRun = preview?.estimate?.jobId || (batch ? job?.id : undefined);
   const speakerReview = !preview && job?.approval?.kind === "speakers";
   const speakersBeforeBatch = speakerReview && job?.mode === "batch";
   const speakers = Array.isArray(detail.speakers) ? detail.speakers.map(String) : [];
@@ -68,8 +72,10 @@ export function TranslationReviewContent({ job, preview, busy, pendingKey, disab
       <p className="translation-review-notice">Submitting incurs API charges. {(job?.temporary || preview) && "Decline discards this preparation. "}Results may replace working translations; earlier approved runs stay in History. Game files change only after Apply.</p>
     </div>
     <ActionBar feedback={<Message message={error} />}>
+      {requestRun && <Button variant="quiet" disabled={busy} onClick={() => setInspecting(true)}>Preview request</Button>}
       <Button pending={busy && pendingKey === "run:answer:false"} disabled={disabled} onClick={() => answer(false)}>Decline</Button>
       <Button variant="primary" pending={busy && pendingKey === "run:answer:true"} disabled={disabled || !approvalCurrent} onClick={() => answer(true)}>{preview ? "Start Live translation" : batch ? "Submit Batch" : "Translate names (Live)"}</Button>
     </ActionBar>
+    {inspecting && requestRun && <PreparedRequestPreview key={`${projectId}:${requestRun}`} projectId={projectId} runId={requestRun} estimate={!!preview} close={() => setInspecting(false)} />}
   </>;
 }

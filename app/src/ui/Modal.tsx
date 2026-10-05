@@ -40,6 +40,7 @@ export function Modal({
       aria-label={label}
       onCancel={(event) => {
         event.preventDefault();
+        event.stopPropagation();
         if (dismissible) onDismiss();
       }}
     >

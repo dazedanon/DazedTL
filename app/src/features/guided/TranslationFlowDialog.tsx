@@ -6,8 +6,8 @@ import { Modal } from "../../ui/Modal";
 import { TranslationReviewContent } from "./TranslationReview";
 import type { useTranslationFlow } from "./useTranslationFlow";
 
-export function TranslationFlowDialog({ flow, approvalCurrent, inspect, remaining, otherFiles }: {
-  flow: ReturnType<typeof useTranslationFlow>; approvalCurrent: boolean; inspect: (run?: string) => void;
+export function TranslationFlowDialog({ projectId, flow, approvalCurrent, inspect, remaining, otherFiles }: {
+  projectId: string; flow: ReturnType<typeof useTranslationFlow>; approvalCurrent: boolean; inspect: (run?: string) => void;
   remaining: string[]; otherFiles: () => void;
 }) {
   const value = flow.state;
@@ -15,7 +15,7 @@ export function TranslationFlowDialog({ flow, approvalCurrent, inspect, remainin
   const loading = ["preparing", "estimating", "batch", "canceling"].includes(value.stage);
   const message = value.stage === "canceling" ? "Stopping preparation…" : value.stage === "batch" ? "Preparing the cost review…" : "Checking selected text and saved results…";
   return <Modal label="Translate selected text" className="guided-sheet translation-review translation-flow" dismissible={loading || !flow.busy} onDismiss={flow.cancel}>
-    {value.stage === "review" ? <TranslationReviewContent job={value.job} preview={value.preview} busy={flow.busy}
+    {value.stage === "review" ? <TranslationReviewContent projectId={projectId} job={value.job} preview={value.preview} busy={flow.busy}
       pendingKey={value.decision == null ? "" : `run:answer:${value.decision}`} disabled={flow.busy} approvalCurrent={approvalCurrent} error="" close={flow.cancel} answer={flow.answer} /> : <>
       <header className="guided-sheet-heading"><h2>{value.stage === "empty" ? "No new translation requests" : value.stage === "error" ? value.conflict ? "Saved work needs attention" : "Translation needs attention" : "Translation estimate"}</h2></header>
       <div className={`guided-sheet-body${loading ? " translation-flow-loading" : ""}`}>
