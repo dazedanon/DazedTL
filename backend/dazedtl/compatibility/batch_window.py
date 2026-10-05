@@ -8,7 +8,7 @@ import time
 
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.files import digest, project_path
-from .batch_continuation import JOURNAL
+from .batch_continuation import JOURNAL, validate_submission_records
 from .batch_control import TERMINAL
 from .process_view import queue, saved
 
@@ -22,7 +22,7 @@ def scope(plan):
 def capacity_lock(root, identity):
     # Separate from the app lock: private workers share this connection/model
     # budget without holding the UI/API lock during uploads.
-    folder = root.parents[2] / 'batch-capacity' / digest(identity)
+    folder = project_path(root.parents[2], 'batch-capacity/' + digest(identity) + '/workspace.lock', exists=False).parent
     folder.mkdir(parents=True, exist_ok=True)
     try:
         lock = WorkspaceLock(folder)
@@ -160,9 +160,18 @@ class BatchWindow:
             with self.translation._batch_submit_lock():
                 self.recover()
                 self.approve()
+                validate_submission_records(self.root)
                 requests = queue(self.root)
+                if any(not self.translation._batch_entry_context_is_current(entry) for entry in requests.values()):
+                    raise ValueError('The approved Batch queue uses an unsupported request context. Its requests were retained.')
                 state = dict(saved(self.root, 'batch_state.json'))
                 batches = list(state.get('batches') or [])
+                for batch in [*batches, *saved(self.root, 'batch_history.json').get('batches', [])]:
+                    if (batch.get('key_name') and batch['key_name'] != self.plan['key_name']
+                            or batch.get('endpoint') and batch['endpoint'].rstrip('/') != state['endpoint'].rstrip('/')
+                            or batch.get('provider') and batch['provider'] != 'openai'
+                            or batch.get('model') and batch['model'] != state['model']):
+                        raise ValueError('The saved Batch connection differs from its approved provider receipts.')
                 submitted = {key for batch in batches for key in batch.get('custom_ids', {}).values()}
                 if submitted == set(requests):
                     if state.get('status') != 'submitted':

@@ -27,6 +27,7 @@ class BatchWindowTests(unittest.TestCase):
         write_json(root/'job.json', {'estimate': {'requests': len(queue)}})
         count = lambda params: params['tokens']
         translation = SimpleNamespace(_estimate_openai_batch_input_tokens=count, _batch_submit_lock=nullcontext,
+            _batch_entry_context_is_current=lambda _: True,
             _read_batch_file=lambda path, **_: read_json(path), _openai_batch_token_limit=lambda: limit,
             OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT=target)
         providers = SimpleNamespace(batch_limits=lambda _: (50_000, 200_000_000),
@@ -64,6 +65,12 @@ class BatchWindowTests(unittest.TestCase):
             self.assertEqual(bounded.fill(task2), 8)
             self.assertEqual(bounded.providers.submit_batch.call_count, 4)
             self.assertEqual(active_tokens(bounded.root, scope(bounded.plan), bounded.count, 8), 8)
+            state = read_json(window.root/'log/batch_state.json')
+            state['batches'].pop()
+            write_json(window.root/'log/batch_state.json', state)
+            with self.assertRaisesRegex(ValueError, 'receipts conflict'):
+                window.fill(task)
+            self.assertEqual(window.providers.submit_batch.call_count, 4)
 
     def test_shared_scope_reserves_uncertain_creates_and_leaves_other_models_independent(self):
         with TemporaryDirectory() as directory:
@@ -91,6 +98,11 @@ class BatchWindowTests(unittest.TestCase):
                 'model': 'fixture', 'api_status': 'completed'}]})
             write_json(pending/'log/dazedtl-batch-submission.json', {'intent': {'receipt': None}})
             self.assertEqual(blocked.fill(task4), 0)
+            window, task5 = self.fixture(base, 'stale', [1], model='stale-model')
+            window.translation._batch_entry_context_is_current = lambda _: False
+            with self.assertRaisesRegex(ValueError, 'unsupported request context'):
+                window.fill(task5)
+            window.providers.submit_batch.assert_not_called()
 
     def test_two_workers_cannot_allocate_the_same_available_capacity(self):
         with TemporaryDirectory() as directory:
