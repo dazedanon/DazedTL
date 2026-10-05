@@ -17,10 +17,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 430px;
 }
+/* Match the shared 380px field width; the reveal button sits beside it. */
 .connection-secret input {
-  flex: 1;
+  flex: 0 1 380px;
   min-width: 0;
 }
 .connection-secret button {
