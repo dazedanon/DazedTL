@@ -103,7 +103,7 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
     setAttemptSelection(null);
     change({ batch: batch.id, index: batch.rows[0]?.index || 0, tab: "source" });
   }
-  const selectionOutcome = selected && (visiblePayload && attempts.length ? requestOutcome(visiblePayload) : selected.outcome);
+  const selectionOutcome = selected && (visiblePayload ? requestOutcome({ ...visiblePayload, providerFinished: selected.providerFinished }) : selected.outcome);
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
   const selectedFile = selected?.file || initialRequest?.file;

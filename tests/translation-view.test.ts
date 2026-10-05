@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
-import { requestRows, requestBatches, requestBatchOutcome, payloadForBatch } from "../app/src/features/guided/requestView.ts";
+import { requestRows, requestBatches, requestBatchOutcome, payloadForBatch, requestOutcome } from "../app/src/features/guided/requestView.ts";
 import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, unsettledBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
 
 test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
@@ -27,6 +27,9 @@ test("clarification selection groups stable receipt indices and keeps each attem
   assert.equal(requestAttempt(payload, 0), first);
   assert.equal(requestAttempt(payload, 1), last);
   assert.equal(requestAttempt(first, 0), first);
+  // Attempt selection must show the failed original independently of a passed retry.
+  assert.equal(requestOutcome(requestAttempt(payload, 0)).group, "failed");
+  assert.equal(requestOutcome(requestAttempt(payload, 1)).group, "finished");
 });
 
 test("request choices identify finished receipts and retain file groups, previews and receipt indices", () => {
@@ -41,9 +44,10 @@ test("request choices identify finished receipts and retain file groups, preview
     { index: 7, file: "Other.json", state: "failed", sourceItems: 1 },
   ]);
   assert.deepEqual(rows.map(row => row.index), [0, 2, 5, 1, 3, 4, 7]);
-  assert.deepEqual(rows.filter(row => row.outcome.group === "finished").map(row => row.index), [0, 1]);
+  // Receiving a body alone must not display a successful validation outcome.
+  assert.deepEqual(rows.filter(row => row.outcome.group === "finished").map(row => row.index), [0]);
   assert.deepEqual(rows.filter(row => row.outcome.group === "failed").map(row => row.index), [7]);
-  assert.deepEqual(rows.filter(row => row.outcome.group === "pending").map(row => row.index), [2, 5, 3, 4]);
+  assert.deepEqual(rows.filter(row => row.outcome.group === "pending").map(row => row.index), [2, 5, 1, 3, 4]);
   assert.equal(rows.find(row => row.index === 1)?.preview, "A silver key");
   // The latest attempt must not inherit a finished marker from its parent.
   const retry = requestRows([{ index: 0, state: "submitted", providerFinished: true, sourceItems: 1 },

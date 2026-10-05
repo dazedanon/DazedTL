@@ -1,16 +1,20 @@
-"""Match retained native validation records to exact, consumed Batch responses.
+"""Record native Batch validation and reconcile older consumed response logs.
 
 The native runner continues after a bad response. Its per-file mismatch flag
-cannot identify which other requests were accepted. These read-only receipts
+cannot identify which other requests were accepted. Per-response receipts
 retain that distinction without revalidating, changing grouping or sending work.
 """
 
 from collections import Counter
-from functools import lru_cache
+from contextlib import closing
+from functools import lru_cache, wraps
+from inspect import signature
 import json
 import re
+import threading
 
-from .process_view import batch_state, consumed_files, evidence_root, file_stamp, saved
+from dazedtl.translation.files import digest
+from .process_view import batch_state, consumed_files, evidence_root, file_stamp, ledger, ledger_stamp, saved
 
 
 def canonical(value):
@@ -32,6 +36,87 @@ def response_value(text):
 def source_value(value):
     return isinstance(value, dict) and bool(value) and all(
         re.fullmatch(r'Line\d+', key) and isinstance(text, str) for key, text in value.items())
+
+
+def install(evidence, translation):
+    """Record native pass/fail per consumed response, independent of its wording."""
+    with evidence.connect() as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS batch_validation '
+                           '(request_key TEXT PRIMARY KEY, filename TEXT, source TEXT, response_hash TEXT, state TEXT)')
+    local = threading.local()
+    native_result, native_cache, native_ai = translation.require_batch_result, translation.cache_translation, translation.translateAI
+    call_signature = signature(native_ai)
+
+    @wraps(native_result)
+    def received(payload, language, cache_context=None, request_context=None):
+        response = native_result(payload, language, cache_context, request_context)
+        if getattr(local, 'call', None) is not None:
+            key = translation.get_cache_key(payload, language, cache_context, request_context)
+            # Native lookup alone decides whether a legacy context key is valid.
+            if key not in translation._batch_results:
+                key = translation.get_cache_key(payload, language, cache_context)
+            if translation._batch_results.get(key) == response:
+                local.call[key] = (payload, language, cache_context, request_context)
+                with evidence.connect() as connection:
+                    connection.execute('INSERT OR REPLACE INTO batch_validation VALUES (?,?,?,?,?)',
+                                       (key, local.filename, canonical(json.loads(payload)), digest(response), 'received'))
+        return response
+
+    @wraps(native_cache)
+    def accepted(payload, output, language, cache_context=None, request_context=None):
+        result = native_cache(payload, output, language, cache_context, request_context)
+        matching = [key for key, args in (getattr(local, 'call', None) or {}).items()
+                    if args == (payload, language, cache_context, request_context)]
+        if matching:
+            with evidence.connect() as connection:
+                connection.executemany("UPDATE batch_validation SET state='validated' WHERE request_key=?", [(key,) for key in matching])
+        return result
+
+    @wraps(native_ai)
+    def validated(*args, **kwargs):
+        previous = getattr(local, 'call', None), getattr(local, 'filename', None)
+        local.call = {}
+        local.filename = call_signature.bind(*args, **kwargs).arguments.get('filename')
+        try:
+            result = native_ai(*args, **kwargs)
+            # Only a returned native validation pass settles rejected responses.
+            # Exceptions retain received state and the existing execution guard.
+            if local.call:
+                with evidence.connect() as connection:
+                    connection.executemany("UPDATE batch_validation SET state='rejected' WHERE request_key=? AND state='received'",
+                                           [(key,) for key in local.call])
+            return result
+        finally:
+            local.call, local.filename = previous
+
+    translation.require_batch_result, translation.cache_translation, translation.translateAI = received, accepted, validated
+
+
+@lru_cache(maxsize=8)
+def validation_receipts(root, stamp):
+    connection = ledger(root)
+    if connection is None:
+        return []
+    with closing(connection):
+        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='batch_validation'").fetchone():
+            return []
+        return connection.execute('SELECT request_key,filename,source,response_hash,state FROM batch_validation').fetchall()
+
+
+def recorded_outcomes(root, queued, responses):
+    if not (root / 'log/dazedtl-process.sqlite3').is_file():
+        return {}
+    result = {}
+    for key, filename, source, response_hash, state in validation_receipts(str(root), ledger_stamp(root)):
+        entry = queued.get(key)
+        if (not entry or state not in {'validated', 'rejected'} or key not in responses
+                or filename != entry.get('dazedtl_file') or source != canonical(json.loads(entry['payload']))
+                or response_hash != digest(responses[key])):
+            continue
+        result[key] = {'state': state}
+        if state == 'rejected':
+            result[key]['error'] = {'code': 'validation_failed', 'message': 'This response failed translation validation. Original text was kept for this request.'}
+    return result
 
 
 @lru_cache(maxsize=8)
@@ -119,9 +204,10 @@ def failure(source, response):
 
 
 def outcomes(root, queued, responses):
+    recorded = recorded_outcomes(root, queued, responses)
     files = consumed_files(root, allow_mismatches=True)
     if not files:
-        return {}
+        return recorded
     manifests = {row['id']: row.get('custom_ids') for row in batch_state(root).get('batches', [])}
     mapped, unbound = set(), set()
     for row in saved(evidence_root(root), 'batch_history.json').get('batches', []):
@@ -149,6 +235,7 @@ def outcomes(root, queued, responses):
     result = dict(match_outcomes(rows, frozenset(accepted), frozenset(rejected), files, bound))
     from .choice_history import unused_responses
     result.update(unused_responses(root, queued, responses, result, files, bound))
+    result.update(recorded)
     return result
 
 

@@ -1,14 +1,15 @@
 import type { Job, RunPayload, RunProcess } from "../../api/contracts.ts";
-import { groupedRequests } from "./translationView.ts";
+import { groupedRequests, requestStateLabel } from "./translationView.ts";
 import { batchOutcome, type ProviderBatch } from "./batchView.ts";
 
 type Request = NonNullable<RunProcess["requests"]>[number];
 /** A provider count never identifies a row; only a bound receipt can do that. */
 export function requestOutcome(row: Pick<Request, "state" | "providerFinished">) {
   if (row.state === "failed" || row.state === "rejected") return { group: "failed", label: row.state === "failed" ? "Failed" : "Validation failed" } as const;
-  if (["received", "validated", "saved", "unused"].includes(row.state)) return {
+  if (row.state === "received") return { group: "pending", label: requestStateLabel(row.state) } as const;
+  if (["validated", "saved", "unused"].includes(row.state)) return {
     group: "finished" as const,
-    label: ({ received: "Response received", validated: "Validated", saved: "Saved", unused: "Unused duplicate" } as Record<string, string>)[row.state],
+    label: requestStateLabel(row.state),
   };
   if (row.state === "submitted" && row.providerFinished) return { group: "finished", label: "Finished at provider" } as const;
   return { group: "pending" as const, label: ({ prepared: "Prepared", queued: "Queued", submitted: "At provider", uncertain: "Submission unconfirmed" } as Record<string, string>)[row.state] || "Status unavailable" };

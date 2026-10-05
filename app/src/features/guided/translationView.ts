@@ -3,7 +3,8 @@ import type { GuidedState, Job, Phase, RunPayload, RunProcess } from "../../api/
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
 export const providerBatchActive = (status: string) => ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(status);
-export const requestStateLabel = (state: string) => state === "unused" ? "Unused duplicate" : state === "rejected" ? "Validation failed" : state;
+export const requestStateLabel = (state: string) => ({ unused: "Unused duplicate", rejected: "Validation failed",
+  validated: "Validation passed", saved: "Validation passed", received: "Not validated" } as Record<string, string>)[state] || state;
 
 /** Keep raw receipt indices stable while presenting one selection per source request. */
 export function groupedRequests(rows: NonNullable<RunProcess["requests"]>) {

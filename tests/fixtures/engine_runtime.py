@@ -226,6 +226,9 @@ try:
         from dazedtl.compatibility import openrouter_batch, openrouter_pricing
         from dazedtl.settings.openrouter import TRANSPORT, STRUCTURED_OUTPUTS
         from dazedtl.compatibility.request_parameters import batch_routing
+        from dazedtl.compatibility.run_evidence import Evidence
+        from dazedtl.compatibility.batch_evidence import install as retain_batch_evidence
+        from dazedtl.compatibility.process_view import payload
         router_root = temporary / 'router-batch'
         router_root.mkdir()
         os.chdir(router_root)
@@ -246,12 +249,13 @@ try:
             return httpx.Response(200, json={'id': identity, 'status': 'completed',
                 'request_counts': {'total': len(rows), 'completed': len(rows), 'failed': 0},
                 'usage': {'cost': .001}, 'results': [{'custom_id': row['custom_id'], 'response': {'status_code': 200,
-                    'body': {'choices': [{'message': {'content': json.dumps({key: 'Potion' for key in
+                    'body': {'choices': [{'message': {'content': json.dumps({key: 'Potion' if key == 'Line1' else '' for key in
                         row['body']['response_format']['json_schema']['schema']['required']})}}],
                              'usage': {'prompt_tokens': 10, 'completion_tokens': 4, 'prompt_tokens_details': {'cached_tokens': 2}}}}}
                     for row in rows]})
         original_http = httpx.Client
-        originals = {name: getattr(translation, name) for name in ('estimateCostComparison', 'translateAI', 'calculateCost')}
+        originals = {name: getattr(translation, name) for name in ('estimateCostComparison', 'translateAI', 'calculateCost',
+            'require_batch_result', 'cache_translation', 'queue_batch_request', '_write_request_debug_log', 'translateText', '_clear_batch_queue_storage')}
         with patch.dict(os.environ, {'API_PROVIDER': 'openai', 'key': 'fixture-key', 'api': openrouter_batch.BASE_URL, 'model': router_model}), \
              patch.multiple(openrouter_batch, _worker_policy=router_policy, _worker_root=router_root, _worker_configured=True), \
              patch.object(httpx, 'Client', side_effect=lambda **kwargs: original_http(**{**kwargs, 'transport': httpx.MockTransport(router_response)})), \
@@ -260,13 +264,16 @@ try:
              patch.object(batch_history, '_price_usage', batch_history._price_usage):
             openrouter_pricing.configure(translation, router_policy)
             structured_outputs.configure(translation, True)
-            configure_builders(translation, GENERATION_PARAMETERS, max_output_tokens=32768,
+            batch_evidence = Evidence(router_root, 'batch')
+            batch_evidence.install(translation)
+            retain_batch_evidence(translation, router_root, {'mode': 'batch'})
+            configure_builders(translation, GENERATION_PARAMETERS, batch_evidence.record, max_output_tokens=32768,
                                structured_outputs=True, batch=True, openrouter_batch=router_policy)
             config = translation.TranslationConfig(model=router_model, prompt='Translate the supplied text.', vocab='', batchSize=2,
                 useSfxReference=False, logFilePath=str(router_root/'log/translation.txt'), mismatchLogPath=str(router_root/'log/mismatches.txt'))
             translation.set_batch_phase('collect')
-            translation.translateAI(['薬'], [], config)
-            translation.translateAI(['回復', '毒'], [], config)
+            translation.translateAI(['薬'], [], config, filename='Items.json')
+            translation.translateAI(['回復', '毒'], [], config, filename='Items.json')
             estimate = translation.estimateBatchCost()
             assert estimate['provider'] == 'openrouter', estimate
             assert abs(estimate['batch_nocache_cost'] - (estimate['input_tokens'] * .8 + estimate['output_tokens'] * 3) / 1_000_000) < 1e-12, estimate
@@ -278,9 +285,20 @@ try:
             assert translation.fetchTranslationBatches() == (2, 0)
             translation.set_batch_phase('consume')
             translation.begin_file_cost_tracking(config.model)
-            translated = translation.translateAI(['薬'], [], config)
+            translated = translation.translateAI(['薬'], [], config, filename='Items.json')
             assert translated[0] == ['Potion'], translated
             assert abs(parser.calculateCost(10, 4, config.model) - (8 * .8 + 2 * .2 + 4 * 3) / 1_000_000) < 1e-12
+            # Schema-shaped responses can fail native content validation without
+            # being refusals. Retain the failed body and generic outcome before
+            # the file finishes, even when human-readable logs are unavailable.
+            failed_output = translation.translateAI(['回復', '毒'], [], config, filename='Items.json')
+            assert failed_output[0] == ['回復', '毒'], failed_output
+            (router_root/'log/translation.txt').unlink()
+            (router_root/'log/mismatches.txt').unlink()
+            batch_rows = [payload(router_root, index) for index in range(2)]
+            assert [row['state'] for row in batch_rows] == ['validated', 'rejected'], batch_rows
+            assert json.loads(batch_rows[1]['response']['text']) == {'Line1': 'Potion', 'Line2': ''}
+            assert batch_rows[1]['error']['code'] == 'validation_failed', batch_rows[1]
             assert len(sent_batches) == 2
             translation.set_batch_phase(None)
             openrouter_pricing.configure(translation, None)

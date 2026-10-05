@@ -266,6 +266,9 @@ class Evidence:
             finally:
                 self.local.call = previous
         translation.translateAI = validated
+        if self.mode == 'batch':
+            from .batch_validation import install
+            install(self, translation)
         if module is not None and hasattr(module, 'sharedtranslateAI'):
-            module.sharedtranslateAI = validated
+            module.sharedtranslateAI = translation.translateAI
         keep_aligned_partial_results(module)

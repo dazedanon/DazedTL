@@ -3,14 +3,53 @@
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 
 from dazedtl.compatibility import process_view, request_scope
+from dazedtl.compatibility.batch_validation import install, recorded_outcomes
+from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
 
 class BatchValidationTests(unittest.TestCase):
+    def test_native_receipts_bind_failures_to_exact_responses_and_leave_interrupted_validation_unsettled(self):
+        # A crash during validation or a changed reply must never inherit a
+        # rejection receipt that releases its paid-work guard. Accepted chunks
+        # remain accepted when a later chunk fails in the same native call.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = ['薬', '毒', '盾']
+            queue = {key: {'payload': json.dumps({'Line1': text}), 'dazedtl_file': 'Items.json'}
+                     for key, text in zip(('good', 'bad', 'interrupted'), sources)}
+            responses = {key: {'text': text} for key, text in zip(queue, ('{"Line1":"Potion"}', 'Malformed JSON', ''))}
+            by_source = {entry['payload']: key for key, entry in queue.items()}
+            def native(text, filename=None):
+                for key in text:
+                    payload = queue[key]['payload']
+                    translator.require_batch_result(payload, 'English', request_context='frozen')
+                    if key == 'good': translator.cache_translation(payload, ['Potion'], 'English', request_context='frozen')
+                    if key == 'interrupted': raise InterruptedError('Stopped while validating')
+                return text
+            translator = SimpleNamespace(translateAI=native, _batch_results=responses,
+                get_cache_key=lambda payload, *_: by_source[payload],
+                require_batch_result=lambda payload, *_: responses[by_source[payload]],
+                cache_translation=lambda *_: None)
+            install(Evidence(root, 'batch'), translator)
+            translator.translateAI(['good', 'bad'], filename='Items.json')
+            with self.assertRaises(InterruptedError):
+                translator.translateAI(['interrupted'], filename='Items.json')
+            rows = recorded_outcomes(root, queue, responses)
+            self.assertEqual({key: row['state'] for key, row in rows.items()}, {'good': 'validated', 'bad': 'rejected'})
+            self.assertEqual(rows['bad']['error']['code'], 'validation_failed')
+            before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+            for field, value in (('payload', '{"Line1":"別"}'), ('dazedtl_file', 'Other.json')):
+                changed = {**queue, 'bad': {**queue['bad'], field: value}}
+                self.assertNotIn('bad', recorded_outcomes(root, changed, responses))
+            self.assertNotIn('bad', recorded_outcomes(root, queue, {**responses, 'bad': {'text': 'Changed reply'}}))
+            self.assertEqual({path: path.read_bytes() for path in before}, before)
+
     def choice_fixture(self, root):
         source = ['特別な品', 'やめる']
         def menu(identity, translated=False):
