@@ -1,17 +1,17 @@
 """Keep the legacy job controller, with a local worker-launch boundary."""
 
-from copy import deepcopy
-from contextlib import contextmanager
-import importlib.util
 import hashlib
+import importlib.util
 import json
-from pathlib import Path
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
-from .preparations import temporary, discard, discardable
 
+from .preparations import discard, discardable, temporary
 
 SPEAKER_CANCELLATION = "Speaker translation canceled"
 DECLINED_SPEAKERS = (

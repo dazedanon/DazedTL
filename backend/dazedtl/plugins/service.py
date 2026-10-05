@@ -1,15 +1,15 @@
 """Retained assistant investigation, exact text edits and reviewed runtime publication."""
 
-from copy import deepcopy
-from datetime import datetime, timezone, timedelta
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import sys
 import threading
 import uuid
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import backups
@@ -19,7 +19,8 @@ from dazedtl.translation.operations import (
     lifecycle_path,
     require_source_backup,
 )
-from .documents import Documents, JAPANESE, decode, leaves, occurrences, validate
+
+from .documents import Documents, decode, occurrences, validate
 
 WORK = ".dazedtl/plugin-work"
 DISPOSITIONS = {
@@ -69,7 +70,7 @@ DATABASE_JSON = {
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def bounded(value, label, limit=4000):
@@ -1938,9 +1939,9 @@ class PluginService:
         preview = self.previews.pop(token, None)
         if not preview or preview["projectId"] != project_id or preview["mode"] != mode:
             raise ValueError("This publication review expired or was already used.")
-        if datetime.fromisoformat(preview["created"]) < datetime.now(
-            timezone.utc
-        ) - timedelta(minutes=20):
+        if datetime.fromisoformat(preview["created"]) < datetime.now(UTC) - timedelta(
+            minutes=20
+        ):
             raise ValueError(
                 "This publication review expired. Review the exact current batch again."
             )

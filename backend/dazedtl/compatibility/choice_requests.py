@@ -1,7 +1,7 @@
 """Visit MV/MZ menu choices once while preserving the native two-pass writer."""
 
-from functools import wraps
 import threading
+from functools import wraps
 
 
 def configure(module, enabled):

@@ -4,20 +4,19 @@ Identity excludes model, prompt and chunk size. Legacy queues lack file/field
 provenance, so their source text is matched only inside the saved phase/files.
 """
 
-from contextlib import closing
 import json
 
 from dazedtl.translation.files import digest, read_json
+
 from .process_view import (
+    batch_results,
+    batch_state,
+    consumed_files,
     evidence_root,
-    ledger,
+    ledger_records,
     queue,
     saved,
     source_values,
-    batch_results,
-    batch_state,
-    ledger_records,
-    consumed_files,
 )
 
 
@@ -159,8 +158,9 @@ def requests(root, job):
         from .batch_validation import outcomes as validation_outcomes
 
         validation = validation_outcomes(root, queued, results)
+        from dazedtl.translation.refusals import MESSAGE, refused
+
         from .batch_refusals import records as clarification_records
-        from dazedtl.translation.refusals import refused, MESSAGE
 
         clarification_pending = {
             item["key"]: "uncertain" if batch["state"] == "sending" else "submitted"

@@ -1,9 +1,9 @@
 """Engine-independent request and result contracts, without provider calls."""
 
-from collections import Counter
 import json
 import math
 import re
+from collections import Counter
 
 from .files import digest, unique_object
 

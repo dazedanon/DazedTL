@@ -1,17 +1,18 @@
 """Portable, immutable file snapshots; old full-copy backups remain readable."""
 
-from contextlib import contextmanager
-from datetime import datetime, timezone
 import hashlib
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
 import tempfile
 import uuid
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path, PurePosixPath
 
 from dazedtl.storage import WorkspaceLock, write_json
+
 from .files import digest, read_json
 
 STORE_RELATIVE = ".dazedtl/backups/v2"
@@ -195,7 +196,7 @@ def snapshot(
             "version": 2,
             "source": str(source),
             "kind": "source" if source_game else "workspace",
-            "created": datetime.now(timezone.utc).isoformat(),
+            "created": datetime.now(UTC).isoformat(),
             "files": {},
             "sizes": {},
             "modes": {},

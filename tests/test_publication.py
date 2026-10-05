@@ -1,13 +1,13 @@
 """Text batches must retain exact approved bytes through failure and restart."""
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation.files import read_json
 from dazedtl.translation import publication as p
+from dazedtl.translation.files import read_json
 
 
 class PublicationTests(unittest.TestCase):

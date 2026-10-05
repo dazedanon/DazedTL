@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 DATA_ROOT = Path(__file__).resolve().parents[1] / "data"
 SHARED_FILES = frozenset(
     {

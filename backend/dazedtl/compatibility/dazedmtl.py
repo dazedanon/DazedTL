@@ -1,10 +1,10 @@
 """Application boundary to DazedTL's bundled parser and worker implementation."""
 
+import hashlib
+import json
+import threading
 from contextlib import contextmanager
 from pathlib import Path
-import threading
-import json
-import hashlib
 
 from dazedtl.storage import WorkspaceError, write_bytes, write_json
 
@@ -15,11 +15,12 @@ class ExistingBackend:
 
         self.source = activate()
         self.workspace = Path(workspace).resolve()
+        from desktop.backend.settings import SettingsStore
+
+        from .guided import phased_workflows
         from .manual import manual_jobs
         from .model_defaults import ModelDefaults
         from .operations import workflow_operations
-        from .guided import phased_workflows
-        from desktop.backend.settings import SettingsStore
 
         self.lock = threading.RLock()
         self._legacy_settings = SettingsStore(self.workspace, code_root=self.source)
@@ -233,8 +234,9 @@ class ExistingBackend:
             )
 
     def provider_defaults(self, values):
-        from dazedtl.settings.providers import PROVIDERS, route
         from util.batch_providers import detect_batch_provider
+
+        from dazedtl.settings.providers import PROVIDERS, route
 
         official = any(
             route(values["API_PROVIDER"], values["api"])
@@ -272,12 +274,13 @@ class ExistingBackend:
 
     def guided_run_context(self):
         from util.paths import (
-            PROMPT_PATH,
             GLOSSARY_BASE_PATH,
-            TRANSLATION_CONTEXTS_PATH,
+            PROMPT_PATH,
             SFX_REFERENCE_PATH,
+            TRANSLATION_CONTEXTS_PATH,
             runtime_data_file,
         )
+
         from dazedtl.translation.files import digest
 
         return {
@@ -291,8 +294,9 @@ class ExistingBackend:
         }
 
     def phase_files(self, native, phase):
-        from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT
         import re
+
+        from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT
 
         if phase == "database":
             return [f["name"] for f in native["files"] if f["name"] in DB_FILES]
@@ -412,6 +416,7 @@ class ExistingBackend:
 
     def guided_text_state(self, native, focus="release"):
         from dazedtl.translation.publication import history
+
         from .text import qa_state
 
         folder = self.workflows.folder(native["id"])

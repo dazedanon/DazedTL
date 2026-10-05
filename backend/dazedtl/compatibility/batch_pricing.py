@@ -1,8 +1,8 @@
 """Apply model-specific cache rates to newly calculated native Batch quotes."""
 
-from functools import wraps
 import math
 import re
+from functools import wraps
 
 
 def configure(translation, enabled):

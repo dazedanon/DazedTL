@@ -1,17 +1,17 @@
 """Shared request acceptance and paid-work recovery, with no provider or game dependencies."""
 
-from copy import deepcopy
 import json
+import unittest
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
+from dazedtl.translation.jobs import RunStore
 from dazedtl.translation.project import ProjectWorkspace
 from dazedtl.translation.requests import logical_request, plan_input, result_value
 from dazedtl.translation.results import Results
-from dazedtl.translation.jobs import RunStore
 from dazedtl.translation.runner import Runner
 
 
@@ -267,7 +267,7 @@ class TranslationTests(unittest.TestCase):
     def test_refusal_clarification_is_bounded_and_retains_both_paid_attempts(self):
         # A refusal in valid JSON used to pass output validation. A repeated
         # refusal or lost retry response must not become dialogue or another bill.
-        from dazedtl.translation.refusals import POLICY, CLARIFICATION, refused
+        from dazedtl.translation.refusals import CLARIFICATION, POLICY, refused
 
         refusal = {
             "text": '{"line":"I cannot translate explicit sexual content."}',
@@ -418,7 +418,7 @@ class TranslationTests(unittest.TestCase):
     ):
         # A Batch refusal must not become a Live call, resend successful rows,
         # or reset its retry allowance when polling resumes in another worker.
-        from dazedtl.translation.refusals import POLICY, CLARIFICATION
+        from dazedtl.translation.refusals import CLARIFICATION, POLICY
 
         refusal = {
             "text": "I cannot translate explicit sexual content.",

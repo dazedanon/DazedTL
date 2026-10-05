@@ -1,12 +1,13 @@
 """Retain the outcome of the native, separately approved name translation."""
 
+import re
 from functools import lru_cache, wraps
 from pathlib import Path
-import re
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
-from .process_view import saved, file_stamp, _verified_digest, _read_cached
+
+from .process_view import _read_cached, _verified_digest, file_stamp, saved
 
 RECEIPT = "dazedtl-speaker-results.json"
 GLOSSARY = "dazedtl-speaker-glossary.txt"
@@ -276,8 +277,8 @@ def seed(root, plan, rows):
         return
     from util.translation import (
         parseVocabWithCategories,
-        split_vocab_source_aliases,
         speaker_source_lookup_keys,
+        split_vocab_source_aliases,
     )
     from util.vocab import BASE_SEPARATOR
 

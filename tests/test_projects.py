@@ -1,13 +1,13 @@
 """Project identity and selection must survive navigation and failed saves."""
 
-from copy import deepcopy
 import json
+import unittest
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
-from dazedtl.projects.store import Projects, SCHEMA_VERSION
+from dazedtl.projects.store import SCHEMA_VERSION, Projects
 
 
 class ProjectTests(unittest.TestCase):
@@ -93,10 +93,13 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(action=action):
                 before = deepcopy(self.projects.data)
                 saved = self.projects.path.read_bytes()
-                with patch(
-                    "dazedtl.projects.store.write_json", side_effect=OSError("No space")
+                with (
+                    patch(
+                        "dazedtl.projects.store.write_json",
+                        side_effect=OSError("No space"),
+                    ),
+                    self.assertRaises(OSError),
                 ):
-                    with self.assertRaises(OSError):
-                        action()
+                    action()
                 self.assertEqual(self.projects.path.read_bytes(), saved)
                 self.assertEqual(self.projects.data, before)

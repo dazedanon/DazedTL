@@ -1,12 +1,12 @@
 """Preserved image operations, without importing a GUI or provider modules."""
 
-from contextlib import nullcontext
-from dataclasses import asdict
 import hashlib
 import os
-from pathlib import Path
 import sys
 import tempfile
+from contextlib import nullcontext
+from dataclasses import asdict
+from pathlib import Path
 
 from dazedtl.storage import write_bytes
 from dazedtl.translation.files import project_path, read_json
@@ -25,8 +25,8 @@ class ImageCompatibility:
 
     def profile(self, root, engine, image_root=""):
         from util.image_manager import (
-            get_image_profile,
             detect_image_engine,
+            get_image_profile,
             normalize_generic_image_root,
         )
 

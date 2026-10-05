@@ -1,12 +1,12 @@
 """Guidance completion follows file presence; optional layout keeps its own evidence."""
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, read_json
 from dazedtl.translation import context_setup as C
+from dazedtl.translation.files import digest, read_json
 
 
 class ContextSetupTests(unittest.TestCase):

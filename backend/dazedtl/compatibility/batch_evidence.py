@@ -4,6 +4,7 @@ from functools import wraps
 from pathlib import Path
 
 from dazedtl.storage import write_json
+
 from .process_view import saved
 
 ARCHIVE = "dazedtl-batch-evidence.json"

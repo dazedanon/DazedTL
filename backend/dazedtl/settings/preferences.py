@@ -1,8 +1,7 @@
 """The supported preferences contract, independent of legacy engine settings."""
 
-from copy import deepcopy
 import math
-
+from copy import deepcopy
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
 DEFAULT_OUTPUT_TOKENS = 32_768

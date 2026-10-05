@@ -1,14 +1,14 @@
 """Small real files protect deduplicated recovery and the no-overwrite boundary."""
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from contextlib import nullcontext
 import os
 import shutil
 import unittest
+from contextlib import nullcontext
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from dazedtl.storage import write_json, WorkspaceLock
+from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import backups
 from dazedtl.translation.files import digest
 

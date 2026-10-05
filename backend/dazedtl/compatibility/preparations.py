@@ -3,7 +3,7 @@
 import shutil
 import sqlite3
 
-from .process_view import saved, evidence_root
+from .process_view import evidence_root, saved
 
 
 def temporary(job):

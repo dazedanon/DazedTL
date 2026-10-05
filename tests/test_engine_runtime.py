@@ -2,12 +2,12 @@
 
 import atexit
 import os
-from pathlib import Path
 import subprocess
 import sys
-from tempfile import TemporaryDirectory
 import time
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 class Probe:

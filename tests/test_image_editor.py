@@ -1,16 +1,16 @@
 """Retained native image work and paid scope checks, without native workers or OCR."""
 
+import unittest
 from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import Mock, patch
 
 from dazedtl.images.editor import ImageEditor, validate_blocks
 from dazedtl.images.native_translation import ImageNativeTranslation
-from dazedtl.storage import write_json, write_bytes
+from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, read_json
 
 
@@ -207,7 +207,7 @@ class EditorTests(unittest.TestCase):
         for name, function in {
             "load": Job,
             "image_size": lambda _: (64, 32),
-            "fonts": lambda: [],
+            "fonts": list,
             "local_ocr": lambda: {"available": False, "detail": "Fixture OCR blocked"},
             "exchange": exchange,
             "set_entry": lambda job, value: setattr(

@@ -1,11 +1,12 @@
 """Guidance file availability and optional measured layout recommendations."""
 
-from pathlib import Path
 import json
 import re
 import uuid
+from pathlib import Path
 
 from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json
 
 REPORT = ".dazedtl/guided/context-findings.json"

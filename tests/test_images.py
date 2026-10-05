@@ -1,23 +1,22 @@
 """Protect scoped handoff, stale reviews and all-or-nothing image application."""
 
+import time
+import unittest
 from contextlib import nullcontext
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import time
-import unittest
 from unittest.mock import patch
-
-from PIL import Image
 
 from dazedtl.images import ImageService
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
-from dazedtl.translation.files import read_json, digest
+from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
+from PIL import Image
 
 
 def png(color=(0, 0, 0, 0), size=(8, 8)):

@@ -1,10 +1,10 @@
 """Coalesce compatible state calls while retaining the native field writer."""
 
-from copy import deepcopy
 import json
-from pathlib import Path
 import re
 import threading
+from copy import deepcopy
+from pathlib import Path
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, read_json

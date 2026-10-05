@@ -3,8 +3,8 @@
 from pathlib import Path
 
 from dazedtl.storage import write_json
-from .files import digest, read_json, project_path
 
+from .files import digest, project_path, read_json
 
 WORK = ".dazedtl/len-method"
 MODES = {"agent", "live", "batch"}

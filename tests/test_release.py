@@ -1,31 +1,31 @@
 """A stopped or stale release must not overwrite a previous archive or game."""
 
+import json
+import sqlite3
+import unittest
+import zipfile
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import Mock, patch
-import zipfile
-from contextlib import closing
-import sqlite3
-import json
 
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
 from dazedtl.translation.release import (
+    applied_assets,
     available,
     destination,
-    output_hash,
-    publish,
     git_identity,
     inventory,
-    write_archive,
-    applied_assets,
-    runtime_asset,
-    packing_state,
+    output_hash,
     packing_inputs,
+    packing_state,
+    publish,
+    runtime_asset,
+    write_archive,
 )
 
 
@@ -298,12 +298,14 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 publish(staged, output, expected)
             self.assertEqual(output.read_bytes(), b"new user archive")
-            with patch(
-                "dazedtl.translation.release.os.replace",
-                side_effect=OSError("generated replacement failure"),
+            with (
+                patch(
+                    "dazedtl.translation.release.os.replace",
+                    side_effect=OSError("generated replacement failure"),
+                ),
+                self.assertRaises(OSError),
             ):
-                with self.assertRaises(OSError):
-                    publish(staged, output, output_hash(output))
+                publish(staged, output, output_hash(output))
             self.assertEqual(output.read_bytes(), b"new user archive")
             self.assertTrue(staged.is_file())
             result = publish(staged, output, output_hash(output))

@@ -1,9 +1,10 @@
 """Manage phased working copies without replacing saved work on selection changes."""
 
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
+
 from .files import decode_json, digest, project_path, read_json
 
 

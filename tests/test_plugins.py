@@ -1,16 +1,16 @@
 """Protect exact edit scope, pristine lookup evidence and reviewed publication recovery."""
 
+import json
+import unittest
 from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import json
-import unittest
 from unittest.mock import patch
 
 from dazedtl.plugins import PluginService
-from dazedtl.plugins.documents import Documents, replace_leaf, validate, occurrences
+from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path

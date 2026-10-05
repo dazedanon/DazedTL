@@ -5,7 +5,7 @@ import math
 import sys
 import time
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -46,8 +46,8 @@ def resolve(cache, model, online):
     from dazedtl.compatibility.runtime import activate
 
     activate()
-    import util.translation as translation
     import httpx
+    from util import translation
 
     cache = Path(cache)
     cached = None
@@ -76,19 +76,21 @@ def resolve(cache, model, online):
     ):
         try:
             started, data = time.monotonic(), bytearray()
-            with httpx.Client(
-                timeout=4, follow_redirects=False, trust_env=False
-            ) as client:
-                with client.stream(
+            with (
+                httpx.Client(
+                    timeout=4, follow_redirects=False, trust_env=False
+                ) as client,
+                client.stream(
                     "GET",
                     translation._LITELLM_PRICING_URL,
                     headers={"Accept-Encoding": "identity"},
-                ) as response:
-                    response.raise_for_status()
-                    for chunk in response.iter_raw(65536):
-                        data.extend(chunk)
-                        if len(data) > 20_000_000 or time.monotonic() - started > 6:
-                            raise ValueError("Pricing catalog exceeds its read limit.")
+                ) as response,
+            ):
+                response.raise_for_status()
+                for chunk in response.iter_raw(65536):
+                    data.extend(chunk)
+                    if len(data) > 20_000_000 or time.monotonic() - started > 6:
+                        raise ValueError("Pricing catalog exceeds its read limit.")
             prices = catalog(json.loads(data))
             cached = {"version": 2, "fetched_at": now, "prices": prices}
             from dazedtl.storage import write_json
@@ -120,9 +122,7 @@ def resolve(cache, model, online):
         if cached
         else None,
         "source": origin,
-        "updatedAt": datetime.fromtimestamp(
-            cached["fetched_at"], timezone.utc
-        ).isoformat()
+        "updatedAt": datetime.fromtimestamp(cached["fetched_at"], UTC).isoformat()
         if catalog_rate
         else None,
         "stale": bool(

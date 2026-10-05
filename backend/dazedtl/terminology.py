@@ -1,15 +1,14 @@
 """Project-owned terminology review. Source text is evidence, never a rewrite target."""
 
-from copy import deepcopy
-from datetime import datetime, timezone
-from pathlib import Path
 import re
 import threading
+from copy import deepcopy
+from datetime import UTC, datetime
+from pathlib import Path
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.file_preview import text_fields
-
+from dazedtl.translation.files import decode_json, digest, project_path, read_json
 
 WORK = ".dazedtl/terminology"
 PAGE_SIZE = 40
@@ -307,7 +306,7 @@ class Terminology:
                 "projectId": project_id,
                 "id": scan_id,
                 "termsRevision": revision,
-                "created": datetime.now(timezone.utc).isoformat(),
+                "created": datetime.now(UTC).isoformat(),
                 "files": len(files),
                 "matches": len(rows),
                 "origin": "original"

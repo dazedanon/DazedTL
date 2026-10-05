@@ -1,13 +1,12 @@
 """Connection presets and explicit, non-generating access checks."""
 
-from datetime import datetime, timezone
 import json
 import re
 import time
+from datetime import UTC, datetime
 from urllib.parse import quote, urlsplit
 
 import httpx
-
 
 PROVIDERS = {
     "openai": {
@@ -203,7 +202,7 @@ def check(connection):
             "check": {
                 "status": status,
                 "message": message,
-                "checkedAt": datetime.now(timezone.utc).isoformat(),
+                "checkedAt": datetime.now(UTC).isoformat(),
             },
             "models": models,
             **({"catalog": catalog} if catalog is not None else {}),

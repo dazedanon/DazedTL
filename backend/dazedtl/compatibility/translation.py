@@ -1,17 +1,18 @@
 """Len's maintained skills and engine helpers behind the migration boundary."""
 
-from contextlib import contextmanager, redirect_stdout
-from dataclasses import asdict
 import json
 import os
-from pathlib import Path
-import tempfile
 import subprocess
+import tempfile
+from contextlib import contextmanager, redirect_stdout
+from dataclasses import asdict
 from functools import wraps
+from pathlib import Path
 
-from dazedtl.storage import write_json, write_bytes
+from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 from dazedtl.translation.requests import output_schema
+
 from . import request_parameters
 from .openrouter_batch import ResultsUnavailable
 
@@ -101,15 +102,15 @@ class TranslationEngine:
         return valid_document_name(name)
 
     def prepare(self, source, options):
+        from util.len_progress import initialize_progress
         from util.len_translation import (
-            shared_context,
+            BUNDLED_SKILL,
             _prepare_local_work,
             _validate_skill,
-            BUNDLED_SKILL,
+            shared_context,
         )
-        from util.len_progress import initialize_progress
-        from util.skills import load_project_setup, load_generic_project_setup
         from util.project_preparation import rpgmaker_layout
+        from util.skills import load_generic_project_setup, load_project_setup
 
         project = self.project(source, options)
         _validate_skill(BUNDLED_SKILL)
@@ -180,8 +181,9 @@ class TranslationEngine:
         return compiled, self.compiler_fingerprint()
 
     def compiler_fingerprint(self):
+        from dazedtl.translation import compilation, requests
+
         from . import resources
-        from dazedtl.translation import requests, compilation
 
         # Retain the compiler's code identity without hashing obsolete prompt
         # copies in its checkout. Actual guidance also binds each logical request.
@@ -212,6 +214,7 @@ class TranslationEngine:
 
     def payload(self, request, configuration):
         from util.translation import buildClaudeRequest, buildOpenAIRequest
+
         from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS
 
         strict_router = configuration.get("openrouterStructuredOutputs")
@@ -343,9 +346,10 @@ class TranslationEngine:
                 configuration.get("openrouterBatch"), configuration["model"]
             )
             return [policy["max_requests"], policy["max_bytes"] - 4096, None]
+        from urllib.parse import urlsplit
+
         from util.batch_providers import batch_limits
         from util.translation import _openai_batch_token_limit
-        from urllib.parse import urlsplit
 
         native_openai = (
             configuration["protocol"] == "openai"
@@ -395,6 +399,7 @@ class TranslationEngine:
     def terminology_files(self, source):
         """Read-only scope for reviewing literal terms, not translation coverage."""
         from util.project_preparation import rpgmaker_layout
+
         from dazedtl.translation.files import project_path
 
         root = Path(source).resolve()
@@ -441,9 +446,9 @@ class TranslationEngine:
         )
 
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
-        from util.project_preparation import prepare_rpgmaker
-        from util.len_translation import setup_forge
         from desktop.backend.cli_environment import public_values
+        from util.len_translation import setup_forge
+        from util.project_preparation import prepare_rpgmaker
 
         values = public_values(self.profile)
         path = self.profile / "translation-public-settings.env"
@@ -471,6 +476,7 @@ class TranslationEngine:
 
     def write_rpgmaker(self, source, translated, output):
         from util.len_originals import write_rpgmaker_json
+
         from dazedtl.translation.files import read_json
 
         read_json(source)
@@ -482,6 +488,7 @@ class TranslationEngine:
     ):
         from util.len_originals import preserve_originals
         from util.version_update.git_workflow import _run_git
+
         from dazedtl.translation.files import read_json
 
         root, source, output = Path(root), Path(source), Path(output)
@@ -597,7 +604,7 @@ class TranslationEngine:
             )
 
     def commit(self, source, message):
-        from util.version_update.git_workflow import _run_git, _TOOL_NAME, _TOOL_EMAIL
+        from util.version_update.git_workflow import _TOOL_EMAIL, _TOOL_NAME, _run_git
 
         if (
             not isinstance(message, str)
@@ -622,10 +629,11 @@ class TranslationEngine:
         return _run_git(Path(source), "rev-parse", "HEAD").stdout.strip()
 
     def package(self, source, options, manifest, destination):
-        from util.len_patch_scope import patch_manifest
-        from util.version_update.git_workflow import _run_git
-        from util.release_package import _release_patch_sha, ReleasePackageError
         import zipfile
+
+        from util.len_patch_scope import patch_manifest
+        from util.release_package import ReleasePackageError, _release_patch_sha
+        from util.version_update.git_workflow import _run_git
 
         source = Path(source)
         status = self.git_status(source, options)
@@ -796,9 +804,11 @@ class TranslationProvider:
 
     @provider_errors
     def live(self, params):
-        from util.batch_providers import execute_live_request
         from types import SimpleNamespace
-        from dazedtl.translation.refusals import refused, refusal_reason
+
+        from util.batch_providers import execute_live_request
+
+        from dazedtl.translation.refusals import refusal_reason, refused
 
         responses = []
 

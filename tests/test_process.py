@@ -1,20 +1,19 @@
 """Hermetic process evidence and state response mapping, without providers."""
 
-from copy import deepcopy
 import json
 import threading
+import unittest
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
-from types import ModuleType
-import unittest
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
-from dazedtl.compatibility import state_requests, process_view, request_scope
+from dazedtl.compatibility import process_view, request_scope, state_requests
 from dazedtl.compatibility.run_evidence import Evidence, keep_aligned_partial_results
+from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
-from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):

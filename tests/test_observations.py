@@ -1,17 +1,17 @@
 """Warm history must stay cheap without hiding changed ownership or receipts."""
 
-from copy import deepcopy
 import os
-from pathlib import Path
 import sqlite3
+import unittest
+from copy import deepcopy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
+from dazedtl.compatibility import process_view
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.observations import RunObservations
-from dazedtl.compatibility import process_view
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest

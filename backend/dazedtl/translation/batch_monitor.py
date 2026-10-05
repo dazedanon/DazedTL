@@ -1,9 +1,9 @@
 """Collect saved Batches and their frozen, bounded clarification allowance."""
 
+import threading
 from contextlib import contextmanager
 from copy import deepcopy
-from datetime import datetime, timezone
-import threading
+from datetime import UTC, datetime
 
 from dazedtl.compatibility import batch_control
 from dazedtl.compatibility.batch_continuation import BatchContinuationError
@@ -223,7 +223,7 @@ class BatchMonitor:
                     "state": "monitoring" if pending else "collecting",
                     "message": "",
                     "batches": observed,
-                    "checkedAt": datetime.now(timezone.utc).isoformat(),
+                    "checkedAt": datetime.now(UTC).isoformat(),
                 }
             if pending:
                 return

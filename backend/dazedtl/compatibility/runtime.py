@@ -1,8 +1,7 @@
 """Locate the engine shipped with DazedTL, independently of cwd and environment."""
 
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 ENGINE_ROOT = Path(__file__).resolve().parents[1] / "engine"
 

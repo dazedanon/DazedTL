@@ -1,9 +1,9 @@
 """Game identity and translation method, independent of the visible screen."""
 
-from copy import deepcopy
-from datetime import datetime, timezone
-from pathlib import Path
 import uuid
+from copy import deepcopy
+from datetime import UTC, datetime
+from pathlib import Path
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
@@ -137,7 +137,7 @@ class Projects:
         return self._select(data, self._get(data, project_id))
 
     def _select(self, data, project):
-        project["last_opened"] = datetime.now(timezone.utc).isoformat()
+        project["last_opened"] = datetime.now(UTC).isoformat()
         data["current_id"] = project["id"]
         data["screen"] = "overview"
         self._commit(data)

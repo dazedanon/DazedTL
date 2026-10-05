@@ -1,13 +1,13 @@
 """Bounded local diagnostics containing metadata and code locations, never payloads."""
 
-from datetime import datetime, timezone
 import json
 import logging
 import platform
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
 import sys
 import traceback
+from datetime import UTC, datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 
 class Diagnostics:
@@ -40,7 +40,7 @@ class Diagnostics:
             self.logger.info(
                 json.dumps(
                     {
-                        "time": datetime.now(timezone.utc).isoformat(),
+                        "time": datetime.now(UTC).isoformat(),
                         "event": event,
                         **fields,
                     }

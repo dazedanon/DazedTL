@@ -1,13 +1,13 @@
 """Incremental disk index. Responses never materialize the entire image library."""
 
+import hashlib
+import json
+import sqlite3
+import warnings
 from collections import OrderedDict
 from contextlib import contextmanager
 from io import BytesIO
-import hashlib
-import json
 from pathlib import Path
-import sqlite3
-import warnings
 
 from dazedtl.translation.files import project_path
 

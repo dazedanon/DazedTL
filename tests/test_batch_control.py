@@ -1,8 +1,8 @@
 """Cancel and partial-result recovery must never destroy receipts or resubmit."""
 
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import batch_control, process_view, request_scope

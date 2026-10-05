@@ -1,15 +1,20 @@
 """Transport-independent acceptance, submission journaling, and safe resume."""
 
 from dazedtl.storage import write_json
+
 from .files import read_json
-from .results import Results
+from .refusals import (
+    MESSAGE as REFUSAL_MESSAGE,
+)
 from .refusals import (
     POLICY as REFUSAL_POLICY,
-    MESSAGE as REFUSAL_MESSAGE,
-    clarified,
+)
+from .refusals import (
     clarifiable,
+    clarified,
     refused,
 )
+from .results import Results
 
 
 class Runner:
@@ -393,6 +398,7 @@ class Runner:
                 and not cancel
             ):
                 from contextlib import contextmanager
+
                 from .batch_refusals import advance
 
                 @contextmanager

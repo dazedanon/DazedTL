@@ -4,25 +4,25 @@ import argparse
 import json
 import os
 import platform
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
-from dazedtl.projects.store import Projects
-from dazedtl.storage import WorkspaceLock
-from dazedtl.diagnostics import Diagnostics
-from dazedtl.settings.store import Settings
-from dazedtl.translation.guided import Guided
-from dazedtl.translation.service import Translation
 from dazedtl.compatibility.translation import TranslationEngine
-from dazedtl.api.local import LocalAPI
+from dazedtl.diagnostics import Diagnostics
 from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
 from dazedtl.plugins import PluginService
+from dazedtl.projects.store import Projects
+from dazedtl.settings.store import Settings
+from dazedtl.storage import WorkspaceLock
+from dazedtl.translation.guided import Guided
+from dazedtl.translation.service import Translation
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views

@@ -1,11 +1,11 @@
 """Persist estimate identity and scope-specific state beside frozen native runs."""
 
-from pathlib import Path
-from contextlib import closing
 import json
 import re
+from contextlib import closing
 
 from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json
 
 PHASES = ("database", "dialogue", "advanced", "variables")
@@ -189,7 +189,7 @@ class GuidedRuns:
 
     def _name_reuse(self, native, language):
         from dazedtl.compatibility.preparations import temporary
-        from dazedtl.compatibility.speaker_results import reusable, RECEIPT
+        from dazedtl.compatibility.speaker_results import RECEIPT, reusable
 
         if not language:
             return []

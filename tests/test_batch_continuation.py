@@ -1,14 +1,14 @@
 """Approved remainder recovery must neither strand work nor duplicate payment."""
 
-from copy import deepcopy
-from contextlib import closing, nullcontext
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from types import ModuleType, SimpleNamespace
 import json
 import sqlite3
 import sys
 import unittest
+from contextlib import closing, nullcontext
+from copy import deepcopy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import batch_continuation as continuation
@@ -325,7 +325,7 @@ class BatchContinuationTests(unittest.TestCase):
                 batch_refusals.effective_results(
                     root, {}, {"one": {"text": "different"}}
                 )
-            from dazedtl.compatibility.batch_evidence import preserve, ARCHIVE
+            from dazedtl.compatibility.batch_evidence import ARCHIVE, preserve
 
             write_json(
                 root / "log/batch_history.json",

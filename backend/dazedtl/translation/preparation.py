@@ -4,6 +4,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json
 
 LABELS = {

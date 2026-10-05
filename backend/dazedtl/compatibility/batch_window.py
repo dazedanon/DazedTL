@@ -1,14 +1,15 @@
 """Fill shared OpenAI Batch capacity without changing approved requests."""
 
-from contextlib import contextmanager
-from pathlib import Path
-from urllib.parse import urlsplit
 import json
 import os
 import time
+from contextlib import contextmanager
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.files import digest, project_path
+
 from .batch_continuation import JOURNAL, validate_submission_records
 from .batch_control import TERMINAL
 from .process_view import queue, saved

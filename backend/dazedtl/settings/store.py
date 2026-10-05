@@ -1,14 +1,15 @@
 """Atomic preferences and profiles; saved secrets are never returned to the UI."""
 
-from copy import deepcopy
 import json
-from pathlib import Path
 import time
 import uuid
+from copy import deepcopy
+from pathlib import Path
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
-from . import providers, preferences, openrouter
+
+from . import openrouter, preferences, providers
 
 
 class Settings:

@@ -1,13 +1,13 @@
 """Project-owned estimates and paid approvals for the optional native image editor."""
 
-from datetime import datetime, timezone
-from pathlib import Path
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from dazedtl.api.views import job as public_job
 from dazedtl.compatibility import image_translation as native
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest, read_json, project_path
+from dazedtl.translation.files import digest, project_path, read_json
 
 
 class ImageNativeTranslation:
@@ -272,7 +272,7 @@ class ImageNativeTranslation:
                 "approved": approved,
                 "estimate": estimate,
                 "mode": preview["mode"],
-                "created": datetime.now(timezone.utc).isoformat(),
+                "created": datetime.now(UTC).isoformat(),
             }
             self._write(project_id, records)
             self.backend.manual.resume(job["id"])

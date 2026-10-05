@@ -1,10 +1,11 @@
 """Preparation must retain completed stages without letting failures create a baseline."""
 
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import json
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
 from dazedtl.compatibility.formatting import format_json_files, format_plugins_js
 from dazedtl.storage import write_json
 from dazedtl.translation import preparation
@@ -19,9 +20,7 @@ class PreparationTests(unittest.TestCase):
             "utf-8"
         )
         expected_plugins = (
-            'var $plugins = [{\n  "name": "薬",\n  "status": true\n}];\n'.encode(
-                "utf-8"
-            )
+            'var $plugins = [{\n  "name": "薬",\n  "status": true\n}];\n'.encode()
         )
         with TemporaryDirectory() as directory:
             root = Path(directory)

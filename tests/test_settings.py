@@ -1,20 +1,19 @@
 """Per-model limits stay with their connection and the approved run."""
 
-from copy import deepcopy
 import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from types import ModuleType, SimpleNamespace
 import sys
 import threading
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 import httpx
-
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.translation import TranslationEngine
-from dazedtl.settings import preferences, providers, openrouter
+from dazedtl.settings import openrouter, preferences, providers
 from dazedtl.settings.execution import configuration, worker_secret
 from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json

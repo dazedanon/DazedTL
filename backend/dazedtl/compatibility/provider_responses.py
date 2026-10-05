@@ -1,11 +1,11 @@
 """Retain provider failure bodies and refusal metadata for inspection."""
 
-from functools import wraps
 import json
 import re
+from functools import wraps
 from types import SimpleNamespace
 
-from dazedtl.translation.refusals import refused, refusal_reason
+from dazedtl.translation.refusals import refusal_reason, refused
 
 
 def error_evidence(error, secret=""):
@@ -108,7 +108,7 @@ def sanitized_body(body, secret=""):
 
 
 def install():
-    from util import batch_providers, batch_history
+    from util import batch_history, batch_providers
 
     if getattr(batch_providers._openai_result, "_dazedtl_refusals", False):
         return

@@ -1,32 +1,32 @@
 """A small project goes from source-bound plans to reusable accepted work."""
 
-from copy import deepcopy
 import json
-from pathlib import Path
 import shutil
+import unittest
+from copy import deepcopy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
 from dazedtl.projects.store import Projects
+from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
-from dazedtl.settings.execution import worker_secret, configuration, connection_summary
 from dazedtl.storage import write_json
-from dazedtl.translation.backups import snapshot, materialized, store_path
-from dazedtl.translation.files import digest, read_json, evidence
+from dazedtl.translation import delivery
+from dazedtl.translation.backups import materialized, snapshot, store_path
+from dazedtl.translation.compilation import compile_requests
+from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.operations import (
-    lifecycle_path,
-    require_baseline,
     execute,
     lifecycle,
+    lifecycle_path,
+    require_baseline,
     verify_guided_review,
 )
-from dazedtl.translation.project import ProjectWorkspace, DEFAULTS, WORK, scope
-from dazedtl.translation.compilation import compile_requests
+from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
 from dazedtl.translation.service import Translation
-from dazedtl.translation import delivery
 
 
 class Engine:

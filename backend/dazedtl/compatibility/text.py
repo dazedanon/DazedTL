@@ -1,13 +1,13 @@
 """Preserved fitting and QA validators, with app-owned runtime publication."""
 
-from pathlib import Path
 import difflib
 import shutil
 import tempfile
+from pathlib import Path
 
 from dazedtl.storage import write_json
-from dazedtl.translation.files import decode_json, digest, read_json, project_path
 from dazedtl.translation import publication
+from dazedtl.translation.files import decode_json, digest, project_path, read_json
 
 
 def binding(plan):

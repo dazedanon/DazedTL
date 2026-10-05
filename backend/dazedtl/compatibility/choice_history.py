@@ -1,10 +1,11 @@
 """Identify unused second-pass choice responses in older consumed MV/MZ runs."""
 
+import json
 from collections import Counter, defaultdict
 from functools import lru_cache
-import json
 
 from dazedtl.translation.files import project_path, read_json
+
 from .process_view import _read_cached, _verified_digest, file_stamp
 
 

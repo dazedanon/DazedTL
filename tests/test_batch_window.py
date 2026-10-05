@@ -1,11 +1,11 @@
 """Use the available token pool, not a one-provider-job gate."""
 
+import threading
+import unittest
 from contextlib import nullcontext
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import threading
-import unittest
 from unittest.mock import Mock
 
 from dazedtl.compatibility.batch_window import (

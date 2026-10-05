@@ -1,7 +1,7 @@
 """Use frozen absolute Batch rates without changing native parser accounting."""
 
-from functools import wraps
 import sys
+from functools import wraps
 
 
 def batch_cost(policy, regular, output, reads=0, writes=0):

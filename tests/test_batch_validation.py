@@ -1,10 +1,10 @@
 """Consumed validation receipts settle only the requests they actually prove."""
 
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 
 from dazedtl.compatibility import process_view, request_scope
 from dazedtl.compatibility.batch_validation import install, recorded_outcomes

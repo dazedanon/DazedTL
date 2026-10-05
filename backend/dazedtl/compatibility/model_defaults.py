@@ -1,12 +1,12 @@
 """Bounded, cached access to the preserved engine's pricing defaults."""
 
-from copy import deepcopy
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
+from copy import deepcopy
+from pathlib import Path
 
 from dazedtl.settings.preferences import text
 

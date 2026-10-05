@@ -1,10 +1,9 @@
 """Unapproved scratch files must disappear without losing any approved request."""
 
-import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import threading
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from dazedtl.compatibility.manual import manual_jobs
@@ -75,11 +74,13 @@ class ManualJobs:
             with self.assertRaises(ValueError):
                 controller.answer("approved", "foreign-token", True)
             self.assertNotIn("dazedtl_approved", job)
-            with patch.object(
-                child, "save", side_effect=OSError("fixture write failure")
+            with (
+                patch.object(
+                    child, "save", side_effect=OSError("fixture write failure")
+                ),
+                self.assertRaises(OSError),
             ):
-                with self.assertRaises(OSError):
-                    controller.answer("approved", "approved", True)
+                controller.answer("approved", "approved", True)
             self.assertNotIn("dazedtl_approved", job)
             self.assertFalse(hasattr(child, "sent"))
             controller.answer("approved", "approved", True)

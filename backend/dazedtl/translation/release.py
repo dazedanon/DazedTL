@@ -1,17 +1,16 @@
 """Package destinations and publication checks shared by Guided release workers."""
 
-from datetime import datetime, timezone
-from contextlib import closing
 import hashlib
+import json
 import os
-from pathlib import Path
 import re
 import sqlite3
-import json
 import zipfile
+from contextlib import closing
+from datetime import UTC, datetime
+from pathlib import Path
 
 from .files import evidence, project_path, read_json
-
 
 _PRIVATE_DIRS = {
     ".git",
@@ -352,5 +351,5 @@ def publish(staged, output, expected, *, stopped=lambda: False):
         "path": str(output),
         "size": identity[2],
         "stamp": identity,
-        "saved": datetime.now(timezone.utc).isoformat(),
+        "saved": datetime.now(UTC).isoformat(),
     }

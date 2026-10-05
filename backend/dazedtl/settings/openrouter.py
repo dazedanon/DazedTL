@@ -5,11 +5,11 @@ resolves compatible Batch endpoints; estimate preparation can resolve Live price
 Observations only read cached metadata.
 """
 
-from datetime import datetime, timezone
-from decimal import Decimal, DecimalException
 import json
 import math
 import time
+from datetime import UTC, datetime
+from decimal import Decimal, DecimalException
 from urllib.parse import quote
 
 import httpx
@@ -168,9 +168,7 @@ def describe(connection, model):
     try:
         stale = (
             not stamp
-            or (
-                datetime.now(timezone.utc) - datetime.fromisoformat(stamp)
-            ).total_seconds()
+            or (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
             > 86400
         )
     except (ValueError, TypeError):
@@ -265,7 +263,7 @@ def live_prices(model, host=""):
             },
             "maxOutputTokens": output_limit,
             "source": "catalog",
-            "updatedAt": datetime.now(timezone.utc).isoformat(),
+            "updatedAt": datetime.now(UTC).isoformat(),
             "stale": False,
         }
     except httpx.HTTPError:
@@ -280,25 +278,27 @@ def _endpoint_rows(model, secret):
         + quote(model + ":batch", safe="/:")
         + "/endpoints"
     )
-    with httpx.Client(timeout=3, follow_redirects=False) as client:
-        with client.stream(
+    with (
+        httpx.Client(timeout=3, follow_redirects=False) as client,
+        client.stream(
             "GET",
             url,
             headers={
                 "Authorization": "Bearer " + secret,
                 "Accept-Encoding": "identity",
             },
-        ) as response:
-            if response.status_code == 404:
-                return []
-            response.raise_for_status()
-            started, content = time.monotonic(), bytearray()
-            for part in response.iter_bytes(65536):
-                content.extend(part)
-                if len(content) > 2_000_000 or time.monotonic() - started > 5:
-                    raise ValueError(
-                        "OpenRouter endpoint metadata exceeded its read limit."
-                    )
+        ) as response,
+    ):
+        if response.status_code == 404:
+            return []
+        response.raise_for_status()
+        started, content = time.monotonic(), bytearray()
+        for part in response.iter_bytes(65536):
+            content.extend(part)
+            if len(content) > 2_000_000 or time.monotonic() - started > 5:
+                raise ValueError(
+                    "OpenRouter endpoint metadata exceeded its read limit."
+                )
     payload = json.loads(content)
     data = payload.get("data") if isinstance(payload, dict) else None
     if (

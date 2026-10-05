@@ -1,13 +1,14 @@
 """Preparation and delivery compose preserved engine operations with backups."""
 
-from pathlib import Path
-from contextlib import contextmanager, ExitStack
 import tempfile
 import uuid
+from contextlib import ExitStack, contextmanager
+from pathlib import Path
 
 from dazedtl.storage import write_json
+
 from . import backups
-from .files import read_json, project_path, digest, evidence, verify_evidence
+from .files import digest, evidence, project_path, read_json, verify_evidence
 
 
 def verify_guided_review(source, state, workspace=None, engine=None):
@@ -248,9 +249,11 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         from .guided_inputs import original_bindings
         from .release import (
             destination as release_destination,
+        )
+        from .release import (
+            git_identity,
             output_hash,
             publish,
-            git_identity,
         )
 
         initial_git = require_baseline(engine, source, options, state)

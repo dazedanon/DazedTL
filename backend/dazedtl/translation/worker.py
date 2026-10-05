@@ -3,23 +3,23 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from dazedtl.storage import write_json, WorkspaceLock, WorkspaceError
 from dazedtl.compatibility.translation import TranslationEngine, TranslationProvider
 from dazedtl.settings.execution import worker_secret
-from dazedtl.translation.jobs import RunStore
-from dazedtl.translation.runner import Runner
-from dazedtl.translation.project import ProjectWorkspace, WORK, scope
-from dazedtl.translation.files import project_path, read_json, verify_evidence
-from dazedtl.translation.results import Results
-from dazedtl.translation.operations import execute, require_baseline, lifecycle
-from dazedtl.translation.ownership import alive
+from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.compilation import verify_compilation
+from dazedtl.translation.files import project_path, read_json, verify_evidence
+from dazedtl.translation.jobs import RunStore
+from dazedtl.translation.operations import execute, lifecycle, require_baseline
+from dazedtl.translation.ownership import alive
+from dazedtl.translation.project import WORK, ProjectWorkspace, scope
+from dazedtl.translation.results import Results
+from dazedtl.translation.runner import Runner
 
 
 def run(workspace, identity, owner_pid, owner_token):

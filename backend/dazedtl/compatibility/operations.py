@@ -1,9 +1,9 @@
 """Retain operation recovery while launching the app's compatibility worker."""
 
 import importlib.util
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 

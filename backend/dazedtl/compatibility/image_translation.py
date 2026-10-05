@@ -1,7 +1,5 @@
 """Run the preserved Image Text module through its normal isolated job owner."""
 
-from pathlib import Path
-
 from dazedtl.storage import write_bytes
 from dazedtl.translation.files import digest, read_json
 

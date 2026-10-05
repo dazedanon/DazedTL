@@ -1,9 +1,9 @@
 """Choice collection must not repeat a physical menu during the write pass."""
 
-from copy import deepcopy
 import threading
-from types import SimpleNamespace
 import unittest
+from copy import deepcopy
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.compatibility.choice_requests import configure

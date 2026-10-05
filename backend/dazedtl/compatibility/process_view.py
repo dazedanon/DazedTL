@@ -1,14 +1,14 @@
 """Read-only, project-owned process evidence and exact retained payloads."""
 
-from functools import lru_cache
-from contextlib import closing
 import json
 import math
-from pathlib import Path
 import re
 import sqlite3
+from contextlib import closing
+from functools import lru_cache
+from pathlib import Path
 
-from dazedtl.translation.files import digest, read_json, project_path
+from dazedtl.translation.files import digest, project_path, read_json
 
 
 @lru_cache(maxsize=8)
@@ -1115,8 +1115,9 @@ def payload(root, index):
             row.get("error") or error,
         )
         value["unused"] = row.get("unused")
+        from dazedtl.translation.refusals import MESSAGE, refused
+
         from .batch_refusals import records as clarification_records
-        from dazedtl.translation.refusals import refused, MESSAGE
 
         attempts, responses = [], []
         for record in clarification_records(evidence_root(root), details=True):

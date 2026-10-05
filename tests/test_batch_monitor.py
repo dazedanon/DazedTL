@@ -1,13 +1,12 @@
 """Automatic reads/collection cannot resume unsent work or hold the API lock."""
 
-from copy import deepcopy
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from types import SimpleNamespace
-from types import ModuleType
 import sys
 import threading
 import unittest
+from copy import deepcopy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import batch_control
@@ -129,8 +128,8 @@ class BatchMonitorTests(unittest.TestCase):
         # Batch and retain its receipt across app restart, without a Live fallback.
         # A second refusal must stay visible in the inspector even though native
         # consume receives an empty body to prevent accepting it as dialogue.
-        from dazedtl.translation.refusals import POLICY, CLARIFICATION
         from dazedtl.compatibility.process_view import batch_results, payload, summary
+        from dazedtl.translation.refusals import CLARIFICATION, POLICY
 
         for retry_text in (
             '{"Line1":"Potion"}',

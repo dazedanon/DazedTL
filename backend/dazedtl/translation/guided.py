@@ -1,21 +1,20 @@
 """User-driven RPG Maker workflow over preserved engines and shared project services."""
 
-from copy import deepcopy
-from pathlib import Path
 import re
 import shlex
 import sys
 import uuid
+from copy import deepcopy
+from pathlib import Path
 
 from dazedtl.storage import write_json
-from .files import read_json, project_path, evidence, verify_evidence
-from .operations import lifecycle, require_source_backup, verify_guided_review
+
+from . import backups, context_setup, preparation, reference_folders, speaker_setup
+from .event_text import EventText
+from .files import digest, evidence, project_path, read_json, verify_evidence
 from .guided_inputs import GuidedInputs
 from .guided_runs import GuidedRuns
-from .event_text import EventText
-from .files import digest
-from . import backups
-from . import speaker_setup, preparation, context_setup, reference_folders
+from .operations import lifecycle, require_source_backup, verify_guided_review
 
 STEPS = {
     "prepare",
@@ -583,8 +582,10 @@ class Guided:
                 (root / "plan.json").read_bytes()
             ):
                 from dazedtl.compatibility.checkpoints import (
-                    outputs as checkpoint_outputs,
                     can_collect_outputs,
+                )
+                from dazedtl.compatibility.checkpoints import (
+                    outputs as checkpoint_outputs,
                 )
 
                 job["outputs"] = {
@@ -914,7 +915,7 @@ class Guided:
             or run_id not in self.backend.manual.jobs
         ):
             raise ValueError("Choose a Batch belonging to this project.")
-        from dazedtl.compatibility.batch_control import receipt, binding, can_cancel
+        from dazedtl.compatibility.batch_control import binding, can_cancel, receipt
 
         batch = receipt(self.backend.manual.folder(run_id), batch_id)
         if not can_cancel(batch["provider"]):
@@ -1704,7 +1705,7 @@ class Guided:
                 manifest = self.patch_manifest(project_id, paths, action)
                 expected = evidence(project["source"], [*paths, *manifest["inputs"]])
             if action == "release_patch":
-                from .release import destination, output_hash, git_identity
+                from .release import destination, git_identity, output_hash
 
                 output = destination(
                     project["source"],

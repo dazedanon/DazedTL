@@ -5,15 +5,16 @@ cannot identify which other requests were accepted. Per-response receipts
 retain that distinction without revalidating, changing grouping or sending work.
 """
 
+import json
+import re
+import threading
 from collections import Counter
 from contextlib import closing
 from functools import lru_cache, wraps
 from inspect import signature
-import json
-import re
-import threading
 
 from dazedtl.translation.files import digest
+
 from .process_view import (
     batch_state,
     consumed_files,
@@ -223,7 +224,7 @@ def records(path, stamp, entries):
     if path.name == "translation.txt":
         marker = re.compile(
             r"^\[(BATCH|CACHE)\] Applied (?:provider batch result|cached translation \(no new API call\))\nInput:\n",
-            re.M,
+            re.MULTILINE,
         )
         offset = 0
         while match := marker.search(text, offset):
@@ -249,7 +250,7 @@ def records(path, stamp, entries):
     else:
         marker = re.compile(
             r"^Validation mismatch: ([^\n]+)\nOriginal text kept after \d+ attempts\.\nInput:\n",
-            re.M,
+            re.MULTILINE,
         )
         offset = 0
         while match := marker.search(text, offset):

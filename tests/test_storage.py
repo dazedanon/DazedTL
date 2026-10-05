@@ -1,9 +1,9 @@
 """Regression coverage for retaining recoverable state during storage failures."""
 
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 from unittest.mock import patch
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_bytes, write_json

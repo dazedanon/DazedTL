@@ -1,10 +1,10 @@
 """Optional native image editing, scoped to prepared copies and retained per project."""
 
+import json
+import math
 from contextlib import nullcontext
 from copy import deepcopy
 from pathlib import Path
-import math
-import json
 
 from dazedtl.compatibility import image_editor as native
 from dazedtl.storage import write_json

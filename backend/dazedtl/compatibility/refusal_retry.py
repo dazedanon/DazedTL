@@ -1,13 +1,13 @@
 """One durable clarification allowance for a guided Live translation request."""
 
-from inspect import signature
 import json
+from inspect import signature
 from types import SimpleNamespace
 
 from dazedtl.translation.files import digest
-from dazedtl.translation.refusals import MESSAGE, clarified, clarifiable, field, refused
-from .process_view import source_values
+from dazedtl.translation.refusals import MESSAGE, clarifiable, clarified, field, refused
 
+from .process_view import source_values
 
 USAGE = (
     "prompt_tokens",

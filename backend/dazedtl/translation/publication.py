@@ -1,12 +1,13 @@
 """Frozen, reviewed text publication with durable backups and guarded recovery."""
 
-from pathlib import Path
 import json
 import time
 import uuid
+from pathlib import Path
 
 from dazedtl.storage import write_bytes, write_json
-from .files import digest, read_json, project_path
+
+from .files import digest, project_path, read_json
 
 
 def records(folder):

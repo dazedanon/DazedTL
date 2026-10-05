@@ -2,21 +2,21 @@
 
 import json
 import os
-from pathlib import Path
 import shlex
 import sys
+from pathlib import Path
 
-from dazedtl.storage import write_json, write_bytes
 from dazedtl.settings.execution import configuration, connection_summary
-from .files import digest, read_json, project_path, evidence, verify_evidence
-from .project import ProjectWorkspace, WORK, options, scope
-from .requests import plan_input, quote
-from .compilation import compile_requests, verify_compilation
-from .results import Results
-from .operations import lifecycle, require_baseline
-from .jobs import Jobs
-from . import delivery, backups
+from dazedtl.storage import write_bytes, write_json
 
+from . import backups, delivery
+from .compilation import compile_requests, verify_compilation
+from .files import digest, evidence, project_path, read_json, verify_evidence
+from .jobs import Jobs
+from .operations import lifecycle, require_baseline
+from .project import WORK, ProjectWorkspace, options, scope
+from .requests import plan_input, quote
+from .results import Results
 
 OPERATIONS = {
     "backup_source": ("Preserve source game", set()),

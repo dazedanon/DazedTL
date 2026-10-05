@@ -1,14 +1,13 @@
 """An offline startup and parser probe using only a generated miniature game."""
 
 import json
-from copy import deepcopy
 import os
-from pathlib import Path
 import socket
 import sys
+from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend"))
@@ -48,9 +47,9 @@ try:
     assert app.state()["project"] is None
     assert app.backend.source == ENGINE_ROOT
     with app.backend.context():
-        from util.paths import PROMPT_PATH, runtime_data_file
-        from util.skills import load_system_prompt, load_project_setup
         from desktop.backend.manual import signature
+        from util.paths import PROMPT_PATH, runtime_data_file
+        from util.skills import load_project_setup, load_system_prompt
 
         # A real saved run's pre-relocation signature must still pass the native
         # resume guard. Updating engine behavior needs its own recovery decision.
@@ -108,9 +107,9 @@ try:
                 for key, value in run_settings.items()
             }
         )
-        from modules import rpgmakermvmz as parser
         from dazedtl.compatibility.worker_policy import configure_states
         from dazedtl.settings.preferences import CHOICE_COLLECTION, SPEAKER_CONTEXT
+        from modules import rpgmakermvmz as parser
 
         def command(code, parameters, **extra):
             return {"code": code, "indent": 0, "parameters": parameters, **extra}
@@ -253,18 +252,18 @@ try:
     # chunk, and another success. Keep every body and only its own validation;
     # refusal loops must preserve source without making more provider calls.
     with app.backend.context():
-        from util import translation
-        from util.batch_providers import detect_batch_provider
+        from unittest.mock import Mock
 
         # A schema-rejecting API must never cause a second, weaker request.
         # Exercise the real native fallback and the DeepSeek builder exception
         # in this existing offline process, including restoration for old runs.
         import httpx
-        from openai import BadRequestError
-        from unittest.mock import Mock
         from dazedtl.compatibility import structured_outputs
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
+        from openai import BadRequestError
+        from util import translation
+        from util.batch_providers import detect_batch_provider
 
         original_call_code = translation.translateText.__code__
         with patch.dict(
@@ -430,15 +429,15 @@ try:
         # installed inline adapter, including aliases already bound by history.
         # Reuse this offline process instead of paying another startup cost.
         import httpx
-        from util import batch_history, batch_providers
         from dazedtl.compatibility import openrouter_batch, openrouter_pricing
-        from dazedtl.settings.openrouter import TRANSPORT, STRUCTURED_OUTPUTS
-        from dazedtl.compatibility.request_parameters import batch_routing
-        from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.compatibility.batch_evidence import (
             install as retain_batch_evidence,
         )
         from dazedtl.compatibility.process_view import payload
+        from dazedtl.compatibility.request_parameters import batch_routing
+        from dazedtl.compatibility.run_evidence import Evidence
+        from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT
+        from util import batch_history, batch_providers
 
         router_root = temporary / "router-batch"
         router_root.mkdir()
@@ -709,9 +708,9 @@ try:
                 assert usage["openrouter_cost"] == 0.001 and len(sent_batches) == 3
             finally:
                 provider.client.close()
-        from dazedtl.compatibility.run_evidence import Evidence
+        from dazedtl.compatibility.process_view import payload, source_values, summary
         from dazedtl.compatibility.request_parameters import configure_builders
-        from dazedtl.compatibility.process_view import source_values, payload, summary
+        from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
 
         live_root = temporary / "live"
@@ -823,7 +822,7 @@ try:
     # Structured refusals survive the real native normalizers, including empty
     # bodies; otherwise they are indistinguishable from generic parse failures.
     from dazedtl.compatibility.provider_responses import install as retain_refusals
-    from util import batch_providers, batch_history
+    from util import batch_history, batch_providers
 
     retain_refusals()
     refusal, error = batch_providers._openai_result(

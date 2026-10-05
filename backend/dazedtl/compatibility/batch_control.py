@@ -5,7 +5,8 @@ from copy import deepcopy
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
-from .process_view import saved, evidence_root, queue, batch_results
+
+from .process_view import batch_results, evidence_root, queue, saved
 from .translation import TranslationProvider
 
 TERMINAL = {"completed", "ended", "failed", "expired", "cancelled", "canceled"}

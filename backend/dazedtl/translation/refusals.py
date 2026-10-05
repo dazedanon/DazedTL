@@ -1,9 +1,8 @@
 """Recognize provider refusals without treating ordinary character dialogue as one."""
 
-from copy import deepcopy
 import json
 import re
-
+from copy import deepcopy
 
 POLICY = "fiction-clarification-once-v1"
 CLARIFICATION = (

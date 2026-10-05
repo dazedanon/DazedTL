@@ -1,12 +1,11 @@
 """Retained investigation and explicit review around the preserved event-text phases."""
 
-from copy import deepcopy
 import json
-from pathlib import Path
-import re
 import uuid
+from pathlib import Path
 
 from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json
 
 CODES = (

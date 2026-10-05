@@ -1,22 +1,21 @@
 """Inline transport, retained receipts, and absolute Batch prices without APIs."""
 
-from copy import deepcopy
 import importlib.util
 import json
-from pathlib import Path
 import sys
+import unittest
+from copy import deepcopy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
-import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import httpx
-
-from dazedtl.compatibility import openrouter_batch as batch, openrouter_pricing
+from dazedtl.compatibility import openrouter_batch as batch
+from dazedtl.compatibility import openrouter_pricing
 from dazedtl.settings import openrouter
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
-
 
 MODEL = "author/model"
 POLICY = {
@@ -149,8 +148,8 @@ class OpenRouterBatchTests(unittest.TestCase):
             # Structured Batch routing must survive serialization, and a
             # weakened format or a different endpoint must fail before POST.
             from dazedtl.compatibility.request_parameters import (
-                structured_output,
                 batch_routing,
+                structured_output,
             )
 
             client.policy = {
@@ -297,16 +296,18 @@ class OpenRouterBatchTests(unittest.TestCase):
                     "request_counts": {"total": 2, "completed": 2, "failed": 0},
                     "results": rows,
                 }
-                with batch.Client(
-                    "fixture-key",
-                    policy=POLICY,
-                    receipt_root=directory,
-                    transport=httpx.MockTransport(
-                        lambda _: httpx.Response(200, json=received)
-                    ),
-                ) as client:
-                    with self.assertRaises(batch.ResultsUnavailable):
-                        client.collect("paid", {"one": "key1", "two": "key2"})
+                with (
+                    batch.Client(
+                        "fixture-key",
+                        policy=POLICY,
+                        receipt_root=directory,
+                        transport=httpx.MockTransport(
+                            lambda _: httpx.Response(200, json=received)
+                        ),
+                    ) as client,
+                    self.assertRaises(batch.ResultsUnavailable),
+                ):
+                    client.collect("paid", {"one": "key1", "two": "key2"})
                 self.assertEqual(
                     read_json(
                         Path(directory)
@@ -327,15 +328,17 @@ class OpenRouterBatchTests(unittest.TestCase):
                 "request_counts": {"total": 2, "completed": 1, "failed": 1},
                 "results": None,
             }
-            with batch.Client(
-                "fixture-key",
-                policy=POLICY,
-                transport=httpx.MockTransport(
-                    lambda _: httpx.Response(200, json=received)
-                ),
-            ) as client:
-                with self.assertRaises(batch.ResultsUnavailable):
-                    client.collect("paid", {"one": "key1", "two": "key2"})
+            with (
+                batch.Client(
+                    "fixture-key",
+                    policy=POLICY,
+                    transport=httpx.MockTransport(
+                        lambda _: httpx.Response(200, json=received)
+                    ),
+                ) as client,
+                self.assertRaises(batch.ResultsUnavailable),
+            ):
+                client.collect("paid", {"one": "key1", "two": "key2"})
         received["request_counts"].update(completed=0, failed=2)
         with batch.Client(
             "fixture-key",
@@ -349,13 +352,15 @@ class OpenRouterBatchTests(unittest.TestCase):
                 },
                 {"one", "two"},
             )
-        with batch.Client(
-            "fixture-key",
-            policy=POLICY,
-            transport=httpx.MockTransport(lambda _: httpx.Response(410)),
-        ) as client:
-            with self.assertRaisesRegex(batch.ResultsUnavailable, "expired"):
-                client.collect("paid", {"one": "key1"})
+        with (
+            batch.Client(
+                "fixture-key",
+                policy=POLICY,
+                transport=httpx.MockTransport(lambda _: httpx.Response(410)),
+            ) as client,
+            self.assertRaisesRegex(batch.ResultsUnavailable, "expired"),
+        ):
+            client.collect("paid", {"one": "key1"})
 
     def test_quotes_and_native_file_costs_use_absolute_batch_rates_once(self):
         # Input/output discounts can differ. Neither estimates nor native

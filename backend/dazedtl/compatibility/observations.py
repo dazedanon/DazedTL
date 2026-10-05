@@ -1,12 +1,13 @@
 """Bounded display caches; execution and inspection keep their fresh readers."""
 
+import stat
 from collections import OrderedDict
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
-import stat
 
 from dazedtl.translation.files import digest
+
 from . import process_view
 
 

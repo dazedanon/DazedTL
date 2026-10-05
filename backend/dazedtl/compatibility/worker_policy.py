@@ -2,11 +2,10 @@
 
 import json
 import math
-from pathlib import Path
-import time
 import sys
+import time
+from pathlib import Path
 
-from dazedtl.storage import write_json
 from dazedtl.settings.preferences import (
     CHOICE_COLLECTION,
     GENERATION_PARAMETERS,
@@ -15,15 +14,17 @@ from dazedtl.settings.preferences import (
     output_tokens,
 )
 from dazedtl.settings.providers import infer_provider, openrouter_host
+from dazedtl.storage import write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
-from .request_parameters import configure_builders
+
 from . import (
-    state_requests,
     batch_pricing,
     choice_requests,
     speaker_context,
+    state_requests,
     structured_outputs,
 )
+from .request_parameters import configure_builders
 from .run_evidence import Evidence
 
 
@@ -89,8 +90,9 @@ def install(*, coordinator=False):
                 if original_plan.is_file() and not original_plan.is_symlink()
                 else None
             )
+        from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, validate_policy
+
         from . import openrouter_batch, openrouter_pricing
-        from dazedtl.settings.openrouter import validate_policy, STRUCTURED_OUTPUTS
 
         if policy is not None and not isinstance(policy, dict):
             raise ValueError(
@@ -106,8 +108,8 @@ def install(*, coordinator=False):
         openrouter_batch.configure(router_policy, grouping_root)
 
         def checkpoint_reader():
-            from .checkpoints import install as install_checkpoints
             from .batch_evidence import install as install_batch_evidence
+            from .checkpoints import install as install_checkpoints
             from .speaker_results import install as install_speaker_results
 
             install_checkpoints(sys.modules.get("modules.rpgmakermvmz"), root, plan)
@@ -122,7 +124,7 @@ def install(*, coordinator=False):
 
         if policy is None:
             result = native_prepare(root)
-            import util.translation as translation
+            from util import translation
 
             openrouter_pricing.configure(translation, None)
             configure_batch_allowance(translation, None)
@@ -182,7 +184,7 @@ def install(*, coordinator=False):
         # rates without fetching a catalog. Preserve native context/import ordering.
         write_json(cache, {"fetched_at": time.time(), "prices": prices})
         result = native_prepare(root)
-        import util.translation as translation
+        from util import translation
 
         openrouter_pricing.configure(translation, router_policy)
         configure_batch_allowance(translation, policy)

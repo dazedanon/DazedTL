@@ -1,9 +1,9 @@
 """Run the preserved speaker parser locally, stopping before name translation."""
 
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from pathlib import Path
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path

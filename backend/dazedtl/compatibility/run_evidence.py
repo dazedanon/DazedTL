@@ -1,16 +1,18 @@
 """Local payload and usage evidence; recording never calls a provider."""
 
-from functools import wraps
-from contextlib import contextmanager
 import json
-from inspect import signature
-from pathlib import Path
 import re
 import sqlite3
 import threading
-from .process_view import source_values
-from .request_scope import identities, columns, source_locations
+from contextlib import contextmanager
+from functools import wraps
+from inspect import signature
+from pathlib import Path
+
 from dazedtl.translation.files import digest
+
+from .process_view import source_values
+from .request_scope import columns, identities, source_locations
 
 
 def keep_aligned_partial_results(module):

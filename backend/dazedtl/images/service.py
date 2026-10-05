@@ -1,22 +1,22 @@
 """One retained image workflow shared by Guided and the standalone manager."""
 
 import base64
-from copy import deepcopy
-from datetime import datetime, timedelta, timezone
 import hashlib
-from io import BytesIO
 import json
-from pathlib import Path
 import threading
 import time
 import uuid
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
+from pathlib import Path
 
 from dazedtl.compatibility.images import ImageCompatibility
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path, read_json
 from dazedtl.translation.operations import lifecycle, require_source_backup
-from .inventory import Index, PreviewCache, inspect_row, png_metadata, sha_file
 
+from .inventory import Index, PreviewCache, inspect_row, png_metadata, sha_file
 
 WORK = ".dazedtl/image_manager/guided"
 CLASSIFICATIONS = {
@@ -43,7 +43,7 @@ VIEW = {
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def text(value, label, maximum=4000):
@@ -1604,7 +1604,7 @@ class ImageService:
             "selected": len(identities),
             "unchanged": unchanged,
             "backups": [row.get("runtimeBackup", "") for row in included],
-            "expires": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+            "expires": (datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
             "message": "If any included image fails validation, this batch is not applied.",
         }
         return {"state": self.state(project_id), "preview": preview}

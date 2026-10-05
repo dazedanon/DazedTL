@@ -2,13 +2,13 @@
 
 import os
 import re
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
-from dazedtl.translation.files import digest, read_json, project_path
 from dazedtl.storage import write_json
+from dazedtl.translation.files import digest, project_path, read_json
 
 
 def file_titles(native):
@@ -49,8 +49,8 @@ def file_titles(native):
 def tools_state(native):
     if native["engine"] != "MVMZ":
         return None
-    from util.tl_inspector import installer as inspector
     from util.forge import installer as forge
+    from util.tl_inspector import installer as inspector
 
     result = {}
     for key, module in (("inspector", inspector), ("forge", forge)):
@@ -73,7 +73,8 @@ def tools_state(native):
 
 
 def release_scope(source):
-    from util.release_package import _release_patch_sha, ReleasePackageError
+    from util.release_package import ReleasePackageError, _release_patch_sha
+
     from dazedtl.translation.release import inventory
 
     try:
@@ -85,11 +86,12 @@ def release_scope(source):
 
 def run_release(plan, log):
     from desktop.backend.workflow_actions import validate_plan
+
     from dazedtl.translation.release import (
         destination,
+        packing_state,
         publish,
         write_archive,
-        packing_state,
     )
 
     validate_plan(plan)
@@ -327,7 +329,7 @@ def phased_workflows(workspace, lock, operations, manual):
 
 
 def apply_selected(plan, log):
-    from desktop.backend.workflow_actions import validate_plan, regular
+    from desktop.backend.workflow_actions import regular, validate_plan
     from util.project_scanner import export_to_game
 
     validate_plan(plan)
@@ -399,11 +401,12 @@ def rewrap_review(backend, native_id, token):
 
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
-    from util.project_preparation import rpgmaker_layout, RPG_GAMEUPDATE_COPY_SKIP_NAMES
-    from dazedtl.translation.release import exclusion, applied_assets
-    from util.paths import PROJECT_ROOT
     from util.len_patch_scope import patch_manifest
+    from util.paths import PROJECT_ROOT
+    from util.project_preparation import RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout
     from util.version_update.git_workflow import _run_git
+
+    from dazedtl.translation.release import applied_assets, exclusion
 
     root = Path(source)
     layout = rpgmaker_layout(root)
@@ -462,8 +465,8 @@ def ace_available():
 
 def run_ace(plan, log):
     """Use bundled tools from a profile cache, never install into engine source."""
-    from util.paths import PROJECT_ROOT
     from desktop.backend.workflow_actions import validate_plan
+    from util.paths import PROJECT_ROOT
 
     validate_plan(plan)
     if not ace_available():
@@ -472,8 +475,8 @@ def run_ace(plan, log):
         )
     action = plan["action"]
     root = Path(plan["project"]["source"])
-    from dazedtl.translation.release import packing_inputs
     from dazedtl.translation.files import evidence
+    from dazedtl.translation.release import packing_inputs
 
     inputs = packing_inputs(plan["project"]) if action == "ace_pack" else None
     outputs = (

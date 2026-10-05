@@ -1,7 +1,7 @@
 """Run the native job protocol using the application's frozen model policy."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -9,8 +9,9 @@ if __name__ == "__main__":
     from dazedtl.compatibility.runtime import activate
 
     activate()
-    from dazedtl.compatibility.worker_policy import install
     from desktop.backend import manual_worker
+
+    from dazedtl.compatibility.worker_policy import install
 
     install(coordinator=True)
     # Native main resolves its per-file runner beside __file__. ROOT remains the

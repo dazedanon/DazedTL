@@ -4,11 +4,11 @@ No provider modules, hosted OCR, downloads or runtime asset replacement live her
 """
 
 from copy import deepcopy
-from importlib.util import find_spec
 from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 
-from dazedtl.storage import write_json, write_bytes
+from dazedtl.storage import write_bytes, write_json
 
 
 def local_ocr():
@@ -37,6 +37,7 @@ def local_ocr():
 @lru_cache(maxsize=1)
 def fonts():
     from util.imagetools.fonts import available_fonts, font_name
+
     from dazedtl.translation.files import digest
 
     return [
@@ -66,8 +67,9 @@ def _job(root, work, originals):
 
 def load(root, work, images):
     """Keep the native record in this project's manager workspace, not a shared file."""
-    from util.imagetools.job import ImageEntry
     import json
+
+    from util.imagetools.job import ImageEntry
 
     originals = {
         item["relative"]: Path(item["original"])
@@ -85,10 +87,10 @@ def load(root, work, images):
 
 
 def set_entry(job, value):
+    import numpy as np
+    from PIL import Image
     from util.imagetools.job import ImageEntry, apply_flags
     from util.imagetools.style import Style, measure
-    from PIL import Image
-    import numpy as np
 
     entry = ImageEntry.from_dict(value)
     with Image.open(job.source_path(entry)) as original:
@@ -118,12 +120,12 @@ def ocr(job, entry):
     status = local_ocr()
     if not status["available"]:
         raise ValueError(status["detail"])
+    import numpy as np
+    from PIL import Image
     from rapidocr_onnxruntime import RapidOCR
     from util.imagetools.geometry import Box
     from util.imagetools.ocr import Line, Reading, worth_keeping
     from util.imagetools.ocr.rapid import group_lines
-    from PIL import Image
-    import numpy as np
 
     with Image.open(job.source_path(entry)) as original:
         source = np.array(original.convert("RGBA"))
@@ -180,11 +182,12 @@ def _verify_pixels(job, entry, expected_candidate, expected_original):
 
 def render(job, entry, *, expected_candidate=None, expected_original=None):
     from io import BytesIO
-    from PIL import Image
-    from util.imagetools.render import render_entry
-    from util.imagetools.paint import load_cut, load_layer
-    from util.imagetools.style import ensure
+
     import numpy as np
+    from PIL import Image
+    from util.imagetools.paint import load_cut, load_layer
+    from util.imagetools.render import render_entry
+    from util.imagetools.style import ensure
 
     source_path = job.source_path(entry)
     _verify_pixels(job, entry, expected_candidate, expected_original)

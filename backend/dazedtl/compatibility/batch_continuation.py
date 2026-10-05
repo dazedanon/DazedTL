@@ -1,13 +1,14 @@
 """Continue an approved, unchanged queue through the original Batch runner."""
 
+import json
 from contextlib import closing
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
-import json
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
+
 from .process_view import ledger, queue, saved
 
 APPROVAL = "dazedtl_batch_approval"
@@ -158,10 +159,10 @@ def install_worker(root, plan):
     """Journal native creates without changing parsing, chunking or consume."""
     if plan.get("mode") != "batch" or plan.get("batch_link"):
         return
-    import util.translation as translation
     import util.batch_providers as providers
-    from util.translation_task import TranslationTask
+    from util import translation
     from util.batch_history import record_submit
+    from util.translation_task import TranslationTask
 
     root = Path(root)
     native = getattr(providers.submit_batch, "_dazedtl_native", providers.submit_batch)

@@ -1,22 +1,22 @@
 """Guided approvals must retain scope, ownership and one-use submission intent."""
 
-from copy import deepcopy
-from pathlib import Path
 import shutil
 import sys
+import unittest
+from copy import deepcopy
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType, SimpleNamespace
-import unittest
 from unittest.mock import Mock, patch
 
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
+from dazedtl.translation import context_setup, event_text, preparation, speaker_setup
 from dazedtl.translation.backups import snapshot, store_path
-from dazedtl.translation.files import evidence, read_json, digest
+from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
-from dazedtl.translation import speaker_setup, preparation, context_setup, event_text
 
 
 class GuidedTests(unittest.TestCase):
@@ -1069,11 +1069,12 @@ class GuidedTests(unittest.TestCase):
     def test_reapply_batch_freezes_owned_history_outputs_without_using_current_selection(
         self,
     ):
+        import sys
+        from types import ModuleType
+
         from dazedtl.compatibility.dazedmtl import ExistingBackend
         from dazedtl.compatibility.text import prepare_publication, run_publication
         from dazedtl.translation import publication
-        from types import ModuleType
-        import sys
 
         # Reapplying must never substitute the newest working copy for a chosen
         # historical run, or publish files belonging to another project.
@@ -1410,6 +1411,7 @@ class GuidedTests(unittest.TestCase):
 
     def test_reference_folders_need_no_game_format_and_stay_project_owned(self):
         import json
+
         from dazedtl.translation import reference_folders
 
         folder = self.root / 'Earlier "game" with an unfamiliar format'
@@ -2467,9 +2469,9 @@ class GuidedTests(unittest.TestCase):
     ):
         # A stopped Live call without a response used to strand the selected
         # file. Keep its uncertain receipt while allowing a separately approved run.
-        from dazedtl.compatibility.run_evidence import Evidence
-        from dazedtl.compatibility import process_view
         from dazedtl.api import views
+        from dazedtl.compatibility import process_view
+        from dazedtl.compatibility.run_evidence import Evidence
 
         identity = "stopped-live"
         root = self.backend.manual.folder(identity)

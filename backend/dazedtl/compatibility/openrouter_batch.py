@@ -1,13 +1,13 @@
 """OpenRouter's inline Batch transport behind the preserved engine boundary."""
 
-from contextlib import nullcontext
-from copy import deepcopy
-from functools import wraps
 import json
 import math
 import os
-from pathlib import Path
 import time
+from contextlib import nullcontext
+from copy import deepcopy
+from functools import wraps
+from pathlib import Path
 from urllib.parse import quote
 
 import httpx
@@ -16,7 +16,7 @@ from dazedtl.settings.openrouter import MAX_BYTES, MAX_REQUESTS, validate_policy
 from dazedtl.settings.providers import openrouter_host
 from dazedtl.storage import write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
-from dazedtl.translation.refusals import refused, refusal_reason
+from dazedtl.translation.refusals import refusal_reason, refused
 
 BASE_URL = "https://openrouter.ai/api/v1"
 TERMINAL = {"completed", "failed", "expired", "cancelled"}

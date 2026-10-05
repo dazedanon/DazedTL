@@ -1,38 +1,37 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
-from types import ModuleType
-from tempfile import TemporaryDirectory
-from types import SimpleNamespace
 import subprocess
 import sys
 import unittest
-from unittest.mock import patch, Mock
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import ModuleType, SimpleNamespace
+from unittest.mock import Mock, patch
 
-from dazedtl.compatibility.translation import (
-    TranslationEngine,
-    ProviderFailure,
-    provider_errors,
-)
-from dazedtl.translation.compilation import compile_requests
-from dazedtl.compatibility.manual import (
-    manual_jobs,
-    canceled_before_submission,
-    DECLINED_SPEAKERS,
-)
 from dazedtl.compatibility.guided import (
+    apply_selected,
+    phased_workflows,
     rewrap_review,
     run_ace,
     runtime_files,
-    apply_selected,
-    phased_workflows,
+)
+from dazedtl.compatibility.manual import (
+    DECLINED_SPEAKERS,
+    canceled_before_submission,
+    manual_jobs,
 )
 from dazedtl.compatibility.speaker_scan import collect as collect_speakers
-from dazedtl.storage import write_json
-from dazedtl.translation.files import digest
+from dazedtl.compatibility.translation import (
+    ProviderFailure,
+    TranslationEngine,
+    provider_errors,
+)
 from dazedtl.settings.preferences import GENERATION_PARAMETERS
+from dazedtl.storage import write_json
+from dazedtl.translation.compilation import compile_requests
+from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -111,6 +110,7 @@ class CompatibilityContracts(unittest.TestCase):
         # new guided Batch. Normalize before collection and Live serialization,
         # but never reinterpret the saved policy of a historical run.
         from copy import deepcopy
+
         from dazedtl.compatibility.worker_policy import install
 
         desktop, backend, environment, util, translation = (
@@ -451,8 +451,8 @@ class CompatibilityContracts(unittest.TestCase):
     ):
         # The native worker reports several failures with the same canceled message.
         # Only its explicit no-submission evidence can retire a first declined run.
-        from copy import deepcopy
         import threading
+        from copy import deepcopy
 
         with TemporaryDirectory() as temporary:
             source = Path(temporary)

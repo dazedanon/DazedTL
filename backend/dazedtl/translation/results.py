@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .files import digest, read_json, project_path, write_project_json
+from .files import digest, project_path, read_json, write_project_json
 from .project import WORK
 from .requests import result_value
 

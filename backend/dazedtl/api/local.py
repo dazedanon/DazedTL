@@ -1,12 +1,12 @@
 """Authenticated loopback access for the user's external coding assistant."""
 
 import hmac
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
-from pathlib import Path
 import secrets
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 from dazedtl.storage import write_json
 

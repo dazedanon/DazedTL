@@ -1,8 +1,9 @@
 """Frozen public execution choices and worker-only credential resolution."""
 
-from . import providers, preferences, openrouter
 from dazedtl.translation.files import read_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
+
+from . import openrouter, preferences, providers
 
 
 def connection_summary(settings):

@@ -1,25 +1,26 @@
 """Durable project-owned runs and bounded worker lifecycle."""
 
-from datetime import datetime, timezone
-import os
 import hashlib
 import hmac
-from pathlib import Path
+import os
 import re
+import secrets
 import signal
 import subprocess
 import sys
 import time
 import uuid
-import secrets
+from datetime import UTC, datetime
+from pathlib import Path
 
-from dazedtl.storage import write_json, write_bytes, WorkspaceLock, WorkspaceError
+from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
+
 from .files import digest, read_json
 from .results import Results
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class RunStore:

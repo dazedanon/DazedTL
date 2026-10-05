@@ -4,8 +4,8 @@ from .files import (
     evidence,
     project_path,
     read_json,
-    write_project_json,
     verify_evidence,
+    write_project_json,
 )
 from .project import WORK
 

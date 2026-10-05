@@ -1,9 +1,9 @@
 """Versioned MV/MZ speaker fixes without changing frozen engine signatures."""
 
 import ast
-from functools import wraps
 import inspect
 import re
+from functools import wraps
 
 
 def standalone_speaker(module, name):

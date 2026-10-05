@@ -1,10 +1,10 @@
 """Paid names must remain inspectable and reusable after declining map work."""
 
-from pathlib import Path
 import re
+import unittest
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-import unittest
 from unittest.mock import patch
 
 from dazedtl.compatibility import speaker_results

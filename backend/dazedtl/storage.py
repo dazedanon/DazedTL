@@ -1,11 +1,11 @@
 """Atomic application state in an explicitly supplied user workspace."""
 
+import hashlib
 import json
 import os
-from pathlib import Path
 import tempfile
 from copy import deepcopy
-import hashlib
+from pathlib import Path
 
 
 class WorkspaceError(ValueError):

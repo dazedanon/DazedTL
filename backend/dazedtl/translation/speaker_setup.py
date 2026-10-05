@@ -5,6 +5,7 @@ import re
 import uuid
 
 from dazedtl.storage import write_json
+
 from .files import digest, project_path, read_json
 
 REPORT = ".dazedtl/guided/speaker-findings.json"
