@@ -13,11 +13,13 @@ export function TranslationFlowDialog({
   projectId,
   flow,
   approvalCurrent,
+  executionEnabled,
   inspect,
 }: {
   projectId: string;
   flow: ReturnType<typeof useTranslationFlow>;
   approvalCurrent: boolean;
+  executionEnabled: boolean;
   inspect: (run?: string) => void;
 }) {
   const value = flow.state;
@@ -82,6 +84,7 @@ export function TranslationFlowDialog({
           }
           disabled={flow.busy}
           approvalCurrent={approvalCurrent}
+          executionEnabled={executionEnabled}
           error=""
           close={flow.cancel}
           answer={flow.answer}

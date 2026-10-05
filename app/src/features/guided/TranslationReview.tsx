@@ -102,6 +102,8 @@ type ReviewProps = {
   pendingKey: string;
   disabled: boolean;
   approvalCurrent: boolean;
+  /** False when this launch cannot contact providers; review stays inspectable. */
+  executionEnabled: boolean;
   error: string;
   close: () => void;
   answer: (approved: boolean) => void;
@@ -131,6 +133,7 @@ export function TranslationReviewContent({
   pendingKey,
   disabled,
   approvalCurrent,
+  executionEnabled,
   error,
   close,
   answer,
@@ -233,6 +236,8 @@ export function TranslationReviewContent({
           />
         )}
         <p className="translation-review-notice">
+          {!executionEnabled &&
+            "Provider execution is disabled for this launch, so this review is for inspection only. "}
           {repeatSubmission
             ? "Earlier work may include this text. Starting again may incur duplicate API charges. "
             : "Submitting incurs API charges. "}
@@ -261,7 +266,7 @@ export function TranslationReviewContent({
         <Button
           variant="primary"
           pending={busy && pendingKey === "run:answer:true"}
-          disabled={disabled || !approvalCurrent}
+          disabled={disabled || !approvalCurrent || !executionEnabled}
           onClick={() => answer(true)}
         >
           {preview

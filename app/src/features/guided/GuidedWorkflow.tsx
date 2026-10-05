@@ -2025,7 +2025,6 @@ function Workspace({
               disabled ||
               prerequisites ||
               !state.provider.ready ||
-              !state.provider.enabled ||
               !paidModeReady
             }
             onClick={translateSelected}
@@ -4495,6 +4494,7 @@ function Workspace({
       <TranslationFlowDialog
         projectId={project.id}
         flow={translationFlow}
+        executionEnabled={state.provider.enabled}
         approvalCurrent={
           !translationFlow.state?.job?.approval ||
           state.runs.some(
@@ -4517,6 +4517,7 @@ function Workspace({
           busy={action.busy}
           pendingKey={action.key}
           disabled={disabled}
+          executionEnabled={state.provider.enabled}
           approvalCurrent={state.runs.some(
             (run) => run.approval?.token === submission.approval!.token,
           )}
