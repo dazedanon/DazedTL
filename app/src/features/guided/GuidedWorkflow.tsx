@@ -28,9 +28,9 @@ import RunPanel, { Estimate } from "./RunPanel";
 import { TranslationCost, TranslationReview } from "./TranslationReview";
 import { useTranslationFlow } from "./useTranslationFlow";
 import { TranslationFlowDialog } from "./TranslationFlowDialog";
-import { ProcessPanel, type RequestInspectionTarget } from "./ProcessPanel";
+import type { RequestInspectionTarget } from "./ProcessPanel";
 import { TranslateWorkspace } from "./TranslateWorkspace";
-import { BatchMonitor } from "./BatchMonitor";
+import { RunInspector } from "./RunInspector";
 import { TranslationOptions } from "./TranslationOptions";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
@@ -118,9 +118,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
   const [comparisonsAccepted, setComparisonsAccepted] = useState(false);
-  const [batchesOpen, setBatchesOpen] = useState(false);
-  const [batchesRun, setBatchesRun] = useState<string>();
-  const openBatches = (id?: string) => { setBatchesRun(id); setBatchesOpen(true); };
   const [history, setHistory] = useState<string | null>(null);
   const [inspection, setInspected] = useState<Job | null>(null);
   const [inspectionTarget, setInspectionTarget] = useState<RequestInspectionTarget>();
@@ -275,10 +272,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   }, "", "review:cancel");
   const translateSelected = () => translationFlow.start();
   useEffect(() => {
-    if (action.busy || translationFlow.active || panel || batchesOpen || preview || submission || position.step !== "translate") return;
+    if (action.busy || translationFlow.active || panel || inspection || inspectionTarget || history || preview || submission || position.step !== "translate") return;
     const pending = state.runs.find(run => run.approval && !translationFlow.claimed.has(run.id) && !seenApprovals.current.has(run.approval.token));
     if (pending?.approval) { seenApprovals.current.add(pending.approval.token); setSubmission(pending); }
-  }, [state.runs, action.busy, translationFlow.active, panel, batchesOpen, preview, submission, position.step]);
+  }, [state.runs, action.busy, translationFlow.active, panel, inspection, inspectionTarget, history, preview, submission, position.step]);
   const task = (name: string, label: string, options: Record<string, unknown> = {}, blocked = false, variant: "default" | "primary" = "default", files?: string[]) => {
     const recorded = name === "start" ? options.mode === "estimate" ? state.estimates[options.phase as Phase]?.job || undefined : undefined : operationJob(name, options);
     const current = name === "backup_source" && recorded?.status === "complete" ? undefined : recorded;
@@ -310,11 +307,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const resyncPending = ["ready", "running", "waiting"].includes(operationJob("refresh_sources")?.status || "");
   const copyTask = (name: string, label: string, variant: "default" | "primary" | "quiet" = "default") => <ActionControl label={label} variant={variant} disabled={disabled} {...feedback("copy:" + name, "Copying…")}
     onClick={() => action.run(async () => { await save(); await window.dazedtl.copyText((await api.guided.skill(project.id, name)).text); }, name === "setup" ? "Investigation task copied. Paste it into your assistant." : "Task copied. Return to its saved results when your assistant finishes.", "copy:" + name)} />;
-  const inspect = (item: Job, target?: RequestInspectionTarget) => {
+  const inspect = (item: Job | null, target?: RequestInspectionTarget) => {
     const current = document.activeElement;
     inspectorReturnFocus.current = current instanceof HTMLElement ? current : historyControl.current;
     setInspectionTarget(target); setInspected(item);
-    void action.run(async () => { const saved = await api.guided.inspect(project.id, item.id); setInspected((current) => current?.id === item.id ? saved : current); }, "", "inspect:" + item.id);
   };
   const chooseFiles = (scope: "database" | "dialogue" | null = null) => { setFileScope(scope); setFileBaseline([...values.selected]); setPanel("files"); };
   const closePanel = () => panel === "files" ? action.run(async () => { edit("selected", fileBaseline); await flushDrafts(); setPanel(null); }, "", "files:cancel") : setPanel(null);
@@ -465,7 +461,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const preparing = estimating || action.busy && ["translate:prepare", actionKey("start", { mode, phase })].includes(action.key);
       const stopLabel = estimating || current?.mode === "batch" ? null : translationStopLabel(current);
       content = <TranslateWorkspace key={phase} state={state} phase={phase} values={values} run={current} estimate={localEstimate} currentEstimate={!!quote}
-        disabled={disabled || resyncPending} locked={translationFlow.active} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={(job, file, index, validation) => inspect(job, { file, index, validation })} batches={openBatches}
+        disabled={disabled || resyncPending} locked={translationFlow.active} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={inspect} inspectedFile={inspectionTarget?.file}
         fileActions={task("refresh_sources", "Resync", {}, !preserved || !selectedNames.length || !!activeOperation, "default", selectedNames)}>
         {!baseline && <p className="translation-error">Preserve the original and save its version baseline before translating.</p>}
         {!state.provider.enabled && <p className="muted">Provider execution is disabled for this launch. Local estimates are available.</p>}
@@ -477,8 +473,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
         : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
-        : pendingBatches.length ? applyFiles.length ? "Earlier Batches are available in Batches. You can apply saved output."
-          : "Earlier Batches are available in Batches. Translate starts a new estimate."
+        : pendingBatches.length ? applyFiles.length ? "Earlier Batches are available in Run history. You can apply saved output."
+          : "Earlier Batches are available in Run history. Translate starts a new estimate."
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
@@ -670,27 +666,26 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       </div>}
       <ActionBar feedback={<Message message={action.error && !feedbackKeys.has(action.key) ? action.error : ""} />}>{panelActions}</ActionBar>
     </Modal>}
-    {batchesOpen && <BatchMonitor projectId={project.id} runs={state.runs} focusRun={batchesRun} close={() => setBatchesOpen(false)}
-      disabled={disabled || !baseline} applicationJob={item => {
-        const startedJob = started[actionKey("export_selected", { run_id: item.id })];
-        return state.operations.find(job => job.id === startedJob?.id) || startedJob;
-      }} reapply={async item => {
+    {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
+      <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}
+    {(inspected || inspectionTarget?.file) && <RunInspector key={`${project.id}:${inspected?.id || ""}:${inspectionTarget?.file || ""}`}
+      projectId={project.id} job={inspected} target={inspectionTarget} returnFocus={inspectorReturnFocus.current}
+      close={() => { setInspected(null); setInspectionTarget(undefined); }}
+      history={() => { setInspected(null); setInspectionTarget(undefined); setHistory(history || "all"); }}
+      disabled={disabled || !baseline}
+      applied={(() => {
+        const startedJob = inspected && started[actionKey("export_selected", { run_id: inspected.id })];
+        return state.operations.find(job => job.id === startedJob?.id) || startedJob || undefined;
+      })()}
+      reapply={async item => {
         const options = { run_id: item.id };
         const result = await preparePreview("export_selected", options);
         previewRequest.current = { name: "export_selected", options };
         setInspectRelease(false); setPreview(result);
-      }} inspect={(item, target) => { setBatchesOpen(false); inspect(item, target); }} />}
-    {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
-      <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}
-    {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? inspected.mode === "batch" ? "Batches" : "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
-      <ProcessPanel job={inspected} initialRequest={inspectionTarget} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
-        readNames={offset => api.guided.nameResults(project.id, inspected.id, offset)}
-        actions={canResumeRun(inspected) && <ActionList compact>
-          <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>
-        </ActionList>} />
-      <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
-      {!inspected.process && <>{inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}{inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}{!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}</>}
-      </Modal>}
+      }}
+      actions={inspected && canResumeRun(inspected) && <ActionList compact>
+        <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>
+      </ActionList>} />}
     {preview && <Modal label={preview.action === "git_setup" ? "Review version baseline" : preview.action === "release_patch" ? inspectRelease ? "Archive contents" : "Review patch ZIP" : preview.action === "release" ? inspectRelease ? "Archive contents" : "Replace game ZIP" : "Review translation action"} className={`guided-sheet${paid ? " translation-review" : ""}${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`} dismissible={!action.busy} onDismiss={cancelPreview}><header className="guided-sheet-heading"><h2>{["release", "release_patch"].includes(preview.action) ? inspectRelease ? "Archive contents" : preview.action === "release_patch" ? "Review patch ZIP" : "Replace game ZIP" : preview.label}</h2></header><div className="guided-sheet-body">
       {["release", "release_patch"].includes(preview.action) && <ReleaseReview preview={preview} inspectOnly={inspectRelease} busy={action.busy} editAssets={() => { setPreview(null); setPanel("release-assets"); }} />}
       {preview.action === "git_setup" ? <><p>Check the version, original source and runtime files before saving.</p>
@@ -728,7 +723,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setComparisonReview(false)}>Cancel</Button><Button variant="primary" disabled={!comparisonsAccepted || !state.comparisons.matches} pending={action.busy} onClick={() => action.run(async () => { await save(); await api.guided.comparisonsReview(project.id, state.comparisons.fingerprint, true); setComparisonReview(false); }, "Comparison coverage reviewed.", "event-text:comparisons")}>Confirm comparison coverage</Button></ActionBar>
     </Modal>}
     <TranslationFlowDialog projectId={project.id} flow={translationFlow} approvalCurrent={!translationFlow.state?.job?.approval || state.runs.some(run => run.approval?.token === translationFlow.state?.job?.approval?.token)}
-      inspect={id => { translationFlow.dismiss(); const run = state.runs.find(item => item.id === id); if (run?.mode === "batch" && run.process?.batches?.length) openBatches(run.id); else if (run) inspect(run); else setHistory("all"); }} />
+      inspect={id => { translationFlow.dismiss(); const run = state.runs.find(item => item.id === id); if (run) inspect(run); else setHistory("all"); }} />
     {submission?.approval && <TranslationReview projectId={project.id} job={submission} busy={action.busy} pendingKey={action.key} disabled={disabled}
       approvalCurrent={state.runs.some(run => run.approval?.token === submission.approval!.token)}
       error={action.key.startsWith("run:answer:") ? action.error : ""} close={() => setSubmission(null)}

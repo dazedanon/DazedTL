@@ -14,6 +14,7 @@ import { requestOutcome, requestBatches, requestBatchOutcome, payloadForBatch, t
 import { RunTechnical } from "./RunTechnical";
 import { RequestFailure } from "./RequestFailure";
 import { providerBatchActive } from "./batchView";
+import { InspectedFile } from "./InspectedFile";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 function responseText(response: unknown) {
@@ -24,9 +25,9 @@ function responseText(response: unknown) {
 }
 const tabs = [{ id: "source", label: "Source" }, { id: "response", label: "Response" },
   { id: "json", label: "Technical" }] as const;
-type Tab = typeof tabs[number]["id"];
+type Tab = typeof tabs[number]["id"] | "file";
 type InspectorView = { index: number; tab: Tab; batch: string | null };
-export type RequestInspectionTarget = { file: string; index: number; validation?: boolean };
+export type RequestInspectionTarget = { file: string; index?: number; validation?: boolean };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
 function savedView(id: string): InspectorView {
   const fallback: InspectorView = { index: 0, tab: "source", batch: null };
@@ -35,7 +36,7 @@ function savedView(id: string): InspectorView {
     if (value && ["run", "log"].includes(value.tab)) value.tab = "json";
     if (value?.batch === "run-details") value.batch = null;
     if (!value || !Number.isSafeInteger(value.index) || value.index < 0
-      || !tabs.some(tab => tab.id === value.tab)) return fallback;
+      || value.tab !== "file" && !tabs.some(tab => tab.id === value.tab)) return fallback;
     return { index: value.index, tab: value.tab, batch: typeof value.batch === "string" ? value.batch : null };
   } catch { return fallback; }
 }
@@ -46,16 +47,17 @@ type Props = {
   job: Job; readPayload?: (index: number) => Promise<RunPayload>;
   initialRequest?: RequestInspectionTarget;
   readNames?: (offset: number) => Promise<NameTranslationPage>;
-  compact?: boolean; actions?: ReactNode;
+  compact?: boolean; actions?: ReactNode; projectId?: string;
+  batchActions?: (batch?: RequestBatch) => ReactNode;
 };
 export function ProcessPanel(props: Props) {
   return props.job.process ? <RequestProcess key={`${props.job.id}:${props.initialRequest?.file || ""}:${props.initialRequest?.index ?? ""}:${!!props.initialRequest?.validation}`} {...props} /> : null;
 }
-function RequestProcess({ job, readPayload, readNames, initialRequest, actions }: Props) {
+function RequestProcess({ job, readPayload, readNames, initialRequest, actions, batchActions, projectId }: Props) {
   const process = job.process!;
   const [view, setView] = useState<InspectorView>(() => initialRequest
-    ? { index: initialRequest.index, tab: initialRequest.validation ? process.rejected ? "response" : "json" : "source",
-        batch: requestBatches(process, job.mode).find(batch => batch.rows.some(row => row.indices.includes(initialRequest.index)))?.id || null }
+    ? { index: initialRequest.index ?? -1, tab: initialRequest.validation ? process.rejected ? "response" : "json" : "source",
+        batch: initialRequest.index == null ? "file" : requestBatches(process, job.mode).find(batch => batch.rows.some(row => row.indices.includes(initialRequest.index!)))?.id || null }
     : savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
   const [attemptSelection, setAttemptSelection] = useState<{ request: number; attempt: number } | null>(null);
@@ -63,6 +65,8 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   const [retrying, setRetrying] = useState(false);
+  const [fileOpened, setFileOpened] = useState<string>();
+  const [unlinkedFile, setUnlinkedFile] = useState(initialRequest?.file);
   const reader = useRef<HTMLDivElement>(null);
   const payloadReader = useRef(readPayload);
   payloadReader.current = readPayload;
@@ -74,7 +78,7 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
     || (view.batch === null ? groups[0] : ["unsent", "unlinked"].includes(view.batch || "") ? groups.find(batch => batch.rows.some(row => row.indices.includes(view.index))) : undefined) : groups[0];
   const selectedProviders = selectedBatch?.provider ? [selectedBatch.provider, ...selectedBatch.clarifications] : [];
   const requests = selectedBatch?.rows || [];
-  const selected = requests.find(row => row.indices.includes(view.index)) || requests[0];
+  const selected = view.index < 0 ? undefined : requests.find(row => row.indices.includes(view.index)) || requests[0];
   const index = selected?.index;
   // Follow the shared observer's receipt changes, including a clarification
   // that changes provider state without changing the grouped request state.
@@ -111,12 +115,22 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
     && (job.mode !== "batch" || selectedProviders.some(batch => providerBatchActive(batch.status)));
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
-  const selectedFile = selected?.file || initialRequest?.file;
+  const selectedFile = selected ? selected.file : unlinkedFile;
+  const contentTabs = projectId && selectedFile ? [...tabs, { id: "file" as const, label: "File contents" }] : tabs;
+  const contentTab = view.tab === "file" && !(projectId && selectedFile) ? "source" : view.tab;
+  useEffect(() => { if (contentTab === "file") setFileOpened(selectedFile || undefined); }, [contentTab, selectedFile]);
   const legacyIssues = (process.validationIssues || []).filter(issue => (!selectedFile || issue.file === selectedFile)
     && !process.requests?.some(row => row.file === issue.file && row.state === "rejected"));
+  const rejected = process.requests?.find(row => row.state === "rejected");
   return <div className="translation-process" data-view={view.tab}>
-    <div className="process-overview"><div><strong>{runLabel(job)}</strong><span className="muted"> · {job.model || "Model not recorded"} · {job.files?.length || 0} files</span>
+    <div className="process-overview"><div><strong>{runLabel(job)}</strong><ExpandableText text={job.model || "Model not recorded"} label="Run model" appearance="inline" limit={100} />{!!job.files?.length && <span className="muted">{job.files.length} files</span>}
       {job.mode !== "batch" && <span className="badge">{historyOutcome(job).label}</span>}</div>
+      {(rejected || !!process.validationIssues?.length) && <Button variant="quiet" onClick={() => {
+        setUnlinkedFile(rejected?.file || process.validationIssues?.[0].file);
+        setAttemptSelection(null);
+        change({ index: rejected?.index ?? -1, tab: rejected ? "response" : "json",
+          batch: rejected ? groups.find(group => group.rows.some(row => row.indices.includes(rejected.index)))?.id || null : "file" });
+      }}>Review issues</Button>}
     </div>
     <div className={`request-workspace${job.mode === "batch" ? "" : " request-workspace--single"}`}>
       {job.mode === "batch" && <aside className="request-batch-list" aria-label="Batches in this run">
@@ -133,10 +147,11 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
               {outcome && <span className="request-outcome" data-state={outcome.failed ? "failed" : outcome.successful ? "finished" : "pending"}>{outcome.label}</span>}
               {outcome && outcome.summary !== `${count?.toLocaleString()} requests` && outcome.summary !== `${count?.toLocaleString()} request` && <small>{outcome.summary}</small>}
               {!!batch.clarifications.length && !outcome?.clarification && <small>{clarificationCount ? `${clarificationCount.toLocaleString()} clarification ${clarificationCount === 1 ? "request" : "requests"}` : "Includes clarification"}</small>}
-              {!!files.length && <small>{files.length > 1 ? `${files.length} files · ` : ""}{files.slice(0, 2).join(", ")}{files.length > 2 ? "…" : ""}</small>}
+              {!!files.length && <small>{files.length} {files.length === 1 ? "file" : "files"}</small>}
             </span><ChevronRight size={16} aria-hidden="true" />
           </button></li>;
         })}</ul> : <p className="muted">No batches or saved requests yet.</p>}
+        {batchActions?.(selectedBatch)}
       </aside>}
       <section className="payload-inspector request-batch-reader" aria-label="Request details">
         <div className="request-selection">
@@ -155,25 +170,28 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
             </span>}
           </div>
         </div>
-        <Tabs id={tabId} label="Request content" items={tabs} value={view.tab} onChange={tab => change({ tab })} />
-        {attempts.length > 1 && <Tabs id={attemptTabId} label="Request attempt" value={String(attemptIndex)}
+        <Tabs id={tabId} label="Request content" items={contentTabs} value={contentTab} onChange={tab => change({ tab })} />
+        {contentTab !== "file" && attempts.length > 1 && <Tabs id={attemptTabId} label="Request attempt" value={String(attemptIndex)}
           items={attempts.map((attempt, index) => ({ id: String(index), label: attempt.kind === "original" ? "Original" : "Clarification retry" }))}
           onChange={attempt => setAttemptSelection({ request: index!, attempt: Number(attempt) })} />}
-        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={busy}
+        {projectId && selectedFile && <div className="file-preview-panel" hidden={contentTab !== "file"} role="tabpanel" id={`${tabId}-panel-file`} aria-labelledby={`${tabId}-tab-file`}>
+          {fileOpened === selectedFile && <InspectedFile key={selectedFile} projectId={projectId} file={selectedFile} />}
+        </div>}
+        <div className="request-reader" hidden={contentTab === "file"} ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={busy}
           role={attempts.length > 1 ? "tabpanel" : undefined}
           id={attempts.length > 1 ? `${attemptTabId}-panel-${attemptIndex}` : undefined}
           aria-labelledby={attempts.length > 1 ? `${attemptTabId}-tab-${attemptIndex}` : undefined}>
           <Message message={error} />
           {(error || retrying) && readPayload && <Button variant="quiet" pending={retrying} disabled={busy}
             onClick={() => { setRetrying(true); setRetry(value => value + 1); }}>{retrying ? "Reading request…" : "Retry reading request"}</Button>}
-          {selectedFile && <p className="request-selection-file muted">{selectedFile}</p>}
+          {selectedFile && <div className="request-selection-file muted"><ExpandableText text={selectedFile} label="Selected file" appearance="inline" limit={80} /></div>}
           {view.tab !== "source" && legacyIssues.map(issue => <p className="translation-error" key={issue.file}>{issue.file}: validation mismatches were recorded, but this older run did not retain which request failed.</p>)}
           {visiblePayload?.unused && <div className="request-unused">
             <p className="muted">This extra choice response was not used. The saved file uses the validated responses below.</p>
             <div className="request-references">{visiblePayload.unused.appliedRequests.filter(index => requests.some(row => row.index === index && ["validated", "saved"].includes(row.state))).map(index =>
               <Button key={index} variant="quiet" onClick={() => choose(index)}>View used request {index + 1}</Button>)}</div>
           </div>}
-          <TabPanel id={tabId} value={view.tab}>
+          <TabPanel id={tabId} value={contentTab === "file" ? "source" : contentTab}>
             {view.tab === "json" ? <div className="request-technical-content">
               <RunTechnical job={job} readNames={readNames} actions={actions} />
               {!!batches.length && <section><h3>Batch receipts</h3>
@@ -188,7 +206,8 @@ function RequestProcess({ job, readPayload, readNames, initialRequest, actions }
               {visiblePayload && <RequestTechnical key={`${visiblePayload.index}:${attemptIndex}`} payload={visiblePayload} job={job} showModel={false} showStatus={false} showEstimate={false} />}
               {job.estimate && <section><h3>Saved estimate</h3><ExpandableText text={formatted(job.estimate)} label="Saved estimate" /></section>}
               {job.eventTextReview && <section><h3>Event text review</h3><ExpandableText text={formatted(job.eventTextReview)} label="Event text review" /></section>}
-            </div> : selectedBatch?.provider && !requests.length ? <p className="muted">The saved receipt does not identify this batch’s requests. Technical contains the retained receipts and failure details.</p>
+            </div> : initialRequest && view.index < 0 ? <p className="muted">{process.noRequestFiles?.includes(initialRequest.file) ? "This file produced no new requests in this pass." : "No saved request is linked to this file in this attempt."} File contents shows its current text.</p>
+            : selectedBatch?.provider && !requests.length ? <p className="muted">The saved receipt does not identify this batch’s requests. Technical contains the retained receipts and failure details.</p>
             : view.tab === "response" ? <>
               {visiblePayload && <RequestFailure payload={visiblePayload} details />}
               {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}

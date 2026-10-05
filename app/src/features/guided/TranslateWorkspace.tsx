@@ -1,46 +1,40 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 import type { GuidedOptions, GuidedState, Job, Phase } from "../../api/contracts";
 import { Button } from "../../ui/Button";
-import { Modal } from "../../ui/Modal";
 import { FileSelection } from "./FileSelection";
-import { TranslationInspector } from "./TranslationInspector";
-import { filePreviewRun, fileRun, fileMetricRun, fileStatus } from "./translationView";
+import { filePreviewRun, fileRun, fileMetricRun, fileStatus, groupedRequests } from "./translationView";
+import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, batches, fileActions, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, inspectedFile, fileActions, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number, validation?: boolean) => void; batches: (runId?: string) => void; fileActions?: ReactNode; children?: ReactNode;
+  settings: () => void; options: () => void; history: () => void; inspect: (job: Job | null, target: RequestInspectionTarget) => void; inspectedFile?: string; fileActions?: ReactNode; children?: ReactNode;
 }) {
-  const [file, setFile] = useState("");
-  const [inspecting, setInspecting] = useState(false);
-  const [record, setRecord] = useState("");
   const rows = useMemo(() => state.files.filter(row => row.group === (phase === "database" ? "database" : "dialogue")), [state.files, phase]);
   const selected = new Set(values.selected);
   const scoped = rows.filter(row => selected.has(row.name));
   const owner = (name: string) => fileRun(state.runs, phase, name, state.sourceStatus.retired);
-  const records = [estimate, run, owner(file)].filter((item): item is Job => !!item && !!item.files?.includes(file))
-    .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index);
-  const inspected = records.find(item => item.id === record) || state.runs.find(item => item.id === record);
   const openFile = (name: string) => {
-    setFile(name); setInspecting(true);
-    setRecord(filePreviewRun(name, run, estimate, owner(name), currentEstimate)?.id || "");
+    const job = filePreviewRun(name, run, estimate, owner(name), currentEstimate);
+    const request = groupedRequests(job?.process?.requests || []).find(row => row.file === name);
+    inspect(job || null, { file: name, index: request?.index });
   };
   return <div className="translation-workspace">
     <div className="translation-toolbar" aria-label="Translation setup">
       <Button variant="quiet" disabled={locked} onClick={settings} title={state.provider.connection}>{state.provider.model || "Choose a model"}</Button>
       <div className="guided-mode" role="group" aria-label="Translation method"><Button disabled={disabled || locked || !state.provider.batchSupported} title={state.provider.batchSupported ? "Review Batch pricing before submitting" : state.provider.batchReason || "Unavailable for this connection"} aria-pressed={values.mode === "batch"} onClick={() => change("mode", "batch")}>Batch</Button><Button disabled={disabled || locked} aria-pressed={values.mode === "translate"} onClick={() => change("mode", "translate")}>Live</Button></div>
       <small className="translation-method-hint">{state.provider.batchSupported ? "Batch recommended · often 50% cheaper" : "Live · saves results as they arrive"}</small>
-      <div className="translation-tools"><Button variant="quiet" onClick={() => batches()}>Batches</Button><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={options}>Options</Button></div>
+      <div className="translation-tools"><Button variant="quiet" onClick={history}>Run history</Button><Button variant="quiet" onClick={options}>Options</Button></div>
     </div>
     <div className="translation-notices">{children}</div>
     <div className="translation-columns">
       <section className="translation-files" aria-label="Translation files">
         <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked} actions={fileActions}
           change={names => change("selected", retainOtherScope(values.selected, rows, names))}
-          inline={{ preview: openFile, previewed: inspecting ? file : undefined, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
+          inline={{ preview: openFile, previewed: inspectedFile, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
               const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner);
               const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
@@ -50,10 +44,6 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
                 <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${metricRun?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;
             } }} />
       </section>
-      {inspecting && file && <Modal label={`File preview: ${file}`} className="request-inspector-sheet" onDismiss={() => setInspecting(false)}>
-        <TranslationInspector key={`${state.projectId}:${file}`} projectId={state.projectId} file={file} job={inspected} inspect={(index, validation) => { if (inspected) inspect(inspected, file, index, validation); }}
-          close={() => { setInspecting(false); }} />
-      </Modal>}
     </div>
   </div>;
 }

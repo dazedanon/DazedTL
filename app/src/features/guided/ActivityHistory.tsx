@@ -1,5 +1,6 @@
 import type { Job, TranslationState, GuidedState } from "../../api/contracts";
 import { Tabs } from "../../ui/Tabs";
+import { batchInProgress } from "./batchView";
 import { activeRun, phaseRun } from "./translationView";
 import { historyDate, historyDay, historyMode, historyOutcome, historyPhase, type HistoryOutcome } from "./historyView";
 import { AlertTriangle, Check, ChevronRight, CircleSlash, Clock3, FileCheck2, LoaderCircle, Pause, XCircle, CircleHelp } from "lucide-react";
@@ -48,7 +49,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
   const outcomes = useMemo(() => new Map(rows.map(job => [job.id, historyOutcome(job)])), [rows]);
   const current = useMemo(() => new Set((["database", "dialogue", "advanced", "variables", "speakers"] as const).map(phase => phaseRun(state.runs, phase)?.id)), [state.runs]);
   const matching = rows.filter(job => (filter === "all"
-    || filter === "active" && activeRun(job) || filter === "saved" && outcomes.get(job.id)?.kind === "saved"
+    || filter === "active" && (job.mode === "batch" && job.process?.batches?.length ? batchInProgress(job) : activeRun(job)) || filter === "saved" && outcomes.get(job.id)?.kind === "saved"
     || filter === "failed" && ["failed", "interrupted"].includes(job.status)
     || filter === "canceled" && ["canceled", "cancelled", "stopped"].includes(job.status))
     && [job.label, job.model, job.id, historyPhase(job), historyMode(job), ...(job.files || [])].join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
@@ -81,6 +82,6 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
       })}</ActionList></section>)}
       {matching.length > visible && <Button onClick={() => setVisible(count => count + 30)}>Show older records ({matching.length - visible})</Button>}
     </div>
-    <div className="history-footer"><span>{matching.length === rows.length ? `${rows.length} ${rows.length === 1 ? "record" : "records"}` : `${matching.length} of ${rows.length} records`}</span>{tab === "runs" && <p className="history-purpose">Each attempt retains its date, model and outcome. Inspecting an attempt is read-only; it does not restore or apply files.</p>}<span>{tab === "estimates" ? "Local plans · no translation submitted by an estimate" : "Newest first"}</span></div>
+    <div className="history-footer"><span>{matching.length === rows.length ? `${rows.length} ${rows.length === 1 ? "record" : "records"}` : `${matching.length} of ${rows.length} records`}</span>{tab === "runs" && <p className="history-purpose">Each attempt retains its date, model and outcome. Inspect an attempt to read its requests and manage Batch work.</p>}<span>{tab === "estimates" ? "Local plans · no translation submitted by an estimate" : "Newest first"}</span></div>
   </div>;
 }

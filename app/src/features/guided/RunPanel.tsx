@@ -74,7 +74,7 @@ export default function RunPanel({
         <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
         {job.eventTextReview.settings && <dl>{Object.entries(job.eventTextReview.settings).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") || "None" : String(value)}</dd></div>)}</dl>}
       </details>}
-      {active && job.mode === "batch" && <p className="muted">Submitted Batches are monitored automatically. Open Batches to view progress.</p>}
+      {active && job.mode === "batch" && <p className="muted">Submitted Batches are monitored automatically. Open Run history to inspect progress.</p>}
       {job.progress && (
         <>
           <progress
