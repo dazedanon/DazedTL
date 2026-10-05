@@ -58,6 +58,7 @@ export function TranslationReviewContent({ projectId, job, preview, busy, pendin
   const requestRun = preview?.estimate?.jobId || (batch ? job?.id : undefined);
   const speakerReview = !preview && job?.approval?.kind === "speakers";
   const speakersBeforeBatch = speakerReview && job?.mode === "batch";
+  const repeatSubmission = preview?.estimate?.repeatSubmission || job?.repeatSubmission;
   const speakers = Array.isArray(detail.speakers) ? detail.speakers.map(String) : [];
   const title = preview ? "Review Live translation" : batch ? "Review Batch submission" : "Review names and labels";
   return <>
@@ -72,7 +73,7 @@ export function TranslationReviewContent({ projectId, job, preview, busy, pendin
         {!!speakers.length && <p className="translation-review-speakers"><strong>Names and labels to translate</strong><br />{speakers.join(", ")}</p>}
       </section>
       {batch && job && <NameTranslationFeedback value={job.nameTranslation} read={offset => api.guided.nameResults(projectId, job.id, offset)} />}
-      <p className="translation-review-notice">Submitting incurs API charges. {(job?.temporary || preview) && "Decline discards this preparation. "}Results may replace working translations; earlier approved runs stay in History. Game files change only after Apply.</p>
+      <p className="translation-review-notice">{repeatSubmission ? "Earlier work may include this text. Starting again may incur duplicate API charges. " : "Submitting incurs API charges. "}{(job?.temporary || preview) && "Decline discards this preparation. "}Results may replace working translations; earlier approved runs stay in History. Game files change only after Apply.</p>
     </div>
     <ActionBar feedback={<Message message={error} />}>
       {requestRun && <Button variant="quiet" disabled={busy} onClick={() => setInspecting(true)}>Preview request</Button>}

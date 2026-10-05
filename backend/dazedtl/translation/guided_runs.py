@@ -12,14 +12,6 @@ PHASES = ("database", "dialogue", "advanced", "variables")
 JAPANESE = re.compile(r"[\u3000\u3002-\u3009\u300C-\u303F\u3040-\u309A\u309C-\u30FA\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF61-\uFF9F]+")
 
 
-class SubmissionOverlap(ValueError):
-    def __init__(self, matches):
-        files = sorted({name for match in matches for name in match.get('files', [])})
-        super().__init__('This selection overlaps unfinished requests in ' + ', '.join(files) +
-                         '. Translate the other selected files or inspect the saved work before sending this text again.')
-        self.details = {'kind': 'submission_overlap', 'files': files, 'matches': matches}
-
-
 class GuidedRuns:
     def __init__(self, guided):
         self.guided = guided

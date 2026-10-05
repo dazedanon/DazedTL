@@ -26,7 +26,7 @@ def job(value):
         return None
     result = pick(value, ('id', 'status', 'message', 'label', 'mode', 'phase', 'model', 'files',
                           'progress', 'itemProgress', 'log', 'estimate', 'outputs', 'outputsAvailable', 'availableOutputs', 'changedOutputs', 'partialOutputs', 'retiredFiles', 'eventTextReview', 'approval', 'action', 'result', 'created', 'updated',
-                          'logicalPhase', 'scopeComplete', 'appliedOutputs', 'process', 'keptForHistory', 'preparationMode', 'temporary', 'nameTranslation'))
+                          'logicalPhase', 'scopeComplete', 'appliedOutputs', 'process', 'keptForHistory', 'preparationMode', 'temporary', 'nameTranslation', 'repeatSubmission'))
     result.setdefault('log', [])
     return result
 
@@ -100,9 +100,6 @@ def preview(value):
 
 
 def error(exc):
-    from dazedtl.translation.guided_runs import SubmissionOverlap
-    if isinstance(exc, SubmissionOverlap):
-        return {'code': 'validation', 'message': str(exc), 'details': exc.details}
     if isinstance(exc, FileNotFoundError):
         return {'code': 'not_found', 'message': str(exc)}
     if isinstance(exc, ValueError):

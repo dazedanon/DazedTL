@@ -1,25 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
-import { ApiError, messageOf } from "../../api/errors";
+import { messageOf } from "../../api/errors";
 import type { GuidedState, Job, Phase, Preview } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { estimateFollowup, preparationFollowup } from "./translationView";
 
-export type SubmissionConflict = { kind: "submission_overlap"; files: string[]; matches: { run: string; files: string[]; state: string }[] };
-export function submissionConflict(error: unknown): SubmissionConflict | undefined {
-  if (!(error instanceof ApiError) || !error.details || typeof error.details !== "object") return;
-  const value = error.details as SubmissionConflict;
-  if (value.kind === "submission_overlap" && Array.isArray(value.files) && value.files.every(file => typeof file === "string")
-    && Array.isArray(value.matches) && value.matches.every(match => match && typeof match.run === "string" && typeof match.state === "string"
-      && Array.isArray(match.files) && match.files.every(file => typeof file === "string"))) return value;
-}
 export type TranslationFlowState = {
   phase: Phase; mode: "batch" | "translate"; files: string[];
   stage: "preparing" | "estimating" | "batch" | "review" | "empty" | "error" | "canceling";
   estimateId?: string; runId?: string; job?: Job; preview?: Preview;
   decision?: boolean;
   namesApproved?: boolean;
-  error?: string; conflict?: SubmissionConflict;
+  error?: string;
 };
 type Session = { state: TranslationFlowState; advanced: boolean; canceled: boolean; finished: boolean; answeredApproval?: string };
 type Options = { projectId: string; phase: Phase; mode: "batch" | "translate"; files: string[]; state: GuidedState;
@@ -36,7 +28,7 @@ export function useTranslationFlow(options: Options) {
       const session = current.current;
       if (session) {
         session.finished = false; session.canceled = false;
-        change(session, { stage: "error", error: messageOf(error), conflict: submissionConflict(error) });
+        change(session, { stage: "error", error: messageOf(error) });
       }
       throw error;
     }
@@ -63,7 +55,7 @@ export function useTranslationFlow(options: Options) {
         if (session.canceled && discardCanceled) await abandon(session);
       } catch (error) {
         session.canceled = false;
-        change(session, { stage: "error", error: messageOf(error), conflict: submissionConflict(error) });
+        change(session, { stage: "error", error: messageOf(error) });
         throw error;
       }
     }, "", "translation-flow");

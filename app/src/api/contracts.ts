@@ -54,6 +54,7 @@ export interface Job {
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
   temporary?: boolean;
+  repeatSubmission?: boolean;
   nameTranslation?: NameTranslation | null;
   scopeComplete?: boolean;
   appliedOutputs?: string[];
@@ -425,7 +426,7 @@ export interface RequestPreview {
 export interface Preview {
   publication?: { path: string; destination: string; before: string; after: string; size: number; later_edits: boolean; diff: string; truncated: boolean; before_text: string; after_text: string }[];
   run?: { model: string; connection: string; mode: string } | null;
-  estimate?: { jobId: string; fingerprint: string; value: Record<string, number> } | null;
+  estimate?: { jobId: string; fingerprint: string; value: Record<string, number>; repeatSubmission?: boolean } | null;
   package?: { included: number; excluded: number; exclusions?: { path: string; reason: string }[]; updater?: string; generated?: string[] };
   overwrite?: boolean;
   game_version?: string;

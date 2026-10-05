@@ -312,7 +312,7 @@ class GuidedTests(unittest.TestCase):
     def test_history_dismissal_preserves_ownership_receipts_and_never_revives_old_work(self):
         # Protect stale native pointers, updated timestamps and exact-scope
         # fallback from promoting old failures; dismissal must be reversible
-        # without removing frozen evidence or allowing overlapping payment.
+        # without removing frozen evidence or hiding overlapping requests.
         from dazedtl.translation.guided_runs import GuidedRuns
         inputs = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
         old = {'id': 'old', 'created': '2020-01-01', 'updated': '2030-01-01', 'mode': 'batch',
@@ -331,12 +331,9 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(self.guided.retain_run(self.identity, 'old', True)['keptForHistory'])
         native = self.backend.workflows.projects['native']
         self.assertIn('old', self.guided.owned_runs(native))
-        from dazedtl.translation.guided_runs import SubmissionOverlap
-        from dazedtl.api import views
-        with self.assertRaises(SubmissionOverlap) as blocked:
-            self.guided.protect_submission(native, {'jobId': 'new'})
-        self.assertEqual(views.error(blocked.exception)['details']['files'], ['Items.json'])
-        self.assertEqual(views.error(blocked.exception)['details']['matches'][0]['run'], 'old')
+        overlaps = self.guided.submission_overlap(native, {'jobId': 'new'})
+        self.assertEqual(overlaps[0]['files'], ['Items.json'])
+        self.assertEqual(overlaps[0]['run'], 'old')
         self.assertEqual({path: path.read_bytes() for path in before}, before)
         self.assertFalse(self.guided.retain_run(self.identity, 'old', False)['keptForHistory'])
         with self.assertRaises(ValueError):
@@ -1089,7 +1086,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, preview['token'])
         self.assertEqual(self.backend.workflows.execute.call_count, len(immediate))
 
-    def test_estimates_retain_rejected_history_and_paid_reviews_recheck_source_overlap(self):
+    def test_new_paid_reviews_allow_overlap_and_retain_historical_receipts(self):
         # Reproduce old-format all-rejected history, then change a receipt to
         # unresolved success between cost review and execution. No provider calls.
         estimate_id = self.seed_estimate()
@@ -1113,16 +1110,28 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['confirmation'])
         review = self.guided.preview(self.identity, 'start', options={'mode': 'batch'})
         self.assertTrue(review['confirmation'])
+        self.assertFalse(review['estimate']['repeatSubmission'])
         changed = deepcopy(batch); changed['request_counts'].update(errored=0, succeeded=1)
         write_json(root/'log/batch_history.json', {'batches': [changed]})
-        with self.assertRaisesRegex(ValueError, 'overlaps'):
-            self.guided.execute(self.identity, review['token'])
+        self.guided.execute(self.identity, review['token'])
+        self.assertEqual(len(self.started), 1)
         with self.assertRaisesRegex(ValueError, 'new preview'):
             self.guided.execute(self.identity, review['token'])
+        # Already submitted work is advisory for both new modes. Its changing
+        # status cannot revoke a fresh approval, and tokens remain one-use.
+        for mode in ('batch', 'translate'):
+            estimate_id = self.seed_estimate(mode=mode)
+            estimate_root = self.backend.manual.folder(estimate_id)
+            write_json(estimate_root/'log/estimate_requests.json', queued)
+            review = self.guided.preview(self.identity, 'start', options={'mode': mode})
+            self.assertTrue(review['estimate']['repeatSubmission'])
+            self.guided.execute(self.identity, review['token'])
+            self.assertTrue(self.guided.runs.records(self.identity)['paid-run']['estimate']['repeatSubmission'])
+        self.assertEqual(len(self.started), 3)
         self.assertFalse(self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['confirmation'])
         # Disjoint source text in the same file remains eligible.
         write_json(estimate_root/'log/estimate_requests.json', {'two': {**queued['one'], 'payload': '{"Line1":"別の文章"}'}})
-        self.assertTrue(self.guided.preview(self.identity, 'start', options={'mode': 'batch'})['confirmation'])
+        self.assertFalse(self.guided.preview(self.identity, 'start', options={'mode': 'translate'})['estimate']['repeatSubmission'])
         for path, raw in frozen.items(): path.write_bytes(raw)
         self.guided.execute(self.identity, self.guided.preview(self.identity, 'start', options={'mode': 'estimate'})['token'])
         reopened = Guided(self.backend, self.projects, self.settings, self.translation)
@@ -1139,6 +1148,49 @@ class GuidedTests(unittest.TestCase):
             reopened.resume(self.identity, 'another-project-run')
         self.backend.manual.resume.assert_not_called()
         self.settings.prepare_engine.assert_not_called()
+
+    def test_stopped_live_submission_cannot_block_new_preparation_or_batch_approval(self):
+        # A stopped Live call without a response used to strand the selected
+        # file. Keep its uncertain receipt while allowing a separately approved run.
+        from dazedtl.compatibility.run_evidence import Evidence
+        from dazedtl.compatibility import process_view
+        from dazedtl.api import views
+        identity = 'stopped-live'
+        root = self.backend.manual.folder(identity)
+        job = {'id': identity, 'mode': 'translate', 'status': 'stopped', 'files': ['Items.json'], 'log': []}
+        self.backend.manual.jobs[identity] = job
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'translate'))
+        evidence = Evidence(root, 'translate')
+        evidence.local.filename = 'Items.json'
+        evidence.prepared({'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}, 'submitted')
+        before = evidence.path.read_bytes()
+        for mode in ('translate', 'batch'):
+            estimate_id = self.seed_estimate(mode=mode)
+            write_json(self.backend.manual.folder(estimate_id)/'log/estimate_requests.json',
+                       {'one': {'params': {}, 'payload': '{"Line1":"薬"}', 'dazedtl_file': 'Items.json'}})
+            review = self.guided.preview(self.identity, 'start', options={'mode': mode})
+            self.assertTrue(views.preview(review)['estimate']['repeatSubmission'])
+            self.guided.execute(self.identity, review['token'])
+        pending = {'id': 'paid-run', 'mode': 'batch', 'status': 'waiting', 'files': ['Items.json'], 'log': [],
+                   'approval': {'token': 'batch-approval', 'kind': 'batch'}, 'dazedtl_preapproval': True}
+        self.backend.manual.jobs[pending['id']] = pending
+        self.assertTrue(views.job(self.guided.run_view(pending['id']))['repeatSubmission'])
+        self.backend.manual.save = Mock()
+        def answer(run, token, approved):
+            self.assertTrue(pending['dazedtl_submission_intent'])
+            pending.pop('approval')
+            return pending
+        self.backend.manual.answer = Mock(side_effect=answer)
+        self.guided.answer(self.identity, 'batch-approval', True)
+        with self.assertRaisesRegex(ValueError, 'no longer pending'):
+            self.guided.answer(self.identity, 'batch-approval', True)
+        self.backend.manual.answer.assert_called_once_with(pending['id'], 'batch-approval', True)
+        self.assertEqual(evidence.path.read_bytes(), before)
+        self.assertEqual(process_view.ledger_records(root)[0]['state'], 'submitted')
+        # Historical read errors also stay advisory instead of blocking review.
+        self.seed_estimate(mode='translate')
+        with patch.object(self.guided, 'submission_overlap', side_effect=ValueError('Unreadable saved evidence')):
+            self.assertTrue(self.guided.preview(self.identity, 'start', options={'mode': 'translate'})['estimate']['repeatSubmission'])
 
     def test_advanced_runs_require_a_source_and_explicit_variable_ids(self):
         # An empty selection wastes paid work; a blank 122 range silently uses

@@ -119,7 +119,7 @@ Record actual token usage separately from the estimate.
 An uncertain request is never sent again automatically. Attach a matching Batch job with attach-batch;
 unrelated or incomplete request IDs keep the run blocked. For an uncertain Live call, check the provider first,
 then resolve-uncertain --retry-reviewed permits a new remaining-work quote. It does not issue a retry itself.
-Use the saved phased-run recovery path for an existing legacy run before creating overlapping new work.
+The Guided UI also permits a separately estimated and approved new translation regardless of older run status, with an advisory about possible duplicate charges. This does not authorize automatic retries or settle the older receipts.
 
 ## Delivery and future versions
 

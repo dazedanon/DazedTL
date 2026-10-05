@@ -11,7 +11,7 @@ from dazedtl.storage import write_json
 from .files import read_json, project_path, evidence, verify_evidence
 from .operations import lifecycle, require_source_backup, verify_guided_review
 from .guided_inputs import GuidedInputs
-from .guided_runs import GuidedRuns, SubmissionOverlap
+from .guided_runs import GuidedRuns
 from .event_text import EventText
 from .files import digest
 from . import backups
@@ -294,6 +294,7 @@ class Guided:
             if project:
                 record = self.runs.records(project["id"]).get(identity, {})
                 job["eventTextReview"] = record.get("review")
+                job["repeatSubmission"] = bool((record.get('estimate') or {}).get('repeatSubmission'))
                 if not job.get('estimate') and record.get('estimate'):
                     job['estimate'] = record['estimate'].get('value')
                 if job.get("mode") == "estimate":
@@ -724,16 +725,15 @@ class Guided:
         if job and job.get('status') in {'running', 'waiting'}:
             raise ValueError('Wait for the active worker before changing runtime files.')
 
-    def protect_submission(self, native, quote):
+    def submission_overlap(self, native, quote):
+        """Advisory for a new cost review, never authority to deny a new run."""
         from dazedtl.compatibility.request_scope import overlap
         current = quote['jobId']
         job = self.run_view(current, compact=True)
         previous = [(self.backend.manual.folder(identity), self.run_view(identity, compact=True))
                     for identity in self.owned_runs(native)
                     if identity and identity != current and identity in self.backend.manual.jobs]
-        matches = overlap(self.backend.manual.folder(current), job, previous)
-        if matches:
-            raise SubmissionOverlap(matches)
+        return overlap(self.backend.manual.folder(current), job, previous)
 
     def protect_batch_files(self, native, files):
         from dazedtl.compatibility.batch_control import TERMINAL
@@ -857,7 +857,12 @@ class Guided:
                     if not matched["current"]:
                         raise ValueError("Calculate a current estimate for this phase, selection, and settings before reviewing translation.")
                     quote = {"jobId": matched["job"]["id"], "fingerprint": run_inputs["fingerprint"], "value": matched["job"]["estimate"], "model": matched["job"].get("model", ""), "connection": (self.settings.connection_summary() or {}).get("name", "")}
-                    self.protect_submission(native, quote)
+                    try:
+                        quote['repeatSubmission'] = bool(self.submission_overlap(native, quote))
+                    except (OSError, ValueError, KeyError):
+                        # Unreadable historical evidence cannot veto a separately
+                        # approved run either; keep the repeat-charge notice.
+                        quote['repeatSubmission'] = True
             label = {"batch": "Prepare Batch translation", "translate": "Start Live API translation", "estimate": "Estimate selected phase", "speakers": "Collect speaker names"}[mode]
         elif action in SHARED_ACTIONS:
             label = SHARED_ACTIONS[action]
@@ -1014,7 +1019,6 @@ class Guided:
                     matched, _ = self.runs.quote(project_id, native, options["phase"], options["mode"])
                     if not matched["current"] or matched["job"]["id"] != confirmed["estimate"]["jobId"]:
                         raise ValueError("The matching estimate changed. Review a new preview.")
-                    self.protect_submission(native, confirmed['estimate'])
             return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"], options.get("preparation_mode"))
         if action == "refresh_sources":
             self.pending_run(self.backend.workflows.state(native["id"]))
@@ -1312,7 +1316,6 @@ class Guided:
                 record = self.runs.records(project_id).get(job['id'])
                 if not record or self.runs.inputs(project_id, native, record['phase'], record['mode'])['fingerprint'] != record['fingerprint']:
                     raise ValueError('The files or settings changed after preparation. Click Translate for a fresh estimate.')
-            self.protect_submission(native, {'jobId': job['id']})
             if job.get('mode') == 'batch':
                 # Persist intent before signaling the native worker, closing the
                 # gap between approval and its first provider manifest write.

@@ -197,7 +197,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
   const translationFlow = useTranslationFlow({ projectId: project.id, phase, mode, files: phaseFiles.map(file => file.name), state,
     dirty: draft.dirty || !!Object.keys(context.drafts).length, busy: operationBusy, save, settle: application.settle });
   const disabled = operationBusy || translationFlow.active;
-  const remainingFiles = translationFlow.state?.files.filter(name => !translationFlow.state?.conflict?.files.includes(name)) || [];
 
   const navigate = async (step: GuidedStep, task: string) => { await flushDrafts(); application.navigateGuided(project.id, { step, task }); };
   const move = (step: GuidedStep, task: string) => action.run(async () => { await navigate(step, task); setPanel(null); }, "", "position");
@@ -455,11 +454,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const noRemainingWork = estimateRequestCount(quote) === 0;
 
       const prerequisites = !baseline || !!changed.length || !state.provider.model || !phaseFiles.length || phase === "advanced" && !advancedReady || phase === "variables" && state.comparisons.status !== "ready";
-      const estimating = activeRun(localEstimate) || translationFlow.active;
+      const estimating = translationFlow.active;
       const preparing = estimating || action.busy && ["translate:prepare", actionKey("start", { mode, phase })].includes(action.key);
       const stopLabel = estimating || current?.mode === "batch" ? null : translationStopLabel(current);
       content = <TranslateWorkspace key={phase} state={state} phase={phase} values={values} run={current} estimate={localEstimate} currentEstimate={!!quote}
-        disabled={disabled} locked={locked} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={(job, file, index, validation) => inspect(job, { file, index, validation })} batches={openBatches}>
+        disabled={disabled} locked={translationFlow.active} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={(job, file, index, validation) => inspect(job, { file, index, validation })} batches={openBatches}>
         {!baseline && <p className="translation-error">Preserve the original and save its version baseline before translating.</p>}
         {!state.provider.enabled && <p className="muted">Provider execution is disabled for this launch. Local estimates are available.</p>}
         {!paidModeReady && <Message message="This connection does not support Batch. Choose Live or a supported connection." />}
@@ -470,8 +469,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
         : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
-        : pendingBatches.length ? "These files belong to submitted Batches. Progress and cancellation are available in Batches."
-        : unresolved.length ? `${unresolved.length} saved ${unresolved.length === 1 ? "run needs" : "runs need"} submission review in Run history.`
+        : pendingBatches.length ? "Earlier Batches are available in Batches. Translate starts a new estimate."
+        : unresolved.length ? "Earlier requests are unresolved. You can start a new translation."
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
@@ -479,8 +478,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         {current?.approval && <Button disabled={disabled} onClick={() => setSubmission(current)}>Review cost</Button>}
         {stopLabel && <Button variant="quiet" disabled={disabled} pending={action.busy && action.key === "run:stop"}
           onClick={() => action.run(() => api.stop(project.id, current!.id), "Stop requested. Saved work is retained.", "run:stop")}>{stopLabel}</Button>}
-        <Button variant="primary" pending={preparing || activeRun(current) && !current?.approval}
-          disabled={disabled || prerequisites || !current?.approval && locked || !state.provider.ready || !state.provider.enabled || !paidModeReady}
+        <Button variant="primary" pending={preparing}
+          disabled={disabled || prerequisites || !state.provider.ready || !state.provider.enabled || !paidModeReady}
           onClick={translateSelected}>Translate</Button>
         {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || locked || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
       </>;
@@ -728,7 +727,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       </div><ActionBar feedback={<Message message={action.error} />}><Button disabled={action.busy} onClick={() => setComparisonReview(false)}>Cancel</Button><Button variant="primary" disabled={!comparisonsAccepted || !state.comparisons.matches} pending={action.busy} onClick={() => action.run(async () => { await save(); await api.guided.comparisonsReview(project.id, state.comparisons.fingerprint, true); setComparisonReview(false); }, "Comparison coverage reviewed.", "event-text:comparisons")}>Confirm comparison coverage</Button></ActionBar>
     </Modal>}
     <TranslationFlowDialog projectId={project.id} flow={translationFlow} approvalCurrent={!translationFlow.state?.job?.approval || state.runs.some(run => run.approval?.token === translationFlow.state?.job?.approval?.token)}
-      remaining={remainingFiles} otherFiles={() => { const files = remainingFiles; edit("selected", values.selected.filter(name => !translationFlow.state?.conflict?.files.includes(name))); translationFlow.dismiss(); translationFlow.start(files); }}
       inspect={id => { translationFlow.dismiss(); const run = state.runs.find(item => item.id === id); if (run?.mode === "batch" && run.process?.batches?.length) openBatches(run.id); else if (run) inspect(run); else setHistory("all"); }} />
     {submission?.approval && <TranslationReview projectId={project.id} job={submission} busy={action.busy} pendingKey={action.key} disabled={disabled}
       approvalCurrent={state.runs.some(run => run.approval?.token === submission.approval!.token)}
