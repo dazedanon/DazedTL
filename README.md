@@ -46,8 +46,9 @@ The runner reports the five slowest Python tests to make runtime regressions vis
 Tests use temporary workspaces and controlled API responses; no provider, game folder, credentials, or sibling checkout is needed.
 
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
-Run `node scripts/build.mjs` separately for the formatting check, TypeScript checking and the renderer build.
-Launching builds a missing renderer without the formatting check.
+Run `node scripts/build.mjs` separately for static checks and the renderer build.
+It checks formatting, lints with type-aware [Oxlint](.oxlintrc.json) (including the React hooks rules) and [Ruff](ruff.toml), and type-checks the renderer and the Electron main process.
+Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 To skip the one-time formatting commit in local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 
