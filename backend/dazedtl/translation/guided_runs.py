@@ -29,12 +29,12 @@ class GuidedRuns:
 
     @staticmethod
     def current(runs, phase):
-        """Newest attempt owns a task; dismissing it never revives an older one."""
+        """Newest attempt owns a task; stale pointers never revive an older one."""
         own = [job for job in runs if job.get('logicalPhase') == phase]
         active = next((job for job in own if job.get('mode') != 'estimate'
                        and job.get('status') in {'ready', 'running', 'waiting'}), None)
         latest = active or (own[0] if own else None)
-        return latest if latest and latest.get('mode') != 'estimate' and (active or not latest.get('keptForHistory')) else None
+        return latest if latest and latest.get('mode') != 'estimate' else None
 
     def files(self, native, phase):
         return sorted(set(self.guided.backend.phase_files(native, phase)).intersection(native["selected"]))

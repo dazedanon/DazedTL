@@ -70,7 +70,7 @@ export function phaseRun(runs: Job[], phase: Phase, selected?: readonly string[]
   const latest = own.find(run => run.mode !== "estimate" && activeRun(run)) || own[0];
   // Check scope after choosing the latest attempt. Falling back by overlap
   // revives old failures when selection changes or an estimate replaces them.
-  return latest && latest.mode !== "estimate" && (activeRun(latest) || !latest.keptForHistory)
+  return latest && latest.mode !== "estimate"
     && (!selected || latest.files?.some(name => selected.includes(name) && !latest.retiredFiles?.includes(name))) ? latest : undefined;
 }
 export const needsSubmissionReview = (run: Job) => run.mode !== "estimate" && run.status !== "complete" && !!run.process?.retryBlocked;
@@ -112,13 +112,12 @@ export function fileMetricRun(runs: Job[], phase: Phase, name: string, retired: 
     : !run.process?.noRequestFiles?.includes(name) && !!run.process?.fileMetrics?.[name];
   return matches.find(run => activeRun(run) && changed(run)) || matches.find(changed);
 }
-export function blockingBatches(runs: Job[], selected: readonly string[], { applying = false } = {}) {
+/** Unsettled Batches protect working-source reloads, not reviewed saved-output Apply. */
+export function blockingBatches(runs: Job[], selected: readonly string[]) {
   return runs.filter(run => run.mode === "batch" && !run.temporary
     && run.files?.some(name => selected.includes(name) && !run.retiredFiles?.includes(name))
     && (activeRun(run) || run.process?.batches?.some(batch => !terminalBatch(batch.status))
       || needsSubmissionReview(run) && !run.process?.resultsCollected
-        && !(applying && run.status === "failed" && !!run.process?.batches?.length
-          && run.process.batches.every(batch => terminalBatch(batch.status) && batch.counts?.succeeded === 0))
       || ["monitoring", "collecting"].includes(run.process?.monitoring?.state || "")
       || ["stopped", "interrupted"].includes(run.status) && (!!run.process?.batches?.length && !!run.phase?.startsWith("poll") || run.process?.resultsCollected)));
 }

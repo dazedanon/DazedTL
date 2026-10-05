@@ -18,7 +18,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { Modal } from "../../ui/Modal";
 import { Section } from "../../ui/Section";
 import { Tabs } from "../../ui/Tabs";
-import { activeRun, blockingBatches, canResumeRun, completeForSelection, estimateRequestCount, needsSubmissionReview, phaseRun, translationTaskComplete, translationStopLabel, observedRun } from "./translationView";
+import { activeRun, blockingBatches, canResumeRun, completeForSelection, estimateRequestCount, phaseRun, translationTaskComplete, translationStopLabel, observedRun } from "./translationView";
 import { VirtualList } from "../../ui/VirtualList";
 import { ActivityHistory, projectActivity } from "./ActivityHistory";
 import { EngineOptions } from "./EngineOptions";
@@ -129,7 +129,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
 
   const documentName = state.contextDocument;
   const setDocumentName = (name: string) => { void action.run(async () => application.navigateGuided(project.id, { contextDocument: name })); };
-  const [output, setOutput] = useState("");
   const [baselineRun, setBaselineRun] = useState<string | null>(null);
   const [baselineNotice, setBaselineNotice] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -285,6 +284,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     const current = name === "backup_source" && recorded?.status === "complete" ? undefined : recorded;
     const active = current && ["ready", "running", "waiting"].includes(current.status);
     const publicationReview = ["export_selected", "rewrap_apply", "qa_apply"].includes(name);
+    const appliedHere = name === "export_selected" && current?.status === "complete" && current.id === started[actionKey(name, options)]?.id;
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
     const display = current?.status === "complete" && (publicationReview || qaOperation && (!qa.current || current.result?.task !== qa.task)) ? undefined : current;
     const localFeedback = !panel && (taskId === "backup" && name === "backup_source" || taskId === "format" && name === "prepare_game");
@@ -292,6 +292,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     if (localOperation?.action === name) return <Button variant={variant} pending disabled>{label}</Button>;
     return <ActionControl label={label} disabled={disabled || blocked} variant={variant}
       {...feedback(actionKey(name, options), active ? current.message || "Working…" : name === "start" && options.mode === "estimate" ? "Estimating selected files…" : "Preparing action…")}
+      {...(appliedHere ? { notice: "Saved translations applied." } : {})}
       pending={action.busy && action.key === actionKey(name, options) || !!active}
       job={display && !active && !(options.mode === "estimate" && display.status === "complete") ? display : undefined}
       onClick={() => review(name, options, files)} />;
@@ -445,14 +446,11 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const latest = phaseRun(state.runs, phase, selectedNames);
       const saved = state.phaseRuns[phase]?.id === latest?.id ? state.phaseRuns[phase] : latest;
       const current = saved && !state.sourceStatus.retired?.includes(saved.id) ? { ...saved, scopeComplete: completeForSelection(saved, selectedNames) } : undefined;
-      const unresolved = state.runs.filter(item => item.id !== current?.id && item.logicalPhase === phase && needsSubmissionReview(item) && item.files?.some(name => selectedNames.includes(name)));
       const quote = currentEstimate(phase);
       const localEstimate = state.estimates[phase]?.job;
       const pendingBatches = blockingBatches(state.runs, selectedNames);
       const locked = activeRun(current) || activeRun(localEstimate) || translationFlow.active || !!pendingBatches.length;
       const applyFiles = selectedNames.filter(name => state.readiness.outputs.includes(name));
-      const applyBatches = blockingBatches(state.runs, applyFiles, { applying: true });
-      const applyLocked = activeRun(current) || activeRun(localEstimate) || translationFlow.active || !!applyBatches.length;
       const noRemainingWork = estimateRequestCount(quote) === 0;
 
       const prerequisites = !baseline || !!changed.length || !state.provider.model || !phaseFiles.length || phase === "advanced" && !advancedReady || phase === "variables" && state.comparisons.status !== "ready";
@@ -471,9 +469,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
         : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
-        : pendingBatches.length ? applyBatches.length ? "Earlier Batch work still blocks Apply for these files. Open Batches to review it."
+        : pendingBatches.length ? applyFiles.length ? "Earlier Batches are available in Batches. You can apply saved output."
           : "Earlier Batches are available in Batches. Translate starts a new estimate."
-        : unresolved.length ? "Earlier requests are unresolved. You can start a new translation."
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
       primary = <>
@@ -484,7 +481,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <Button variant="primary" pending={preparing}
           disabled={disabled || prerequisites || !state.provider.ready || !state.provider.enabled || !paidModeReady}
           onClick={translateSelected}>Translate</Button>
-        {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || applyLocked || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
+        {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
       </>;
       break;
     }
@@ -571,7 +568,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       content = job ? <RunPanel projectId={project.id} hideTitle job={job} active={running && ["running", "waiting"].includes(job.status)} busy={action.busy || running && job.status === "failed"}
         pendingKey={action.busy ? action.key : ""} error={action.key.startsWith("run:") ? action.error : ""}
         stop={() => action.run(() => api.stop(project.id, job.id), "", "run:stop")} resume={() => setResume(job)} answer={(approved) => action.run(() => api.answer(project.id, job.approval!.token, approved), "", "run:answer:" + approved)}
-        exportFiles={() => action.run(async () => setOutput((await api.export(project.id)).path), "Output copy saved.", "run:export")} /> : <p className="muted">No saved translation run is available for this game.</p>;
+        /> : <p className="muted">No saved translation run is available for this game.</p>;
       primary = job?.status === "complete" && job.mode !== "estimate"
         ? job.mode === "speakers" ? <Button variant="primary" onClick={() => stepTask("guidance")}>Review translation guidance</Button> : nextRun(job)
         : <Button onClick={() => stepTask(stage.tasks[0].id)}>Return to tasks</Button>;
@@ -613,7 +610,6 @@ function Workspace({ project, state, translation, settings, backups, versions }:
           {taskId === "apply" && <div className="text-workspace-nav"><div role="group" aria-label="Apply and Fitting views">{(["apply", "fitting"] as const).map(view => <Button key={view} aria-pressed={taskView === view} disabled={disabled} onClick={() => textView(view)}>{view === "apply" ? "Apply" : "Fitting"}</Button>)}</div><div className="actions"><Button variant="quiet" aria-pressed={taskView === "qa"} disabled={disabled} onClick={() => textView("qa")}>Text QA · optional</Button>{state.engine === "MVMZ" && <Button variant="quiet" aria-pressed={taskView === "tools"} disabled={disabled} onClick={() => textView("tools")}>Tools · optional</Button>}</div></div>}
           {taskId === "other-event-text" && <div className="translation-substeps" role="group" aria-label="Event text steps">{(["audit", "sources", "advanced-run", ...(state.comparisons.status !== "not_needed" ? ["variables"] : [])] as string[]).map(view => <Button key={view} variant="quiet" aria-pressed={taskView === view} disabled={disabled} onClick={() => stepTask(view)}>{{ audit: "Investigate", sources: "Source choices", "advanced-run": "Translate", variables: "Update comparisons" }[view]}</Button>)}</div>}
           <ErrorBoundary resetKey={`${taskId}:${taskView}`} label="This task">{content}</ErrorBoundary>
-          {output && <p className="path">Output copy: {output} <Button onClick={() => action.run(() => window.dazedtl.openFolder("output", output))}>Open folder</Button></p>}
         </PageBody>
         {taskId === "plugins" ? <div className="plugin-host-footer" ref={setPluginFooter} /> : <ActionBar feedback={actionContext || <div className="guided-footer-context">{previous && <Button variant="quiet" disabled={action.busy} onClick={() => stepTask(previous.id)}>Back</Button>}{position.step !== "context" && <span className={backupPending || preparationPending ? "guided-prepare-feedback" : undefined}>{backupPending ? "Backup in progress" : preparationPending ? "Preparation in progress" : taskId === "format" && (preparationComplete || baseline) ? "Game files prepared" : draft.dirty ? "Options retained for recovery" : preserved ? "Original preserved" : "Start by preserving the original"}</span>}</div>}>
           {secondary}{primary}
@@ -683,12 +679,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
     {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? inspected.mode === "batch" ? "Batches" : "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
       <ProcessPanel job={inspected} initialRequest={inspectionTarget} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
         readNames={offset => api.guided.nameResults(project.id, inspected.id, offset)}
-        readProvider={() => api.guided.providerDetails(project.id, inspected.id)} actions={<ActionList compact>
-          {!activeRun(inspected) && <ActionRow label={<small>{inspected.keptForHistory ? "Hidden from current work." : "Keep this run in history only."}</small>}>
-            <ActionControl label={inspected.keptForHistory ? "Restore notice" : "Dismiss notice"} disabled={action.busy} {...feedback("run:retain:" + inspected.id, "Saving…")} onClick={() => action.run(async () => { const saved = await api.guided.retainRun(project.id, inspected.id, !inspected.keptForHistory); setInspected(current => current?.id === saved.id ? saved : current); }, "History preference saved.", "run:retain:" + inspected.id)} />
-          </ActionRow>}
+        actions={<ActionList compact>
           {canResumeRun(inspected) && <ActionRow label={<small>Continue Live with this run’s saved settings.</small>}><Button disabled={action.busy} onClick={() => setResume(inspected)}>Review resume</Button></ActionRow>}
-          {inspected.status === "complete" && Object.keys(inspected.outputs || {}).length > 0 && <ActionRow label="Export saved translations."><ActionControl label="Save output copy" disabled={action.busy || inspected.outputsAvailable === false} {...feedback("run:export", "Saving output copy…")} onClick={() => action.run(async () => setOutput((await api.export(project.id, inspected.id)).path), "Output copy saved.", "run:export")} /></ActionRow>}
         </ActionList>} />
       <Message message={action.key === "inspect:" + inspected.id ? action.error : ""} />
       {!inspected.process && <>{inspected.files && <p>{fileCount(inspected.files.length)} frozen · {inspected.model} · {inspected.mode}</p>}{inspected.result && <pre>{JSON.stringify(inspected.result, null, 2)}</pre>}{!!inspected.log.length && <details><summary>Diagnostic log</summary><pre>{inspected.log.join("\n")}</pre></details>}</>}

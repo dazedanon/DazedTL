@@ -51,7 +51,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
   const attention = rows.filter(needsReview).length;
   const matching = rows.filter(job => (filter === "all" || filter === "attention" && needsReview(job)
     || filter === "active" && activeRun(job) || filter === "saved" && outcomes.get(job.id)?.kind === "saved"
-    || filter === "dismissed" && job.keptForHistory || filter === "failed" && ["failed", "interrupted"].includes(job.status)
+    || filter === "failed" && ["failed", "interrupted"].includes(job.status)
     || filter === "canceled" && ["canceled", "cancelled", "stopped"].includes(job.status))
     && [job.label, job.model, job.id, historyPhase(job), historyMode(job), ...(job.files || [])].join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const groups: { day: string; date: string; jobs: Job[] }[] = [];
@@ -66,7 +66,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
       { id: "estimates", label: <>Estimates <span className="history-tab-count">{estimates.length}</span></> }, { id: "operations", label: "Other activity" }]}
       value={tab} onChange={value => { setTab(value); setFilter("all"); setVisible(30); }} />
     <div className="history-filters"><input type="search" aria-label="Search history" placeholder="Search files, model or task…" value={query} onChange={event => { setQuery(event.target.value); setVisible(30); }} />
-      <select aria-label="History status" value={filter} onChange={event => { setFilter(event.target.value); setVisible(30); }}><option value="all">All statuses</option><option value="attention">Needs review</option><option value="active">In progress</option>{tab === "runs" && <option value="saved">Output saved</option>}<option value="failed">Failed / interrupted</option><option value="canceled">Canceled / stopped</option><option value="dismissed">Dismissed</option></select>
+      <select aria-label="History status" value={filter} onChange={event => { setFilter(event.target.value); setVisible(30); }}><option value="all">All statuses</option><option value="attention">Needs review</option><option value="active">In progress</option>{tab === "runs" && <option value="saved">Output saved</option>}<option value="failed">Failed / interrupted</option><option value="canceled">Canceled / stopped</option></select>
       {!!attention && <Button variant="quiet" className="history-attention-filter" aria-pressed={filter === "attention"} onClick={() => { setFilter(filter === "attention" ? "all" : "attention"); setVisible(30); }}><AlertTriangle size={14} aria-hidden="true" />{attention} {attention === 1 ? "needs" : "need"} review</Button>}
     </div>
     <div key={`${tab}-${filter}-${query}`} className="history-list" role="tabpanel" id={`activity-history-panel-${tab}`} aria-labelledby={`activity-history-tab-${tab}`}>
@@ -75,7 +75,7 @@ export function ActivityHistory({ state, translation, inspect, initialFilter = "
         const outcome = outcomes.get(job.id)!;
         return <ActionRow key={job.id} label={<div className={`history-entry${tab === "operations" ? " history-entry--operation" : ""}`}>
           <div className="history-identity"><div><strong>{tab === "operations" ? job.label || "Saved activity" : historyPhase(job)}</strong>{tab !== "operations" && <span className="history-method">{historyMode(job)}</span>}{current.has(job.id) && <span className="history-latest">Latest</span>}</div>
-            <small>{job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}{(job.model || job.keptForHistory) && <span>{job.model}{job.keptForHistory && <span>{job.model ? " · " : ""}Dismissed</span>}</span>}</small>
+            <small>{job.created && <time dateTime={job.created} title={new Date(job.created).toLocaleString()}>{new Date(job.created).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time>}{job.model && <span>{job.model}</span>}</small>
           </div>
           {tab === "operations" ? <div className="history-operation-detail"><small>{operationSummary(job) || job.message}</small></div>
             : <div className="history-scope"><span>{job.files ? `${job.files.length} ${job.files.length === 1 ? "file" : "files"}` : "Scope not recorded"}</span><small>{job.files?.slice(0, 2).join(", ")}{job.files && job.files.length > 2 ? ` +${job.files.length - 2}` : ""}</small></div>}

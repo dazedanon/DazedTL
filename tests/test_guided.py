@@ -70,7 +70,7 @@ class GuidedTests(unittest.TestCase):
                     if key == selector and (not isinstance(value, list) or any(item not in choices[code] for item in value)): raise ValueError('Unknown registry identifier')
             return deepcopy(values)
         self.backend.guided_event_text_options = validate_event_options
-        self.backend.operations = SimpleNamespace(jobs={}, start=Mock())
+        self.backend.operations = SimpleNamespace(jobs={}, start=Mock(), running=lambda: False)
         self.backend.describe = lambda _: dict(self.native)
         self.backend.guided_phase = lambda owner, phase, files: self.backend.workflows.phase(owner, phase, True)
         self.settings_revision = 1
@@ -310,10 +310,10 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs']['database']['scopeComplete'])
         self.assertEqual(self.guided.run_view(identity)['availableOutputs'], [])
 
-    def test_history_dismissal_preserves_ownership_receipts_and_never_revives_old_work(self):
+    def test_legacy_history_preserves_ownership_receipts_and_never_revives_old_work(self):
         # Protect stale native pointers, updated timestamps and exact-scope
-        # fallback from promoting old failures; dismissal must be reversible
-        # without removing frozen evidence or hiding overlapping requests.
+        # fallback from promoting old failures. Legacy dismissal preferences
+        # must not hide saved ownership or settle overlapping paid requests.
         from dazedtl.translation.guided_runs import GuidedRuns
         inputs = self.guided.runs.inputs(self.identity, self.native, 'database', 'batch')
         old = {'id': 'old', 'created': '2020-01-01', 'updated': '2030-01-01', 'mode': 'batch',
@@ -329,28 +329,25 @@ class GuidedTests(unittest.TestCase):
         self.assertNotIn('database', self.guided.runs.snapshot(self.identity, self.native, {'changed': []})['phase_runs'])
         roots = [self.backend.manual.folder(identity) for identity in ('old', 'new')]
         before = {path: path.read_bytes() for root in roots for path in root.rglob('*') if path.is_file()}
-        self.assertTrue(self.guided.retain_run(self.identity, 'old', True)['keptForHistory'])
+        self.native['kept_failed_runs'] = {'old': {'dismissed': True}}
         native = self.backend.workflows.projects['native']
         self.assertIn('old', self.guided.owned_runs(native))
         overlaps = self.guided.submission_overlap(native, {'jobId': 'new'})
         self.assertEqual(overlaps[0]['files'], ['Items.json'])
         self.assertEqual(overlaps[0]['run'], 'old')
         self.assertEqual({path: path.read_bytes() for path in before}, before)
-        self.assertFalse(self.guided.retain_run(self.identity, 'old', False)['keptForHistory'])
-        with self.assertRaises(ValueError):
-            self.guided.retain_run(self.identity, 'foreign', True)
         old['status'] = 'running'
-        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
-            self.guided.retain_run(self.identity, 'old', True)
         views = [self.guided.run_view(identity) for identity in ('new', 'old')]
         self.assertEqual(GuidedRuns.current(views, 'database')['id'], 'old')
         old['status'] = 'failed'
         new.update(mode='batch', files=['Actors.json'])
         self.assertNotIn('database', self.guided.runs.snapshot(self.identity, native, {'changed': []})['phase_runs'])
-        self.backend.workflows.save.side_effect = OSError('Disk full')
-        with self.assertRaises(OSError):
-            self.guided.retain_run(self.identity, 'new', True)
-        self.assertFalse(self.guided.run_view('new')['keptForHistory'])
+        self.assertEqual(GuidedRuns.current([self.guided.run_view('old')], 'database')['id'], 'old')
+        # Legacy history keys still discover runs after old pointers disappear.
+        self.guided.path(self.identity, 'runs').unlink()
+        native['manual_job'] = None
+        self.assertIn('old', self.guided.owned_runs(native))
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
 
     def test_comparisons_require_exact_usable_mappings_for_the_selected_event_scope(self):
         self.backend.phase_files = lambda _native, phase: ['Items.json'] if phase == 'database' else ['Map001.json', 'Map002.json']
@@ -399,16 +396,16 @@ class GuidedTests(unittest.TestCase):
         self.native['selected'] = ['Map002.json']
         self.assertEqual(self.guided.runs.comparisons(self.native)['files'], ['Map002.json'])
 
-    def test_apply_review_keeps_a_completed_scope_and_does_not_apply_another_phases_output(self):
+    def test_apply_review_accepts_partial_output_despite_batches_and_keeps_its_selected_scope(self):
         write_json(self.source / 'System.json', {'gameTitle': 'Fixture'})
         self.native['selected'] = ['Items.json', 'System.json']
         self.backend.phase_files = lambda *_: ['Items.json', 'System.json']
-        write_json(self.folder / 'translated/Items.json', [{'name': 'Fixture output'}])
+        write_json(self.folder / 'translated/Items.json', [{'name': 'Fixture output', 'description': '未翻訳'}])
         write_json(self.folder / 'translated/System.json', {'gameTitle': 'Other output'})
         self.backend.workflows.preview = lambda *_: {'token': 'apply-preview', 'confirmation': True, 'options': {}}
         self.backend.guided_export_preview = Mock(side_effect=lambda _owner, paths: self.backend.workflows.preview())
-        # A historical failed Batch with no successful responses used to veto
-        # separately saved output. Its receipts must still guard source reloads.
+        # Pending or unresolved Batch receipts must not veto saved partial
+        # output; Apply must leave them intact and keep source reloads guarded.
         old = {'id': 'failed-batch', 'mode': 'batch', 'status': 'failed', 'files': ['Items.json'], 'log': []}
         self.backend.manual.jobs[old['id']] = old
         self.guided.runs.remember(self.identity, old, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
@@ -424,29 +421,40 @@ class GuidedTests(unittest.TestCase):
             self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
         for status, counts in [('in_progress', {'succeeded': 0}), ('failed', {}), ('failed', {'succeeded': 1})]:
             write_json(root/'log/batch_history.json', {'batches': [{**batch, 'api_status': status, 'request_counts': counts}]})
-            with self.assertRaisesRegex(ValueError, 'Open Batches'):
-                self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+            self.assertEqual(self.guided.preview(self.identity, 'export_selected', files=['Items.json'])['paths'], ['Items.json'])
         write_json(root/'log/batch_history.json', {'batches': [batch]})
         self.guided.batch_monitor.busy.add(old['id'])
-        with self.assertRaisesRegex(ValueError, 'Open Batches'):
-            self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
-        self.guided.batch_monitor.busy.clear()
+        old['status'] = 'running'
+        self.backend.running = lambda: True
+        self.backend.guided_export_preview.reset_mock()
         preview = self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
         self.assertEqual(preview['paths'], ['Items.json'])
         self.backend.guided_export_preview.assert_called_once_with('native', ['Items.json'])
         self.assertEqual(read_json(self.source / 'Items.json'), [{'name': '薬'}])
         self.assertEqual(self.native['selected'], ['Items.json', 'System.json'])
-        # The execution guard needs the reviewed file scope on the stored
-        # native confirmation, not just in the renderer's preview response.
+        # The active translation and collector cannot veto confirmation either.
         self.backend.workflows.execute = Mock(return_value={'id': 'apply-operation'})
-        with patch.object(self.guided, 'protect_batch_files', wraps=self.guided.protect_batch_files) as guard:
-            self.assertEqual(self.guided.execute(self.identity, preview['token']), {'id': 'apply-operation'})
-            guard.assert_called_once_with(self.native, ['Items.json'], applying=True)
+        self.assertEqual(self.guided.execute(self.identity, preview['token']), {'id': 'apply-operation'})
+        old['status'] = 'failed'
+        self.guided.batch_monitor.busy.clear()
+        self.backend.running = lambda: False
         self.assertEqual({path: path.read_bytes() for path in retained}, retained)
         self.assertTrue(self.guided.run_view(old['id'])['process']['retryBlocked'])
         with self.assertRaisesRegex(ValueError, 'new preview'):
             self.guided.execute(self.identity, preview['token'])
         self.backend.workflows.execute.assert_called_once_with('apply-preview')
+        # A runtime writer still blocks preview and consumes a failed confirmation.
+        preview = self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+        self.backend.operations.running = lambda: True
+        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
+            self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
+            self.guided.execute(self.identity, preview['token'])
+        self.backend.operations.running = lambda: False
+        with self.assertRaisesRegex(ValueError, 'new preview'):
+            self.guided.execute(self.identity, preview['token'])
+        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+            self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, 'export_selected', files=['Foreign.json'])
         self.native['files'] = [{'name': 'Items.json'}, {'name': 'System.json'}]
@@ -529,6 +537,21 @@ class GuidedTests(unittest.TestCase):
             with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
             (root/'translated/Items.json').unlink()
             with self.assertRaises(ValueError): self.guided.preview(self.identity, 'export_selected', options={'run_id': identity})
+            # Ordinary Apply can publish mixed translated/untranslated JSON
+            # while its Batch is running, without accepting malformed output.
+            self.native['selected'] = ['Items.json']
+            job['status'] = 'running'
+            self.backend.running = lambda: True
+            partial = [{'name': 'Medicine', 'description': '未翻訳', '_original': {'name': '薬'}}]
+            write_json(self.folder/'translated/Items.json', partial)
+            review = self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+            self.guided.execute(self.identity, review['token'])
+            self.assertEqual(read_json(self.source/'Items.json'), partial)
+            self.assertEqual(job['status'], 'running')
+            (self.folder/'translated/Items.json').write_text('{broken')
+            with self.assertRaises(ValueError):
+                self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+            self.assertEqual(read_json(self.source/'Items.json'), partial)
 
     def test_guidance_save_replaces_external_edits_and_retains_other_drafts(self):
         path = self.source / 'glossary.txt'
@@ -1007,12 +1030,13 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(job['status'], 'stopped')
         self.guided.batch_monitor.views.clear()
         self.guided.protect_batch_files(self.native, ['Other.json'])
-        for action in ('export_selected', 'refresh_sources'):
-            with self.assertRaisesRegex(ValueError, 'Open Batches'):
-                self.guided.preview(self.identity, action, files=['Items.json'])
-            self.guided.confirmations['file-review'] = {'project_id': self.identity, 'action': action, 'paths': ['Items.json']}
-            with self.assertRaisesRegex(ValueError, 'Open Batches'):
-                self.guided.execute(self.identity, 'file-review')
+        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+            self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+        self.guided.confirmations['file-review'] = {'project_id': self.identity, 'action': 'refresh_sources', 'paths': ['Items.json']}
+        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+            self.guided.execute(self.identity, 'file-review')
+        with self.assertRaisesRegex(ValueError, 'outputs are no longer available'):
+            self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
         job['status'] = 'running'
         provider = Mock()
         provider.status.return_value = {'api_status': 'in_progress'}

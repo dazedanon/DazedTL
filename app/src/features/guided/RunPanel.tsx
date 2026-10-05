@@ -41,7 +41,6 @@ export default function RunPanel({
   stop,
   resume,
   answer,
-  exportFiles,
   apply,
   busy,
   error = "",
@@ -54,7 +53,6 @@ export default function RunPanel({
   stop: () => void;
   resume: () => void;
   answer: (approved: boolean) => void;
-  exportFiles: () => void;
   apply?: () => void;
   busy: boolean;
   error?: string;
@@ -70,8 +68,7 @@ export default function RunPanel({
       </div>
       <p>{job.message}</p>
       <ProcessPanel job={job} readPayload={projectId ? index => api.guided.payload(projectId, job.id, index) : undefined}
-        readNames={projectId ? offset => api.guided.nameResults(projectId, job.id, offset) : undefined}
-        readProvider={projectId ? () => api.guided.providerDetails(projectId, job.id) : undefined} />
+        readNames={projectId ? offset => api.guided.nameResults(projectId, job.id, offset) : undefined} />
       {job.files && <details><summary>Frozen file scope</summary><ul>{job.files.map((name) => <li key={name}>{name}</li>)}</ul></details>}
       {job.eventTextReview && <details><summary>Saved event text review</summary>
         <p>{job.eventTextReview.literalBased ? "Reviewed literal-based comparison coverage." : job.eventTextReview.manual?.length ? "Manual overrides: " + job.eventTextReview.manual.join(", ") + ". Reason: " + job.eventTextReview.reason : "Reviewed investigation recommendations."}</p>
@@ -147,9 +144,6 @@ export default function RunPanel({
         {job.status === "complete" &&
           Object.keys(job.outputs || {}).length > 0 && (
             <>
-              <Button size="comfortable" onClick={exportFiles} disabled={busy} pending={pendingKey === "run:export"}>
-                Save output copy
-              </Button>
               {apply && <Button
                 size="comfortable"
                 variant="primary"

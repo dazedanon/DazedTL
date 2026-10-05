@@ -208,7 +208,30 @@ class Application:
         return self.settings.draft(revision, connection_id, values, model_options)
 
     def settings_model_defaults(self, connection_id, model):
-        return self.settings.model_defaults(connection_id, model)
+        return self.resolve_batch_support(connection_id=connection_id, model=model)
+
+    def resolve_batch_support(self, *, connection_id=None, model=None, persist=False):
+        """Model selection checks endpoints without holding the engine/app lock."""
+        with self.backend.lock:
+            if self.closing:
+                if persist:
+                    return None
+                raise ValueError('The app is closing. Reopen it before checking model defaults.')
+            lookup = self.settings.batch_lookup(connection_id=connection_id, model=model)
+        endpoints = None
+        if lookup is not None:
+            from dazedtl.settings.openrouter import check_endpoints
+            connection = {**lookup['connection'], 'model': lookup['model']}
+            endpoints = check_endpoints(connection, connection['catalog'])
+        with self.backend.context(), self.translation.engine.context():
+            if self.closing:
+                if persist:
+                    return None
+                raise ValueError('The app closed while checking model defaults. Try again after reopening it.')
+            if lookup is not None:
+                endpoints = self.settings.retain_batch_endpoints(lookup, endpoints, persist=persist)
+            if not persist:
+                return self.settings.model_defaults(connection_id, model, batch_endpoints=endpoints)
 
     def prepare_model_pricing(self, name, params):
         """Only explicit price/estimate actions may perform public price reads."""
@@ -299,9 +322,8 @@ def serve(args, diagnostics):
                 getattr(app.guided, name),
                 lambda value, _params: views.job(value),
             )
-            for name in ("execute", "answer", "stop", "resume", "inspect", "retain_run")
+            for name in ("execute", "answer", "stop", "resume", "inspect")
         },
-        "guided_export": (app.guided.export, lambda value, _params: value),
         "guided_output_folder": (app.guided.output_folder, lambda value, _params: value),
         "guided_payload": (app.guided.payload, lambda value, _params: value),
         "guided_name_results": (app.guided.name_results, lambda value, _params: value),
@@ -338,12 +360,15 @@ def serve(args, diagnostics):
             raise ValueError("Unknown project operation.")
         handler, present = methods[name]
         app.prepare_model_pricing(name, params)
-        if name in {"connection_check", "openrouter_hosts"}:
+        if name in {"connection_check", "openrouter_hosts", "settings_model_defaults"}:
             return present(handler(**params), params)
         with app.backend.context(), app.translation.engine.context():
             if app.closing:
                 raise ValueError("The app is closing. Reopen it to resume saved project work.")
-            return present(handler(**params), params)
+            value = present(handler(**params), params)
+        if name in {"settings_save", "connection_save", "connection_select"}:
+            app.resolve_batch_support(persist=True)
+        return value
 
     if set(methods) != set(PROTOCOL["methods"]):
         raise RuntimeError("The application API does not match its protocol manifest.")

@@ -409,12 +409,14 @@ class Settings:
                           default_mode="translate" if self.adapter.allow_providers else "estimate")
         return result
 
-    def model_defaults(self, connection_id, model, *, cached_only=False):
+    def model_defaults(self, connection_id, model, *, cached_only=False, batch_endpoints=None):
         state = self._read()
         if connection_id != state["active"]:
             raise ValueError("The active connection changed. Reopen Settings.")
         active = self._connection(state)
         if active and active["provider"] == "openrouter":
+            if batch_endpoints is not None:
+                active = {**active, 'batch_endpoints': batch_endpoints}
             value = openrouter.describe(active, model)
             cached = self._openrouter_prices.get((active['id'], model, active.get('openrouter_host', '')))
             if cached:
@@ -424,6 +426,43 @@ class Settings:
             cached = getattr(getattr(self.adapter, 'model_defaults', None), 'cached', None)
             return cached(model) if cached is not None else {}
         return self.adapter.model_defaults.describe(model)
+
+    def batch_lookup(self, *, connection_id=None, model=None):
+        """Select a targeted endpoint read; observations never call this."""
+        active = self._connection(self._read())
+        if connection_id is not None and connection_id != (active['id'] if active else ''):
+            raise ValueError('The active connection changed. Reopen Settings.')
+        if (not active or active['provider'] != 'openrouter' or not self.adapter.allow_providers
+                or not self._configured(active) or active['check']['status'] != 'verified'):
+            return None
+        model = active['model'] if model is None else preferences.text(model, 'model ID', required=True)
+        row = active.get('catalog', {}).get(model + ':batch', {}) if ':' not in model else {}
+        if not model or not row.get('text') or not row.get('json'):
+            return None
+        endpoints = active.get('batch_endpoints', {})
+        if (endpoints.get('model') == model and endpoints.get('host') == active.get('openrouter_host', '')
+                and 'providers' in endpoints and not endpoints.get('error')):
+            return None
+        return {'connection': active, 'model': model}
+
+    def retain_batch_endpoints(self, lookup, endpoints, *, persist):
+        state = self._read()
+        active, previous = self._connection(state), lookup['connection']
+        keys = ('id', 'provider', 'protocol', 'endpoint', 'secret', 'keyless', 'organization',
+                'model', 'openrouter_host', 'check', 'catalog', 'batch_endpoints')
+        if not active or any(active.get(key) != previous.get(key) for key in keys):
+            if persist:
+                return None  # A completed save must not overwrite a newer selection.
+            raise ValueError('The connection or model changed while checking Batch support. Try again.')
+        openrouter.validate_endpoints(endpoints)
+        if endpoints.get('model') != lookup['model'] or endpoints.get('host') != active.get('openrouter_host', ''):
+            raise ValueError('The Batch endpoints do not match the selected model and host.')
+        if persist:
+            if lookup['model'] != active['model']:
+                raise ValueError('Only the saved model can retain Batch availability.')
+            active['batch_endpoints'] = endpoints
+            self._write(state, bump=False)
+        return endpoints
 
     def pricing_lookup(self, *, connection_id=None, model=None, explicit=False):
         """Choose an optional public read while the caller holds the app lock."""

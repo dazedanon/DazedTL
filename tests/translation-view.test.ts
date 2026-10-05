@@ -121,8 +121,8 @@ test("a later event-code task cannot inherit completion from map outputs or an o
   assert.equal(fileStatus("Map001.json", { ...maps, appliedOutputs: ["Map001.json"] }).label, "Applied");
   const partial = { ...maps, status: "interrupted", availableOutputs: [], outputs: {}, process: { requests: [{ index: 0, file: "Map001.json", state: "uncertain", sourceItems: 1 }], errors: [] } };
   assert.equal(fileStatus("Map001.json", partial).label, "Check submission");
-  // Dismissal must not revive the previous attempt.
-  assert.equal(phaseRun([{ ...maps, id: "kept", keptForHistory: true }, partial], "dialogue"), undefined);
+  // Legacy dismissal flags no longer hide the latest attempt.
+  assert.equal(phaseRun([{ ...maps, id: "kept", keptForHistory: true }, partial], "dialogue")?.id, "kept");
   // A new draft selection must not offer Apply for a different completed scope
   // while the backend snapshot still describes the previous saved selection.
   assert.equal(phaseRun([maps], "dialogue", ["Map003.json"]), undefined);
@@ -229,14 +229,14 @@ test("context preview separates matched guidance from static prompts and transla
 });
 
 // Protect stale overlapping failures becoming current after an estimate, a
-// selection change or dismissal, while unresolved receipts remain actionable.
+// selection change, while unresolved receipts remain actionable.
 test("new attempts supersede historical warnings without releasing submission protections", () => {
   const old = { id: "old", created: "2020-01-01", updated: "2030-01-01", mode: "batch", logicalPhase: "database", files: ["Items.json", "Actors.json"], status: "failed", phase: "poll", process: { failed: 82, retryBlocked: false, requests: [{ index: 0, file: "Items.json", state: "failed", sourceItems: 1 }] } } as Job;
   const next = { ...old, id: "next", created: "2026-01-01", files: ["Actors.json"] };
   assert.equal(phaseRun([old, next], "database", ["Items.json"]), undefined);
   assert.equal(phaseRun([old, next], "database", ["Actors.json"]), next);
   assert.equal(phaseRun([{ ...next, mode: "estimate" }, old], "database"), undefined);
-  assert.equal(phaseRun([{ ...next, keptForHistory: true }, old], "database"), undefined);
+  assert.equal(phaseRun([{ ...next, keptForHistory: true }, old], "database")?.id, next.id);
   assert.equal(fileStatus("Items.json", old, true).label, "Ready");
   assert.equal(needsSubmissionReview(old), false);
   assert.equal(canResumeRun(old), false);
@@ -246,18 +246,16 @@ test("new attempts supersede historical warnings without releasing submission pr
   assert.equal(canResumeRun(unresolved), false);
   const resumed = { ...unresolved, status: "running" };
   assert.equal(phaseRun([next, resumed], "database"), resumed);
-  // Saved output may be applied despite an old terminal zero-success Batch;
-  // unresolved submissions, source reloads and active collection stay guarded.
+  // Source reloads stay guarded regardless of a Batch's successful row count.
   const failedBatch = { id: "paid", status: "failed", counts: { succeeded: 0 } };
   const terminalFailure = { ...unresolved, process: { ...unresolved.process, batches: [failedBatch] } };
-  assert.deepEqual(blockingBatches([terminalFailure], ["Items.json"], { applying: true }), []);
   assert.deepEqual(blockingBatches([terminalFailure], ["Items.json"]), [terminalFailure]);
   assert.equal(needsSubmissionReview(terminalFailure), true);
   for (const guarded of [unresolved, { ...terminalFailure, status: "running" },
     { ...terminalFailure, process: { ...terminalFailure.process, monitoring: { state: "collecting" } } },
     ...[{ ...failedBatch, status: "in_progress" }, { ...failedBatch, counts: {} }, { ...failedBatch, counts: { succeeded: 1 } }]
       .map(batch => ({ ...terminalFailure, process: { ...terminalFailure.process, batches: [batch] } })),
-  ]) assert.equal(blockingBatches([guarded as Job], ["Items.json"], { applying: true }).length, 1);
+  ]) assert.equal(blockingBatches([guarded as Job], ["Items.json"]).length, 1);
 });
 
 // History must not turn local estimates, absent receipts or a stopped/failed

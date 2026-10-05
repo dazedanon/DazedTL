@@ -1,7 +1,7 @@
 """Checked OpenRouter catalog metadata and immutable Batch execution policy.
 
-The authenticated connection check owns Batch eligibility. Explicit model or
-estimate preparation can also resolve public Live prices without changing it.
+The authenticated connection check owns account eligibility. Model selection
+resolves compatible Batch endpoints; estimate preparation can resolve Live prices.
 Observations only read cached metadata.
 """
 
@@ -101,7 +101,7 @@ def describe(connection, model):
         endpoints = connection.get("batch_endpoints", {})
         if endpoints.get("model") != model or endpoints.get("host") != host or 'providers' not in endpoints:
             supported, batch = False, {}
-            reason = "Check this connection after selecting the model to verify Batch structured-output support."
+            reason = "Batch support has not been checked for this model and host. Save preferences to check automatically."
         elif not endpoints.get("rates") or not endpoints.get('providers'):
             supported, batch = False, {}
             reason = endpoints.get('error') or "No selected Batch endpoint supports this model's required structured outputs."

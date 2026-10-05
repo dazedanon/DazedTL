@@ -197,23 +197,31 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(len(requests), 4)
 
     def test_openrouter_batch_catalog_survives_reopen_and_host_changes_cannot_reprice_saved_work(self):
-        # Batch availability and rates must be checked once, survive reopening,
-        # and never perform network I/O while snapshots inspect saved settings.
-        model = 'author/model'
+        # Switching a saved model/host must resolve Batch support without a
+        # second account check; draft reads and late replies cannot change it.
+        from dazedtl.api.server import Application
+        model, other = 'author/model', 'author/other'
         metadata = {'values': {'language': 'English', 'model': model, 'api': '', 'API_PROVIDER': 'openai'}}
         adapter = SimpleNamespace(settings_metadata=lambda: metadata, allow_providers=True, validate_route=lambda _: None,
                                   provider_defaults=lambda _: {'batch_supported': False}, manual=SimpleNamespace(request_policy=None), install_settings=Mock())
+        adapter.lock = threading.RLock()
+        adapter.context = lambda: adapter.lock
+        app = Application.__new__(Application)
+        app.backend, app.closing = adapter, False
+        app.translation = SimpleNamespace(engine=SimpleNamespace(context=lambda: adapter.lock))
         state = {'version': 2, 'revision': 0, 'values': {'language': 'English', 'model': model},
                  'legacy': {'values': metadata['values'], 'engines': {}, 'draft': None}, 'model_options': {},
                  'active': '', 'draft': None, 'connections': []}
         row = {'input': 2, 'output': 8, 'cache_read': None, 'cache_write': None, 'text': True, 'json': True, 'context': 32000, 'max_output': 4096}
         checked = {'check': {'status': 'verified', 'message': 'Checked', 'checkedAt': '2026-10-05T12:00:00+00:00'},
-                   'models': [model], 'catalog': {model: row, model + ':batch': {**row, 'input': .8, 'output': 3}},
+                   'models': [model, other], 'catalog': {model: row, model + ':batch': {**row, 'input': .8, 'output': 3},
+                                                       other: row, other + ':batch': row},
                    'batch_endpoints': {'model': model, 'host': '', 'providers': ['supported'],
                        'rates': {'input': .8, 'output': 3, 'cache_read': None, 'cache_write': None}}}
         with TemporaryDirectory() as directory:
             write_json(Path(directory)/'settings/settings.json', state)
             settings = Settings(directory, adapter)
+            app.settings = settings
             view = settings.save_connection(0, 'openrouter', secret='fixture-key')
             identity = view['activeConnectionId']
             view = settings.save(view['revision'], identity, {'language': 'English', 'model': model}, {})
@@ -221,6 +229,7 @@ class SettingsTests(unittest.TestCase):
             with patch.object(providers, 'check', return_value=checked):
                 view = settings.check_connection(view['revision'], identity)
             settings = Settings(directory, adapter)
+            app.settings = settings
             with patch.object(httpx, 'Client', side_effect=AssertionError('Observations cannot contact a provider.')):
                 self.assertTrue(settings.translation_defaults()['batch_supported'])
                 self.assertEqual(settings.model_defaults(identity, model)['batchInputRate'], .8)
@@ -231,20 +240,89 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(frozen['openrouterStructuredOutputs'], openrouter.STRUCTURED_OUTPUTS)
                 self.assertNotIn('catalog', settings.describe()['connections'][0])
             original = deepcopy(frozen)
+            endpoints = {**checked['batch_endpoints'], 'model': other,
+                         'rates': {**checked['batch_endpoints']['rates'], 'input': 1.1}}
+            with patch.object(providers, 'check', side_effect=AssertionError('Do not recheck the account on model selection.')), \
+                    patch.object(openrouter, 'check_endpoints', return_value=endpoints) as fetch:
+                result = app.settings_model_defaults(identity, other)
+                self.assertTrue(result['batchSupported'])
+                self.assertEqual(result['batchInputRate'], 1.1)
+                self.assertEqual(settings.describe()['values']['model'], model)
+                self.assertEqual(settings.model_defaults(identity, model)['batchInputRate'], .8)
+                view = settings.save(view['revision'], identity, {'language': 'English', 'model': other}, {})
+                app.resolve_batch_support(persist=True)
+                self.assertEqual(fetch.call_args.args[0]['model'], other)
+                self.assertEqual(configuration(settings, 'batch')['openrouterBatch']['input'], 1.1)
+                app.resolve_batch_support(persist=True)
+                self.assertEqual(fetch.call_count, 2)  # Saved metadata is reused on a revisit.
+            settings = Settings(directory, adapter)
+            app.settings = settings
+            with patch.object(httpx, 'Client', side_effect=AssertionError('Reopening/observations cannot contact a provider.')):
+                self.assertTrue(settings.translation_defaults()['batch_supported'])
+                self.assertEqual(settings.model_defaults(identity, other)['batchInputRate'], 1.1)
+            view = settings.save(view['revision'], identity, {'language': 'English', 'model': model}, {})
             view = settings.save_connection(view['revision'], 'openrouter', connection_id=identity, openrouter_host='deepinfra')
             self.assertFalse(settings.translation_defaults()['batch_supported'])
             with self.assertRaises(ValueError):
                 configuration(settings, 'batch')
             endpoints = {'model': model, 'host': 'deepinfra', 'providers': ['deepinfra'],
                          'rates': {'input': 1.2, 'output': 4, 'cache_read': None, 'cache_write': None}}
-            with patch.object(providers, 'check', return_value={**checked, 'batch_endpoints': endpoints}):
-                view = settings.check_connection(view['revision'], identity)
+            with patch.object(openrouter, 'check_endpoints', return_value=endpoints):
+                app.resolve_batch_support(persist=True)
             settings.retain_prices(settings.pricing_lookup(), {'model': model, 'host': 'deepinfra', 'inputRate': 2.4, 'outputRate': 9,
                 'source': 'catalog', 'updatedAt': checked['check']['checkedAt'], 'stale': False})
             self.assertEqual(configuration(settings, 'batch')['openrouterBatch']['input'], 1.2)
             self.assertEqual(configuration(settings, 'live')['rates']['input'], 2.4)
             self.assertEqual(frozen, original)
             self.assertEqual(worker_secret(Path(directory), frozen), 'fixture-key')
+
+            # A stalled endpoint read leaves settings observable and cannot
+            # publish after a different model, host, key or catalog is selected.
+            view = settings.save(view['revision'], identity, {'language': 'English', 'model': other}, {})
+            lookup = settings.batch_lookup()
+            for change in ({'model': model}, {'openrouter_host': 'novita'}, {'secret': 'replacement'},
+                           {'catalog': {}}, {'check': providers.unchecked()}):
+                stale = deepcopy(lookup)
+                stale['connection'].update(change)
+                self.assertIsNone(settings.retain_batch_endpoints(stale, endpoints, persist=True))
+            started, release, failures = threading.Event(), threading.Event(), []
+            def slow_check(connection, _known):
+                started.set()
+                self.assertTrue(release.wait(1))
+                return {**endpoints, 'model': connection['model']}
+            def resolve():
+                try:
+                    app.resolve_batch_support(persist=True)
+                except Exception as error:
+                    failures.append(error)
+            with patch.object(openrouter, 'check_endpoints', side_effect=slow_check):
+                worker = threading.Thread(target=resolve)
+                worker.start()
+                try:
+                    self.assertTrue(started.wait(1))
+                    acquired = adapter.lock.acquire(timeout=.1)
+                    self.assertTrue(acquired, 'A stalled Batch check held the application lock.')
+                    if acquired:
+                        try:
+                            view = settings.save(view['revision'], identity, {'language': 'English', 'model': model}, {})
+                            self.assertTrue(settings.translation_defaults()['batch_supported'])
+                        finally:
+                            adapter.lock.release()
+                finally:
+                    release.set()
+                    worker.join(1)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(failures, [])
+            self.assertTrue(settings.translation_defaults()['batch_supported'])
+            self.assertEqual(settings.model_defaults(identity, model)['batchInputRate'], 1.2)
+            # No endpoint lookup can infer eligibility for an absent model or
+            # bypass offline mode and initial account authentication.
+            self.assertIsNone(settings.batch_lookup(model='author/absent'))
+            adapter.allow_providers = False
+            self.assertIsNone(settings.batch_lookup(model=other))
+            adapter.allow_providers = True
+            view = settings.save_connection(view['revision'], 'openrouter', connection_id=identity, secret='replacement')
+            self.assertIsNone(settings.batch_lookup(model=other))
 
     def test_pinned_batch_endpoint_prices_do_not_fall_back_and_outages_preserve_authentication(self):
         # A host's price can differ from the model minimum, and a Batch

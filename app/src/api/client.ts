@@ -139,12 +139,10 @@ export const api = {
     comparisonsReview: (project_id: string, fingerprint: string | null, accepted: boolean) => request("guided_comparisons_review", { project_id, fingerprint, accepted }),
     applySpeakers: (project_id: string, revision: number, report_id: string, reset = false) => request("guided_apply_speakers", { project_id, revision, report_id, reset }),
     inspect: (project_id: string, run_id: string) => request("guided_inspect", { project_id, run_id }),
-    retainRun: (project_id: string, run_id: string, dismissed: boolean) => request("guided_retain_run", { project_id, run_id, dismissed }),
     payload: (project_id: string, run_id: string, index: number) => request("guided_payload", { project_id, run_id, index }),
     nameResults: (project_id: string, run_id: string, offset = 0) => request("guided_name_results", { project_id, run_id, offset }),
     filePreview: (project_id: string, name: string, offset = 0, query = "") => request("guided_file_preview", { project_id, name, offset, query }),
     discardPreparation: (project_id: string, run_id: string) => request("guided_discard_preparation", { project_id, run_id }),
-    providerDetails: (project_id: string, run_id: string) => request("guided_provider_details", { project_id, run_id }),
     batchCancelPreview: (project_id: string, run_id: string, batch_id: string) => request("guided_batch_cancel_preview", { project_id, run_id, batch_id }),
     batchCancel: (project_id: string, token: string) => request("guided_batch_cancel", { project_id, token }),
     batchCollect: (project_id: string, run_id: string) => request("guided_batch_collect", { project_id, run_id }),
@@ -162,7 +160,6 @@ export const api = {
     request("guided_answer", { project_id, token, approved }),
   stop: (project_id: string, run_id?: string) => request("guided_stop", { project_id, ...(run_id ? { run_id } : {}) }),
   resume: (project_id: string, run_id?: string) => request("guided_resume", { project_id, ...(run_id ? { run_id } : {}) }),
-  export: (project_id: string, run_id?: string) => request("guided_export", { project_id, run_id }),
   draft: (project_id: string, documents: Documents) =>
     request("guided_draft", { project_id, documents }),
   saveDocument: (

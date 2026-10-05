@@ -59,7 +59,6 @@ export interface Job {
   scopeComplete?: boolean;
   appliedOutputs?: string[];
   process?: RunProcess;
-  keptForHistory?: boolean;
   eventTextReview?: { manual?: string[]; reason?: string; binding?: string; reportId?: string | null; fingerprint?: string; literalBased?: boolean; settings?: Record<string, EngineValue> } | null;
   action?: string;
   result?: Record<string, unknown> | null;
@@ -98,6 +97,7 @@ export interface RunProcess {
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
   batches?: { id: string; status: string; provider?: string; canCancel?: boolean; total?: number | null; requestIndices?: number[]; clarification?: boolean; originalBatchId?: string; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
+  runErrors?: string[];
   errors: string[]; usage?: Record<string, number> | null;
 }
 export interface BatchCancellation {
@@ -788,9 +788,7 @@ export interface RpcContract {
   };
   guided_stop: { request: { project_id: string; run_id?: string }; response: Job };
   guided_resume: { request: { project_id: string; run_id?: string }; response: Job };
-  guided_retain_run: { request: { project_id: string; run_id: string; dismissed: boolean }; response: Job };
   guided_output_folder: { request: { project_id: string }; response: { path: string } };
-  guided_export: { request: { project_id: string; run_id?: string }; response: ExportedFiles };
   guided_inspect: { request: { project_id: string; run_id: string }; response: Job };
   guided_payload: { request: { project_id: string; run_id: string; index: number }; response: RunPayload };
   guided_name_results: { request: { project_id: string; run_id: string; offset?: number }; response: NameTranslationPage };

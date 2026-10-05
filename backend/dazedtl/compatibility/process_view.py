@@ -397,6 +397,11 @@ def summary(root, job):
     results = batch_results(root)
     failed = sum((batch.get('request_counts') or {}).get('errored') or 0 for batch in batches)
     errors = [clean_message(error.get('message')) for batch in batches for error in (batch.get('provider_errors') or []) if error.get('message')]
+    # Keep errors bound to a request out of run-wide diagnostics. The original
+    # aggregate still drives existing outcome/guard calculations.
+    run_errors = [clean_message(error.get('message')) for batch in batches
+                  for error in (batch.get('provider_errors') or [])
+                  if error.get('message') and error.get('custom_id') not in (batch.get('custom_ids') or {})]
     received = len(results)
     prepared = len(requests)
     validated = None
@@ -481,7 +486,8 @@ def summary(root, job):
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
             'noRequestFiles': no_request_files(root, job, items),
-            'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
+            'errors': list(dict.fromkeys(errors)), 'runErrors': list(dict.fromkeys(run_errors)),
+            'usage': usage, 'fileMetrics': file_metrics(job),
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source']),
                           'preview': source_preview(row['source']),
                           **({'providerFinished': True} if row.get('providerFinished') else {}),
@@ -599,7 +605,7 @@ def payload(root, index):
         custom_id = next((custom for batch in history
                           for custom, value in batch.get('custom_ids', {}).items() if value == key), None)
         error = next((error for batch in history for error in (batch.get('provider_errors') or [])
-                      if error.get('custom_id') == custom_id), None)
+                      if custom_id is not None and error.get('custom_id') == custom_id), None)
         value = batch_payload(index, len(keys), entry, custom_id, entry['params'], row['response'], row['state'], row.get('error') or error)
         value['unused'] = row.get('unused')
         from .batch_refusals import records as clarification_records

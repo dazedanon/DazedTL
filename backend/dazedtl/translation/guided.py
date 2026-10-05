@@ -80,8 +80,11 @@ class Guided:
         self.observed_files[path] = (signature, value)
         return value
 
-    def idle(self):
-        if self.backend.running() or self.translation.jobs.running():
+    def idle(self, *, applying=False):
+        # Apply freezes saved output; isolated translation workers do not write
+        # runtime files. Other runtime operations must still finish first.
+        busy = self.backend.operations.running() if applying else self.backend.running()
+        if busy or self.translation.jobs.running():
             raise ValueError("Finish or stop the current run before starting another action.")
 
     def record(self, project_id):
@@ -278,8 +281,6 @@ class Guided:
             job['itemProgress'] = dict(job['item_progress'])
         from dazedtl.compatibility.preparations import temporary
         job['temporary'] = temporary(job)
-        job["keptForHistory"] = any(identity in project.get("kept_failed_runs", {})
-                                    for project in self.backend.workflows.projects.values())
         try:
             root = self.backend.manual.folder(identity)
             folder = root / "translated"
@@ -480,24 +481,6 @@ class Guided:
         if run_id in self.owned_runs(native) and run_id in self.backend.manual.jobs:
             return self.run_view(run_id)
         return self.translation.run(project_id, run_id)
-
-    def retain_run(self, project_id, run_id, dismissed):
-        """Only change presentation; all ownership and submission receipts remain."""
-        _, native = self.record(project_id)
-        if type(dismissed) is not bool or not isinstance(run_id, str) or run_id not in self.owned_runs(native) or run_id not in self.backend.manual.jobs:
-            raise ValueError('Choose a saved run belonging to this project.')
-        job = self.backend.manual.jobs[run_id]
-        if job.get('status') in {'ready', 'running', 'waiting'} or job.get('approval'):
-            raise ValueError('Finish or stop this run before dismissing its notice.')
-        updated = deepcopy(native)
-        kept = updated.setdefault('kept_failed_runs', {})
-        if dismissed:
-            kept[run_id] = {'dismissed': True}
-        else:
-            kept.pop(run_id, None)
-        self.backend.workflows.save(updated)
-        self.backend.workflows.projects[native['id']] = updated
-        return self.run_view(run_id)
 
     def readiness(self, project_id, native, value, source_status=None):
         folder = self.backend.workflows.folder(native["id"])
@@ -751,7 +734,7 @@ class Guided:
                     if identity and identity != current and identity in self.backend.manual.jobs]
         return overlap(self.backend.manual.folder(current), job, previous)
 
-    def protect_batch_files(self, native, files, *, applying=False):
+    def protect_batch_files(self, native, files):
         from dazedtl.compatibility.batch_control import TERMINAL
         names = set(files)
         for identity in self.owned_runs(native):
@@ -763,18 +746,10 @@ class Guided:
                 continue
             process = view.get('process') or {}
             batches = process.get('batches', [])
-            # A failed run with terminal zero-success receipts cannot publish
-            # new output. Keep its uncertainty for recovery and source reloads,
-            # without vetoing a separately reviewed saved runtime publication.
-            failed_without_results = (applying and job.get('status') == 'failed' and bool(batches)
-                                      and all(batch.get('status') in TERMINAL
-                                              and type((batch.get('counts') or {}).get('succeeded')) is int
-                                              and batch['counts']['succeeded'] == 0
-                                              for batch in batches))
             if (identity in self.batch_monitor.busy or job.get('status') in {'ready', 'running', 'waiting'}
                     or (process.get('monitoring') or {}).get('state') in {'monitoring', 'collecting'}
                     or any(batch.get('status') not in TERMINAL for batch in batches)
-                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected') and not failed_without_results
+                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected')
                     or job.get('status') in {'stopped', 'interrupted'} and (str(job.get('phase', '')).startswith('poll') and process.get('batches') or process.get('resultsCollected'))):
                 raise ValueError('These files still belong to Batch work. Open Batches to track progress or cancel it before changing the files.')
 
@@ -802,7 +777,7 @@ class Guided:
 
     def preview(self, project_id, action, files=None, options=None):
         if action != 'start':
-            self.idle()
+            self.idle(applying=action == 'export_selected')
         project, native = self.record(project_id)
         self.clean(project_id)
         options = {} if options is None else deepcopy(options)
@@ -813,8 +788,8 @@ class Guided:
             if set(options) != {'run_id'}:
                 raise ValueError("Choose a saved Batch to reapply.")
             run_output, files = self.batch_output(native, options['run_id'], files)
-        if action in {'refresh_sources', 'export_selected'}:
-            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'], applying=action == 'export_selected')
+        if action == 'refresh_sources':
+            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
         self.settings.prepare_engine()
@@ -941,7 +916,7 @@ class Guided:
                 if files is not None and paths != files:
                     raise ValueError("The selected run outputs are no longer available. Review current outputs.")
                 if not paths:
-                    raise ValueError("Complete and review a translation before applying its files.")
+                    raise ValueError("No saved translation output is available for these files yet.")
                 options = {"files": paths}
             if action == "release":
                 from .release import destination
@@ -1004,10 +979,10 @@ class Guided:
         project, native = self.record(project_id)
         self.confirmations.pop(token)
         action = confirmed["action"]
-        if action in {'refresh_sources', 'export_selected'}:
-            self.protect_batch_files(native, confirmed['paths'], applying=action == 'export_selected')
+        if action == 'refresh_sources':
+            self.protect_batch_files(native, confirmed['paths'])
         if action != 'start':
-            self.idle()
+            self.idle(applying=action == 'export_selected')
         if action != "backup_source":
             self.source_preserved(project_id)
         if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
@@ -1398,16 +1373,6 @@ class Guided:
         if not folder.is_dir():
             raise ValueError("No translated folder is available for this project.")
         return {"path": str(folder)}
-
-    def export(self, project_id, run_id=None):
-        self.idle()
-        _, native = self.record(project_id)
-        identity = run_id if run_id is not None else self.job(project_id)["id"]
-        if not isinstance(identity, str) or identity not in self.owned_runs(native):
-            raise ValueError("Choose a saved run belonging to this project.")
-        if (self.backend.saved_run_configuration(identity).get("workflow") or {}).get("id") != native["id"]:
-            raise ValueError("This saved output belongs to another project.")
-        return self.backend.manual.export(identity)
 
     def draft(self, project_id, documents):
         _, native = self.record(project_id)
