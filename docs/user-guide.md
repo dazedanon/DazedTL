@@ -126,6 +126,7 @@ Len's manual checkpoint and patch controls are under **Advanced setup & patch to
 
 For a new official release, **Project tools → Game updates** stages a separate copy for comparison.
 Finish any engine-specific preparation of that copy, preview the changes, then apply the update.
+Each step appears under **History → Other activity**, where **Inspect** shows its saved result and log.
 Ordinary MV/MZ writes keep the existing Japanese in `_original`.
 Rebasing source metadata after an update requires the exact current original-branch bytes and commit.
 Native formats use their engine's source and injection sidecars.

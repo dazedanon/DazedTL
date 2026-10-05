@@ -496,6 +496,7 @@ Saving a reviewed baseline continues to speaker/context setup only after the sav
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
 Their primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the host dialog's footer while content scrolls.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.
+Guided keeps update steps in Run history's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
 Backup history is grouped by game versus project files and appears only after the user chooses recovery.
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.

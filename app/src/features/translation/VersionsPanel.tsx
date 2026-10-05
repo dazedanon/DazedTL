@@ -59,6 +59,18 @@ export function VersionsPanel({
   const preview = !choosing ? session.preview : undefined;
   const done = !choosing && session.finished;
   const aborted = !choosing && session.aborted;
+  // Continue and cancel controls show their own outcome beside the action.
+  const failedStep =
+    session.latest &&
+    ["failed", "interrupted"].includes(session.latest.status) &&
+    !(
+      pending &&
+      ["version_continue", "version_abort"].includes(
+        session.latest.action || "",
+      )
+    )
+      ? session.latest
+      : undefined;
   const resultVersion = String(
     preview?.result?.version || stage?.result?.version || "",
   );
@@ -175,15 +187,7 @@ export function VersionsPanel({
               folder before starting another update.
             </p>
           )}
-          {session.latest && (
-            <details>
-              <summary>Recovery details</summary>
-              <JobStatus job={session.latest} />
-              <pre className="translation-json">
-                {JSON.stringify(session.latest.result, null, 2)}
-              </pre>
-            </details>
-          )}
+          {failedStep && <JobStatus job={failedStep} />}
         </Section>
       ) : active ? (
         <Section
@@ -431,7 +435,7 @@ export function VersionsPanel({
       >
         Backups & recovery
       </Button>
-      {!!session.history.length && (
+      {!guided && !!session.history.length && (
         <details>
           <summary>Update history ({session.history.length})</summary>
           {session.history.map((job) => (
@@ -440,14 +444,6 @@ export function VersionsPanel({
               <time className="muted" dateTime={job.created}>
                 {new Date(job.created).toLocaleString()}
               </time>
-              {job.result && (
-                <details>
-                  <summary>Saved details</summary>
-                  <pre className="translation-json">
-                    {JSON.stringify(job.result, null, 2)}
-                  </pre>
-                </details>
-              )}
             </article>
           ))}
         </details>

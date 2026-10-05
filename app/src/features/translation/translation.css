@@ -319,10 +319,6 @@
   margin: var(--space-2) 0 0;
   color: var(--muted);
 }
-.version-panel .translation-json {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 .backup-kinds {
   display: flex;
   flex-wrap: wrap;

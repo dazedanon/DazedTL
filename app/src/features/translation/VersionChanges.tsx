@@ -87,10 +87,6 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
           </div>
         </>
       )}
-      <details>
-        <summary>Full comparison details</summary>
-        <pre className="translation-json">{JSON.stringify(value, null, 2)}</pre>
-      </details>
     </div>
   );
 }
