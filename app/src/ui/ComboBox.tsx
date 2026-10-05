@@ -103,6 +103,7 @@ export function ComboBox({ value, options, onChange, disabled, readOnly, selecti
         value={selectionOnly && query !== null ? query : readOnly || selectionOnly ? entries.find(option => option.value === value)?.label ?? value : value}
         readOnly={readOnly}
         disabled={disabled}
+        data-choice-label={readOnly || (selectionOnly && query === null) || undefined}
         role="combobox"
         autoComplete="off"
         aria-autocomplete={readOnly ? "none" : "list"}

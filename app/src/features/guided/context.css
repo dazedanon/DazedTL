@@ -2,7 +2,6 @@
 .context-task-header { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-5); }
 .context-task-header > div:first-child { flex: 1 1 20em; min-width: 0; }
 .context-task-header h2 { margin: 0; font-size: var(--font-body); line-height: 1.5; }
-.context-task-header h2:focus { outline: none; }
 .context-task-header p { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--font-control); line-height: 1.5; }
 .context-columns { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--space-6); }
 .context-columns > section { min-width: 0; }
@@ -37,7 +36,6 @@
 .context-layout-status { color: var(--muted); font-size: var(--font-small); }
 .context-layout-actions { display: flex; align-items: start; flex-wrap: wrap; gap: var(--space-3); }
 .guided-sheet.context-sheet { width: min(54rem, calc(100vw - var(--space-8))); }
-.guided-sheet-body:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .context-detection-settings { --field-label-width: 13em; }
 .context-detection-settings > .guided-engine-options { margin-top: var(--field-row-gap); }
 .guided-speaker-findings > .context-finding { margin: 0; border-bottom: 1px solid var(--line); }

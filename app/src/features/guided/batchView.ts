@@ -1,7 +1,7 @@
 import type { Job, RunProcess } from "../../api/contracts.ts";
-import { activeRun, needsSubmissionReview, terminalBatch } from "./translationView.ts";
+import { activeRun, needsSubmissionReview, terminalBatch, providerBatchActive } from "./translationView.ts";
 import { historyOutcome } from "./historyView.ts";
-export { terminalBatch } from "./translationView.ts";
+export { terminalBatch, providerBatchActive } from "./translationView.ts";
 
 export type ProviderBatch = NonNullable<RunProcess["batches"]>[number];
 export const batchCount = (value: unknown): number | undefined => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
@@ -22,7 +22,6 @@ export function totalBatchProgress(batches: ProviderBatch[], remaining = 0) {
   const total = submitted != null && queued != null ? batchCount(submitted + queued) : undefined;
   return { total, finished: total != null ? sum("finished") : undefined };
 }
-export const providerBatchActive = (status: string) => ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(status);
 export function batchInProgress(job: Job) {
   const batches = job.process?.batches || [];
   // A stopped local worker does not stop provider work. Conversely, recovery

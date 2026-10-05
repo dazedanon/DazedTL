@@ -2,6 +2,7 @@ import type { GuidedState, Job, Phase, RunPayload, RunProcess } from "../../api/
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
+export const providerBatchActive = (status: string) => ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(status);
 export const requestStateLabel = (state: string) => state === "unused" ? "Unused duplicate" : state === "rejected" ? "Validation failed" : state;
 
 /** Keep raw receipt indices stable while presenting one selection per source request. */
@@ -149,10 +150,18 @@ export function fileStatus(name: string, run?: Job) {
     if (working && run.approval) return { label: "Review cost", tone: "active", symbol: "◷" };
     const submitted = rows.filter(row => row.state === "submitted");
     if (run.mode === "batch" && submitted.length) {
-      // Monitoring/collection is run-wide. Only this file's submission and
-      // finished receipts establish its provider state during a refresh.
-      const finished = submitted.every(row => row.providerFinished);
-      return { label: finished ? run.process?.monitoring?.state === "collecting" ? "Receiving results" : "Awaiting results" : "In Batch", tone: "active", symbol: "◷" };
+      // A retained submission protects against duplicate charges; it does not
+      // establish current provider activity. Match the latest attempt to its
+      // Batch receipts, including any clarification under the original index.
+      const batches = run.process?.batches || [];
+      const belongs = (batch: typeof batches[number], row: typeof submitted[number]) => batch.requestIndices?.includes(row.indices.at(-1)!);
+      const pending = batches.filter(batch => providerBatchActive(batch.status) && submitted.some(row => belongs(batch, row)));
+      if (pending.length) return {
+        label: pending.some(batch => !["cancelling", "canceling"].includes(batch.status)) ? "In Batch" : "Canceling",
+        tone: "active", symbol: "◷",
+      };
+      const finished = submitted.every(row => row.providerFinished && batches.some(batch => belongs(batch, row) && ["completed", "ended"].includes(batch.status)));
+      if (finished) return { label: run.process?.monitoring?.state === "collecting" ? "Receiving results" : "Awaiting results", tone: "active", symbol: "◷" };
     }
     if (working && run.mode !== "batch" && submitted.length) return { label: translating, tone: "active", symbol: "◷" };
     if (working && states.some(state => ["queued", "prepared"].includes(state)))
@@ -167,13 +176,13 @@ export function fileStatus(name: string, run?: Job) {
         return { label: translating, tone: "active", symbol: "◷" };
     }
   }
-  if (saved && partial) return { label: "Progress saved", tone: "idle", symbol: "◐" };
+  if (saved && partial) return { label: "Partial output", tone: "idle", symbol: "◐" };
   if (saved) return run.appliedOutputs?.includes(name)
     ? { label: "Applied", tone: "success", symbol: "✓" }
     : { label: "Saved", tone: "success", symbol: "✓" };
   if (run.outputs?.[name]) return { label: "Output unavailable", tone: "warning", symbol: "!" };
   if (partial || states.some(state => ["failed", "rejected", "uncertain", "submitted"].includes(state)))
-    return { label: "Incomplete", tone: "idle", symbol: "◐" };
+    return { label: "No saved output", tone: "idle", symbol: "·" };
   if (received) return { label: "Results received", tone: "idle", symbol: "◐" };
   if (working && run.mode !== "batch") return { label: "Queued", tone: "active", symbol: "◷" };
   return { label: "No saved output", tone: "idle", symbol: "·" };

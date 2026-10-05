@@ -1,7 +1,3 @@
-summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
 .primary {
   background: var(--color-primary);
   color: var(--color-primary-text);
@@ -459,6 +455,14 @@ pre {
 .combobox > input {
   width: 100%;
   padding-right: var(--space-8);
+}
+/* Preserve select-to-replace search without painting the displayed choice. */
+.combobox > input[data-choice-label] {
+  caret-color: transparent;
+}
+.combobox > input[data-choice-label]::selection {
+  background: transparent;
+  color: inherit;
 }
 .combobox-toggle {
   position: absolute;
