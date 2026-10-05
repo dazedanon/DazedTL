@@ -69,14 +69,17 @@ export default function RunPanel({
 }) {
   return (
     <section className="ui-section run-panel">
-      <div className="section-heading">
-        {!hideTitle && (
-          <h2>
-            {job.mode === "estimate" ? "Cost estimate" : "Translation run"}
-          </h2>
-        )}
-        <span className="badge">{job.status}</span>
-      </div>
+      {(!hideTitle || !job.process) && (
+        <div className="section-heading">
+          {!hideTitle && (
+            <h2>
+              {job.mode === "estimate" ? "Cost estimate" : "Translation run"}
+            </h2>
+          )}
+          {/* The process reader shows its own outcome label. */}
+          {!job.process && <span className="badge">{job.status}</span>}
+        </div>
+      )}
       <p>{job.message}</p>
       <ProcessPanel
         job={job}
