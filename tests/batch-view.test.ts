@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Job } from "../app/src/api/contracts.ts";
-import { batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome, totalBatchProgress } from "../app/src/features/guided/batchView.ts";
+import { batchInProgress, batchProgress, batchRuns, canRetrySaving, canReapplyBatch, batchOutcome, totalBatchProgress } from "../app/src/features/guided/batchView.ts";
 
 test("Total Batch progress retains completed requests when another provider batch starts", () => {
   const completed = { id: "first", status: "completed", total: 74, counts: { succeeded: 74 } };
@@ -9,6 +9,7 @@ test("Total Batch progress retains completed requests when another provider batc
   assert.deepEqual(totalBatchProgress([completed, next]), { total: 142, finished: 74 });
   assert.deepEqual(totalBatchProgress([completed, next], 52), { total: 194, finished: 74 });
   assert.deepEqual(totalBatchProgress([completed], 120), { total: 194, finished: 74 });
+  assert.deepEqual(totalBatchProgress([completed, { ...completed, id: "clarification", total: 8, counts: { succeeded: 8 }, clarification: true }], 120), { total: 194, finished: 74 });
   assert.deepEqual(totalBatchProgress([completed, next], -1), { total: undefined, finished: undefined });
   assert.deepEqual(totalBatchProgress([completed, { ...next, status: "in_progress", counts: { ...next.counts, succeeded: 20, errored: 2 } }]), { total: 142, finished: 96 });
   assert.deepEqual(totalBatchProgress([completed, { ...next, status: "completed", counts: { ...next.counts, succeeded: 68 } }]), { total: 142, finished: 142 });
@@ -37,9 +38,13 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   }
   assert.deepEqual(batchRuns([completed, paused]), [paused]);
   assert.equal(batchRuns([completed, paused], true).length, 2);
+  // Grouping by date must not split a day around an older active run.
+  const recent = { ...completed, created: "2026-10-05T12:00:00Z" }, older = { ...paused, created: "2026-10-04T12:00:00Z" };
+  assert.deepEqual(batchRuns([older, recent], true), [recent, older]);
   assert.equal(canRetrySaving(paused), false);
   const collected = { ...paused, process: { ...paused.process!, resultsCollected: true, received: 1, monitoring: { state: "save_error" as const, message: "Local processing failed" }, batches: [{ ...batch, status: "cancelled" }] } };
   assert.equal(canRetrySaving(collected), true);
+  assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, remaining: 445 } }), false);
   assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, received: 0 } }), false);
   const failed = { ...batch, status: "completed", counts: { succeeded: 0, errored: 10 } };
   assert.equal(batchOutcome(failed, paused).label, "Failed");
@@ -62,5 +67,28 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
   assert.equal(canRetrySaving({ ...collected, status: "running" }), false);
   assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, resultsCollected: false } }), false);
   assert.equal(canRetrySaving({ ...collected, process: { ...collected.process, monitoring: { state: "monitoring", message: "" } } }), false);
-  assert.equal(batchRuns([{ ...paused, process: { retryBlocked: true, errors: [] } }]).length, 1);
+  const missing = { ...paused, process: { retryBlocked: true, errors: [] } };
+  assert.equal(batchRuns([missing]).length, 0);
+  assert.equal(batchRuns([missing], true).length, 1);
+  // Failed provider work used to remain In progress solely because its
+  // recovery guard, stale worker phase or monitor state was still present.
+  for (const status of ["failed", "expired", "cancelled", "canceled", "completed", "ended", "unknown"]) {
+    const ended = { ...paused, status: "running", phase: "poll_status",
+      process: { ...paused.process!, remaining: 15, batches: [{ ...batch, status, counts: { succeeded: 0, errored: 10 } }] } };
+    assert.equal(batchInProgress(ended), false, status);
+    assert.deepEqual(batchRuns([ended]), []);
+    assert.deepEqual(batchRuns([ended], true), [ended]);
+    assert.equal(batchOutcome(ended.process.batches[0], ended).pending, false);
+  }
+  for (const status of ["validating", "in_progress", "finalizing", "cancelling", "canceling"]) {
+    assert.equal(batchInProgress({ ...paused, process: { ...paused.process!, batches: [{ ...batch, status }] } }), true);
+  }
+  assert.equal(batchInProgress({ ...paused, status: "running", process: { ...paused.process!, batches: [successful], remaining: 20 } }), true);
+  assert.equal(batchInProgress(collected), false);
+  assert.equal(batchInProgress({ ...collected, process: { ...collected.process, monitoring: { state: "collecting", message: "" }, batches: [successful] } }), true);
+  assert.equal(batchInProgress({ ...paused, process: { ...paused.process!, batches: [failed], monitoring: { state: "collecting", message: "" } } }), false);
+  assert.equal(batchOutcome(failed, { ...paused, status: "running", phase: "consume" }).active, false);
+  for (const state of ["error", "blocked", "save_error"] as const) {
+    assert.equal(batchInProgress({ ...paused, process: { ...paused.process!, batches: [successful], monitoring: { state, message: "" } } }), false);
+  }
 });

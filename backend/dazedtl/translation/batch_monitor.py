@@ -93,7 +93,7 @@ class BatchMonitor:
             if batch_control.no_successful_results(root):
                 self._finish_empty(identity)
                 return
-            if identity in self.consumed:
+            if identity in self.consumed and not batch_control.unsent_requests(root):
                 self.views[identity] = {'state': 'save_error', 'message': 'Saving the collected responses did not finish. Review the run error, then retry saving results.'}
                 return
             state = saved(root, 'batch_state.json').get('status')
@@ -136,6 +136,12 @@ class BatchMonitor:
         with self._commit(identity, plan):
             if batch_control.no_successful_results(root):
                 self._finish_empty(identity)
+                return
+            remaining = len(batch_control.unsent_requests(root))
+            if remaining:
+                self.views[identity] = {'state': 'blocked', 'message':
+                    f'{remaining:,} requests were not submitted. Collected responses are retained; '
+                    'this incomplete run has not been saved in full.'}
                 return
             self.guided.settings.prepare_engine(resume=plan)
             # Only fetched responses can reach the local consume worker.

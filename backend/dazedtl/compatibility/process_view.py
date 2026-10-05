@@ -368,8 +368,20 @@ def no_request_files(root, job, items):
     return sorted(files - prepared - {item['file'] for item in items} - set(job.get('errors', {})))
 
 
+def source_preview(source):
+    """Bound observer data to a source excerpt, without copying full prompts."""
+    text = ''
+    for value in source.values():
+        if isinstance(value, str):
+            text += (' ' if text else '') + ' '.join(value[:161].split())
+        if len(text) > 160:
+            break
+    return text[:160] + ('…' if len(text) > 160 else '')
+
+
 def summary(root, job):
     requests = queue(root)
+    request_indices = {key: index for index, key in enumerate(requests)}
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
     submitted = set(key for batch in batches for key in batch.get('custom_ids', {}).values())
     duplicate_submissions = sum(len(batch.get('custom_ids', {})) for batch in batches) - len(submitted)
@@ -431,13 +443,16 @@ def summary(root, job):
                 counts = cancellation.get('counts') or {}
         receipts.append({'id': batch['id'], 'status': status, 'provider': batch.get('provider'),
                          'total': len(batch['custom_ids']) if isinstance(batch.get('custom_ids'), dict) else None,
+                         'requestIndices': sorted({request_indices[key] for key in (batch.get('custom_ids') or {}).values() if key in request_indices}),
                          'counts': counts})
     for record in clarifications:
         original = next((batch for batch in batches if batch['id'] == record['original_id']), {})
         for batch in record['batches']:
             if batch['id']:
                 receipts.append({'id': batch['id'], 'status': batch.get('api_status', 'validating'),
-                                 'provider': original.get('provider'), 'total': len(batch['items']), 'counts': batch.get('counts', {})})
+                                 'provider': original.get('provider'), 'total': len(batch['items']), 'counts': batch.get('counts', {}),
+                                 'clarification': True, 'originalBatchId': record['original_id'],
+                                 'requestIndices': sorted({request_indices[item['key']] for item in batch['items'] if item['key'] in request_indices})})
     return {'mode': job.get('mode'), 'prepared': prepared,
             'resultsCollected': batch_state(root).get('status') == 'fetched',
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
@@ -451,6 +466,8 @@ def summary(root, job):
             'noRequestFiles': no_request_files(root, job, items),
             'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
             'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source']),
+                          'preview': source_preview(row['source']),
+                          **({'providerFinished': True} if row.get('providerFinished') else {}),
                           **({'clarificationOf': records[row['index']]['clarificationOf']}
                              if records and row['index'] < len(records) and 'clarificationOf' in records[row['index']] else {})} for row in items],
             'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)
@@ -576,14 +593,14 @@ def payload(root, index):
                                     for custom, value in batch.get('custom_ids', {}).items() if value == key), None)
                 detail = batch_payload(index, len(keys), entry, original_id, record['requests'][key], original,
                                        'rejected' if refused(original) else 'received', {'message': MESSAGE} if refused(original) else None)
-                responses.append({'kind': 'original', 'response': original, 'payload': detail})
+                responses.append({'kind': 'original', 'batchId': record['original_id'], 'response': original, 'payload': detail})
             for batch, item in matching:
                 attempts.append(item)
                 response = batch.get('responses', {}).get(key)
                 state = row['state'] if response is not None else {'pending': 'queued', 'sending': 'uncertain', 'submitted': 'submitted'}.get(batch['state'], 'failed')
                 error = row.get('error') if response is not None else None
                 detail = batch_payload(index, len(keys), entry, item['custom_id'], item['params'], response, state, error)
-                responses.append({'kind': 'clarification', 'response': response, 'payload': detail})
+                responses.append({'kind': 'clarification', 'batchId': batch['id'], 'response': response, 'payload': detail})
         if attempts:
             value['exact'] = {'original': value['exact'], 'clarifications': attempts}
         value['responseAttempts'] = responses

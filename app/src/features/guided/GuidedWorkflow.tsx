@@ -677,10 +677,10 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         const result = await preparePreview("export_selected", options);
         previewRequest.current = { name: "export_selected", options };
         setInspectRelease(false); setPreview(result);
-      }} inspect={item => { setBatchesOpen(false); inspect(item); }} />}
+      }} inspect={(item, target) => { setBatchesOpen(false); inspect(item, target); }} />}
     {history && <Modal label="Run history" className="history-sheet" onDismiss={() => setHistory(null)}><div className="request-inspector-heading"><h2>Run history</h2><Button onClick={() => setHistory(null)}>Close</Button></div>
       <ActivityHistory state={state} translation={translation} inspect={inspect} initialFilter={history} /></Modal>}
-    {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
+    {inspected && <Modal label="Request inspector" className={inspected.process ? "request-inspector-sheet" : ""} returnFocus={inspectorReturnFocus.current} onDismiss={() => setInspected(null)}><div className="request-inspector-heading"><h2>{inspected.process ? inspected.mode === "batch" ? "Batches" : "Requests" : inspected.label || "Saved activity"}</h2><div className="request-heading-actions"><Button variant="quiet" onClick={() => { setInspected(null); setHistory(history || "all"); }}>Run history</Button><Button onClick={() => setInspected(null)}>Close</Button></div></div>
       <ProcessPanel job={inspected} initialRequest={inspectionTarget} readPayload={index => api.guided.payload(project.id, inspected.id, index)}
         readNames={offset => api.guided.nameResults(project.id, inspected.id, offset)}
         readProvider={() => api.guided.providerDetails(project.id, inspected.id)} actions={<ActionList compact>

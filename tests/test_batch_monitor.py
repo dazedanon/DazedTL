@@ -77,6 +77,7 @@ class BatchMonitorTests(unittest.TestCase):
                     self.assertEqual(summary(root, job)['requests'][0]['state'], 'submitted')
                     pending = payload(root, 0)['responseAttempts']
                     self.assertEqual([attempt['kind'] for attempt in pending], ['original', 'clarification'])
+                    self.assertEqual([attempt['batchId'] for attempt in pending], ['paid', 'retry'])
                     self.assertEqual(pending[0]['response'], original['key'])
                     self.assertIsNone(pending[1]['response'])
                     self.assertEqual(pending[1]['payload']['state'], 'submitted')
@@ -102,16 +103,19 @@ class BatchMonitorTests(unittest.TestCase):
                     self.assertEqual({path: path.read_bytes() for path in before}, before)
                     self.assertEqual(summary(root, job)['usage'], {'input_tokens': 8, 'output_tokens': 3})
                     self.assertEqual([row['id'] for row in summary(root, job)['batches']], ['paid', 'retry'])
+                    self.assertEqual([row['requestIndices'] for row in summary(root, job)['batches']], [[0], [0]])
+                    self.assertEqual(summary(root, job)['batches'][1]['originalBatchId'], 'paid')
                     provider.submit.assert_called_once()
                     provider.live.assert_not_called()
                     job['status'] = 'stopped'
                     BatchMonitor(monitor.guided).tick()
                     provider.submit.assert_called_once()
 
-    def test_old_pauses_monitor_then_consume_once_without_sending_the_unsent_queue(self):
+    def test_old_pauses_monitor_then_consume_once_without_resubmitting(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             monitor, job, _ = self.fixture(root)
+            write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}', 'params': {}}})
             provider = Mock()
             provider.status.return_value = {'api_status': 'in_progress', 'counts': {'processing': 1}}
             provider.collect_terminal.return_value = ({'key': {'text': '{"Line1":"Medicine"}'}}, [], {})
@@ -155,6 +159,34 @@ class BatchMonitorTests(unittest.TestCase):
                 self.assertEqual(monitor.backend.manual.consume_batch.call_count, 2)
             monitor.backend.manual.resume.assert_not_called()
             provider.submit.assert_not_called(); provider.live.assert_not_called(); provider.cancel.assert_not_called()
+
+    def test_partial_queue_collection_cannot_start_a_full_consume_even_after_restart(self):
+        # Downloading one terminal chunk used to convert the whole queue to
+        # fetched, then launch a worker that failed on every unsent file.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            provider = Mock()
+            provider.status.return_value = {'api_status': 'completed', 'counts': {'succeeded': 1}}
+            provider.collect_terminal.return_value = ({'key': {'text': 'retained'}}, [], {})
+            frozen = (root/'log/batch_requests.json').read_bytes()
+            with patch.object(batch_control, 'TranslationProvider', return_value=provider):
+                monitor.tick()
+                self.assertEqual(monitor.views['run']['state'], 'blocked')
+                self.assertEqual(batch_control.unsent_requests(root), {'unsent'})
+                self.assertEqual(read_json(root/'log/batch_state.json')['status'], 'fetched')
+                self.assertEqual(read_json(root/'log/batch_results.json'), {'key': {'text': 'retained'}})
+                monitor.consumed.add('run')  # A worker launched by the older bug.
+                monitor.tick()
+                self.assertEqual(monitor.views['run']['state'], 'blocked')
+                reads = provider.status.call_count
+                BatchMonitor(monitor.guided).tick()
+                self.assertEqual(provider.status.call_count, reads)
+                with self.assertRaisesRegex(ValueError, '1 requests were not submitted'):
+                    batch_control.require_complete_submission(root)
+            self.assertEqual((root/'log/batch_requests.json').read_bytes(), frozen)
+            monitor.backend.manual.consume_batch.assert_not_called()
+            provider.submit.assert_not_called(); provider.live.assert_not_called()
 
     def test_stalled_read_releases_api_lock_and_late_results_cannot_cross_close_or_ownership(self):
         for change in ('close', 'owner'):

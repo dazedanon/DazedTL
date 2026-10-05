@@ -74,6 +74,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
             attempt = json.loads((directory / 'attempt.json').read_bytes())
             if job.get('mode') != 'batch' or attempt.get('resume') is not True or attempt.get('batch_resume_state') != 'fetched':
                 raise ValueError('Automatic Batch recovery can only save already collected responses.')
+            from .batch_control import require_complete_submission
+            require_complete_submission(directory)
         arguments = [
             *arguments[:2],
             str(Path(__file__).with_name("manual_worker.py")),
@@ -175,6 +177,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 job = self.jobs[identity]
                 if job.get('mode') != 'batch' or saved(self.folder(identity), 'batch_state.json').get('status') != 'fetched':
                     raise ValueError('Collect this Batch’s responses before saving results.')
+                from .batch_control import require_complete_submission
+                require_complete_submission(self.folder(identity))
                 job['dazedtl_consume_only'] = True
                 self.save(job)
                 return self.resume(identity)

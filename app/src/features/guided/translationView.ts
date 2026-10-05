@@ -13,6 +13,7 @@ export function groupedRequests(rows: NonNullable<RunProcess["requests"]>) {
     if (parent && parent.file === row.file) {
       parent.indices.push(row.index);
       parent.state = row.state;
+      parent.providerFinished = row.providerFinished;
       owners.set(row.index, parent);
     } else {
       const group = { ...row, indices: [row.index], number: groups.length + 1 };

@@ -13,20 +13,39 @@ export function batchProgress(batch: ProviderBatch) {
   return { total, finished: total != null && finished != null && finished <= total ? finished : undefined };
 }
 export function totalBatchProgress(batches: ProviderBatch[], remaining = 0) {
-  const progress = batches.map(batchProgress);
+  // Clarifications retry existing source requests; they do not expand the run.
+  const progress = batches.filter(batch => !batch.clarification).map(batchProgress);
   const sum = (key: "total" | "finished") => progress.length && progress.every(row => row[key] != null)
     ? batchCount(progress.reduce((total, row) => total + row[key]!, 0)) : undefined;
   const submitted = sum("total"), queued = batchCount(remaining);
   const total = submitted != null && queued != null ? batchCount(submitted + queued) : undefined;
   return { total, finished: total != null ? sum("finished") : undefined };
 }
+export const providerBatchActive = (status: string) => ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(status);
+export function batchInProgress(job: Job) {
+  const batches = job.process?.batches || [];
+  // A stopped local worker does not stop provider work. Conversely, recovery
+  // guards and stale polling phases do not make terminal failures active.
+  if (batches.some(batch => providerBatchActive(batch.status))) return true;
+  const monitor = job.process?.monitoring?.state;
+  if (monitor && ["error", "save_error", "blocked"].includes(monitor)) return false;
+  const collectable = batches.some(batch => (batchCount(batch.counts.succeeded) || 0) > 0
+    || batch.counts.succeeded == null && ["completed", "ended"].includes(batch.status));
+  if (monitor === "collecting" && collectable) return true;
+  if (activeRun(job) && !job.approval) {
+    if (job.phase === "consume") return (job.process?.received || 0) > 0 || collectable;
+    if (job.phase === "submit") return !batches.length || batches.every(batch => batchOutcome(batch, job).successful);
+    if (job.phase?.startsWith("poll") && batches.length && batches.every(batch => batchOutcome(batch, job).successful)) return true;
+  }
+  return monitor === "monitoring" && collectable && batches.every(batch => terminalBatch(batch.status));
+}
 export function batchRuns(runs: Job[], all = false) {
-  return runs.filter(job => job.mode === "batch" && !job.temporary && (!!job.process?.batches?.length || needsSubmissionReview(job)) && (all || activeRun(job) || needsSubmissionReview(job)
-    || !!job.process?.monitoring || job.process?.batches?.some(batch => !terminalBatch(batch.status))))
-    .sort((a, b) => Number(activeRun(b)) - Number(activeRun(a)) || (b.created || "").localeCompare(a.created || ""));
+  return runs.filter(job => job.mode === "batch" && !job.temporary && (!!job.process?.batches?.length || needsSubmissionReview(job)) && (all || batchInProgress(job)))
+    .sort((a, b) => (b.created || "").localeCompare(a.created || ""));
 }
 export function canRetrySaving(job: Job) {
   return job.mode === "batch" && !!job.process?.resultsCollected && (job.process.received ?? 0) > 0 && job.process?.monitoring?.state === "save_error"
+    && !job.process.remaining
     && ["failed", "stopped", "interrupted", "canceled"].includes(job.status);
 }
 export function canReapplyBatch(job: Job) {
@@ -42,16 +61,17 @@ export function batchOutcome(batch: ProviderBatch, job: Job) {
   const failures = ([['errored', 'failed'], ['canceled', 'canceled'], ['expired', 'expired']] as const)
     .filter(([key]) => (batchCount(batch.counts[key]) || 0) > 0).map(([key, label]) => `${batch.counts[key]!.toLocaleString()} ${label}`);
   const terminal = terminalBatch(batch.status);
-  const consuming = terminal && activeRun(job) && job.phase === "consume";
-  const collecting = terminal && job.process?.monitoring?.state === "collecting";
+  const hasResults = (succeeded || 0) > 0 || succeeded == null && ["completed", "ended"].includes(batch.status);
+  const consuming = terminal && hasResults && activeRun(job) && job.phase === "consume";
+  const collecting = terminal && hasResults && job.process?.monitoring?.state === "collecting";
   let label = terminal && failures.length ? succeeded ? "Partial" : batch.counts.errored ? "Failed" : batch.counts.canceled ? "Canceled" : "Expired" : batchStatus(batch.status);
   if (consuming || collecting) label = consuming ? "Saving results" : "Receiving results";
   const uniform = terminal && progress.total != null && (succeeded === progress.total || succeeded === 0 && failures.length === 1);
   const summary = uniform ? `${progress.total!.toLocaleString()} ${progress.total === 1 ? "request" : "requests"}` : [succeeded != null && (succeeded > 0 || !failures.length) ? `${succeeded.toLocaleString()}${progress.total != null ? `/${progress.total.toLocaleString()}` : ""} succeeded` : "", ...failures].filter(Boolean).join(" · ")
     || (progress.total != null ? `${progress.total.toLocaleString()} requests` : "Counts unavailable");
-  const providerActive = ["validating", "in_progress", "finalizing", "cancelling", "canceling"].includes(batch.status);
+  const providerActive = providerBatchActive(batch.status);
   const active = providerActive || consuming || collecting;
   const failed = terminal && (failures.length > 0 || !["completed", "ended"].includes(batch.status));
   const successful = terminal && !active && !failed && progress.total != null && succeeded === progress.total;
-  return { label, summary, progress, pending: !terminal, active, failed, successful };
+  return { label, summary, progress, pending: providerActive, active, failed, successful };
 }

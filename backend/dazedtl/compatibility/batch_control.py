@@ -10,6 +10,20 @@ from .translation import TranslationProvider
 TERMINAL = {'completed', 'ended', 'failed', 'expired', 'cancelled', 'canceled'}
 
 
+def unsent_requests(root):
+    """A fetched marker covers downloaded jobs, not the entire prepared queue."""
+    history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
+    submitted = {key for batch in history for key in (batch.get('custom_ids') or {}).values()}
+    return set(queue(root)) - submitted
+
+
+def require_complete_submission(root):
+    remaining = len(unsent_requests(root))
+    if remaining:
+        raise ValueError(f'{remaining:,} requests were not submitted. Collected responses are retained; '
+                         'saving the full run cannot start from an incomplete submission.')
+
+
 def no_successful_results(root):
     batches = saved(evidence_root(root), 'batch_history.json').get('batches', [])
     return bool(batches) and not batch_results(root) and all(

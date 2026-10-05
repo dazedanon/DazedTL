@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
+import { matchesRequest, requestRows, requestFilter, requestBatches, requestBatchOutcome, payloadForBatch } from "../app/src/features/guided/requestView.ts";
 import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
 
 test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
@@ -26,6 +27,82 @@ test("clarification selection groups stable receipt indices and keeps each attem
   assert.equal(requestAttempt(payload, 0), first);
   assert.equal(requestAttempt(payload, 1), last);
   assert.equal(requestAttempt(first, 0), first);
+});
+
+test("request filters identify finished receipts, keep file groups and search source previews without losing receipt indices", () => {
+  const rows = requestRows([
+    { index: 0, file: "CommonEvents.json", state: "submitted", sourceItems: 1, preview: "The locked door", providerFinished: true },
+    { index: 1, file: "Map001.json", state: "received", sourceItems: 1, preview: "A silver key" },
+    { index: 2, file: "CommonEvents.json", state: "submitted", sourceItems: 2, preview: "The open door" },
+    { index: 3, file: "Map001.json", state: "queued", sourceItems: 1 },
+    { index: 4, file: "Map001.json", state: "rejected", sourceItems: 1 },
+    { index: 5, file: "CommonEvents.json", state: "uncertain", sourceItems: 1 },
+    { index: 6, file: "Map001.json", state: "submitted", sourceItems: 1, clarificationOf: 4 },
+    { index: 7, file: "Other.json", state: "failed", sourceItems: 1 },
+  ]);
+  assert.deepEqual(rows.map(row => row.index), [0, 2, 5, 1, 3, 4, 7]);
+  assert.deepEqual(rows.filter(row => matchesRequest(row, "finished", "")).map(row => row.index), [0, 1]);
+  assert.deepEqual(rows.filter(row => matchesRequest(row, "failed", "")).map(row => row.index), [7]);
+  assert.deepEqual(rows.filter(row => matchesRequest(row, "pending", "common")).map(row => row.index), [2, 5]);
+  assert.deepEqual(rows.filter(row => matchesRequest(row, "all", " SILVER ")).map(row => row.index), [1]);
+  assert.deepEqual(rows.filter(row => matchesRequest(row, "all", "#3")).map(row => row.index), [2]);
+  assert.equal(rows.filter(row => matchesRequest(row, "finished", "absent")).length, 0);
+  assert.equal(requestFilter("unresolved"), "pending");
+  assert.equal(requestFilter("rejected"), "failed");
+  // The latest attempt must not inherit a finished marker from its parent.
+  const retry = requestRows([{ index: 0, state: "submitted", providerFinished: true, sourceItems: 1 },
+    { index: 1, state: "submitted", clarificationOf: 0, sourceItems: 1 }]);
+  assert.equal(retry[0].outcome.group, "pending");
+});
+
+test("batch groups deduplicate linked clarifications while preserving membership and separate replies", () => {
+  const process = { errors: [], requests: [
+    { index: 0, state: "submitted", file: "CommonEvents.json", sourceItems: 1 },
+    { index: 1, state: "submitted", file: "Map001.json", sourceItems: 1 },
+    { index: 2, state: "received", file: "CommonEvents.json", sourceItems: 1 },
+    { index: 3, state: "queued", file: "CommonEvents.json", sourceItems: 1 },
+    { index: 4, state: "uncertain", file: "Map001.json", sourceItems: 1 },
+  ], batches: [
+    { id: "original", status: "completed", total: 2, counts: { succeeded: 2 }, requestIndices: [0, 2] },
+    { id: "retry", status: "in_progress", total: 1, counts: {}, requestIndices: [2], clarification: true, originalBatchId: "original" },
+    { id: "other", status: "completed", total: 1, counts: { succeeded: 1 }, requestIndices: [1] },
+    { id: "legacy", status: "completed", total: 5, counts: {} },
+  ] };
+  const groups = requestBatches(process, "batch");
+  assert.deepEqual(groups.map(group => [group.id, group.rows.map(row => row.index)]), [
+    ["original", [0, 2]], ["other", [1]], ["legacy", []], ["unsent", [3]], ["unlinked", [4]],
+  ]);
+  assert.deepEqual(groups[0].clarifications.map(batch => batch.id), ["retry"]);
+  assert.equal(groups[0].provider?.total, 2); // A retry does not add another source request.
+  const job = { id: "run", mode: "batch", status: "stopped", message: "", log: [] } as Job;
+  assert.equal(requestBatchOutcome(groups[0], job)?.active, true);
+  assert.equal(requestBatchOutcome(groups[0], job)?.successful, false);
+  const complete = { ...groups[0], clarifications: [{ ...groups[0].clarifications[0], status: "completed", counts: { succeeded: 1 } }] };
+  assert.equal(requestBatchOutcome(complete, job)?.successful, true);
+  const failed = { ...complete, clarifications: [{ ...complete.clarifications[0], status: "failed", counts: { succeeded: 0, errored: 1 } }] };
+  assert.equal(requestBatchOutcome(failed, job)?.failed, true);
+  // Similar files or overlapping indices cannot link an orphan to a different parent.
+  const orphan = requestBatches({ ...process, batches: process.batches.map(batch => batch.id === "retry" ? { ...batch, originalBatchId: "missing" } : batch) }, "batch");
+  assert.deepEqual(orphan[0].clarifications, []);
+  assert.deepEqual(orphan[1].rows.map(row => row.index), [2]);
+  // Counts, same-file requests and missing mappings cannot fill a provider batch.
+  assert.equal(requestBatches({ ...process, batches: process.batches.map(({ requestIndices, ...batch }) => batch) }, "batch")[0].rows.length, 0);
+  assert.equal(requestBatches(process, "translate").length, 1);
+  const original = { index: 2, state: "rejected", response: "Original refusal" } as RunPayload;
+  const retry = { index: 2, state: "received", response: "Translated reply" } as RunPayload;
+  const payload = { ...retry, responseAttempts: [
+    { kind: "original" as const, batchId: "original", response: original.response, payload: original },
+    { kind: "clarification" as const, batchId: "retry", response: retry.response, payload: retry },
+    { kind: "clarification" as const, batchId: "other", response: "Unrelated response" },
+  ] };
+  assert.equal(requestAttempt(payloadForBatch(payload, "original"), 0), original);
+  assert.equal(requestAttempt(payloadForBatch(payload, "retry"), 0), retry);
+  const family = payloadForBatch(payload, [groups[0].id, ...groups[0].clarifications.map(batch => batch.id)]);
+  assert.equal(family.responseAttempts?.length, 2);
+  assert.equal(requestAttempt(family, 0), original);
+  assert.equal(requestAttempt(family, 1), retry);
+  assert.equal(payloadForBatch(payload, "unknown").response, null);
+  assert.equal(payloadForBatch(payload), payload);
 });
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {

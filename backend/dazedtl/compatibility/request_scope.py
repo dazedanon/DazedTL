@@ -50,7 +50,7 @@ def requests(root, job):
         state = batch_state(evidence)
         results = batch_results(evidence)
         manifests = {row['id']: row.get('custom_ids', {}) for row in state.get('batches', []) if row.get('id')}
-        outcomes = {}
+        outcomes, provider_finished = {}, {}
         for batch in batches:
             mapping = batch.get('custom_ids', {})
             counts = batch.get('request_counts') or {}
@@ -70,6 +70,9 @@ def requests(root, job):
                                 and all(type(counts.get(key)) is int and counts[key] == 0
                                         for key in ('processing', 'errored', 'canceled', 'expired')))
             for custom, key in mapping.items():
+                # Display evidence only: never release the paid-work guard or
+                # assign partial aggregate counts to individual requests.
+                provider_finished[key] = provider_finished.get(key, True) and awaiting_results
                 error = next((row for row in (batch.get('provider_errors') or []) if row.get('custom_id') == custom), None)
                 # Multiple submissions retain the strictest known outcome.
                 pending = batch.get('api_status') in {'validating', 'in_progress', 'finalizing'} and manifests.get(batch.get('id')) == mapping
@@ -102,6 +105,7 @@ def requests(root, job):
             elif key in results and refused(results[key]):
                 outcome, receipt = 'rejected', {'error': {'code': 'provider_refusal', 'message': MESSAGE}}
             yield {'index': index, 'state': outcome,
+                   'providerFinished': outcome == 'submitted' and provider_finished.get(key, False) and key not in clarification_pending,
                    'source': json.loads(entry['payload']), 'keys': entry.get('dazedtl_sources'),
                    'file': entry.get('dazedtl_file'), 'response': results.get(key), 'error': receipt.get('error'), 'unused': receipt.get('unused')}
         return

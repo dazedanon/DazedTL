@@ -146,6 +146,11 @@ class ProcessTests(unittest.TestCase):
             job = {'mode': 'batch', 'status': 'running'}
             value = process_view.summary(root, job)
             self.assertEqual([row['state'] for row in value['requests']], ['submitted', 'submitted'])
+            self.assertEqual([batch['requestIndices'] for batch in value['batches']], [[0], [1]])
+            # The inspector may identify finished rows without pretending a
+            # response was downloaded or authorizing another paid submission.
+            self.assertEqual([row.get('providerFinished', False) for row in value['requests']], [True, False])
+            self.assertEqual([row['preview'] for row in value['requests']], ['薬', '薬'])
             self.assertEqual((value['uncertain'], value['received']), (0, 0))
             self.assertTrue(value['retryBlocked'])
             # Known completion does not excuse missing downloaded responses,
@@ -160,7 +165,23 @@ class ProcessTests(unittest.TestCase):
                 write_json(root/'log/batch_state.json', manifest)
                 value = process_view.summary(root, job)
                 self.assertEqual(value['requests'][0]['state'], 'uncertain', change)
+                self.assertNotIn('providerFinished', value['requests'][0], change)
                 self.assertTrue(value['retryBlocked'], change)
+            # Aggregate partial success cannot identify which source finished;
+            # a new clarification must not inherit the original's completion.
+            write_json(root/'log/batch_history.json', {'batches': [first, second]})
+            write_json(root/'log/batch_state.json', state)
+            clarification = [{'batches': [{'id': 'retry', 'state': 'submitted', 'items': [{'key': 'one'}]}]}]
+            with patch('dazedtl.compatibility.batch_refusals.records', return_value=clarification):
+                rows = list(request_scope.requests(root, job))
+            self.assertFalse(rows[0]['providerFinished'])
+            partial = {**first, 'custom_ids': {'first-request': 'one', 'second-request': 'two'},
+                       'request_counts': {**first['request_counts'], 'errored': 1}}
+            write_json(root/'log/batch_history.json', {'batches': [partial]})
+            write_json(root/'log/batch_state.json', {'status': 'submitted', 'batches': [partial]})
+            self.assertFalse(any(row.get('providerFinished') for row in process_view.summary(root, job)['requests']))
+            # A long source stays bounded on the observer, not the full prompt.
+            self.assertEqual(len(process_view.source_preview({'Line1': 'a' * 5000, 'Line2': 'b' * 5000})), 161)
 
     def test_source_locations_accept_native_event_originals_without_indexing_metadata(self):
         # Estimation previously crashed on valid scalar/list event originals

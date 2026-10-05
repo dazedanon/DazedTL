@@ -90,10 +90,10 @@ export interface RunProcess {
   unused?: number;
   validationIssues?: { file: string; rejected: number | null }[];
   uncertain?: number; duplicateSubmissions?: number;
-  requests?: { index: number; state: string; file?: string | null; sourceItems: number; clarificationOf?: number }[];
+  requests?: { index: number; state: string; file?: string | null; sourceItems: number; clarificationOf?: number; preview?: string; providerFinished?: boolean }[];
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
   sourceItems?: number | null; submittedItems?: number | null;
-  batches?: { id: string; status: string; provider?: string; total?: number | null; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
+  batches?: { id: string; status: string; provider?: string; total?: number | null; requestIndices?: number[]; clarification?: boolean; originalBatchId?: string; counts: Record<string, number | null>; errors?: Record<string, string>[] }[];
   errors: string[]; usage?: Record<string, number> | null;
 }
 export interface BatchCancellation {
@@ -101,7 +101,7 @@ export interface BatchCancellation {
 }
 export interface RunPayload {
   responseOrigin?: "validated" | "log" | null;
-  responseAttempts?: { kind: "original" | "clarification"; response: unknown; payload?: RunPayload }[];
+  responseAttempts?: { kind: "original" | "clarification"; batchId?: string; response: unknown; payload?: RunPayload }[];
   translations?: unknown;
   unused?: { appliedRequests: number[] } | null;
   index: number; total: number; state: string; source: Record<string, string> | null;
