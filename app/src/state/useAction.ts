@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { messageOf } from "../api/errors";
 
 type Result<T> = { ok: true; value: T } | { ok: false };
@@ -13,7 +19,9 @@ export function useAction({
   const pending = useRef(false);
   const mounted = useRef(true);
   const afterRef = useRef(after);
-  afterRef.current = after;
+  useLayoutEffect(() => {
+    afterRef.current = after;
+  });
   useEffect(() => {
     mounted.current = true;
     return () => {

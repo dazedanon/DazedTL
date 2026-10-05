@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -7,6 +6,7 @@ import {
   type ComponentProps,
 } from "react";
 import { ChevronDown } from "lucide-react";
+import { useOnChange } from "../state/useOnChange";
 
 type Props = Omit<ComponentProps<"input">, "value" | "onChange" | "list"> & {
   value: string;
@@ -84,12 +84,11 @@ export function ComboBox({
     input.current?.focus({ preventScroll: true });
   }
 
-  useEffect(() => {
-    if (disabled) {
-      setOpen(false);
-      setQuery(null);
-    }
-  }, [disabled]);
+  useOnChange(disabled, (now) => {
+    if (!now) return;
+    setOpen(false);
+    setQuery(null);
+  });
 
   useLayoutEffect(() => {
     if (!expanded) return;

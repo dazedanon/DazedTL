@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from "react";
 
+const unmeasured: ReadonlyMap<string, number> = new Map();
+
 /** Variable-height rows keep enlarged text and wrapped paths fully readable. */
 export function VirtualList<T>({
   items,
@@ -26,24 +28,25 @@ export function VirtualList<T>({
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const rows = useRef(new Map<string, HTMLDivElement>());
-  const heights = useRef(new Map<string, number>());
-  const [revision, measure] = useState(0);
   const [window, setWindow] = useState({
     top: 0,
     height: 400,
     estimate: 44,
     width: 0,
   });
+  // Row heights are only valid for the width and font size they were measured at.
+  const layout = `${window.width}:${window.estimate}`;
+  const [measured, setMeasured] = useState({ layout, values: unmeasured });
+  const heights = measured.layout === layout ? measured.values : unmeasured;
   const keys = useMemo(() => items.map(itemKey), [items, itemKey]);
   const offsets = useMemo(() => {
     const values = [0];
     for (const key of keys)
       values.push(
-        values[values.length - 1] +
-          (heights.current.get(key) || window.estimate),
+        values[values.length - 1] + (heights.get(key) || window.estimate),
       );
     return values;
-  }, [keys, revision, window.estimate, window.width]);
+  }, [keys, heights, window.estimate]);
   let start = 0;
   while (start < items.length && offsets[start + 1] < window.top) start++;
   let end = start;
@@ -56,18 +59,11 @@ export function VirtualList<T>({
     const observe = () => {
       const style = getComputedStyle(element);
       const estimate = Math.max(32, parseFloat(style.fontSize) * 1.6 + 16);
-      setWindow((previous) => {
-        if (
-          previous.width !== element.clientWidth ||
-          previous.estimate !== estimate
-        )
-          heights.current.clear();
-        return {
-          top: element.scrollTop,
-          height: element.clientHeight,
-          estimate,
-          width: element.clientWidth,
-        };
+      setWindow({
+        top: element.scrollTop,
+        height: element.clientHeight,
+        estimate,
+        width: element.clientWidth,
       });
     };
     const observer = new ResizeObserver(observe);
@@ -77,22 +73,24 @@ export function VirtualList<T>({
   }, []);
   useLayoutEffect(() => {
     const observer = new ResizeObserver((entries) => {
-      let changed = false;
-      for (const entry of entries) {
-        const key = (entry.target as HTMLElement).dataset.virtualKey!;
-        const height =
-          entry.borderBoxSize[0]?.blockSize ||
-          entry.target.getBoundingClientRect().height;
-        if (height && heights.current.get(key) !== height) {
-          heights.current.set(key, height);
-          changed = true;
+      setMeasured((previous) => {
+        const current =
+          previous.layout === layout ? previous.values : unmeasured;
+        let next: Map<string, number> | undefined;
+        for (const entry of entries) {
+          const key = (entry.target as HTMLElement).dataset.virtualKey!;
+          const height =
+            entry.borderBoxSize[0]?.blockSize ||
+            entry.target.getBoundingClientRect().height;
+          if (height && current.get(key) !== height)
+            (next ??= new Map(current)).set(key, height);
         }
-      }
-      if (changed) measure((value) => value + 1);
+        return next ? { layout, values: next } : previous;
+      });
     });
     for (const row of rows.current.values()) observer.observe(row);
     return () => observer.disconnect();
-  }, [start, end, keys]);
+  }, [start, end, keys, layout]);
   useLayoutEffect(() => {
     if (!focusKey) return;
     const index = keys.indexOf(focusKey);
@@ -113,12 +111,9 @@ export function VirtualList<T>({
     const row = rows.current.get(focusKey);
     // Let wrapped rows preceding the target settle before releasing the focus
     // request; otherwise their measurements can move the new focus offscreen.
-    if (
-      row &&
-      keys.slice(start, index + 1).every((key) => heights.current.has(key))
-    )
+    if (row && keys.slice(start, index + 1).every((key) => heights.has(key)))
       onFocusReady?.(row);
-  }, [focusKey, keys, offsets, start, end, onFocusReady]);
+  }, [focusKey, keys, heights, offsets, start, end, onFocusReady]);
   useLayoutEffect(() => {
     const element = viewport.current!;
     const maximum = Math.max(

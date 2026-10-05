@@ -1,34 +1,51 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { DraftSession } from "./DraftSession";
 import { retainDraft } from "./leaveGuards";
 
+type Options<T> = {
+  persist: (value: T) => Promise<unknown>;
+  report: (error: unknown) => void;
+  fingerprint?: (value: T) => string;
+  initial?: { saved: T; draft?: T };
+};
+
+function createSession<T>({
+  persist,
+  report,
+  fingerprint,
+  initial,
+}: Options<T>) {
+  const session = new DraftSession<T>(persist, report, fingerprint);
+  if (initial) session.adopt(initial.saved, initial.draft);
+  return session;
+}
+
 /** Identity binds a session to its project/document for its entire lifetime. */
-export function useDraft<T>(
-  identity: string,
-  options: {
-    persist: (value: T) => Promise<unknown>;
-    report: (error: unknown) => void;
-    fingerprint?: (value: T) => string;
-    initial?: { saved: T; draft?: T };
-  },
-) {
-  const report = useRef(options.report);
-  report.current = options.report;
-  const session = useMemo(() => {
-    const value = new DraftSession(
-      options.persist,
-      (error) => report.current(error),
-      options.fingerprint,
-    );
-    if (options.initial)
-      value.adopt(options.initial.saved, options.initial.draft);
-    return value;
-  }, [identity]);
+export function useDraft<T>(identity: string, options: Options<T>) {
+  // State, not a memo: React may discard memoized values, which would drop drafts.
+  const [owned, setOwned] = useState(() => ({
+    identity,
+    session: createSession(options),
+  }));
+  let session = owned.session;
+  if (owned.identity !== identity) {
+    session = createSession(options);
+    setOwned({ identity, session });
+  }
+  const { persist, report, fingerprint } = options;
+  useLayoutEffect(() => {
+    session.configure(persist, report, fingerprint);
+  }, [session, persist, report, fingerprint]);
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
   useEffect(() => {
     const release = retainDraft(session);
     return () => {
-      void release().catch((error) => report.current(error));
+      void release().catch(session.fail);
     };
   }, [session]);
   return { ...state, session };

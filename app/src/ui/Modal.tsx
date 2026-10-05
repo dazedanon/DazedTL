@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, type ReactNode } from "react";
 
 export function Modal({
   label,
@@ -16,12 +16,15 @@ export function Modal({
   returnFocus?: HTMLElement | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  // The dialog opens once; closing returns focus to the latest requested target.
+  const focusTarget = useEffectEvent(() => returnFocus);
   useLayoutEffect(() => {
     const element = dialog.current!;
-    const previous = returnFocus || document.activeElement;
+    const opener = document.activeElement;
     element.showModal();
     return () => {
       element.close();
+      const previous = focusTarget() || opener;
       queueMicrotask(() => {
         if (
           previous instanceof HTMLElement &&
