@@ -1,5 +1,6 @@
 import type { Job, RunPayload } from "../../api/contracts";
 import { ExpandableText } from "../../ui/ExpandableText";
+import { requestStateLabel } from "./translationView";
 
 const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "Not recorded";
 
@@ -11,7 +12,7 @@ export function RequestTechnical({ payload, job, compact = true, showModel = tru
     <div className="request-technical-summary">
       <section><h3>This request</h3><dl className="request-metrics">
         {showModel && <div><dt>Model</dt><dd>{String(parameters?.model || job.model || "Not recorded")}</dd></div>}
-        <div><dt>Status</dt><dd>{payload.state}</dd></div>
+        <div><dt>Status</dt><dd>{requestStateLabel(payload.state)}</dd></div>
         <div><dt>Text entries</dt><dd>{payload.source ? Object.keys(payload.source).length.toLocaleString() : "Not recorded"}</dd></div>
       </dl></section>
       <section><h3>Actual tokens</h3><dl className="request-metrics">

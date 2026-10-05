@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from dazedtl.compatibility import state_requests, process_view, request_scope
-from dazedtl.compatibility.run_evidence import Evidence
+from dazedtl.compatibility.run_evidence import Evidence, keep_aligned_partial_results
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 from dazedtl.settings.store import Settings
@@ -47,6 +47,25 @@ class ProcessTests(unittest.TestCase):
                 value = process_view.summary(root, job)
                 self.assertEqual(value['requests'][0]['state'], 'uncertain', change)
                 self.assertTrue(value['retryBlocked'], change)
+
+    def test_source_locations_accept_native_event_originals_without_indexing_metadata(self):
+        # Estimation previously crashed on valid scalar/list event originals
+        # before preparing any request. Database field originals still apply.
+        data = {'events': [None, {'pages': [{'list': [
+            {'code': 101, 'parameters': ['', 0, 0, 2, 'Name'], '_original': '名前'},
+            {'code': 401, 'parameters': ['残りの台詞'], '_original': '保存済みの台詞'},
+            {'code': 102, 'parameters': [['選択肢', 'Quit'], 0], '_original': ['元の選択肢', 'やめる']},
+            {'code': 401, 'parameters': ['別の台詞'], '_original': None},
+        ]}]}], 'item': {'name': 'Potion', '_original': {'name': '薬'}}}
+        before = json.dumps(data, ensure_ascii=False)
+        locations = request_scope.source_locations(data)
+        self.assertEqual(locations['残りの台詞'], ['/events/1/pages/0/list/1/parameters/0'])
+        self.assertEqual(locations['選択肢'], ['/events/1/pages/0/list/2/parameters/0/0'])
+        self.assertEqual(locations['別の台詞'], ['/events/1/pages/0/list/3/parameters/0'])
+        self.assertEqual(locations['薬'], ['/item/name'])
+        for metadata in ('名前', '保存済みの台詞', '元の選択肢', 'やめる', 'Potion'):
+            self.assertNotIn(metadata, locations)
+        self.assertEqual(json.dumps(data, ensure_ascii=False), before)
 
     def test_continuation_translates_new_text_inside_a_previously_translated_file_only_once(self):
         from dazedtl.translation.guided_runs import GuidedRuns
@@ -96,6 +115,42 @@ class ProcessTests(unittest.TestCase):
             Evidence(root, 'translate', plan).install(again)
             self.assertEqual(again.translateAI(['薬', '毒'], [], 'Items.json')[0], ['Potion', 'Poison'])
             self.assertEqual(sent, [['毒']])
+            # A failed segment before a reusable span must not discard earlier
+            # successes, omit its usage, or prevent the later segment running.
+            retry_root = Path(temporary)/'mixed'
+            values = ['失敗', '既存', '成功']
+            write_json(retry_root/'files/Items.json', values)
+            keys = request_scope.identities('Items.json', 'database', values, request_scope.source_locations(values))
+            mixed_plan = {'workflow': {'phase': 'database'}, 'dazedtl_continuation': {keys[1]: {'source': values[1], 'response': 'Reused'}}}
+            mixed = translator()
+            calls = []
+            def mixed_ai(text, history, filename):
+                calls.append(text)
+                mixed._thread_local.last_translation_had_mismatch = text == [values[0]]
+                return [text if text == [values[0]] else ['Translated'], [3, 4]]
+            mixed.translateAI = mixed_ai
+            mixed.last_translation_had_mismatch = lambda: getattr(mixed._thread_local, 'last_translation_had_mismatch', False)
+            Evidence(retry_root, 'translate', mixed_plan).install(mixed)
+            self.assertEqual(mixed.translateAI(values, [], 'Items.json'), [[values[0], 'Reused', 'Translated'], [6, 8]])
+            self.assertEqual(calls, [[values[0]], [values[2]]])
+            self.assertTrue(mixed.last_translation_had_mismatch())
+            self.assertEqual(Evidence(retry_root, 'translate', mixed_plan).reused[keys[2]]['response'], 'Translated')
+            # The native comment handler may consume aligned mixed results;
+            # malformed lengths and name-preflight failures keep their guard.
+            module = SimpleNamespace(THREAD_CTX=SimpleNamespace(), MISMATCH=['Items.json'])
+            def native_module(text):
+                module.THREAD_CTX.last_translation_had_mismatch = True
+                return [[text[0], 'Translated'], [3, 4]]
+            module.translateAI = native_module
+            keep_aligned_partial_results(module)
+            self.assertEqual(module.translateAI(values[:2]), [[values[0], 'Translated'], [3, 4]])
+            self.assertFalse(module.THREAD_CTX.last_translation_had_mismatch)
+            self.assertEqual(module.MISMATCH, ['Items.json'])
+            module.translateAI(values)
+            self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
+            module.THREAD_CTX.in_speaker = True
+            module.translateAI(values[:2])
+            self.assertTrue(module.THREAD_CTX.last_translation_had_mismatch)
 
     def test_finished_batch_receipts_are_settled_only_with_verified_unmodified_output(self):
         with TemporaryDirectory() as temporary:

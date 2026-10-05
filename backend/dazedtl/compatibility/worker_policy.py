@@ -7,15 +7,16 @@ import time
 import sys
 
 from dazedtl.storage import write_json
-from dazedtl.settings.preferences import GENERATION_PARAMETERS
+from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS
 from .request_parameters import configure_builders
-from . import state_requests, batch_pricing
+from . import state_requests, batch_pricing, choice_requests
 from .run_evidence import Evidence
 
 
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
+        choice_requests.configure(module, bool(policy and policy.get('choiceCollection') == CHOICE_COLLECTION))
         if policy and policy.get("stateGrouping") == state_requests.POLICY:
             state_requests.configure(module, sys.modules["util.translation"], root, policy["entriesPerRequest"])
         else:
@@ -59,6 +60,7 @@ def install():
             or policy.get("model") != plan["settings"]["model"]
             or policy.get("generationParameters") not in (None, GENERATION_PARAMETERS)
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
+            or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or type(policy.get("entriesPerRequest")) is not int
             or not 1 <= policy["entriesPerRequest"] <= 100
             or plan["settings"]["batchsize"] != policy["entriesPerRequest"]

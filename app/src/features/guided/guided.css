@@ -16,10 +16,10 @@ main.editor-main.guided-main { padding: 0; }
 .process-counts--compact > div { display:flex; align-items:baseline; gap:var(--space-2); }
 .request-workspace { display:grid; grid-template-columns:minmax(210px,23%) minmax(0,1fr); gap:var(--space-4); border-top:1px solid var(--line); padding-top:var(--space-3); flex:1; min-height:0; }
 .request-list { min-height:0; min-width:0; display:flex; flex-direction:column; border-right:1px solid var(--line); padding-right:var(--space-3); gap:var(--space-2); }
-.request-search { display:grid; gap:var(--space-2); }
+.request-search { display:grid; grid-template-columns:minmax(0,1fr); min-width:0; gap:var(--space-2); }
 .request-search input { width:100%; min-width:0; }
-.request-search > div { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); }
-.request-search select { min-width:0; font-size:var(--font-small); }
+.request-search > div { display:flex; flex-wrap:wrap; min-width:0; align-items:center; justify-content:space-between; gap:var(--space-2); }
+.request-search select { min-width:0; max-width:100%; font-size:var(--font-small); }
 .request-search small { color:var(--muted); flex-shrink:0; }
 .request-list-viewport { display:flex; flex-direction:column; flex:1; min-height:0; }
 .request-row { display:flex; justify-content:flex-start; align-items:start; gap:var(--space-2); width:100%; text-align:left; padding:var(--space-2); border:0; border-radius:var(--control-radius); background:transparent; color:inherit; }
@@ -38,6 +38,7 @@ main.editor-main.guided-main { padding: 0; }
 .request-reader h3:first-child { margin-top:0; }
 .request-reader h4 { font-size:var(--font-small); font-weight:500; color:var(--muted); margin:var(--space-3) 0 var(--space-2); }
 .request-reader p { margin:var(--space-2) 0; }
+.request-references { display:flex; flex-wrap:wrap; gap:var(--space-2); }
 .request-reader pre { white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible; max-height:none; margin:var(--space-2) 0 var(--space-4); font-size:var(--font-small); }
 .request-reader details { margin-block:var(--space-3); }
 .request-source-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:var(--space-5); }

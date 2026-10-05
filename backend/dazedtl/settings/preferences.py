@@ -6,6 +6,7 @@ import math
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
 GENERATION_PARAMETERS = "provider-defaults-v1"
+CHOICE_COLLECTION = "event-choices-once-v1"
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,

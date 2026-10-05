@@ -21,7 +21,12 @@ def source_locations(value, path=''):
     if isinstance(value, list):
         children = enumerate(value)
     elif isinstance(value, dict):
-        children = ((key, value.get('_original', {}).get(key, item)) for key, item in value.items() if key != '_original')
+        # Database originals map field names; event originals may instead be
+        # a dialogue string or choice list. Those are not field overlays: keep
+        # indexing the current parameters that the native parser will inspect.
+        original = value.get('_original')
+        fields = original if isinstance(original, dict) else {}
+        children = ((key, fields.get(key, item)) for key, item in value.items() if key != '_original')
     else:
         if isinstance(value, str):
             result[value] = [path]
@@ -78,13 +83,18 @@ def requests(root, job):
         unknown_submission = (state.get('status') in {'submission_uncertain', 'submitting', 'corrupt'} or
                               job.get('dazedtl_submission_intent') and state.get('status') not in {'partially_submitted', 'submitted', 'fetched'})
         complete = consumed_files(root)
+        from .batch_validation import outcomes as validation_outcomes
+        validation = validation_outcomes(root, queued, results)
         for index, (key, entry) in enumerate(queued.items()):
             outcome = outcomes.get(key, 'uncertain' if unknown_submission else 'queued')
-            if outcome == 'received' and entry.get('dazedtl_file') in complete:
+            receipt = validation.get(key, {}) if outcome == 'received' else {}
+            if receipt:
+                outcome = receipt['state']
+            elif outcome == 'received' and entry.get('dazedtl_file') in complete:
                 outcome = 'saved'
             yield {'index': index, 'state': outcome,
                    'source': json.loads(entry['payload']), 'keys': entry.get('dazedtl_sources'),
-                   'file': entry.get('dazedtl_file'), 'response': results.get(key)}
+                   'file': entry.get('dazedtl_file'), 'response': results.get(key), 'error': receipt.get('error'), 'unused': receipt.get('unused')}
         return
     rows = ledger_records(root)
     if rows is not None:

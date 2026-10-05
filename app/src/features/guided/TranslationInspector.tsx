@@ -11,7 +11,7 @@ import { RequestTechnical } from "./RequestTechnical";
 
 type View = "text" | "context" | "technical" | "file";
 const views = [{ id: "text", label: "Text" }, { id: "context", label: "Context" }, { id: "technical", label: "Technical details" }, { id: "file", label: "File contents" }] as const;
-export function TranslationInspector({ projectId, file, job, inspect, close }: { projectId: string; file: string; job?: Job | null; inspect: (index: number) => void; close: () => void }) {
+export function TranslationInspector({ projectId, file, job, inspect, close }: { projectId: string; file: string; job?: Job | null; inspect: (index: number, validation?: boolean) => void; close: () => void }) {
   const [tab, setTab] = useState<View>("text");
   const [fileOpened, setFileOpened] = useState(false);
   const [selected, setSelected] = useState<{ job: string; file: string; index: number } | null>(null);
@@ -75,6 +75,8 @@ export function TranslationInspector({ projectId, file, job, inspect, close }: {
         </div>
       </div>}
       <Message message={error} />
+      {payload?.state === "rejected" && <p className="translation-error">This response failed validation. Original text was kept. <Button variant="link" onClick={() => inspect(index!, true)}>Review response</Button></p>}
+      {payload?.state === "unused" && <p className="muted">This extra response was not used. The saved file uses another validated response for these choices. <Button variant="link" onClick={() => inspect(index!)}>View details</Button></p>}
       {views.filter(view => view.id !== "file").map(view => <div className={`translation-reader${view.id === "technical" ? " translation-reader--technical" : ""}`} key={`${key}:${view.id}`} hidden={tab !== view.id} role="tabpanel" id={`translation-inspector-panel-${view.id}`} aria-labelledby={`translation-inspector-tab-${view.id}`} tabIndex={view.id === "technical" && payload ? undefined : 0} aria-busy={pending}>
         {!rows.length ? <p className="muted">{missing}</p> : !payload ? error ? null : <p role="status">{pending ? "Reading prepared text…" : "Use Refresh preview to try again."}</p>
           : <div className={view.id === "context" ? "translation-context-reader" : view.id === "technical" ? "translation-technical-reader" : undefined}>

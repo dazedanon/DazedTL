@@ -55,13 +55,15 @@ def _verified_digest(path, signature):
     return digest(Path(path).read_bytes())
 
 
-def consumed_files(root):
+def consumed_files(root, *, allow_mismatches=False):
     """Prove local Batch completion without claiming per-request validation.
 
     Native cleanup may leave preparation-only ledger rows. Terminal provider
     history plus a bound completed-file receipt settles those old requests;
     a missing/changed output or native mismatch must keep its recovery guard.
     This does not exclude the file from later parsing or translate new text.
+    allow_mismatches verifies retained partial output only for exact per-request
+    reconciliation; it must never establish whole-file completion.
     """
     root = Path(root)
     history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
@@ -78,7 +80,9 @@ def consumed_files(root):
         if plan.get('mode') != 'batch' or plan.get('batch_link') or set(job.get('files', [])) != set(plan.get('selected', [])):
             return frozenset()
         complete = set(job.get('completed', [])) & set(plan.get('selected', []))
-        complete -= set(job.get('errors', {})) | set(job.get('mismatches', {}))
+        complete -= set(job.get('errors', {}))
+        if not allow_mismatches:
+            complete -= set(job.get('mismatches', {}))
         verified = set()
         for name in complete:
             path = project_path(root, 'translated/' + name, exists=False)
@@ -354,6 +358,12 @@ def summary(root, job):
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('input_tokens', 'output_tokens')}
     from .request_scope import requests as source_requests
     items = list(source_requests(root, job))
+    rejected = sum(row['state'] == 'rejected' for row in items)
+    validation_files = set(job.get('mismatches', {})) | {row['file'] for row in items if row['state'] == 'rejected' and row['file']}
+    validation_issues = [{'file': name, 'rejected': sum(row['state'] == 'rejected' and row['file'] == name for row in items) or None}
+                         for name in sorted(validation_files)]
+    if requests and any(row['state'] in {'validated', 'saved', 'rejected'} for row in items):
+        validated = sum(row['state'] in {'validated', 'saved'} for row in items)
     uncertain = max(uncertain, sum(row['state'] == 'uncertain' for row in items))
     polls = {row['id']: row for row in job.get('batch_detail', []) if isinstance(row, dict) and row.get('id')} if isinstance(job.get('batch_detail'), list) and str(job.get('phase', '')).startswith('poll') else {}
     receipts = []
@@ -375,7 +385,8 @@ def summary(root, job):
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
             'submitted': len(submitted) if batches or requests else sum(row['state'] != 'prepared' for row in records) if records is not None else None,
             'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or records is not None else None,
-            'validated': validated, 'validatedFiles': len(job.get('completed', [])),
+            'validated': validated, 'validatedFiles': len(set(job.get('completed', [])) - set(job.get('mismatches', {})) - set(job.get('errors', {}))),
+            'rejected': rejected, 'validationIssues': validation_issues, 'unused': sum(row['state'] == 'unused' for row in items),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
             'noRequestFiles': no_request_files(root, job, items),
@@ -455,7 +466,7 @@ def payload(root, index):
         exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
         error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in (batch.get('provider_errors') or [])
                       if error.get('custom_id') == custom_id), None)
-        return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': error,
+        return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': row.get('error') or error, 'unused': row.get('unused'),
                 'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
                 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
                 'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,

@@ -2,6 +2,7 @@ import type { GuidedState, Job, Phase, RunPayload } from "../../api/contracts.ts
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
+export const requestStateLabel = (state: string) => state === "unused" ? "Unused duplicate" : state === "rejected" ? "Validation failed" : state;
 
 /** Keep the inspector current without replacing its retained full log. */
 export function observedRun(detail: Job | null, observed?: Job) {
@@ -130,6 +131,8 @@ export function fileStatus(name: string, run?: Job, historical = false) {
     if (["stopped", "interrupted"].includes(run.status)) return { label: run.status === "stopped" ? "Stopped" : "Interrupted", tone: "warning", symbol: "Ⅱ" };
     if (run.status === "failed") return { label: "Needs attention", tone: "warning", symbol: "!" };
   }
+  const validation = run.process?.validationIssues?.find(issue => issue.file === name);
+  if (validation) return { label: `${saved ? "Saved · " : ""}${validation.rejected ? `${validation.rejected} rejected` : "Needs review"}`, tone: "warning", symbol: "!" };
   if (saved && run.partialOutputs?.includes(name)) return { label: "Progress saved", tone: "active", symbol: "◐" };
   if (saved) return run.appliedOutputs?.includes(name)
     ? { label: "Applied", tone: "success", symbol: "✓" }
@@ -146,6 +149,7 @@ export function fileStatus(name: string, run?: Job, historical = false) {
 
 /** Pair only an exact line-key match or the validated Live result of equal length. */
 export function translatedLines(payload: RunPayload): Record<string, string> | null {
+  if (["rejected", "unused"].includes(payload.state)) return null;
   const keys = Object.keys(payload.source || {});
   if (!keys.length) return null;
   let value = payload.response;

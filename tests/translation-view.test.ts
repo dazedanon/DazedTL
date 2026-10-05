@@ -10,6 +10,12 @@ test("a later event-code task cannot inherit completion from map outputs or an o
   assert.equal(fileStatus("Map001.json", phaseRun([maps], "dialogue")).label, "Saved");
   assert.equal(fileStatus("Map002.json", maps).label, "Output unavailable");
   assert.equal(fileStatus("Map001.json", { ...maps, partialOutputs: ["Map001.json"] }).label, "Progress saved");
+  const rejected = { ...maps, availableOutputs: ["Map001.json"], partialOutputs: ["Map001.json"],
+    process: { rejected: 2, validationIssues: [{ file: "Map001.json", rejected: 2 }], errors: [] } };
+  assert.equal(fileStatus("Map001.json", rejected).tone, "warning");
+  assert.equal(fileStatus("Map002.json", rejected).label, "Output unavailable");
+  assert.equal(fileStatus("Map001.json", { ...rejected, retiredFiles: ["Map001.json"] }).tone, "idle");
+  assert.equal(historyOutcome({ ...rejected, outputs: { "Map001.json": "hash" } }).kind, "partial");
   assert.equal(fileStatus("Map001.json", { ...maps, retiredFiles: ["Map001.json"] }).label, "Ready");
   assert.equal(fileStatus("Map001.json", { ...maps, appliedOutputs: ["Map001.json"] }).label, "Applied");
   const partial = { ...maps, status: "interrupted", availableOutputs: [], outputs: {}, process: { requests: [{ index: 0, file: "Map001.json", state: "uncertain", sourceItems: 1 }], errors: [] } };
@@ -95,6 +101,8 @@ test("request comparisons reject misaligned or unvalidated Live responses and mi
   assert.deepEqual(translatedLines({ ...payload, state: "received", response: { text: '{"Line2":"Poison","Line1":"Medicine"}' } }), { Line2: "Poison", Line1: "Medicine" });
   assert.equal(translatedLines({ ...payload, response: { text: '{"Line1":"Medicine","Line3":"Poison"}' } }), null);
   assert.equal(translatedLines({ ...payload, response: { text: "Unstructured reply" } }), null);
+  assert.equal(translatedLines({ ...payload, state: "rejected", response: { text: '{"Line1":"Medicine","Line2":"Poison"}' } }), null);
+  assert.equal(translatedLines({ ...payload, state: "unused", response: { text: '{"Line1":"Medicine","Line2":"Poison"}' } }), null);
 
 });
 

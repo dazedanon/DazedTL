@@ -368,7 +368,7 @@ class Settings:
         from .execution import configuration
         state = self._read()
         return {**configuration(self, mode), "engine_settings": self._values(state),
-                "stateGrouping": "compatible-states-v1"}
+                "stateGrouping": "compatible-states-v1", "choiceCollection": preferences.CHOICE_COLLECTION}
 
     def connection_summary(self):
         from .execution import connection_summary
@@ -699,6 +699,7 @@ class Settings:
                 "model": values["model"],
                 "generationParameters": preferences.GENERATION_PARAMETERS,
                 "stateGrouping": "compatible-states-v1",
+                "choiceCollection": preferences.CHOICE_COLLECTION,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

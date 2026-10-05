@@ -13,12 +13,13 @@ import { useAction } from "../../state/useAction";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import { historyPhase } from "./historyView";
+import type { RequestInspectionTarget } from "./ProcessPanel";
 import { batchOutcome, batchRuns, canRetrySaving, canReapplyBatch, terminalBatch, totalBatchProgress } from "./batchView";
 
 const keyOf = (job: Job) => job.id;
 
 export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reapply, applicationJob, disabled }: {
-  projectId: string; runs: Job[]; focusRun?: string; close: () => void; inspect: (job: Job) => void;
+  projectId: string; runs: Job[]; focusRun?: string; close: () => void; inspect: (job: Job, target?: RequestInspectionTarget) => void;
   reapply: (job: Job) => Promise<void>; applicationJob: (job: Job) => Job | undefined; disabled: boolean;
 }) {
   const application = useApplication();
@@ -78,6 +79,12 @@ export function BatchMonitor({ projectId, runs, focusRun, close, inspect, reappl
                     onClick={() => action.run(async () => setCancellation(await api.guided.batchCancelPreview(projectId, job.id, batch.id)), "", cancelKey)} />}
                 </ActionRow>;
               })}
+              {!!job.process?.validationIssues?.length && <ActionRow label={<small className="translation-error">
+                {job.process.rejected ? `${job.process.rejected} translations rejected.` : "Translation validation needs review."} Original text was kept for rejected requests.
+              </small>}><Button variant="quiet" onClick={() => {
+                const rejected = job.process?.requests?.find(request => request.state === "rejected");
+                inspect(job, { file: rejected?.file || job.process!.validationIssues![0].file, index: rejected?.index ?? 0, validation: true });
+              }}>Review issues</Button></ActionRow>}
               {issue && <ActionRow label={<small className="translation-error" role="alert">{issue}</small>}>
                 {canRetrySaving(job) && <ActionControl label="Retry saving results" pending={action.busy && action.key === collectKey} disabled={action.busy} pendingText="Saving responses…"
                   error={action.key === collectKey ? action.error : ""} notice={action.key === collectKey ? action.notice : ""}

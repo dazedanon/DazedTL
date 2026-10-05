@@ -85,6 +85,9 @@ export interface RunProcess {
   mode?: string; prepared?: number; submitted?: number | null; remaining?: number | null;
   received?: number | null; validated?: number | null; validatedFiles?: number; appliedFiles?: number;
   failed?: number; retryBlocked?: boolean; nextAction?: string;
+  rejected?: number;
+  unused?: number;
+  validationIssues?: { file: string; rejected: number | null }[];
   uncertain?: number; duplicateSubmissions?: number;
   requests?: { index: number; state: string; file?: string | null; sourceItems: number }[];
   freshStart?: { eligible: boolean; reason: string; failed?: number; remaining?: number } | null;
@@ -97,6 +100,7 @@ export interface BatchCancellation {
 }
 export interface RunPayload {
   responseOrigin?: "validated" | null;
+  unused?: { appliedRequests: number[] } | null;
   index: number; total: number; state: string; source: Record<string, string> | null;
   context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;
   usage?: Record<string, number> | null;

@@ -35,6 +35,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
   const missing = Object.keys(job.outputs || {}).filter(name => saved && !savedNames.has(name));
   if (missing.length || job.outputsAvailable === false && Object.keys(job.outputs || {}).length && !saved)
     return { kind: "missing", label: "Output unavailable", detail: output || "Saved output could not be verified" };
+  if (process?.validationIssues?.length) return { kind: "partial", label: output ? "Saved with issues" : "Validation failed", detail: [output, process.rejected ? `${process.rejected} requests rejected` : "Translation validation needs review"].filter(Boolean).join(" · ") };
   if (partial.length) return { kind: "partial", label: "Progress saved", detail: output };
   if (whole?.length) return { kind: "saved", label: "Output saved", detail: output };
   if (saved === undefined && Object.keys(job.outputs || {}).length) return { kind: "finished", label: "Finished", detail: "Output availability not recorded" };

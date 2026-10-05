@@ -459,7 +459,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const preparing = estimating || action.busy && ["translate:prepare", actionKey("start", { mode, phase })].includes(action.key);
       const stopLabel = estimating || current?.mode === "batch" ? null : translationStopLabel(current);
       content = <TranslateWorkspace key={phase} state={state} phase={phase} values={values} run={current} estimate={localEstimate} currentEstimate={!!quote}
-        disabled={disabled} locked={locked} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={(job, file, index) => inspect(job, { file, index })} batches={openBatches}>
+        disabled={disabled} locked={locked} change={edit} settings={settings} options={() => setPanel("translation-context")} history={() => setHistory("all")} inspect={(job, file, index, validation) => inspect(job, { file, index, validation })} batches={openBatches}>
         {!baseline && <p className="translation-error">Preserve the original and save its version baseline before translating.</p>}
         {!state.provider.enabled && <p className="muted">Provider execution is disabled for this launch. Local estimates are available.</p>}
         {!paidModeReady && <Message message="This connection does not support Batch. Choose Live or a supported connection." />}

@@ -12,7 +12,7 @@ import "./translation.css";
 export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, batches, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number) => void; batches: (runId?: string) => void; children?: ReactNode;
+  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number, validation?: boolean) => void; batches: (runId?: string) => void; children?: ReactNode;
 }) {
   const [file, setFile] = useState("");
   const [inspecting, setInspecting] = useState(false);
@@ -46,14 +46,17 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
               const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
               const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
               const statusText = status.label !== "Ready" && <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;
+              const validation = fileOwner?.process?.validationIssues?.some(issue => issue.file === row.name);
               return <><span className={`translation-file-status ${status.tone}`} title={status.label} aria-label={status.label}>
-                {statusText && fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
+                {statusText && validation && fileOwner ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · Review rejected requests for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => {
+                  event.stopPropagation(); inspect(fileOwner, row.name, fileOwner.process?.requests?.find(request => request.file === row.name && request.state === "rejected")?.index ?? 0, true);
+                }}>{statusText}</Button> : statusText && fileOwner?.mode === "batch" && !!fileOwner.process?.batches?.length ? <Button variant="link" className="translation-status-link" aria-label={`${status.label} · View Batch for ${row.name}`} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); batches(fileOwner.id); }}>{statusText}</Button> : statusText}</span>
                 <span className="translation-file-cost" title={metrics ? "Engine-reported cost from the last run that changed this file" : "Cost not recorded"}>{metrics ? `$${metrics.cost.toFixed(4)}` : "—"}</span>
                 <span className="translation-file-time" title={metrics ? `${metrics.seconds.toFixed(1)} seconds of engine processing${metricRun?.mode === "batch" ? "; excludes provider waiting" : ""}` : "Time not recorded"}>{metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}</span></>;
             } }} />
       </section>
       {inspecting && file && <Modal label={`File preview: ${file}`} className="request-inspector-sheet" onDismiss={() => setInspecting(false)}>
-        <TranslationInspector key={`${state.projectId}:${file}`} projectId={state.projectId} file={file} job={inspected} inspect={index => { if (inspected) inspect(inspected, file, index); }}
+        <TranslationInspector key={`${state.projectId}:${file}`} projectId={state.projectId} file={file} job={inspected} inspect={(index, validation) => { if (inspected) inspect(inspected, file, index, validation); }}
           close={() => { setInspecting(false); }} />
       </Modal>}
     </div>
