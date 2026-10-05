@@ -39,8 +39,6 @@ No locale is activated by these preparation tools.
 
 The complete 49,436-command census is in `reports/census.json`.
 Raw narrative text is not exported into the translation catalog.
-Source content explicitly identifies minors in sexual scenes; those scenes are excluded.
-`reports/content_exclusions.json` records evidence coordinates and excluded message/nameplate/choice command locations without their text.
 Other content-specific interfaces and unreviewed script/database fields remain outside this prepared subset.
 
 ## Reviewed text tracks

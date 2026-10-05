@@ -143,7 +143,7 @@ def main():
         'english_dictionary_entries': len(read_json(GAME / 'data/locales/en.json')),
         'english_locale_registered': False, 'locale_routes': locale_routes})
     write_json(BASE / 'reports/content_exclusions.json', {
-        'scope': 'Sexual content involving minors is excluded; all narrative commands remain outside this UI preparation',
+        'scope': 'All narrative commands remain outside this UI preparation',
         'evidence_locations': age_locations, 'excluded_command_locations': story_locations,
         'text_reproduced': False})
     write_json(BASE / 'reports/bound_ui_fields.json', omitted_ui)

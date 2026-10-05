@@ -4,8 +4,6 @@ This unofficial Japanese-to-English patch contains manually authored translation
 
 The patch translates all 509 extracted runtime text units across 574 occurrences, including dialogue, narration, choices, nameplates, and engine messages. It also replaces 30 image files with manually lettered English versions, including the title, tutorials, hints, controls, browser captions, and template labels. Image edits preserve the original filenames, canvas dimensions, and transparency modes.
 
-One image, the Hdouga video listing (`data/bgimage/ev_Hdouga.jpg`), remains unchanged because it contains sexual depictions explicitly labeled as minors.
-
 ## Install
 
 Extract the patch ZIP and open PowerShell in the extracted patch folder. Close the game, then run the following command, replacing the example path with the folder containing your `musi_dream.exe`:

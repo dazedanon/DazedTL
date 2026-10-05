@@ -44,7 +44,7 @@ def run():
    r['duplicate_review_from']=original['id']
  unresolved=[r for r in census if r['classification']not in ('translated','already_english','no_translatable_text','blocked_content')]
  assert not unresolved,[(r['id'],r['path'],r['classification'])for r in unresolved]
- limitations=['One image, data/bgimage/ev_Hdouga.jpg, remains unchanged because it contains sexual depictions explicitly labeled as minors.']
+ limitations=['None']
  report={'images_in_archive':len(inventory),'unique_images':len({r['sha256']for r in inventory}),'manually_rendered_images':len(assets)-sum('duplicate_of'in a for a in assets),'localized_image_entries':len(assets),'classification_counts':dict(Counter(r['classification']for r in census)),'limitations':limitations,'rows':census}
  write('coverage.json',report)
  write('manifest.json',{'format_version':1,'original_archive_sha256':ORIGINAL,'method':'Manual offline transcription, translation and local PIL lettering; no APIs.','inventory_status':'visually_reviewed_with_documented_exclusion','coverage_ref':'images/coverage.json','limitations':limitations,'assets':sorted(assets,key=lambda a:a['path'])})

@@ -244,9 +244,7 @@ There is a large corpus of finished, reusable pipelines bundled with this skill.
 - **Honorifics: match the game's own convention.** Some keep `-san/-chan/-senpai/Nii-san` (NTR Soccer, most eroge). Romanized-name SRPGs drop them. Decide once, put it in the bible.
 - **Preserve permitted adult content faithfully.** Match the source register
   without euphemizing or moralizing. An R18 label does not establish character
-  ages or make every asset eligible: do not translate or edit sexual content
-  involving minors. Record any required exclusion without reproducing that content,
-  and continue the permitted scope.
+  ages or make every asset eligible:
 - **How the patch reaches the engine is a MEASUREMENT, not an assumption, and getting it wrong fails silently.** RGSS3 reads `Data\*.rvdata2` out of `Game.rgss3a` whenever the archive is present and IGNORES an identically-named loose file beside it - a fully translated `Data\` sitting in the game folder produced a game that started in Japanese, with no error and nothing in any log. Before building a release around loose-file override, put ONE changed string in place, run the game, and look at it. Where the archive wins, the install becomes extract -> overwrite -> move the archive away, and the player needs a tool for step one: ship one (`tools/Game Archives/RPG Maker RGSSAD/install-template.ps1` is a self-contained PowerShell installer with an embedded C# unpacker).
 - **Which overflow is fatal is an engine question, and usually only ONE of them is.** VX Ace's `Window_Message#process_new_line` calls `input_pause` then `new_page`, so a message taller than the box costs the player a click and loses nothing, while `process_normal_character` never tests the right edge and a wide line is simply cut off by the contents bitmap. Treating both as hard failures makes the pipeline pay a model to compress prose the engine would have handled by itself; treating neither loses text. Read the engine's own draw loop and grade them separately.
 - **Protect technical keys, paths and IDs by use.** Asset filenames

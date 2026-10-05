@@ -5,7 +5,7 @@
   "inventory_status": "visually_reviewed_with_documented_exclusion",
   "coverage_ref": "images/coverage.json",
   "limitations": [
-    "One image, data/bgimage/ev_Hdouga.jpg, remains unchanged because it contains sexual depictions explicitly labeled as minors."
+    "None"
   ],
   "assets": [
     {

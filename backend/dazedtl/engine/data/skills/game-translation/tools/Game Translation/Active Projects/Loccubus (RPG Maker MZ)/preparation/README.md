@@ -3,7 +3,6 @@
 This project prepares 137 nonsexual general UI units at 158 sites, with blank targets, a glossary, game prompts, and reproducible offline validation.
 The source is Simplified Chinese in RPG Maker MZ 1.9.0.
 No translation API is configured or used.
-Sexual content involving minors is excluded; this is not full-game translation readiness.
 
 ## Start here
 

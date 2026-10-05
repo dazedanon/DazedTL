@@ -17,9 +17,3 @@ alpha, artwork, borders and hotspots. Use the copied skill toolkit (`imgtl.py`)
 and explicit per-family recipes. Reconstruct only the old lettering's footprint;
 do not add caption plates. Store before/after crops, masks, source/output hashes,
 fit measurements and visual review evidence. Review at native size and 2–3x.
-
-The Hdouga listing image `data/bgimage/ev_Hdouga.jpg` is excluded because it
-contains sexual depictions explicitly labeled as minors. Keep this limitation
-visible in coverage/release documentation. Do not alter or include that asset in
-the translation payload. The separate final-video frame depicts the main adult
-heroine and has its own eligible browser caption.

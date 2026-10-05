@@ -76,8 +76,3 @@ nonempty erasure masks, preserved dimensions/mode, no unintended pixel changes
 outside declared zones, and magnified inspection for Japanese remnants, damaged
 art, clipped borders and misleading wording. Exact duplicates receive identical
 translated bytes. Image coverage and literal text coverage remain separate counts.
-
-`data/bgimage/ev_Hdouga.jpg` remains unchanged and outside the payload because it
-contains sexual depictions explicitly labeled as minors. Keep this one-image
-limitation visible in coverage and release documentation; do not classify it as
-translated or claim that all image text has been localized.

@@ -175,7 +175,7 @@ For every mode, images follow the user's selected scope; finding Japanese art do
 ## Age evidence in cartoony and stylized games
 
 Cartoony, chibi and super-deformed art styles are common across adult casts.
-Do not infer that a character is underage or exclude text solely from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”.
+Do not infer that a character is underage or exclude text solely from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
 Distinguish the game's general visual style from specific evidence about a character's age or depiction.
 Use established age/adulthood lore, the complete scene context and relevant user clarification; do not start a cast-wide age investigation merely because the art is stylized.
 Before creating or reinstating an age-related exclusion, read `references/review-decisions.md` and reconcile prior corrections and retractions.

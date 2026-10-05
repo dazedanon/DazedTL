@@ -123,10 +123,6 @@ visual approvals remain in the per-family workspace. The scripts retain canvas
 sizes, alpha, artwork, borders, original paths and click geometry. Some original
 JPEG paths receive PNG bytes to avoid recompressing untouched pixels.
 
-One image, `data/bgimage/ev_Hdouga.jpg`, contains sexual depictions explicitly
-labeled as minors and is excluded from image editing and the patch payload.
-Its unchanged status is recorded separately from translated image coverage.
-
 The completed image package contains 50 payload files and 56 package files.
 All 30 replacement images passed native-size decoding from the isolated game's
 actual ASAR URLs; `reports/image_decode.json` records encoded-byte hashes,

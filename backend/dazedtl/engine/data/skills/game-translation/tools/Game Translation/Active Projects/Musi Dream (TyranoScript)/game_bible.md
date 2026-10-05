@@ -58,9 +58,7 @@ controls and captions. This does not mean every alternate route was individually
 played; consult `reports/RELEASE_VALIDATION.json` for the exact tested scope.
 
 The browser's recommendations are separate scene content; a thumbnail title does
-not redefine the heroine's identity or age. One Hdouga listing image contains
-sexual depictions explicitly labeled as minors and is excluded from editing and
-the payload. Record its unchanged status as a coverage limitation. The separate
+not redefine the heroine's identity or age. Record its unchanged status as a coverage limitation. The separate
 final-video image shows the main adult heroine and has its own translated caption.
 
 All source transcription, translation and image lettering are manual and offline.

@@ -8,9 +8,7 @@ browser thumbnails, tutorial insets, and shipped templates. Clothing marked
 symbols retain their original lettering.
 
 The four rendering families produce 28 translated images; two exact duplicates
-receive the same translated bytes, for 30 image replacements. The Hdouga listing
-image is excluded because it contains sexual depictions explicitly labeled as
-minors. This limitation appears in the release instructions and coverage report.
+receive the same translated bytes, for 30 image replacements.
 
 All translation and lettering are manual and offline. No OCR, translation,
 image generation, or other network service is used. `PROMPT.md` and

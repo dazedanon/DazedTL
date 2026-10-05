@@ -24,8 +24,7 @@ substitutions, except before possessive apostrophes or hyphens. Keep fragment ed
 spaces when grammar needs them. Preserve meaning, tone, numbers, and character
 identity; add no events or details. Keep short UI labels concise. Use the locked
 glossary spelling for names. Do not merge speakers or reveal unknown identities.
-Translate only supplied content that is permissible to translate. Do not produce
-sexual content involving minors; return null for a unit requiring that exclusion.
+Translate only supplied content that is permissible to translate. return null for a unit requiring that exclusion.
 Each record supplies its kind, speaker, scene, and optional expression context.
 Values marked display_value are display copies: their underlying state keys are
 preserved locally. Translate their visible meaning, never invent technical syntax.

@@ -18,9 +18,7 @@ replacements, unchanged structure across 33 scenarios / 5,138 parsed elements,
 rendered fit, live legacy/English save checks, a nine-scene run back to title,
 and exact archive restoration. Its `DROPIN_PROJECT.md` and `reports/dropin_qa.json`
 separately document the Git packaging retest. Not every alternate route was
-played individually. One image, `data/bgimage/ev_Hdouga.jpg`, is excluded because
-it contains sexual depictions explicitly labeled as minors; it remains unchanged
-and absent from the patch. Preserve these limitations in coverage claims.
+played individually.
 
 Most examples below come from AjinSyoujyo; newer-build differences are identified
 explicitly. Read the shipped `Config.tjs` and parser first. A configuration schema

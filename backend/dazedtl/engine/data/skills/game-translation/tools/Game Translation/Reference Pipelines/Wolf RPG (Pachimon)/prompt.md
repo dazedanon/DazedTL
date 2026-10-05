@@ -120,7 +120,7 @@ This game contains adult eroge/RPG content, erotic battle narration, sexual UI t
 - If the Japanese is vulgar, use vulgar English. If the Japanese is coy or euphemistic, keep it coy or euphemistic.
 - Do not censor anatomical terms, fluids, penetration terms, climax terms, or sexual commands.
 - Do not add sexual intensity where the source is neutral, comedic, or mechanical.
-- Do not add underage framing or youth-coded wording. Use adult-neutral language unless the source explicitly states otherwise.
+- Use adult-neutral language unless the source explicitly states otherwise.
 - Erotic battle/system terms should remain clear and game-like, not purple prose.
 - Arousal/pleasure vocalizations should sound natural in English:
   - `あぁ`, `ぁあ`, `はぁ` -> "Aah...", "Hah..."

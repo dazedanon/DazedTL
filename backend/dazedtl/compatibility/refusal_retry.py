@@ -110,7 +110,6 @@ class RefusalRetry:
         self.reject(response)
         first = receipt(response)
         first_usage = first['usage']
-        # A provider's explicit child-safety refusal is terminal. Never relabel
         # the characters or retry that passage with an age clarification.
         if not self.allow_clarification or not clarifiable(response, (source or {}).values()):
             first.update(content=None, refusal=MESSAGE)

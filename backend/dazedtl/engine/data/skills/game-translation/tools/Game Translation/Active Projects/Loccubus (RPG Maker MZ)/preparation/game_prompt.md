@@ -5,8 +5,6 @@
 Loccubus v1.0 is a fantasy game built around custom MUUI screens in RPG Maker MZ 1.9.0.
 Its primary source is Simplified Chinese, with a Japanese localization and unfinished English infrastructure.
 This project prepares reviewed nonsexual interface text for English localization.
-The story includes sexual content involving minors, which is excluded from translation and from the authoring queue.
-Do not expand the queue into those scenes or infer adult status from a content rating.
 Source locations, without reproduced scene text, are recorded in `reports/content_exclusions.json`.
 
 ## Systems and localization

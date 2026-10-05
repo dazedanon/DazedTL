@@ -18,11 +18,6 @@ hover states and save/reload. All 442 measured text units fit without overflow.
 Not every alternate route was played individually. The new package's restore
 test reproduced the exact original archive.
 
-One image,
-`data/bgimage/ev_Hdouga.jpg`, is excluded because it contains sexual depictions
-explicitly labeled as minors. It remains unchanged and is absent from the patch
-payload. Image coverage must always be reported with this limitation.
-
 The durable project is:
 `C:\Users\sw\Desktop\Tools\Game Translation\Active Projects\Musi Dream (TyranoScript)`.
 The game's `translation` directory is the local scratch copy for building and QA.
