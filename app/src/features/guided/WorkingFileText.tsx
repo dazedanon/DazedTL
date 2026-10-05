@@ -121,7 +121,7 @@ export function WorkingFileText({
                             className="muted"
                             title="No different source text retained"
                           >
-                            —
+                            -
                           </span>
                         )}
                       </td>

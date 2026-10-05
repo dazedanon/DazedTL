@@ -193,7 +193,7 @@ export function TranslateWorkspace({
                           : "Cost not recorded"
                       }
                     >
-                      {metrics ? `$${metrics.cost.toFixed(4)}` : "—"}
+                      {metrics ? `$${metrics.cost.toFixed(4)}` : "-"}
                     </span>
                     <span
                       className="translation-file-time"
@@ -203,7 +203,7 @@ export function TranslateWorkspace({
                           : "Time not recorded"
                       }
                     >
-                      {metrics ? `${metrics.seconds.toFixed(1)}s` : "—"}
+                      {metrics ? `${metrics.seconds.toFixed(1)}s` : "-"}
                     </span>
                   </>
                 );

@@ -38,7 +38,7 @@ export function SpeakerFindings({
               <ul>
                 {rule.evidence.map((ref, index) => (
                   <li key={index}>
-                    <span className="path">{ref.file}</span> — {ref.location}
+                    <span className="path">{ref.file}</span> · {ref.location}
                   </li>
                 ))}
               </ul>

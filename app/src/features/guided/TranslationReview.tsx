@@ -13,7 +13,7 @@ import { api } from "../../api/client";
 const numeric = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const count = (value: unknown) =>
-  numeric(value) ? value.toLocaleString() : "—";
+  numeric(value) ? value.toLocaleString() : "-";
 const pathKey = (path: string) => path;
 
 export function TranslationCost({
