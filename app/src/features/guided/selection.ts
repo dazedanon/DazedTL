@@ -92,6 +92,9 @@ export function selectMatching(
   add: boolean,
 ) {
   const result = new Set(selected);
-  for (const name of matching) add ? result.add(name) : result.delete(name);
+  for (const name of matching) {
+    if (add) result.add(name);
+    else result.delete(name);
+  }
   return [...result];
 }

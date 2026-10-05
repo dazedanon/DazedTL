@@ -16,6 +16,7 @@ import { ActionSlot } from "../../ui/ActionSlot";
 import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
 import { versionSession } from "./versionState";
+import { displayText } from "../../ui/displayText";
 
 export function VersionsPanel({
   project,
@@ -71,9 +72,9 @@ export function VersionsPanel({
     )
       ? session.latest
       : undefined;
-  const resultVersion = String(
-    preview?.result?.version || stage?.result?.version || "",
-  );
+  const resultVersion =
+    displayText(preview?.result?.version) ||
+    displayText(stage?.result?.version);
   const operation = (name: string, args: Record<string, unknown> = {}) =>
     action.run(
       async () => {

@@ -12,7 +12,7 @@ type MissingClientMethods = AssertNever<
 type MissingManifestMethods = AssertNever<
   Exclude<Method, keyof typeof protocol.methods>
 >;
-export type ProtocolCoverage = MissingClientMethods | MissingManifestMethods;
+export type ProtocolCoverage = [MissingClientMethods, MissingManifestMethods];
 type Envelope =
   | { version: number; ok: true; value: unknown }
   | {

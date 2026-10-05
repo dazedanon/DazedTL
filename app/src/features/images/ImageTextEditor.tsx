@@ -3,7 +3,6 @@ import { api } from "../../api/client";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import type {
-  ImageEditorImage,
   ImageEditorSave,
   ImageEditorState,
   ImageNativeTranslationPreview,

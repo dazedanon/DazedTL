@@ -178,7 +178,7 @@ export function useTranslationFlow(options: Options) {
               : result.job?.message || "The estimate could not finish.",
         });
       } else if (result.kind === "empty" && value.phase !== "variables") {
-        change(session, { stage: "empty", job: result.job! });
+        change(session, { stage: "empty", job: result.job });
         // The finished check is the result, not a preparation to cancel. The
         // backend keeps it as file status and discards the estimate itself.
         void perform(

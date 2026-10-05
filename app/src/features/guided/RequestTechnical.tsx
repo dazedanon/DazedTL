@@ -2,6 +2,7 @@ import type { Job, RunPayload } from "../../api/contracts";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { RequestFailure } from "./RequestFailure";
 import { requestStateLabel } from "./translationView";
+import { displayText } from "../../ui/displayText";
 
 const count = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value)
@@ -38,7 +39,9 @@ export function RequestTechnical({
               <div>
                 <dt>Model</dt>
                 <dd>
-                  {String(parameters?.model || job.model || "Not recorded")}
+                  {displayText(parameters?.model) ||
+                    job.model ||
+                    "Not recorded"}
                 </dd>
               </div>
             )}

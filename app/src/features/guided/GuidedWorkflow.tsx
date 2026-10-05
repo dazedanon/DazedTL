@@ -21,7 +21,6 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
-import { DocumentEditor } from "../../ui/DocumentEditor";
 import { FieldRow } from "../../ui/FieldRow";
 import { Message } from "../../ui/Feedback";
 import { JobStatus } from "../../ui/JobStatus";
@@ -45,7 +44,7 @@ import { ActivityHistory, projectActivity } from "./ActivityHistory";
 import { EngineOptions } from "./EngineOptions";
 import { FileSelection } from "./FileSelection";
 import { retainOtherScope } from "./selection";
-import RunPanel, { Estimate } from "./RunPanel";
+import RunPanel from "./RunPanel";
 import { TranslationCost, TranslationReview } from "./TranslationReview";
 import { useTranslationFlow } from "./useTranslationFlow";
 import { TranslationFlowDialog } from "./TranslationFlowDialog";
@@ -55,13 +54,7 @@ import { RunInspector } from "./RunInspector";
 import { TranslationOptions } from "./TranslationOptions";
 import { useContextDraft } from "./useContextDraft";
 import { useGuidedWorkflow } from "./useGuidedWorkflow";
-import {
-  initialPosition,
-  runPhase,
-  runStage,
-  stagesFor,
-  taskForStage,
-} from "./workflow";
+import { initialPosition, runPhase, stagesFor, taskForStage } from "./workflow";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import {
   guidanceAvailability,
@@ -93,6 +86,7 @@ import { GuidedImages, type ImageEntryMode } from "./GuidedImages";
 import { ReleaseContent, ReleaseReview } from "./Release";
 import { PluginWorkspace } from "../plugins/PluginWorkspace";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
+import { displayText } from "../../ui/displayText";
 
 const speakers = [
   "NAMES",
@@ -128,11 +122,11 @@ const phaseLabels: Record<Phase, string> = {
 };
 const actionKey = (name: string, options: Record<string, unknown> = {}) =>
   name === "start"
-    ? `start:${options.mode}:${options.phase || "speakers"}`
+    ? `start:${displayText(options.mode)}:${displayText(options.phase) || "speakers"}`
     : name === "runtime_restore"
-      ? `runtime_restore:${options.publication}`
+      ? `runtime_restore:${displayText(options.publication)}`
       : name === "export_selected" && options.run_id
-        ? `export_selected:${options.run_id}`
+        ? `export_selected:${displayText(options.run_id)}`
         : name;
 const jobTime = (job: { updated?: string; created?: string }) =>
   Date.parse(job.updated || job.created || "") || 0;
@@ -528,7 +522,7 @@ function Workspace({
       async () => {
         await flushDrafts();
         const selected = Array.isArray(values.engine_options[key])
-          ? [...(values.engine_options[key] as string[])]
+          ? [...values.engine_options[key]]
           : [];
         await api.guided.eventTextPicker(project.id, {
           key,
@@ -968,10 +962,9 @@ function Workspace({
     action.run(
       async () => {
         const folder = await window.dazedtl.chooseFolder();
-        if (folder)
-          key === "original"
-            ? editForm("original", folder)
-            : editRelease("directory", folder);
+        if (!folder) return;
+        if (key === "original") editForm("original", folder);
+        else editRelease("directory", folder);
       },
       "",
       "folder:" + key,
@@ -2597,7 +2590,7 @@ function Workspace({
             <div className="guided-qa-status">
               <strong>
                 Saved discovery stage:{" "}
-                {String(qaStatus.stage).replaceAll("_", " ")}
+                {displayText(qaStatus.stage).replaceAll("_", " ")}
               </strong>
               {["mechanical", "screen", "deep"].map((key) => {
                 const counts = qaStatus[key] as
@@ -2697,8 +2690,6 @@ function Workspace({
       secondary = releaseButton;
       break;
     case "tools": {
-      const both =
-        state.tools?.inspector.installed && state.tools.forge.installed;
       content = (
         <>
           <ActionList>
@@ -4210,7 +4201,7 @@ function Workspace({
                   disabled={disabled}
                   onClick={() => {
                     setPreview(null);
-                    void translateSelected();
+                    translateSelected();
                   }}
                 >
                   Refresh estimate

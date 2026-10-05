@@ -6,7 +6,8 @@ export function registerLeaveGuard(guard: () => Promise<void>) {
   };
 }
 export async function flushDrafts() {
-  for (const guard of [...guards]) await guard();
+  // Guards can unregister themselves while saving, so iterate a snapshot.
+  for (const guard of Array.from(guards)) await guard();
 }
 
 /** A failed unmount save must remain retryable by navigation or crash recovery. */

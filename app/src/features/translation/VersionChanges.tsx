@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { VirtualList } from "../../ui/VirtualList";
 import { updateCounts } from "./versionState";
+import { displayText } from "../../ui/displayText";
 
 const paths = (value: unknown): string[] =>
   Array.isArray(value)
@@ -27,7 +28,7 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
     ...paths(value.json_warnings),
     ...rows(value.image_changes)
       .filter((row) => row.warning === true)
-      .map((row) => `${row.path}: ${row.result}`),
+      .map((row) => `${displayText(row.path)}: ${displayText(row.result)}`),
   ];
   return (
     <div className="version-changes">
@@ -79,7 +80,8 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
                     <span>{String(row.change)}</span>
                   </div>
                   <p>
-                    {String(row.result || "Review this file after updating.")}
+                    {displayText(row.result) ||
+                      "Review this file after updating."}
                   </p>
                 </div>
               )}
