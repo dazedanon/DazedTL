@@ -46,6 +46,8 @@ used during migration. The local snapshot is `b91bede1` on
 `git -C ../DazedMTLTool worktree add --detach ../DazedMTLTool-engine b91bede1` if needed.
 The sibling `DazedMTLTool` checkout is restored to Qt and is the workflow reference;
 it does not supply the new app's runtime helpers.
+Shared translation prompts and reference data are owned by this checkout; see
+[resource ownership](docs/architecture.md#ownership) for their locations and override behavior.
 Use the Node and Python versions in [.node-version](.node-version) and [.python-version](.python-version), and the npm version in [app/package.json](app/package.json).
 Setup installs locked dependencies into this checkout's own `app/node_modules` and `.venv`.
 Launching, building, and testing also accept newer Node releases within the pinned major version.

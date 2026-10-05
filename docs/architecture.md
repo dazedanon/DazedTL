@@ -22,6 +22,15 @@ ordering and behavior. The separate frozen `DazedMTLTool-engine` checkout suppli
 compatibility code only; its retired Electron interface is not a UX reference.
 The default engine location is shared by the launcher and Electron backend through
 [engine-source.cjs](../app/electron/engine-source.cjs); see README for snapshot recovery.
+DazedTL owns the base translation rules in [system.md](../backend/dazedtl/data/skills/system.md),
+along with the shared prompt templates, field instructions, base glossary and SFX reference
+under [data](../backend/dazedtl/data). The [resource bridge](../backend/dazedtl/compatibility/resources.py)
+routes engine readers to these packaged files before importing consumers in the app and its workers.
+Existing workspace `engine/shared-data` overrides retain precedence and native path validation;
+missing packaged defaults fail instead of falling back to the engine checkout. Resources are not
+seeded into profiles, so future default changes reach new preparations without overwriting customizations.
+Frozen run context stays authoritative for execution and recovery. Engine parsers, context assembly
+and Len's maintained methodology/tool bundle remain behind the compatibility boundary.
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.

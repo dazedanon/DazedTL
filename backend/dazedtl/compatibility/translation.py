@@ -44,6 +44,8 @@ class TranslationEngine:
             raise ValueError("Choose the preserved DazedMTLTool checkout.")
         if str(self.source) not in sys.path:
             sys.path.insert(0, str(self.source))
+        from .resources import install
+        install()
 
     @contextmanager
     def context(self):
@@ -129,9 +131,16 @@ class TranslationEngine:
         return compiled, self.compiler_fingerprint()
 
     def compiler_fingerprint(self):
-        from util.len_api import _compiler_fingerprint
+        from . import resources
         from dazedtl.translation import requests, compilation
-        return digest({"engine": _compiler_fingerprint(), "bridge": digest(Path(__file__).read_bytes()),
+        # Retain the compiler's code identity without hashing obsolete prompt
+        # copies in its checkout. Actual guidance also binds each logical request.
+        engine_files = ("util/len_api.py", "util/len_translation.py", "util/translation.py",
+                        "util/skills/__init__.py", "util/skills/contexts.py", "util/skills/system.py",
+                        "util/sfx_reference.py", "util/vocab.py", "util/reference_games.py")
+        return digest({"engine": {name: digest((self.source / name).read_bytes()) for name in engine_files},
+                       "resources": digest(Path(resources.__file__).read_bytes()),
+                       "bridge": digest(Path(__file__).read_bytes()),
                        "contract": digest(Path(requests.__file__).read_bytes()),
                        "compilation": digest(Path(compilation.__file__).read_bytes()),
                        "parameters": digest(Path(request_parameters.__file__).read_bytes())})

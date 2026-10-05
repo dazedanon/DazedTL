@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, os.environ["DAZEDTL_ENGINE_SOURCE"])
 
 if __name__ == "__main__":
+    from dazedtl.compatibility.resources import install as install_resources
+    install_resources()
     from dazedtl.compatibility.worker_policy import install
 
     install()

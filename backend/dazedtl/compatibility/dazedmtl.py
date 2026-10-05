@@ -22,6 +22,8 @@ class ExistingBackend:
             if not (self.source / name).is_file():
                 raise ValueError("Select the preserved DazedMTLTool repository for the migration adapter.")
         sys.path.insert(0, str(self.source))
+        from .resources import install
+        install()
         from .manual import manual_jobs
         from .model_defaults import ModelDefaults
         from .operations import workflow_operations

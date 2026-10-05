@@ -29,6 +29,8 @@ def catalog(value):
 
 def resolve(source, cache, model, online):
     sys.path.insert(0, str(source))
+    from dazedtl.compatibility.resources import install
+    install()
     import util.translation as translation
     import httpx
 

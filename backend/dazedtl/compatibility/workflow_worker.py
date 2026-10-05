@@ -9,6 +9,8 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 source = Path(os.environ["DAZEDTL_ENGINE_SOURCE"])
 sys.path.insert(0, str(source))
+from dazedtl.compatibility.resources import install as install_resources
+install_resources()
 from desktop.backend import workflow_actions
 from dazedtl.compatibility.guided import run_ace, apply_selected, run_release
 from dazedtl.compatibility.translation import TranslationEngine
