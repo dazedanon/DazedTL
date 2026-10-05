@@ -29,6 +29,8 @@ const commands = [
       ".",
       "-p",
       "test_*.py",
+      "--durations",
+      "5",
     ],
   ],
   [process.execPath, ["--test", "--test-isolation=none", ...tests]],

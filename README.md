@@ -177,11 +177,10 @@ Engine adapter authors and assistant integrations should use the [translation co
 
 ## Development checks
 
-Run the full behavior suite from this checkout with `node scripts/test.mjs`
-(or `npm test` from `app`). It uses the local Python environment and Node's
-built-in test runner, with one enforced wall-clock budget including
-startup, fixtures, and teardown. Tests use temporary workspaces and controlled
-API responses; no provider, game folder, credentials, or sibling checkout is needed.
+Run the full behavior suite from this checkout with `node scripts/test.mjs` (or `npm test` from `app`).
+It uses the local Python environment and Node's built-in test runner, with one enforced wall-clock budget including startup, fixtures, and teardown.
+The runner reports the five slowest Python tests to make runtime regressions visible.
+Tests use temporary workspaces and controlled API responses; no provider, game folder, credentials, or sibling checkout is needed.
 
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py`
 or `node --test --test-isolation=none tests/application.test.ts` from the root.

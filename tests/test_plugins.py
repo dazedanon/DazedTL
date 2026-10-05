@@ -1,6 +1,7 @@
 """Protect exact edit scope, pristine lookup evidence and reviewed publication recovery."""
 
 from copy import deepcopy
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -17,7 +18,24 @@ from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 
 
+class FixtureDocuments:
+    """Reuse real parse results only for identical fixture inputs."""
+
+    @lru_cache(maxsize=64)
+    def _parse(self, path, kind, source):
+        return Documents().parse([{'path':path, 'kind':kind, 'source':source}])[path]
+
+    def parse(self, files):
+        # Services and later tests must never share mutable parser results.
+        return {row['path']:deepcopy(self._parse(**row)) for row in files}
+
+
 class PluginTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.documents = FixtureDocuments()
+        cls.addClassCleanup(cls.documents._parse.cache_clear)
+
     def setUp(self):
         temporary=TemporaryDirectory();self.addCleanup(temporary.cleanup)
         self.root=Path(temporary.name);self.game=self.root/'game';self.profile=self.root/'profile'
@@ -35,7 +53,7 @@ class PluginTests(unittest.TestCase):
         self.projects=Projects(self.profile);self.project=self.projects.open({'source':str(self.game),'engine':'MVMZ'});self.identity=self.project['id']
         self.translation=SimpleNamespace(workspace=self.profile,idle=lambda _:None,clean_drafts=lambda _:None)
         self.backend=SimpleNamespace(source=self.root/'engine')
-        self.service=PluginService(self.projects,self.translation,self.backend)
+        self.service=PluginService(self.projects,self.translation,self.backend,documents=self.documents)
         saved=snapshot(self.game,store_path(self.game),source_game=True)
         write_json(lifecycle_path(self.profile,self.identity),{'version':1,'source_backup':saved})
 
@@ -55,7 +73,7 @@ class PluginTests(unittest.TestCase):
 
     def candidate(self,path,targets):
         value=self.service.load(self.identity);row=value['files'][path];prepared=row['prepared'];raw=(self.game/prepared['original']).read_bytes()
-        parsed=Documents().parse([{'path':path,'source':raw.decode(),'kind':row['kind']}])[path]
+        parsed=self.service.documents.parse([{'path':path,'source':raw.decode(),'kind':row['kind']}])[path]
         by_token={}
         for item in row['occurrences']:
             if item['id'] in targets:by_token.setdefault(item['token'],[]).append(item)
@@ -95,7 +113,7 @@ class PluginTests(unittest.TestCase):
         self.assertFalse(any(row.get('prepared') for row in value['files'].values()))
         state=self.service.state(self.identity);self.service.update(self.identity,state['revision'],{'view':{'query':'PluginB','currentFile':'www/js/plugins/PluginA.js'}})
         self.assertEqual(self.service.list(self.identity,query='PluginB')['selectedMatched'],0)
-        restarted=PluginService(self.projects,self.translation,self.backend)
+        restarted=PluginService(self.projects,self.translation,self.backend,documents=self.service.documents)
         self.assertEqual(restarted.state(self.identity)['counts']['selected'],selected)
         self.assertEqual(restarted.state(self.identity)['view']['query'],'PluginB')
         self.assertNotIn('www/data/Map001.json',[row['path'] for row in request['files']])
@@ -160,6 +178,9 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'out-of-scope'):self.service.action(self.identity,'refresh_results')
 
     def test_apply_cancel_stale_preview_one_use_restore_and_rollback(self):
+        # Keep the real, uncached parser boundary through investigation,
+        # translation, Apply and restore, alongside the direct parser checks.
+        self.service.documents=Documents()
         request,report=self.translated();before={row['path']:(self.game/row['path']).read_bytes() for row in request['files']}
         self.assertEqual(self.service.state(self.identity)['counts']['ready'],2)
         canceled=self.service.action(self.identity,'preview_apply')['preview']
@@ -279,7 +300,7 @@ class PluginTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):self.service.action(self.identity,'apply',{'token':preview['token']})
         pending=self.service.load(self.identity);journal=self.service.path(self.identity,'publications/'+preview['token']+'/approval.json');original=journal.read_bytes()
         document=read_json(journal);document['files'][0]['afterHash']='0'*64;write_json(journal,document)
-        restarted=PluginService(self.projects,self.translation,self.backend)
+        restarted=PluginService(self.projects,self.translation,self.backend,documents=self.service.documents)
         with self.assertRaisesRegex(ValueError,'journal changed'):restarted.state(self.identity)
         write_bytes(journal,original);state=restarted.state(self.identity)
         receipt=state['receipts'][-1];self.assertEqual(receipt['status'],'recovered');self.assertEqual(len(receipt['files']),1)

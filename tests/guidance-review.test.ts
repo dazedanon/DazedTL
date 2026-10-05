@@ -33,10 +33,7 @@ test("investigation progress retains saved artifacts through settings changes an
 test("guidance completion follows file presence independently of old review and investigation state", () => {
   const setup = { status: "stale", documents: Object.fromEntries(["glossary", "quirks", "game"].map(name => [name,
     { exists: true, reviewed: false, needsReview: true, intentionalEmpty: false }])) } as ContextSetup;
-  for (const status of ["missing", "waiting", "ready", "stale", "invalid"] as const) {
-    setup.status = status;
-    assert.deepEqual(guidanceAvailability(setup.documents), { complete: true, missing: [] });
-  }
+  assert.deepEqual(guidanceAvailability(setup.documents), { complete: true, missing: [] });
   setup.documents.game.exists = false;
   assert.deepEqual(guidanceAvailability(setup.documents), { complete: false, missing: ["game"] });
   assert.equal(guidanceAvailability({}).complete, false);
