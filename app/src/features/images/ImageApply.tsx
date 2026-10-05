@@ -25,6 +25,7 @@ export function ImageApply({
     typeof preview.included === "number"
       ? preview.included
       : preview.assets.length;
+  const images = count === 1 ? "image" : "images";
   const [page, setPage] = useState(0);
   const [blockedPage, setBlockedPage] = useState(0);
   const [copyNotice, setCopyNotice] = useState("");
@@ -44,8 +45,8 @@ export function ImageApply({
       <header className="image-modal-heading">
         <h2>
           {restore
-            ? `Restore ${count} original images`
-            : `Apply ${count} images to the game`}
+            ? `Restore ${count} original ${images}`
+            : `Apply ${count} ${images} to the game`}
         </h2>
       </header>
       <div className="image-apply-body">
@@ -69,7 +70,9 @@ export function ImageApply({
           {included.map((asset) => (
             <div key={asset.id}>
               <strong>{asset.path}</strong>
-              <span>{asset.destination}</span>
+              {asset.destination !== asset.path && (
+                <span>{asset.destination}</span>
+              )}
             </div>
           ))}
           {!count && (
@@ -166,7 +169,7 @@ export function ImageApply({
           disabled={!count}
           onClick={onConfirm}
         >
-          {restore ? `Restore ${count} images` : `Apply ${count} images`}
+          {restore ? `Restore ${count} ${images}` : `Apply ${count} ${images}`}
         </Button>
       </ActionBar>
     </Modal>

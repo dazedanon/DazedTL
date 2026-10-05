@@ -19,6 +19,9 @@ import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import "./plugins.css";
 
+const fileCount = (count: number, noun = "file") =>
+  `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 export const pluginStatus = (status: string) =>
   ({
     not_investigated: "Not investigated",
@@ -275,9 +278,9 @@ export function PluginWorkspace({
           state.editing.status === "awaiting_report"
         ? "Working copies are prepared. Your agent’s saved results appear here after validation."
         : counts.ready
-          ? `${counts.ready} files checked and ready to apply.`
+          ? `${fileCount(counts.ready)} checked and ready to apply.`
           : counts.applied
-            ? `${counts.applied} files applied to the game.`
+            ? `${fileCount(counts.applied)} applied to the game.`
             : "Investigate plugin text, translate confirmed display text, and check the results in one agent task.";
   return (
     <section className="plugin-workspace" aria-label="Plugin text workspace">
@@ -490,11 +493,11 @@ export function PluginWorkspace({
         <div className="plugin-footer-summary">
           <span>
             {counts.ready
-              ? `${counts.ready} files ready to apply`
+              ? `${fileCount(counts.ready)} ready to apply`
               : counts.selected
-                ? `${counts.selected} text locations in ${counts.selectedFiles} files included`
+                ? `${counts.selected} text ${counts.selected === 1 ? "location" : "locations"} in ${fileCount(counts.selectedFiles)} included`
                 : counts.applied
-                  ? `${counts.applied} files applied`
+                  ? `${fileCount(counts.applied)} applied`
                   : "No plugin translations ready"}
           </span>
           {["apply", "restore"].includes(action.key) && action.notice && (
@@ -826,7 +829,7 @@ export function PluginWorkspace({
           <header>
             <h2>
               {preview.mode === "apply" ? "Apply" : "Restore"}{" "}
-              {preview.files.length} plugin files
+              {fileCount(preview.files.length, "plugin file")}
             </h2>
             <p className="muted">
               {preview.files.length} included · {preview.blocked.length} blocked
@@ -877,7 +880,7 @@ export function PluginWorkspace({
             </Button>
             <ActionControl
               variant="primary"
-              label={`${preview.mode === "apply" ? "Apply" : "Restore"} ${preview.files.length} plugin files`}
+              label={`${preview.mode === "apply" ? "Apply" : "Restore"} ${fileCount(preview.files.length, "plugin file")}`}
               disabled={busy || !preview.files.length}
               {...feedback(preview.mode)}
               onClick={async () => {
