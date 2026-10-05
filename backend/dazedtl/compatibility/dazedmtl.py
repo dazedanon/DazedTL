@@ -1,12 +1,7 @@
-"""Temporary boundary to the preserved DazedMTLTool Python implementation.
-
-This is the only package allowed to import the previous repository.
-It does not import its UI, prototype workspace service, or user profile.
-"""
+"""Application boundary to DazedTL's bundled parser and worker implementation."""
 
 from contextlib import contextmanager
 from pathlib import Path
-import sys
 import threading
 import json
 import hashlib
@@ -15,15 +10,10 @@ from dazedtl.storage import WorkspaceError, write_bytes, write_json
 
 
 class ExistingBackend:
-    def __init__(self, source, workspace, allow_providers=True):
-        self.source = Path(source).resolve(strict=True)
+    def __init__(self, workspace, allow_providers=True):
+        from .runtime import activate
+        self.source = activate()
         self.workspace = Path(workspace).resolve()
-        for name in ("modules/rpgmakermvmz.py", "modules/wolf.py", "desktop/backend/manual.py"):
-            if not (self.source / name).is_file():
-                raise ValueError("Select the preserved DazedMTLTool repository for the migration adapter.")
-        sys.path.insert(0, str(self.source))
-        from .resources import install
-        install()
         from .manual import manual_jobs
         from .model_defaults import ModelDefaults
         from .operations import workflow_operations
@@ -33,7 +23,7 @@ class ExistingBackend:
         self.lock = threading.RLock()
         self._legacy_settings = SettingsStore(self.workspace, code_root=self.source)
         self.manual = manual_jobs(self.source, self.workspace, self.lock, allow_providers)
-        self.model_defaults = ModelDefaults(self.source, self.workspace / "model-cache", allow_providers)
+        self.model_defaults = ModelDefaults(self.workspace / "model-cache", allow_providers)
         self.operations = workflow_operations(self.source, self.workspace, self.lock)
         self.workflows = phased_workflows(self.workspace, self.lock, self.operations, self.manual)
         self.allow_providers = allow_providers

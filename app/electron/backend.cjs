@@ -3,11 +3,9 @@ const { createInterface } = require("node:readline");
 const path = require("node:path");
 const fs = require("node:fs");
 const protocol = require("../../backend/dazedtl/api/protocol.json");
-const { engineSource } = require("./engine-source.cjs");
 
 class Backend {
   constructor(root, profile, onStopped, diagnostics) {
-    const legacy = engineSource(root);
     const python =
       process.env.DAZEDTL_PYTHON ||
       path.join(
@@ -40,8 +38,6 @@ class Backend {
       path.join(root, "backend/dazedtl/api/server.py"),
       "--workspace",
       this.workspace,
-      "--legacy-root",
-      legacy,
       "--diagnostics-directory",
       diagnostics.directory,
     ];

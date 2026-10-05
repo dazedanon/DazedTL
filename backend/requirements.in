@@ -1,4 +1,4 @@
-# Dependencies for the existing engine adapter, without the former Qt UI.
+# Dependencies for DazedTL's bundled engine, without the former Qt UI.
 anthropic>=0.40.0
 colorama>=0.4.6
 openai>=2.8.0

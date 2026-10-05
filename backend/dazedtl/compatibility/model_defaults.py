@@ -12,8 +12,7 @@ from dazedtl.settings.preferences import text
 
 
 class ModelDefaults:
-    def __init__(self, source, workspace, online):
-        self.source = source
+    def __init__(self, workspace, online):
         self.workspace = workspace
         self.online = online
         self.cache = {}
@@ -61,7 +60,6 @@ class ModelDefaults:
                 [
                     sys.executable,
                     str(Path(__file__).with_name("pricing_worker.py")),
-                    str(self.source),
                     str(self.workspace / "pricing.json"),
                 ],
                 input=json.dumps({"model": model, "online": self.online}),

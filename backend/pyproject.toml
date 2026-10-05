@@ -10,7 +10,8 @@ description = "Project and workflow API for the DazedTL Electron application"
 
 [tool.setuptools.packages.find]
 include = ["dazedtl*"]
+exclude = ["dazedtl.engine*"]
 
 [tool.setuptools.package-data]
 "dazedtl.api" = ["protocol.json"]
-"dazedtl" = ["data/*.txt", "data/*.json", "data/skills/*.md", "data/skills/*/*.md", "data/sfx_reference/*.json"]
+"dazedtl" = ["data/*.txt", "data/*.json", "data/skills/*.md", "data/skills/*/*.md", "data/sfx_reference/*", "engine/**/*", "engine/data/skills/game-translation/tools/.NET/**/*", "engine/data/skills/game-translation/tools/.NET/**/.*"]

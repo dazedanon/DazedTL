@@ -1,0 +1,6340 @@
+"""
+Shared translation utilities for DazedTL.
+Centralized translation function used across all modules.
+"""
+
+import os
+import re
+import json
+import sqlite3
+import time
+import random
+import unicodedata
+import tiktoken
+import openai
+import anthropic
+import urllib.request
+from urllib.parse import urlparse
+from openai import APIError, APIConnectionError, RateLimitError, APIStatusError
+import hashlib
+import threading
+import uuid
+from collections import Counter
+from contextlib import contextmanager
+from functools import lru_cache, wraps
+from dotenv import load_dotenv
+from pathlib import Path
+from retry import retry
+from util.paths import DATA_DIR, read_active_glossary
+from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
+from util import request_debug
+from util.sfx_reference import build_sfx_reference_text
+from util.vocab import decorative_glossary_alias
+
+# The fixed GPT-4 token counter is shared by translation and Len estimates.
+# Prefer its shipped table on clean/offline installations; explicit process
+# configuration can still choose another cache directory.
+os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(DATA_DIR / "tokenizers"))
+
+
+def _batch_freeze_glossary_text(fallback=""):
+    """Collect-time glossary freeze used for legacy (v4) batch key recovery."""
+    try:
+        from util.vocab import (
+            BATCH_GLOSSARY_FREEZE_FILE,
+            batch_glossary_phase,
+            restore_batch_glossary_freeze_from_state,
+        )
+
+        if batch_glossary_phase() in {"collect", "consume"}:
+            if not BATCH_GLOSSARY_FREEZE_FILE.is_file():
+                restore_batch_glossary_freeze_from_state()
+            if BATCH_GLOSSARY_FREEZE_FILE.is_file():
+                return BATCH_GLOSSARY_FREEZE_FILE.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    if fallback is not None and fallback != "":
+        return fallback
+    try:
+        return read_active_glossary()
+    except OSError:
+        return ""
+
+
+def _active_batch_cache_key_version() -> int:
+    """Return the key version for the active batch run, else the current default."""
+    # Estimate collection is intentionally isolated from resumable paid batch
+    # state.  A queued legacy batch must not change how a fresh estimate keys
+    # and deduplicates its requests.
+    if get_batch_phase() == "estimate":
+        return BATCH_CACHE_KEY_VERSION
+    snapshotted = getattr(
+        _thread_local, "batch_collect_cache_key_version", None
+    )
+    if snapshotted is not None:
+        return snapshotted
+    try:
+        with _batch_file_lock():
+            state = _read_batch_file(BATCH_STATE_FILE)
+        if state:
+            return int(state.get("cache_key_version", BATCH_CACHE_KEY_VERSION) or BATCH_CACHE_KEY_VERSION)
+    except Exception:
+        pass
+    return BATCH_CACHE_KEY_VERSION
+
+
+def _batch_stable_cache_context(subbed_text, history, sfx_text, live_vocab_text):
+    """Glossary+SFX fingerprint for batch queue/result keys.
+
+    v5+ batch identity ignores glossary/SFX: the paid provider result already
+    baked collect-time context into the model output. Older runs still need the
+    collect-time freeze so redownload/consume can rematch existing keys.
+    """
+    if _active_batch_cache_key_version() >= 5:
+        return None
+    freeze_text = _batch_freeze_glossary_text("")
+    if not freeze_text:
+        return live_vocab_text
+    matched = buildMatchedVocabText(
+        parseVocabWithCategories(freeze_text),
+        subbed_text,
+        history,
+    )
+    return matched + (sfx_text or "")
+
+
+# Request logging includes complete prompt payloads and is therefore opt-in.
+# The legacy module flag remains available for maintainers and tests, while
+# normal users enable it with ``debugRequestLogs=true`` in their environment.
+DEBUG = False
+DEBUG_LOG_MAX_BYTES = 5 * 1024 * 1024
+DEBUG_LOG_BACKUP_COUNT = 2
+
+# Translation output should scale with its source payload, but short structured
+# requests still need room for JSON scaffolding and provider reasoning tokens.
+# Official providers with known larger limits may use the full safety ceiling;
+# unknown OpenAI-compatible routes retain the conservative compatibility cap.
+MIN_TRANSLATION_OUTPUT_TOKENS = 8192
+COMPAT_TRANSLATION_OUTPUT_TOKENS = 8192
+MISTRAL_TRANSLATION_OUTPUT_TOKENS = 16000
+MAX_TRANSLATION_OUTPUT_TOKENS = 16384
+
+# Set to True to disable Claude prompt caching for baseline cost comparison.
+DISABLE_CACHE = False
+
+# Thread-local per-file token breakdown; read by calculateCost() for Claude.
+_thread_local = threading.local()
+
+# Cross-thread running total of accurate cache-discounted cost (protected by lock).
+_global_accurate_cost      = 0.0
+_global_accurate_cost_lock = threading.Lock()
+
+
+def _usage_to_debug_dict(usage):
+    """Extract token counts from provider usage objects for request debugging."""
+    return request_debug.usage_to_dict(usage)
+
+
+def _debug_logging_enabled() -> bool:
+    return request_debug.enabled(legacy_enabled=DEBUG)
+
+
+def _append_rotating_debug_log(path: Path, text: str) -> None:
+    """Append debug text while retaining only a small bounded history."""
+    request_debug.append_rotating(
+        path,
+        text,
+        max_bytes=DEBUG_LOG_MAX_BYTES,
+        backups=DEBUG_LOG_BACKUP_COUNT,
+    )
+
+
+def _write_request_debug_log(provider, request_payload, usage):
+    """Write the exact SDK payload text and returned token usage when enabled."""
+    request_debug.write_request(
+        provider,
+        request_payload,
+        usage,
+        legacy_enabled=DEBUG,
+        max_bytes=DEBUG_LOG_MAX_BYTES,
+        backups=DEBUG_LOG_BACKUP_COUNT,
+    )
+
+def _normalize_openai_base_url(url: str) -> str:
+    """Ensure OpenAI SDK global base_url has a trailing slash."""
+    _url = (url or "").strip()
+    if _url and not _url.endswith("/"):
+        _url += "/"
+    return _url
+
+
+def isClaudeModel(model):
+    """True when the model name looks like an Anthropic Claude model."""
+    return bool(model) and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+
+
+def isClaudeNative(model, api_url=None):
+    """True when this model routes to the native Anthropic SDK.
+
+    Mirrors the routing check in translateText: the model must look like Claude
+    AND the configured API URL must be unset or point at anthropic.com.  Any
+    other custom URL (e.g. DeepSeek, OpenAI proxy) uses the OpenAI-compatible
+    path even for Claude-named models.
+    """
+    live_api = os.getenv("api", "").strip() if api_url is None else str(api_url).strip()
+    return isClaudeModel(model) and (not live_api or "anthropic" in live_api.lower())
+
+
+def getBatchProvider(model=None, api_url=None, api_provider=None):
+    """Return the configured asynchronous batch backend, if supported."""
+    from util.batch_providers import detect_batch_provider
+
+    return detect_batch_provider(
+        model if model is not None else os.getenv("model", ""),
+        api_url=api_url,
+        api_provider=api_provider,
+    )
+
+
+def isBatchSupported(model=None, api_url=None, api_provider=None):
+    """Whether Batch Translate can preserve the normal request semantics."""
+    return getBatchProvider(model, api_url, api_provider) is not None
+
+
+def isMistralAPI():
+    """True when requests go to the Mistral platform API (la Plateforme).
+
+    Detection is URL-based: the adaptive rate limiter keys off x-ratelimit-*
+    headers that only api.mistral.ai sends. Mistral models served through other
+    OpenAI-compatible providers (Nvidia, OpenRouter, ...) use the generic path.
+    """
+    live_api = os.getenv("api", "").strip().lower()
+    if "mistral.ai" in live_api:
+        return True
+    return not live_api and os.getenv("API_PROVIDER", "").strip().lower() == "mistral"
+
+
+# Models that REJECT sampling params (temperature/top_p/top_k) with a 400 —
+# Claude Opus 4.7 and up retired them in favour of adaptive thinking. Matches
+# opus-4-7, opus-4-8, opus-4-10+ and fable, but NOT opus-4-6 or Sonnet/Haiku.
+_NO_SAMPLING_RE = re.compile(r"opus-4-(?:[7-9]\b|[1-9]\d)|fable", re.I)
+
+# Tracks which distinct batch sizes have already been cache-written during this estimate run.
+# Each unique numLines value maps to a distinct output_config schema → one write per size.
+# Persisted under a cross-process lock so concurrent GUI subprocesses share state.
+_estimate_written_sizes: set = set()
+_ESTIMATE_SIZES_FILE = Path("log/estimate_written_sizes.json")
+_ESTIMATE_STATE_LOCK_FILE = Path("log/estimate_state.lock")
+_ESTIMATE_STATIC_TOKENS_FILE = Path("log/estimate_static_tokens.json")
+
+
+@contextmanager
+def _estimate_state_lock():
+    """Serialize estimate-only state shared by concurrent file workers."""
+    _ESTIMATE_STATE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_ESTIMATE_STATE_LOCK_FILE, "a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+def _load_estimate_written_sizes():
+    """Load persisted written-sizes set from disk (for GUI subprocess sharing)."""
+    global _estimate_written_sizes
+    try:
+        if _ESTIMATE_SIZES_FILE.exists():
+            with open(_ESTIMATE_SIZES_FILE, "r", encoding="utf-8") as f:
+                _estimate_written_sizes = set(json.load(f))
+    except Exception:
+        _estimate_written_sizes = set()
+
+def _save_estimate_written_sizes():
+    """Persist written-sizes set to disk."""
+    try:
+        _ESTIMATE_SIZES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _ESTIMATE_SIZES_FILE.with_name(
+            f"{_ESTIMATE_SIZES_FILE.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(list(_estimate_written_sizes), f)
+        os.replace(tmp, _ESTIMATE_SIZES_FILE)
+    except Exception:
+        pass
+
+def clear_estimate_written_sizes():
+    """Reset the written-sizes file at the start of a new estimate run."""
+    global _estimate_written_sizes
+    with _estimate_state_lock():
+        _estimate_written_sizes = set()
+        try:
+            if _ESTIMATE_SIZES_FILE.exists():
+                _ESTIMATE_SIZES_FILE.unlink()
+        except Exception:
+            pass
+
+
+def _estimate_static_token_count(static_system, model):
+    """Count one static prompt once and reuse it across parallel workers/runs."""
+    identity = hashlib.sha256(
+        (str(model or "") + "\0" + str(static_system or "")).encode("utf-8")
+    ).hexdigest()
+    with _estimate_state_lock():
+        cache = {}
+        try:
+            if _ESTIMATE_STATIC_TOKENS_FILE.is_file():
+                loaded = json.loads(
+                    _ESTIMATE_STATIC_TOKENS_FILE.read_text(encoding="utf-8")
+                )
+                if isinstance(loaded, dict):
+                    cache = loaded
+            cached = int(cache.get(identity, 0) or 0)
+            if cached > 0:
+                return cached
+        except Exception:
+            cache = {}
+
+        try:
+            client = anthropic.Anthropic(api_key=openai.api_key)
+            backtick = chr(96) * 3
+            system_block = [{
+                "type": "text",
+                "text": backtick + "\n" + static_system + "\n" + backtick,
+                "cache_control": {"type": "ephemeral", "ttl": "5m"},
+            }]
+            response = client.beta.messages.count_tokens(
+                betas=["token-counting-2024-11-01"],
+                model=model,
+                system=system_block,
+                messages=[{"role": "user", "content": "x"}],
+            )
+            token_count = int(response.input_tokens)
+        except Exception:
+            enc = tiktoken.encoding_for_model("gpt-4")
+            token_count = len(enc.encode(static_system))
+
+        try:
+            cache[identity] = token_count
+            _ESTIMATE_STATIC_TOKENS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _ESTIMATE_STATIC_TOKENS_FILE.with_name(
+                f"{_ESTIMATE_STATIC_TOKENS_FILE.name}.{os.getpid()}.tmp"
+            )
+            tmp.write_text(
+                json.dumps(cache, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            os.replace(tmp, _ESTIMATE_STATIC_TOKENS_FILE)
+        except Exception:
+            pass
+        return token_count
+
+
+# Keep the established import surface while allowing desktop review to use
+# runtime-code validation without loading provider SDKs.
+from util.runtime_text import (
+    PROTECTED_PATTERNS, _GENERAL_CONTROL_PATTERN, _ORPHAN_BACKSLASH_PATTERN,
+    _CONTROL_CODE_RE, _ORPHAN_BACKSLASH_RE, _FORMAT_SCOPE_RE,
+    _escaped_orphan_backslash, _mask_mapped_control_codes, _format_scope_signature,
+    extract_control_codes, validate_control_codes, protect_script_codes,
+    restore_script_codes, _reprotect_cached_codes,
+)
+
+
+def validate_placeholders(original_text, translated_text, replacements):
+    """
+    Validate that all placeholders from the original text appear in the translation.
+    Returns: (is_valid, missing_placeholders, extra_placeholders)
+    """
+    if not replacements:
+        return True, [], []
+    
+    # Get all placeholders
+    all_placeholders = set(replacements.keys())
+    
+    # Count placeholders in original
+    original_counts = {}
+    for placeholder in all_placeholders:
+        if isinstance(original_text, str):
+            original_counts[placeholder] = original_text.count(placeholder)
+        elif isinstance(original_text, list):
+            original_counts[placeholder] = sum(str(item).count(placeholder) for item in original_text)
+    
+    # Count placeholders in translation
+    translated_counts = {}
+    for placeholder in all_placeholders:
+        if isinstance(translated_text, str):
+            translated_counts[placeholder] = translated_text.count(placeholder)
+        elif isinstance(translated_text, list):
+            translated_counts[placeholder] = sum(str(item).count(placeholder) for item in translated_text)
+    
+    # Find mismatches
+    missing = []
+    extra = []
+    for placeholder in all_placeholders:
+        orig_count = original_counts.get(placeholder, 0)
+        trans_count = translated_counts.get(placeholder, 0)
+        
+        if trans_count < orig_count:
+            missing.append(f"{placeholder} (expected {orig_count}, found {trans_count})")
+        elif trans_count > orig_count:
+            extra.append(f"{placeholder} (expected {orig_count}, found {trans_count})")
+    
+    is_valid = len(missing) == 0 and len(extra) == 0
+    return is_valid, missing, extra
+
+_PRESERVED_KAOMOJI_RE = re.compile(
+    r"(?P<open>[（(])"
+    r"(?P<face>[^（）()\r\n\s]{1,32})"
+    r"(?P<close>[）)])"
+    r"(?P<flourish>[ゝゞヽヾ])?"
+)
+
+
+def _strip_source_preserved_kaomoji_flourishes(
+    source_text, translated_text, lang_regex
+):
+    """Ignore an exact decorative suffix on a source-preserved kaomoji.
+
+    Japanese iteration marks can be decorative flourishes outside a kaomoji,
+    as in ``(｀・ω・´)ゞ``. They are also legitimate Japanese characters, so
+    ignore only the suffix when the complete symbol-heavy emoticon was preserved
+    byte-for-byte and its interior contains no source-language text.
+    """
+    residue = str(translated_text)
+    for match in _PRESERVED_KAOMOJI_RE.finditer(str(source_text)):
+        flourish = match.group("flourish")
+        if not flourish:
+            continue
+        face = match.group("face")
+        symbol_count = sum(
+            unicodedata.category(char)[:1] in {"P", "S"} for char in face
+        )
+        if symbol_count < 2 or re.search(lang_regex, face):
+            continue
+        token = match.group(0)
+        index = residue.find(token)
+        if index >= 0:
+            suffix_index = index + len(token) - len(flourish)
+            residue = (
+                residue[:suffix_index] + residue[suffix_index + len(flourish):]
+            )
+    return residue
+
+
+def validate_translation_content(
+    original_items, translated_items, langRegex, target_language=None
+):
+    """
+    Validate hard content failures that make a translation unsafe or unusable.
+    Returns: (is_valid, invalid_indices, reasons)
+
+    Outputs that are too short to carry the source meaning or contain runaway
+    character repetition are hard failures.  Accepting either result would
+    cache and write visibly corrupt player text.
+    """
+    if not isinstance(original_items, list):
+        original_items = [original_items]
+        translated_items = [translated_items]
+    
+    invalid_indices = []
+    reasons = []
+    normalized_target = str(target_language or "").strip().casefold()
+    target_uses_cjk = normalized_target in {
+        "chinese",
+        "japanese",
+    }
+    
+    for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
+        orig_str = str(orig).strip()
+        trans_str = str(trans).strip()
+        
+        # Skip if original is empty or placeholder
+        if not orig_str or orig_str == "Placeholder Text":
+            continue
+        
+        # Check if original has content that needs translation
+        has_source_text = bool(re.search(langRegex, orig_str))
+        
+        if has_source_text:
+            # Original has Japanese text - translation must be substantial
+            
+            # Check 1: Translation is empty or just whitespace
+            if not trans_str:
+                invalid_indices.append(i)
+                reasons.append(f"Line{i+1}: Empty translation for '{orig_str[:50]}...'")
+                continue
+
+            # Check 2: A substantial source cannot validly collapse to one
+            # punctuation mark.  This used to be only a warning, which meant
+            # the result was cached and written without entering the retry path.
+            has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
+            if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
+                invalid_indices.append(i)
+                reasons.append(
+                    f"Line{i+1}: Translation unusually short ('{trans_str}') for "
+                    f"'{orig_str[:50]}...'"
+                )
+                continue
+            if (
+                len(orig_str) > 10
+                and len(trans_str) <= 2
+                and not has_bracketed_control
+                and not trans_str.isalnum()
+            ):
+                invalid_indices.append(i)
+                reasons.append(
+                    f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "
+                    f"'{orig_str[:50]}...'"
+                )
+                continue
+
+            # Check 3: Long runs of one character are model degeneration, not
+            # meaningful translation output.
+            if re.search(r"(.)\1{44,}", trans_str):
+                invalid_indices.append(i)
+                reasons.append(
+                    f"Line{i+1}: Excessive character repetition (possible model glitch)"
+                )
+                continue
+            
+            # Check 4: Runaway translation - translation is excessively long relative to original
+            # Catches cases where the model repeats words endlessly (e.g. "it hurts it hurts it hurts...")
+            ratio_limit = max(len(orig_str) * 8, 120)
+            if len(orig_str) > 10 and len(trans_str) > ratio_limit:
+                invalid_indices.append(i)
+                reasons.append(f"Line{i+1}: Runaway translation (output {len(trans_str)} chars vs input {len(orig_str)} chars) for '{orig_str[:50]}...'")
+                continue
+            # Absolute cap: garbage outputs that are not caught by ratio alone
+            if len(trans_str) > 4000 and len(trans_str) > len(orig_str) * 3:
+                invalid_indices.append(i)
+                reasons.append(f"Line{i+1}: Runaway translation (output {len(trans_str)} chars exceeds cap) for '{orig_str[:50]}...'")
+                continue
+
+            # Check 5: Source-language residue must not survive in player text.
+            # Japanese inside protected runtime-code parameters is absent here
+            # and is restored only after validation. Ignore ideographic spaces:
+            # RPG Maker choice lists commonly use U+3000 as intentional visual
+            # padding, and preserving that layout is not untranslated content.
+            # Also ignore CJK quotation marks: engines whose langRegex includes
+            # the U+300C-U+303F block would otherwise reject English that keeps
+            # stylistic wrappers such as 〝loanword〟 or leftover 「」.
+            residue_text = _strip_source_preserved_kaomoji_flourishes(
+                orig_str, trans_str, langRegex
+            )
+            residue_text = (
+                residue_text.replace("\u3000", "")
+                .replace("「", "")
+                .replace("」", "")
+                .replace("『", "")
+                .replace("』", "")
+                .replace("〝", "")
+                .replace("〞", "")
+                .replace("〟", "")
+            )
+            if normalized_target == "chinese" and re.search(
+                r"[ぁ-ゖァ-ヺー\uFF66-\uFF9F]", residue_text
+            ):
+                invalid_indices.append(i)
+                reasons.append(
+                    f"Line{i+1}: Japanese kana remains in Chinese translation"
+                )
+                continue
+            if not target_uses_cjk and re.search(langRegex, residue_text):
+                invalid_indices.append(i)
+                reasons.append(f"Line{i+1}: Source-language text remains in translation")
+                continue
+
+            # Check 6: Reject leaked structured-response scaffolding such as
+            # `}Line1:` that can otherwise become a speaker label.
+            if re.search(r"(?:^|[}\]])\s*Line\d+\s*:", trans_str, re.IGNORECASE):
+                invalid_indices.append(i)
+                reasons.append(f"Line{i+1}: Structured response marker leaked into translation")
+                continue
+
+    is_valid = len(invalid_indices) == 0
+    return is_valid, invalid_indices, reasons
+
+
+def _is_map_name_batch(request_instructions) -> bool:
+    """Return True when this request appears to be map-location name translation."""
+    if not request_instructions:
+        return False
+    if isinstance(request_instructions, (list, tuple)):
+        return any(_is_map_name_batch(item) for item in request_instructions)
+    lowered = str(request_instructions).casefold()
+    return "rpg location name" in lowered
+
+
+def translation_content_warnings(original_items, translated_items, langRegex):
+    """Return non-blocking content concerns that should remain reviewable."""
+    if not isinstance(original_items, list):
+        original_items = [original_items]
+        translated_items = [translated_items]
+
+    warning_indices = []
+    warnings = []
+    for i, (orig, trans) in enumerate(zip(original_items, translated_items)):
+        orig_str = str(orig).strip()
+        trans_str = str(trans).strip()
+        if not orig_str or orig_str == "Placeholder Text":
+            continue
+        if not re.search(langRegex, orig_str):
+            continue
+
+        line_warnings = []
+        has_bracketed_control = bool(re.search(r'\\[A-Z]\[', trans_str))
+        if len(trans_str) <= 1 and len(orig_str) > 3 and not has_bracketed_control:
+            line_warnings.append(
+                f"Line{i+1}: Translation unusually short ('{trans_str}') for "
+                f"'{orig_str[:50]}...'"
+            )
+        elif (
+            len(orig_str) > 10
+            and len(trans_str) <= 2
+            and not has_bracketed_control
+            and not trans_str.isalnum()
+        ):
+            line_warnings.append(
+                f"Line{i+1}: Translation suspiciously short ('{trans_str}') for "
+                f"'{orig_str[:50]}...'"
+            )
+        if re.search(r"(.)\1{44,}", trans_str):
+            line_warnings.append(
+                f"Line{i+1}: Excessive character repetition (possible model glitch)"
+            )
+
+        if line_warnings:
+            warning_indices.append(i)
+            warnings.extend(line_warnings)
+
+    return warning_indices, warnings
+
+# Load .env, strip accidental whitespace, set base URL / org / API key.
+# Gemini/Mistral use their endpoints only when no custom API URL is set.
+load_dotenv()
+api_provider = os.getenv("API_PROVIDER", "openai").lower()
+env_api = os.getenv("api", "").strip()
+if api_provider == "gemini" and not env_api:
+    # Use Google Generative Language compatibility endpoint only as fallback.
+    openai.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    openai.organization = None
+elif api_provider == "mistral" and not env_api:
+    openai.base_url = "https://api.mistral.ai/v1/"
+    openai.organization = None
+else:
+    if env_api:
+        openai.base_url = _normalize_openai_base_url(env_api)
+    # Support both 'organization' (gui/.env.example) and legacy 'org' names
+    org = os.getenv("organization") or os.getenv("org")
+    if org:
+        openai.organization = org.strip()
+
+# The SDK itself requires a non-empty value even when a local compatible server
+# does not authenticate requests. Only use the placeholder for an explicitly
+# keyless vault entry so missing cloud credentials still fail normally.
+_env_key = os.getenv("key", "").strip()
+_key_optional = os.getenv("API_KEY_OPTIONAL", "").strip().lower() in ("1", "true", "yes")
+openai.api_key = _env_key or ("not-needed" if _key_optional else "")
+
+# Translation cache management
+CACHE_FILE = Path("log/translation_cache.json")
+CACHE_LOCK_FILE = Path("log/translation_cache.lock")
+CACHE_LOCK = threading.RLock()
+CACHE_PENDING_MARKER = "__translation_pending__"
+CACHE_PENDING_TTL = 600
+CACHE_WAIT_INTERVAL = 0.25
+BATCH_CACHE_KEY_VERSION = 5
+# v5+: batch queue/result identity is payload + language + request_context only.
+# Glossary/SFX still go into the provider prompt at collect time, and still
+# fingerprint the live translation cache, but they must not block consume after
+# Pass 2 harvests names into glossary.txt.
+
+# Request context has two independent parts: preceding Japanese source and
+# per-call instructions. Keeping both in the provider payload and cache key
+# prevents source text from masquerading as model output or dropping directives.
+CONTEXT_SOURCE = "source_context"
+CONTEXT_INSTRUCTIONS = "instructions"
+_REQUEST_CONTEXT_KINDS = {
+    CONTEXT_SOURCE,
+    CONTEXT_INSTRUCTIONS,
+}
+_cache = None
+
+@contextmanager
+def _translation_cache_file_lock():
+    """Cross-process lock for translation_cache.json."""
+    CACHE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CACHE_LOCK_FILE, "a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+_CACHE_SQLITE_HEADER = b"SQLite format 3\x00"
+_CACHE_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS translations "
+    "(cache_key TEXT PRIMARY KEY, value_json TEXT NOT NULL)"
+)
+
+
+def _initialize_cache_database(path, values=None):
+    connection = sqlite3.connect(path, timeout=30)
+    try:
+        connection.execute(_CACHE_SCHEMA)
+        if values:
+            connection.executemany(
+                "INSERT OR REPLACE INTO translations(cache_key, value_json) "
+                "VALUES (?, ?)",
+                (
+                    (
+                        str(key),
+                        json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+                    )
+                    for key, value in values.items()
+                ),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _ensure_cache_database():
+    """Create the transactional cache and migrate the legacy JSON snapshot."""
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "rb") as cache_file:
+                is_sqlite = cache_file.read(len(_CACHE_SQLITE_HEADER)) == _CACHE_SQLITE_HEADER
+        except OSError:
+            is_sqlite = False
+        if is_sqlite:
+            try:
+                _initialize_cache_database(CACHE_FILE)
+                return
+            except sqlite3.DatabaseError:
+                # Match the old cache's fail-open behavior: a corrupt cache is
+                # replaceable and must never block translation work.
+                pass
+
+    legacy = {}
+    if CACHE_FILE.exists():
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as cache_file:
+                loaded = json.load(cache_file)
+                if isinstance(loaded, dict):
+                    legacy = loaded
+        except Exception:
+            legacy = {}
+
+    tmp_file = CACHE_FILE.with_name(
+        f"{CACHE_FILE.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    try:
+        if tmp_file.exists():
+            tmp_file.unlink()
+        _initialize_cache_database(tmp_file, legacy)
+        os.replace(tmp_file, CACHE_FILE)
+    finally:
+        for leftover in (
+            tmp_file,
+            tmp_file.with_name(tmp_file.name + "-journal"),
+        ):
+            try:
+                if leftover.exists():
+                    leftover.unlink()
+            except OSError:
+                pass
+
+
+def _cache_connection():
+    _ensure_cache_database()
+    return sqlite3.connect(CACHE_FILE, timeout=30)
+
+
+def _read_cache_entry(key):
+    connection = _cache_connection()
+    try:
+        row = connection.execute(
+            "SELECT value_json FROM translations WHERE cache_key = ?",
+            (key,),
+        ).fetchone()
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    try:
+        return json.loads(row[0])
+    except Exception:
+        return None
+
+
+def _write_cache_entry(key, value):
+    connection = _cache_connection()
+    try:
+        with connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO translations(cache_key, value_json) "
+                "VALUES (?, ?)",
+                (
+                    key,
+                    json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+                ),
+            )
+    finally:
+        connection.close()
+
+
+def _delete_cache_entry(key):
+    connection = _cache_connection()
+    try:
+        with connection:
+            connection.execute(
+                "DELETE FROM translations WHERE cache_key = ?",
+                (key,),
+            )
+    finally:
+        connection.close()
+
+
+def _read_cache_from_disk():
+    """Read the transactional cache; return an empty dict if unavailable."""
+    try:
+        connection = _cache_connection()
+        try:
+            rows = connection.execute(
+                "SELECT cache_key, value_json FROM translations"
+            ).fetchall()
+        finally:
+            connection.close()
+        cache = {}
+        for key, value_json in rows:
+            try:
+                cache[key] = json.loads(value_json)
+            except Exception:
+                continue
+        return cache
+    except Exception:
+        return {}
+
+
+def _write_cache_to_disk(cache):
+    """Atomically replace the transactional cache with a complete snapshot."""
+    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = CACHE_FILE.with_name(
+        f"{CACHE_FILE.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+    )
+    try:
+        if tmp_file.exists():
+            tmp_file.unlink()
+        _initialize_cache_database(tmp_file, cache)
+        os.replace(tmp_file, CACHE_FILE)
+    finally:
+        for leftover in (
+            tmp_file,
+            tmp_file.with_name(tmp_file.name + "-journal"),
+        ):
+            try:
+                if leftover.exists():
+                    leftover.unlink()
+            except OSError:
+                pass
+
+def _is_pending_cache_entry(value):
+    return isinstance(value, dict) and value.get(CACHE_PENDING_MARKER) is True
+
+def _is_stale_pending_cache_entry(value):
+    if not _is_pending_cache_entry(value):
+        return False
+    try:
+        return time.time() - float(value.get("time", 0)) > CACHE_PENDING_TTL
+    except Exception:
+        return True
+
+def _is_own_pending_cache_entry(value):
+    return (
+        _is_pending_cache_entry(value)
+        and value.get("pid") == os.getpid()
+        and value.get("thread") == threading.get_ident()
+    )
+
+def _pending_cache_entry():
+    return {
+        CACHE_PENDING_MARKER: True,
+        "pid": os.getpid(),
+        "thread": threading.get_ident(),
+        "time": time.time(),
+    }
+
+
+def _track_cache_reservation(key):
+    """Associate a newly claimed cache key with the active translation call."""
+    scopes = getattr(_thread_local, "cache_reservation_scopes", None)
+    if scopes:
+        scopes[-1].add(key)
+
+
+def _release_cache_reservation_key(key):
+    """Remove *our* pending marker without disturbing another worker's value."""
+    global _cache
+    try:
+        with CACHE_LOCK:
+            with _translation_cache_file_lock():
+                if _is_own_pending_cache_entry(_read_cache_entry(key)):
+                    _delete_cache_entry(key)
+                if isinstance(_cache, dict) and _is_own_pending_cache_entry(
+                    _cache.get(key)
+                ):
+                    _cache.pop(key, None)
+    except Exception:
+        # Reservation cleanup is best effort. A stale marker remains bounded by
+        # CACHE_PENDING_TTL and must never replace the translation exception.
+        pass
+
+
+@contextmanager
+def _cache_reservation_scope():
+    """Release unresolved cache reservations when one translate call exits."""
+    scopes = getattr(_thread_local, "cache_reservation_scopes", None)
+    if scopes is None:
+        scopes = []
+        _thread_local.cache_reservation_scopes = scopes
+    reservations = set()
+    scopes.append(reservations)
+    try:
+        yield
+    finally:
+        scopes.pop()
+        for key in reservations:
+            _release_cache_reservation_key(key)
+
+def _merge_translation_caches(base, overlay):
+    """Merge cache dictionaries while never replacing a translation with pending."""
+    merged = dict(base or {})
+    for key, value in (overlay or {}).items():
+        existing = merged.get(key)
+        if _is_pending_cache_entry(value) and existing is not None:
+            if not _is_pending_cache_entry(existing):
+                continue
+            if not _is_stale_pending_cache_entry(existing):
+                continue
+        merged[key] = value
+    return merged
+
+def clear_cache():
+    """Clear the translation cache (called at start of each run)"""
+    global _cache
+    with CACHE_LOCK:
+        _cache = {}
+        with _translation_cache_file_lock():
+            for path in (
+                CACHE_FILE,
+                CACHE_FILE.with_name(CACHE_FILE.name + "-journal"),
+                CACHE_FILE.with_name(CACHE_FILE.name + "-wal"),
+                CACHE_FILE.with_name(CACHE_FILE.name + "-shm"),
+            ):
+                try:
+                    if path.exists():
+                        path.unlink()
+                except Exception:
+                    pass
+
+def load_cache():
+    """Load the translation cache from disk."""
+    global _cache
+    with CACHE_LOCK:
+        with _translation_cache_file_lock():
+            disk_cache = _read_cache_from_disk()
+            if _cache:
+                disk_cache = _merge_translation_caches(disk_cache, _cache)
+            _cache = disk_cache
+        return _cache
+
+def save_cache():
+    """Save the translation cache to disk, preserving entries from other workers."""
+    global _cache
+    if _cache is None:
+        return
+
+    if (
+        _translation_cache_writes_deferred()
+        or getattr(_thread_local, "batch_collect_cache_snapshot", False)
+    ):
+        return
+    
+    with CACHE_LOCK:
+        try:
+            with _translation_cache_file_lock():
+                disk_cache = _read_cache_from_disk()
+                disk_cache = _merge_translation_caches(disk_cache, _cache)
+                _cache = disk_cache
+                _write_cache_to_disk(_cache)
+        except Exception:
+            pass
+
+
+def _translation_cache_writes_deferred():
+    return bool(getattr(_thread_local, "defer_translation_cache_writes", 0))
+
+
+@contextmanager
+def deferred_translation_cache_writes():
+    """Buffer cache mutations and persist them once when the outer scope exits.
+
+    Batch consume runs one file per subprocess and never makes live provider
+    calls. It therefore does not need per-request pending markers or durable
+    cache writes. Keeping the mutations in memory avoids repeatedly parsing and
+    serializing the complete global cache while a fetched result set is applied.
+    """
+    depth = int(getattr(_thread_local, "defer_translation_cache_writes", 0))
+    outermost = depth == 0
+    if outermost:
+        load_cache()
+        _thread_local.deferred_translation_cache_dirty = False
+    _thread_local.defer_translation_cache_writes = depth + 1
+    try:
+        yield
+    finally:
+        _thread_local.defer_translation_cache_writes = depth
+        if outermost:
+            dirty = bool(
+                getattr(_thread_local, "deferred_translation_cache_dirty", False)
+            )
+            try:
+                del _thread_local.deferred_translation_cache_dirty
+            except AttributeError:
+                pass
+            if dirty:
+                save_cache()
+
+
+@contextmanager
+def batch_collect_snapshot_reads():
+    """Snapshot read-only collect inputs once for one file subprocess.
+
+    Fresh collection clears the translation cache before speaker preflight.
+    List requests only read that cache and are deduplicated again by their
+    durable queue key, so rereading it under a cross-process lock for every
+    chunk adds contention without changing submitted work. Live scalar name
+    translations still use the synchronized cache path and update this
+    process's in-memory copy.
+    """
+    previous_cache_mode = getattr(
+        _thread_local, "batch_collect_cache_snapshot", None
+    )
+    previous_version = getattr(
+        _thread_local, "batch_collect_cache_key_version", None
+    )
+    load_cache()
+    version = _active_batch_cache_key_version()
+    _thread_local.batch_collect_cache_snapshot = True
+    _thread_local.batch_collect_cache_key_version = version
+    try:
+        yield
+    finally:
+        if previous_cache_mode is None:
+            try:
+                del _thread_local.batch_collect_cache_snapshot
+            except AttributeError:
+                pass
+        else:
+            _thread_local.batch_collect_cache_snapshot = previous_cache_mode
+        if previous_version is None:
+            try:
+                del _thread_local.batch_collect_cache_key_version
+            except AttributeError:
+                pass
+        else:
+            _thread_local.batch_collect_cache_key_version = previous_version
+
+def expand_clean_to_batch(clean_values, tItem, corrupted_map, no_japanese_map):
+    """Re-insert skipped originals around AI-translated (clean) values.
+
+    The cache key is built from the Japanese-only payload, so cached values hold
+    only the translatable items. corrupted_map / no_japanese_map hold the skipped
+    originals keyed by their position in the full batch. Returns a list aligned
+    1:1 with tItem. Falls back to the source line if clean_values runs short.
+    """
+    expanded = []
+    clean_idx = 0
+    for j in range(len(tItem)):
+        if j in corrupted_map:
+            expanded.append(corrupted_map[j])
+        elif j in no_japanese_map:
+            expanded.append(no_japanese_map[j])
+        elif clean_idx < len(clean_values):
+            expanded.append(clean_values[clean_idx])
+            clean_idx += 1
+        else:
+            expanded.append(tItem[j])
+    return expanded
+
+def _normalize_cache_request_context(request_context):
+    """Return the stable, API-relevant form of conversation history."""
+    if request_context is None:
+        return ""
+    if isinstance(request_context, (list, tuple)):
+        values = [
+            str(item) for item in request_context
+            if item is not None and str(item).strip()
+        ]
+        return json.dumps(values, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(request_context, dict):
+        return json.dumps(
+            request_context,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+    value = str(request_context)
+    return value if value.strip() else ""
+
+
+def _context_items(context):
+    """Return non-empty request-context strings without changing their order."""
+    if isinstance(context, (list, tuple)):
+        return [str(item) for item in context if item and str(item).strip()]
+    if context and str(context).strip():
+        return [str(context)]
+    return []
+
+
+def _typed_request_context(source_context=None, instructions=None):
+    """Build the cache-safe context document used by live and batch calls."""
+    source_items = _context_items(source_context)
+    instruction_items = _context_items(instructions)
+    if not source_items and not instruction_items:
+        return None
+    return {
+        "instructions": instruction_items,
+        "source_items": source_items,
+    }
+
+
+def _initial_context_kind(context):
+    """Infer legacy translateAI arguments while callers migrate to typed context."""
+    if not _context_items(context):
+        return CONTEXT_SOURCE
+    # Existing scalar contexts come from data/translation_contexts.json and are
+    # request instructions. Existing lists are preceding source captured by the
+    # game parsers. Results generated inside translateAI are marked explicitly.
+    return CONTEXT_SOURCE if isinstance(context, (list, tuple)) else CONTEXT_INSTRUCTIONS
+
+
+def _request_context_parts(context, kind=None, request_instructions=None):
+    """Return independent ``(source_items, instruction_items)`` lists.
+
+    Legacy callers still pass either a source list or an instruction scalar.
+    Modern callers and persisted batch entries use a document containing both.
+    """
+    parsed = context
+    if isinstance(context, str) and context.strip().startswith("{"):
+        try:
+            parsed = json.loads(context)
+        except json.JSONDecodeError:
+            parsed = context
+
+    source_items = []
+    instruction_items = []
+    if isinstance(parsed, dict):
+        if "source_items" in parsed or "instructions" in parsed:
+            source_items = _context_items(parsed.get("source_items"))
+            instruction_items = _context_items(parsed.get("instructions"))
+        else:
+            legacy_kind = parsed.get("kind")
+            legacy_items = parsed.get("items")
+            if legacy_kind == CONTEXT_INSTRUCTIONS:
+                instruction_items = _context_items(legacy_items)
+            elif legacy_kind == CONTEXT_SOURCE:
+                source_items = _context_items(legacy_items)
+            else:
+                resolved_kind = (
+                    kind if kind in _REQUEST_CONTEXT_KINDS else CONTEXT_SOURCE
+                )
+                if resolved_kind == CONTEXT_INSTRUCTIONS:
+                    instruction_items = _context_items(context)
+                else:
+                    source_items = _context_items(context)
+    else:
+        resolved_kind = (
+            kind if kind in _REQUEST_CONTEXT_KINDS else _initial_context_kind(parsed)
+        )
+        if resolved_kind == CONTEXT_INSTRUCTIONS:
+            instruction_items = _context_items(parsed)
+        else:
+            source_items = _context_items(parsed)
+
+    instruction_items.extend(_context_items(request_instructions))
+    return source_items, instruction_items
+
+
+def _coerce_typed_request_context(context, default_kind=CONTEXT_SOURCE):
+    """Return a typed context document, accepting serialized modern input."""
+    source_items, instruction_items = _request_context_parts(
+        context, default_kind
+    )
+    return _typed_request_context(source_items, instruction_items)
+
+
+def _serialized_request_context_is_typed(context):
+    """Whether persisted non-empty context uses the current typed schema."""
+    if context is None or context == "":
+        return True
+    parsed = context
+    if isinstance(context, str):
+        try:
+            parsed = json.loads(context)
+        except json.JSONDecodeError:
+            return False
+    if not isinstance(parsed, dict):
+        return False
+    if set(parsed) != {"instructions", "source_items"}:
+        return False
+    instructions = parsed.get("instructions")
+    source_items = parsed.get("source_items")
+    if not isinstance(instructions, list) or not isinstance(source_items, list):
+        return False
+    combined = instructions + source_items
+    return bool(combined) and all(
+        item is not None and str(item).strip() for item in combined
+    )
+
+
+def _batch_entry_context_is_current(entry):
+    """Whether a queued request is safe under the current context schema."""
+    if not isinstance(entry, dict) or "request_context" not in entry:
+        return False
+    try:
+        version = int(entry.get("cache_key_version", 1) or 1)
+    except (TypeError, ValueError):
+        return False
+    return (
+        version >= BATCH_CACHE_KEY_VERSION
+        and _serialized_request_context_is_typed(entry.get("request_context"))
+    )
+
+
+def get_cache_key(payload, language, cache_context=None, request_context=None):
+    """Generate a cache key for a payload and its dynamic/request context.
+
+    ``cache_context`` is normally the subset of the active glossary matched to
+    this payload. Keeping it in the key prevents a translation produced with an
+    old spelling from surviving a relevant glossary edit, without invalidating
+    unrelated payloads when some other glossary entry changes.
+    """
+    # Use hash to keep keys short but unique
+    payload_str = str(payload) if payload is not None else ""
+    combined = f"{payload_str}|{language}"
+    # Preserve legacy keys when this payload matches no glossary entries. Those
+    # translations are unaffected by glossary edits, so invalidating them would
+    # only waste cache/batch work during an upgrade.
+    if cache_context:
+        context_hash = hashlib.sha256(
+            str(cache_context).encode("utf-8")
+        ).hexdigest()
+        combined += f"|context:{context_hash}"
+    normalized_request_context = _normalize_cache_request_context(request_context)
+    if normalized_request_context:
+        request_hash = hashlib.sha256(
+            normalized_request_context.encode("utf-8")
+        ).hexdigest()
+        combined += f"|request:{request_hash}"
+    return hashlib.md5(combined.encode("utf-8")).hexdigest()
+
+def get_cached_translation(
+    payload, language, cache_context=None, request_context=None
+):
+    """Get cached translation if it exists"""
+    global _cache
+    key = get_cache_key(payload, language, cache_context, request_context)
+
+    if _translation_cache_writes_deferred():
+        with CACHE_LOCK:
+            entry = (_cache or {}).get(key)
+            if entry is None or _is_pending_cache_entry(entry):
+                return None
+            return entry
+
+    while True:
+        with CACHE_LOCK:
+            with _translation_cache_file_lock():
+                entry = _read_cache_entry(key)
+                if (
+                    entry is None
+                    or _is_stale_pending_cache_entry(entry)
+                    or _is_own_pending_cache_entry(entry)
+                ):
+                    pending = _pending_cache_entry()
+                    _write_cache_entry(key, pending)
+                    _track_cache_reservation(key)
+                    if _cache is None:
+                        _cache = {}
+                    _cache[key] = pending
+                    return None
+
+                if not _is_pending_cache_entry(entry):
+                    if _cache is None:
+                        _cache = {}
+                    _cache[key] = entry
+                    return entry
+
+        time.sleep(CACHE_WAIT_INTERVAL)
+
+def cache_translation(
+    payload, translation, language, cache_context=None, request_context=None
+):
+    """Cache a translation payload and its response"""
+    global _cache
+    key = get_cache_key(payload, language, cache_context, request_context)
+
+    if _translation_cache_writes_deferred():
+        with CACHE_LOCK:
+            if _cache is None:
+                _cache = {}
+            _cache[key] = translation
+            _thread_local.deferred_translation_cache_dirty = True
+        return
+    
+    with CACHE_LOCK:
+        with _translation_cache_file_lock():
+            _write_cache_entry(key, translation)
+            if _cache is None:
+                _cache = {}
+            _cache[key] = translation
+
+
+# Variable translation map (code 122 <-> code 111 consistency)
+VAR_MAP_FILE = Path("log/var_translation_map.json")
+VAR_MAP_LOCK = threading.Lock()
+_var_map = None
+
+def clear_var_map():
+    """Clear the variable translation map (called at start of each run)"""
+    global _var_map
+    with VAR_MAP_LOCK:
+        _var_map = {}
+        try:
+            if VAR_MAP_FILE.exists():
+                VAR_MAP_FILE.unlink()
+        except Exception:
+            pass
+
+def _load_var_map():
+    """Load the variable translation map from disk (always re-reads to pick up
+    entries written by other subprocesses)."""
+    global _var_map
+    _var_map = {}
+    try:
+        if VAR_MAP_FILE.exists():
+            with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
+                _var_map = json.load(f)
+    except Exception:
+        _var_map = {}
+    return _var_map
+
+def _save_var_map():
+    """Save the variable translation map to disk.
+    Re-reads the file first and merges so entries from other subprocesses
+    are never lost."""
+    global _var_map
+    if _var_map is None:
+        return
+    try:
+        VAR_MAP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Re-read the on-disk version and merge our entries on top
+        disk_map = {}
+        try:
+            if VAR_MAP_FILE.exists():
+                with open(VAR_MAP_FILE, "r", encoding="utf-8") as f:
+                    disk_map = json.load(f)
+        except Exception:
+            disk_map = {}
+        disk_map.update(_var_map)
+        _var_map = disk_map
+        tmp_file = VAR_MAP_FILE.with_suffix(".tmp")
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(_var_map, f, ensure_ascii=False, indent=2)
+        tmp_file.replace(VAR_MAP_FILE)
+    except Exception:
+        pass
+
+def get_var_translation(original):
+    """Look up a cached variable translation. Returns the translation or None."""
+    with VAR_MAP_LOCK:
+        m = _load_var_map()
+        return m.get(original)
+
+def set_var_translation(original, translated):
+    """Store a variable translation and persist to disk.
+    Skips if the translation is identical to the original (untranslated).
+    """
+    if original == translated:
+        return
+    with VAR_MAP_LOCK:
+        m = _load_var_map()
+        m[original] = translated
+        _save_var_map()
+
+def set_var_translations_batch(pairs):
+    """Store multiple variable translations at once and persist to disk.
+    pairs: list of (original, translated) tuples
+    Skips pairs where the translation is identical to the original (untranslated).
+    """
+    with VAR_MAP_LOCK:
+        m = _load_var_map()
+        for original, translated in pairs:
+            if original != translated:
+                m[original] = translated
+        _save_var_map()
+
+
+# ===== Asynchronous provider batches (50% off all token usage) =====
+# Batch integration by Len — two-pass collect/consume flow; see README Credits.
+# Batch translation is a two-pass flow driven by the batch phase (kept in the
+# BATCH_PHASE env var so GUI subprocesses inherit it):
+#   collect: translateAI builds each cache-missed request (byte-identical to a
+#            live request, including the cached system block) and queues it
+#            instead of calling the API. Text is left untranslated.
+#   estimate: same request construction as collect, written to an isolated
+#             disposable queue that can never be submitted or resumed.
+#   consume: translateAI feeds fetched responses through the normal validation
+#            and restore path; missing or invalid results fail closed without a
+#            surprise full-price live request.
+# Between the passes, submit/poll/fetch the queue with runTranslationBatches().
+BATCH_QUEUE_FILE   = Path("log/batch_requests.json")
+BATCH_ESTIMATE_QUEUE_FILE = Path("log/estimate_requests.json")
+BATCH_STATE_FILE   = Path("log/batch_state.json")
+BATCH_RESULTS_FILE = Path("log/batch_results.json")
+BATCH_LOCK_FILE    = Path("log/batch_files.lock")
+BATCH_SUBMIT_LOCK_FILE = Path("log/batch_submit.lock")
+# A desktop recovery worker may pin a linked legacy queue. Other callers keep
+# the established queue lifecycle; the guard is checked inside the submit lock.
+BATCH_QUEUE_EXPECTED = None
+BATCH_LOCK = threading.RLock()
+# Legacy public constants retained for extensions/tests. Submission uses the
+# stricter provider-specific limits from util.batch_providers.
+BATCH_MAX_REQUESTS = 100_000
+BATCH_MAX_BYTES    = 200 * 1024 * 1024
+BATCH_QUEUE_BUFFER_MAX_ENTRIES = 64
+BATCH_QUEUE_BUFFER_MAX_SECONDS = 15.0
+
+_batch_phase = None
+_batch_results = None      # in-memory copy of BATCH_RESULTS_FILE (read-only during consume)
+_batch_queue_pending = {}  # process-local queue entries not yet flushed to disk
+
+
+def set_batch_phase(phase):
+    """Set the batch phase for this process and any subprocesses it spawns."""
+    global _batch_phase, _batch_results
+    _batch_phase = phase if phase in ("collect", "consume", "estimate") else None
+    if _batch_phase:
+        os.environ["BATCH_PHASE"] = _batch_phase
+    else:
+        os.environ.pop("BATCH_PHASE", None)
+    _batch_results = None  # phase change invalidates the in-memory results copy
+
+
+def get_batch_phase():
+    """Current batch phase, or None when batch translation is off."""
+    if _batch_phase:
+        return _batch_phase
+    phase = os.getenv("BATCH_PHASE", "").strip().lower()
+    return phase if phase in ("collect", "consume", "estimate") else None
+
+
+@contextmanager
+def _batch_file_lock():
+    """Cross-process lock for the batch queue/state/results files."""
+    BATCH_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(BATCH_LOCK_FILE, "a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _batch_submit_lock():
+    """Prevent concurrent paid submissions for the translation batch queue."""
+    BATCH_SUBMIT_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(BATCH_SUBMIT_LOCK_FILE, "a+b") as lock_file:
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write(b"\0")
+            lock_file.flush()
+        lock_file.seek(0)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise RuntimeError(
+                "This translation batch is already being submitted by another "
+                "DazedTL process. Wait for it to finish before trying again."
+            ) from None
+        try:
+            yield
+        finally:
+            lock_file.seek(0)
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+class BatchFileCorruptionError(RuntimeError):
+    """A durable batch file exists but cannot be trusted for paid recovery."""
+
+
+def _read_batch_file(path, *, strict=False):
+    """Read a batch JSON object.
+
+    Missing files remain equivalent to an empty object. ``strict`` is used at
+    paid submission/recovery boundaries, where treating corruption as an empty
+    run could submit the same work twice.
+    """
+    error = None
+    try:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+                error = "document is not a JSON object"
+    except Exception as exc:
+        error = str(exc)
+    if error is not None:
+        message = f"Batch recovery file is corrupt: {path} ({error})"
+        print(f"[BATCH] {message}", flush=True)
+        if strict:
+            raise BatchFileCorruptionError(
+                message
+                + ". The operation was blocked to preserve recovery data and "
+                "prevent duplicate paid work. Restore or inspect the file before "
+                "clearing the batch run."
+            )
+    return {}
+
+
+def _write_batch_file(path, data):
+    """Atomically write a batch JSON file (no indent — queues can be large)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    tmp_file.replace(path)
+
+
+def _active_batch_queue_file():
+    """Queue target for the current collect-like phase."""
+    if get_batch_phase() == "estimate":
+        return BATCH_ESTIMATE_QUEUE_FILE
+    return BATCH_QUEUE_FILE
+
+
+def _batch_queue_parts_dir(queue_file=None):
+    """Directory of append-only collect fragments for one queue."""
+    queue_file = Path(queue_file or _active_batch_queue_file())
+    return queue_file.with_name(f"{queue_file.name}.parts")
+
+
+def batchQueueDigest(queue):
+    """Identify request content independently of queue fragment compaction."""
+    return hashlib.sha256(json.dumps(queue, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def _read_batch_queue(*, strict=False, queue_file=None):
+    """Read the compact queue snapshot plus all durable collect fragments.
+
+    Callers coordinating queue lifecycle changes must hold ``_batch_file_lock``.
+    A fragment is one atomic write from a collect subprocess, which avoids
+    rewriting and reparsing the full, growing queue for every request.
+    """
+    queue_file = Path(queue_file or _active_batch_queue_file())
+    queue = _read_batch_file(queue_file, strict=strict)
+    parts_dir = _batch_queue_parts_dir(queue_file)
+    try:
+        if parts_dir.is_symlink():
+            raise OSError("path is a symbolic link")
+        if not parts_dir.exists():
+            return queue
+        if not parts_dir.is_dir():
+            raise OSError("path is not a trusted directory")
+        paths = sorted(parts_dir.iterdir(), key=lambda path: path.name)
+    except Exception as exc:
+        message = f"Batch recovery directory is corrupt: {parts_dir} ({exc})"
+        print(f"[BATCH] {message}", flush=True)
+        if strict:
+            raise BatchFileCorruptionError(
+                message
+                + ". The operation was blocked to preserve recovery data and "
+                "prevent duplicate paid work."
+            ) from exc
+        return queue
+
+    for path in paths:
+        # Atomic-write leftovers cannot represent committed queue entries.
+        if path.name.endswith(".tmp"):
+            continue
+        if path.suffix != ".json" or path.is_symlink() or not path.is_file():
+            message = f"Batch recovery fragment is invalid: {path}"
+            print(f"[BATCH] {message}", flush=True)
+            if strict:
+                raise BatchFileCorruptionError(
+                    message
+                    + ". The operation was blocked to preserve recovery data and "
+                    "prevent duplicate paid work."
+                )
+            continue
+        fragment = _read_batch_file(path, strict=strict)
+        for key, entry in fragment.items():
+            queue.setdefault(key, entry)
+    return queue
+
+
+def _clear_batch_queue_parts(*, strict=False, queue_file=None):
+    """Remove queue fragments without traversing unexpected directories."""
+    parts_dir = _batch_queue_parts_dir(queue_file)
+    try:
+        if parts_dir.is_symlink():
+            raise OSError(f"Batch queue fragments path is a link: {parts_dir}")
+        if not parts_dir.exists():
+            paths = []
+        elif not parts_dir.is_dir():
+            raise OSError(
+                f"Batch queue fragments path is not a directory: {parts_dir}"
+            )
+        else:
+            paths = list(parts_dir.iterdir())
+    except Exception:
+        if strict:
+            raise
+        return
+
+    for path in paths:
+        try:
+            if path.is_dir() and not path.is_symlink():
+                if strict:
+                    raise OSError(
+                        f"Unexpected directory in batch queue fragments: {path}"
+                    )
+                continue
+            path.unlink()
+        except Exception:
+            if strict:
+                raise
+    try:
+        if parts_dir.exists():
+            parts_dir.rmdir()
+    except Exception:
+        if strict:
+            raise
+
+
+def _clear_batch_queue_storage(*, strict=False, queue_file=None):
+    """Remove the compact queue snapshot and its append-only fragments."""
+    queue_file = Path(queue_file or _active_batch_queue_file())
+    try:
+        if queue_file.exists():
+            queue_file.unlink()
+    except Exception:
+        if strict:
+            raise
+    _clear_batch_queue_parts(strict=strict, queue_file=queue_file)
+
+
+def _compact_batch_queue(*, strict=True, queue_file=None):
+    """Merge durable fragments into the legacy queue snapshot once."""
+    queue_file = Path(queue_file or _active_batch_queue_file())
+    queue = _read_batch_queue(strict=strict, queue_file=queue_file)
+    parts_dir = _batch_queue_parts_dir(queue_file)
+    if parts_dir.exists():
+        # Write the complete snapshot before deleting any fragment. A crash can
+        # therefore leave duplicates, but never lose a collected request.
+        _write_batch_file(queue_file, queue)
+        _clear_batch_queue_parts(strict=strict, queue_file=queue_file)
+    return queue
+
+
+def _attach_glossary_freeze(state_doc: dict, source_state: dict | None = None) -> dict:
+    """Keep collect-time glossary freeze across batch_state rewrites."""
+    text = None
+    if isinstance(source_state, dict):
+        candidate = source_state.get("glossary_freeze")
+        if isinstance(candidate, str) and candidate:
+            text = candidate
+    if text is None and isinstance(state_doc, dict):
+        candidate = state_doc.get("glossary_freeze")
+        if isinstance(candidate, str) and candidate:
+            text = candidate
+    if text is None:
+        try:
+            from util.vocab import BATCH_GLOSSARY_FREEZE_FILE
+
+            if BATCH_GLOSSARY_FREEZE_FILE.is_file():
+                text = BATCH_GLOSSARY_FREEZE_FILE.read_text(encoding="utf-8")
+        except Exception:
+            text = None
+    if text is not None:
+        state_doc["glossary_freeze"] = text
+    return state_doc
+
+
+def peek_cached_translation(
+    payload, language, cache_context=None, request_context=None
+):
+    """Cache lookup that never blocks or writes a pending marker.
+
+    The collect pass uses this instead of get_cached_translation so abandoned
+    pending markers can't stall the consume pass for CACHE_PENDING_TTL."""
+    key = get_cache_key(payload, language, cache_context, request_context)
+    global _cache
+    if getattr(_thread_local, "batch_collect_cache_snapshot", False):
+        with CACHE_LOCK:
+            entry = (_cache or {}).get(key)
+        if entry is None or _is_pending_cache_entry(entry):
+            return None
+        return entry
+    with CACHE_LOCK:
+        with _translation_cache_file_lock():
+            entry = _read_cache_entry(key)
+            if entry is not None:
+                if _cache is None:
+                    _cache = {}
+                _cache[key] = entry
+    if entry is None or _is_pending_cache_entry(entry):
+        return None
+    return entry
+
+
+def queue_batch_request(
+    payload, language, params, cache_context=None, provider=None,
+    request_context=None,
+):
+    """Queue one Batches API request during the collect pass.
+
+    Deduped by the same key the translation cache uses, so identical payloads
+    with identical conversation context are only paid for once. Entries are
+    buffered in memory and atomically persisted as a queue fragment by
+    flush_batch_queue() at the end of each translateAI call.
+    """
+    typed_request_context = _coerce_typed_request_context(
+        request_context, CONTEXT_SOURCE
+    )
+    normalized_request_context = _normalize_cache_request_context(
+        typed_request_context
+    )
+    # v5+: glossary/SFX fingerprint the live cache and the collect-time prompt,
+    # but must not identify paid batch results (Pass 2 harvests change them).
+    batch_cache_context = None if BATCH_CACHE_KEY_VERSION >= 5 else cache_context
+    key = get_cache_key(
+        payload, language, batch_cache_context, normalized_request_context
+    )
+    with BATCH_LOCK:
+        _batch_queue_pending[key] = {
+            "payload": payload,
+            "language": language,
+            "params": params,
+            "provider": provider or getBatchProvider(params.get("model", "")),
+            "request_context": normalized_request_context,
+            "cache_key_version": BATCH_CACHE_KEY_VERSION,
+        }
+    return key
+
+
+def _batch_queue_writes_buffered():
+    return bool(getattr(_thread_local, "buffer_batch_queue_writes", 0))
+
+
+@contextmanager
+def buffered_batch_queue_writes():
+    """Coalesce collect writes while retaining periodic durable fragments.
+
+    RPG Maker collection can discover thousands of requests in one process.
+    Writing one tiny file after every parser call makes filesystem metadata the
+    dominant cost. The buffer is flushed at a bounded entry/time interval and
+    unconditionally when the scope exits, including exceptional exits.
+    """
+    depth = int(getattr(_thread_local, "buffer_batch_queue_writes", 0))
+    outermost = depth == 0
+    if outermost:
+        _thread_local.batch_queue_last_flush = time.monotonic()
+    _thread_local.buffer_batch_queue_writes = depth + 1
+    try:
+        yield
+    finally:
+        _thread_local.buffer_batch_queue_writes = depth
+        if outermost:
+            try:
+                flush_batch_queue(force=True)
+            finally:
+                try:
+                    del _thread_local.batch_queue_last_flush
+                except AttributeError:
+                    pass
+
+
+def flush_batch_queue(*, force=False, queue_file=None):
+    """Persist pending entries as one atomic queue fragment.
+
+    Outside a buffered collect scope this remains an immediate durability
+    boundary. Inside one, entry/time limits prevent unbounded recovery loss
+    without producing a fragment for every parser call.
+    """
+    global _batch_queue_pending
+    queue_file = Path(queue_file or _active_batch_queue_file())
+    with BATCH_LOCK:
+        if not _batch_queue_pending:
+            return False
+        if _batch_queue_writes_buffered() and not force:
+            last_flush = float(
+                getattr(_thread_local, "batch_queue_last_flush", 0.0) or 0.0
+            )
+            if (
+                len(_batch_queue_pending) < BATCH_QUEUE_BUFFER_MAX_ENTRIES
+                and time.monotonic() - last_flush
+                < BATCH_QUEUE_BUFFER_MAX_SECONDS
+            ):
+                return False
+        pending, _batch_queue_pending = _batch_queue_pending, {}
+        try:
+            with _batch_file_lock():
+                # A corrupt legacy snapshot must still block new collection;
+                # never hide or overwrite recovery data from an older build.
+                _read_batch_file(queue_file, strict=True)
+                parts_dir = _batch_queue_parts_dir(queue_file)
+                part_name = (
+                    f"{time.time_ns():020d}-{os.getpid()}-"
+                    f"{threading.get_ident()}-{uuid.uuid4().hex}.json"
+                )
+                _write_batch_file(parts_dir / part_name, pending)
+            _thread_local.batch_queue_last_flush = time.monotonic()
+            return True
+        except BatchFileCorruptionError:
+            _batch_queue_pending.update(pending)
+            raise
+        except Exception:
+            _batch_queue_pending.update(pending)
+            raise
+
+
+def batchQueueStaleContextCount(vocab_text=None, use_sfx_reference=None):
+    """Return ``(stale, total)`` for queued requests under current dynamic context.
+
+    This is used before resuming an unsubmitted queue. Submitted/fetched results
+    are protected by the same context-aware result key; a mismatch stops consume
+    rather than making an unapproved full-price live request.
+    """
+    flush_batch_queue(queue_file=BATCH_QUEUE_FILE)
+    if vocab_text is None:
+        vocab_text = _batch_freeze_glossary_text()
+    vocab_pairs = parseVocabWithCategories(vocab_text or "")
+    if use_sfx_reference is None:
+        use_sfx_reference = os.getenv("useSfxReference", "true").strip().lower() in (
+            "true", "1", "yes",
+        )
+
+    with _batch_file_lock():
+        queue = _read_batch_queue(strict=True, queue_file=BATCH_QUEUE_FILE)
+
+    stale = 0
+    for recorded_key, entry in queue.items():
+        # Queues created before instructions and source were independently
+        # keyed cannot be submitted safely: consume would build another key.
+        if not _batch_entry_context_is_current(entry):
+            stale += 1
+            continue
+        payload = entry.get("payload", "")
+        language = entry.get("language", "")
+        try:
+            entry_version = int(entry.get("cache_key_version", 1) or 1)
+        except (TypeError, ValueError):
+            entry_version = 1
+        if entry_version >= 5:
+            # v5+ batch identity ignores glossary/SFX drift.
+            current_key = get_cache_key(
+                payload,
+                language,
+                None,
+                entry.get("request_context"),
+            )
+        else:
+            matched_glossary = buildMatchedVocabText(
+                vocab_pairs, payload, entry.get("request_context")
+            )
+            matched_sfx = build_sfx_reference_text(
+                payload, enabled=bool(use_sfx_reference)
+            )
+            matched_context = matched_glossary + matched_sfx
+            current_key = get_cache_key(
+                payload,
+                language,
+                matched_context,
+                entry.get("request_context"),
+            )
+        if current_key != recorded_key:
+            stale += 1
+    return stale, len(queue)
+
+
+def take_batch_result(
+    payload, language, cache_context=None, request_context=None
+):
+    """Return the fetched batch response dict for a payload, or None.
+
+    The results file is loaded once per process — it is written before the
+    consume pass starts and never changes mid-consume."""
+    global _batch_results
+    if _batch_results is None:
+        with BATCH_LOCK:
+            if _batch_results is None:
+                with _batch_file_lock():
+                    _batch_results = _read_batch_file(BATCH_RESULTS_FILE)
+    current_key = get_cache_key(
+        payload, language, cache_context, request_context
+    )
+    result = _batch_results.get(current_key)
+    if result is not None or not request_context:
+        return result
+
+    # Already-paid batches fetched by older releases are keyed without
+    # conversation history. Allow that exact legacy lookup only when the
+    # active state itself predates the context-key format. Modern result sets
+    # must never fall back across contexts.
+    with _batch_file_lock():
+        state = _read_batch_file(BATCH_STATE_FILE)
+    if int(state.get("cache_key_version", 1) or 1) < 2:
+        legacy_key = get_cache_key(payload, language, cache_context)
+        return _batch_results.get(legacy_key)
+    return None
+
+
+class BatchResultUnavailableError(RuntimeError):
+    """A consume pass could not safely match a fetched provider result."""
+
+
+def require_batch_result(
+    payload, language, cache_context=None, request_context=None
+):
+    """Return one fetched result or stop before an unapproved live API call."""
+    result = take_batch_result(
+        payload, language, cache_context, request_context
+    )
+    if result is None:
+        raise BatchResultUnavailableError(
+            "[BATCH] No fetched result matches this request. The consume pass "
+            "was stopped without making a full-price live request. For older "
+            "batches, restore/re-download with the collect-time glossary freeze, "
+            "or re-collect. For a full-price retry use normal Translate."
+        )
+    return result
+
+
+def pendingBatchRequests():
+    """Number of queued batch requests (call after the collect pass)."""
+    flush_batch_queue(queue_file=BATCH_QUEUE_FILE)
+    with _batch_file_lock():
+        return len(
+            _compact_batch_queue(strict=True, queue_file=BATCH_QUEUE_FILE)
+        )
+
+
+def batchRunState():
+    """Resume detector for an interrupted batch run.
+
+    Returns:
+      'partially_submitted' - at least one split job exists, with requests left
+      'submitted' - provider batch(es) in flight (or ended but not fetched)
+      'fetched'   - results on disk waiting for consume
+      'queued'    - collect finished / submit declined; queue still on disk
+      'corrupt'   - a recovery document exists but cannot be trusted
+      None        - nothing to resume
+    """
+    try:
+        with _batch_file_lock():
+            state = _read_batch_file(BATCH_STATE_FILE, strict=True)
+            results = _read_batch_file(BATCH_RESULTS_FILE, strict=True)
+            queue = _read_batch_queue(strict=True, queue_file=BATCH_QUEUE_FILE)
+            if state.get("status") == "partially_submitted" and state.get("batches"):
+                return "partially_submitted"
+            if state.get("batches"):
+                return "submitted"
+            if state.get("status") == "fetched" or results:
+                return "fetched"
+            if queue:
+                return "queued"
+    except BatchFileCorruptionError:
+        return "corrupt"
+    return None
+
+
+def batchRunMetadata():
+    """Return a copy of the active batch state used to validate safe resumes."""
+    with _batch_file_lock():
+        return dict(_read_batch_file(BATCH_STATE_FILE))
+
+
+def saveQueuedBatchMetadata(
+    file_set=None,
+    runtime_profile=None,
+    workflow_return=None,
+):
+    """Persist the file scope of an unsubmitted queue for safe resume."""
+    from util.runtime_profile import copy_batch_runtime_profile
+    from util.batch_history import active_key_name_for_environment
+
+    saved_profile = copy_batch_runtime_profile(runtime_profile)
+    with BATCH_LOCK:
+        with _batch_file_lock():
+            state = _read_batch_file(BATCH_STATE_FILE)
+            state.update({
+                "status": "queued",
+                "run_id": state.get("run_id") or f"translation-{uuid.uuid4().hex}",
+                "file_set": list(file_set or []),
+                "model": os.getenv("model", ""),
+                "provider": getBatchProvider(os.getenv("model", "")),
+                "cache_key_version": BATCH_CACHE_KEY_VERSION,
+                "key_name": active_key_name_for_environment(),
+                "endpoint": os.getenv("api", "").strip(),
+            })
+            if saved_profile is not None:
+                state["runtime_profile"] = saved_profile
+            if isinstance(workflow_return, dict):
+                engine = str(workflow_return.get("engine") or "").strip().lower()
+                step_index = workflow_return.get("step_index")
+                if engine in {"rpgmakermvmz", "wolfdawn"} and (
+                    step_index is None
+                    or (
+                        isinstance(step_index, int)
+                        and not isinstance(step_index, bool)
+                        and step_index >= 0
+                    )
+                ):
+                    state["workflow_return"] = {
+                        "engine": engine,
+                        "step_index": step_index,
+                    }
+            _write_batch_file(BATCH_STATE_FILE, state)
+
+
+def saveBatchRuntimeProfile(runtime_profile, *, expected_state=None):
+    """Attach an explicitly confirmed legacy profile to active recovery data."""
+    from util.runtime_profile import copy_batch_runtime_profile
+
+    saved_profile = copy_batch_runtime_profile(runtime_profile)
+    if saved_profile is None:
+        raise ValueError("A batch runtime profile is required")
+    batch_ids = []
+    with BATCH_LOCK:
+        with _batch_file_lock():
+            state = _read_batch_file(BATCH_STATE_FILE, strict=True)
+            if not state:
+                raise ValueError("No active batch state is available")
+            if expected_state is not None and (
+                state != expected_state or state.get("runtime_profile") is not None
+            ):
+                raise ValueError("The batch state changed before its legacy profile was confirmed")
+            state["runtime_profile"] = saved_profile
+            batch_ids = list(state.get("batch_ids") or [])
+            batch_ids.extend(
+                info.get("id")
+                for info in (state.get("batches") or [])
+                if info.get("id")
+            )
+            _write_batch_file(BATCH_STATE_FILE, state)
+
+    try:
+        from util.batch_history import upsert_history_entry
+
+        for batch_id in dict.fromkeys(batch_ids):
+            upsert_history_entry(batch_id, runtime_profile=saved_profile)
+    except Exception as exc:
+        print(f"[BATCH] history runtime-profile update failed: {exc}", flush=True)
+
+
+def clearBatchFiles(*, strict=False):
+    """Remove active queue/state/results. Never deletes durable batch history.
+
+    When ``strict`` is true, surface cleanup failures instead of leaving an
+    active run behind while the UI reports that it was discarded.
+    """
+    global _batch_results, _batch_queue_pending
+    with BATCH_LOCK:
+        fetched_ids = []
+        had_results = False
+        with _batch_file_lock():
+            state = _read_batch_file(BATCH_STATE_FILE)
+            if BATCH_QUEUE_EXPECTED is not None and state.get('run_id') != BATCH_QUEUE_EXPECTED['run_id']:
+                raise ValueError('The linked batch owner changed. Its recovery files were preserved.')
+            had_results = bool(_read_batch_file(BATCH_RESULTS_FILE)) or state.get("status") == "fetched"
+            if had_results:
+                fetched_ids = list(state.get("batch_ids") or [])
+                if not fetched_ids:
+                    fetched_ids = [b.get("id") for b in (state.get("batches") or []) if b.get("id")]
+            _clear_batch_queue_storage(
+                strict=strict, queue_file=BATCH_QUEUE_FILE
+            )
+            for path in (BATCH_STATE_FILE, BATCH_RESULTS_FILE):
+                try:
+                    if path.exists():
+                        path.unlink()
+                except Exception:
+                    if strict:
+                        raise
+            if strict:
+                remaining = [
+                    str(path)
+                    for path in (BATCH_QUEUE_FILE, BATCH_STATE_FILE, BATCH_RESULTS_FILE)
+                    if path.exists()
+                ]
+                parts_dir = _batch_queue_parts_dir(BATCH_QUEUE_FILE)
+                if parts_dir.exists():
+                    remaining.append(str(parts_dir))
+                if remaining:
+                    raise OSError(
+                        "Could not discard batch recovery files: " + ", ".join(remaining)
+                    )
+        _batch_results = None
+        _batch_queue_pending = {}
+    try:
+        from util.vocab import clear_batch_glossary_freeze
+
+        clear_batch_glossary_freeze()
+    except Exception:
+        pass
+    # Only mark history consumed when clearing after a successful fetch/consume,
+    # never when discarding a still-submitted or queued run.
+    if had_results:
+        try:
+            from util.batch_history import on_clear_active_files
+            on_clear_active_files(had_results=True, fetched_ids=fetched_ids or None)
+        except Exception as exc:
+            print(f"[BATCH] history consume mark failed: {exc}", flush=True)
+
+
+def clearEstimateRequests(*, strict=False):
+    """Discard only the disposable request queue used by Estimate mode."""
+    global _batch_queue_pending
+    with BATCH_LOCK:
+        with _batch_file_lock():
+            _clear_batch_queue_storage(
+                strict=strict, queue_file=BATCH_ESTIMATE_QUEUE_FILE
+            )
+        if get_batch_phase() == "estimate":
+            _batch_queue_pending = {}
+
+
+def _get_anthropic_client():
+    key = os.getenv("key", "").strip()
+    if not key:
+        raise Exception("Batch translation requires the 'key' env var (see .env).")
+    return anthropic.Anthropic(api_key=key)
+
+
+def _estimate_openai_cache_reads(prompt_token_sequences):
+    """Estimate automatic OpenAI prefix-cache hits for an ordered request set.
+
+    OpenAI caches exact prompt prefixes automatically once they reach 1,024
+    tokens and reports hits in 128-token increments.  Track fingerprints at
+    those boundaries so the estimate stays linear in the number of prompt
+    tokens instead of comparing every request with every earlier request.
+
+    This is deliberately an estimate: a matching prefix must also be routed to
+    a machine holding that prefix, so the no-cache figure remains the safe
+    upper bound shown to the user.
+    """
+    import hashlib
+
+    seen = set()
+    cached_tokens = 0
+    for tokens in prompt_token_sequences:
+        hasher = hashlib.blake2b(digest_size=16)
+        fingerprints = []
+        request_cached_tokens = 0
+        for index, token in enumerate(tokens, 1):
+            hasher.update(int(token).to_bytes(4, "little", signed=False))
+            if index >= 1024 and index % 128 == 0:
+                fingerprint = (index, hasher.digest())
+                fingerprints.append(fingerprint)
+                if fingerprint in seen:
+                    request_cached_tokens = index
+        cached_tokens += request_cached_tokens
+        seen.update(fingerprints)
+    return cached_tokens
+
+
+def estimateCostComparison(
+    input_tokens,
+    output_tokens,
+    model=None,
+    *,
+    api_url=None,
+    api_provider=None,
+    batch_provider=None,
+):
+    """Return comparable no-cache live and Batch API estimates.
+
+    This is the common baseline used by normal Estimate mode and the richer
+    post-collection Batch Translate estimate. Prompt-cache savings are layered
+    onto the latter separately because they require the complete request set.
+    """
+    est_model = model or os.getenv("model", "")
+    pricing = getPricingConfig(est_model)
+    input_tokens = max(0, int(input_tokens or 0))
+    output_tokens = max(0, int(output_tokens or 0))
+    live_cost = (
+        input_tokens * pricing["inputAPICost"]
+        + output_tokens * pricing["outputAPICost"]
+    ) / 1_000_000
+    provider = batch_provider
+    if provider is None:
+        provider = getBatchProvider(
+            est_model,
+            api_url=api_url,
+            api_provider=api_provider,
+        )
+    normalized_model = str(est_model or "").lower().removeprefix("models/")
+    return {
+        "model": est_model,
+        "provider": provider,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "live_cost": live_cost,
+        "batch_cost": live_cost * 0.50 if provider else None,
+        "batch_supported": provider is not None,
+        "basis": "no_cache",
+        "unestimated_thinking_tokens": (
+            provider == "gemini" and normalized_model.startswith("gemini-3")
+        ),
+    }
+
+
+def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
+    """Print a cost estimate for the queued batch requests and return it.
+
+    For Claude, cached-prefix accounting mirrors what Anthropic bills: each distinct cached
+    prefix is written once (2x input rate at the 1h TTL) and read by every other
+    request that shares it (0.10x); everything is then halved by the batch
+    discount. Cache hits inside a batch are best-effort, so the no-cache batch
+    figure is the worst-case bound. OpenAI automatic cache reads and separately
+    billed GPT-5.6+ cache writes are estimated from 1,024+ token prefixes.
+    Gemini estimates exclude unpredictable thinking output and do not assume
+    an implicit cache hit.
+    """
+    queue_file = Path(queue_file or BATCH_QUEUE_FILE)
+    # Pending entries belong to the current process phase. Do not redirect a
+    # different phase's in-memory buffer merely because another queue is being
+    # priced explicitly.
+    if queue_file == _active_batch_queue_file():
+        flush_batch_queue(queue_file=queue_file)
+    with _batch_file_lock():
+        queue = _compact_batch_queue(strict=True, queue_file=queue_file)
+    if not queue:
+        print(f"{log_prefix} No requests need translation.", flush=True)
+        return None
+
+    enc = tiktoken.encoding_for_model("gpt-4")
+    prefix_count = {}   # cached prefix text -> how many requests reuse it
+    prefix_tokens = {}  # cached prefix text -> token count
+    dynamic_tokens = 0
+    prompt_token_sequences = []
+    output_tokens = 0
+    models = set()
+    providers = set()
+    for entry in queue.values():
+        params = entry.get("params", {})
+        if params.get("model"):
+            models.add(params["model"])
+        if entry.get("provider"):
+            providers.add(entry["provider"])
+        blocks = params.get("system") or []
+        cut = 0  # split system blocks at the cache breakpoint (0 = nothing cached)
+        for i, b in enumerate(blocks):
+            if "cache_control" in b:
+                cut = i + 1
+                break
+        prefix = "".join(b.get("text", "") for b in blocks[:cut])
+        dyn = "".join(b.get("text", "") for b in blocks[cut:])
+        if prefix:
+            prefix_count[prefix] = prefix_count.get(prefix, 0) + 1
+            if prefix not in prefix_tokens:
+                prefix_tokens[prefix] = len(enc.encode(prefix))
+        msg_text = "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
+        message_tokens = enc.encode(msg_text)
+        prompt_token_sequences.append(message_tokens)
+        dynamic_tokens += len(enc.encode(dyn)) + len(message_tokens) + 8
+        # Output heuristic mirrors countTokens(): payload tokens x 2.5 covers
+        # the echoed JSON scaffold plus EN expansion.
+        output_tokens += round(len(enc.encode(str(entry.get("payload", "")))) * 2.5)
+
+    est_model = model or next(iter(models), None) or os.getenv("model", "")
+    est_provider = next(iter(providers), getBatchProvider(est_model))
+    # Use Anthropic's count_tokens for the exact cached-prefix size when possible.
+    if prefix_tokens:
+        try:
+            client = _get_anthropic_client()
+            for prefix in list(prefix_tokens.keys()):
+                resp = client.messages.count_tokens(
+                    model=est_model,
+                    system=[{"type": "text", "text": prefix}],
+                    messages=[{"role": "user", "content": "x"}],
+                )
+                prefix_tokens[prefix] = resp.input_tokens
+        except Exception:
+            pass  # tiktoken estimate already in place
+
+    cache_write_tok = sum(prefix_tokens.values())
+    cache_read_tok = sum(prefix_tokens[p] * (prefix_count[p] - 1) for p in prefix_count)
+    raw_input_tok = sum(prefix_tokens[p] * prefix_count[p] for p in prefix_count) + dynamic_tokens
+
+    pricing = getPricingConfig(est_model)
+    in_rate = pricing["inputAPICost"] / 1_000_000
+    out_rate = pricing["outputAPICost"] / 1_000_000
+
+    comparison = estimateCostComparison(
+        raw_input_tok,
+        output_tokens,
+        est_model,
+        batch_provider=est_provider,
+    )
+    batch_nocache = comparison["batch_cost"]
+    if batch_nocache is None:
+        # Legacy/test queues may omit provider metadata even though their
+        # entries already represent Batch API work.
+        batch_nocache = comparison["live_cost"] * 0.50
+    live_cost = comparison["live_cost"]
+    cache_kind = None
+    if est_provider == "anthropic" and cache_write_tok > 0:
+        # Claude's explicit 1-hour cache writes the prefix once at 2x input
+        # price, then reads it at 0.10x. Batch pricing halves both charges.
+        batch_cached = (cache_write_tok * in_rate * 2.00
+                        + cache_read_tok * in_rate * 0.10
+                        + dynamic_tokens * in_rate
+                        + output_tokens * out_rate) * 0.50
+        cache_kind = "explicit"
+    elif est_provider == "openai":
+        # OpenAI prompt caching is automatic. Cached inputs for the supported
+        # GPT models are currently 10% of standard input price; Batch then
+        # applies its own 50% discount.
+        cache_read_tok = min(
+            raw_input_tok,
+            _estimate_openai_cache_reads(prompt_token_sequences),
+        )
+        if has_billed_cache_writes(est_provider, est_model):
+            cacheable_tokens = sum(
+                len(tokens) for tokens in prompt_token_sequences
+                if len(tokens) >= 1024
+            )
+            cache_write_tok = max(
+                0,
+                min(
+                    raw_input_tok - cache_read_tok,
+                    cacheable_tokens - cache_read_tok,
+                ),
+            )
+        else:
+            cache_write_tok = 0
+        uncached_input_tok = raw_input_tok - cache_read_tok - cache_write_tok
+        batch_cached = (
+            uncached_input_tok * in_rate
+            + cache_write_tok
+            * in_rate
+            * cache_write_multiplier(est_provider, est_model)
+            + cache_read_tok * in_rate * 0.10
+            + output_tokens * out_rate
+        ) * 0.50
+        if cache_read_tok:
+            cache_kind = "automatic"
+    else:
+        # We do not create Gemini explicit cache resources for these jobs.
+        # Implicit hits are not guaranteed, so only expose the worst case.
+        cache_write_tok = 0
+        cache_read_tok = 0
+        batch_cached = batch_nocache
+    uses_prompt_cache = cache_kind is not None
+    unestimated_thinking = comparison["unestimated_thinking_tokens"]
+
+    n_reread = sum(prefix_count.values()) - len(prefix_count)
+    request_state = "queued" if log_prefix == "[BATCH]" else "estimated"
+    print(
+        f"{log_prefix} {len(queue)} requests {request_state} for {est_model}",
+        flush=True,
+    )
+    if cache_kind == "explicit":
+        print(
+            f"{log_prefix} cached prefix: {cache_write_tok:,} tokens "
+            f"(written once, re-read by {n_reread:,} requests)",
+            flush=True,
+        )
+    elif cache_kind == "automatic":
+        print(
+            f"{log_prefix} estimated OpenAI automatic cache: "
+            f"{cache_write_tok:,} write / {cache_read_tok:,} read tokens "
+            f"(best-effort prefix routing)",
+            flush=True,
+        )
+    print(
+        f"{log_prefix} estimated input: {raw_input_tok:,} tokens | "
+        f"estimated visible output: {output_tokens:,} tokens",
+        flush=True,
+    )
+    if cache_kind == "explicit":
+        print(f"{log_prefix} estimated cost: ${batch_cached:.4f} (batch + prompt cache)", flush=True)
+        print(f"{log_prefix}                 ${batch_nocache:.4f} (batch, no cache hits)", flush=True)
+    elif cache_kind == "automatic":
+        print(f"{log_prefix} estimated cost: ${batch_cached:.4f} (batch + automatic cache)", flush=True)
+        print(f"{log_prefix}                 ${batch_nocache:.4f} (batch, no cache hits)", flush=True)
+    else:
+        print(f"{log_prefix} estimated cost: ${batch_nocache:.4f} (batch)", flush=True)
+    print(f"{log_prefix}                 ${live_cost:.4f} (live API)", flush=True)
+    if unestimated_thinking:
+        print(
+            f"{log_prefix} NOTE: Gemini thinking tokens are billed as output and cannot "
+            "be predicted before the run; they are not included above.",
+            flush=True,
+        )
+    return {
+        "requests": len(queue),
+        "model": est_model,
+        "provider": est_provider,
+        "cache_write_tokens": cache_write_tok,
+        "cache_read_tokens": cache_read_tok,
+        "dynamic_tokens": dynamic_tokens,
+        "input_tokens": raw_input_tok,
+        "output_tokens": output_tokens,
+        "batch_cached_cost": batch_cached,
+        "batch_nocache_cost": batch_nocache,
+        "live_cost": live_cost,
+        "uses_prompt_cache": uses_prompt_cache,
+        "cache_kind": cache_kind,
+        "unestimated_thinking_tokens": unestimated_thinking,
+    }
+
+
+def estimateTranslationCosts(model=None):
+    """Price the isolated Estimate-mode queue using Batch Collect accounting."""
+    estimate = estimateBatchCost(
+        model,
+        queue_file=BATCH_ESTIMATE_QUEUE_FILE,
+        log_prefix="[ESTIMATE]",
+    )
+    if estimate is None:
+        return None
+    estimate = dict(estimate)
+    estimate["batch_supported"] = True
+    estimate["batch_cost"] = (
+        estimate["batch_cached_cost"]
+        if estimate.get("uses_prompt_cache")
+        else estimate["batch_nocache_cost"]
+    )
+    estimate["basis"] = "request_queue"
+    return estimate
+
+
+OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT = 600_000
+
+
+def _estimate_openai_batch_input_tokens(params):
+    """Conservatively count the complete request, including context and schema.
+
+    Serialized request fields slightly overcount message framing. Add 5% and
+    32 tokens for tokenizer/framing differences; this is not an account quota.
+    """
+    from util.batch_providers import _openai_batch_body
+
+    # Match the existing queue estimator; do not download a model-specific
+    # tokenizer while resuming paid work (model aliases also change over time).
+    encoding = tiktoken.encoding_for_model("gpt-4")
+    body = json.dumps(
+        _openai_batch_body("openai", params), ensure_ascii=False, separators=(",", ":")
+    )
+    tokens = len(encoding.encode(body, disallowed_special=()))
+    return (tokens * 105 + 99) // 100 + 32
+
+
+def _openai_batch_token_limit():
+    value = os.getenv("openaiBatchTokenLimit", str(OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT))
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        limit = 0
+    if limit <= 0:
+        raise ValueError("openaiBatchTokenLimit must be a positive input-token limit")
+    return limit
+
+
+def submitTranslationBatches(file_set=None, cost_estimate=None):
+    """Submit queued requests to the configured provider's Batch API.
+
+    Splits at the API limits and saves the custom_id -> cache-key mapping so
+    fetchTranslationBatches can route results back. Also appends durable
+    history entries (custom_ids survive later fetch/clear). Returns the batch ids.
+    """
+    with _batch_submit_lock():
+        return _submit_translation_batches_unlocked(file_set, cost_estimate)
+
+
+def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
+    """Submit while the caller holds the cross-process submission lock."""
+    flush_batch_queue(queue_file=BATCH_QUEUE_FILE)
+    with _batch_file_lock():
+        queue = _compact_batch_queue(
+            strict=True, queue_file=BATCH_QUEUE_FILE
+        )
+        previous_state = _read_batch_file(BATCH_STATE_FILE, strict=True)
+    if BATCH_QUEUE_EXPECTED is not None:
+        submitted_keys = {key for batch in previous_state.get("batches", [])
+                          for key in (batch.get("custom_ids") or {}).values()}
+        if (batchQueueDigest(queue) != BATCH_QUEUE_EXPECTED["digest"]
+                or previous_state.get("run_id") != BATCH_QUEUE_EXPECTED["run_id"]
+                or not submitted_keys.issubset(queue)):
+            raise ValueError("The linked batch queue changed. Submission was blocked; prepare recovery again in Batch history.")
+    if not queue:
+        print("[BATCH] No batch requests queued.", flush=True)
+        return []
+    if any(not _batch_entry_context_is_current(entry) for entry in queue.values()):
+        raise ValueError(
+            "This queued batch predates combined instruction/source context and cannot "
+            "be submitted safely. Re-collect it before submitting so paid "
+            "results can be matched during consume."
+        )
+
+    from util.batch_providers import batch_limits, submit_batch
+
+    batches = list(previous_state.get("batches") or [])
+    submitted_keys = {
+        key
+        for batch in batches
+        for key in (batch.get("custom_ids") or {}).values()
+    }
+    requests, id_map, size, input_tokens = [], {}, 0, 0
+    models = set()
+    providers = set()
+    for entry in queue.values():
+        m = (entry.get("params") or {}).get("model")
+        if m:
+            models.add(m)
+        p = entry.get("provider") or getBatchProvider(m)
+        if p:
+            providers.add(p)
+    if len(models) != 1 or len(providers) != 1:
+        raise ValueError(
+            "A batch queue must contain exactly one model and one provider; "
+            f"found models={sorted(models)} providers={sorted(providers)}"
+        )
+    provider = next(iter(providers))
+    max_requests, max_bytes = batch_limits(provider)
+    from util.batch_history import (
+        active_key_name_for_environment,
+        entry_for_batch,
+        key_name_for_batch,
+    )
+
+    current_key_name = active_key_name_for_environment()
+    current_endpoint = os.getenv("api", "").strip() or {
+        "anthropic": "https://api.anthropic.com",
+        "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "openai": "https://api.openai.com/v1",
+    }.get(provider, "")
+    existing_key_names = {
+        str(info.get("key_name") or key_name_for_batch(info.get("id", "")))
+        for info in batches
+    } - {""}
+    if existing_key_names and (
+        len(existing_key_names) != 1 or current_key_name not in existing_key_names
+    ):
+        expected = ", ".join(sorted(existing_key_names))
+        raise ValueError(
+            "Remaining split requests must use the same saved API key as the "
+            f"already submitted batches. Select {expected!r} and resume again."
+        )
+    model = (
+        (cost_estimate or {}).get("model")
+        or previous_state.get("model")
+        or next(iter(models), None)
+        or os.getenv("model", "")
+    )
+    effective_file_set = list(
+        file_set if file_set is not None else previous_state.get("file_set") or []
+    )
+    effective_estimate = (
+        cost_estimate
+        if cost_estimate is not None
+        else previous_state.get("cost_estimate")
+    )
+    run_id = previous_state.get("run_id") or f"translation-{uuid.uuid4().hex}"
+    existing_endpoints = {
+        str(
+            info.get("endpoint")
+            or (entry_for_batch(str(info.get("id") or "")) or {}).get("endpoint")
+            or ""
+        ).strip()
+        for info in batches
+    } - {""}
+    if len(existing_endpoints) > 1:
+        raise ValueError(
+            "The saved split batches use inconsistent API endpoints and "
+            "cannot be resumed safely."
+        )
+    submitted_endpoint = (
+        next(iter(existing_endpoints), "")
+        or str(previous_state.get("endpoint") or "").strip()
+        or current_endpoint
+    )
+    from urllib.parse import urlparse
+
+    native_openai = provider == "openai" and urlparse(submitted_endpoint).hostname == "api.openai.com"
+    token_costs = {}
+    sequential_limit = previous_state.get("sequential_token_limit", 0)
+    if native_openai:
+        limit = sequential_limit or _openai_batch_token_limit()
+        token_costs = {
+            key: _estimate_openai_batch_input_tokens(entry["params"])
+            for key, entry in queue.items()
+        }
+        for key, tokens in token_costs.items():
+            if key not in submitted_keys and tokens > limit:
+                raise ValueError(
+                    f"One OpenAI batch request needs approximately {tokens:,} input tokens, "
+                    f"above the sequential OpenAI cap of {limit:,}. Reduce the translation "
+                    "batch size/context and re-collect before submitting."
+                )
+        if sum(token_costs.values()) > limit:
+            sequential_limit = limit
+    if sequential_limit:
+        print(f"[BATCH] sequential OpenAI cap: {sequential_limit:,} estimated input tokens.", flush=True)
+        if batches:
+            # Resume must confirm the already-paid work succeeded before paying
+            # for anything else. The submission lock covers this check and create.
+            ended, statuses = checkTranslationBatchStatuses()
+            failures = failedTranslationBatchStatuses(statuses)
+            if failures:
+                raise RuntimeError(
+                    "Provider batch failed; queue preserved and later submissions blocked. "
+                    + formatTranslationBatchFailures(failures)
+                )
+            if not ended:
+                print("[BATCH] Current provider chunk is still active. Resume polling it first.", flush=True)
+                return [b["id"] for b in batches]
+    if batches:
+        from util.batch_history import client_for_batch
+
+        first_batch = batches[0]
+        client = client_for_batch(
+            str(first_batch.get("id") or ""),
+            provider,
+            str(first_batch.get("key_name") or current_key_name),
+            str(first_batch.get("endpoint") or submitted_endpoint),
+        )
+    else:
+        client = _get_anthropic_client() if provider == "anthropic" else None
+
+    def _checkpoint(new_info, *, complete):
+        """Persist each paid provider job before attempting the next split."""
+        state_doc = {
+            "status": "submitted" if complete else "partially_submitted",
+            "run_id": run_id,
+            "batches": batches,
+            "submitted_at": previous_state.get("submitted_at")
+            or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "model": model,
+            "provider": provider,
+            "endpoint": submitted_endpoint,
+            "cache_key_version": BATCH_CACHE_KEY_VERSION,
+            "file_set": effective_file_set,
+            "cost_estimate": effective_estimate,
+            "request_count": sum(
+                len(batch.get("custom_ids") or {}) for batch in batches
+            ),
+        }
+        if sequential_limit:
+            state_doc["sequential_token_limit"] = sequential_limit
+            state_doc["queued_request_count"] = len(queue)
+        if previous_state.get("runtime_profile") is not None:
+            state_doc["runtime_profile"] = previous_state["runtime_profile"]
+        _attach_glossary_freeze(state_doc, previous_state)
+        with BATCH_LOCK:
+            with _batch_file_lock():
+                _write_batch_file(BATCH_STATE_FILE, state_doc)
+        try:
+            from util.batch_history import record_submit
+
+            record_submit(
+                [new_info],
+                model=model,
+                provider=provider,
+                file_set=effective_file_set,
+                cost_estimate=effective_estimate,
+                key_name=current_key_name,
+                endpoint=submitted_endpoint,
+            )
+        except Exception as exc:
+            print(f"[BATCH] history record_submit failed: {exc}", flush=True)
+
+    def _submit():
+        nonlocal requests, id_map, size, input_tokens
+        if not requests:
+            return
+        submitted = submit_batch(provider, requests, client=client)
+        info = {
+            **submitted,
+            "run_id": run_id,
+            "custom_ids": id_map,
+            "provider": provider,
+            "key_name": current_key_name,
+            "endpoint": submitted_endpoint,
+            "cache_key_version": BATCH_CACHE_KEY_VERSION,
+        }
+        if sequential_limit:
+            info["estimated_input_tokens"] = input_tokens
+        batches.append(info)
+        submitted_keys.update(id_map.values())
+        complete = len(submitted_keys) == len(queue)
+        _checkpoint(info, complete=complete)
+        print(f"[BATCH] submitted {info['id']} ({len(requests)} requests)", flush=True)
+        if sequential_limit and not complete:
+            print("[BATCH] More queued requests remain. Resume will poll this chunk before submitting the next.", flush=True)
+        requests, id_map, size, input_tokens = [], {}, 0, 0
+
+    for i, (key, entry) in enumerate(queue.items()):
+        if key in submitted_keys:
+            continue
+        custom_id = f"req-{i:06d}"
+        params = entry["params"]
+        request_size = len(json.dumps(params, ensure_ascii=False).encode("utf-8")) + 128
+        if request_size > max_bytes:
+            raise ValueError(
+                f"Batch request {custom_id} is {request_size:,} bytes, above the "
+                f"{max_bytes:,}-byte provider limit."
+            )
+        if requests and (
+            len(requests) >= max_requests or size + request_size > max_bytes
+            or (sequential_limit and input_tokens + token_costs[key] > sequential_limit)
+        ):
+            _submit()
+            if sequential_limit:
+                return [b["id"] for b in batches]
+        requests.append({"custom_id": custom_id, "params": params})
+        id_map[custom_id] = key
+        size += request_size
+        input_tokens += token_costs.get(key, 0)
+    _submit()
+
+    # A retry after the final provider job was checkpointed has no new work, but
+    # older state files may still carry the partial marker. Normalize it.
+    if batches and len(submitted_keys) == len(queue):
+        with BATCH_LOCK:
+            with _batch_file_lock():
+                state_doc = _read_batch_file(BATCH_STATE_FILE)
+                if state_doc.get("status") != "submitted":
+                    state_doc["status"] = "submitted"
+                    _write_batch_file(BATCH_STATE_FILE, state_doc)
+    return [b["id"] for b in batches]
+
+
+def checkTranslationBatches():
+    """Print the processing status of submitted batches. True when all ended.
+
+    Also returns a structured status list as the second value when called as
+    ``ended, statuses = checkTranslationBatchStatuses()`` - prefer that helper
+    for UI work. Kept for CLI/print compatibility.
+    """
+    ended, _statuses = checkTranslationBatchStatuses(print_status=True)
+    return ended
+
+
+def checkTranslationBatchStatuses(print_status=True):
+    """Return (all_ended, statuses) for submitted batches.
+
+    Provider-level terminal failures and their validation errors are retained
+    so callers cannot mistake a rejected job for a successful empty result.
+    """
+    with _batch_file_lock():
+        state = _read_batch_file(BATCH_STATE_FILE)
+    if not state.get("batches"):
+        if print_status:
+            print("[BATCH] No submitted batches - submit the queue first.", flush=True)
+        return False, []
+    from util.batch_history import client_for_batch
+    from util.batch_providers import retrieve_batch
+
+    all_ended = True
+    statuses = []
+    for info in state["batches"]:
+        bid = info["id"]
+        provider = info.get("provider") or state.get("provider") or "anthropic"
+        client = client_for_batch(
+            bid,
+            provider,
+            str(info.get("key_name") or ""),
+            str(info.get("endpoint") or state.get("endpoint") or ""),
+        )
+        normalized = retrieve_batch(provider, bid, client=client)
+        api_status = normalized["api_status"]
+        counts = normalized["counts"]
+        if state.get("sequential_token_limit") and normalized["ended"] and counts.get("errored", 0):
+            normalized = dict(normalized, terminal_failure=True)
+            normalized["errors"] = list(normalized.get("errors") or []) + [{
+                "message": "Current provider chunk contains failed requests; later submissions blocked."
+            }]
+        statuses.append({
+            "id": bid,
+            "provider": provider,
+            "api_status": api_status,
+            "counts": counts,
+            "request_count": len(info.get("custom_ids") or {}),
+            "terminal_failure": bool(normalized.get("terminal_failure")),
+            "errors": list(normalized.get("errors") or []),
+            "output_file_id": normalized.get("output_file_id"),
+            "error_file_id": normalized.get("error_file_id"),
+        })
+        if print_status:
+            parts = [f"{k[:4]}={v}" for k, v in counts.items() if v]
+            suffix = ("  " + " ".join(parts)) if parts else ""
+            print(
+                f"[BATCH] {time.strftime('%H:%M:%S')}  {bid}: {api_status}{suffix}",
+                flush=True,
+            )
+        if not normalized["ended"]:
+            all_ended = False
+        else:
+            try:
+                from util.batch_history import (
+                    STATUS_CANCELED,
+                    STATUS_ENDED,
+                    STATUS_ERROR,
+                    upsert_history_entry,
+                )
+
+                if api_status == "cancelled":
+                    local_status = STATUS_CANCELED
+                elif normalized.get("terminal_failure"):
+                    local_status = STATUS_ERROR
+                else:
+                    local_status = STATUS_ENDED
+                provider_errors = list(normalized.get("errors") or [])
+                note = ""
+                if provider_errors:
+                    note = "; ".join(
+                        str(item.get("message") or item.get("code") or "provider error")
+                        for item in provider_errors
+                    )[:1000]
+                upsert_history_entry(
+                    bid,
+                    status=local_status,
+                    api_status=api_status,
+                    request_counts=counts,
+                    provider_errors=provider_errors,
+                    **({"notes": note} if note else {}),
+                )
+            except Exception as exc:
+                print(
+                    f"[BATCH] history status update failed for {bid}: {exc}",
+                    flush=True,
+                )
+    return all_ended, statuses
+
+
+def failedTranslationBatchStatuses(statuses):
+    """Return provider jobs that ended unsuccessfully."""
+    return [status for status in statuses if status.get("terminal_failure")]
+
+
+def formatTranslationBatchFailures(statuses):
+    """Build a concise actionable provider failure message."""
+    details = []
+    for status in failedTranslationBatchStatuses(statuses):
+        messages = [
+            str(error.get("message") or error.get("code") or "provider error")
+            for error in (status.get("errors") or [])
+        ]
+        detail = "; ".join(messages) or f"provider status {status.get('api_status')}"
+        details.append(f"{status.get('id')}: {detail}")
+    return " | ".join(details)
+
+
+def fetchTranslationBatches(batches=None):
+    """Download finished batch results into the local results store.
+
+    Successes are stored keyed by the payload cache key for the consume pass;
+    errored/expired requests are reported; consume stops rather than silently
+    switching to the live API
+    during consume. Durable history retains custom_ids for later redownload.
+
+    batches: optional list of {id, custom_ids} (defaults to active batch_state).
+    Returns (succeeded, errored) counts.
+    """
+    global _batch_results
+    with _batch_file_lock():
+        state = _read_batch_file(BATCH_STATE_FILE)
+    if state.get("sequential_token_limit") and state.get("status") == "partially_submitted":
+        raise RuntimeError(
+            "More queued requests remain. Resume the durable batch queue before fetching or consuming results."
+        )
+    if state.get("sequential_token_limit"):
+        ended, statuses = checkTranslationBatchStatuses(print_status=False)
+        if not ended or failedTranslationBatchStatuses(statuses):
+            raise RuntimeError(
+                "All sequential provider chunks must succeed before fetch/consume. "
+                + formatTranslationBatchFailures(statuses)
+            )
+    batch_list = batches if batches is not None else (state.get("batches") or [])
+    if not batch_list:
+        print("[BATCH] No submitted batches - nothing to fetch.", flush=True)
+        return 0, 0
+
+    try:
+        from util.batch_history import (
+            _price_usage,
+            client_for_batch,
+            download_batch_results,
+            google_client_for_batch,
+            record_fetch,
+        )
+    except Exception:
+        client_for_batch = None
+        download_batch_results = None
+        google_client_for_batch = None
+        record_fetch = None
+        _price_usage = None
+
+    results, errored = {}, []
+    usage_totals = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "thinking_tokens": 0,
+    }
+    batch_ids = []
+    history_parts = []
+    for info in batch_list:
+        bid = info.get("id")
+        provider = info.get("provider") or state.get("provider") or "anthropic"
+        if bid:
+            batch_ids.append(bid)
+        id_map = info.get("custom_ids", {})
+        client = (
+            client_for_batch(
+                bid,
+                provider,
+                str(info.get("key_name") or ""),
+                str(info.get("endpoint") or state.get("endpoint") or ""),
+            )
+            if client_for_batch
+            else None
+        )
+        if download_batch_results is not None:
+            google_client = (
+                google_client_for_batch(
+                    bid, str(info.get("key_name") or "")
+                )
+                if provider == "gemini" and google_client_for_batch
+                else None
+            )
+            part, err_part, usage_part = download_batch_results(
+                bid, id_map, client=client, provider=provider,
+                google_client=google_client,
+            )
+        else:
+            from util.batch_providers import download_results
+            part, err_part, usage_part = download_results(
+                provider, bid, id_map, client=client
+            )
+        results.update(part)
+        errored.extend(err_part)
+        for k, v in usage_part.items():
+            usage_totals[k] = usage_totals.get(k, 0) + (v or 0)
+        history_parts.append((bid, provider, part, err_part, usage_part))
+
+    if state.get("sequential_token_limit"):
+        expected = {
+            key for info in state.get("batches", [])
+            for key in (info.get("custom_ids") or {}).values()
+        }
+        if errored or set(results) != expected:
+            raise RuntimeError(
+                "Sequential batch results are incomplete or contain errors; "
+                "queue preserved and consume/write blocked."
+            )
+
+    model = state.get("model") or os.getenv("model", "")
+    aggregate_provider = state.get("provider") or (
+        batch_list[0].get("provider") if batch_list else "anthropic"
+    )
+    actual_cost = None
+    if _price_usage is not None and model:
+        try:
+            actual_cost = _price_usage(
+                usage_totals, model, aggregate_provider or "anthropic"
+            )
+        except Exception:
+            actual_cost = None
+
+    with BATCH_LOCK:
+        with _batch_file_lock():
+            # Preserve corrupt recovery data and make the active result file an
+            # exact snapshot of these batch ids. Cache keys omit the model, so
+            # merging with a previous run can silently mix model outputs when
+            # the new provider result set has errors or omissions.
+            if BATCH_QUEUE_EXPECTED is not None:
+                current = _read_batch_file(BATCH_STATE_FILE, strict=True)
+                if current != state or current.get('run_id') != BATCH_QUEUE_EXPECTED['run_id']:
+                    raise ValueError('The linked batch changed while downloading. Its recovery files were preserved.')
+            _read_batch_file(BATCH_RESULTS_FILE, strict=True)
+            _write_batch_file(BATCH_RESULTS_FILE, results)
+            # Drop the queue; keep a lightweight fetched marker (ids for consume→history).
+            # custom_ids stay in durable history - do not destroy recovery maps.
+            _clear_batch_queue_storage(queue_file=BATCH_QUEUE_FILE)
+            fetched_state = {
+                "status": "fetched",
+                "run_id": state.get("run_id"),
+                "batch_ids": batch_ids,
+                "batches": [],
+                "model": model,
+                "provider": state.get("provider") or (
+                    batch_list[0].get("provider") if batch_list else None
+                ),
+                "endpoint": state.get("endpoint") or (
+                    batch_list[0].get("endpoint") if batch_list else None
+                ),
+                "cache_key_version": state.get("cache_key_version", 1),
+                "result_keys": sorted(results),
+                "file_set": state.get("file_set") or [],
+                "cost_estimate": state.get("cost_estimate"),
+                "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            if state.get("runtime_profile") is not None:
+                fetched_state["runtime_profile"] = state["runtime_profile"]
+            _attach_glossary_freeze(fetched_state, state)
+            _write_batch_file(BATCH_STATE_FILE, fetched_state)
+        _batch_results = None
+
+    if record_fetch is not None:
+        for bid, provider, part, err_part, usage_part in history_parts:
+            try:
+                part_cost = None
+                if _price_usage is not None and model:
+                    part_cost = _price_usage(usage_part, model, provider)
+                record_fetch(
+                    [bid],
+                    succeeded=len(part),
+                    errored=len(err_part),
+                    usage=usage_part,
+                    actual_cost=part_cost,
+                )
+            except Exception as exc:
+                print(
+                    f"[BATCH] history record_fetch failed for {bid}: {exc}",
+                    flush=True,
+                )
+
+    print(f"[BATCH] fetched {len(results)} results ({len(errored)} errored).", flush=True)
+    if actual_cost is not None:
+        print(f"[BATCH] actual batch usage cost (est.): ${actual_cost:.4f}", flush=True)
+    for cid, why in errored[:20]:
+        print(f"[BATCH]   ! {cid}: {why}", flush=True)
+    if len(errored) > 20:
+        print(f"[BATCH]   ... ({len(errored) - 20} more)", flush=True)
+    return len(results), len(errored)
+
+
+def runTranslationBatches(poll=60):
+    """Submit the queue (unless already submitted), poll to completion, fetch."""
+    with _batch_file_lock():
+        state = _read_batch_file(BATCH_STATE_FILE)
+    if not state.get("batches"):
+        if not submitTranslationBatches():
+            return 0, 0
+    print(f"[BATCH] polling every {poll}s (Ctrl-C is safe — resume later with runTranslationBatches)...", flush=True)
+    while True:
+        ended, statuses = checkTranslationBatchStatuses(print_status=True)
+        if ended:
+            failures = failedTranslationBatchStatuses(statuses)
+            if failures:
+                detail = formatTranslationBatchFailures(failures)
+                raise RuntimeError(
+                    "Provider batch failed; the local queue was preserved and "
+                    f"consume was blocked. {detail}"
+                )
+            current = batchRunMetadata()
+            if current.get("sequential_token_limit") and current.get("status") == "partially_submitted":
+                print("[BATCH] Current provider chunk completed. Submitting the next queued chunk...", flush=True)
+                submitTranslationBatches()
+                continue
+            break
+        time.sleep(poll)
+    return fetchTranslationBatches()
+
+
+# ===== Mistral (la Plateforme) adaptive rate limiting =====
+# Mistral enforces per-minute request and token limits that vary by tier/model.
+# The limiter starts from a conservative seed, then pins itself to the real
+# limits read from the live x-ratelimit-* response headers. One limiter is
+# shared across file threads. Override seeds via
+# mistralReqPerSec / mistralTokPerMin / mistralTokenHeadroom.
+_mistral_limiter = None
+_mistral_limiter_lock = threading.Lock()
+
+
+def _estimate_mistral_tokens(text):
+    # JP ~1 token/char with Mistral tokenizers; EN ~1 per 3.5 chars. Be pessimistic.
+    return int(len(str(text)) * 1.1) + 8
+
+
+def _header_int(headers, *names):
+    """First present header among names parsed as int, else None."""
+    for n in names:
+        v = headers.get(n)
+        if v is not None and str(v).strip() != "":
+            try:
+                return int(float(v))
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _header_float(headers, *names):
+    """First present header among names parsed as float, else None.
+
+    Used for the RPS limit header, which per-model is often FRACTIONAL
+    (e.g. 0.08, 0.42, 0.83) — parsing it as int would floor those to 0."""
+    for n in names:
+        v = headers.get(n)
+        if v is not None and str(v).strip() != "":
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+class AdaptiveLimiter:
+    """Paces requests off live ratelimit headers.
+
+    acquire() enforces two gates together:
+      * requests: spaced >= min_interval (1/RPS) apart, so bursts can't overrun
+        the per-minute request cap.
+      * tokens: a minute-windowed input+output budget with a headroom margin.
+    """
+
+    def __init__(self, req_per_sec, tok_per_min, headroom):
+        self.lock = threading.Lock()
+        self.req_per_sec = max(0.001, float(req_per_sec))
+        self.tok_per_min = tok_per_min
+        self.headroom = headroom  # margin left under the TPM cap
+        self.min_interval = 1.0 / self.req_per_sec
+        self.next_request_at = time.monotonic()
+        self.tokens_remaining = tok_per_min
+        self.window_reset = time.monotonic() + 60
+
+    def acquire(self, est_tokens):
+        """Block until the request clears both the RPS pace and the TPM budget."""
+        while True:
+            with self.lock:
+                now = time.monotonic()
+                if now >= self.window_reset:
+                    self.tokens_remaining = self.tok_per_min
+                    self.window_reset = now + 60
+                # token gate
+                if self.tokens_remaining - est_tokens <= self.headroom:
+                    sleep_for = max(0.05, self.window_reset - now)
+                # request-pace gate
+                elif now < self.next_request_at:
+                    sleep_for = self.next_request_at - now
+                else:
+                    # both gates clear — reserve this slot
+                    self.next_request_at = max(now, self.next_request_at) + self.min_interval
+                    self.tokens_remaining -= est_tokens
+                    return
+            time.sleep(min(sleep_for, 5))
+
+    def update(self, headers):
+        """Sync budgets from the live ratelimit headers."""
+        if not headers:
+            return
+        with self.lock:
+            # Mistral's documented request cap is x-ratelimit-limit-requests
+            # (RPM); accept alternate spellings too and /60 to a pacing interval.
+            # A true per-second header, if present, is used undivided.
+            limit_rps = _header_float(headers, "x-ratelimit-limit-req-second",
+                                      "x-ratelimit-limit-requests-second")
+            if limit_rps is None:
+                limit_rpm = _header_float(headers, "x-ratelimit-limit-requests",
+                                          "x-ratelimit-limit-req-minute",
+                                          "x-ratelimit-limit-requests-minute")
+                if limit_rpm is not None:
+                    limit_rps = limit_rpm / 60.0
+            if limit_rps and limit_rps > 0:
+                self.req_per_sec = limit_rps
+                self.min_interval = 1.0 / self.req_per_sec
+            limit_tok = _header_int(headers, "x-ratelimit-limit-tokens",
+                                    "x-ratelimit-limit-tokens-minute")
+            if limit_tok and limit_tok > 0:
+                self.tok_per_min = limit_tok
+            rem_tok = _header_int(headers, "x-ratelimit-remaining-tokens",
+                                  "x-ratelimit-remaining-tokens-minute")
+            if rem_tok is not None:
+                self.tokens_remaining = rem_tok
+            # If the minute's request budget is already spent, hold off ~a minute.
+            rem_req = _header_int(headers, "x-ratelimit-remaining-requests",
+                                  "x-ratelimit-remaining-req-minute",
+                                  "x-ratelimit-remaining-requests-minute")
+            if rem_req is not None and rem_req <= 0:
+                self.next_request_at = max(self.next_request_at, time.monotonic() + 60.0)
+
+
+def _get_mistral_limiter():
+    global _mistral_limiter
+    with _mistral_limiter_lock:
+        if _mistral_limiter is None:
+            # mistralReqPerMin is a deprecated per-minute alias, converted to RPS.
+            rps_env = os.getenv("mistralReqPerSec")
+            if rps_env:
+                req_per_sec = float(rps_env)
+            elif os.getenv("mistralReqPerMin"):
+                req_per_sec = max(0.05, float(os.getenv("mistralReqPerMin")) / 60.0)
+            else:
+                # Conservative seed; the first response's headers correct it.
+                req_per_sec = 0.5
+            _mistral_limiter = AdaptiveLimiter(
+                req_per_sec,
+                int(os.getenv("mistralTokPerMin", "50000") or 50000),
+                int(os.getenv("mistralTokenHeadroom", "4000") or 4000),
+            )
+        return _mistral_limiter
+
+
+def callMistral(params, retries=6):
+    """Call the Mistral chat completions endpoint with adaptive pacing.
+
+    Acquires from the shared limiter before each attempt, syncs budgets from
+    the live x-ratelimit headers after each response, honours Retry-After on
+    429, backs off with jitter on 5xx/network errors, and downgrades
+    json_schema -> json_object for models without structured-output support.
+    """
+    limiter = _get_mistral_limiter()
+    est = sum(_estimate_mistral_tokens(m.get("content", "")) for m in params.get("messages", []))
+    est += params.get("max_tokens", 0) // 2
+    last_error = None
+    for attempt in range(retries + 1):
+        limiter.acquire(est)
+        try:
+            raw = openai.chat.completions.with_raw_response.create(**params)
+            response = raw.parse()
+            limiter.update(raw.headers)
+            return response
+        except RateLimitError as e:
+            last_error = e
+            resp = getattr(e, "response", None)
+            limiter.update(getattr(resp, "headers", None))
+            retry_after = None
+            try:
+                retry_after = float(resp.headers.get("retry-after"))
+            except (AttributeError, TypeError, ValueError):
+                pass
+            time.sleep(retry_after if retry_after is not None else min(60, 2 ** attempt + random.random() * 2))
+        except APIStatusError as e:
+            last_error = e
+            # Mistral rejects unsupported params with 400/422 — downgrade the
+            # structured-output format once and retry immediately.
+            if e.status_code in (400, 422) and (params.get("response_format") or {}).get("type") == "json_schema":
+                params = dict(params)
+                params["response_format"] = {"type": "json_object"}
+                continue
+            if e.status_code >= 500 and attempt < retries:
+                time.sleep(min(45, 2 ** attempt + random.random()))
+                continue
+            raise Exception(f"Mistral API error ({e.status_code}): {e}")
+        except APIConnectionError as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(min(45, 2 ** attempt + random.random()))
+                continue
+            raise Exception(f"Mistral connection error: {e}")
+    raise Exception(f"Mistral API failed after {retries + 1} attempts: {last_error}")
+
+
+class TranslationConfig:
+    """Configuration class to hold all translation settings"""
+    
+    def __init__(self, 
+                 model=None,
+                 language=None,
+                 prompt=None,
+                 vocab=None,
+                 langRegex=None,
+                 batchSize=None,
+                 maxHistory=10,
+                 estimateMode=False,
+                 logFilePath="log/translationHistory.txt",
+                 mismatchLogPath="log/mismatchHistory.txt",
+                 convertQuotes=None,
+                 useSfxReference=None,
+                 validationRetries=2):
+        
+        # Load from environment if not provided
+        self.model = model or os.getenv("model")
+        self.language = (language or os.getenv("language", "english")).capitalize()
+        
+        # Load prompt and vocab files if not provided
+        if prompt is None:
+            try:
+                from util.skills import load_system_prompt
+                self.prompt = load_system_prompt()
+            except FileNotFoundError:
+                self.prompt = ""
+        else:
+            self.prompt = prompt
+            
+        if vocab is None:
+            try:
+                self.vocab = read_active_glossary()
+            except OSError:
+                self.vocab = ""
+        else:
+            self.vocab = vocab
+        
+        # Set language regex (default is Japanese)
+        self.langRegex = langRegex or r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+        
+        # Set batch size — derive from pricing config unless explicitly supplied
+        if batchSize is None:
+            self.batchSize = getPricingConfig(self.model)["batchSize"]
+        else:
+            self.batchSize = batchSize
+            
+        self.maxHistory = maxHistory
+        self.estimateMode = estimateMode
+        self.logFilePath = logFilePath
+        self.mismatchLogPath = mismatchLogPath
+        self.validationRetries = max(0, min(2, int(validationRetries)))
+        if convertQuotes is None:
+            self.convertQuotes = os.getenv("convertQuotes", "true").strip().lower() in (
+                "true", "1", "yes",
+            )
+        else:
+            self.convertQuotes = bool(convertQuotes)
+        if useSfxReference is None:
+            self.useSfxReference = os.getenv(
+                "useSfxReference", "true"
+            ).strip().lower() in ("true", "1", "yes")
+        else:
+            self.useSfxReference = bool(useSfxReference)
+
+
+def convert_corner_brackets(text, enabled=True):
+    """Replace Japanese quotation marks with ASCII double quotes when enabled."""
+    if not enabled or not isinstance(text, str):
+        return text
+    return (
+        text.replace("「", '"')
+        .replace("」", '"')
+        .replace("『", '"')
+        .replace("』", '"')
+        .replace("〝", '"')
+        .replace("〞", '"')
+        .replace("〟", '"')
+    )
+
+
+_LITELLM_PRICING_URL = (
+    "https://raw.githubusercontent.com/BerriAI/litellm/main"
+    "/model_prices_and_context_window.json"
+)
+_PRICING_CACHE_FILE = Path("log/litellm_pricing.json")
+_PRICING_CACHE_TTL  = 86_400  # 24 hours
+_pricing_db: dict | None = None
+_pricing_db_fetched_at: float = 0.0
+_pricing_db_lock = threading.Lock()
+_pricing_fetch_warned: bool = False  # print fetch-failure warning at most once per session
+
+
+def _load_litellm_pricing() -> dict | None:
+    """Return the LiteLLM pricing DB, using a 24-hour disk cache."""
+    global _pricing_db, _pricing_db_fetched_at, _pricing_fetch_warned
+
+    with _pricing_db_lock:
+        now = time.time()
+
+        # Test discovery and execution must be hermetic. The suite runner sets
+        # this before importing application modules so a stale/missing local
+        # cache can never turn a test run into a live network request.
+        if os.getenv("DAZEDTL_TEST_OFFLINE") == "1":
+            return _pricing_db
+
+        # In-memory cache still fresh
+        if _pricing_db is not None and (now - _pricing_db_fetched_at) < _PRICING_CACHE_TTL:
+            return _pricing_db
+
+        # Try disk cache
+        if _PRICING_CACHE_FILE.exists():
+            try:
+                disk = json.loads(_PRICING_CACHE_FILE.read_text(encoding="utf-8"))
+                if (now - disk.get("fetched_at", 0)) < _PRICING_CACHE_TTL:
+                    _pricing_db = disk["prices"]
+                    _pricing_db_fetched_at = disk["fetched_at"]
+                    return _pricing_db
+            except Exception:
+                pass
+
+        # Fetch from GitHub
+        try:
+            with urllib.request.urlopen(_LITELLM_PRICING_URL, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            _pricing_db = data
+            _pricing_db_fetched_at = now
+            _pricing_fetch_warned = False  # reset if a later fetch succeeds
+            try:
+                _PRICING_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+                _PRICING_CACHE_FILE.write_text(
+                    json.dumps({"fetched_at": now, "prices": data}),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+            return _pricing_db
+        except Exception as fetch_err:
+            # No internet / GitHub unreachable — warn once, then fall back
+            if not _pricing_fetch_warned:
+                _pricing_fetch_warned = True
+                print(
+                    f"[PRICING] Warning: Could not fetch live model pricing "
+                    f"({fetch_err}). Cost estimates may be inaccurate — "
+                    f"using built-in fallback prices.",
+                    flush=True,
+                )
+            # Use stale disk cache if available
+            if _pricing_db is not None:
+                return _pricing_db
+            try:
+                disk = json.loads(_PRICING_CACHE_FILE.read_text(encoding="utf-8"))
+                _pricing_db = disk["prices"]
+                return _pricing_db
+            except Exception:
+                return None
+
+
+def _lookup_model_price(model: str):
+    """Look up (input_per_1M, output_per_1M) from the LiteLLM pricing DB.
+
+    Returns a (float, float) tuple or None if not found.
+    Matching priority:
+      1. Exact key match
+      2. Exact match on the model portion after a provider prefix (e.g. "deepseek/deepseek-chat")
+      3. The user's model name is a prefix of a DB key (handles dated suffixes like -20241022)
+      4. A DB key model-part is a prefix of the user's model name
+    """
+    db = _load_litellm_pricing()
+    if not db:
+        return None
+
+    model_lower = str(model or "").strip().lower()
+    # Google APIs and the Gen AI SDK may return resource-style model names
+    # (``models/gemini-...``), while pricing catalogs use the bare model id.
+    # Leaving the resource prefix in place can accidentally prefix-match an
+    # unrelated generic catalog entry with incomplete prices.
+    if model_lower.startswith("models/"):
+        model_lower = model_lower.removeprefix("models/")
+    model_part = model_lower.rsplit("/", 1)[-1]
+    requested_provider = (
+        model_lower.split("/", 1)[0] if "/" in model_lower else ""
+    )
+
+    def _extract(entry):
+        inp = entry.get("input_cost_per_token")
+        out = entry.get("output_cost_per_token")
+        if inp is not None and out is not None:
+            return round(inp * 1_000_000, 6), round(out * 1_000_000, 6)
+        return None
+
+    # Pass 1: exact key
+    if model_lower in db:
+        result = _extract(db[model_lower])
+        if result:
+            return result
+
+    # Build a lookup of (stripped_key → original_key) for passes 2-4
+    stripped: list[tuple[str, str]] = []
+    for key in db:
+        stripped_key = key.rsplit("/", 1)[-1].lower()
+        # Catalog namespace placeholders such as
+        # ``fireworks_ai/accounts/fireworks/models/`` have an empty model
+        # portion. Every string starts with an empty string, so retaining one
+        # here can make an unrelated non-chat entry win the prefix passes.
+        if stripped_key:
+            stripped.append((stripped_key, key))
+
+    def _provider_preference(item: tuple[str, str]) -> int:
+        skey, original = item
+        original_lower = original.lower()
+        if requested_provider and original_lower.startswith(
+            requested_provider + "/"
+        ):
+            return 0
+        if original_lower == skey:
+            return 1
+        return 2
+
+    # Pass 2: exact match on stripped key
+    candidates = [item for item in stripped if item[0] == model_part]
+    for skey, orig in sorted(candidates, key=_provider_preference):
+        result = _extract(db[orig])
+        if result:
+            return result
+
+    # Pass 3: model name is a prefix of the DB key (e.g. "claude-3-5-sonnet" matches
+    #          "claude-3-5-sonnet-20241022")
+    candidates = [
+        item for item in stripped if item[0].startswith(model_part)
+    ]
+    if candidates:
+        # Prefer the shortest (most generic) key
+        skey, orig = min(
+            candidates,
+            key=lambda item: (len(item[0]), _provider_preference(item)),
+        )
+        result = _extract(db[orig])
+        if result:
+            return result
+
+    # Pass 4: DB key is a prefix of the model name (e.g. "gemini-2.0-flash" matches
+    #          "gemini-2.0-flash-exp")
+    candidates = [
+        item for item in stripped if model_part.startswith(item[0])
+    ]
+    if candidates:
+        skey, orig = min(
+            candidates,
+            key=lambda item: (-len(item[0]), _provider_preference(item)),
+        )
+        result = _extract(db[orig])
+        if result:
+            return result
+
+    return None
+
+
+def getPricingConfig(model):
+    """
+    Get pricing configuration for a given model.
+    
+    Args:
+        model: The model name string
+        
+    Returns:
+        dict: Dictionary containing inputAPICost, outputAPICost, batchSize, and frequencyPenalty
+    """
+    # Try to resolve pricing from the LiteLLM community pricing DB first.
+    # This keeps costs accurate as providers update their prices without requiring
+    # a code change.  Falls back to the hardcoded table below on failure.
+    live_price = _lookup_model_price(model)
+    if live_price:
+        inp, out = live_price
+        # Preserve model-specific batch / penalty overrides from the hardcoded table
+        # by still running through the if-chain but replacing the cost fields.
+        _live_override = {"inputAPICost": inp, "outputAPICost": out}
+    else:
+        _live_override = None
+
+    # Hardcoded fallback table — used for batchSize / frequencyPenalty tuning and
+    # as a cost fallback when the LiteLLM DB is unavailable.
+    # Batch Size: GPT-3.5 struggles past 15 lines; GPT-4 struggles past 50.
+    # If you get a MISMATCH LENGTH error, lower the batch size.
+    if "gpt-3.5" in model:
+        cfg = {"inputAPICost": 3.00,  "outputAPICost": 5.00,  "batchSize": 10, "frequencyPenalty": 0.2}
+    elif "gpt-4.1-mini" in model:
+        cfg = {"inputAPICost": 0.40,  "outputAPICost": 1.60,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "gpt-4.1" in model:
+        cfg = {"inputAPICost": 2.00,  "outputAPICost": 8.00,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "gpt-5" in model:
+        cfg = {"inputAPICost": 1.25,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "deepseek" in model:
+        cfg = {"inputAPICost": 0.27,  "outputAPICost": 1.10,  "batchSize": 30, "frequencyPenalty": 0.05}
+    # Mistral — system prompt is resent per request (no prompt caching), so
+    # throughput/cost favor larger batches. Live LiteLLM pricing overrides these.
+    elif "mistral-large" in model or "pixtral-large" in model:
+        cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "magistral-medium" in model:
+        cfg = {"inputAPICost": 2.00,  "outputAPICost": 5.00,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "mistral-medium-3.5" in model or "mistral-medium-3-5" in model or "mistral-medium-26" in model:
+        # Medium 3.5 (v26.04) — also matches dated 26xx ids
+        cfg = {"inputAPICost": 1.50,  "outputAPICost": 7.50,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "mistral-medium" in model:
+        # Medium 3 / 3.1 (what -latest still points at)
+        cfg = {"inputAPICost": 0.40,  "outputAPICost": 2.00,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "magistral-small" in model:
+        cfg = {"inputAPICost": 0.50,  "outputAPICost": 1.50,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "mistral-small" in model:
+        cfg = {"inputAPICost": 0.10,  "outputAPICost": 0.30,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "ministral" in model or "open-mistral" in model or "mistral-nemo" in model:
+        cfg = {"inputAPICost": 0.10,  "outputAPICost": 0.10,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "codestral" in model:
+        cfg = {"inputAPICost": 0.30,  "outputAPICost": 0.90,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "mistral" in model or "pixtral" in model:
+        cfg = {"inputAPICost": 2.00,  "outputAPICost": 6.00,  "batchSize": 40, "frequencyPenalty": 0.0}
+    elif "claude-opus-4-5" in model or "claude-opus-4-6" in model:
+        cfg = {"inputAPICost": 5.00,  "outputAPICost": 25.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-opus" in model or model == "claude-3-opus":
+        # Opus 4, 4.1, 3 — $15/$75
+        cfg = {"inputAPICost": 15.00, "outputAPICost": 75.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-haiku-4-5" in model or "claude-haiku-4-6" in model:
+        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-haiku-3-5" in model:
+        cfg = {"inputAPICost": 0.80,  "outputAPICost": 4.00,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "claude-3-haiku" in model:
+        cfg = {"inputAPICost": 0.25,  "outputAPICost": 1.25,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "haiku" in model:
+        # Unknown haiku version — use current flagship pricing as best guess
+        cfg = {"inputAPICost": 1.00,  "outputAPICost": 5.00,  "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "sonnet" in model or "claude" in model:
+        cfg = {"inputAPICost": 3.00,  "outputAPICost": 15.00, "batchSize": 30, "frequencyPenalty": 0.05}
+    elif "gemini-3.6-flash" in model:
+        # Google AI Developer API standard rates. Batch is applied separately
+        # by estimateBatchCost/_price_usage at the provider's 50% discount.
+        cfg = {"inputAPICost": 1.50, "outputAPICost": 7.50, "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-3.5-flash-lite" in model:
+        cfg = {"inputAPICost": 0.30, "outputAPICost": 2.50, "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-3.5-flash" in model:
+        cfg = {"inputAPICost": 1.50, "outputAPICost": 9.00, "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-2.0-flash-lite" in model:
+        cfg = {"inputAPICost": 0.075, "outputAPICost": 0.30,  "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-2.0-flash" in model:
+        cfg = {"inputAPICost": 0.10,  "outputAPICost": 0.40,  "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-2.5-flash-lite" in model:
+        cfg = {"inputAPICost": 0.10,  "outputAPICost": 0.40,  "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-2.5-flash" in model:
+        cfg = {"inputAPICost": 0.30,  "outputAPICost": 2.50,  "batchSize": 30, "frequencyPenalty": 0.0}
+    elif "gemini-2.5-pro" in model:
+        cfg = {"inputAPICost": 1.25,  "outputAPICost": 10.00, "batchSize": 30, "frequencyPenalty": 0.0}
+    else:
+        cfg = {
+            "inputAPICost":    float(os.getenv("input_cost", 3.00)),
+            "outputAPICost":   float(os.getenv("output_cost", 6.00)),
+            "batchSize":       int(os.getenv("batchsize", 10)),
+            "frequencyPenalty": float(os.getenv("frequency_penalty", 0.2)),
+        }
+
+    # Apply live pricing from LiteLLM if available — keeps costs up-to-date
+    # without requiring code changes when providers reprice their models.
+    if _live_override:
+        cfg.update(_live_override)
+
+    # Config / .env overrides win over model defaults so the Batch Size and
+    # Frequency Penalty controls actually affect translation batching.
+    env_batch = os.getenv("batchsize")
+    if env_batch not in (None, ""):
+        try:
+            cfg["batchSize"] = max(1, int(env_batch))
+        except (TypeError, ValueError):
+            pass
+    env_penalty = os.getenv("frequency_penalty")
+    if env_penalty not in (None, ""):
+        try:
+            cfg["frequencyPenalty"] = float(env_penalty)
+        except (TypeError, ValueError):
+            pass
+
+    return cfg
+
+
+def batchList(inputList, batchSize):
+    """Split a list into batches of specified size"""
+    if not isinstance(batchSize, int) or batchSize <= 0:
+        raise ValueError("batchSize must be a positive integer")
+    
+    return [inputList[i : i + batchSize] for i in range(0, len(inputList), batchSize)]
+
+
+def parseVocabWithCategories(vocabText):
+    """Parse vocabulary text and extract terms with their categories."""
+    pairs = []
+    seen = set()
+    currentCategory = None
+    
+    for line in vocabText.splitlines():
+        line = line.strip()
+        if (
+            not line
+            or line.startswith('```')
+            or line.startswith(('Here are some vocabulary', 'Here are glossary entries'))
+        ):
+            continue
+        
+        # Check if this is a category header
+        if line.startswith('#'):
+            currentCategory = line
+            continue
+            
+        # Parse vocabulary term - extract both Japanese and English parts.
+        # Rich entries may continue after the first parenthesized translation,
+        # e.g. "サンク (Sank) - Male; protagonist..."; only "Sank" is the match key.
+        paren_match = re.match(r'^(.+?)\s*\(([^()]*)\)', line)
+        dash_match = re.match(r'^(.+?)\s+[–-]\s+(.+)$', line)
+        if paren_match:
+            japanese_term = paren_match.group(1).strip()
+            english_term = paren_match.group(2).strip()
+            
+            # Create a tuple with both terms for matching
+            term_pair = (japanese_term, english_term)
+            if term_pair not in seen:
+                pairs.append((term_pair, line, currentCategory))
+                seen.add(term_pair)
+        elif dash_match:
+            japanese_term = dash_match.group(1).strip()
+            english_term = dash_match.group(2).strip()
+            
+            # Create a tuple with both terms for matching
+            term_pair = (japanese_term, english_term)
+            if term_pair not in seen:
+                pairs.append((term_pair, line, currentCategory))
+                seen.add(term_pair)
+        elif line and not line.startswith('#'):
+            # Fallback for lines without parentheses - treat as single term
+            term = line.strip()
+            if term and term not in seen:
+                pairs.append((term, line, currentCategory))
+                seen.add(term)
+    
+    return pairs
+
+
+_VOCAB_SOURCE_ALIAS_SPLIT_RE = re.compile(r"\s*[\/／]\s*")
+
+
+def split_vocab_source_aliases(source: str) -> list[str]:
+    """Expand ``ニーナ / ネーナ・エヴァンス`` into individual source keys.
+
+    Curated Game Characters rows often list orthographic or full-name variants
+    separated by ASCII or fullwidth slashes. Speaker lookup and glossary matching
+    must treat each variant as covered by the same English gloss.
+    """
+    text = str(source or "").strip()
+    if not text:
+        return []
+    parts = [
+        part.strip()
+        for part in _VOCAB_SOURCE_ALIAS_SPLIT_RE.split(text)
+        if part.strip()
+    ]
+    return parts or [text]
+
+
+def normalize_vocab_source_key(source: str) -> str:
+    """NFKC-normalize a glossary/speaker source for coverage checks."""
+    return unicodedata.normalize("NFKC", str(source or "")).strip()
+
+
+_JP_HONORIFIC_SUFFIX_RE = re.compile(r"(様|先生|博士|君)+$")
+
+
+def honorific_stripped_speaker_forms(source: str) -> list[str]:
+    """Return base name forms with trailing Japanese honorifics removed.
+
+    Nameplates like ``ニーナ様`` should stay covered by curated ``ニーナ`` rows so
+    preflight does not create a duplicate glossary entry and prompt context still
+    receives the full character line.
+
+    Do not strip ``さん`` / ``ちゃん`` (lexicalized ``おじさん``), or ``氏`` / ``殿``
+    (``源氏``, ``御殿``), which are often part of the name itself.
+    """
+    text = str(source or "").strip()
+    if not text:
+        return []
+    base = _JP_HONORIFIC_SUFFIX_RE.sub("", text).strip(" ・\u3000")
+    if not base or base == text:
+        return []
+    return [base]
+
+
+def speaker_source_lookup_keys(source: str) -> list[str]:
+    """Return ordered lookup keys for a speaker/glossary source.
+
+    Includes slash aliases, NFKC forms, trailing-honorific bases, and a small
+    OCR lookalike map so nameplates like ``コア1Ａ``, ``二ーナ``, and ``ニーナ様``
+    resolve to curated ``コア1A`` / ``ニーナ`` rows instead of being rewritten.
+    """
+    keys: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: str) -> None:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            return
+        seen.add(text)
+        keys.append(text)
+
+    def _add_with_variants(value: str) -> None:
+        _add(value)
+        normalized = normalize_vocab_source_key(value)
+        _add(normalized)
+        # Kanji 二 is a common OCR/font stand-in for katakana ニ on nameplates.
+        if "二" in normalized:
+            _add(normalized.replace("二", "ニ"))
+        if "二" in value:
+            _add(value.replace("二", "ニ"))
+
+    for alias in split_vocab_source_aliases(source):
+        _add_with_variants(alias)
+        for stripped in honorific_stripped_speaker_forms(alias):
+            _add_with_variants(stripped)
+    return keys
+
+
+def _aliases_look_orthographic(aliases: list[str]) -> bool:
+    """True when slash parts look like spelling variants, not short vs full name."""
+    if len(aliases) < 2:
+        return True
+    lengths = [len(alias) for alias in aliases]
+    if max(lengths) - min(lengths) > 2:
+        return False
+    # Full-name forms often use an interpunct or space (ネーナ・エヴァンス).
+    if any(re.search(r"[・\s\u3000]", alias) for alias in aliases):
+        return False
+    return True
+
+
+_NAMEPLATE_TITLE_PREFIXES = frozenset(
+    {
+        "lady",
+        "lord",
+        "sir",
+        "dame",
+        "dr",
+        "mister",
+        "mr",
+        "mrs",
+        "ms",
+        "miss",
+        "prof",
+        "madame",
+        "madam",
+        "master",
+        "captain",
+        "capt",
+        "saint",
+        "st",
+    }
+)
+_NAMEPLATE_SURNAME_PARTICLES = frozenset(
+    {
+        "van",
+        "von",
+        "de",
+        "del",
+        "della",
+        "di",
+        "da",
+        "du",
+        "des",
+        "la",
+        "le",
+        "af",
+        "al",
+        "bin",
+        "ibn",
+        "mac",
+        "mc",
+    }
+)
+
+
+def _nameplate_token_key(token: str) -> str:
+    return str(token or "").strip(" ,;:.").casefold()
+
+
+_JP_NAMEPLATE_TITLE_PREFIX_RE = re.compile(
+    r"^(レディ|ロード|ドクター|サー|教授|船長)([・\s\u3000]|$)"
+)
+
+
+def _source_has_nameplate_title(alias: str) -> bool:
+    """True when the JP/source nameplate itself carries a title or honorific."""
+    text = str(alias or "").strip()
+    if not text:
+        return False
+    if _JP_HONORIFIC_SUFFIX_RE.search(text):
+        return True
+    if _JP_NAMEPLATE_TITLE_PREFIX_RE.match(text):
+        return True
+    for token in re.split(r"[\s・\u3000]+", text):
+        if _nameplate_token_key(token) in _NAMEPLATE_TITLE_PREFIXES:
+            return True
+    return False
+
+
+def nameplate_gloss_for_alias(alias: str, aliases: list[str], translated: str) -> str:
+    """Pick the English nameplate gloss for one JP alias in a slash group.
+
+    Orthographic groups (``クイーン / クィーン``) share one gloss.
+    Short/full groups (``ニーナ / ネーナ・エヴァンス (Nena Evans)``) keep the full
+    English on the long form, but everyday short nameplates use the given name
+    (``Nena``) so dialogue boxes do not show the full name.
+
+    English titles are kept only when the source alias also has a title/honorific
+    (``レディ・ニーナ`` / ``ニーナ様`` -> ``Lady Nena``). Plain ``ニーナ`` against
+    ``Lady Nena`` still resolves to ``Nena``. Surname particles (``van``, ``de``)
+    keep the full gloss so ``van Helsing`` does not collapse to ``van``.
+
+    ``alias`` should be the live source being resolved (including honorifics), not
+    only a curated slash-alias spelling.
+    """
+    gloss = str(translated or "").strip()
+    if not gloss or len(aliases) <= 1 or _aliases_look_orthographic(aliases):
+        return gloss
+    longest = max(aliases, key=len)
+    query = str(alias or "").strip()
+    compare = query
+    stripped = honorific_stripped_speaker_forms(query)
+    if stripped:
+        compare = stripped[0]
+    if compare == longest or query == longest or len(compare) >= len(longest):
+        return gloss
+    tokens = gloss.split()
+    if not tokens:
+        return gloss
+    first_key = _nameplate_token_key(tokens[0])
+    if first_key in _NAMEPLATE_SURNAME_PARTICLES:
+        return gloss
+    if first_key in _NAMEPLATE_TITLE_PREFIXES:
+        if _source_has_nameplate_title(query):
+            # Source carried a title; keep title + given name on the nameplate.
+            if len(tokens) == 1:
+                return gloss
+            title = tokens[0].strip(" ,;:")
+            given = tokens[1].strip(" ,;:")
+            return f"{title} {given}".strip() or gloss
+        # Plain source name: drop English titles, then take the given name.
+        while tokens and _nameplate_token_key(tokens[0]) in _NAMEPLATE_TITLE_PREFIXES:
+            tokens = tokens[1:]
+        if not tokens:
+            return gloss
+    return tokens[0].strip(" ,;:") or gloss
+
+
+def _japanese_term_in_text(term, text):
+    """
+    Check if a Japanese term appears in text as a standalone word, not as a
+    substring of a longer run of the same script (katakana/hiragana/kanji).
+    E.g. 'キス' will NOT match inside 'テキスト' because both neighbours are katakana.
+    Falls back to plain substring check for non-Japanese or mixed terms.
+    """
+    if term not in text:
+        return False
+    KATAKANA = r'ァ-ヴーｦ-ﾟ'
+    HIRAGANA = r'ぁ-ゔ'
+    KANJI = r'一-龠'
+    if re.search(rf'[{KATAKANA}]', term) and not re.search(rf'[{HIRAGANA}{KANJI}]', term):
+        pattern = rf'(?<![{KATAKANA}]){re.escape(term)}(?![{KATAKANA}])'
+    elif re.search(rf'[{HIRAGANA}]', term) and not re.search(rf'[{KATAKANA}{KANJI}]', term):
+        pattern = rf'(?<![{HIRAGANA}]){re.escape(term)}(?![{HIRAGANA}])'
+    elif re.search(rf'[{KANJI}]', term) and not re.search(rf'[{KATAKANA}{HIRAGANA}]', term):
+        pattern = rf'(?<![{KANJI}]){re.escape(term)}(?![{KANJI}])'
+    else:
+        return True  # mixed-script term: plain substring match already confirmed above
+    return bool(re.search(pattern, text))
+
+
+def _vocab_term_in_text(term, text):
+    """Match any vocab term variant against the current batch text.
+
+    Slash-separated character aliases (``ニーナ / ネーナ・エヴァンス``) are expanded
+    only in speaker/Game Characters matching inside ``buildMatchedVocabText``.
+    Expanding them here would make ordinary Terms rows like ``攻撃／防御`` match
+    on either half.
+    """
+    if not term:
+        return False
+
+    variants = [str(term).strip()]
+    if isinstance(term, str):
+        variants.extend(part.strip() for part in re.split(r"[,、]", term) if part.strip())
+
+    for variant in variants:
+        if not variant:
+            continue
+        if re.search(r'[一-龠ぁ-ゔァ-ヴーｦ-ﾟ｡-ﾟ]', variant):
+            if _japanese_term_in_text(variant, text):
+                return True
+        elif variant in text:
+            return True
+
+    return False
+
+
+def _render_decorative_vocab_alias(line: str, source_alias: str,
+                                   target_alias: str) -> str:
+    """Render the first ``source (target)`` pair without its label marker."""
+    match = re.match(r'^(.+?)\s*\(([^()]*)\)', line)
+    if match is None:
+        return line
+    return f"{source_alias} ({target_alias}){line[match.end():]}"
+
+
+def _collect_json_string_values(value):
+    """Collect only translatable string values from a parsed JSON payload."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        values = []
+        for item in value:
+            values.extend(_collect_json_string_values(item))
+        return values
+    if isinstance(value, dict):
+        values = []
+        for item in value.values():
+            values.extend(_collect_json_string_values(item))
+        return values
+    return []
+
+
+def _text_for_vocab_search(subbedText):
+    """Return text that should participate in vocab matching."""
+    text = str(subbedText)
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r'^```(?:json)?\s*', '', stripped, flags=re.IGNORECASE)
+        stripped = re.sub(r'\s*```$', '', stripped)
+
+    try:
+        parsed = json.loads(stripped)
+    except (TypeError, json.JSONDecodeError):
+        return text
+
+    values = _collect_json_string_values(parsed)
+    return "\n".join(values) if values else text
+
+
+@lru_cache(maxsize=4096)
+def _speaker_alias_pattern(alias):
+    """Compile one reusable speaker-position matcher.
+
+    Large game glossaries can contain more aliases than ``re``'s process-wide
+    512-entry cache.  Building every pattern inline made batch collection evict
+    and recompile the same glossary patterns for every request chunk.
+    """
+    return re.compile(
+        rf"(?m)^\s*(?:\[|【)?{re.escape(alias)}(?:\]|】)?\s*"
+        rf"(?=[:：|「『“\"'(（])"
+    )
+
+
+def _speaker_alias_in_text(alias, text):
+    """Match a character-name component only in a speaker-tag position."""
+    if not alias or len(alias) < 2:
+        return False
+    # Supported forms include `果歩 "..."`, `果歩「...」`, `[果歩]: ...`, and
+    # `【果歩】...`. Restricting aliases to the start of a logical line avoids
+    # treating ordinary prose mentions as speaker identity.
+    return bool(_speaker_alias_pattern(alias).search(text))
+
+
+def buildMatchedVocabText(vocabPairs, subbedText, history=None):
+    """Build formatted vocabulary text for terms found in the current batch."""
+    matchedCategories = {}
+
+    # Explicit prose entries are authoritative over aliases inferred from
+    # decorated database labels.  This lets a project override or enrich the
+    # clean spelling without having to remove generated ``▼Term`` rows.
+    literal_pair_sources = {
+        term[0]
+        for term, _line, _category in vocabPairs
+        if isinstance(term, tuple) and len(term) == 2
+    }
+
+    # Legacy # Speakers entries can overlap hand-curated character entries.
+    # Keep only the highest-authority spelling for each character source.
+    character_authority = {}
+    character_component_sources = {}
+    character_source_aliases = {}
+    for candidate_term, candidate_line, candidate_category in vocabPairs:
+        if not isinstance(candidate_term, tuple) or len(candidate_term) != 2:
+            continue
+        candidate_name = str(candidate_category or "").lstrip("#").strip().casefold()
+        candidate_primary = re.split(
+            r"\s*[·・|/]\s*", candidate_name, maxsplit=1
+        )[0]
+        priority = {"game characters": 2, "speakers": 1}.get(candidate_primary, 0)
+        if not priority:
+            continue
+        source = candidate_term[0]
+        english_alias = candidate_term[1]
+        aliases = split_vocab_source_aliases(source)
+        alias_group = len(aliases) > 1
+        authority_keys = list(dict.fromkeys([source, *aliases]))
+        for alias in authority_keys:
+            previous = character_authority.get(alias)
+            if previous is None or priority > previous[0] or (
+                alias_group and priority == previous[0]
+            ):
+                character_authority[alias] = (priority, candidate_line)
+            if english_alias:
+                character_source_aliases.setdefault(alias, set()).add(english_alias)
+        if candidate_primary == "game characters":
+            components = [
+                item for item in re.split(r"[\s\u3000]+", source.strip())
+                if len(item) >= 2 and item not in {"/", "／"}
+            ]
+            # Slash-separated orthographic variants are aliases, not name parts.
+            if alias_group:
+                components = list(aliases)
+            if len(components) > 1 or alias_group:
+                for component in components:
+                    for alias in split_vocab_source_aliases(component):
+                        character_component_sources.setdefault(alias, set()).add(source)
+
+    # Only match against the current request text. History is deliberately not
+    # searched so stale terms are not resent in unrelated batches.
+    textToSearch = _text_for_vocab_search(subbedText)
+
+    # Use word boundaries for Japanese if appropriate, or allow substring as before.
+    for term, line, category in vocabPairs:
+        # Check if term is a tuple (Japanese, English) or a single term
+        term_found = False
+        exact_match = False
+        matched_lines = []
+        if isinstance(term, tuple):
+            # Check both Japanese and English terms
+            japanese_term, english_term = term
+            category_name = str(category or "").lstrip("#").strip().casefold()
+            category_primary = re.split(
+                r"\s*[·・|/]\s*", category_name, maxsplit=1
+            )[0]
+            component_targets = character_component_sources.get(japanese_term)
+            speaker_alias_match = _speaker_alias_in_text(
+                japanese_term, textToSearch
+            ) or any(
+                _speaker_alias_in_text(alias, textToSearch)
+                for alias in character_source_aliases.get(japanese_term, ())
+            )
+            if (
+                category_primary in {"game characters", "speakers"}
+                and component_targets
+                and len(component_targets) == 1
+                and japanese_term not in component_targets
+                and speaker_alias_match
+            ):
+                # A short generated speaker entry must not compete with the
+                # unique curated full-name character entry for a speaker tag.
+                continue
+            authoritative = character_authority.get(japanese_term)
+            if authoritative is not None and authoritative[1] != line:
+                continue
+            japanese_match = _vocab_term_in_text(japanese_term, textToSearch)
+            source_aliases = split_vocab_source_aliases(japanese_term)
+            if (
+                not japanese_match
+                and category_primary in {"game characters", "speakers"}
+                and len(source_aliases) > 1
+            ):
+                # Slash aliases are speaker/character coverage, not general Terms.
+                japanese_match = any(
+                    _vocab_term_in_text(alias, textToSearch) or alias in textToSearch
+                    for alias in source_aliases
+                )
+            if not japanese_match and category_primary == "game characters":
+                components = [
+                    item for item in re.split(r"[\s\u3000]+", japanese_term.strip())
+                    if len(item) >= 2 and item not in {"/", "／"}
+                ]
+                if len(source_aliases) > 1:
+                    components = list(source_aliases)
+                japanese_match = any(
+                    character_component_sources.get(component) == {japanese_term}
+                    and (
+                        _speaker_alias_in_text(component, textToSearch)
+                        or any(
+                            _speaker_alias_in_text(alias, textToSearch)
+                            for alias in character_source_aliases.get(component, ())
+                        )
+                    )
+                    for component in components
+                )
+            # Character names often appear inside compound event/map labels,
+            # e.g. ユウイベント. For character sections only, a substring is
+            # intentional and should still attach the authoritative spelling.
+            if (
+                not japanese_match
+                and category_primary in {"game characters", "speakers"}
+                and (
+                    japanese_term in textToSearch
+                    or any(alias in textToSearch for alias in source_aliases)
+                )
+            ):
+                japanese_match = True
+            english_match = _vocab_term_in_text(english_term, textToSearch)
+            exact_match = japanese_match or english_match
+            if exact_match:
+                term_found = True
+
+            # A generated label such as ``▼ルドゥレンス (▼Ludurens)`` also
+            # supplies ``ルドゥレンス (Ludurens)`` to ordinary prose.  Remove
+            # exact decorated occurrences before testing the clean alias so a
+            # marked-only payload retains the original row rather than being
+            # mistaken for a bare occurrence.
+            decorative_alias = decorative_glossary_alias(
+                japanese_term, english_term
+            )
+            if decorative_alias is not None:
+                source_alias, target_alias = decorative_alias
+                alias_is_explicit = source_alias in literal_pair_sources
+                alias_source_text = textToSearch.replace(japanese_term, "")
+                alias_target_text = textToSearch.replace(english_term, "")
+                alias_found = (
+                    not alias_is_explicit
+                    and (
+                        _vocab_term_in_text(source_alias, alias_source_text)
+                        or _vocab_term_in_text(target_alias, alias_target_text)
+                    )
+                )
+                if alias_found:
+                    matched_lines.append(_render_decorative_vocab_alias(
+                        line, source_alias, target_alias
+                    ))
+                    term_found = True
+        else:
+            # Single term check
+            if _vocab_term_in_text(term, textToSearch):
+                exact_match = True
+                term_found = True
+        
+        if term_found:
+            if category not in matchedCategories:
+                matchedCategories[category] = []
+            if exact_match:
+                matched_lines.insert(0, line)
+            for matched_line in matched_lines:
+                if matched_line not in matchedCategories[category]:
+                    matchedCategories[category].append(matched_line)
+
+    # Format matched vocabulary with categories
+    if matchedCategories:
+        formattedLines = [
+            "Here are glossary entries with the approved spelling and translation.\n"
+        ]
+        for category, lines in matchedCategories.items():
+            if category:  # Only add category header if it exists
+                formattedLines.append(category)
+            formattedLines.extend(lines)
+            formattedLines.append("")  # Add blank line between categories
+        matchedVocabText = f"\n{chr(10).join(formattedLines).rstrip()}\n"
+    else:
+        matchedVocabText = ""
+    
+    return matchedVocabText
+
+
+def createContextParts(config, subbedText, formatType, history=None, *, speaker_names=()):
+    """Create separate glossary, SFX-reference, system, and user context.
+
+    Returns ``(static_system, glossary_text, sfx_text, user)``. Both dynamic
+    blocks stay outside Claude's cached static prefix, while remaining
+    distinguishable for evaluation and review exports.
+
+    Cached in static_system:
+      - data/skills/system.md content (plus optional game Translation Frame / quirks / custom overlays)
+
+    Dynamic:
+      - only glossary terms found in the current batch text
+      - character guidance for explicitly supplied current speakers
+      - only SFX reference records found in the current batch text
+    """
+    vocabPairs = parseVocabWithCategories(getattr(config, "vocab", "") or "")
+    match_text = subbedText
+    if speaker_names:
+        # Match speaker metadata without adding it to translatable text or SFX.
+        # Prefer an exact curated source form before trying the shared nameplate
+        # normalization/honorific/OCR lookup keys.
+        character_sources = set()
+        for term, _line, category in vocabPairs:
+            primary = re.split(r"\s*[·・|/]\s*", str(category or "").lstrip("#").strip().casefold(), maxsplit=1)[0]
+            if isinstance(term, tuple) and primary in {"game characters", "speakers"}:
+                character_sources.update(split_vocab_source_aliases(term[0]))
+        tags = []
+        for name in speaker_names:
+            key = next((key for key in speaker_source_lookup_keys(name) if key in character_sources), name)
+            tags.append(f"[{key}]:")
+        # Speaker-position matching retains the existing unique-full-name and
+        # curated-over-generated rules without matching opaque request IDs.
+        match_text = json.dumps([_text_for_vocab_search(subbedText), *tags], ensure_ascii=False)
+    matchedVocabText = buildMatchedVocabText(vocabPairs, match_text, history)
+    matchedSfxText = build_sfx_reference_text(
+        subbedText,
+        enabled=bool(getattr(config, "useSfxReference", True)),
+    )
+
+    static_system = config.prompt.replace("English", config.language)
+
+    if formatType == "json":
+        user = f"```json\n{subbedText}\n```"
+    else:
+        user = subbedText
+
+    return static_system, matchedVocabText, matchedSfxText, user
+
+
+def createContext(config, subbedText, formatType, history=None):
+    """Backward-compatible combined dynamic-context wrapper."""
+    static_system, glossary_text, sfx_text, user = createContextParts(
+        config, subbedText, formatType, history
+    )
+    return static_system, glossary_text + sfx_text, user
+
+
+def createTranslationSchema(numLines):
+    """Create the stable historical ``LineN`` translation schema.
+
+    Keeping the response shape aligned with the input avoids model-side
+    rewrites between a keyed object and a positional array. Extraction and
+    logging sort these keys numerically, so providers may serialize them in
+    any object-key order without changing translation order.
+    """
+    count = max(1, int(numLines or 1))
+    properties = {}
+    required = []
+    for i in range(1, count + 1):
+        line_key = f"Line{i}"
+        properties[line_key] = {"type": "string"}
+        required.append(line_key)
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
+
+
+def createLegacyTranslationSchema(numLines):
+    """Backward-compatible name for the canonical ``LineN`` schema."""
+    return createTranslationSchema(numLines)
+
+
+def _is_official_openai_api(api_provider=None, api_url=None):
+    """Return whether a request targets OpenAI's own API."""
+    provider = (
+        api_provider or os.getenv("API_PROVIDER", "openai")
+    ).strip().lower()
+    endpoint = (
+        os.getenv("api", "") if api_url is None else str(api_url or "")
+    ).strip()
+    if provider != "openai" or not endpoint:
+        return provider == "openai" and not endpoint
+    return (urlparse(endpoint).hostname or "").lower() == "api.openai.com"
+
+
+def _translation_completion_limit(
+    user,
+    ceiling=MAX_TRANSLATION_OUTPUT_TOKENS,
+    floor=MIN_TRANSLATION_OUTPUT_TOKENS,
+):
+    """Size output while retaining safe minimum and maximum bounds."""
+    enc = tiktoken.encoding_for_model("gpt-4")
+    payload_tokens = len(enc.encode(str(user or "")))
+    ceiling = max(1, int(ceiling))
+    floor = min(ceiling, max(1, int(floor)))
+    return min(
+        ceiling,
+        max(floor, payload_tokens * 2),
+    )
+
+
+def _choice_failure_diagnostic(choice):
+    """Summarize non-success response metadata without assuming SDK fields."""
+    finish_reason = getattr(choice, "finish_reason", None)
+    message = getattr(choice, "message", None)
+    refusal = getattr(message, "refusal", None)
+    details = []
+    if finish_reason and str(finish_reason).casefold() != "stop":
+        details.append(f"finish_reason={finish_reason}")
+    if refusal:
+        refusal_text = re.sub(r"\s+", " ", str(refusal)).strip()
+        if len(refusal_text) > 500:
+            refusal_text = refusal_text[:497] + "..."
+        details.append(f"refusal={refusal_text}")
+    return "; ".join(details)
+
+
+def format_translation_response_for_log(raw_text) -> str:
+    """Pretty-print a model/cache response with LineN keys in numeric order.
+
+    Logs stay human-readable whether the provider returned a translations
+    array or a LineN object (including lexically ordered keys).
+    """
+    if raw_text is None:
+        return ""
+    if not isinstance(raw_text, str):
+        try:
+            parsed = raw_text
+        except Exception:
+            return str(raw_text)
+    else:
+        try:
+            parsed = json.loads(raw_text)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return str(raw_text)
+
+    if not isinstance(parsed, dict):
+        try:
+            return json.dumps(parsed, indent=4, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(parsed)
+
+    if isinstance(parsed.get("translations"), list):
+        ordered = {
+            f"Line{i + 1}": value
+            for i, value in enumerate(parsed["translations"])
+        }
+        return json.dumps(ordered, indent=4, ensure_ascii=False)
+
+    numeric_keys = []
+    for key in parsed.keys():
+        match = re.fullmatch(r"Line(\d+)", str(key))
+        if match:
+            numeric_keys.append(int(match.group(1)))
+    if numeric_keys:
+        ordered = {
+            f"Line{n}": parsed.get(f"Line{n}", "")
+            for n in sorted(numeric_keys)
+        }
+        return json.dumps(ordered, indent=4, ensure_ascii=False)
+
+    try:
+        return json.dumps(parsed, indent=4, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(parsed)
+
+
+def _anthropic_content_text(content) -> str:
+    """Join text from Anthropic message content blocks.
+
+    Newer Claude models often return a ThinkingBlock (no ``.text``) before the
+    TextBlock. Only blocks that expose ``.text`` contribute to the result.
+    """
+    if not content:
+        return ""
+    return "".join(getattr(b, "text", "") or "" for b in content)
+
+
+class _AnthropicCompat:
+    """OpenAI-shaped wrapper around an Anthropic response (text + usage)."""
+    class _Usage:
+        def __init__(self, prompt, completion, cr, cw):
+            self.prompt_tokens               = prompt
+            self.completion_tokens           = completion
+            self.cache_read_input_tokens     = cr
+            self.cache_creation_input_tokens = cw
+        @property
+        def model_extra(self):
+            return {
+                "cache_read_input_tokens":     self.cache_read_input_tokens,
+                "cache_creation_input_tokens": self.cache_creation_input_tokens,
+            }
+    class _Choice:
+        class _Msg:
+            def __init__(self, c): self.content = c
+        def __init__(self, c):
+            self.message = _AnthropicCompat._Choice._Msg(c)
+    def __init__(self, text, prompt, output, cr, cw):
+        self.choices = [_AnthropicCompat._Choice(text)]
+        self.usage   = _AnthropicCompat._Usage(prompt, output, cr, cw)
+
+
+def _context_heading(kind):
+    if kind == CONTEXT_INSTRUCTIONS:
+        return "Request Instructions:"
+    return (
+        "Preceding Japanese Source Context (untranslated):\n"
+        "Use these lines only to understand the scene. Do not copy Japanese "
+        "spellings from them or treat them as approved terminology; the "
+        "glossary is authoritative."
+    )
+
+
+def _context_block(history, kind):
+    items = _context_items(history)
+    if not items:
+        return ""
+    return _context_heading(kind) + "\n```\n" + "\n".join(items) + "\n```"
+
+
+def _request_context_blocks(history, context_kind, request_instructions=None):
+    """Build separate instruction and source blocks for a provider request."""
+    source_items, instruction_items = _request_context_parts(
+        history, context_kind, request_instructions
+    )
+    blocks = []
+    if instruction_items:
+        blocks.append(_context_block(instruction_items, CONTEXT_INSTRUCTIONS))
+    if source_items:
+        blocks.append(_context_block(source_items, CONTEXT_SOURCE))
+    return blocks
+
+
+def _provider_system_blocks(system, vocab_text=""):
+    """Return the provider-neutral ordered system-prompt content blocks.
+
+    The first block is the stable translation method shared by every request.
+    Dynamic glossary and SFX guidance follows it as a second system block so
+    both Claude and OpenAI give that guidance the same role and ordering while
+    still allowing a cache breakpoint at the end of the static prefix.
+    """
+    blocks = [{"type": "text", "text": f"```\n{system}\n```"}]
+    dynamic_system = str(vocab_text or "").strip()
+    if dynamic_system:
+        blocks.append({"type": "text", "text": dynamic_system})
+    return blocks
+
+
+def _provider_user_messages(user, history, context_kind,
+                            request_instructions=None):
+    """Return the identical conversational suffix used by every provider."""
+    messages = [
+        {"role": "user", "content": block}
+        for block in _request_context_blocks(
+            history, context_kind, request_instructions
+        )
+    ]
+    messages.append({"role": "user", "content": f"```\n{user}\n```"})
+    return messages
+
+
+def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
+                       vocab_text="", context_kind=CONTEXT_SOURCE,
+                       request_instructions=None, cache_ttl="5m"):
+    """Build the native Anthropic request kwargs.
+
+    Shared by live calls (translateText) and batch collection (translateAI) so
+    both use the same logical prompt. When ``cache_ttl`` is not ``None``, only
+    the first, static system block is cached. Dynamic system guidance and user
+    messages follow the explicit breakpoint and cannot bust that prefix.
+    """
+    ant_system = _provider_system_blocks(system, vocab_text)
+    if not DISABLE_CACHE and cache_ttl is not None:
+        ttl = "1h" if str(cache_ttl).lower() == "1h" else "5m"
+        ant_system[0]["cache_control"] = {"type": "ephemeral", "ttl": ttl}
+
+    native_msgs = _provider_user_messages(
+        user, history, context_kind, request_instructions
+    )
+
+    ant_kwargs = dict(
+        model=model,
+        max_tokens=_translation_completion_limit(user),
+        system=ant_system,
+        messages=native_msgs,
+    )
+    if formatType == "json" and numLines is not None:
+        ant_kwargs["output_config"] = {
+            "format": {
+                "type": "json_schema",
+                "schema": createLegacyTranslationSchema(numLines),
+            }
+        }
+    elif not _NO_SAMPLING_RE.search(model or ""):
+        # Plain completions still allow explicit sampling params (except on
+        # Opus 4.7+ which rejects them with a 400).
+        ant_kwargs["temperature"] = 0
+    # Do not pass temperature with output_config: newer Claude (e.g. Opus 4.7)
+    # returns errors such as "temperature is not supported" for structured outputs.
+    return ant_kwargs
+
+
+def buildOpenAIRequest(system, user, history, penalty, formatType, model,
+                       numLines=None, vocab_text="", api_provider=None,
+                       context_kind=CONTEXT_SOURCE,
+                       request_instructions=None, use_cache_routing=False,
+                       api_url=None):
+    """Build OpenAI-compatible kwargs shared by live and batch requests."""
+    if not system or not str(system).strip():
+        raise ValueError("System content cannot be empty")
+    if not user or not str(user).strip():
+        raise ValueError("User content cannot be empty")
+
+    provider = (api_provider or os.getenv("API_PROVIDER", "openai")).lower()
+    model_l = str(model or "").lower()
+    gpt6_family = re.search(r"(?:^|/)gpt-6-(astra|sol|luna)(?:-|$)", model_l)
+    is_deepseek = "deepseek" in model_l
+    is_mistral = provider == "mistral" or isMistralAPI()
+    system_blocks = _provider_system_blocks(system, vocab_text)
+    supports_explicit_cache = (
+        provider == "openai" and "gpt-5.6" in model_l
+    )
+    if supports_explicit_cache:
+        # Match Claude's explicit static-prefix boundary. Dynamic glossary/SFX
+        # content remains system guidance but does not enter the cache key.
+        system_blocks[0]["prompt_cache_breakpoint"] = {"mode": "explicit"}
+        system_content = system_blocks
+    else:
+        # Keep broad OpenAI-compatible endpoint support: several providers only
+        # accept string system content even though the logical blocks are shared.
+        system_content = "\n\n".join(block["text"] for block in system_blocks)
+
+    messages = [{"role": "system", "content": system_content}]
+    messages.extend(_provider_user_messages(
+        user, history, context_kind, request_instructions
+    ))
+
+    params = {"model": model, "messages": messages}
+    if supports_explicit_cache:
+        # The API supports prompt_cache_options before some OpenAI SDK releases
+        # expose it as a typed keyword. extra_body is the SDK's forward-compatible
+        # path; the batch adapter materializes it as a normal top-level API field.
+        cache_fields = {"prompt_cache_options": {"mode": "explicit"}}
+        if use_cache_routing:
+            cache_identity = "\0".join((
+                model_l,
+                str(numLines or ""),
+                system_blocks[0]["text"],
+            ))
+            cache_fields["prompt_cache_key"] = (
+                "dazedtl-" + hashlib.sha256(
+                    cache_identity.encode("utf-8")
+                ).hexdigest()[:32]
+            )
+        params["extra_body"] = cache_fields
+    if is_deepseek:
+        completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
+    elif _is_official_openai_api(provider, api_url) or provider == "gemini":
+        completion_ceiling = MAX_TRANSLATION_OUTPUT_TOKENS
+    elif is_mistral:
+        completion_ceiling = MISTRAL_TRANSLATION_OUTPUT_TOKENS
+    else:
+        completion_ceiling = COMPAT_TRANSLATION_OUTPUT_TOKENS
+    completion_limit = _translation_completion_limit(
+        user,
+        completion_ceiling,
+    )
+    if _is_official_openai_api(provider, api_url):
+        params["max_completion_tokens"] = completion_limit
+    else:
+        params["max_tokens"] = completion_limit
+
+    if formatType == "json" and numLines is not None:
+        params["response_format"] = (
+            {"type": "json_object"}
+            if is_deepseek else {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "translation_response",
+                    "strict": True,
+                    "schema": createTranslationSchema(numLines),
+                },
+            }
+        )
+    if provider == "gemini":
+        params["temperature"] = 0
+        thinking_budget_str = os.getenv("GEMINI_THINKING_BUDGET")
+        if thinking_budget_str:
+            try:
+                params["extra_body"] = {
+                    "extra_body": {
+                        "google": {
+                            "thinking_config": {
+                                "thinking_budget": int(thinking_budget_str)
+                            }
+                        }
+                    }
+                }
+            except (ValueError, TypeError):
+                pass
+    elif is_mistral:
+        params["temperature"] = 0
+    elif gpt6_family:
+        # Astra requires reasoning; Sol and Luna also support none. Omit
+        # sampling/penalty overrides instead of taking the legacy chat path.
+        # https://developers.openai.com/api/docs/guides/latest-model
+        params["reasoning_effort"] = "low" if gpt6_family.group(1) == "astra" else "none"
+    elif "gpt-5" in model_l:
+        params["reasoning_effort"] = "none" if "gpt-5.6" in model_l else "minimal"
+    else:
+        params["temperature"] = 0
+        params["frequency_penalty"] = penalty
+    return params
+
+
+def translateText(system, user, history, penalty, formatType, model, numLines=None,
+                  vocab_text="", context_kind=CONTEXT_SOURCE,
+                  request_instructions=None):
+    """Send translation request to the selected API.
+
+    system:     Static system prompt (data/skills/system.md). Cached by Claude.
+    vocab_text: Per-batch vocabulary (dynamic, never cached to avoid cache busting).
+    """
+    # Ensure system content is not empty
+    if not system or not str(system).strip():
+        raise ValueError("System content cannot be empty")
+    
+    _live_api_check = os.getenv("api", "").strip()
+    # Only route to the native Anthropic SDK when the model looks like Claude AND
+    # the configured API URL is either unset (implying default Anthropic usage) or
+    # explicitly points at anthropic.com.  Any other custom URL (e.g. DeepSeek,
+    # OpenAI proxy) should use the OpenAI-compatible path even for Claude-named models.
+    _is_claude = (
+        model
+        and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+        and (not _live_api_check or "anthropic" in _live_api_check.lower())
+    )
+    _is_deepseek = model and "deepseek" in model.lower()
+    _is_mistral = not _is_claude and isMistralAPI()
+
+    # Build message list.
+    # Claude: static prompt gets cache_control; vocab appended uncached so it
+    # never busts the cache. Requires ≥2048 tokens for Sonnet 4.6 to qualify.
+    # Other providers: combine into one plain string.
+    if _is_claude or getattr(_thread_local, 'file_cost_ready', False):
+        if DISABLE_CACHE:
+            # No cache_control — sends as a plain content block for a real uncached run.
+            combined_system = system + vocab_text
+            content_blocks = [{"type": "text", "text": f"```\n{combined_system}\n```"}]
+        else:
+            # Only the static prompt goes in the system content blocks.
+            # Vocab and history are moved to messages so they don't bust the
+            # Anthropic prefix cache (the entire system parameter is part of
+            # the cache key, not just blocks up to cache_control).
+            content_blocks = [{"type": "text", "text": f"```\n{system}\n```", "cache_control": {"type": "ephemeral", "ttl": "5m"}}]
+        msg = [{"role": "system", "content": content_blocks}]
+    else:
+        combined_system = system + vocab_text
+        msg = [{"role": "system", "content": f"```\n{combined_system}\n```"}]
+
+    # Typed request context. The canonical builders below replace this list,
+    # but keeping the preliminary shape correct protects provider fallbacks.
+    for context_block in _request_context_blocks(
+        history, context_kind, request_instructions
+    ):
+        msg.append({"role": "user", "content": context_block})
+
+    # Response format per provider:
+    # OpenAI/Gemini: json_schema  |  Deepseek: json_object  |  text: omit entirely
+
+    if formatType == "json" and numLines is not None:
+        if _is_deepseek:
+            # Deepseek: use json_object (no strict schema support)
+            responseFormat = {"type": "json_object"}
+        else:
+            # OpenAI, Claude, Gemini: use json_schema with strict enforcement
+            responseFormat = {
+                "type": "json_schema",
+                "json_schema": {"name": "translation_response", "strict": True, "schema": createTranslationSchema(numLines)}
+            }
+    else:
+        responseFormat = {"type": "text"}
+
+    # Content to TL - ensure user content is not empty
+    if not user or not str(user).strip():
+        raise ValueError("User content cannot be empty")
+    msg.append({"role": "user", "content": f"```\n{user}\n```"})
+
+    # Debug: Check for any empty messages before API call
+    for i, message in enumerate(msg):
+        if not message.get("content") or not str(message.get("content")).strip():
+            raise ValueError(f"Message {i} has empty content: {message}")
+
+    # --- API Call Logic ---
+    # Re-apply env vars here so that GUI config changes (which update os.environ
+    # but cannot re-run module-level code) are always reflected at call time.
+    _live_api = os.getenv("api", "").strip()
+    _live_key = os.getenv("key", "").strip()
+    _live_provider = os.getenv("API_PROVIDER", "openai").lower()
+    if _live_provider == "gemini" and not _live_api:
+        openai.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    elif _live_provider == "mistral" and not _live_api:
+        openai.base_url = "https://api.mistral.ai/v1/"
+    elif _live_api:
+        openai.base_url = _normalize_openai_base_url(_live_api)
+    _live_key_optional = os.getenv("API_KEY_OPTIONAL", "").strip().lower() in ("1", "true", "yes")
+    openai.api_key = _live_key or ("not-needed" if _live_key_optional else "")
+
+    api_provider = _live_provider
+
+    # Omit response_format for plain text — some providers reject {"type": "text"}.
+    params = {
+        "model": model,
+        "messages": msg,
+    }
+    if responseFormat.get("type") != "text":
+        params["response_format"] = responseFormat
+
+    # Provider-specific parameters
+    if api_provider == "gemini":
+        params["temperature"] = 0
+        
+        # Handle thinking budget for Gemini
+        thinking_budget_str = os.getenv("GEMINI_THINKING_BUDGET")
+        if thinking_budget_str:
+            try:
+                thinking_budget = int(thinking_budget_str)
+                params["extra_body"] = {
+                    'google': {
+                        'thinking_config': {
+                            'thinking_budget': thinking_budget
+                        }
+                    }
+                }
+            except (ValueError, TypeError):
+                pass
+        
+    # frequency_penalty is unsupported on the Gemini OpenAI compat layer
+    elif _is_claude:
+        params["temperature"] = 0
+        # cache_control is set on the system message content block above.
+    elif _is_mistral:
+        params["temperature"] = 0
+        params["max_tokens"] = _translation_completion_limit(user)
+    else:  # Default to OpenAI behavior
+        if "gpt-5" in model:
+            params["reasoning_effort"] = "none" if "gpt-5.6" in model else "minimal"
+        else:
+            params["temperature"] = 0
+            params["frequency_penalty"] = penalty
+
+    # One canonical OpenAI-compatible builder feeds both live requests and
+    # JSONL batch rows. Keep responseFormat in sync for the existing live
+    # compatibility fallback below.
+    if not _is_claude:
+        params = buildOpenAIRequest(
+            system, user, history, penalty, formatType, model, numLines,
+            vocab_text=vocab_text, api_provider=api_provider,
+            context_kind=context_kind,
+            request_instructions=request_instructions,
+            use_cache_routing=True,
+        )
+        responseFormat = params.get("response_format", {"type": "text"})
+
+    # Use native Anthropic SDK — the OpenAI compat endpoint strips cache_control
+    # and never returns cache_read/creation_input_tokens.
+    if _is_claude:
+        # Built by the shared builder so live and batch requests are
+        # byte-identical and share the same prompt cache.
+        ant_kwargs = buildClaudeRequest(
+            system, user, history, formatType, model, numLines,
+            vocab_text=vocab_text, context_kind=context_kind,
+            request_instructions=request_instructions,
+        )
+
+        ant_client = anthropic.Anthropic(api_key=openai.api_key)
+        try:
+            ant_resp = ant_client.messages.create(**ant_kwargs)
+        except Exception as e:
+            raise Exception(f"Anthropic API error: {e}")
+
+        _ant_text = _anthropic_content_text(ant_resp.content)
+        _u = ant_resp.usage
+        _cr  = getattr(_u, "cache_read_input_tokens",     0) or 0
+        _cw  = getattr(_u, "cache_creation_input_tokens", 0) or 0
+        _inp = getattr(_u, "input_tokens",  0) or 0
+        _out = getattr(_u, "output_tokens", 0) or 0
+
+        # input_tokens (native SDK) = non-cached portion; add cache fields for true total.
+        _total_prompt = _inp + _cr + _cw
+
+        compat_response = _AnthropicCompat(_ant_text, _total_prompt, _out, _cr, _cw)
+        _write_request_debug_log("anthropic", ant_kwargs, compat_response.usage)
+        return compat_response
+
+    # Mistral (la Plateforme): same OpenAI-compatible request, but routed
+    # through the adaptive rate limiter so the per-minute request/token
+    # budgets are paced off the live response headers instead of tripping 429s.
+    if _is_mistral:
+        response = callMistral(params)
+        if not response or not hasattr(response, 'choices') or not response.choices:
+            raise Exception("API returned invalid or empty response - retrying...")
+        _write_request_debug_log("mistral", params, getattr(response, "usage", None))
+        return response
+
+    # Call API (reaches here only for non-Claude providers)
+    try:
+        response = openai.chat.completions.create(**params)
+    except APIStatusError as e:
+        # Handle HTTP status errors (404, 500, etc.)
+        if e.status_code == 404:
+            raise Exception(f"API endpoint not found (404) - check your API_PROVIDER and base URL settings. Error: {e}")
+        elif e.status_code >= 500:
+            raise Exception(f"API server error ({e.status_code}) - retrying... Error: {e}")
+        elif e.status_code == 400 and formatType == "json" and "json_schema" in str(responseFormat):
+            # Only fall back to json_object if the error is NOT "Input should be 'json_schema'"
+            # (that message means json_schema IS required and json_object would also be rejected)
+            if "input should be 'json_schema'" in str(e).lower() or "input should be \"json_schema\"" in str(e).lower():
+                raise Exception(f"API status error ({e.status_code}): {e}")
+            # Provider doesn't support json_schema (e.g. Claude) — fall back to json_object
+            responseFormat = {"type": "json_object"}
+            params["response_format"] = responseFormat
+            try:
+                response = openai.chat.completions.create(**params)
+            except APIStatusError as fallback_error:
+                if fallback_error.status_code == 400 and "input should be 'json_schema'" in str(fallback_error).lower():
+                    raise Exception(f"API requires json_schema response format but rejected the schema. Original error: {e}")
+                raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
+            except Exception as fallback_error:
+                raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
+        elif e.status_code == 400 and "input should be 'json_schema'" in str(e).lower():
+            # response_format.type was rejected (e.g. sent "text" or "json_object" to a model
+            # that only accepts json_schema). Remove response_format and retry with no constraint.
+            params.pop("response_format", None)
+            try:
+                response = openai.chat.completions.create(**params)
+            except Exception as fallback_error:
+                raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
+        else:
+            raise Exception(f"API status error ({e.status_code}): {e}")
+    except (APIConnectionError, RateLimitError) as e:
+        # These should always be retried
+        raise Exception(f"API connection/rate limit error - retrying... Error: {e}")
+    except Exception as e:
+        # Check if it's a 404 error or other HTTP error that should be retried
+        error_str = str(e).lower()
+        if "404" in error_str or "not found" in error_str:
+            raise Exception(f"API returned 404 Not Found - check your API configuration. Original error: {e}")
+        
+        # If structured output fails, fallback to json_object (unless the error
+        # explicitly states json_schema is required — falling back would just fail again)
+        if formatType == "json" and "json_schema" in str(responseFormat) and \
+                "input should be 'json_schema'" not in error_str:
+            responseFormat = {"type": "json_object"}
+            params["response_format"] = responseFormat
+            try:
+                response = openai.chat.completions.create(**params)
+            except Exception as fallback_error:
+                # If fallback also fails, raise the original error for retry
+                raise Exception(f"API call failed: {e}. Fallback also failed: {fallback_error}")
+        else:
+            raise e
+    
+    # Validate response before returning
+    if not response or not hasattr(response, 'choices') or not response.choices:
+        raise Exception("API returned invalid or empty response - retrying...")
+
+    _write_request_debug_log(api_provider, params, getattr(response, "usage", None))
+    return response
+
+
+_DIALOGUE_TYPOGRAPHY_RE = re.compile(
+    # Leave runtime tokens, URLs, paths and inline code byte-for-byte intact.
+    r"(?P<protected>" + "|".join(PROTECTED_PATTERNS) +
+    r'|\b[\w+.-]+://[^\s"<>]+|\bwww\.[^\s"<>]+'
+    r'|(?:[A-Za-z]:[\\/]|(?<!\w)~[\\/]|\.{0,2}/)[^\s"<>]+'
+    r'|`[^`\r\n]+`)'
+    r"|(?P<apostrophe>[‘’‛ʼ＇])"
+    # A drawn-out word ending, not an approximation, range or bitwise operator.
+    r"|(?<=[^\W\d_])(?P<tail>[~〜]+)"
+    r"(?:(?=__PROTECTED_\d+__)|(?![\w~〜]|\.[A-Za-z0-9]))"
+)
+
+
+def normalize_dialogue_typography(text):
+    """Use font-safe apostrophes and centered dialogue tildes in decoded prose."""
+    if not isinstance(text, str) or not any(char in text for char in "~〜‘’‛ʼ＇"):
+        return text
+    return _DIALOGUE_TYPOGRAPHY_RE.sub(
+        lambda match: (
+            match.group("protected")
+            or ("'" if match.group("apostrophe") else "～" * len(match.group("tail")))
+        ),
+        text,
+    )
+
+
+def cleanTranslatedText(translatedText, language):
+    """Clean and format translated text"""
+    placeholders = {
+        f"{language} Translation: ": "",
+        "Translation: ": "",
+        "っ": "",
+        "ッ": "",
+        "。": ".",
+        # Note: 「 and 」 are NOT replaced here — replacing them with ASCII " would
+        # corrupt raw JSON strings before extraction.  They are handled per-line
+        # in _clean_extracted_line() after JSON parsing (when convertQuotes is on).
+        "—": "―",
+        "】": "]",
+        "【": "[",
+        "é": "e",
+        "```json": "",
+        "```": "",
+    }
+    
+    for target, replacement in placeholders.items():
+        translatedText = translatedText.replace(target, replacement)
+
+    # Japanese fonts may give smart apostrophes fullwidth advances and raise ~.
+    # Normalize prose before engine-specific line wrapping measures the output.
+    translatedText = normalize_dialogue_typography(translatedText)
+
+    # Remove Repeating Characters
+    pattern = re.compile(r"(.)\s*\1(?:\s*\1){" + str(20 - 1) + r",}")
+    translatedText = pattern.sub(lambda match: match.group(0).replace(" ", "")[:20], translatedText)
+
+    # Elongate Long Dashes (Since GPT Ignores them...)
+    translatedText = elongateCharacters(translatedText)
+    return translatedText
+
+
+def elongateCharacters(text):
+    """Replace ー sequences with elongated characters"""
+    # Define a pattern to match one character followed by two or more ー characters.
+    # The lookbehind is restricted to non-ー Japanese/CJK characters so that:
+    #   - standalone ー separators (e.g. "ーーーーーーーーーー") are left untouched
+    #   - ー sequences preceded by a JSON quote or other non-Japanese char are not corrupted
+    pattern = r"(?<=([\u3040-\u309F\u30A0-\u30FB\u30FD-\u30FF\u4E00-\u9FEF\uFF61-\uFF9F]))ー{2,}"
+
+    # Define a replacement function that elongates the captured character
+    def repl(match):
+        char = match.group(1)  # The character before the ー sequence
+        count = len(match.group(0)) - 1  # Number of ー characters
+        return char * count  # Replace ー sequence with the character repeated
+
+    # Use re.sub() to replace the pattern in the text
+    return re.sub(pattern, repl, text)
+
+
+def extractTranslation(translatedTextList, isList, pbar=None):
+    """Extract translation from JSON response.
+
+    This function is resilient to a few common model mistakes:
+    - Wraps output in code fences or outer quotes
+    - Uses smart quotes instead of straight quotes
+    - Inserts an extra leading quote in values (e.g. :""Word" -> :"Word")
+    - Trailing commas before } or ]
+
+    If strict JSON parsing fails, falls back to a regex-based extractor that
+    captures LineN values in numeric order.
+    """
+    s = str(translatedTextList or "").strip()
+
+    # Fast exit
+    if not s:
+        return None
+
+    # Remove code fences if present
+    if s.startswith("```"):
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\s*```$", "", s)
+
+    # Trim wrapping quotes around the whole JSON blob (common in logs)
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in {'"', "'"}:
+        # Only strip if it still looks like JSON inside
+        if s[1:2] == "{" and s[-2:-1] == "}":
+            s = s[1:-1]
+
+    # Normalize a broad set of Unicode “smart” quotes to ASCII equivalents.
+    translation_table = {
+        0x201C: "'",  # “ left double quotation mark
+        0x201D: "'",  # ” right double quotation mark
+        0xFF02: "'",  # ＂ fullwidth quotation mark
+
+        0x2018: "'",  # ‘ left single quotation mark
+        0x2019: "'",  # ’ right single quotation mark
+        0x201B: "'",  # ‛ single high-reversed-9 quotation mark
+        0x02BC: "'",  # ʼ modifier letter apostrophe
+        0xFF07: "'",  # ＇ fullwidth apostrophe
+    }
+    s = s.translate(translation_table)
+
+    # Remove trailing commas before object/array closures
+    s = re.sub(r",(\s*[}\]])", r"\1", s)
+
+    # Repair common doubled leading quote in values: :""Word" -> :"Word"
+    # Ensure we don't alter legitimate empty strings (:"")
+    s = re.sub(r":\s*\"\"(?=[^\",}\]\s])", r':"', s)
+
+    # Attempt strict parse first
+    try:
+        lineDict = json.loads(s)
+
+        # Handle array-based schema: {"translations": ["...", ...]}
+        if isinstance(lineDict, dict) and "translations" in lineDict and isinstance(lineDict["translations"], list):
+            stringList = [normalize_dialogue_typography(str(v)) for v in lineDict["translations"]]
+            return stringList if isList else (stringList[0] if stringList else None)
+
+        # Build list in numeric order if keys are LineN
+        numeric_keys = []
+        for k in lineDict.keys():
+            m = re.fullmatch(r"Line(\d+)", str(k))
+            if m:
+                numeric_keys.append(int(m.group(1)))
+
+        if numeric_keys:
+            stringList = [lineDict.get(f"Line{n}", "") for n in sorted(numeric_keys)]
+        else:
+            # Fallback to values order if no LineN keys found
+            stringList = list(lineDict.values())
+
+        # Escaped Unicode only becomes punctuation after JSON decoding.
+        stringList = [normalize_dialogue_typography(value) for value in stringList]
+        return stringList if isList else (stringList[0] if stringList else None)
+
+    except Exception as e:
+        # Fallback: regex-based extraction tolerant to one or two opening quotes
+        # Captures escaped quotes within values too
+        try:
+            pairs = re.findall(r'"Line(\d+)"\s*:\s*"{1,2}((?:\\.|[^"\\])*)"', s)
+            if not pairs:
+                raise ValueError("No LineN pairs found")
+
+            # Sort numerically and unescape JSON string content
+            items = []
+            for n_str, v in sorted(((int(n), v) for n, v in pairs), key=lambda x: x[0]):
+                try:
+                    # Decode JSON escapes reliably by round-tripping as a JSON string
+                    decoded = json.loads(f'"{v}"')
+                except Exception:
+                    decoded = v
+                items.append(normalize_dialogue_typography(decoded))
+
+            return items if isList else (items[0] if items else None)
+        except Exception as e2:
+            if pbar:
+                pbar.write(f"extractTranslation Error: {e2} after JSON error {e} on String {translatedTextList}")
+            return None
+
+
+_FILE_COST_COUNTERS = (
+    "file_cache_read",
+    "file_cache_write",
+    "file_regular",
+    "file_output",
+    "file_batch_read",
+    "file_batch_write",
+    "file_batch_regular",
+    "file_batch_output",
+)
+
+
+_BATCH_COLLECT_FILE_COUNTERS = (
+    "source_items",
+    "queued_items",
+    "queued_requests",
+    "cached_items",
+    "cached_requests",
+)
+
+
+def reset_batch_collect_file_stats():
+    """Reset the lightweight collect summary for the current worker thread."""
+    for name in _BATCH_COLLECT_FILE_COUNTERS:
+        setattr(_thread_local, f"batch_collect_{name}", 0)
+
+
+def batch_collect_file_stats():
+    """Return request-preparation counts for the current file's collect pass."""
+    return {
+        name: int(getattr(_thread_local, f"batch_collect_{name}", 0) or 0)
+        for name in _BATCH_COLLECT_FILE_COUNTERS
+    }
+
+
+def _record_batch_collect_stats(**increments):
+    for name, amount in increments.items():
+        if name not in _BATCH_COLLECT_FILE_COUNTERS:
+            continue
+        attr = f"batch_collect_{name}"
+        setattr(
+            _thread_local,
+            attr,
+            int(getattr(_thread_local, attr, 0) or 0) + int(amount or 0),
+        )
+
+
+def begin_file_cost_tracking(model=None):
+    """Start an isolated per-file accurate-cost window.
+
+    Persistent RPG Maker batch workers reuse one process for many files, so the
+    cross-file accurate total cannot identify the cost of the current file.
+    Reset the per-file counters explicitly, including for files that are fully
+    satisfied by the translation cache and therefore record zero new usage.
+    """
+    for name in _FILE_COST_COUNTERS:
+        setattr(_thread_local, name, 0)
+    reset_batch_collect_file_stats()
+    _thread_local.file_cost_window_active = bool(
+        isClaudeModel(model) or get_batch_phase() == "consume"
+    )
+    _thread_local.file_cost_ready = bool(
+        isClaudeModel(model) or get_batch_phase() == "consume"
+    )
+
+
+def calculateCost(inputTokens, outputTokens, model):
+    """
+    Calculate the cost of translation based on token usage and model pricing.
+
+    For Claude models and asynchronous batch consume, cost is derived from the
+    actual cache/token breakdown recorded by translateAI:
+      - Cache reads:  10 % of the base input rate
+      - Cache writes: 125 % of the base input rate
+      - Regular input: 100 % of the base input rate
+
+    Call pattern:
+      Per-file call: an explicit file window (or the legacy Claude ready flag)
+                     reads thread-local accumulators spanning every translateAI
+                     call for the file, then resets and closes the window.
+      TOTAL call:    the file window and ready flag are both closed, so return
+                     the cross-thread _global_accurate_cost running sum.
+
+    Falls back to naive token × rate calculation for non-Claude live models.
+    """
+    _is_claude = model and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+    _uses_accurate_file_cost = _is_claude or get_batch_phase() == "consume"
+    if _uses_accurate_file_cost:
+        if (
+            getattr(_thread_local, 'file_cost_window_active', False)
+            or getattr(_thread_local, 'file_cost_ready', False)
+        ):
+            # Per-file call: compute from accumulators (may be 0 for disk-cached files),
+            # reset everything, return the file cost.
+            cr  = getattr(_thread_local, 'file_cache_read',  0)
+            cw  = getattr(_thread_local, 'file_cache_write', 0)
+            reg = getattr(_thread_local, 'file_regular',     0)
+            out = getattr(_thread_local, 'file_output',      0)
+            bcr  = getattr(_thread_local, 'file_batch_read',    0)
+            bcw  = getattr(_thread_local, 'file_batch_write',   0)
+            breg = getattr(_thread_local, 'file_batch_regular', 0)
+            bout = getattr(_thread_local, 'file_batch_output',  0)
+            pricing  = getPricingConfig(model)
+            br  = pricing["inputAPICost"]  / 1_000_000
+            orr = pricing["outputAPICost"] / 1_000_000
+            live_write_multiplier = cache_write_multiplier(
+                "anthropic", model, "5m"
+            )
+            batch_write_multiplier = cache_write_multiplier(
+                getBatchProvider(model) or "anthropic", model
+            )
+            cost = (cr * br * 0.10
+                    + cw * br * live_write_multiplier
+                    + reg * br + out * orr
+                    # Batch API tokens: same rates, then the 50% batch discount.
+                    + (bcr * br * 0.10
+                       + bcw * br * batch_write_multiplier
+                       + breg * br + bout * orr) * 0.50)
+            _thread_local.file_cache_read  = 0
+            _thread_local.file_cache_write = 0
+            _thread_local.file_regular     = 0
+            _thread_local.file_output      = 0
+            _thread_local.file_batch_read    = 0
+            _thread_local.file_batch_write   = 0
+            _thread_local.file_batch_regular = 0
+            _thread_local.file_batch_output  = 0
+            _thread_local.file_cost_window_active = False
+            _thread_local.file_cost_ready  = False
+            return cost
+    # TOTAL call: cache-aware Claude and all async providers accumulate here.
+    with _global_accurate_cost_lock:
+        accurate = _global_accurate_cost
+    if accurate > 0 and (_is_claude or get_batch_phase() == "consume"):
+        return accurate
+
+    # Non-Claude, estimate mode, or no accurate data: naive calculation.
+    # For Claude models, use the accumulated static_system token count (the portion
+    # that is cache-written at the live 5-minute TTL rate = 1.25x input rate).
+    # Remaining tokens are billed at the regular input rate.
+    pricing = getPricingConfig(model)
+    _is_claude_naive = model and any(x in model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+    if _is_claude_naive:
+        static_tok  = getattr(_thread_local, 'estimate_static_tokens', 0)
+        regular_tok = getattr(_thread_local, 'estimate_regular_tokens', 0)
+        batch_count = max(1, getattr(_thread_local, 'estimate_batch_count', 1))
+        _thread_local.estimate_static_tokens  = 0
+        _thread_local.estimate_regular_tokens = 0
+        _thread_local.estimate_batch_count    = 0
+        # If cache is disabled, every batch is a write (2x) — no reads ever.
+        # Otherwise: each distinct batch size (= distinct output_config schema) gets exactly
+        # one cache write on first use; all subsequent batches of that size are reads (0.10x).
+        # Load from disk first so GUI subprocesses (one per file) share warm-cache state.
+        global _estimate_written_sizes
+        if DISABLE_CACHE:
+            write_batches = batch_count
+            read_batches  = 0
+        else:
+            # File estimates can run concurrently. Claim newly seen output
+            # schemas under one cross-process lock so exactly one worker counts
+            # each prompt-cache write while every other worker counts a read.
+            with _estimate_state_lock():
+                _load_estimate_written_sizes()
+                seen_sizes = getattr(_thread_local, 'estimate_seen_sizes', set())
+                new_sizes = seen_sizes - _estimate_written_sizes
+                write_batches = len(new_sizes)
+                read_batches = batch_count - write_batches
+                _estimate_written_sizes.update(new_sizes)
+                _save_estimate_written_sizes()
+            _thread_local.estimate_seen_sizes = set()
+        write_cost = (
+            write_batches * static_tok / 1_000_000
+        ) * pricing["inputAPICost"] * cache_write_multiplier(
+            "anthropic", model, "5m"
+        )
+        read_cost    = (read_batches  * static_tok / 1_000_000) * pricing["inputAPICost"] * 0.10
+        regular_cost = (regular_tok / 1_000_000) * pricing["inputAPICost"]
+        inputCost    = write_cost + read_cost + regular_cost
+    else:
+        inputCost = (inputTokens / 1_000_000) * pricing["inputAPICost"]
+    outputCost = (outputTokens / 1_000_000) * pricing["outputAPICost"]
+    return inputCost + outputCost
+
+
+def countTokens(system, user, history):
+    """Count tokens for cost estimation"""
+    inputTotalTokens = 0
+    outputTotalTokens = 0
+    enc = tiktoken.encoding_for_model("gpt-4")
+
+    # Input
+    if isinstance(history, list):
+        for line in history:
+            inputTotalTokens += len(enc.encode(line))
+    else:
+        inputTotalTokens += len(enc.encode(history))
+    inputTotalTokens += len(enc.encode(system))
+    inputTotalTokens += len(enc.encode(user))
+
+    # Output
+    outputTotalTokens += round(len(enc.encode(user)) * 2.5)
+
+    return [inputTotalTokens, outputTotalTokens]
+
+
+def last_translation_had_mismatch() -> bool:
+    """Return whether the latest translateAI call on this thread fell back."""
+    return bool(getattr(_thread_local, "last_translation_had_mismatch", False))
+
+
+def _retry_live_translation(func):
+    """Retry live provider work; batch phases only read or write local data."""
+    retried = retry(exceptions=Exception, tries=5, delay=5)(func)
+
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        if get_batch_phase():
+            return func(*args, **kwargs)
+        return retried(*args, **kwargs)
+
+    return wrapped
+
+
+@_cache_reservation_scope()
+@_retry_live_translation
+def translateAI(text, history, config, filename=None, pbar=None, lock=None,
+                mismatchList=None, context_kind=None, request_instructions=None):
+    """
+    Main translation entry point used by all modules.
+
+    Returns [translatedText, [inputTokens, outputTokens]]. Legacy ``history``
+    arguments are inferred by shape; ``request_instructions`` remains attached
+    to every chunk while Japanese source context rolls forward independently.
+    """
+    _thread_local.last_translation_had_mismatch = False
+    if not text:
+        return [text, [0, 0]]
+
+    # Use TRANSLATION_RUN_LOG env var as log path if set.
+    run_log = os.getenv("TRANSLATION_RUN_LOG")
+    if run_log:
+        # Make sure parent dir exists
+        try:
+            Path(run_log).parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        config.logFilePath = run_log
+
+    # Ensure log directory exists for the configured path
+    try:
+        Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+    # Token tracking: [input, output].
+    totalTokens = [0, 0]
+
+    # Init per-file accumulators on first call on this thread (never reset here —
+    # they span all translateAI calls for a file; reset by calculateCost).
+    if not hasattr(_thread_local, 'file_cache_read'):
+        _thread_local.file_cache_read  = 0
+        _thread_local.file_cache_write = 0
+        _thread_local.file_regular     = 0
+        _thread_local.file_output      = 0
+    # Batch API usage is billed at 50% so it is accumulated separately.
+    if not hasattr(_thread_local, 'file_batch_read'):
+        _thread_local.file_batch_read    = 0
+        _thread_local.file_batch_write   = 0
+        _thread_local.file_batch_regular = 0
+        _thread_local.file_batch_output  = 0
+    # Snapshot accumulators so end-of-call delta only counts tokens from this call.
+    _prev_cr  = _thread_local.file_cache_read
+    _prev_cw  = _thread_local.file_cache_write
+    _prev_reg = _thread_local.file_regular
+    _prev_out = _thread_local.file_output
+    _prev_bcr  = _thread_local.file_batch_read
+    _prev_bcw  = _thread_local.file_batch_write
+    _prev_breg = _thread_local.file_batch_regular
+    _prev_bout = _thread_local.file_batch_output
+    _thread_local.file_cost_ready = False  # will be set True at end of translateAI
+
+    # Provider batch phase; Estimate uses the collect request builder with a
+    # disposable queue and never reaches a provider call.
+    batch_phase = get_batch_phase()
+    batch_provider = getBatchProvider(config.model)
+    if batch_phase and not batch_provider:
+        raise ValueError("This endpoint does not support provider Batch jobs. The batch phase was stopped; no live request was made.")
+    if batch_phase and config.estimateMode and batch_phase != "estimate":
+        raise ValueError("An estimate cannot execute a provider batch phase. No live request was made.")
+    if batch_phase in {"collect", "estimate"} and isinstance(text, list):
+        _record_batch_collect_stats(source_items=len(text))
+    
+    if isinstance(text, list):
+        formatType = "json"
+        tList = batchList(text, config.batchSize)
+    else:
+        formatType = "json"
+        tList = [text]
+
+    # Every mode sends preceding source lines as context. Keep a stable copy so
+    # live translations and fetched batch results never replace that Japanese
+    # context with model output.
+    initial_history = list(history) if isinstance(history, list) else history
+    initial_source, persistent_instructions = _request_context_parts(
+        initial_history,
+        context_kind,
+        request_instructions,
+    )
+    source_batches = [
+        list(item) if isinstance(item, list) else item for item in tList
+    ]
+
+    for index, tItem in enumerate(tList):
+        request_history = initial_source
+        if isinstance(tItem, list):
+            if index > 0:
+                previous_source = source_batches[index - 1]
+                request_history = (
+                    previous_source[-config.maxHistory:]
+                    if isinstance(previous_source, list)
+                    else previous_source
+                )
+        request_context = _typed_request_context(
+            request_history, persistent_instructions
+        )
+        is_map_name_batch = _is_map_name_batch(persistent_instructions)
+        # Check if text contains target language
+        if not re.search(config.langRegex, str(tItem)):
+            if pbar is not None:
+                pbar.update(len(tItem) if isinstance(tItem, list) else 1)
+            if isinstance(tItem, list):
+                for j in range(len(tItem)):
+                    tItem[j] = cleanTranslatedText(tItem[j], config.language)
+                tList[index] = tItem
+            else:
+                tList[index] = cleanTranslatedText(tItem, config.language)
+            continue
+
+        # Ellipsis-only bypass: strings whose translatable content is purely '…' characters
+        # (e.g. "「………」") should never be sent to the AI — just convert brackets and pass through.
+        def _is_ellipsis_only(s):
+            inner = (
+                str(s)
+                .strip()
+                .lstrip('「『〝')
+                .rstrip('」』〞〟')
+                .strip()
+            )
+            return bool(inner) and all(c in '\u2026\u30FC' for c in inner)
+
+        def _convert_ellipsis(s):
+            return convert_corner_brackets(str(s), config.convertQuotes)
+
+        if isinstance(tItem, list):
+            if all(_is_ellipsis_only(s) for s in tItem):
+                tList[index] = [_convert_ellipsis(s) for s in tItem]
+                if pbar is not None:
+                    pbar.update(len(tItem))
+                continue
+        else:
+            if _is_ellipsis_only(tItem):
+                tList[index] = _convert_ellipsis(tItem)
+                if pbar is not None:
+                    pbar.update(1)
+                continue
+
+        # Protect script codes before translation
+        protected_items = []
+        all_replacements = {}
+        
+        if isinstance(tItem, list):
+            for j in range(len(tItem)):
+                if not tItem[j] or not str(tItem[j]).strip():
+                    protected_items.append("Placeholder Text")
+                    all_replacements[j] = {}
+                else:
+                    collapsed = re.sub(r'(.)\1{9,}', lambda m: m.group(1) * 10, tItem[j])
+                    protected_text, replacements = protect_script_codes(collapsed)
+                    protected_items.append(protected_text)
+                    all_replacements[j] = replacements
+        else:
+            if not tItem or not str(tItem).strip():
+                protected_items = "Placeholder Text"
+                all_replacements[0] = {}
+            else:
+                collapsed = re.sub(r'(.)\1{9,}', lambda m: m.group(1) * 10, tItem)
+                protected_items, all_replacements[0] = protect_script_codes(collapsed)
+        
+        # Filter out corrupted/mojibake text (U+FFFD) from the batch before API call
+        corrupted_map = {}  # original_index -> original_text
+        if isinstance(tItem, list):
+            for j in range(len(tItem)):
+                if tItem[j] and "\ufffd" in str(tItem[j]):
+                    corrupted_map[j] = tItem[j]
+        elif tItem and "\ufffd" in str(tItem):
+            # Single corrupted string - skip translation entirely
+            tList[index] = tItem
+            if pbar is not None:
+                pbar.update(1)
+            continue
+
+        # Skip non-Japanese lines (AI empties them); restore after translation.
+        no_japanese_map = {}  # original_index -> already-cleaned text
+        if isinstance(tItem, list):
+            for j in range(len(tItem)):
+                if j in corrupted_map:
+                    continue
+                item_str = str(tItem[j]).strip() if tItem[j] else ""
+                if item_str and item_str != "Placeholder Text" and not re.search(config.langRegex, item_str):
+                    cleaned = cleanTranslatedText(tItem[j], config.language)
+                    cleaned = convert_corner_brackets(cleaned, config.convertQuotes).strip()
+                    no_japanese_map[j] = cleaned
+
+        # Combine skip sets and rebuild protected_items / all_replacements
+        skip_indices = set(corrupted_map.keys()) | set(no_japanese_map.keys())
+        if isinstance(tItem, list) and skip_indices:
+            clean_indices = [j for j in range(len(tItem)) if j not in skip_indices]
+
+            if not clean_indices:
+                # Every item is either corrupted or untranslatable — reassemble and move on
+                result = []
+                for j in range(len(tItem)):
+                    if j in corrupted_map:
+                        result.append(corrupted_map[j])
+                    elif j in no_japanese_map:
+                        result.append(no_japanese_map[j])
+                    else:
+                        result.append(tItem[j])
+                tList[index] = result
+                if pbar is not None:
+                    pbar.update(len(tItem))
+                continue
+
+            # Rebuild protected_items and all_replacements for translatable items only
+            protected_items = [protected_items[j] for j in clean_indices]
+            new_replacements = {}
+            for new_idx, old_idx in enumerate(clean_indices):
+                new_replacements[new_idx] = all_replacements.get(old_idx, {})
+            all_replacements = new_replacements
+
+        # Build filtered tItem for validation (excludes skipped items)
+        if isinstance(tItem, list) and skip_indices:
+            clean_tItem = [tItem[j] for j in range(len(tItem)) if j not in skip_indices]
+        else:
+            clean_tItem = tItem
+
+        # Format for translation
+        if isinstance(tItem, list):
+            payload = {f"Line{i+1}": string for i, string in enumerate(protected_items)}
+            payload = json.dumps(payload, indent=4, ensure_ascii=False)
+            subbedT = payload
+        else:
+            subbedT = json.dumps({"Line1": protected_items}, indent=4, ensure_ascii=False)
+
+        # Build the matched glossary context before cache/batch lookup. Its
+        # fingerprint is part of the lookup key, so results produced under an
+        # older relevant spelling cannot bypass the current glossary.
+        static_system, glossary_text, sfx_text, user = createContextParts(
+            config, subbedT, formatType, request_history
+        )
+        vocab_text = glossary_text + sfx_text
+        # Live prompts may use a growing glossary during sequential consume.
+        # Batch/cache keys stay pinned to the collect-time freeze.
+        key_context = _batch_stable_cache_context(
+            subbedT, request_history, sfx_text, vocab_text
+        )
+
+        # Batch collect/estimate queues list payloads only. Single strings (speaker and
+        # variable names) translate live — modules memoize them and embed the
+        # results into later payloads, so they must resolve identically in both
+        # passes or the consume pass couldn't match the queued payload keys.
+        # This is the names-first phase; names are a tiny share of the volume.
+        queue_for_batch = (
+            batch_phase in {"collect", "estimate"}
+            and isinstance(tItem, list)
+        )
+
+        # Check cache for this exact payload (the collect pass uses a
+        # non-blocking peek so no pending markers are left behind for the
+        # consume pass to wait on)
+        if queue_for_batch or batch_phase == "estimate":
+            cached_result = peek_cached_translation(
+                subbedT, config.language, key_context, request_context
+            )
+        else:
+            cached_result = get_cached_translation(
+                subbedT, config.language, key_context, request_context
+            )
+        if cached_result is not None:
+            cached_values = cached_result if isinstance(cached_result, list) else [cached_result]
+            source_values = clean_tItem if isinstance(clean_tItem, list) else [clean_tItem]
+            controls_ok, _control_errors = validate_control_codes(
+                source_values, cached_values, all_replacements
+            )
+            protected_source_values = (
+                protected_items if isinstance(protected_items, list) else [protected_items]
+            )
+            cached_content_values = [
+                _reprotect_cached_codes(value, all_replacements.get(line, {}))
+                for line, value in enumerate(cached_values)
+            ]
+            if is_map_name_batch:
+                content_ok = True
+                for orig, trans in zip(protected_source_values, cached_content_values):
+                    orig_str = str(orig).strip()
+                    trans_str = str(trans).strip()
+                    if (
+                        orig_str
+                        and orig_str != "Placeholder Text"
+                        and re.search(config.langRegex, orig_str)
+                        and not trans_str
+                    ):
+                        content_ok = False
+                        break
+            else:
+                content_ok, _invalid_indices, _content_reasons = validate_translation_content(
+                    protected_source_values,
+                    cached_content_values,
+                    config.langRegex,
+                    config.language,
+                )
+            if len(source_values) != len(cached_values) or not controls_ok or not content_ok:
+                # Ignore stale/corrupt cache entries. A successful live result
+                # below overwrites the same key.
+                cached_result = None
+
+        if cached_result is not None:
+            # Older cached dialogue predates glyph normalization. Repair it at
+            # the output boundary as well, without another paid provider call.
+            if isinstance(cached_result, list):
+                cached_result = [normalize_dialogue_typography(v) for v in cached_result]
+            else:
+                cached_result = normalize_dialogue_typography(cached_result)
+            if queue_for_batch:
+                _record_batch_collect_stats(
+                    cached_items=len(source_values),
+                    cached_requests=1,
+                )
+            # Estimate mode: keep original tList[index]; cached length may differ.
+            if not config.estimateMode:
+                if isinstance(tItem, list):
+                    # Cached value is Japanese-only; re-expand skipped items for this batch.
+                    if (corrupted_map or no_japanese_map) and isinstance(cached_result, list):
+                        expanded_cached = expand_clean_to_batch(
+                            cached_result, tItem, corrupted_map, no_japanese_map
+                        )
+                        tList[index] = expanded_cached
+                    else:
+                        tList[index] = cached_result
+                else:
+                    tList[index] = cached_result
+
+            if lock and pbar is not None:
+                with lock:
+                    pbar.update(len(tItem) if isinstance(tItem, list) else 1)
+
+            # Consume pass: still record what was applied. Cache hits used to
+            # skip the log entirely, which left the GUI Translation Log empty
+            # after a resume even though translated/ was written.
+            if batch_phase == "consume" and not config.estimateMode:
+                try:
+                    if isinstance(cached_result, list):
+                        out_payload = {
+                            f"Line{i+1}": string for i, string in enumerate(cached_result)
+                        }
+                        formatted_output = json.dumps(out_payload, indent=4, ensure_ascii=False)
+                    else:
+                        formatted_output = json.dumps(
+                            {"Line1": cached_result}, indent=4, ensure_ascii=False
+                        )
+                    Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
+                    with open(config.logFilePath, "a", encoding="utf-8") as logFile:
+                        logFile.write("[CACHE] Applied cached translation (no new API call)\n")
+                        logFile.write(f"Input:\n{subbedT}\n")
+                        logFile.write(f"Output:\n{formatted_output}\n")
+                        logFile.flush()
+                except Exception:
+                    pass
+
+            continue
+
+        # Batch collect pass: queue the request (built exactly like a live one)
+        # instead of calling the API. The text stays untranslated; the consume
+        # pass fills it in from the fetched batch results. History carries the
+        # preceding source lines so the model still sees scene context.
+        if queue_for_batch:
+            numLines = len(clean_tItem) if isinstance(tItem, list) else 1
+            if batch_provider == "anthropic":
+                params = buildClaudeRequest(
+                    static_system, user, request_history, formatType,
+                    config.model, numLines, vocab_text=vocab_text,
+                    context_kind=CONTEXT_SOURCE,
+                    request_instructions=persistent_instructions,
+                    cache_ttl="1h",
+                )
+            else:
+                params = buildOpenAIRequest(
+                    static_system, user, request_history, 0.05, formatType,
+                    config.model, numLines, vocab_text=vocab_text,
+                    api_provider=batch_provider,
+                    context_kind=CONTEXT_SOURCE,
+                    request_instructions=persistent_instructions,
+                )
+            queue_batch_request(
+                subbedT,
+                config.language,
+                params,
+                cache_context=key_context,
+                provider=batch_provider,
+                request_context=request_context,
+            )
+            _record_batch_collect_stats(
+                queued_items=numLines,
+                queued_requests=1,
+            )
+            if lock and pbar is not None:
+                with lock:
+                    pbar.update(len(tItem))
+            continue
+
+        # Calculate estimate if in estimate mode
+        if config.estimateMode:
+            token_context = persistent_instructions + _context_items(request_history)
+            estimate = countTokens(
+                static_system + vocab_text, user, token_context
+            )
+            totalTokens[0] += estimate[0]
+            totalTokens[1] += estimate[1]
+
+            # Track exact cache write size (static_system, constant across batches)
+            # and accumulate non-cached (vocab + user + history) tokens per batch.
+            _est_api = os.getenv("api", "").strip()
+            _is_claude_est = (
+                config.model
+                and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+                and (not _est_api or "anthropic" in _est_api.lower())
+            )
+            if _is_claude_est:
+                # Count the shared static prefix once across every concurrent
+                # file worker. The keyed result persists across estimate runs
+                # until the model or prompt changes.
+                if not getattr(_thread_local, 'estimate_static_tokens', 0):
+                    _thread_local.estimate_static_tokens = (
+                        _estimate_static_token_count(static_system, config.model)
+                    )
+                regular_tok = max(0, estimate[0] - getattr(_thread_local, 'estimate_static_tokens', 0))
+                _thread_local.estimate_regular_tokens = getattr(_thread_local, 'estimate_regular_tokens', 0) + regular_tok
+                _thread_local.estimate_batch_count = getattr(_thread_local, 'estimate_batch_count', 0) + 1
+                # Track unique batch sizes seen this file (each maps to a distinct schema)
+                _size = len(clean_tItem) if isinstance(clean_tItem, list) else 1
+                _seen = getattr(_thread_local, 'estimate_seen_sizes', set())
+                _seen.add(_size)
+                _thread_local.estimate_seen_sizes = _seen
+            
+            # Cache the payload with original text as placeholder for future estimates
+            if isinstance(tItem, list):
+                cache_translation(
+                    subbedT, tItem, config.language,
+                    cache_context=key_context,
+                    request_context=request_context,
+                )
+            else:
+                cache_translation(
+                    subbedT, [tItem], config.language,
+                    cache_context=key_context,
+                    request_context=request_context,
+                )
+            
+            continue
+
+        # --- Translation and Validation Retry Block ---
+        # A fetched provider result may be validated once, but a consume pass
+        # must never turn a missing/invalid discounted result into an implicit
+        # full-price live retry. The user can start normal Translate explicitly.
+        max_retries = 0 if batch_phase == "consume" else getattr(config, "validationRetries", 2)
+        final_translations = None
+        last_raw_translation = ""
+        from_batch = False
+        numLines = len(clean_tItem) if isinstance(tItem, list) else 1
+
+        for attempt in range(max_retries + 1):
+            is_valid = True
+
+            # On retries, prepend the correction note to the USER message so the
+            # cached static_system block is never modified (avoids cache busting).
+            current_user = user
+            if attempt > 0:
+                retry_note = (
+                    f"IMPORTANT: Your previous attempt was incorrect or incomplete. Please ensure:\n"
+                    f"1. The entire output is translated to {config.language} with no untranslated characters\n"
+                    f"2. The JSON structure is correct with NO EMPTY or near-empty translations\n"
+                    f"   - Every line with Japanese text MUST be fully translated\n"
+                    f"   - Do NOT leave translations empty (\"\") or as single punctuation marks (\":\")\n"
+                    f"3. ALL placeholders (like __PROTECTED_0__, __PROTECTED_1__, etc.) are preserved EXACTLY as they appear in the input\n"
+                    f"   - Do not modify, translate, or remove any __PROTECTED_N__ placeholders\n"
+                    f"   - Keep them in the exact same position in your translation\n"
+                    f"4. Do NOT repeat the same letter or symbol many times in a row (e.g. uuuuuuuu... or broken tails)\n"
+                    f"   - Keep moans/effects natural; never output long runs of one character\n\n"
+                )
+                current_user = retry_note + user
+                if pbar:
+                    pbar.write(f"Retrying translation... (Attempt {attempt + 1}/{max_retries + 1})")
+
+            # Translate - a consume pass must use the matching fetched result.
+            from_batch = False
+            if batch_phase == "consume" and attempt == 0:
+                batch_result = require_batch_result(
+                    subbedT,
+                    config.language,
+                    cache_context=key_context,
+                    request_context=request_context,
+                )
+                response = _AnthropicCompat(
+                    batch_result.get("text", ""),
+                    batch_result.get("prompt_tokens", 0) or 0,
+                    batch_result.get("completion_tokens", 0) or 0,
+                    batch_result.get("cache_read_input_tokens", 0) or 0,
+                    batch_result.get("cache_creation_input_tokens", 0) or 0,
+                )
+                from_batch = True
+                _write_request_debug_log(
+                    f"{batch_provider or 'provider'}-batch",
+                    {"payload": subbedT}, response.usage,
+                )
+            if not from_batch:
+                if batch_phase == "consume":
+                    raise BatchResultUnavailableError(
+                        "[BATCH] Consume attempted to use the live API. The run "
+                        "was stopped before any full-price fallback request."
+                    )
+                try:
+                    response = translateText(
+                        static_system, current_user, request_history, 0.05,
+                        formatType, config.model, numLines,
+                        vocab_text=vocab_text,
+                        context_kind=CONTEXT_SOURCE,
+                        request_instructions=persistent_instructions,
+                    )
+                except Exception as api_err:
+                    err_msg = f"[API_ERROR] {api_err}"
+                    # Print to stdout so the GUI captures it immediately
+                    print(err_msg, flush=True)
+                    if pbar:
+                        pbar.write(err_msg)
+                    # Also write to the translation log file for persistence
+                    try:
+                        Path(config.logFilePath).parent.mkdir(parents=True, exist_ok=True)
+                        with open(config.logFilePath, "a", encoding="utf-8") as _lf:
+                            _lf.write(f"{err_msg}\n")
+                            _lf.flush()
+                    except Exception:
+                        pass
+                    raise  # Let retry decorator handle it
+            choice = response.choices[0]
+            message = getattr(choice, "message", None)
+            translatedText = getattr(message, "content", None)
+            response_diagnostic = _choice_failure_diagnostic(choice)
+            if isinstance(translatedText, str) and translatedText:
+                last_raw_translation = translatedText
+            else:
+                diagnostic_suffix = (
+                    f"; {response_diagnostic}" if response_diagnostic else ""
+                )
+                last_raw_translation = (
+                    f"[No translation content returned{diagnostic_suffix}]"
+                )
+
+            # Update token count for this attempt
+            totalTokens[0] += response.usage.prompt_tokens
+            totalTokens[1] += response.usage.completion_tokens
+
+            # --- Cache/batch cost tracking ---
+            _is_claude_model = config.model and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+            if _is_claude_model or from_batch:
+                usage = response.usage
+
+                # Read cache fields from _AnthropicCompat._Usage; fall back to model_extra.
+                def _get_usage_field(field):
+                    v = getattr(usage, field, None)
+                    if v is None:
+                        v = (getattr(usage, "model_extra", None) or {}).get(field)
+                    return int(v) if v else 0
+
+                batch_cache_read  = _get_usage_field("cache_read_input_tokens")
+                batch_cache_write = _get_usage_field("cache_creation_input_tokens")
+                batch_prompt_total = getattr(usage, "prompt_tokens", 0) or 0
+                batch_regular = max(0, batch_prompt_total - batch_cache_read - batch_cache_write)
+                batch_output  = getattr(usage, "completion_tokens", 0) or 0
+
+                # Accumulate into per-file thread-local counters. Batch API
+                # usage is billed at 50% so it goes into its own counters.
+                if from_batch:
+                    _thread_local.file_batch_read    += batch_cache_read
+                    _thread_local.file_batch_write   += batch_cache_write
+                    _thread_local.file_batch_regular += batch_regular
+                    _thread_local.file_batch_output  += batch_output
+                elif _is_claude_model:
+                    _thread_local.file_cache_read  += batch_cache_read
+                    _thread_local.file_cache_write += batch_cache_write
+                    _thread_local.file_regular     += batch_regular
+                    _thread_local.file_output      += batch_output
+
+            # --- Debug Token Logging ---
+            if _debug_logging_enabled():
+                try:
+                    entry = f"\n--- Batch ({len(clean_tItem) if isinstance(tItem, list) else 1} lines) ---\n"
+                    entry += f"Prompt: {response.usage.prompt_tokens} tokens | Output: {response.usage.completion_tokens} tokens\n"
+                    if hasattr(response.usage, "cache_read_input_tokens"):
+                        cr = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+                        cw = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+                        cache_status = "HIT" if cr > 0 else ("WRITE" if cw > 0 else "MISS")
+                        entry += f"Cache: {cache_status} (read={cr}, write={cw})\n"
+                    _append_rotating_debug_log(Path("log/debug.log"), entry)
+                except Exception:
+                    pass
+
+            # Clean the translation first for consistency
+            cleaned_text = (
+                cleanTranslatedText(translatedText, config.language)
+                if isinstance(translatedText, str)
+                else ""
+            )
+
+            # Process and validate translation result
+            if cleaned_text:
+                if isinstance(tItem, list):
+                    extracted = extractTranslation(cleaned_text, True, pbar)
+
+                    # Check 1: Mismatch in length -> still a hard failure
+                    if extracted is None or len(clean_tItem) != len(extracted):
+                        is_valid = False
+                        if pbar:
+                            pbar.write(
+                                f"Length mismatch: expected {len(clean_tItem)}, "
+                                f"got {len(extracted) if extracted else 0}"
+                            )
+                    else:
+                        # Check 2: Validate placeholders are preserved
+                        # Flatten all_replacements for batch validation
+                        all_protected_text = protected_items
+                        placeholder_valid, missing, extra = validate_placeholders(
+                            all_protected_text,
+                            extracted,
+                            {
+                                k: v
+                                for replacements in all_replacements.values()
+                                for k, v in replacements.items()
+                            },
+                        )
+
+                        if not placeholder_valid:
+                            is_valid = False
+                            if pbar:
+                                if missing:
+                                    pbar.write(f"Missing placeholders: {', '.join(missing)}")
+                                if extra:
+                                    pbar.write(f"Extra placeholders: {', '.join(extra)}")
+                        else:
+                            restored_for_validation = [
+                                restore_script_codes(line, all_replacements.get(j, {}))
+                                for j, line in enumerate(extracted)
+                            ]
+                            control_valid, control_reasons = validate_control_codes(
+                                clean_tItem, restored_for_validation, all_replacements
+                            )
+                            if not control_valid:
+                                is_valid = False
+                                if pbar:
+                                    pbar.write("Control-code mismatch detected:")
+                                    for reason in control_reasons[:5]:
+                                        pbar.write(f"  - {reason}")
+                            else:
+                                # Check 3: Validate that translations are not empty or nearly empty
+                                if is_map_name_batch:
+                                    content_valid = True
+                                    invalid_indices = []
+                                    content_reasons = []
+                                    for idx, (orig, trans) in enumerate(
+                                        zip(clean_tItem, extracted), start=1
+                                    ):
+                                        orig_str = str(orig).strip()
+                                        trans_str = str(trans).strip()
+                                        if (
+                                            not orig_str
+                                            or orig_str == "Placeholder Text"
+                                            or not re.search(config.langRegex, orig_str)
+                                        ):
+                                            continue
+                                        if not trans_str:
+                                            content_valid = False
+                                            invalid_indices.append(idx - 1)
+                                            content_reasons.append(
+                                                f"Line{idx}: Empty translation for "
+                                                f"'{orig_str[:50]}...'"
+                                            )
+                                else:
+                                    content_valid, invalid_indices, content_reasons = validate_translation_content(
+                                        clean_tItem,
+                                        extracted,
+                                        config.langRegex,
+                                        config.language,
+                                    )
+
+                                if not content_valid:
+                                    is_valid = False
+                                    if pbar:
+                                        pbar.write(f"Invalid translation content detected:")
+                                        for reason in content_reasons[:5]:  # Show first 5 issues
+                                            pbar.write(f"  - {reason}")
+                                        if len(content_reasons) > 5:
+                                            pbar.write(
+                                                f"  ... and {len(content_reasons) - 5} more issues"
+                                            )
+                                else:
+                                    _, content_warnings = translation_content_warnings(
+                                        clean_tItem, extracted, config.langRegex
+                                    )
+                                    if content_warnings and pbar:
+                                        pbar.write("Translation content warning:")
+                                        for warning in content_warnings[:5]:
+                                            pbar.write(f"  - {warning}")
+                                    # Set translations (line count matches, placeholders valid, and content is good)
+                                    # Strip "Placeholder Text" from individual lines (AI placeholder for untranslatable input)
+                                    # Also apply the 「→" / 」→" replacements here per-line (safe now that JSON is parsed)
+                                    def _clean_extracted_line(line):
+                                        if not isinstance(line, str):
+                                            return line
+                                        line = line.replace("Placeholder Text", "").strip()
+                                        return convert_corner_brackets(line, config.convertQuotes)
+
+                                    final_translations = [
+                                        _clean_extracted_line(line) for line in extracted
+                                    ]
+                else:
+                    # Single string: extract from JSON schema response
+                    extracted = extractTranslation(cleaned_text, False, pbar)
+                    if extracted is None:
+                        is_valid = False
+                        if pbar:
+                            pbar.write(
+                                f"Failed to extract translation from response: {cleaned_text[:100]}"
+                            )
+                    else:
+                        # Validate placeholders against extracted value
+                        placeholder_valid, missing, extra = validate_placeholders(
+                            protected_items, extracted, all_replacements[0]
+                        )
+
+                        if not placeholder_valid:
+                            is_valid = False
+                            if pbar:
+                                if missing:
+                                    pbar.write(f"Missing placeholders: {', '.join(missing)}")
+                                if extra:
+                                    pbar.write(f"Extra placeholders: {', '.join(extra)}")
+                        else:
+                            restored_for_validation = restore_script_codes(
+                                extracted, all_replacements[0]
+                            )
+                            control_valid, control_reasons = validate_control_codes(
+                                tItem, restored_for_validation, all_replacements
+                            )
+                            if not control_valid:
+                                is_valid = False
+                                if pbar:
+                                    pbar.write("Control-code mismatch detected:")
+                                    for reason in control_reasons:
+                                        pbar.write(f"  - {reason}")
+                            else:
+                                # Validate content for single string
+                                final_cleaned = extracted.replace("Placeholder Text", "")
+                                content_valid, _, content_reasons = validate_translation_content(
+                                    tItem,
+                                    final_cleaned,
+                                    config.langRegex,
+                                    config.language,
+                                )
+
+                                if not content_valid:
+                                    is_valid = False
+                                    if pbar:
+                                        pbar.write(f"Invalid translation content:")
+                                        for reason in content_reasons:
+                                            pbar.write(f"  - {reason}")
+                                else:
+                                    _, content_warnings = translation_content_warnings(
+                                        tItem, final_cleaned, config.langRegex
+                                    )
+                                    if content_warnings and pbar:
+                                        pbar.write("Translation content warning:")
+                                        for warning in content_warnings:
+                                            pbar.write(f"  - {warning}")
+                                    # Accept output - all validations passed
+                                    final_cleaned = convert_corner_brackets(
+                                        final_cleaned, config.convertQuotes
+                                    )
+                                    final_translations = final_cleaned
+            else:
+                is_valid = False
+                if pbar:
+                    detail = (
+                        f" ({response_diagnostic})" if response_diagnostic else ""
+                    )
+                    pbar.write(f"AI returned no translation content{detail}")
+
+            if (
+                not is_valid
+                and cleaned_text
+                and response_diagnostic
+                and pbar
+            ):
+                pbar.write(f"Provider response metadata: {response_diagnostic}")
+
+            # If translation is valid, break the retry loop
+            if is_valid:
+                break
+        
+        # --- End of Retry Block ---
+
+        # After the loop, handle the final result
+        if final_translations is not None: # Success case
+            # Restore protected script codes
+            if isinstance(tItem, list):
+                for j in range(len(final_translations)):
+                    if j in all_replacements:
+                        final_translations[j] = restore_script_codes(
+                            final_translations[j],
+                            all_replacements[j],
+                            escape_orphan_backslashes=True,
+                        )
+
+                # Cache before expansion; key is Japanese-only, so value must match.
+                if not config.estimateMode:
+                    cache_translation(
+                        subbedT,
+                        list(final_translations),
+                        config.language,
+                        cache_context=key_context,
+                        request_context=request_context,
+                    )
+
+                # Re-insert skipped items at original positions
+                if corrupted_map or no_japanese_map:
+                    final_translations = expand_clean_to_batch(
+                        final_translations, tItem, corrupted_map, no_japanese_map
+                    )
+            else:
+                final_translations = restore_script_codes(
+                    final_translations,
+                    all_replacements[0],
+                    escape_orphan_backslashes=True,
+                )
+            
+            formatted_output = last_raw_translation
+            try:
+                formatted_output = format_translation_response_for_log(
+                    last_raw_translation
+                )
+            except Exception:
+                pass
+            
+            # Only open and write to log file when we have something to log
+            try:
+                with open(config.logFilePath, "a", encoding="utf-8") as logFile:
+                    if from_batch:
+                        logFile.write("[BATCH] Applied provider batch result\n")
+                    logFile.write(f"Input:\n{subbedT}\n")
+                    logFile.write(f"Output:\n{formatted_output}\n")
+                    logFile.flush()  # Ensure data is written to disk immediately
+            except Exception:
+                pass  # Don't fail if logging fails
+
+            # Non-list payloads cache here; lists are cached above.
+            if not config.estimateMode and not isinstance(tItem, list):
+                cache_translation(
+                    subbedT,
+                    final_translations,
+                    config.language,
+                    cache_context=key_context,
+                    request_context=request_context,
+                )
+
+            if isinstance(tItem, list):
+                tList[index] = final_translations
+            else:
+                tList[index] = final_translations
+
+            if lock and pbar is not None:
+                with lock:
+                    pbar.update(len(tItem) if isinstance(tItem, list) else 1)
+
+        else: # Validation fallback after all retries
+            _thread_local.last_translation_had_mismatch = True
+            if pbar:
+                pbar.write(
+                    f"Validation mismatch after {max_retries + 1} attempts; "
+                    "original text kept. Check mismatch log."
+                )
+
+            # Emit a machine-readable marker on stdout so the GUI worker
+            # thread can detect the mismatch reliably (stdout is captured
+            # synchronously, unlike file-tail polling which can be racy).
+            try:
+                print(f"MISMATCH_EVENT:{filename}", flush=True)
+            except Exception:
+                pass
+
+            formatted_mismatch_output = last_raw_translation
+            try:
+                formatted_mismatch_output = format_translation_response_for_log(
+                    last_raw_translation
+                )
+            except Exception:
+                pass
+            with open(config.mismatchLogPath, "a+", encoding="utf-8") as mismatchFile:
+                mismatchFile.write(f"Validation mismatch: {filename}\n")
+                mismatchFile.write(
+                    f"Original text kept after {max_retries + 1} attempts.\n"
+                )
+                mismatchFile.write(f"Input:\n{subbedT}\n")
+                mismatchFile.write(
+                    f"Provider output:\n{formatted_mismatch_output}\n\n"
+                )
+                mismatchFile.flush()  # Ensure data is written to disk immediately
+
+            # Also write to the main translation log so the GUI log viewer can display it
+            try:
+                with open(config.logFilePath, "a", encoding="utf-8") as logFile:
+                    logFile.write(f"[MISMATCH] Validation mismatch: {filename}\n")
+                    logFile.write(
+                        f"[MISMATCH] Original text kept after "
+                        f"{max_retries + 1} attempts.\n"
+                    )
+                    logFile.write("[MISMATCH] Input:\n")
+                    for mline in subbedT.splitlines():
+                        logFile.write(f"[MISMATCH] {mline}\n")
+                    logFile.write("[MISMATCH] Provider output:\n")
+                    for mline in formatted_mismatch_output.splitlines():
+                        logFile.write(f"[MISMATCH] {mline}\n")
+                    logFile.write("[MISMATCH] End mismatch\n")
+                    logFile.flush()
+            except Exception:
+                pass  # Don't fail if logging fails
+
+            if filename and mismatchList is not None and filename not in mismatchList:
+                mismatchList.append(filename)
+            
+            tList[index] = tItem
+
+    # Combine if multilist
+    if tList and isinstance(tList[0], list):
+        tList = [t for sublist in tList for t in sublist]
+    
+    # Collect-like passes merge this call's requests into their own disk queue.
+    if batch_phase in {"collect", "estimate"}:
+        flush_batch_queue()
+
+    # Accumulate Claude cache-aware calls and every provider's discounted batch.
+    # file_* accumulators hold full per-file totals; calculateCost() reads them.
+    _is_claude_final = config.model and any(x in config.model.lower() for x in ("claude", "sonnet", "haiku", "opus"))
+    _has_batch_delta = (
+        getattr(_thread_local, 'file_batch_regular', 0) > _prev_breg
+        or getattr(_thread_local, 'file_batch_output', 0) > _prev_bout
+    )
+    if (_is_claude_final or _has_batch_delta) and not config.estimateMode:
+        _pricing = getPricingConfig(config.model)
+        _br = _pricing["inputAPICost"] / 1_000_000
+        _or = _pricing["outputAPICost"] / 1_000_000
+        # Delta = tokens added in this call only (not earlier calls for same file).
+        _delta_cr  = getattr(_thread_local, 'file_cache_read',  0) - _prev_cr
+        _delta_cw  = getattr(_thread_local, 'file_cache_write', 0) - _prev_cw
+        _delta_reg = getattr(_thread_local, 'file_regular',     0) - _prev_reg
+        _delta_out = getattr(_thread_local, 'file_output',      0) - _prev_out
+        _delta_bcr  = getattr(_thread_local, 'file_batch_read',    0) - _prev_bcr
+        _delta_bcw  = getattr(_thread_local, 'file_batch_write',   0) - _prev_bcw
+        _delta_breg = getattr(_thread_local, 'file_batch_regular', 0) - _prev_breg
+        _delta_bout = getattr(_thread_local, 'file_batch_output',  0) - _prev_bout
+        _batch_write_multiplier = cache_write_multiplier(
+            batch_provider or "anthropic", config.model
+        )
+        _live_write_multiplier = cache_write_multiplier(
+            "anthropic", config.model, "5m"
+        )
+        _call_cost = (
+            _delta_cr  * _br * 0.10 +
+            _delta_cw  * _br * _live_write_multiplier +
+            _delta_reg * _br +
+            _delta_out * _or +
+            # Batch API tokens: same rates, then the 50% batch discount.
+            (_delta_bcr  * _br * 0.10 +
+             _delta_bcw  * _br * _batch_write_multiplier +
+             _delta_breg * _br +
+             _delta_bout * _or) * 0.50
+        )
+        global _global_accurate_cost
+        with _global_accurate_cost_lock:
+            _global_accurate_cost += _call_cost
+        _thread_local.file_cost_ready = True  # signals calculateCost to use file accumulators
+
+    # Return result
+    if isinstance(text, list):
+        return [tList, totalTokens]
+    else:
+        return [tList[0], totalTokens]

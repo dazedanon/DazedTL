@@ -191,7 +191,8 @@ class ImageCompatibility:
     def skill(self, root, profile):
         """Read skill templates without context migration or other game writes."""
         source = Path(self.backend.source)
-        path = source / "data/skills/image_translation.md"
+        from util.paths import SKILLS_DIR, runtime_data_file
+        path = runtime_data_file(SKILLS_DIR / "image_translation.md", self.backend.workspace)
         value = path.read_text(encoding="utf-8")
         folder = root / ".dazedtl/images"
         from desktop.backend.guidance import documents

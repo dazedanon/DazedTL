@@ -63,7 +63,8 @@ def run_release(plan, log):
     validate_plan(plan)
     source = Path(plan["project"]["source"])
     workspace = Path(plan["folder"]).parents[1]
-    output = destination(source, workspace, os.environ["DAZEDTL_ENGINE_SOURCE"], plan["options"]["output"])
+    from .runtime import ENGINE_ROOT
+    output = destination(source, workspace, ENGINE_ROOT, plan["options"]["output"])
     expected = plan["release_scope"]
     if not packing_state(plan["project"], plan["folder"])["current"]:
         raise ValueError("Pack and verify current Ace data before packaging.")

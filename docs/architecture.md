@@ -11,17 +11,23 @@
 | [app/src/api](../app/src/api) | Typed contracts, transport, and named application operations |
 | [app/electron](../app/electron) | Native dialogs, approved folder opening, close handshake, and Python process |
 | [backend/dazedtl](../backend/dazedtl) | Project identity, settings, workflow actions, and run ownership |
-| [compatibility](../backend/dazedtl/compatibility) | The only boundary allowed to import DazedMTLTool code |
+| [compatibility](../backend/dazedtl/compatibility) | The only boundary allowed to import the bundled engine |
+| [engine](../backend/dazedtl/engine) | Preserved parsers, worker implementation, native tools and translation toolkit |
 
 The shell composes features; features use shared services without importing each other's internals.
 Shared UI components do not import features or call the backend.
 The renderer is sandboxed and has no direct filesystem, process, or network access.
 The adapter retains existing engine behavior while capabilities are extracted incrementally.
-The Qt GUI in the sibling `DazedMTLTool` checkout is the reference for guided workflow
-ordering and behavior. The separate frozen `DazedMTLTool-engine` checkout supplies runtime
-compatibility code only; its retired Electron interface is not a UX reference.
-The default engine location is shared by the launcher and Electron backend through
-[engine-source.cjs](../app/electron/engine-source.cjs); see README for snapshot recovery.
+The Qt GUI from `DazedMTLTool` is the reference for guided workflow ordering and behavior;
+its retired Electron interface is not a UX reference. Neither checkout is a runtime dependency.
+The [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects the engine shipped
+inside this package in the app, workers and standalone helpers, independently of cwd and
+old engine environment variables. There is no external-engine fallback.
+The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its
+[license](../backend/dazedtl/engine/LICENSE.md) and component notices. Parser modules,
+utilities and native manual workers retain their original bytes so relocation preserves
+the signatures checked by existing saved runs. Their historical Python namespaces are
+internal to the compatibility boundary; the old UI and application server are not shipped.
 DazedTL owns the base translation rules in [system.md](../backend/dazedtl/data/skills/system.md),
 along with the shared prompt templates, field instructions, base glossary and SFX reference
 under [data](../backend/dazedtl/data). The [resource bridge](../backend/dazedtl/compatibility/resources.py)
@@ -30,7 +36,7 @@ Existing workspace `engine/shared-data` overrides retain precedence and native p
 missing packaged defaults fail instead of falling back to the engine checkout. Resources are not
 seeded into profiles, so future default changes reach new preparations without overwriting customizations.
 Frozen run context stays authoritative for execution and recovery. Engine parsers, context assembly
-and Len's maintained methodology/tool bundle remain behind the compatibility boundary.
+and Len's maintained methodology/tool bundle are shipped in the owned engine behind the compatibility boundary.
 The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.

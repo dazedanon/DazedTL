@@ -1,14 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { engineSource } from "../app/electron/engine-source.cjs";
 
 export const root = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
 export const app = path.join(root, "app");
-export const legacy = engineSource(root);
 export function requireNode({ exact = false } = {}) {
   const expected = fs
     .readFileSync(path.join(root, ".node-version"), "utf8")

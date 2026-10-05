@@ -418,7 +418,6 @@ class ManualJobs:
                 self.assertEqual(Path(args[0][2]).name, 'manual_worker.py')
                 self.assertNotEqual(Path(args[0][2]).parent, module.parent)
                 self.assertEqual((kwargs['stdin'], kwargs['stdout']), (subprocess.PIPE, subprocess.PIPE))
-                self.assertEqual(kwargs['env']['DAZEDTL_ENGINE_SOURCE'], str(source))
                 self.assertEqual(kwargs['env']['PYTHONDONTWRITEBYTECODE'], '1')
                 # A collected-only worker must never fall back to queued or
                 # partially submitted work, even if state changed before launch.

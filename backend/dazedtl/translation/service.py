@@ -49,7 +49,7 @@ class Translation:
         self.projects = projects
         self.settings = settings
         self.engine = engine
-        self.jobs = jobs or Jobs(workspace, engine.source, settings.adapter.allow_providers)
+        self.jobs = jobs or Jobs(workspace, settings.adapter.allow_providers)
 
     def project(self, identity):
         record = self.projects.get(identity)

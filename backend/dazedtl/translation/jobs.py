@@ -175,9 +175,8 @@ class RunStore:
 
 
 class Jobs:
-    def __init__(self, workspace, legacy_root, allow_providers):
+    def __init__(self, workspace, allow_providers):
         self.store = RunStore(workspace)
-        self.legacy_root = Path(legacy_root)
         self.allow_providers = allow_providers
         self.processes = {}
         self.owner_token = uuid.uuid4().hex
@@ -246,7 +245,7 @@ class Jobs:
             "LOCALAPPDATA", "HOME", "USERPROFILE", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM"}}
         environment.update(PYTHON_DOTENV_DISABLED="1", PYTHONNOUSERSITE="1", PYTHONUTF8="1", PYTHONDONTWRITEBYTECODE="1")
         arguments = [sys.executable, "-I", "-B", str(Path(__file__).with_name("worker.py")),
-                     "--workspace", str(self.store.workspace), "--legacy-root", str(self.legacy_root), "--run", identity,
+                     "--workspace", str(self.store.workspace), "--run", identity,
                      "--owner-pid", str(os.getpid()), "--owner-token", self.owner_token]
         try:
             # Only structured job records cross into the UI; raw provider output is never logged.

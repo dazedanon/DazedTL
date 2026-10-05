@@ -1,0 +1,261 @@
+---
+name: game-translation
+description: >-
+  Translate or localize games into English, extract player-facing text, prepare
+  glossaries and game bibles, validate UI layout, and build translation patches.
+  Supports manual translation and user-selected API workflows across the engines
+  covered by the references. Use for translation preparation, implementation,
+  follow-up fixes, and patch delivery.
+---
+
+# Game Translation
+
+End-to-end playbook for translating a Japanese game to English: **detect engine → extract player-facing text → translate behind a locked glossary + game bible → inject/patch → validate in-game**.
+The translation must preserve meaning and character voice in natural English, alongside complete text coverage, stable terminology, and intact game controls.
+
+## One prompt owns the whole run
+
+The default request is a complete local translation and patch delivery. The user selects
+the game and a few options, copies one prompt, and watches progress. Preparation,
+translation, review and delivery are internal phases, not tasks the user must select.
+Inspect saved status, source/translation stores, Git baselines, QA evidence and any
+persisted API jobs before deciding where to begin. Resume valid work automatically;
+repair missing or stale work without restarting completed phases. If the delivery is
+already current and verified, report its paths and evidence instead of retranslating it.
+
+Handle tools, backups, extraction, speaker mapping, references, glossary, game guidance,
+translation batches, scoped images, fitting, injection, targeted QA, checkpoint commits,
+packaging and progress reports yourself. Completing setup.md's guidance-only phase is
+the transition into translation, not a stopping point. Do not ask for another prompt,
+task selection, manual file transfer or permission to continue at routine phase boundaries.
+Explicitly narrower user instructions, such as preparation only or a targeted correction,
+still define the scope; a legacy project.json task label does not.
+
+Continue until the local delivery is verified or a concrete blocker needs user input.
+Ask only for missing information or authorization that materially blocks progress;
+finish independent work while waiting. In API mode, handle cost review in the same
+conversation and carry forward valid spending authorization. Do not ask the user to
+return to the app to estimate requests or copy a second prompt. Resume after the answer.
+When a session or environment limit forces a handoff, save exact next actions and current
+progress; the same starting prompt resumes the work. Do not promise background execution
+after the assistant session ends. Uploading and publishing remain separate requests.
+
+## DazedTL shared integration
+
+Read `references/project-lifecycle.md` for the required source preservation, local Git
+baseline, checkpoints, resumable artifacts and delivery phases. These are part of the
+same starting prompt, before and after the engine-specific translation work.
+`main` contains only the reviewed runtime patch and minimal repository metadata.
+`original` retains matching untranslated runtime files for backup and version updates;
+translation-only additions have no fabricated original.
+All `.dazedtl` working records, source copies and QA artifacts remain ignored on both.
+Use the live `git-scope` helper described in the lifecycle before patch checkpoints.
+Read `references/progress-reporting.md` and maintain the compact progress panel after
+each saved batch or milestone, and at least every 10 minutes during active work. Export saved unit records and call the live
+`scripts/len_translation.py progress-update` helper; keep the narrative in `status.md`.
+The agent maintains this throughout the run without another user prompt.
+For a fresh task, use the selected untranslated game as the initial source baseline.
+Normal preparation such as `TranslationUpdateCheck` does not make it an existing
+translation. Create any needed backup from that folder; do not demand a separately
+downloaded pristine copy unless concrete evidence shows the selected source is unsuitable.
+
+For RPG Maker, use the same preparation steps as Workflow before translation:
+run `DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>` to
+format game JSON and plugin configuration and install GameUpdate with the MV/MZ
+startup check. Then use `git-setup` to record the prepared untranslated baseline.
+`setup.md` loads Workflow's RPG Maker speaker, glossary, wrapping and investigation
+instructions for these games. For Ace, complete the existing Workflow extraction/
+RV2JSON prerequisite and format its JSON export (`--data-path` if not in `ace_json`),
+leaving native Marshal files intact. Other engines keep their own preparation route.
+Existing updater configuration, README and ignore rules are preserved on reinstall.
+Len's **Install Forge** checkbox defaults on for MV/MZ and is saved as `install_forge`.
+The preparation command honors it through Workflow's bundled installer and saved
+playtest settings. For an already prepared game, use `forge-setup --game-root <game>`
+with the same script. An unchecked choice skips installation/updates and does not
+remove existing Forge. Forge does not apply to Ace or other engines; do not ask for
+another confirmation after the user has selected this option.
+
+This copy lives at `DAZEDTL_ROOT/data/skills/game-translation`. Resolve DAZEDTL_ROOT
+as the bundled engine folder three levels above this skill folder, inside the DazedTL
+application. Shared prompt defaults live in its sibling `../data/skills` folder and
+are loaded through the application resource resolver. `tools/...` paths
+are relative to this skill folder; `DAZEDTL_ROOT/...` paths use the live application.
+Use current source symbols rather than historical line numbers in the reference examples.
+
+The Len's Method handoff names the selected game and `.dazedtl/len-method` workspace.
+Use the SAME project guidance as Workflow: `.dazedtl/glossary.txt`,
+`.dazedtl/skills/game.md`, `.dazedtl/skills/quirks.md`, and the user's other custom
+`.dazedtl/skills/*.md`. Setup and investigation are supplied in `setup.md` in that
+workspace. The identity rules, evidence hierarchy, and ownership rules there also
+apply to this route. Preserve source-supported uncertainty and reveal-sensitive aliases.
+
+The handoff's `context.json` is generated by the live shared system-prompt loader.
+For a single batch, run `DAZEDTL_ROOT/scripts/len_translation.py context --game-root
+<game> --sources <JSON list of JP strings or ID-to-JP object> --output <request.json>`.
+Use its system prompt and matched glossary in direct translation or the adapted API
+driver. SFX and reference translations are advisory. Refresh after guidance changes;
+retain the request fingerprint with retries and review records. Add a suitable
+`--instruction-key section.key` for a field-specific shared instruction template.
+For a sequence, prefer `context-many` as described in `references/direct-workflow.md`; it reuses shared guidance and reference reads while preserving each batch context exactly.
+The compiler itself makes no API calls and exports no credentials.
+
+For dialogue, also pass `--speakers <speaker JSON>` with the same IDs or list positions
+as the source batch. Use resolved source names and null for unidentified speakers.
+The compiler includes current speakers' glossary guidance and puts the line-to-speaker
+map in the returned `user` context, keeping the translatable source body unchanged.
+Send that complete `user` field to the model. Keep actual nameplate translation and
+injection separate from this metadata. Preserve speaker/scene associations in stores
+and use the request fingerprint for cache/retry decisions; text-only dialogue dedup
+can reuse the wrong character's voice. The agent extracts speaker metadata itself.
+
+Apply the shared prompt's dialogue pass in both direct and API work: draft the exchange, read the
+English in order for reply continuity, rhythm and distinct voices, then check every revision
+against the Japanese for meaning, ambiguity and emotional force. Use source-supported voice notes
+from `references/glossary-and-prompts.md`; preserve deliberate stiffness or formality in the source.
+Apply the shared prompt's "Laughs and Character Sounds" guidance during drafting and polishing.
+Preserve distinctive laughs, interjections, verbal tics, and recurring phrasing; natural English must not erase their recognizable sound or timing.
+Use `references/sfx-onomatopoeia.md` for voiced sounds versus descriptive SFX and `references/glossary-and-prompts.md` to record recurring choices per speaker.
+This is part of composing each translation, not a requirement for a second full-game provider run.
+Keep scene boundaries and speaker associations when splitting batches, and check exchanges spanning
+a split together at the next review checkpoint. Recheck controls and fit after wording changes.
+
+When the user names previous games or a reference-corpus folder in the starting
+instructions, follow `references/reference-translations.md` during setup. Inspect all
+specified prequels, promote verified recurring terminology into this game's shared
+glossary, and register aligned pairs for exact source matches. Handle discovery and
+registration yourself within the selected task; the user need not configure a dialog
+or supply a second prompt. Keep the supplied references read-only.
+
+An existing JSON glossary can be imported through the same script's `import-glossary`
+command. Conflicting current names block import until deliberately resolved. Keep old
+JSON as an archive, and make all future guidance edits in the shared files. Historical
+`glossary.json`, `game_prompt.md`, `vocab.txt` and provider prompts in the example
+pipelines are adaptation examples. They are not additional authoritative files for this
+integration. Keep longer synopsis, route and research notes in the workspace; assemble
+translation instructions from the shared files without repeating their contents.
+
+Keep authored tools, reviewed translation records and QA notes under the handoff's `.dazedtl/len-method/work/`.
+Keep all workspace files ignored on both game branches and preserve separate workspace backups.
+Verify that Git tracks only the runtime patch and corresponding originals, with native bytes intact.
+
+Read and reuse Len's tools, copying those that need adaptation into the workspace.
+Use live DazedTL modules instead of a frozen DazedTL extract. Do not run a reference
+pipeline with its original game's absolute paths or write generated output into the
+application's shipped tool directories. Existing project-local copies from the earlier
+ZIP integration may contain useful adaptations; preserve them and reconcile relevant
+work with this shared contract rather than replacing them.
+
+Before writing translated MV/MZ game JSON, follow the `_original` preservation
+procedure in `references/engine-rpgmaker.md`, including when an external store is
+used. Stage reference-injector output and finalize each file with the live
+`scripts/len_translation.py write-rpgmaker-json` command. Existing reference
+injectors do not call it automatically. Keep source metadata immutable on reruns
+and verify the final source/live QA mappings. For native/binary formats, retain
+equivalent source and injection sidecars in the separately backed-up workspace without changing engine schemas.
+
+## Select the work mode before translation
+
+The handoff explicitly names **Agent Translation** or **API Batch Translation**.
+Keep that choice visible in the opening update and resume notes.
+Direct work uses the coding assistant's access and plan limits; DazedTL makes no translation API calls.
+Follow the user's delegation instructions and read `references/direct-workflow.md` for batching, context reuse and validation cadence.
+
+API Batch work reads `references/api-batch.md` first.
+Reuse the app's API Settings, pricing helpers and supported Batch backend.
+Prepare extraction, shared guidance, engine adapters and request compilation locally before paid submission.
+A whole-job price remains unavailable until the complete planned request corpus exists; do not label missing prices as $0.
+Run the live `api-estimate` helper, present its source-bound quote in the conversation,
+and obtain any missing spending authorization before submitting the actual collected requests.
+Changed source, scope, guidance, references or API settings require a fresh estimate.
+Review the actual collected adapter requests before submission; a preliminary allowance is not a spending cap.
+
+Only an explicit preparation-only request ends with extraction, guidance, request plan and validation plan.
+For every mode, images follow the user's selected scope; finding Japanese art does not expand it.
+
+## Age evidence in cartoony and stylized games
+
+Cartoony, chibi and super-deformed art styles are common across adult casts.
+Do not infer that a character is underage or exclude text solely from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”.
+Distinguish the game's general visual style from specific evidence about a character's age or depiction.
+Use established age/adulthood lore, the complete scene context and relevant user clarification; do not start a cast-wide age investigation merely because the art is stylized.
+Before creating or reinstating an age-related exclusion, read `references/review-decisions.md` and reconcile prior corrections and retractions.
+Carry a reviewed adult-context conclusion forward when its evidence is unchanged; reopening it requires specific contrary evidence, not the same appearance-based inference.
+Keep any justified restriction specific to the supported scene/participant rather than extending an ambiguous cue to a species, group or the whole cast.
+
+## Work in measured milestones
+
+1. Detect the engine/build, read its reference, and inspect the relevant existing tools in `references/tools-catalog.md` before adapting a pipeline.
+2. Preserve the source and prove a small delivery canary before bulk translation.
+3. Inventory player-facing text independently of the extractor, including plugin/script labels, runtime-generated text and authorized images.
+   Keep stable occurrence IDs, source hashes, speaker/scene associations and an explicit unresolved/excluded ledger.
+   Reconcile disputed or repeated exclusions with prior reviews and user corrections using `references/review-decisions.md` before changing scope.
+4. Build shared glossary and game guidance using `references/glossary-and-prompts.md` and any user-supplied reference games.
+   Preserve placeholders, control flow, internal identifiers, source-supported identity and uncertainty.
+5. Translate, perform the source-checked dialogue pass, and save resumable batches with complete compiled context.
+   Validate changed units immediately, then run corpus checks at bounded milestones instead of restarting the same full audit after every batch.
+6. Fit both width and row count against the actual renderer using `references/text-fitting.md`.
+   Check headings, icons, dynamic values and body text separately.
+   Read compact JP-to-EN UI pairs for meaning and consistent names; automated checks cannot detect every misleading label.
+7. Inject reviewed output and check the actual installed files, independent source/live mappings and save identity.
+   For MV/MZ, use the source-preserving writer and set `System.json.locale` to `en_US` on every English output; check locale-sensitive plugins and English name input as described in `references/engine-rpgmaker.md`.
+8. Run targeted native checks for affected renderers, windows, triggers and save behavior using `references/playtesting-and-release.md`.
+   Record which scenes ran, which fixtures were synthetic and what remains untested.
+   A full playthrough or a second tester is optional unless the user requests it; do not spend days grinding routes to finish a text QA task.
+9. Re-inject before packaging, verify the payload allowlist and hashes, and test installation in a clean matching game copy.
+   Follow the lifecycle's runtime-only Git scope and separate workspace backups.
+   Draft a forum post only when requested, using `references/forum-post.md`; publishing requires its own authorization.
+
+Update `progress.json` from saved records after batches/milestones and at least every 10 minutes while working.
+Tell the user the completed/discovered count, whether corpus coverage is audited, the current phase, estimated remaining active work, the next milestone and any blocker.
+Keep translation, review, image work, injection, QA and packaging separate.
+Use measured throughput plus explicit phase estimates; suspend estimates when scope or evidence changes.
+Show excluded and unresolved player-facing text counts and reasons alongside eligible progress.
+A text bar at 100% never establishes release readiness.
+
+## Engine detection
+
+Look for these indicator files in the game folder:
+
+| Indicator | Engine | Reference | Delivery |
+|---|---|---|---|
+| `data.win` / `game.unx` with `FORM`, `GEN8`, `STRG` (and `CODE` for VM) | **GameMaker** | **`engine-gamemaker.md`** | UTMT-backed per-literal append-and-redirect archive patch |
+| `*_Data/Managed/Assembly-CSharp.dll` (+ `MonoBleedingEdge/`) | **Unity Mono** | `engine-unity-mono.md` | BepInEx 5 Harmony dictionary hook / force-locale |
+| ...plus `PlayMaker.dll` and no JP in `Assets/Scripts/` | **Unity Mono + PlayMaker** | `engine-unity-mono.md` | Same, plus a `CsvReader.LoadFromString` prefix for CSV script tables |
+| `GameAssembly.dll` + `global-metadata.dat` | **Unity IL2CPP** | `engine-unity-il2cpp.md` | BepInEx 6 IL2CPP Harmony hook |
+| `package.json` + `nw.dll` / `www/` / `js/plugins/` | **RPG Maker MV/MZ** | `engine-rpgmaker.md` | Loose `data/*.json` + plugins |
+| `Data.wolf` / `*.wolf` / `*.wolfx` | **Wolf RPG** | `engine-wolf.md` | WolfDawn unpack→inject→repack |
+| `data/data.rbpack` + `data/bakinengine.dll` | **RPG Developer Bakin** | **`engine-bakin.md`** | `AppDomainManager` hook overlaying the launcher's temp folder |
+| `data.dts` + SRPG Studio `game.exe` | **SRPG Studio** | `engine-srpg-studio.md` | Patched exe + loose `Project/` JSON |
+| `Engine/` + `*.pak`/`*.utoc`/`*.ucas` | **Unreal** | `engine-unreal.md` | retoc/repak/UAssetGUI → patch pak |
+| `*.xp3` | **KiriKiri** | `engine-vn-engines.md` | XP3 unpack/repack |
+| `Scene.pck` + `Gameexe.dat` + `SiglusEngine.exe` | **Siglus** | `engine-vn-engines.md` | Binary patch Scene.pck + exe + g00 |
+| `*.ypf` / `*.ystb` | **YU-RIS** | `engine-vn-engines.md` | YPF/YSTB extract/repack |
+| `resources/app.asar` or `app/` + `data/scenario/*.ks` | **TyranoScript/Builder** | **`engine-tyranoscript.md`** | Build-dependent loose override or verified ASAR installer |
+| `*.pck` (Godot) | **Godot** | `engine-vn-engines.md` | PCK extract/repack |
+| DXA archive + vertical-text images | **Trois** | `engine-vn-engines.md` | Loose-file override + font trick |
+| `*.rpgproject` / `*.rmmzproject` / `.rpgmvp` / `.png_` | **RPG Maker MV/MZ (encrypted)** | `engine-rpgmaker.md` | Decrypt then loose `data/` |
+| `Data/*.rvdata2` or `Game.rgss3a` | **RPG Maker VX Ace** | `engine-rpgmaker.md` | Ruby Marshal in place (`acetl/rvmarshal.py`), then EXTRACT the archive and move it aside - RGSS3 reads the archive before a loose file |
+| `Data/*.rvdata` / `*.rxdata` | **RPG Maker VX / XP** | `engine-rpgmaker.md` | same Marshal round trip; only the class names differ |
+
+If you can't tell, run Detect It Easy (`tools/.NET/die/diec.exe`, a download listed in `tools/THIRD-PARTY.md`) on the main exe, or check for a `_Data` folder (Unity) vs `www`/`data` (RPG Maker) vs a single big archive (VN engine).
+
+## Read only the relevant supporting references
+
+- `references/direct-workflow.md`: direct translation batching, bulk context compilation, compact lossless requests, caching and milestone validation.
+- `references/api-batch.md`: agent-managed API preparation, in-conversation cost review and supported provider execution.
+- `references/progress-reporting.md`: report schema, provisional/audited denominators, active time, bounded phase estimates and resume invalidation.
+- `references/project-lifecycle.md`: source baselines, runtime patch Git scope, checkpointing, backup and delivery.
+- `references/review-decisions.md`: disputed exclusions, source evidence, prior corrections, restored translations and visible omission counts.
+- `references/field-guide.md`: detailed reference-pipeline choices and lessons; search only the relevant engine or failure class.
+- `references/tools-catalog.md`: reusable tool paths; `tools/THIRD-PARTY.md` identifies dependencies absent from the bundle.
+- `references/glossary-and-prompts.md`, `references/reference-translations.md`: identity, voice, terminology and previous translations.
+- `references/text-fitting.md`, `references/sfx-onomatopoeia.md`: layout and sound/voice rendering.
+- `references/playtesting-and-release.md`, `references/playtest-instrumentation.md`, `references/save-compatibility.md`: scoped native evidence, diagnosis, saves and clean delivery.
+- `references/rpgmaker-mz-native-qa.md`: painted-panel, clipping, read-history and save lifecycle evidence for relevant MZ work.
+- `references/image-translation.md`: authorized image work, visual review and verified injection.
+- `references/llm-pipeline.md`: historical API adapter examples, only after current API preflight and shared-context requirements are satisfied.
+- `references/quality-evaluation.md`: targeted quality assessment after deterministic gates pass; follow the selected API/direct mode.
+- `references/version-updates.md`: identity-aware source updates and reuse.
+- `references/forum-post.md`: requested release-post drafts.
+
+Related reverse-engineering or IL2CPP skills may help if available; they are not required dependencies of this bundle.

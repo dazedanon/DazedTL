@@ -1,0 +1,557 @@
+"""Install-time patches for the rewritten Forge plugin (unified forge.js)."""
+
+from __future__ import annotations
+
+import json
+import re
+
+_BOOTSTRAP_START = "/*<DazedMTLTool-Forge-bootstrap>*/"
+_BOOTSTRAP_END = "/*</DazedMTLTool-Forge-bootstrap>*/"
+
+_MODIFIER_ALIASES = {
+    "control": "ctrl",
+    "ctrl": "ctrl",
+    "alt": "alt",
+    "shift": "shift",
+    "meta": "meta",
+    "cmd": "meta",
+    "command": "meta",
+    "win": "meta",
+}
+
+_TOGGLE_UI_KEYSTR_RE = re.compile(
+    r"(id:`toggle_ui`,name:`Toggle Cheat UI`,desc:`Show/Hide the cheat panel`,keyStr:`)[^`]+(`)"
+)
+_SHOW_LAUNCHER_DEFAULT_RE = re.compile(
+    r"(favorites:\{\},showLauncher:)![01](,quickSaveSlot:1)"
+)
+_CONFIG_FILENAME_RE = re.compile(r"`forge-config\.json`")
+_CONFIG_PATH_EXPRESSION = (
+    "window.__dazedForgeConfigPath || `.dazedtl/forge-config.json`"
+)
+_STORAGE_FS_ACCESS = (
+    "let e=window.require;if(typeof e!=`function`)return;"
+    "let t=e(`fs`);if(!t)return;"
+)
+_KEYS_TAB_KEYDOWN_GUARD = (
+    "!$._isFocusedOnInput()&&!$._hasSelection()"
+    "&&!(Q.visible&&Q.activeTab===ml.Shortcuts)"
+)
+_KEYS_TAB_KEYUP_GUARD = (
+    "$._isFocusedOnInput()||Q.visible&&Q.activeTab===ml.Shortcuts||"
+)
+_SHORTCUT_TRANSITION_FILTER = (
+    "for(let e of $.shortcuts)if(!(!e.enabled||!e.keyStr))try{"
+)
+
+
+def forge_key_str(hotkey: str) -> str:
+    """Convert a Dazed forgeHotkey value to Forge shortcut keyStr format."""
+    raw = (hotkey or "F10").strip()
+    if not raw:
+        return "f10"
+    parts = re.split(r"\s*\+\s*|\s+", raw)
+    out: list[str] = []
+    for part in parts:
+        token = part.strip().lower()
+        if not token:
+            continue
+        mapped = _MODIFIER_ALIASES.get(token)
+        if mapped:
+            if mapped not in out:
+                out.append(mapped)
+        else:
+            out.append(token)
+    return " ".join(out) or "f10"
+
+
+def _bootstrap_js(hotkey: str, ui_scale: str) -> str:
+    key_str = json.dumps(forge_key_str(hotkey))
+    scale = json.dumps(str(ui_scale or "auto").strip() or "auto")
+    return f"""{_BOOTSTRAP_START}
+(function () {{
+  var toggleKey = {key_str};
+  var uiScale = {scale};
+  // Forge persists settings through NW.js. Resolve the file from the loaded
+  // game rather than process.cwd(), which depends on how the executable was
+  // launched. Keep it with DazedTL's other ignored per-game metadata.
+  window.__dazedForgeConfigPath = ".dazedtl/forge-config.json";
+  var forgeNativeFs = null;
+  try {{
+    var forgeNw =
+      typeof nw !== "undefined" ? nw : window.nw || null;
+    var forgeRequire =
+      typeof window.require === "function"
+        ? window.require
+        : typeof require === "function"
+        ? require
+        : forgeNw && typeof forgeNw.require === "function"
+        ? forgeNw.require.bind(forgeNw)
+        : null;
+    var forgeFs = forgeRequire && forgeRequire("fs");
+    var forgePath = forgeRequire && forgeRequire("path");
+    var forgeProcess =
+      (forgeRequire && forgeRequire("process")) ||
+      (typeof process !== "undefined" ? process : null);
+    forgeNativeFs = forgeFs || null;
+    if (forgeFs && forgePath) {{
+      var pageDir = "";
+      if (
+        window.location &&
+        String(window.location.protocol || "").toLowerCase() === "file:"
+      ) {{
+        var pagePath = decodeURIComponent(window.location.pathname || "");
+        if (/^\\/[A-Za-z]:\\//.test(pagePath)) pagePath = pagePath.slice(1);
+        pageDir = pagePath ? forgePath.dirname(pagePath) : "";
+      }}
+
+      // Packaged NW.js games use a chrome-extension:// URL, whose pathname is
+      // merely /index.html. Resolve those games from NW/Node process paths and
+      // select the first candidate that actually contains an RPG Maker entry.
+      var forgeRootCandidates = [];
+      function addForgeRoot(candidate) {{
+        if (!candidate) return;
+        try {{
+          var resolved = forgePath.resolve(String(candidate));
+          if (forgeRootCandidates.indexOf(resolved) < 0) {{
+            forgeRootCandidates.push(resolved);
+          }}
+        }} catch (e) {{}}
+      }}
+      addForgeRoot(pageDir);
+      addForgeRoot(forgeNw && forgeNw.App && forgeNw.App.startPath);
+      if (forgeProcess) {{
+        if (forgeProcess.mainModule && forgeProcess.mainModule.filename) {{
+          addForgeRoot(forgePath.dirname(forgeProcess.mainModule.filename));
+        }}
+        if (forgeProcess.execPath) {{
+          addForgeRoot(forgePath.dirname(forgeProcess.execPath));
+        }}
+        if (forgeProcess.cwd) addForgeRoot(forgeProcess.cwd());
+      }}
+
+      var gameRoot = "";
+      for (var forgeRootIndex = 0; forgeRootIndex < forgeRootCandidates.length; forgeRootIndex++) {{
+        var rootCandidate = forgeRootCandidates[forgeRootIndex];
+        if (String(forgePath.basename(rootCandidate)).toLowerCase() === "www") {{
+          rootCandidate = forgePath.dirname(rootCandidate);
+        }}
+        if (
+          forgeFs.existsSync(forgePath.join(rootCandidate, "index.html")) ||
+          forgeFs.existsSync(forgePath.join(rootCandidate, "www", "index.html"))
+        ) {{
+          gameRoot = rootCandidate;
+          break;
+        }}
+      }}
+      if (!gameRoot) gameRoot = forgeRootCandidates[0] || ".";
+      var forgeDir = forgePath.join(gameRoot, ".dazedtl");
+      var forgeConfig = forgePath.join(forgeDir, "forge-config.json");
+      window.__dazedForgeConfigPath = forgeConfig;
+      if (!forgeFs.existsSync(forgeDir)) forgeFs.mkdirSync(forgeDir);
+
+      // Preserve settings from both the upstream root-level location and the
+      // old relative-path patch (which could land under www for MV games).
+      var legacyForgeConfigs = [
+        forgePath.join(gameRoot, "forge-config.json"),
+        forgePath.resolve("forge-config.json")
+      ];
+      if (pageDir) {{
+        legacyForgeConfigs.push(
+          forgePath.join(pageDir, ".dazedtl", "forge-config.json")
+        );
+      }}
+      for (var forgeIndex = 0; forgeIndex < legacyForgeConfigs.length; forgeIndex++) {{
+        var legacyForgeConfig = legacyForgeConfigs[forgeIndex];
+        if (
+          forgePath.resolve(legacyForgeConfig) !== forgePath.resolve(forgeConfig) &&
+          forgeFs.existsSync(legacyForgeConfig) &&
+          !forgeFs.existsSync(forgeConfig)
+        ) {{
+          forgeFs.renameSync(legacyForgeConfig, forgeConfig);
+        }}
+      }}
+    }}
+  }} catch (e) {{}}
+  // Some NW.js builds do not expose Node as window.require, and games can also
+  // live in read-only folders. Prefer the per-game JSON, but retain settings in
+  // a path-scoped browser fallback whenever that file cannot be used.
+  var forgeFallbackKey =
+    "dazedtl:forge-config:" +
+    String((window.location && window.location.pathname) || "game") +
+    ":" +
+    String(window.__dazedForgeConfigPath);
+  function forgeFallbackRead() {{
+    try {{
+      return localStorage.getItem(forgeFallbackKey);
+    }} catch (e) {{
+      return null;
+    }}
+  }}
+  function forgeNativeExists(file) {{
+    try {{
+      return !!(forgeNativeFs && forgeNativeFs.existsSync(file));
+    }} catch (e) {{
+      return false;
+    }}
+  }}
+  window.__dazedForgeFs = {{
+    existsSync: function (file) {{
+      return forgeFallbackRead() !== null || forgeNativeExists(file);
+    }},
+    readFileSync: function (file, encoding) {{
+      var fallback = forgeFallbackRead();
+      if (fallback !== null) return fallback;
+      if (forgeNativeFs) return forgeNativeFs.readFileSync(file, encoding);
+      throw new Error("Forge settings storage is unavailable");
+    }},
+    writeFileSync: function (file, data, encoding) {{
+      var nativeError = null;
+      if (forgeNativeFs) {{
+        try {{
+          forgeNativeFs.writeFileSync(file, data, encoding);
+          try {{
+            localStorage.removeItem(forgeFallbackKey);
+          }} catch (e) {{}}
+          return;
+        }} catch (e) {{
+          nativeError = e;
+        }}
+      }}
+      try {{
+        localStorage.setItem(forgeFallbackKey, String(data));
+        return;
+      }} catch (fallbackError) {{
+        throw nativeError || fallbackError;
+      }}
+    }}
+  }};
+  // Seed the consolidated store on boot and migrate every legacy forge:* key.
+  // This also guarantees that a writable packaged game gets its JSON before
+  // the first settings interaction.
+  try {{
+    var forgeInitialConfig = {{}};
+    if (window.__dazedForgeFs.existsSync(window.__dazedForgeConfigPath)) {{
+      try {{
+        forgeInitialConfig = JSON.parse(
+          window.__dazedForgeFs.readFileSync(
+            window.__dazedForgeConfigPath,
+            "utf8"
+          )
+        );
+      }} catch (e) {{
+        forgeInitialConfig = {{}};
+      }}
+    }}
+    function forgeDecodeSetting(value) {{
+      if (typeof value !== "string") return value;
+      try {{
+        return JSON.parse(value);
+      }} catch (e) {{
+        return value;
+      }}
+    }}
+    function forgeSettingObject(value) {{
+      value = forgeDecodeSetting(value);
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : {{}};
+    }}
+    for (var forgeConfigKey of Object.keys(forgeInitialConfig)) {{
+      if (forgeConfigKey.indexOf("forge:") === 0) {{
+        var normalizedForgeKey = forgeConfigKey.slice(6);
+        if (!(normalizedForgeKey in forgeInitialConfig)) {{
+          forgeInitialConfig[normalizedForgeKey] = forgeDecodeSetting(
+            forgeInitialConfig[forgeConfigKey]
+          );
+        }}
+        delete forgeInitialConfig[forgeConfigKey];
+      }}
+    }}
+    try {{
+      for (var forgeStorageIndex = 0; forgeStorageIndex < localStorage.length; forgeStorageIndex++) {{
+        var legacyForgeKey = localStorage.key(forgeStorageIndex);
+        if (legacyForgeKey && legacyForgeKey.indexOf("forge:") === 0) {{
+          var migratedForgeKey = legacyForgeKey.slice(6);
+          if (!(migratedForgeKey in forgeInitialConfig)) {{
+            forgeInitialConfig[migratedForgeKey] = forgeDecodeSetting(
+              localStorage.getItem(legacyForgeKey)
+            );
+          }}
+        }}
+      }}
+    }} catch (e) {{}}
+    var forgeShortcuts = forgeSettingObject(forgeInitialConfig.shortcuts);
+    forgeShortcuts.toggle_ui = Object.assign(
+      {{}},
+      forgeShortcuts.toggle_ui,
+      {{ keyStr: toggleKey, enabled: true }}
+    );
+    forgeInitialConfig.shortcuts = forgeShortcuts;
+    var forgeSettings = forgeSettingObject(forgeInitialConfig.config);
+    forgeSettings.showLauncher = false;
+    forgeInitialConfig.config = forgeSettings;
+    window.__dazedForgeFs.writeFileSync(
+      window.__dazedForgeConfigPath,
+      JSON.stringify(forgeInitialConfig, null, 2),
+      "utf8"
+    );
+  }} catch (e) {{}}
+  // Forge's shortcut matcher uses legacy keyCode. Some NW.js/Wine builds deliver
+  // keydown with keyCode=0 while still setting key/code - map those back.
+  window.__dazedKeyCode = function (e) {{
+    var kc = e.keyCode || e.which || 0;
+    if (kc) return kc;
+    var key = String(e.key || "").toLowerCase();
+    var code = String(e.code || "");
+    if (key === "control") return 17;
+    if (key === "alt") return 18;
+    if (key === "shift") return 16;
+    if (key === "meta") return 91;
+    var fm = /^f(\\d{{1,2}})$/.exec(key) || /^f(\\d{{1,2}})$/i.exec(code);
+    if (fm) return 111 + parseInt(fm[1], 10);
+    var km = /^key([a-z])$/i.exec(code);
+    if (km) return km[1].toUpperCase().charCodeAt(0);
+    if (key.length === 1) {{
+      var c = key.charCodeAt(0);
+      if (c >= 97 && c <= 122) return c - 32;
+      if (c >= 48 && c <= 57) return c;
+    }}
+    var dm = /^digit([0-9])$/i.exec(code);
+    if (dm) return 48 + parseInt(dm[1], 10);
+    return 0;
+  }};
+  function resolveUiScale(v) {{
+    if (v !== "auto" && v != null && String(v).trim() !== "") {{
+      var n = parseFloat(v);
+      if (!isNaN(n) && n > 0) return Math.max(0.75, Math.min(3, n));
+    }}
+    var base = 816;
+    var gameW = (typeof Graphics !== "undefined" && Graphics.width) ? Graphics.width : 0;
+    var viewW = window.innerWidth || document.documentElement.clientWidth || base;
+    var w = Math.max(gameW || base, viewW);
+    var scale = w / base;
+    var dpr = window.devicePixelRatio || 1;
+    if (dpr > 1.15) scale *= Math.min(2, 0.75 + dpr * 0.35);
+    return Math.max(1, Math.min(2.75, scale));
+  }}
+  function applyUiScale() {{
+    var host = document.getElementById("forge-mvmz-host");
+    if (!host) return;
+    var fx = resolveUiScale(uiScale);
+    var changed = host.style.zoom !== String(fx);
+    host.style.zoom = String(fx);
+    host.style.width = window.innerWidth / fx + "px";
+    host.style.height = window.innerHeight / fx + "px";
+    if (changed) window.dispatchEvent(new Event("dazedtl:forge-scale"));
+  }}
+  // CSS zoom changes layout units, but mouse events and innerWidth/Height
+  // still use viewport pixels. Keep Forge's layout and input in local units.
+  window.__dazedForgeViewport = {{
+    local: function (value) {{ return value / resolveUiScale(uiScale); }},
+    width: function () {{ return this.local(window.innerWidth); }},
+    height: function () {{ return this.local(window.innerHeight); }}
+  }};
+  if (!window.__dazedForgeUiScaleHook) {{
+    window.__dazedForgeUiScaleHook = true;
+    var observer = new MutationObserver(applyUiScale);
+    observer.observe(document.documentElement, {{ childList: true, subtree: true }});
+    window.addEventListener("resize", applyUiScale);
+    setInterval(applyUiScale, 500);
+  }}
+  applyUiScale();
+}})();
+{_BOOTSTRAP_END}"""
+
+
+def _strip_existing_bootstrap(text: str) -> str:
+    while True:
+        start = text.find(_BOOTSTRAP_START)
+        if start < 0:
+            return text
+        end = text.find(_BOOTSTRAP_END, start)
+        if end < 0:
+            return text
+        text = text[:start] + text[end + len(_BOOTSTRAP_END) :]
+    return text
+
+
+def _patch_toggle_ui_default(text: str, hotkey: str) -> str:
+    """Rewrite Forge's built-in toggle_ui default (Ctrl C) to the Dazed hotkey."""
+    key = forge_key_str(hotkey)
+    text, n = _TOGGLE_UI_KEYSTR_RE.subn(rf"\g<1>{key}\2", text, count=1)
+    if n == 0:
+        raise ValueError("Could not patch toggle_ui keyStr in modern Forge bundle")
+    return text
+
+
+def _disable_launcher_default(text: str) -> str:
+    """Hide modern Forge's floating launcher; the toggle shortcut remains active."""
+    text, n = _SHOW_LAUNCHER_DEFAULT_RE.subn(r"\g<1>!1\2", text, count=1)
+    if n == 0:
+        raise ValueError("Could not disable modern Forge launcher default")
+    return text
+
+
+def _relocate_config_file(text: str) -> str:
+    """Store Forge's runtime settings under the ignored game metadata folder."""
+    text, count = _CONFIG_FILENAME_RE.subn(
+        _CONFIG_PATH_EXPRESSION, text, count=1
+    )
+    if count != 1:
+        raise ValueError("Could not relocate modern Forge config file")
+    return text
+
+
+def _patch_storage_adapter(text: str) -> str:
+    """Route Forge persistence through the filesystem/localStorage adapter."""
+    if text.count(_STORAGE_FS_ACCESS) != 1:
+        raise ValueError("Could not patch modern Forge settings storage")
+    return text.replace(
+        _STORAGE_FS_ACCESS,
+        "let t=window.__dazedForgeFs;if(!t)return;",
+        1,
+    )
+
+
+def _keep_toggle_ui_active_on_keys_tab(text: str) -> str:
+    """Keep the required panel toggle active while other keys are disabled."""
+    replacements = (
+        (
+            _KEYS_TAB_KEYDOWN_GUARD,
+            "!$._isFocusedOnInput()&&!$._hasSelection()",
+        ),
+        (_KEYS_TAB_KEYUP_GUARD, "$._isFocusedOnInput()||"),
+        (
+            _SHORTCUT_TRANSITION_FILTER,
+            "for(let e of $.shortcuts)if(!(!e.enabled||!e.keyStr||"
+            "Q.visible&&Q.activeTab===ml.Shortcuts&&e.id!==`toggle_ui`))try{",
+        ),
+    )
+    for old, new in replacements:
+        if text.count(old) != 1:
+            raise ValueError("Could not keep Forge's UI toggle active on Keys tab")
+        text = text.replace(old, new, 1)
+    return text
+
+
+def _patch_keycode_reads(text: str) -> str:
+    """Route Forge shortcut key reads through the keyCode polyfill."""
+    replacements = [
+        (
+            "$.currentKey.add(e.keyCode)",
+            "$.currentKey.add(window.__dazedKeyCode(e))",
+        ),
+        (
+            "$.currentKey.remove(e.keyCode)",
+            "$.currentKey.remove(window.__dazedKeyCode(e))",
+        ),
+    ]
+    for old, new in replacements:
+        if old not in text:
+            raise ValueError(f"Could not patch Forge keyCode read: missing {old!r}")
+        text = text.replace(old, new, 1)
+
+    # The minifier changes the key-set and class identifiers between upstream
+    # builds, so patch the stable method shape instead of pinning those names.
+    from_event = re.compile(
+        r"static fromEvent\((?P<event>[A-Za-z_$][\w$]*)\)\{return "
+        r"(?P<body>[^{}]+)\}(?=static _fromCombiningAloneEvent)"
+    )
+
+    def patch_from_event(match: re.Match) -> str:
+        event = match.group("event")
+        body, count = re.subn(
+            rf"\b{re.escape(event)}\.keyCode\b",
+            f"window.__dazedKeyCode({event})",
+            match.group("body"),
+        )
+        if count != 2:
+            raise ValueError(
+                "Could not patch Forge fromEvent keyCode reads: "
+                f"expected 2, found {count}"
+            )
+        return f"static fromEvent({event}){{return {body}}}"
+
+    text, count = from_event.subn(patch_from_event, text, count=1)
+    if count != 1:
+        raise ValueError("Could not patch Forge fromEvent shortcut parser")
+    return text
+
+
+def _patch_scaled_interactions(text: str) -> str:
+    """Keep window bounds and map/panel input in the zoomed host's units.
+
+    These counts deliberately fail on upstream changes so a refreshed bundle
+    cannot silently ship with only some of its coordinate conversions applied.
+    Actor reordering compares clientY against a DOM rect and stays in pixels.
+    """
+    def replace(old: str, new: str, count: int) -> None:
+        nonlocal text
+        if text.count(old) != count:
+            raise ValueError(f"Could not patch Forge scaled interaction: {old}")
+        text = text.replace(old, new)
+
+    # A hard minimum outside the viewport clamp can push the resize handle
+    # offscreen again. Smaller viewports also need room to shrink the panel.
+    for size, dimension, position, initial in (
+        (560, "Width", "r", "x"),
+        (360, "Height", "i", "S"),
+    ):
+        axis = "X" if dimension == "Width" else "Y"
+        origin = "p" if dimension == "Width" else "m"
+        delta = f"V({initial})+e.client{axis}-V({origin})"
+        replace(
+            f"Math.max({size},Math.min(window.inner{dimension}-V({position}),{delta}))",
+            f"Math.min(window.inner{dimension}-V({position}),"
+            f"Math.max(Math.min({size},window.inner{dimension}*.75),{delta}))",
+            1,
+        )
+
+    for axis, edge in (("X", "left"), ("Y", "top")):
+        # Convert panel/launcher/map drag coordinates, leaving canvas-relative
+        # input and the actor list's rect comparisons for their own handling.
+        pattern = rf"e\.client{axis}(?!-t\.{edge}|[<>])"
+        text, count = re.subn(
+            pattern, rf"window.__dazedForgeViewport.local(e.client{axis})", text
+        )
+        if count != 9:
+            raise ValueError(f"Could not patch Forge scaled mouse {axis}")
+        replace(
+            f"e.client{axis}-t.{edge}",
+            f"window.__dazedForgeViewport.local(e.client{axis}-t.{edge})",
+            3,
+        )
+
+    for dimension in ("Width", "Height"):
+        replace(
+            f"window.inner{dimension}",
+            f"window.__dazedForgeViewport.{dimension.lower()}()",
+            13,
+        )
+    for handler in ("l", "u"):
+        original = f"window.addEventListener(`resize`,{handler})"
+        replace(
+            original,
+            original + f",window.addEventListener(`dazedtl:forge-scale`,{handler})",
+            1,
+        )
+    return text
+
+
+def apply_modern_forge_patches(text: str, hotkey: str, ui_scale: str) -> str:
+    """Inject Dazed hotkey / UI-scale bootstrap and harden shortcut handling."""
+    text = _strip_existing_bootstrap(text)
+    text = _patch_toggle_ui_default(text, hotkey)
+    text = _disable_launcher_default(text)
+    text = _relocate_config_file(text)
+    text = _patch_storage_adapter(text)
+    text = _keep_toggle_ui_active_on_keys_tab(text)
+    text = _patch_keycode_reads(text)
+    text = _patch_scaled_interactions(text)
+    bootstrap = _bootstrap_js(hotkey, ui_scale)
+    match = re.search(r"\*/\s*\n", text)
+    if not match:
+        return bootstrap + "\n" + text
+    pos = match.end()
+    return text[:pos] + bootstrap + "\n" + text[pos:]

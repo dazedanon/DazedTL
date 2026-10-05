@@ -40,14 +40,10 @@ The optional text editor retains boxes, source text and translations, supports i
 
 ## Development launch
 
-Keep this checkout beside `DazedMTLTool-engine`, the frozen Python compatibility source
-used during migration. The local snapshot is `b91bede1` on
-`codex/archive-electron-20261001` in the DazedMTLTool Git repository. Recreate it with
-`git -C ../DazedMTLTool worktree add --detach ../DazedMTLTool-engine b91bede1` if needed.
-The sibling `DazedMTLTool` checkout is restored to Qt and is the workflow reference;
-it does not supply the new app's runtime helpers.
-Shared translation prompts and reference data are owned by this checkout; see
-[resource ownership](docs/architecture.md#ownership) for their locations and override behavior.
+This checkout includes its engine code, worker helpers, tokenizers, native tools and
+translation toolkit. No DazedMTLTool installation or sibling engine checkout is required.
+See [resource ownership](docs/architecture.md#ownership) for the engine and shared prompt
+locations, saved-run compatibility and override behavior.
 Use the Node and Python versions in [.node-version](.node-version) and [.python-version](.python-version), and the npm version in [app/package.json](app/package.json).
 Setup installs locked dependencies into this checkout's own `app/node_modules` and `.venv`.
 Launching, building, and testing also accept newer Node releases within the pinned major version.
@@ -66,7 +62,6 @@ Projects, credentials, and runs live in its workspace outside this checkout.
 
 | Optional environment variable | Purpose |
 | --- | --- |
-| `DAZEDTL_LEGACY_ROOT` | Override the frozen compatibility engine checkout |
 | `DAZEDTL_PYTHON` | Python executable with backend dependencies |
 | `DAZEDTL_NEXT_PROFILE` | Electron profile location |
 | `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |

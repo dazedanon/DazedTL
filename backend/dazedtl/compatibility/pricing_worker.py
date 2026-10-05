@@ -27,10 +27,9 @@ def catalog(value):
     }
 
 
-def resolve(source, cache, model, online):
-    sys.path.insert(0, str(source))
-    from dazedtl.compatibility.resources import install
-    install()
+def resolve(cache, model, online):
+    from dazedtl.compatibility.runtime import activate
+    activate()
     import util.translation as translation
     import httpx
 
@@ -113,6 +112,6 @@ if __name__ == "__main__":
     # Imports and existing engine messages cannot pollute the response protocol.
     with redirect_stdout(sys.stderr):
         result = resolve(
-            Path(sys.argv[1]), Path(sys.argv[2]), request["model"], request["online"]
+            Path(sys.argv[1]), request["model"], request["online"]
         )
     print(json.dumps(result, allow_nan=False))

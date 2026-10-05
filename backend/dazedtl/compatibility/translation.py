@@ -5,7 +5,6 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
-import sys
 import tempfile
 import subprocess
 from functools import wraps
@@ -37,15 +36,10 @@ def provider_errors(function):
 
 
 class TranslationEngine:
-    def __init__(self, source, profile):
-        self.source = Path(source).resolve(strict=True)
+    def __init__(self, profile):
+        from .runtime import activate
+        self.source = activate()
         self.profile = Path(profile).resolve()
-        if not (self.source / "util/len_translation.py").is_file():
-            raise ValueError("Choose the preserved DazedMTLTool checkout.")
-        if str(self.source) not in sys.path:
-            sys.path.insert(0, str(self.source))
-        from .resources import install
-        install()
 
     @contextmanager
     def context(self):

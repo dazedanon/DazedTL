@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dazedtl.compatibility.dazedmtl import ExistingBackend
+from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.projects.store import Projects
 from dazedtl.storage import WorkspaceLock
 from dazedtl.diagnostics import Diagnostics
@@ -32,18 +33,18 @@ PROTOCOL = json.loads(
 
 
 class Application:
-    def __init__(self, workspace, legacy, allow_providers):
+    def __init__(self, workspace, allow_providers):
         self.closing = False
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.workspace_lock = WorkspaceLock(self.workspace)
         self.projects = Projects(self.workspace)
         self.projects.data["screen"] = "overview"
-        self.backend = ExistingBackend(legacy, self.workspace / "engine", allow_providers)
+        self.backend = ExistingBackend(self.workspace / "engine", allow_providers)
         with self.backend.context():
             self.settings = Settings(self.workspace, self.backend)
         self.translation = Translation(self.workspace, self.projects, self.settings,
-                                       TranslationEngine(legacy, self.workspace / "engine"))
+                                       TranslationEngine(self.workspace / "engine"))
         self.guided = Guided(self.backend, self.projects, self.settings, self.translation)
         self.images = ImageService(self.projects, self.translation, self.settings, self.backend)
         self.plugins = PluginService(self.projects, self.translation, self.backend)
@@ -227,7 +228,7 @@ class Application:
 
 def serve(args, diagnostics):
     os.environ["PYTHON_DOTENV_DISABLED"] = "1"
-    app = Application(args.workspace, args.legacy_root, not args.offline)
+    app = Application(args.workspace, not args.offline)
     diagnostics.workspace_ready(app.projects.data["version"])
     methods = {
         "workspace_snapshot": (app.snapshot, lambda value, _params: value),
@@ -367,7 +368,6 @@ def serve(args, diagnostics):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True, type=Path)
-    parser.add_argument("--legacy-root", required=True, type=Path)
     parser.add_argument("--diagnostics-directory", type=Path)
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
@@ -375,7 +375,7 @@ def main():
     diagnostics = Diagnostics(
         args.diagnostics_directory or args.workspace / "diagnostics",
         root,
-        args.legacy_root.resolve(),
+        ENGINE_ROOT,
     )
     try:
         diagnostics.started()

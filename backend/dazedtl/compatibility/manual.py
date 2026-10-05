@@ -81,7 +81,6 @@ def manual_jobs(source, workspace, lock, allow_providers):
         ]
         kwargs["env"] = {
             **kwargs["env"],
-            "DAZEDTL_ENGINE_SOURCE": str(source),
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         return subprocess.Popen(arguments, **kwargs)

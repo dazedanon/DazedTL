@@ -1,0 +1,458 @@
+# Libraries
+import json
+import os
+import re
+import util.dazedwrap as dazedwrap
+import threading
+import time
+import traceback
+import tiktoken
+from pathlib import Path
+from colorama import Fore
+from dotenv import load_dotenv
+from retry import retry
+from tqdm import tqdm
+from util.translation import TranslationConfig, translateAI as sharedtranslateAI, getPricingConfig, calculateCost
+from util.speakers import strip_speaker_prefix
+import tempfile
+
+# OpenAI initialization centralized in util/translation.py
+
+# Globals
+MODEL = os.getenv("model")
+TIMEOUT = int(os.getenv("timeout"))
+LANGUAGE = os.getenv("language").capitalize()
+from util.paths import PROMPT_PATH, read_active_glossary
+
+PROMPT = PROMPT_PATH.read_text(encoding="utf-8")
+VOCAB = read_active_glossary()
+LOCK = threading.Lock()
+WIDTH = int(os.getenv("width"))
+LISTWIDTH = int(os.getenv("listWidth"))
+NOTEWIDTH = 70
+MAXHISTORY = 10
+ESTIMATE = ""
+TOKENS = [0, 0]
+NAMESLIST = []
+NAMES = False  # Output a list of all the character names found
+BRFLAG = False  # If the game uses <br> instead
+FIXTEXTWRAP = True  # Overwrites textwrap
+IGNORETLTEXT = False  # Ignores all translated text.
+MISMATCH = []  # Lists files that throw a mismatch error (Length of GPT list response is wrong)
+FILENAME = None
+
+# tqdm Globals
+BAR_FORMAT = "{l_bar}{bar:10}{r_bar}{bar:-10b}"
+POSITION = 0
+LEAVE = False
+PBAR = None
+
+# Regex - Need to change this if you want to translate from/to other languages. Default is Japanese Regex
+LANGREGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
+
+# Get pricing configuration based on the model
+PRICING_CONFIG = getPricingConfig(MODEL)
+INPUTAPICOST = PRICING_CONFIG["inputAPICost"]
+OUTPUTAPICOST = PRICING_CONFIG["outputAPICost"]
+BATCHSIZE = PRICING_CONFIG["batchSize"]
+FREQUENCY_PENALTY = PRICING_CONFIG["frequencyPenalty"]
+
+# Initialize Translation Config
+TRANSLATION_CONFIG = TranslationConfig(
+    model=MODEL,
+    language=LANGUAGE,
+    prompt=PROMPT,
+    vocab=VOCAB,
+    langRegex=LANGREGEX,
+    batchSize=BATCHSIZE,
+    maxHistory=MAXHISTORY,
+    estimateMode=False  # Will be set dynamically based on ESTIMATE
+)
+LEAVE = False
+
+def handleTyrano(filename, estimate):
+    global ESTIMATE, TOKENS, FILENAME
+    ESTIMATE = estimate
+    FILENAME = filename
+
+    # Translate
+    start = time.time()
+    translatedData = openFiles(filename)
+
+    # Translate
+    if not estimate:
+        try:
+            with open("translated/" + filename, "w", encoding="utf-8", newline="\n") as outFile:
+                outFile.writelines(translatedData[0])
+        except Exception:
+            traceback.print_exc()
+            return "Fail"
+
+    # Print File
+    end = time.time()
+    tqdm.write(getResultString(translatedData, end - start, filename))
+    with LOCK:
+        TOKENS[0] += translatedData[1][0]
+        TOKENS[1] += translatedData[1][1]
+
+    # Print Total
+    totalString = getResultString(["", TOKENS, None], end - start, "TOTAL")
+
+    # Print any errors on maps
+    if len(MISMATCH) > 0:
+        return totalString + Fore.RED + f"\nMismatch Errors: {MISMATCH}" + Fore.RESET
+    else:
+        return totalString
+
+
+def getResultString(translatedData, translationTime, filename):
+    # File Print String
+    cost = calculateCost(translatedData[1][0], translatedData[1][1], MODEL)
+    totalTokenstring = (
+        Fore.YELLOW + "[Input: " + str(translatedData[1][0]) + "]"
+        "[Output: "
+        + str(translatedData[1][1])
+        + "]" "[Cost: ${:,.4f}".format(cost)
+        + "]"
+    )
+    timeString = Fore.BLUE + "[" + str(round(translationTime, 1)) + "s]"
+
+    if translatedData[2] == None:
+        # Success
+        return filename + ": " + totalTokenstring + timeString + Fore.GREEN + " \u2713 " + Fore.RESET
+
+    else:
+        # Fail
+        try:
+            raise translatedData[2]
+        except Exception as e:
+            traceback.print_exc()
+            errorString = str(e) + Fore.RED
+            return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
+
+
+def openFiles(filename):
+    with open("files/" + filename, "r", encoding="utf8") as readFile:
+        translatedData = parseTyrano(readFile, filename)
+
+        # Delete lines marked for deletion
+        finalData = []
+        for line in translatedData[0]:
+            if line != "\\d\n":
+                finalData.append(line)
+        translatedData[0] = finalData
+
+    return translatedData
+
+
+def parseTyrano(readFile, filename):
+    global PBAR
+    totalTokens = [0, 0]
+
+    # Read File into data
+    data = readFile.readlines()
+
+    # Create Progress Bar
+    with tqdm(bar_format=BAR_FORMAT, position=POSITION, leave=LEAVE) as pbar:
+        pbar.desc = filename
+        PBAR = pbar
+
+        try:
+            result = translateTyrano(data, filename, [])
+            totalTokens[0] += result[0]
+            totalTokens[1] += result[1]
+        except Exception as e:
+            traceback.print_exc()
+            return [data, totalTokens, e]
+    return [data, totalTokens, None]
+
+
+def save_progress_lines(lines, filename, encoding="utf-8"):
+    """Atomically save current line-based translation progress."""
+    try:
+        if ESTIMATE:
+            return
+        os.makedirs("translated", exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(prefix=f"{filename}.", suffix=".tmp", dir="translated")
+        try:
+            with os.fdopen(tmp_fd, "w", encoding=encoding, newline="\n", errors="ignore") as tmp_file:
+                tmp_file.writelines(lines)
+            os.replace(tmp_path, os.path.join("translated", filename))
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+    except Exception:
+        traceback.print_exc()
+
+
+def saveCheckLines(lines, filename, tokens=None, encoding="utf-8"):
+    """Save progress only when tokens indicate work or when tokens is None but we know a mutation occurred."""
+    try:
+        # If explicit tokens provided, gate on tokens; otherwise assume we were called on actual mutation
+        if tokens is not None:
+            if not (isinstance(tokens, (list, tuple)) and len(tokens) >= 2 and (tokens[0] or tokens[1])):
+                return
+        save_progress_lines(lines, filename, encoding=encoding)
+    except Exception:
+        traceback.print_exc()
+
+
+def translateTyrano(data, filename, translatedList):
+    if translatedList:
+        stringList = translatedList[0]
+        choiceList = translatedList[1]
+    else:
+        stringList = []
+        choiceList = []
+    tokens = [0, 0]
+    speaker = ""
+    stringListTL = []
+    choiceListTL = []
+    global LOCK, ESTIMATE, FILENAME, PBAR, MISMATCH
+    i = 0
+
+    while i < len(data):
+        voice = False
+        lineRegexNoSpeaker = r"^([^\[#;*@\n]+)\[p\]|^([^\[#;*@\n]+)\[l\]\[[rp]\]|^([^\[#;*@\n]+)\[[rpl]\]|^([^\[#;*@_\n]+)\n$"
+        lineRegexSpeaker = r"^#(.*)"
+        furiganaRegex = r"(\[ruby\stext=(.*?)\])"
+        choiceRegex = r'\[glink.+?text="(.*?)"'
+
+        # Speaker
+        match = re.search(lineRegexSpeaker, data[i])
+        if match:
+            if match.group(1):
+                response = getSpeaker(match.group(1))
+                speaker = response[0]
+                tokens[0] += response[1][0]
+                tokens[1] += response[1][1]
+                data[i] = data[i].replace(match.group(1), speaker)
+            else:
+                speaker = None
+
+        # Furigana
+        match = re.search(r"^\[ruby\stext", data[i])
+        furiganaList = []
+        if match:
+            # Check next line and combine
+            while match:
+                furiganaList.append(data[i].replace("\n", ""))
+                del data[i]
+                match = re.search(r"^\[ruby\stext", data[i])
+            jaString = "".join(furiganaList)
+
+            # Ruby Text
+            furiganaList = re.findall(furiganaRegex, jaString)
+            for furigana in furiganaList:
+                jaString = jaString.replace(furigana[0], furigana[1])
+
+            data.insert(i, f"{jaString}[r]")
+
+        # Dialogue
+        match = re.search(lineRegexNoSpeaker, data[i])
+        jaString = None
+        if match:
+            # Find which group matched
+            for group_num in range(1, 5):
+                try:
+                    if match.group(group_num):
+                        jaString = match.group(group_num)
+                        break
+                except IndexError:
+                    break
+            
+            # Skip if no valid string found
+            if not jaString:
+                i += 1
+                continue
+
+            # Combine w/ next line if necessary
+            repeatRegex = r"(.+?)\[[rpl]\]"
+            if i + 1 < len(data):
+                match = re.search(repeatRegex, data[i + 1])
+                while match and "[p]" not in data[i]:
+                    jaString = jaString + match.group(1)
+                    jaString = jaString.replace("_　", "")
+                    if "[p]" in data[i + 1]:
+                        data[i] = f"{jaString}[p]\n"
+                    else:
+                        data[i] = jaString
+                    del data[i + 1]
+                    if i + 1 < len(data):
+                        match = re.search(repeatRegex, data[i + 1])
+                    else:
+                        break
+
+            originalString = jaString
+
+            # Pass 1
+            if not translatedList:
+                # Remove any textwrap and commands
+                jaString = jaString.replace("[r]", " ")
+                jaString = jaString.replace("[l]", "")
+
+                # Ruby Text
+                furiganaList = re.findall(furiganaRegex, jaString)
+                for furigana in furiganaList:
+                    jaString = jaString.replace(furigana[0], furigana[1])
+
+                # Strip Spaces
+                jaString = jaString.strip()
+
+                if jaString:
+                    if speaker:
+                        stringList.append(f"[{speaker}]: {jaString}")
+                    else:
+                        stringList.append(jaString)
+
+            # Pass 2
+            else:
+                # Get Text
+                if stringList:
+                    # Grab and Pop
+                    translatedText = stringList[0]
+                    stringList.pop(0)
+
+                    # Set to None if empty list
+                    if len(stringList) <= 0:
+                        stringList = None
+
+                    # Remove speaker
+                    translatedText = strip_speaker_prefix(translatedText)
+
+                    # Avoid Crashes
+                    translatedText = translatedText.replace("[", "(")
+                    translatedText = translatedText.replace("]", ")")
+
+                    # Textwrap
+                    translatedText = dazedwrap.wrapText(translatedText, width=WIDTH)
+                    translatedText = translatedText.replace("\n", "[r]")
+
+                    # Set Data
+                    data[i] = data[i].replace(originalString, translatedText)
+                    # Save progress after each line change (we mutated, so tokens gate optional)
+                    saveCheckLines(data, filename)
+
+        # Choices
+        match = re.search(choiceRegex, data[i])
+        if match:
+            # Pass 1
+            if not translatedList:
+                choiceList.append(match.group(1))
+                match = re.search(choiceRegex, data[i + 1])
+
+            # Pass 2
+            else:
+                # Grab and Pop
+                translatedText = choiceList[0]
+                choiceList.pop(0)
+
+                # Replace Spaces
+                translatedText = translatedText.replace(" ", "\u3000")
+
+                # Set
+                data[i] = data[i].replace(match.group(1), translatedText)
+                saveCheckLines(data, filename)
+
+            i += 1
+        else:
+            i += 1
+
+    # EOF
+    if not translatedList:
+        # String List
+        if stringList:
+            PBAR.total = len(stringList)
+            PBAR.refresh()
+            response = translateAI(stringList, "Reply with the English Translation")
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            stringListTL = response[0]
+
+            if len(stringList) != len(stringListTL):
+                # Mismatch
+                with LOCK:
+                    if FILENAME not in MISMATCH:
+                        MISMATCH.append(FILENAME)
+
+        # Choice List
+        if choiceList:
+            response = translateAI(choiceList, "Reply with the English TL of the Dialogue Choice")
+            tokens[0] += response[1][0]
+            tokens[1] += response[1][1]
+            choiceListTL = response[0]
+
+            if len(choiceList) != len(choiceListTL):
+                # Mismatch
+                with LOCK:
+                    if FILENAME not in MISMATCH:
+                        MISMATCH.append(FILENAME)
+
+        # Recursive call for Pass 2 with translated strings
+        result = translateTyrano(data, filename, [stringListTL, choiceListTL])
+        tokens[0] += result[0]
+        tokens[1] += result[1]
+    
+    return tokens
+
+# Save some money and enter the character before translation
+def getSpeaker(speaker):
+    match speaker:
+        case "ファイン":
+            return ["Fine", [0, 0]]
+        case "":
+            return ["", [0, 0]]
+        case _:
+            # Find Speaker
+            for i in range(len(NAMESLIST)):
+                if speaker == NAMESLIST[i][0]:
+                    return [NAMESLIST[i][1], [0, 0]]
+
+            # Translate and Store Speaker
+            response = translateAI(
+                f"{speaker}",
+                "Reply with the " + LANGUAGE + " translation of the NPC name.",
+                False,
+            )
+            response[0] = response[0].title()
+            response[0] = response[0].replace("'S", "'s")
+            response[0] = response[0].replace("Speaker: ", "")
+
+            # Retry if name doesn't translate for some reason
+            if re.search(r"([a-zA-Z？?])", response[0]) == None:
+                response = translateAI(
+                    f"{speaker}",
+                    "Reply with the " + LANGUAGE + " translation of the NPC name.",
+                    False,
+                )
+                response[0] = response[0].title()
+                response[0] = response[0].replace("'S", "'s")
+
+            speakerList = [speaker, response[0]]
+            NAMESLIST.append(speakerList)
+            return response
+    return [speaker, [0, 0]]
+
+def translateAI(text, history, history_ctx=None):
+    """
+    Legacy wrapper function for the new shared translation utility.
+    This maintains compatibility with existing code while using the new shared implementation.
+    """
+    global PBAR, MISMATCH, FILENAME
+    
+    # Update config estimate mode based on global ESTIMATE
+    TRANSLATION_CONFIG.estimateMode = bool(ESTIMATE)
+    
+    # Call the new shared translation function
+    return sharedtranslateAI(
+        text=text,
+        history=history,
+        config=TRANSLATION_CONFIG,
+        filename=FILENAME,
+        pbar=PBAR,
+        lock=LOCK,
+        mismatchList=MISMATCH
+    )

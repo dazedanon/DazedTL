@@ -1,16 +1,13 @@
 """Preserved workflow runner with app-owned tool installation paths."""
 
-import os
 from pathlib import Path
 import runpy
 import sys
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-source = Path(os.environ["DAZEDTL_ENGINE_SOURCE"])
-sys.path.insert(0, str(source))
-from dazedtl.compatibility.resources import install as install_resources
-install_resources()
+from dazedtl.compatibility.runtime import activate
+source = activate()
 from desktop.backend import workflow_actions
 from dazedtl.compatibility.guided import run_ace, apply_selected, run_release
 from dazedtl.compatibility.translation import TranslationEngine
@@ -37,7 +34,7 @@ def run_action(plan, log):
         return apply_selected(plan, log)
     if plan["action"] == "refresh_sources":
         workflow_actions.validate_plan(plan)
-        engine = TranslationEngine(source, Path(plan["folder"]).parent.parent)
+        engine = TranslationEngine(Path(plan["folder"]).parent.parent)
         project = plan["project"]
         inputs = GuidedInputs(plan["folder"], project["source"], project["data"], engine.source_bindings, engine.original_bytes,
                               native_exports=project["engine"] == "ACE")

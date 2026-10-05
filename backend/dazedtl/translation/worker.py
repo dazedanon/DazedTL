@@ -22,7 +22,7 @@ from dazedtl.translation.ownership import alive
 from dazedtl.translation.compilation import verify_compilation
 
 
-def run(workspace, legacy_root, identity, owner_pid, owner_token):
+def run(workspace, identity, owner_pid, owner_token):
     store = RunStore(workspace, owner_alive=lambda: alive(workspace, owner_pid, owner_token))
     try:
         lock = WorkspaceLock(store.folder(identity))
@@ -31,14 +31,14 @@ def run(workspace, legacy_root, identity, owner_pid, owner_token):
     try:
         if not alive(workspace, owner_pid, owner_token):
             return
-        run_locked(workspace, legacy_root, identity, store)
+        run_locked(workspace, identity, store)
     finally:
         lock.close()
 
 
-def run_locked(workspace, legacy_root, identity, store):
+def run_locked(workspace, identity, store):
     job, plan = store.load(identity)
-    engine = TranslationEngine(legacy_root, workspace / "engine")
+    engine = TranslationEngine(workspace / "engine")
     os.environ.update(PYTHON_DOTENV_DISABLED="1", DAZEDTL_DESKTOP_WORKSPACE=str(engine.profile))
     try:
         with engine.context():
@@ -121,9 +121,8 @@ def run_locked(workspace, legacy_root, identity, store):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True, type=Path)
-    parser.add_argument("--legacy-root", required=True, type=Path)
     parser.add_argument("--run", required=True)
     parser.add_argument("--owner-pid", required=True, type=int)
     parser.add_argument("--owner-token", required=True)
     args = parser.parse_args()
-    run(args.workspace.resolve(), args.legacy_root.resolve(), args.run, args.owner_pid, args.owner_token)
+    run(args.workspace.resolve(), args.run, args.owner_pid, args.owner_token)
