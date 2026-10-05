@@ -96,7 +96,9 @@ export function TranslationFlowDialog({
               {value.stage === "empty"
                 ? "No new translation requests"
                 : value.stage === "error"
-                  ? "Translation failed"
+                  ? value.runId
+                    ? "Translation could not start"
+                    : "Estimate could not finish"
                   : value.namesApproved
                     ? "Translation preparation"
                     : "Translation estimate"}
