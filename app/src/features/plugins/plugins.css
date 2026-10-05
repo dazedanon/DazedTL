@@ -303,14 +303,6 @@
   max-height: 18em;
   overflow: auto;
 }
-.plugin-hashes dt {
-  color: var(--muted);
-  margin-top: var(--space-2);
-}
-.plugin-hashes dd {
-  margin: var(--space-1) 0;
-  overflow-wrap: anywhere;
-}
 .plugin-review-table {
   overflow: auto;
 }

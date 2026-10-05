@@ -705,23 +705,6 @@ export function PluginWorkspace({
                     </dl>
                   </details>
                 )}
-                <details>
-                  <summary>Working files & hashes</summary>
-                  <dl className="plugin-hashes">
-                    <dt>Working copy</dt>
-                    <dd>
-                      {detail.working || "Created with the translation task"}
-                    </dd>
-                    <dt>Source SHA-256</dt>
-                    <dd>{detail.sourceHash}</dd>
-                    <dt>Original snapshot</dt>
-                    <dd>{detail.original || "Not prepared"}</dd>
-                    <dt>Original SHA-256</dt>
-                    <dd>{detail.originalHash || "Not prepared"}</dd>
-                    <dt>Candidate SHA-256</dt>
-                    <dd>{detail.candidateHash || "Awaiting results"}</dd>
-                  </dl>
-                </details>
               </>
             )}
           </div>
@@ -853,8 +836,8 @@ export function PluginWorkspace({
           <div className="plugin-review-body">
             <p>
               {preview.mode === "apply"
-                ? "Replace these game files with the checked translations. A backup is saved for recovery."
-                : "Restore these game files from their saved backups."}
+                ? "Replace these game files with the checked translations. Each file is checked again first, and a backup is saved for recovery."
+                : "Restore these game files from their saved backups. Each file is checked again first."}
             </p>
             <div className="plugin-review-table">
               <table>
@@ -884,26 +867,6 @@ export function PluginWorkspace({
                 ))}
               </details>
             )}
-            <details>
-              <summary>File verification & recovery</summary>
-              <p>
-                Source, original and candidate files are checked again before
-                replacement. Changed files invalidate this review.
-              </p>
-              {preview.files.map((file) => (
-                <dl className="plugin-hashes" key={file.path}>
-                  <dt>{file.path} · before / after SHA-256</dt>
-                  <dd>
-                    {file.beforeHash}
-                    <br />
-                    {file.afterHash}
-                  </dd>
-                  <dt>Backup</dt>
-                  <dd>{file.backup}</dd>
-                </dl>
-              ))}
-              <p className="plugin-path">{preview.manifest}</p>
-            </details>
             <Message
               message={action.key === preview.mode ? action.error : ""}
             />

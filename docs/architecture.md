@@ -365,6 +365,7 @@ Repeated continuation of the immediately preceding request returns its existing 
 Agent questions concern unresolved choices; runtime replacement retains its exact-file review.
 The phase uses one flat task row with adjacent feedback and an optional file list.
 Text, evidence and validation details open on demand.
+File details and Apply/restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
 Filtering preserves occurrence overrides, and bounded renderer reads share the application observer and serialized drafts.
 Plugin view revisions are independent of agent-updated scope, so incoming reports do not invalidate pending view edits.
 
