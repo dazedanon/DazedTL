@@ -1,3 +1,5 @@
 # One-time formatting passes; git blame skips these with blame.ignoreRevsFile.
 # style: apply Prettier and Ruff formatting
 efb9d11a58f4a1b8a624677ccac8062fb88e6fbc
+# docs: reflow architecture and contract to one sentence per line
+a43006c6094dd744e60640c9ee7f3a33084131c9
