@@ -1,7 +1,9 @@
 """Project-bound Batch cancellation and collection; never create provider work."""
 
-from contextlib import contextmanager, nullcontext
+from collections.abc import Callable
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from copy import deepcopy
+from typing import Any
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
@@ -145,7 +147,9 @@ def cancel(root, identity, expected, resolve):
         return {**result, "requested": True}
 
 
-def collect(root, resolve, *, commit=nullcontext):
+def collect(
+    root, resolve, *, commit: Callable[[], AbstractContextManager[Any]] = nullcontext
+):
     """Retain terminal successes and prepare only a local consume pass.
 
     The caller excludes running workers. All provider jobs must be terminal;

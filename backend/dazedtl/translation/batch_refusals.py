@@ -1,8 +1,10 @@
 """Durable, same-provider Batch retries for confirmed refusals only."""
 
 import json
-from contextlib import nullcontext
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from copy import deepcopy
+from typing import Any
 
 from dazedtl.storage import write_json
 
@@ -52,7 +54,7 @@ def advance(
     *,
     limits=(50_000, 200_000_000),
     input_tokens=lambda _: 0,
-    commit=nullcontext,
+    commit: Callable[[], AbstractContextManager[Any]] = nullcontext,
     allow_submit=True,
     reserve=lambda _items: nullcontext(True),
 ):

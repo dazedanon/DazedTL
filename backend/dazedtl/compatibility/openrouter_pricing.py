@@ -2,6 +2,7 @@
 
 import sys
 from functools import wraps
+from typing import Any, cast
 
 
 def batch_cost(policy, regular, output, reads=0, writes=0):
@@ -53,7 +54,7 @@ def configure(translation, policy):
         if name not in originals:
             return
         decorated = wraps(originals[name])(function)
-        decorated._dazedtl_openrouter_pricing = True
+        cast(Any, decorated)._dazedtl_openrouter_pricing = True
         setattr(translation, name, decorated)
 
     def comparison(*args, **kwargs):
@@ -145,5 +146,5 @@ def configure(translation, policy):
                 None if provider == "openrouter" else original(usage, model, provider)
             )
 
-        price._dazedtl_openrouter_pricing = True
+        cast(Any, price)._dazedtl_openrouter_pricing = True
         batch_history._price_usage = price

@@ -3,6 +3,7 @@
 import math
 import re
 from functools import wraps
+from typing import Any, cast
 
 
 def configure(translation, enabled):
@@ -35,11 +36,16 @@ def configure(translation, enabled):
             )
         ]
         if any(
-            type(count) not in (int, float) or not math.isfinite(count) or count < 0
+            # bool is an int subclass but never a token count.
+            not isinstance(count, (int, float))
+            or isinstance(count, bool)
+            or not math.isfinite(count)
+            or count < 0
             for count in counts
         ):
             return value
-        inputs, outputs, reads, writes = counts
+        # Every count was checked above as a finite, non-negative number.
+        inputs, outputs, reads, writes = cast(list[float], counts)
         regular = inputs - reads - writes
         if regular < 0:
             return value
@@ -74,5 +80,5 @@ def configure(translation, enabled):
             ),
         }
 
-    estimate._dazedtl_cache_pricing = True
+    cast(Any, estimate)._dazedtl_cache_pricing = True
     translation.estimateBatchCost = estimate

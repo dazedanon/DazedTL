@@ -6,6 +6,7 @@ import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from dazedtl.storage import write_json
 
@@ -1483,7 +1484,9 @@ class Guided:
             "outputs": {name: outputs[name] for name in requested},
         }, list(requested)
 
-    def preview(self, project_id, action, files=None, options=None):
+    def preview(
+        self, project_id, action, files=None, options: dict[str, Any] | None = None
+    ):
         if action != "start":
             self.idle(isolated_workers=action in {"export_selected", "refresh_sources"})
         project, native = self.record(project_id)
@@ -2183,6 +2186,7 @@ class Guided:
                 elif job and job.get("approval") and record.get("phase") == phase:
                     self.answer(project_id, job["approval"]["token"], False)
         if preparation_mode:
+            assert run_inputs is not None  # Preparation follows a confirmed estimate.
             for identity, record in reversed(
                 list(self.runs.records(project_id).items())
             ):
@@ -2582,6 +2586,7 @@ class Guided:
         available = saved is not None
         current = bool(
             saved
+            and job is not None
             and job["id"] == saved["id"]
             and result.get("configuration") == self.speaker_configuration(native)
             and result.get("reportId")

@@ -4,6 +4,7 @@ import tempfile
 import uuid
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from typing import Any
 
 from dazedtl.storage import write_json
 
@@ -37,7 +38,7 @@ def lifecycle_path(workspace, project_id):
     return Path(workspace) / "translation/projects" / project_id / "lifecycle.json"
 
 
-def lifecycle(workspace, project_id):
+def lifecycle(workspace, project_id) -> dict[str, Any]:
     path = lifecycle_path(workspace, project_id)
     return read_json(path) if path.exists() else {"version": 1}
 

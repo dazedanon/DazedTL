@@ -2,6 +2,7 @@
 
 from functools import wraps
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.storage import write_json
 
@@ -91,5 +92,5 @@ def install(translation, root, plan):
             )
         return original(*args, **kwargs)
 
-    clear._dazedtl_native = original
+    cast(Any, clear)._dazedtl_native = original
     translation._clear_batch_queue_storage = clear

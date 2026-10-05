@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 from .preparations import discard, discardable, temporary
 
@@ -83,6 +84,8 @@ def manual_jobs(source, workspace, lock, allow_providers):
     spec = importlib.util.spec_from_file_location(
         name, source / "desktop/backend/manual.py"
     )
+    if spec is None or spec.loader is None:
+        raise ImportError("The bundled engine module " + name + " is missing.")
     native = importlib.util.module_from_spec(spec)
     sys.modules[name] = native
     spec.loader.exec_module(native)
@@ -129,7 +132,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
         }
         return subprocess.Popen(arguments, **kwargs)
 
-    native.subprocess = SimpleNamespace(
+    cast(Any, native).subprocess = SimpleNamespace(
         Popen=launch,
         PIPE=subprocess.PIPE,
         DEVNULL=subprocess.DEVNULL,
@@ -144,7 +147,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
         reused_names = None
         workflow_selection = None
         temporary_preparation = False
-        controllers = None
+        controllers: dict[str, Any] | None = None
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -158,6 +161,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
             )
 
         def controller(self, identity):
+            assert self.controllers is not None  # Only the owner hands out controllers.
             if identity not in self.controllers:
                 item = object.__new__(ManualJobs)
                 item.workspace, item.root, item.lock, item.allow_providers = (

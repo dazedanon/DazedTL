@@ -4,6 +4,7 @@ import ast
 import inspect
 import re
 from functools import wraps
+from typing import Any, cast
 
 
 def standalone_speaker(module, name):
@@ -94,7 +95,7 @@ def corrected_parser(native):
             )
             found[2] += 1
         elif isinstance(node, ast.Assign) and ast.dump(node) == target_shapes[3]:
-            node.value.func.id = "_dazedtl_message_end"
+            cast(Any, node.value).func.id = "_dazedtl_message_end"
             found[3] += 1
         elif (
             isinstance(node, ast.While)

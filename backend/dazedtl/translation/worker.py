@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -125,7 +126,7 @@ def run_locked(workspace, identity, store):
                 report_path = project_path(
                     plan["source"], WORK + "/progress-report.json", exists=False
                 )
-                report = (
+                report: dict[str, Any] = (
                     read_json(report_path) if report_path.exists() else {"phases": {}}
                 )
                 relative, changed = Results(plan["source"]).export(plan)

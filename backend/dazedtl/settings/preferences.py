@@ -2,6 +2,7 @@
 
 import math
 from copy import deepcopy
+from typing import cast
 
 DEFAULT_ENTRIES_PER_REQUEST = 50
 DEFAULT_OUTPUT_TOKENS = 32_768
@@ -43,7 +44,8 @@ def output_allowance(value=None, *limits):
     return min(
         [
             output_tokens(value) or DEFAULT_OUTPUT_TOKENS,
-            *(output_tokens(limit) for limit in limits if limit is not None),
+            # output_tokens returns valid limits unchanged and rejects others.
+            *(cast(int, output_tokens(limit)) for limit in limits if limit is not None),
         ]
     )
 

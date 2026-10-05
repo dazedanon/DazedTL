@@ -594,7 +594,8 @@ def serve(args, diagnostics):
                     }
                     print(json.dumps(response), file=RPC_OUTPUT, flush=True)
                     continue
-                method = methods.get(request.get("method"))
+                name = request.get("method")
+                method = methods.get(name) if isinstance(name, str) else None
                 if not method:
                     raise ValueError("Unknown application operation.")
                 params = request.get("params", {})

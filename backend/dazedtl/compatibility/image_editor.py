@@ -122,7 +122,9 @@ def ocr(job, entry):
         raise ValueError(status["detail"])
     import numpy as np
     from PIL import Image
-    from rapidocr_onnxruntime import RapidOCR
+    from rapidocr_onnxruntime import (  # pyright: ignore[reportMissingImports]
+        RapidOCR,  # Optional local OCR runtime, checked by the status above.
+    )
     from util.imagetools.geometry import Box
     from util.imagetools.ocr import Line, Reading, worth_keeping
     from util.imagetools.ocr.rapid import group_lines

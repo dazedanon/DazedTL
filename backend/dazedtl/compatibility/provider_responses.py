@@ -4,6 +4,7 @@ import json
 import re
 from functools import wraps
 from types import SimpleNamespace
+from typing import Any, cast
 
 from dazedtl.translation.refusals import refusal_reason, refused
 
@@ -125,7 +126,7 @@ def install():
             )
         return result, error
 
-    openai_result._dazedtl_refusals = True
+    cast(Any, openai_result)._dazedtl_refusals = True
     batch_providers._openai_result = openai_result
     anthropic_entry = batch_history._result_entry_from_message
 

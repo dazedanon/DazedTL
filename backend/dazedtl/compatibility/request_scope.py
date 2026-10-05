@@ -143,7 +143,7 @@ def requests(root, job):
                     else "uncertain"
                 )
                 priority = {"failed": 0, "submitted": 1, "received": 2, "uncertain": 3}
-                if priority[outcome] >= priority.get(outcomes.get(key), -1):
+                if priority[outcome] >= priority.get(outcomes.get(key, ""), -1):
                     outcomes[key] = outcome
         for manifest in state.get("batches", []):
             for key in manifest.get("custom_ids", {}).values():

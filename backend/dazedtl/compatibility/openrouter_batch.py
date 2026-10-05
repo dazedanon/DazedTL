@@ -8,6 +8,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import quote
 
 import httpx
@@ -97,7 +98,9 @@ def normalize(batch, identity):
             "OpenRouter returned conflicting Batch counts. Its receipt was retained."
         )
     remaining = (
-        total - completed - failed if None not in (total, completed, failed) else None
+        total - completed - failed
+        if total is not None and completed is not None and failed is not None
+        else None
     )
     counts = {
         "total": total,
@@ -419,6 +422,7 @@ class Client:
                     )
                 )
                 continue
+            assert result is not None  # Rows without an error carry a result.
             body = row.get("response", {}).get("body", {})
             if refused(body):
                 result["refusal"] = refusal_reason(body) or True
@@ -500,7 +504,7 @@ def install():
             )
         return original_detect(model, api_url, api_provider)
 
-    detect._dazedtl_openrouter = True
+    cast(Any, detect)._dazedtl_openrouter = True
     native.detect_batch_provider = detect
     original_client, original_limits, original_label = (
         native.get_client,
@@ -545,11 +549,13 @@ def install():
                 raise ValueError(
                     "OpenRouter does not expose Batch cancellation. Submitted work continues at the provider."
                 )
-            with (
+            # The patched get_client returns this module's Client for OpenRouter.
+            owner: Any = (
                 nullcontext(client)
                 if client is not None
                 else native.get_client(provider)
-            ) as connection:
+            )
+            with owner as connection:
                 if _name == "submit_batch":
                     return connection.submit(*args)
                 if _name == "retrieve_batch":

@@ -521,6 +521,7 @@ def run_ace(plan, log):
         errors="replace",
         env=environment,
     ) as child:
+        assert child.stdout is not None  # Opened with stdout=PIPE.
         try:
             for line in child.stdout:
                 message = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line).strip()

@@ -122,11 +122,13 @@ def resolve(cache, model, online):
         if cached
         else None,
         "source": origin,
+        # Catalog rates only come from a cached catalog.
         "updatedAt": datetime.fromtimestamp(cached["fetched_at"], UTC).isoformat()
-        if catalog_rate
+        if catalog_rate and cached
         else None,
         "stale": bool(
             catalog_rate
+            and cached
             and (cached.get("version") != 2 or now - cached["fetched_at"] > 86400)
         ),
     }

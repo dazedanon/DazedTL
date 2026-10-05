@@ -5,6 +5,7 @@ import time
 import uuid
 from copy import deepcopy
 from pathlib import Path
+from typing import Any, TypeGuard
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
@@ -186,7 +187,7 @@ class Settings:
             )
 
     @staticmethod
-    def _configured(connection):
+    def _configured(connection) -> TypeGuard[dict[str, Any]]:
         return bool(
             connection
             and connection["provider"]
@@ -816,8 +817,8 @@ class Settings:
             "runtime_name": old["runtime_name"] if old else "connection-" + identity,
             "model": old["model"] if old and same_route else "",
             "model_options": old["model_options"] if old and same_route else {},
-            "check": old["check"] if unchanged else providers.unchecked(),
-            "models": old["models"] if unchanged else [],
+            "check": old["check"] if old and unchanged else providers.unchecked(),
+            "models": old["models"] if old and unchanged else [],
             **(
                 {"catalog": old.get("catalog", {})}
                 if unchanged and old and provider == "openrouter"
@@ -994,15 +995,13 @@ class Settings:
                 self.adapter.manual.request_policy["openrouterStructuredOutputs"] = (
                     openrouter.STRUCTURED_OUTPUTS
                 )
-                self.adapter.manual.request_policy["openrouterBatch"] = (
-                    openrouter.policy(
-                        active, values["model"], configured, required=mode == "batch"
-                    )
+                batch_policy = openrouter.policy(
+                    active, values["model"], configured, required=mode == "batch"
                 )
+                self.adapter.manual.request_policy["openrouterBatch"] = batch_policy
                 if mode == "batch":
-                    batch_limit = self.adapter.manual.request_policy[
-                        "openrouterBatch"
-                    ].get("max_output")
+                    assert batch_policy is not None  # Required policies raise instead.
+                    batch_limit = batch_policy.get("max_output")
                     self.adapter.manual.request_policy["maxOutputTokens"] = (
                         preferences.output_allowance(
                             self.adapter.manual.request_policy["maxOutputTokens"],

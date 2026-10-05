@@ -8,6 +8,7 @@ from contextlib import contextmanager, redirect_stdout
 from dataclasses import asdict
 from functools import wraps
 from pathlib import Path
+from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
@@ -260,7 +261,7 @@ class TranslationEngine:
             "request_instructions": "\n\n".join(text for text in instructions if text),
         }
         if configuration["protocol"] == "anthropic":
-            params = buildClaudeRequest(
+            params: dict[str, Any] = buildClaudeRequest(
                 **shared, cache_ttl="1h" if configuration["mode"] == "batch" else "5m"
             )
             params.pop("temperature", None)
@@ -361,7 +362,7 @@ class TranslationEngine:
 
         allowance = batch_input_tokens(configuration.get("batchInputTokens"))
         return [
-            *batch_limits(self.batch_supported(configuration)),
+            *batch_limits(self.batch_supported(configuration) or ""),
             (allowance or _openai_batch_token_limit()) if native_openai else None,
         ]
 
@@ -768,6 +769,8 @@ class TranslationProvider:
         from util.batch_providers import get_client
 
         self.configuration = configuration
+        # One of several provider SDK clients, chosen by configuration.
+        self.client: Any
         if (
             configuration.get("provider", configuration["protocol"]) == "openrouter"
             and configuration["mode"] == "batch"
@@ -794,7 +797,7 @@ class TranslationProvider:
             api_url=configuration["endpoint"],
             max_retries=0,
         )
-        extra = {"timeout": 45, "max_retries": 0}
+        extra: dict[str, Any] = {"timeout": 45, "max_retries": 0}
         if configuration.get("organization") and self.provider != "anthropic":
             extra["organization"] = configuration["organization"]
         self.client = self.client.with_options(**extra)
@@ -896,7 +899,7 @@ class TranslationProvider:
         for name in ("output_file_id", "error_file_id"):
             content = _download_file_text(
                 self.provider,
-                getattr(batch, name, None),
+                getattr(batch, name, None) or "",
                 client=self.client,
                 google_client=self.google,
             )

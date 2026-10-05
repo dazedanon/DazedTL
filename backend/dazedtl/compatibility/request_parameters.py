@@ -2,6 +2,7 @@
 
 from functools import wraps
 from inspect import signature
+from typing import Any, cast
 
 from dazedtl.settings.preferences import GENERATION_PARAMETERS, output_tokens
 from dazedtl.settings.providers import openrouter_host as validate_host
@@ -105,7 +106,7 @@ def configure_builders(
             def frozen_limit(*_args, **_kwargs):
                 return max_output_tokens
 
-            frozen_limit._dazedtl_output_native = native_limit
+            cast(Any, frozen_limit)._dazedtl_output_native = native_limit
             translation._translation_completion_limit = frozen_limit
     for name in ("buildOpenAIRequest", "buildClaudeRequest"):
         builder = getattr(translation, name)
@@ -146,6 +147,6 @@ def configure_builders(
                     record(params)
                 return params
 
-            defaulted._dazedtl_provider_defaults = True
+            cast(Any, defaulted)._dazedtl_provider_defaults = True
             builder = defaulted
         setattr(translation, name, builder)

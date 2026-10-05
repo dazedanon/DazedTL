@@ -5,6 +5,7 @@ from contextlib import closing
 from copy import deepcopy
 from functools import wraps
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
@@ -308,7 +309,7 @@ def install_worker(root, plan):
         write_json(path, {"intent": intent})
         return result
 
-    submit._dazedtl_native = native
+    cast(Any, submit)._dazedtl_native = native
     providers.submit_batch = submit
     native_wait = getattr(
         TranslationTask._wait_batch_submit,
@@ -324,8 +325,8 @@ def install_worker(root, plan):
             return not task.should_stop
         return native_wait(task, estimate)
 
-    wait._dazedtl_native = native_wait
-    TranslationTask._wait_batch_submit = wait
+    cast(Any, wait)._dazedtl_native = native_wait
+    cast(Any, TranslationTask)._wait_batch_submit = wait
     if (plan.get("dazedtl_request_policy") or {}).get("openrouterBatch"):
         native_poll = TranslationTask._run_batch_poll_fetch
         if getattr(native_poll, "_dazedtl_openrouter_poll", False):
@@ -340,8 +341,8 @@ def install_worker(root, plan):
             finally:
                 active_task = None
 
-        poll._dazedtl_openrouter_poll = True
-        TranslationTask._run_batch_poll_fetch = poll
+        cast(Any, poll)._dazedtl_openrouter_poll = True
+        cast(Any, TranslationTask)._run_batch_poll_fetch = poll
     # A crash after the returned job ID but before native checkpointing is
     # repaired from the journal; an unknown HTTP outcome remains protected.
     with translation._batch_submit_lock():

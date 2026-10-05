@@ -3,6 +3,7 @@
 import re
 from functools import lru_cache, wraps
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
@@ -75,7 +76,7 @@ def install(module, root):
             record({**value, "state": "unavailable"})
         return result
 
-    finalize._dazedtl_native = original
+    cast(Any, finalize)._dazedtl_native = original
     module.finalizeSpeakerParse = finalize
 
 

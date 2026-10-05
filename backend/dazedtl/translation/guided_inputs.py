@@ -2,6 +2,7 @@
 
 import uuid
 from pathlib import Path
+from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 
@@ -138,7 +139,7 @@ class GuidedInputs:
             result[name] = {"relative": relative, "identity": identity}
         return result
 
-    def status(self, names, fingerprint=None):
+    def status(self, names, fingerprint=None) -> dict[str, Any]:
         previous = self.record()["inputs"]
         current = self.sources(names, previous, fingerprint)
         return {
@@ -225,6 +226,7 @@ class GuidedInputs:
             )
         try:
             if refresh:
+                assert archive is not None  # Created above whenever refresh is set.
                 # Retire these file versions before replacing any bytes. If
                 # the process is interrupted, late outputs cannot restore an
                 # earlier pass over a partially reloaded selection.

@@ -3,6 +3,7 @@
 import json
 import uuid
 from pathlib import Path
+from typing import Any
 
 from dazedtl.storage import write_json
 
@@ -220,7 +221,7 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
             key: False if key in CODES else "" if key == "CODE122_VAR_RANGES" else []
             for key in FIELDS
         }
-        rows = [
+        rows: list[dict[str, Any]] = [
             dict(
                 row,
                 decision="review",

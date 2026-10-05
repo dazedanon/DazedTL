@@ -1,10 +1,12 @@
 """Bridge guided Batch collection to the bounded clarification journal."""
 
 import time
-from contextlib import nullcontext
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from copy import deepcopy
 from functools import partial, wraps
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.storage import write_json
 from dazedtl.translation.batch_refusals import advance
@@ -56,7 +58,13 @@ def effective_results(root, previous, current):
 
 
 def advance_guided(
-    root, plan, resolve, *, commit=nullcontext, connection=None, allow_submit=True
+    root,
+    plan,
+    resolve,
+    *,
+    commit: Callable[[], AbstractContextManager[Any]] = nullcontext,
+    connection=None,
+    allow_submit=True,
 ):
     from . import batch_control
     from .process_view import batch_results, queue, saved
@@ -121,6 +129,7 @@ def advance_guided(
                     "openrouterBatch"
                 )
                 validate_policy(frozen, plan["settings"]["model"])
+                assert frozen is not None  # validate_policy rejects missing policies.
                 limits = (frozen["max_requests"], frozen["max_bytes"] - 4096)
             result = advance(
                 root,
@@ -187,7 +196,7 @@ def install_worker(root, plan):
         value = native_result(*args, **kwargs)
         return {**value, "text": ""} if refused(value) else value
 
-    result._dazedtl_native = native_result
+    cast(Any, result)._dazedtl_native = native_result
     translation.require_batch_result = result
     native = getattr(
         TranslationTask._run_files, "_dazedtl_native", TranslationTask._run_files
@@ -267,5 +276,5 @@ def install_worker(root, plan):
                 return "Stopped"
         return native(task, matching_files, estimate_only, batch_phase=batch_phase)
 
-    files._dazedtl_native = native
-    TranslationTask._run_files = files
+    cast(Any, files)._dazedtl_native = native
+    cast(Any, TranslationTask)._run_files = files

@@ -150,7 +150,10 @@ class ImageNativeTranslation:
         for identity in reversed(list(records)):
             try:
                 record, job, _plan = self._owned(project_id, identity)
-                view = {**public_job(job), "imported": record.get("imported", False)}
+                view = {
+                    **(public_job(job) or {}),
+                    "imported": record.get("imported", False),
+                }
                 if job["mode"] != "estimate":
                     view["estimate"] = record.get("estimate")
                     configuration = record["inputs"]["configuration"]

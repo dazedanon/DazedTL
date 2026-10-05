@@ -4,7 +4,9 @@ import json
 import os
 import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from dazedtl.settings.execution import configuration, connection_summary
 from dazedtl.storage import write_bytes, write_json
@@ -71,6 +73,8 @@ class Translation:
         self.settings = settings
         self.engine = engine
         self.jobs = jobs or Jobs(workspace, settings.adapter.allow_providers)
+        # The API server installs handlers for the retained legacy run actions.
+        self.legacy_actions: dict[str, Callable[..., Any]] = {}
 
     def project(self, identity):
         record = self.projects.get(identity)
@@ -257,6 +261,7 @@ class Translation:
                 warnings.append(
                     "The reported engine evidence changed. Recheck the engine before adapting its tools."
                 )
+        legacy = self.legacy_record(project_id)
         return {
             "projectId": project_id,
             **selected,
@@ -280,7 +285,7 @@ class Translation:
             "legacyRun": (
                 {
                     key: value
-                    for key, value in self.legacy_record(project_id).items()
+                    for key, value in legacy.items()
                     if key
                     in {
                         "id",
@@ -292,7 +297,7 @@ class Translation:
                         "outputs",
                     }
                 }
-                if self.legacy_record(project_id)
+                if legacy
                 else None
             ),
             "legacyAvailable": bool(
@@ -677,7 +682,9 @@ Additional project instructions:
         report_path = project_path(
             plan["source"], WORK + "/progress-report.json", exists=False
         )
-        report = read_json(report_path) if report_path.exists() else {"phases": {}}
+        report: dict[str, Any] = (
+            read_json(report_path) if report_path.exists() else {"phases": {}}
+        )
         report.update(text=relative, inputs=list(plan["evidence"]))
         if changed:
             report.update(

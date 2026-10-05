@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+from typing import Any, cast
 
 
 def configure(translation, enabled):
@@ -21,7 +22,7 @@ def configure(translation, enabled):
         # fallbacks. Keep errors intact for the evidence and retry guards.
         handlers = [
             handler
-            for node in tree.body[0].body
+            for node in cast(Any, tree.body[0]).body
             if isinstance(node, ast.Try)
             for handler in node.handlers
             if isinstance(handler.type, ast.Name)

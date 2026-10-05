@@ -47,17 +47,16 @@ COVERAGE = {
 def _literals(tree):
     result = {}
     for node in tree.body:
-        targets = (
-            node.targets
-            if isinstance(node, ast.Assign)
-            else [node.target]
-            if isinstance(node, ast.AnnAssign)
-            else []
-        )
+        if isinstance(node, ast.Assign):
+            targets, value = node.targets, node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
         for target in targets:
             if isinstance(target, ast.Name):
                 try:
-                    result[target.id] = ast.literal_eval(node.value)
+                    result[target.id] = ast.literal_eval(value)
                 except (ValueError, TypeError):
                     pass
     return result

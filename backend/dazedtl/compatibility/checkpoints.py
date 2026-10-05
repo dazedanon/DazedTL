@@ -5,6 +5,7 @@ import io
 import threading
 from functools import lru_cache, wraps
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
@@ -130,6 +131,6 @@ def install(module, root, plan):
                     return stream
         return native_open(file, *args, **kwargs)
 
-    save._dazedtl_native = native_save
-    opening._dazedtl_native = native_open
+    cast(Any, save)._dazedtl_native = native_save
+    cast(Any, opening)._dazedtl_native = native_open
     module.saveProgress, module.open = save, opening

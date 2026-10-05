@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from functools import wraps
 from inspect import signature
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.translation.files import digest
 
@@ -44,7 +45,7 @@ def keep_aligned_partial_results(module):
             module.THREAD_CTX.last_translation_had_mismatch = False
         return result
 
-    translate._dazedtl_partial_native = native
+    cast(Any, translate)._dazedtl_partial_native = native
     module.translateAI = translate
 
 
@@ -392,7 +393,8 @@ class Evidence:
                 for row, value in zip(reused, values)
             ):
                 translation._thread_local.last_translation_had_mismatch = False
-                output = [row["response"] for row in reused]
+                # Every reused row was checked above.
+                output = [cast(dict, row)["response"] for row in reused]
                 return [output if isinstance(text, list) else output[0], [0, 0]]
             if isinstance(text, list) and any(
                 row is not None and row.get("source") == value

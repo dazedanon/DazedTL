@@ -10,6 +10,7 @@ import math
 import time
 from datetime import UTC, datetime
 from decimal import Decimal, DecimalException
+from typing import cast
 from urllib.parse import quote
 
 import httpx
@@ -260,7 +261,8 @@ def live_prices(model, host=""):
             "model": model,
             "host": host,
             **{
-                key: max(row[key] for row in rates)
+                # Missing rates were rejected above.
+                key: max(cast(float, row[key]) for row in rates)
                 for key in ("inputRate", "outputRate")
             },
             "maxOutputTokens": output_limit,

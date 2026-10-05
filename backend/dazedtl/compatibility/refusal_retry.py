@@ -3,6 +3,7 @@
 import json
 from inspect import signature
 from types import SimpleNamespace
+from typing import Any
 
 from dazedtl.translation.files import digest
 from dazedtl.translation.refusals import MESSAGE, clarifiable, clarified, field, refused
@@ -51,7 +52,8 @@ def send_once(translation, evidence, params):
     from util.batch_providers import get_client
 
     provider = "anthropic" if "system" in params else "openai"
-    client = get_client(
+    # The SDK client type depends on the provider chosen above.
+    client: Any = get_client(
         provider,
         api_key=translation.openai.api_key,
         api_url=None
@@ -59,7 +61,7 @@ def send_once(translation, evidence, params):
         else str(translation.openai.base_url or ""),
         max_retries=0,
     )
-    options = {"timeout": 45, "max_retries": 0}
+    options: dict[str, Any] = {"timeout": 45, "max_retries": 0}
     organization = getattr(translation.openai, "organization", None)
     if provider != "anthropic" and organization:
         options["organization"] = organization

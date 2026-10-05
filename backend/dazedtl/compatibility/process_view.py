@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import closing
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from dazedtl.translation.files import digest, project_path, read_json
 
@@ -52,7 +53,7 @@ def file_stamp(path):
 
 def ledger_stamp(root):
     path = Path(root) / "log/dazedtl-process.sqlite3"
-    signatures = [file_stamp(path)]
+    signatures: list[tuple[int, int, int, int] | None] = [file_stamp(path)]
     for suffix in ("-wal", "-journal"):
         sidecar = path.with_name(path.name + suffix)
         if sidecar.is_symlink():
@@ -187,7 +188,7 @@ def _ledger_records(root, signature, consumed):
             }
     result = []
     for row in rows:
-        entry = dict(zip(fields, row))
+        entry: dict[str, Any] = dict(zip(fields, row))
         for key in ("params", "error", "usage", "sources", "response", "raw_response"):
             entry[key] = json.loads(entry[key]) if entry[key] is not None else None
         source = source_values(entry["params"]) or {}
@@ -326,7 +327,7 @@ def batch_state(root):
     return {**previous, **current, "batches": list(manifests.values())}
 
 
-def clean_message(value, secret="", *, limit=2000):
+def clean_message(value, secret="", *, limit: int | None = 2000):
     text = str(value or "")
     if secret:
         text = text.replace(secret, "[credential removed]")
@@ -1000,7 +1001,13 @@ def token_usage(value):
         "thinking_tokens",
     ):
         count = value.get(key, value.get(aliases.get(key)))
-        if type(count) in (int, float) and math.isfinite(count) and count >= 0:
+        # bool is an int subclass but never a token count.
+        if (
+            isinstance(count, (int, float))
+            and not isinstance(count, bool)
+            and math.isfinite(count)
+            and count >= 0
+        ):
             result[key] = count
     return result or None
 
@@ -1232,7 +1239,8 @@ def provider_details(root, resolve_connection):
     rows = []
     for batch in saved(evidence_root(root), "batch_history.json").get("batches", []):
         binding = resolve_connection(batch)
-        client = batch_providers.get_client(
+        # The SDK client type depends on the recorded provider.
+        client: Any = batch_providers.get_client(
             batch["provider"],
             api_key=binding["secret"] or "not-needed",
             api_url=binding["endpoint"],
@@ -1241,7 +1249,7 @@ def provider_details(root, resolve_connection):
         if batch["provider"] == "openrouter":
             client.receipt_root = Path(evidence_root(root))
         if hasattr(client, "with_options"):
-            options = (
+            options: dict[str, Any] = (
                 {"organization": binding["organization"] or None}
                 if batch["provider"] in {"openai", "gemini"}
                 else {}

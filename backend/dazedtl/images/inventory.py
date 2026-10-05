@@ -8,6 +8,7 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 from dazedtl.translation.files import project_path
 
@@ -43,7 +44,12 @@ def png_metadata(value):
                 if "A" in image.getbands() or "transparency" in image.info
                 else None
             )
-            alpha_range = list(alpha.getextrema()) if alpha is not None else [255, 255]
+            # A single channel's extrema are its (minimum, maximum) values.
+            alpha_range = (
+                list(cast(tuple[int, int], alpha.getextrema()))
+                if alpha is not None
+                else [255, 255]
+            )
             result = {
                 "width": image.width,
                 "height": image.height,

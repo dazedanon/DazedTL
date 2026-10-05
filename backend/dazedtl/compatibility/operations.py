@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 
 def workflow_operations(source, workspace, lock):
@@ -12,6 +13,8 @@ def workflow_operations(source, workspace, lock):
     spec = importlib.util.spec_from_file_location(
         name, source / "desktop/backend/operations.py"
     )
+    if spec is None or spec.loader is None:
+        raise ImportError("The bundled engine module " + name + " is missing.")
     native = importlib.util.module_from_spec(spec)
     sys.modules[name] = native
     spec.loader.exec_module(native)
@@ -34,7 +37,7 @@ def workflow_operations(source, workspace, lock):
             **kwargs,
         )
 
-    native.subprocess = SimpleNamespace(
+    cast(Any, native).subprocess = SimpleNamespace(
         Popen=launch,
         run=subprocess.run,
         PIPE=subprocess.PIPE,

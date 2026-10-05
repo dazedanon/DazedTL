@@ -1721,6 +1721,7 @@ class PluginService:
             try:
                 current = digest(self.source(root, path))
                 if mode == "restore":
+                    assert receipt is not None  # Restores require a receipt above.
                     saved = next(
                         item for item in receipt["files"] if item["path"] == path
                     )
