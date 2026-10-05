@@ -6,12 +6,13 @@ import { JobStatus } from "./JobStatus";
 import type { Job } from "../api/contracts";
 
 export function ActionControl({
-  label, pending = false, pendingText = "Working…", error = "", notice = "", job, ...button
+  label, pending = false, pendingText = "Working…", error = "", notice = "", job, inline = false, ...button
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
   pendingText?: string;
   error?: string;
   notice?: string;
+  inline?: boolean;
   job?: Pick<Job, "label" | "status" | "message">;
 }) {
   const active = job && ["ready", "running", "waiting"].includes(job.status);
@@ -30,17 +31,17 @@ export function ActionControl({
   }, [failure, pending, active]);
   const failed = !!error || !!job && ["failed", "needs_attention", "interrupted"].includes(job.status);
   const succeeded = !failed && (job?.status === "complete" || !!notice);
-  return <div className="action-control" ref={control}>
+  return <div className={`action-control${inline ? " action-control--inline" : ""}`} ref={control}>
     <Button {...button} pending={pending || !!active}
       onClick={(event) => { invoked.current = true; button.onClick?.(event); }}
       aria-describedby={[button["aria-describedby"], feedbackId].filter(Boolean).join(" ")}>
-      {!pending && !active && (failed
+      {!inline && !pending && !active && (failed
         ? <AlertCircle size={14} className="action-result-icon action-result-icon--error" aria-hidden="true" />
         : succeeded ? <Check size={14} className="action-result-icon action-result-icon--success" aria-hidden="true" /> : null)}
-      <span className="action-control-label">{label}</span>
+      <span className="action-control-label">{inline && (pending || active) ? pendingText : label}</span>
     </Button>
     <div id={feedbackId} className="action-control-feedback" ref={feedback}>
-      {pending ? <Feedback loading loadingText={pendingText} />
+      {pending || inline && active ? !inline && <Feedback loading loadingText={pendingText} />
         : error ? <Feedback error={error} />
         : job ? <JobStatus compact job={{ label: job.label || label, status: job.status, message: job.message }} />
         : notice ? <Feedback notice={notice} /> : null}

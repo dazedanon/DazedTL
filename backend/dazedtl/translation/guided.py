@@ -33,7 +33,7 @@ SHARED_ACTIONS = {
     "checkpoint": "Save reviewed patch in Git", "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
-    "refresh_sources": "Reload selected files from game",
+    "refresh_sources": "Resync selected files from game",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 
@@ -80,10 +80,10 @@ class Guided:
         self.observed_files[path] = (signature, value)
         return value
 
-    def idle(self, *, applying=False):
-        # Apply freezes saved output; isolated translation workers do not write
-        # runtime files. Other runtime operations must still finish first.
-        busy = self.backend.operations.running() if applying else self.backend.running()
+    def idle(self, *, isolated_workers=False):
+        # Apply and reload can coexist with frozen translation workers. Tool
+        # operations still serialize writes to the game and working copies.
+        busy = self.backend.operations.running() if isolated_workers else self.backend.running()
         if busy or self.translation.jobs.running():
             raise ValueError("Finish or stop the current run before starting another action.")
 
@@ -734,25 +734,6 @@ class Guided:
                     if identity and identity != current and identity in self.backend.manual.jobs]
         return overlap(self.backend.manual.folder(current), job, previous)
 
-    def protect_batch_files(self, native, files):
-        from dazedtl.compatibility.batch_control import TERMINAL
-        names = set(files)
-        for identity in self.owned_runs(native):
-            job = self.backend.manual.jobs.get(identity)
-            if not job or job.get('mode') != 'batch' or not names.intersection(job.get('files', [])):
-                continue
-            view = self.run_view(identity, compact=True)
-            if not (names.intersection(job.get('files', [])) - set(view.get('retiredFiles', []))):
-                continue
-            process = view.get('process') or {}
-            batches = process.get('batches', [])
-            if (identity in self.batch_monitor.busy or job.get('status') in {'ready', 'running', 'waiting'}
-                    or (process.get('monitoring') or {}).get('state') in {'monitoring', 'collecting'}
-                    or any(batch.get('status') not in TERMINAL for batch in batches)
-                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected')
-                    or job.get('status') in {'stopped', 'interrupted'} and (str(job.get('phase', '')).startswith('poll') and process.get('batches') or process.get('resultsCollected'))):
-                raise ValueError('These files still belong to Batch work. Open Batches to track progress or cancel it before changing the files.')
-
     def batch_output(self, native, run_id, files):
         if (not isinstance(run_id, str) or run_id not in self.owned_runs(native)
                 or run_id not in self.backend.manual.jobs):
@@ -777,7 +758,7 @@ class Guided:
 
     def preview(self, project_id, action, files=None, options=None):
         if action != 'start':
-            self.idle(applying=action == 'export_selected')
+            self.idle(isolated_workers=action in {'export_selected', 'refresh_sources'})
         project, native = self.record(project_id)
         self.clean(project_id)
         options = {} if options is None else deepcopy(options)
@@ -788,8 +769,6 @@ class Guided:
             if set(options) != {'run_id'}:
                 raise ValueError("Choose a saved Batch to reapply.")
             run_output, files = self.batch_output(native, options['run_id'], files)
-        if action == 'refresh_sources':
-            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
         self.settings.prepare_engine()
@@ -875,7 +854,6 @@ class Guided:
                 if saved and backups.record_status(project["source"], saved, kind="source")["available"]:
                     raise ValueError("The original is already preserved. Use workspace backups for later milestones.")
             if action == "refresh_sources":
-                self.pending_run(value)
                 if (not isinstance(files, list) or not files or any(not isinstance(name, str) for name in files)
                         or len(set(files)) != len(files) or set(files) - self.supported_files(native)):
                     raise ValueError("Select supported files to refresh.")
@@ -979,10 +957,8 @@ class Guided:
         project, native = self.record(project_id)
         self.confirmations.pop(token)
         action = confirmed["action"]
-        if action == 'refresh_sources':
-            self.protect_batch_files(native, confirmed['paths'])
         if action != 'start':
-            self.idle(applying=action == 'export_selected')
+            self.idle(isolated_workers=action in {'export_selected', 'refresh_sources'})
         if action != "backup_source":
             self.source_preserved(project_id)
         if action in {"start", "export_selected", "rewrap_apply", "qa_apply", "runtime_restore", "ace_pack", "qa_prepare", "playtest_install", "checkpoint", "guided_review", "guided_package"} | TOOL_ACTIONS:
@@ -1022,7 +998,6 @@ class Guided:
                         raise ValueError("The matching estimate changed. Review a new preview.")
             return self._start(project_id, options["mode"], options["phase"], confirmed["paths"], confirmed["run_inputs"], confirmed["estimate"], options.get("preparation_mode"))
         if action == "refresh_sources":
-            self.pending_run(self.backend.workflows.state(native["id"]))
             return self.backend.guided_refresh(native, confirmed["paths"], options["sources"])
         if action == "git_setup":
             self.require_preparation(project_id, native)
@@ -1070,6 +1045,9 @@ class Guided:
 
     def _start(self, project_id, mode, phase, files, run_inputs=None, estimate=None, preparation_mode=None):
         _, native = self.record(project_id)
+        if any(job.get('project_id') == native['id'] and job.get('action') == 'refresh_sources'
+               and job.get('status') in {'ready', 'running', 'waiting'} for job in self.backend.operations.jobs.values()):
+            raise ValueError('Wait for the working files to finish resyncing before preparing translation.')
         if mode == 'estimate':
             from dazedtl.compatibility.preparations import temporary
             records = self.runs.records(project_id)

@@ -269,7 +269,7 @@ class ExistingBackend:
     def guided_refresh(self, native, files, sources):
         folder = self.workflows.folder(native["id"])
         return self.operations.start({"project_id": native["id"], "project": native,
-            "folder": str(folder), "action": "refresh_sources", "label": "Refresh selected source copies",
+            "folder": str(folder), "action": "refresh_sources", "label": "Resync selected files from game",
             "options": {"files": files, "sources": sources, "retired": []}, "guard": self.guided_guard(native, folder)})
 
     @staticmethod

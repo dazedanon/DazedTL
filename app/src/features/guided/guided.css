@@ -212,7 +212,6 @@ main.editor-main.guided-main { padding: 0; }
 .file-browser-groups button > span { color: var(--muted); margin-left: var(--space-1); }
 .file-browser-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) 0; font-size: var(--font-small); }
 .file-browser-toolbar .actions { gap: var(--space-1); }
-.file-browser-help { font-size: var(--font-small); color: var(--muted); margin: 0 0 var(--space-2); }
 .file-browser-heading, .file-browser-row { display: grid; grid-template-columns: 1.3em minmax(0, 1fr) minmax(0, 1.3fr) 6em; gap: var(--space-3); align-items: center; }
 .file-browser-heading { padding: var(--space-2); color: var(--muted); font-size: var(--font-control); border-bottom: 1px solid var(--line); }
 .file-browser-row { padding: var(--space-2); font-size: var(--font-control); border-bottom: 1px solid var(--line); align-items: start; }

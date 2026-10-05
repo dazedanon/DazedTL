@@ -77,13 +77,14 @@ class GuidedInputs:
 
     def prepare(self, names, *, refresh=False, expected=None, retired=(), progress=lambda _message: None):
         record = self.record()
+        indexed = self.index.exists()
         previous = record["inputs"]
         current = self.sources(names, previous, fresh=refresh)
         if expected is not None and current != expected:
-            raise ValueError("The original source version changed. Review the source refresh again.")
+            raise ValueError("The original source version changed. Review the file resync again.")
         changed = [name for name in names if name in previous and previous[name] != current[name]]
         if changed and not refresh:
-            raise ValueError("Source changed for " + ", ".join(changed) + ". Review source changes and refresh these working copies first.")
+            raise ValueError("Source changed for " + ", ".join(changed) + ". Review source changes and resync these working copies first.")
         replacements = {}
         for name in names:
             if refresh or not self.path("files", name).is_file():
@@ -117,8 +118,16 @@ class GuidedInputs:
                     write_bytes(archive / group / name, raw)
             if cache_bytes is not None:
                 write_bytes(archive / "log/var_translation_map.json", cache_bytes)
-            progress("Previous working copies and outputs archived before refreshing sources.")
+            progress("Previous working copies and outputs archived before resyncing files.")
         try:
+            if refresh:
+                # Retire these file versions before replacing any bytes. If
+                # the process is interrupted, late outputs cannot restore an
+                # earlier pass over a partially reloaded selection.
+                write_json(self.index, {**record, "inputs": {**previous, **current},
+                                       "last_refresh": archive.name,
+                                       "retired_runs": list(dict.fromkeys([*record.get("retired_runs", []), *retired])),
+                                       "file_versions": {**record.get("file_versions", {}), **dict.fromkeys(names, archive.name)}})
             for name, raw in replacements.items():
                 progress("Preparing source copy: " + name)
                 write_bytes(self.path("files", name), raw)
@@ -126,11 +135,8 @@ class GuidedInputs:
                     self.path("translated", name).unlink(missing_ok=True)
             if refresh:
                 cache.unlink(missing_ok=True)
-            record = self.record()
-            write_json(self.index, {**record, "inputs": {**previous, **current},
-                                    **({"last_refresh": archive.name,
-                                        "retired_runs": list(dict.fromkeys([*record.get("retired_runs", []), *retired])),
-                                        "file_versions": {**record.get("file_versions", {}), **dict.fromkeys(names, archive.name)}} if refresh else {})})
+            else:
+                write_json(self.index, {**record, "inputs": {**previous, **current}})
         except Exception:
             for (group, name), raw in old.items():
                 path = self.path(group, name)
@@ -140,5 +146,10 @@ class GuidedInputs:
                     write_bytes(path, raw)
             if cache_bytes is not None:
                 write_bytes(cache, cache_bytes)
+            if refresh:
+                if indexed:
+                    write_json(self.index, record)
+                else:
+                    self.index.unlink(missing_ok=True)
             raise
         return {"files": len(replacements), "selection": names, "archive": str(archive) if archive else None}

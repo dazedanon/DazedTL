@@ -9,10 +9,10 @@ import { activeRun, filePreviewRun, fileRun, fileMetricRun, fileStatus } from ".
 import { retainOtherScope } from "./selection";
 import "./translation.css";
 
-export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, batches, children }: {
+export function TranslateWorkspace({ state, phase, values, run, estimate, currentEstimate, disabled, locked, change, settings, options, history, inspect, batches, fileActions, children }: {
   state: GuidedState; phase: Phase; values: GuidedOptions; run?: Job; estimate?: Job | null; currentEstimate: boolean;
   disabled: boolean; locked: boolean; change: <K extends keyof GuidedOptions>(key: K, value: GuidedOptions[K]) => void;
-  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number, validation?: boolean) => void; batches: (runId?: string) => void; children?: ReactNode;
+  settings: () => void; options: () => void; history: () => void; inspect: (job: Job, file: string, index: number, validation?: boolean) => void; batches: (runId?: string) => void; fileActions?: ReactNode; children?: ReactNode;
 }) {
   const [file, setFile] = useState("");
   const [inspecting, setInspecting] = useState(false);
@@ -38,11 +38,11 @@ export function TranslateWorkspace({ state, phase, values, run, estimate, curren
     <div className="translation-notices">{children}</div>
     <div className="translation-columns">
       <section className="translation-files" aria-label="Translation files">
-        <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked}
+        <FileSelection state={{ ...state, files: rows }} selected={scoped.map(row => row.name)} disabled={disabled || locked} actions={fileActions}
           change={names => change("selected", retainOtherScope(values.selected, rows, names))}
           inline={{ preview: openFile, previewed: inspecting ? file : undefined, columns: <><span>Status</span><span className="translation-file-cost">Cost</span><span className="translation-file-time" title="Engine processing time; excludes Batch provider waiting">Time</span><span /></>,
             details: row => {
-              const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner, fileOwner?.id !== run?.id);
+              const fileOwner = owner(row.name), status = fileStatus(row.name, fileOwner);
               const metricRun = fileMetricRun(state.runs, phase, row.name, state.sourceStatus.retired), metrics = metricRun?.process?.fileMetrics?.[row.name];
               const moving = activeRun(fileOwner) && status.tone === "active" && status.label !== "Review cost";
               const statusText = status.label !== "Ready" && <>{moving ? <LoaderCircle size={14} className="job-status-spinner" aria-hidden="true" /> : <span aria-hidden="true">{status.symbol}</span>}<span className="translation-status-text">{status.label}</span></>;

@@ -12,17 +12,16 @@ const gesture = (event: Modifiers, checkbox = false): SelectionGesture => event.
   ? event.ctrlKey || event.metaKey ? "add-range" : "range"
   : checkbox || event.ctrlKey || event.metaKey ? "toggle" : "replace";
 
-export function FileSelection({ state, selected, change, disabled, inline }: {
+export function FileSelection({ state, selected, change, disabled, inline, actions }: {
   state: GuidedState; selected: string[]; change: (names: string[]) => void; disabled: boolean;
+  actions?: ReactNode;
   inline?: { columns: ReactNode; details: (file: GuidedFile) => ReactNode; preview: (name: string) => void; previewed?: string };
 }) {
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState<FileGroup>("all");
   const [selectedOnly, setSelectedOnly] = useState(false);
   const [changedOnly, setChangedOnly] = useState(false);
-  const [undo, setUndo] = useState<string[] | null>(null);
   const [notice, setNotice] = useState("");
-  const [help, setHelp] = useState(false);
   const [focusName, setFocusName] = useState<string | null>(null);
   const anchor = useRef<string | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -39,7 +38,7 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
   const resetFilter = () => { anchor.current = null; setFocusName(null); setNotice(""); };
   const apply = (next: string[], message = "") => {
     if (disabled) return;
-    setUndo(selected); change(next); setNotice(message);
+    change(next); setNotice(message);
   };
   const focus = useCallback((row: HTMLElement) => {
     row.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
@@ -86,11 +85,9 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
       <div className="actions">
         <Button variant="quiet" disabled={disabled || !visible.length || visible.every((file) => selection.has(file.name))} onClick={() => bulk(true)}>Select {inline && !query ? "all" : "matching"}</Button>
         <Button variant="quiet" disabled={disabled || !visible.some((file) => selection.has(file.name))} onClick={() => bulk(false)}>Clear {inline && !query ? "all" : "matching"}</Button>
-        {inline && <Button variant="quiet" disabled={disabled || !undo} onClick={() => { if (undo) change(undo); setUndo(null); setNotice("Previous selection restored."); }}>Undo</Button>}
-        <Button variant="quiet" aria-expanded={help} onClick={() => setHelp(!help)}>Shortcuts</Button>
+        {actions}
       </div>
     </div>
-    {help && <p className="file-browser-help">Click a row to select one file. Checkboxes or Ctrl/Cmd-click toggle files. Shift-click selects a range; Ctrl/Cmd+Shift-click adds a range. Shift+arrows extend it. Ctrl/Cmd+A selects all matches while the file list has focus.</p>}
     <div className="file-browser-heading" aria-hidden="true"><span /><span>File</span>{inline ? inline.columns : <><span>Map / contents</span><span>Source</span></>}</div>
     <VirtualList key={`${group}:${query}:${selectedOnly}:${changedOnly}`} items={visible} itemKey={keyOf} label="Files to include in this pass"
       focusKey={focusName} onFocusReady={focus}
@@ -111,7 +108,6 @@ export function FileSelection({ state, selected, change, disabled, inline }: {
       <div><strong>{selected.length} selected</strong>{hidden > 0 && <span className="muted"> · {hidden} outside this filter</span>}
         {counts.length === 1 ? <span className="muted"> · {counts[0].label}</span> : counts.length > 1 && <span className="file-browser-counts">{counts.map((item) => `${item.count} ${item.label}`).join(" · ")}</span>}</div>
       <div className="actions">
-        {undo && <Button variant="quiet" disabled={disabled} onClick={() => { change(undo.filter((name) => files.some((file) => file.name === name))); setUndo(null); setNotice("Previous selection restored."); }}>Undo</Button>}
         <Button variant="quiet" disabled={disabled || !selected.length} onClick={() => { apply([], "Selection cleared."); anchor.current = null; }}>Clear selection</Button>
       </div>
       {!!selectedChanges && <p className="file-browser-source-warning">{selectedChanges} selected {selectedChanges === 1 ? "source has" : "sources have"} changed. <Button variant="quiet" onClick={() => { setGroup("all"); setQuery(""); setSelectedOnly(true); setChangedOnly(true); resetFilter(); }}>Show changed sources</Button></p>}

@@ -405,7 +405,7 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.preview = lambda *_: {'token': 'apply-preview', 'confirmation': True, 'options': {}}
         self.backend.guided_export_preview = Mock(side_effect=lambda _owner, paths: self.backend.workflows.preview())
         # Pending or unresolved Batch receipts must not veto saved partial
-        # output; Apply must leave them intact and keep source reloads guarded.
+        # output; Apply must leave their execution protections intact.
         old = {'id': 'failed-batch', 'mode': 'batch', 'status': 'failed', 'files': ['Items.json'], 'log': []}
         self.backend.manual.jobs[old['id']] = old
         self.guided.runs.remember(self.identity, old, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
@@ -417,8 +417,7 @@ class GuidedTests(unittest.TestCase):
         write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}', 'params': {}}})
         self.assertTrue(self.guided.run_view(old['id'])['process']['retryBlocked'])
         retained = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
-        with self.assertRaisesRegex(ValueError, 'Open Batches'):
-            self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+        self.assertEqual(self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])['paths'], ['Items.json'])
         for status, counts in [('in_progress', {'succeeded': 0}), ('failed', {}), ('failed', {'succeeded': 1})]:
             write_json(root/'log/batch_history.json', {'batches': [{**batch, 'api_status': status, 'request_counts': counts}]})
             self.assertEqual(self.guided.preview(self.identity, 'export_selected', files=['Items.json'])['paths'], ['Items.json'])
@@ -453,8 +452,7 @@ class GuidedTests(unittest.TestCase):
         self.backend.operations.running = lambda: False
         with self.assertRaisesRegex(ValueError, 'new preview'):
             self.guided.execute(self.identity, preview['token'])
-        with self.assertRaisesRegex(ValueError, 'Open Batches'):
-            self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+        self.assertEqual(self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])['paths'], ['Items.json'])
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, 'export_selected', files=['Foreign.json'])
         self.native['files'] = [{'name': 'Items.json'}, {'name': 'System.json'}]
@@ -1029,12 +1027,43 @@ class GuidedTests(unittest.TestCase):
         self.assertEqual(self.guided.run_view(job['id'])['status'], 'running')
         self.assertEqual(job['status'], 'stopped')
         self.guided.batch_monitor.views.clear()
-        self.guided.protect_batch_files(self.native, ['Other.json'])
-        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+        # Reload is repeatable even while a saved Batch is running, collecting,
+        # or awaiting reconciliation. It never mutates that run's receipts.
+        retained = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        self.backend.guided_refresh = lambda native, files, sources: self.guided.inputs(native).prepare(files, refresh=True, expected=sources)
+        self.backend.running = lambda: True
+        self.guided.batch_monitor.busy.add(job['id'])
+        self.pending = job
+        archives = set()
+        for status in ['stopped', 'failed', 'running', 'waiting', 'complete']:
+            job['status'] = status
+            review = self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+            self.assertEqual(review['paths'], ['Items.json'])
+            self.assertTrue(review['confirmation'])
+            result = self.guided.execute(self.identity, review['token'])
+            archives.add(result['archive'])
+            self.assertEqual((self.folder/'files/Items.json').read_bytes(), (self.source/'Items.json').read_bytes())
+            with self.assertRaisesRegex(ValueError, 'new preview'):
+                self.guided.execute(self.identity, review['token'])
+        self.assertEqual(len(archives), 5)
+        self.assertEqual({path: path.read_bytes() for path in retained}, retained)
+        # Only writers block the action; a failed confirmation is still one-use.
+        review = self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+        self.backend.operations.running = lambda: True
+        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
             self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
-        self.guided.confirmations['file-review'] = {'project_id': self.identity, 'action': 'refresh_sources', 'paths': ['Items.json']}
-        with self.assertRaisesRegex(ValueError, 'Open Batches'):
-            self.guided.execute(self.identity, 'file-review')
+        with self.assertRaisesRegex(ValueError, 'Finish or stop'):
+            self.guided.execute(self.identity, review['token'])
+        self.backend.operations.running = lambda: False
+        with self.assertRaisesRegex(ValueError, 'new preview'):
+            self.guided.execute(self.identity, review['token'])
+        self.backend.operations.jobs['reload'] = {'project_id': 'native', 'action': 'refresh_sources', 'status': 'running'}
+        with self.assertRaisesRegex(ValueError, 'finish resyncing'):
+            self.guided._start(self.identity, 'estimate', 'database', ['Items.json'])
+        self.backend.operations.jobs.clear()
+        self.backend.running = lambda: False
+        self.pending = None
+        self.guided.batch_monitor.busy.clear()
         with self.assertRaisesRegex(ValueError, 'outputs are no longer available'):
             self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
         job['status'] = 'running'
@@ -1494,6 +1523,28 @@ class GuidedTests(unittest.TestCase):
         self.assertIsNotNone(self.preview()['token'])
         with self.assertRaises(ValueError):
             inputs.prepare(['Items.json'], refresh=True, expected={})
+
+        # A failed replacement restores both the old generation and its bytes;
+        # an abrupt interruption must already have retired the old generation.
+        before = inputs.record()
+        write_json(self.folder/'log/var_translation_map.json', {'薬': 'Potion'})
+        write_json(self.folder/'translated/Items.json', [{'name': 'New saved translation'}])
+        preserved = {path: path.read_bytes() for path in [inputs.index, self.folder/'files/Items.json',
+                     self.folder/'translated/Items.json', self.folder/'log/var_translation_map.json']}
+        def fail_after_version(message):
+            if message.startswith('Preparing source copy:'):
+                self.assertNotEqual(inputs.record()['file_versions'], before['file_versions'])
+                raise OSError('Fixture replacement failure')
+        with self.assertRaisesRegex(OSError, 'replacement failure'):
+            inputs.prepare(['Items.json'], refresh=True, progress=fail_after_version)
+        self.assertEqual({path: path.read_bytes() for path in preserved}, preserved)
+        def interrupt_after_version(message):
+            if message.startswith('Preparing source copy:'):
+                raise KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            inputs.prepare(['Items.json'], refresh=True, progress=interrupt_after_version)
+        self.assertNotEqual(inputs.record()['file_versions'], before['file_versions'])
+        self.assertEqual(read_json(self.folder/'source-history'/inputs.record()['last_refresh']/'translated/Items.json'), [{'name': 'New saved translation'}])
 
     def test_current_game_seeds_working_copies_and_original_backups_remain_separate(self):
         write_json(self.source/'Items.json', [{'name': 'English runtime'}])

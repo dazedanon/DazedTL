@@ -10,7 +10,7 @@ import { Button } from "../../ui/Button";
 export function operationSummary(job: Job): string {
   const result = job.result;
   if (!result) return "";
-  if (typeof result.archive === "string") return `${Number(result.files || 0)} ${result.files === 1 ? "source" : "sources"} refreshed. Previous copies and outputs archived.`;
+  if (typeof result.archive === "string") return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} resynced. Previous copies and outputs archived.`;
   if (typeof result.files === "number") return `${result.files} ${result.files === 1 ? "file" : "files"} saved.`;
   if (typeof result.changes_found === "number") return `${result.changes_found} text-fitting changes found · ${Number(result.overflow_skipped || 0)} protected overflows skipped.`;
   if (typeof result.reviewed_files === "number") return `${result.reviewed_files} current runtime files reviewed.`;

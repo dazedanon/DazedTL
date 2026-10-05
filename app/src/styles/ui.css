@@ -592,6 +592,16 @@ pre {
 .action-control-feedback:not(:empty) {
   margin-top: var(--space-2);
 }
+.action-control--inline {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.action-control--inline > button { flex-shrink: 0; }
+.action-control--inline > .action-control-feedback:not(:empty) { margin-top: 0; }
+.action-control--inline > .action-control-feedback:empty { display: none; }
 .action-result-icon--success {
   color: var(--color-success);
 }

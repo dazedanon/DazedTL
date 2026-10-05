@@ -532,12 +532,14 @@ class ManualJobs:
             workflow = ModuleType('desktop.backend.workflow')
             collected = []
             class Workflows:
-                def __init__(self, workspace, *args): self.root, self.manual = workspace, SimpleNamespace(jobs={})
+                def __init__(self, workspace, lock, operations, manual):
+                    self.root, self.manual, self.operations = workspace, SimpleNamespace(jobs={}), operations
                 def folder(self, identity): return self.root/identity
                 def _collect(self, project): collected.append(project['manual_job'])
             workflow.Workflows = Workflows
             with patch.dict(sys.modules, {workflow.__name__: workflow}):
-                phases = phased_workflows(source/'phases', None, None, controller)
+                operations = SimpleNamespace(jobs={})
+                phases = phased_workflows(source/'phases', None, operations, controller)
                 write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'retired_runs': ['older-source-run']})
                 phases._collect({'id': 'owner', 'manual_job': 'older-source-run'})
                 self.assertEqual(collected, [])
@@ -571,11 +573,26 @@ class ManualJobs:
                 phases._collect({'id': 'owner', 'manual_job': 'partial'})
                 self.assertFalse((phases.folder('owner')/'translated/System.json').exists())
                 phases.manual.jobs['partial']['phase'] = 'consume'
+                # Neither collection path may publish into the workspace while
+                # reload is between its archive and replacement writes.
+                operations.jobs['reload'] = {'project_id': 'owner', 'action': 'refresh_sources', 'status': 'running'}
+                collected.clear()
+                phases._collect({'id': 'owner', 'manual_job': 'partial'})
+                self.assertEqual(collected, [])
+                self.assertFalse((phases.folder('owner')/'translated/System.json').exists())
                 write_json(phases.folder('owner')/'source-inputs.json', {'version': 1, 'inputs': {}, 'file_versions': {'Items.json': 'reloaded'}})
+                operations.jobs['reload']['status'] = 'complete'
                 project = {'id': 'owner', 'manual_job': 'partial'}
                 phases._collect(project)
                 self.assertFalse((phases.folder('owner')/'translated/Items.json').exists())
                 self.assertEqual(json.loads((phases.folder('owner')/'translated/System.json').read_text()), {'translated': 'System.json'})
+                # Completing the same Batch later still cannot restore Items
+                # through the native full-run collector or the partial collector.
+                phases.manual.jobs['partial'].update(status='complete', outputs={name: digest((directory/'translated'/name).read_bytes()) for name in before})
+                phases._collect(project)
+                self.assertEqual(collected, [])
+                self.assertFalse((phases.folder('owner')/'translated/Items.json').exists())
+                self.assertTrue((directory/'translated/Items.json').is_file())
 
     def test_full_overwrite_ignores_game_edits_but_binds_the_reviewed_working_output(self):
         from dazedtl.compatibility.text import validate_publication

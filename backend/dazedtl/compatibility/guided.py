@@ -135,6 +135,11 @@ def phased_workflows(workspace, lock, operations, manual):
 
         def _collect(self, project):
             from .preparations import temporary
+            # Reload runs in a separate tool process. Do not collect between
+            # its archive, version update and file replacements.
+            if any(job.get('project_id') == project['id'] and job.get('action') == 'refresh_sources'
+                   and job.get('status') in {'ready', 'running', 'waiting'} for job in self.operations.jobs.values()):
+                return
             index = self.folder(project["id"]) / "source-inputs.json"
             if index.exists() and project.get("manual_job") in read_json(index).get("retired_runs", []):
                 return  # Frozen work from an older source pass stays in its own run.

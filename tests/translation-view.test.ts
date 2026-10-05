@@ -3,7 +3,7 @@ import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
 import { requestRows, requestBatches, requestBatchOutcome, payloadForBatch } from "../app/src/features/guided/requestView.ts";
-import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, unsettledBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
 
 test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
   // A retry must not create another source selection or overwrite the original
@@ -109,14 +109,14 @@ test("a later event-code task cannot inherit completion from map outputs or an o
   assert.equal(fileStatus("Map001.json", { ...maps, partialOutputs: ["Map001.json"] }).label, "Progress saved");
   const rejected = { ...maps, availableOutputs: ["Map001.json"], partialOutputs: ["Map001.json"],
     process: { rejected: 2, validationIssues: [{ file: "Map001.json", rejected: 2 }], errors: [] } };
-  assert.equal(fileStatus("Map001.json", rejected).tone, "warning");
+  assert.equal(fileStatus("Map001.json", rejected).tone, "idle");
   assert.equal(fileStatus("Map002.json", rejected).label, "Output unavailable");
   assert.equal(fileStatus("Map001.json", { ...rejected, retiredFiles: ["Map001.json"] }).tone, "idle");
   assert.equal(historyOutcome({ ...rejected, outputs: { "Map001.json": "hash" } }).kind, "partial");
   assert.equal(fileStatus("Map001.json", { ...maps, retiredFiles: ["Map001.json"] }).label, "Ready");
   assert.equal(fileStatus("Map001.json", { ...maps, appliedOutputs: ["Map001.json"] }).label, "Applied");
   const partial = { ...maps, status: "interrupted", availableOutputs: [], outputs: {}, process: { requests: [{ index: 0, file: "Map001.json", state: "uncertain", sourceItems: 1 }], errors: [] } };
-  assert.equal(fileStatus("Map001.json", partial).label, "Check submission");
+  assert.equal(fileStatus("Map001.json", partial).label, "Incomplete");
   // Legacy dismissal flags no longer hide the latest attempt.
   assert.equal(phaseRun([{ ...maps, id: "kept", keptForHistory: true }, partial], "dialogue")?.id, "kept");
   // A new draft selection must not offer Apply for a different completed scope
@@ -233,7 +233,7 @@ test("new attempts supersede historical warnings without releasing submission pr
   assert.equal(phaseRun([old, next], "database", ["Actors.json"]), next);
   assert.equal(phaseRun([{ ...next, mode: "estimate" }, old], "database"), undefined);
   assert.equal(phaseRun([{ ...next, keptForHistory: true }, old], "database")?.id, next.id);
-  assert.equal(fileStatus("Items.json", old, true).label, "Ready");
+  assert.equal(fileStatus("Items.json", old).label, "Incomplete");
   assert.equal(needsSubmissionReview(old), false);
   assert.equal(canResumeRun(old), false);
   assert.equal(canResumeRun({ ...old, mode: "estimate", phase: "prepare" }), false);
@@ -242,16 +242,16 @@ test("new attempts supersede historical warnings without releasing submission pr
   assert.equal(canResumeRun(unresolved), false);
   const resumed = { ...unresolved, status: "running" };
   assert.equal(phaseRun([next, resumed], "database"), resumed);
-  // Source reloads stay guarded regardless of a Batch's successful row count.
+  // Unsettled work stays visible regardless of a Batch's successful row count.
   const failedBatch = { id: "paid", status: "failed", counts: { succeeded: 0 } };
   const terminalFailure = { ...unresolved, process: { ...unresolved.process, batches: [failedBatch] } };
-  assert.deepEqual(blockingBatches([terminalFailure], ["Items.json"]), [terminalFailure]);
+  assert.deepEqual(unsettledBatches([terminalFailure], ["Items.json"]), [terminalFailure]);
   assert.equal(needsSubmissionReview(terminalFailure), true);
   for (const guarded of [unresolved, { ...terminalFailure, status: "running" },
     { ...terminalFailure, process: { ...terminalFailure.process, monitoring: { state: "collecting" } } },
     ...[{ ...failedBatch, status: "in_progress" }, { ...failedBatch, counts: {} }, { ...failedBatch, counts: { succeeded: 1 } }]
       .map(batch => ({ ...terminalFailure, process: { ...terminalFailure.process, batches: [batch] } })),
-  ]) assert.equal(blockingBatches([guarded as Job], ["Items.json"]).length, 1);
+  ]) assert.equal(unsettledBatches([guarded as Job], ["Items.json"]).length, 1);
 });
 
 // History must not turn local estimates, absent receipts or a stopped/failed
@@ -310,7 +310,7 @@ test("translation stop controls distinguish preparation, approval and running wo
   const temporary = { ...job, temporary: true, status: "stopped", files: ["Items.json"] };
   assert.equal(canResumeRun(temporary), false);
   assert.equal(fileStatus("Items.json", temporary).label, "Ready");
-  assert.equal(fileStatus("Items.json", { ...temporary, status: "failed" }).label, "Needs attention");
+  assert.equal(fileStatus("Items.json", { ...temporary, status: "failed" }).label, "Ready");
   assert.equal(translationStopLabel({ ...job, mode: "estimate" }), null);
   for (const phase of [undefined, "preparing", "collect", "collect_done", "submit"]) {
     assert.equal(translationStopLabel({ ...job, phase, process: { submitted: 0, errors: [] } }), null);
@@ -360,31 +360,60 @@ test("file status follows active and automatically monitored Batch work before r
   assert.equal(fileStatus("Armors.json", { ...withSkipped, status: "complete", availableOutputs: ["Armors.json"] }).label, "Saved");
   assert.notEqual(fileStatus("Armors.json", { ...withSkipped, mode: "translate" }).label, "No new requests");
   const received = { ...checkpoint, process: { ...checkpoint.process!, requests: [{ index: 0, file: "Items.json", state: "received", sourceItems: 1 }] } };
-  assert.equal(fileStatus("Items.json", received).label, "Received");
+  assert.equal(fileStatus("Items.json", received).label, "Progress saved");
+  assert.equal(fileStatus("Items.json", { ...received, availableOutputs: [] }).label, "Results received");
   assert.equal(fileStatus("Items.json", { ...received, phase: "consume" }).label, "Saving results");
   assert.equal(fileStatus("Items.json", { ...received, phase: "consume", partialOutputs: [] }).label, "Saved");
   assert.equal(fileStatus("Items.json", { ...checkpoint, status: "stopped" }).label, "In Batch");
   assert.equal(fileStatus("Items.json", { ...checkpoint, status: "complete", partialOutputs: [] }).label, "Saved");
   assert.equal(fileStatus("Items.json", { ...checkpoint, mode: "translate" }).label, "Translating");
-  assert.equal(fileStatus("Items.json", { ...checkpoint, process: { errors: [] } }).label, "In Batch");
+  assert.equal(fileStatus("Items.json", { ...checkpoint, process: { errors: [] } }).label, "Progress saved");
   const completed = { ...checkpoint, id: "newer", status: "complete", partialOutputs: [] };
   assert.equal(fileRun([completed, checkpoint], "database", "Items.json"), checkpoint);
   assert.equal(fileRun([completed, checkpoint], "dialogue", "Items.json"), undefined);
   assert.equal(fileRun([completed, checkpoint], "database", "Items.json", [checkpoint.id]), completed);
   const stopped = { ...checkpoint, status: "stopped" };
-  assert.deepEqual(blockingBatches([{ ...completed, mode: "estimate" }, stopped], ["Items.json"]), [stopped]);
-  assert.deepEqual(blockingBatches([stopped], ["Actors.json"]), []);
+  assert.deepEqual(unsettledBatches([{ ...completed, mode: "estimate" }, stopped], ["Items.json"]), [stopped]);
+  assert.deepEqual(unsettledBatches([stopped], ["Actors.json"]), []);
   const providerFinished = { ...stopped, process: { errors: [], retryBlocked: false, resultsCollected: true, batches: [{ id: "paid", status: "completed", counts: {} }] } };
   assert.equal(canResumeRun(providerFinished), false);
   assert.equal(canResumeRun({ ...providerFinished, status: "failed", process: { ...providerFinished.process, resultsCollected: false, failed: 12 } }), false);
-  assert.deepEqual(blockingBatches([providerFinished], ["Items.json"]), [providerFinished]);
-  assert.deepEqual(blockingBatches([{ ...providerFinished, phase: "consume", status: "failed" }], ["Items.json"]), []);
-  assert.deepEqual(blockingBatches([checkpoint], ["Actors.json"]), []);
-  assert.deepEqual(blockingBatches([{ ...checkpoint, retiredFiles: ["Items.json"] }], ["Items.json"]), []);
+  assert.deepEqual(unsettledBatches([providerFinished], ["Items.json"]), [providerFinished]);
+  assert.deepEqual(unsettledBatches([{ ...providerFinished, phase: "consume", status: "failed" }], ["Items.json"]), []);
+  assert.deepEqual(unsettledBatches([checkpoint], ["Actors.json"]), []);
+  assert.deepEqual(unsettledBatches([{ ...checkpoint, retiredFiles: ["Items.json"] }], ["Items.json"]), []);
   const monitoring = { ...stopped, process: { ...stopped.process!, monitoring: { state: "collecting" as const, message: "" } } };
-  assert.equal(fileStatus("Items.json", monitoring).label, "Receiving results");
+  assert.equal(fileStatus("Items.json", monitoring).label, "In Batch");
   assert.equal(canResumeRun(monitoring), false);
-  assert.equal(fileStatus("Items.json", { ...monitoring, process: { ...monitoring.process, monitoring: { state: "error", message: "Retrying" } } }).label, "Needs attention");
+  assert.equal(fileStatus("Items.json", { ...monitoring, process: { ...monitoring.process, monitoring: { state: "error", message: "Retrying" } } }).label, "In Batch");
+  // A run-wide refresh must not turn saved, failed, untouched or unsent files
+  // into provider work. Monitor failures likewise cannot mark each file broken.
+  const mixed: Job = { ...checkpoint, files: ["Items.json", "Saved.json", "Partial.json", "Failed.json", "Queued.json", "Empty.json", "Untouched.json", "Missing.json"],
+    outputs: { "Saved.json": "hash", "Partial.json": "hash", "Missing.json": "missing" },
+    availableOutputs: ["Saved.json", "Partial.json"], partialOutputs: ["Partial.json"],
+    process: { errors: [], noRequestFiles: ["Empty.json", "Missing.json"], requests: [
+      ...checkpoint.process!.requests!,
+      { index: 1, file: "Saved.json", state: "saved", sourceItems: 1 },
+      { index: 2, file: "Partial.json", state: "rejected", sourceItems: 1 },
+      { index: 3, file: "Failed.json", state: "failed", sourceItems: 1 },
+      { index: 4, file: "Queued.json", state: "queued", sourceItems: 1 },
+      { index: 5, file: "Partial.json", state: "validated", sourceItems: 1 },
+    ], validationIssues: [{ file: "Partial.json", rejected: 1 }] } };
+  const expected = mixed.files!.map(name => fileStatus(name, mixed));
+  const beforeRefresh = { ...mixed, status: "interrupted" };
+  for (const state of ["monitoring", "collecting", "error", "save_error", "blocked"] as const) {
+    const refreshed = { ...mixed, process: { ...mixed.process!, monitoring: { state, message: "Checking this run" } } };
+    assert.deepEqual(mixed.files!.map(name => fileStatus(name, refreshed)), expected);
+    for (const name of ["Saved.json", "Partial.json", "Failed.json", "Empty.json", "Untouched.json", "Missing.json"])
+      assert.deepEqual(fileStatus(name, refreshed), fileStatus(name, beforeRefresh));
+  }
+  assert.deepEqual(expected.map(status => [status.label, status.tone]), [
+    ["In Batch", "active"], ["Saved", "success"], ["Progress saved", "idle"], ["Incomplete", "idle"],
+    ["Queued", "active"], ["No new requests", "idle"], ["No saved output", "idle"], ["Output unavailable", "warning"],
+  ]);
+  const finished = { ...monitoring, process: { ...monitoring.process, requests: monitoring.process.requests!.map(row => ({ ...row, providerFinished: true })) } };
+  assert.equal(fileStatus("Items.json", finished).label, "Receiving results");
+  assert.equal(fileStatus("Items.json", { ...finished, process: { ...finished.process, monitoring: undefined } }).label, "Awaiting results");
 });
 
 // Live inspection must follow new receipts while a stale full-detail read and
@@ -398,9 +427,20 @@ test("Live inspection and file progress follow current receipts without Batch co
   const rejected = { index: 1, file: "Items.json", state: "rejected", sourceItems: 50 };
   assert.equal(fileStatus("Items.json", { ...live, process: { ...live.process!, requests: [...live.process!.requests!, rejected] } }).label, "Translating · 1 received");
   assert.equal(translationStopLabel(live), "Stop translation");
-  assert.equal(fileStatus("Items.json", { ...live, status: "stopped", availableOutputs: ["Items.json"], partialOutputs: ["Items.json"] }).label, "Stopped");
-  assert.equal(fileStatus("Items.json", { ...live, status: "failed" }).label, "Needs attention");
+  assert.equal(fileStatus("Items.json", { ...live, status: "stopped", availableOutputs: ["Items.json"], partialOutputs: ["Items.json"] }).label, "Progress saved");
+  assert.equal(fileStatus("Items.json", { ...live, status: "failed" }).label, "Incomplete");
   assert.equal(fileStatus("Items.json", { ...live, status: "complete", availableOutputs: ["Items.json"] }).label, "Saved");
+  // A stopped/failed worker and an earlier rejected attempt must not hide the
+  // file's saved progress or make the outcome depend on Live versus Batch.
+  for (const mode of ["translate", "batch"]) for (const status of ["failed", "stopped", "interrupted", "complete"]) {
+    const partial = { ...live, mode, status, availableOutputs: ["Items.json"], partialOutputs: ["Items.json"],
+      process: { errors: [], requests: [rejected] } };
+    assert.equal(fileStatus("Items.json", partial).label, "Progress saved");
+    assert.equal(fileStatus("Items.json", partial).tone, "idle");
+    assert.equal(fileStatus("Items.json", { ...partial, availableOutputs: [] }).label, "Incomplete");
+  }
+  const clarified = { ...live, process: { errors: [], requests: [rejected, { ...rejected, index: 2, state: "submitted", clarificationOf: 1 }] } };
+  assert.equal(fileStatus("Items.json", clarified).tone, "active");
   const completed = { ...live, updated: "2026-10-04T10:00:01Z", status: "complete", log: [] };
   assert.equal(observedRun(live, completed)?.status, "complete");
   assert.deepEqual(observedRun(live, completed)?.log, ["retained"]);
