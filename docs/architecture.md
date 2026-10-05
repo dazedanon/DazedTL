@@ -59,10 +59,14 @@ records intent before submission and saves returned job IDs before polling, incl
 The guided adapter waits before native consume, while the background monitor can finish the same
 authorized retry after interruption. Uncertain submissions are never retried automatically, and repeated refusals remain
 untranslated. Original payloads and responses remain available beside the clarification evidence.
-The request inspector reads original and clarification responses from their retained receipts,
-separately from the refusal-filtered native consume result, so both replies remain visible even
-when the retry is rejected. Each clarification request retains the original source and instructions
-with one appended clarification; Technical shows both complete request attempts.
+The request inspector groups a clarification with its original request and offers Original and
+Clarification retry tabs inside that selection. Response, source/context, exact payload and usage
+follow the selected attempt without another backend read; the latest attempt opens by default.
+Both replies come from retained receipts, separately from the refusal-filtered native consume result.
+Live workers record the parent before sending. Older Live pairs require an exact, unambiguous
+match of payload, file and source identities; unrelated or ambiguous requests stay separate.
+Grouping is presentation-only: raw receipt indices, submission guards and billed usage stay intact.
+Each clarification retains the original source and instructions with one appended clarification.
 New MV/MZ state runs also freeze compatible state-call grouping before submission.
 The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
 Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.
@@ -111,6 +115,7 @@ The review resolves the chosen project-owned run independently of the current se
 Missing or changed historical files cannot be reapplied.
 Publication uses the same reviewed overwrite and restore receipts as ordinary Apply.
 An older Apply receipt does not establish that the current game still matches a run’s output. Explicit text Apply is a full overwrite: it binds the frozen candidate and destination scope while accepting intervening game-data edits. Its one-use confirmation retains the reviewed file list for execution guards. A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review. Apply captures the actual overwritten bytes for rollback at execution. Fitting, QA and restore keep their existing exact-before checks; no background synchronization is performed.
+An inactive failed Batch with terminal provider receipts reporting zero successes does not block reviewed Apply of saved output. Its unresolved receipts remain in History and continue to protect source reloads; active workers, provider work and collection still block conflicting file actions.
 Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
 Validation mismatches are file warnings with a direct action into the request inspector's rejected-translation filter. Provider completion and local validation stay distinct. The [Batch validation reader](../backend/dazedtl/compatibility/batch_validation.py) matches retained native acceptance/rejection records to exact source identities and provider responses only after verifying the consumed submission mapping, frozen plan and unchanged output. Matching rejected requests retain their source text and can enter a fresh estimate; matching valid requests remain settled even when another request in the same file fails. Missing, ambiguous or conflicting evidence keeps the affected requests unresolved, and older file-only mismatch records show an unknown count with log inspection. Parsed validation records are cached by file stamps and exact input/response bindings; observations do not rewrite history or rerun validators. Rejected responses remain inspectable as raw evidence and never appear as saved translations.
 The [choice history reader](../backend/dazedtl/compatibility/choice_history.py) identifies an older unused response only when one extra context-free request accompanies the exact contextualized requests for every physical menu, and each menu's saved text and original metadata match a validated sibling response. Frozen input/output hashes and submission mappings must still match. Proven extras are labeled Unused duplicate, keep their provider bodies and usage, and link to the requests whose wording was saved. They do not count as validated or unresolved work; ambiguous associations remain unresolved. Menu locations are cached by source/output file stamps, without rewriting historical runs.

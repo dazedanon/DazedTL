@@ -30,7 +30,7 @@ def restored(value, *, replay=False):
 
 def send_once(translation, evidence, params):
     """Send the extra paid call without native fallback or SDK retry loops."""
-    evidence.record(params)
+    evidence.record(params, clarification_of=evidence.local.current)
     from util.batch_providers import get_client
     provider = 'anthropic' if 'system' in params else 'openai'
     client = get_client(provider, api_key=translation.openai.api_key,

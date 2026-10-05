@@ -11,7 +11,7 @@ import { RequestSource } from "./RequestSource";
 import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
-import { requestStateLabel, translatedLines } from "./translationView";
+import { groupedRequests, requestAttempt, requestStateLabel, translatedLines } from "./translationView";
 import { NameTranslationFeedback } from "./NameTranslationFeedback";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -55,6 +55,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
     ? { index: initialRequest.index, tab: initialRequest.validation ? process.rejected ? "response" : "run" : "source", filter: initialRequest.validation && process.rejected ? "rejected" : "all", query: initialRequest.file }
     : savedView(job.id));
   const [payload, setPayload] = useState<RunPayload | null>(null);
+  const [attemptSelection, setAttemptSelection] = useState<{ request: number; attempt: number } | null>(null);
   const [remote, setRemote] = useState<RunProcess["batches"]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -68,9 +69,10 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
   const payloadReader = useRef(readPayload);
   payloadReader.current = readPayload;
   const tabId = useId();
-  const requests = process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 }));
-  const index = requests.some(row => row.index === view.index) ? view.index : requests[0]?.index;
-  const selected = requests.find(row => row.index === index);
+  const attemptTabId = useId();
+  const requests = groupedRequests(process.requests || Array.from({ length: process.prepared || 0 }, (_, index) => ({ index, state: "Saved", file: "", sourceItems: 0 })));
+  const selected = requests.find(row => row.indices.includes(view.index)) || requests[0];
+  const index = selected?.index;
   function change(value: Partial<InspectorView>) {
     setView(previous => {
       const next = { ...previous, ...value };
@@ -86,9 +88,12 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
       .catch(failure => { if (current) setError(failure instanceof Error ? failure.message : "Saved request unavailable."); })
       .finally(() => { if (current) setBusy(false); });
     return () => { current = false; };
-  }, [index, refresh, selected?.state]);
-  useEffect(() => { reader.current?.scrollTo(0, 0); }, [index, view.tab]);
-  const visiblePayload = payload?.index === index ? payload : null;
+  }, [index, refresh, selected?.state, selected?.indices.length]);
+  const requestPayload = payload?.index === index ? payload : null;
+  const attempts = requestPayload?.responseAttempts || [];
+  const attemptIndex = Math.max(0, Math.min(attempts.length - 1, attemptSelection?.request === index ? attemptSelection.attempt : attempts.length - 1));
+  const visiblePayload = requestPayload && requestAttempt(requestPayload, attemptIndex);
+  useEffect(() => { reader.current?.scrollTo(0, 0); }, [index, view.tab, attemptIndex]);
   const query = view.query.trim().toLocaleLowerCase();
   function matches(row: typeof requests[number], filter: string, query: string) {
     const status = filter === "all" || filter === "failed" && row.state === "failed"
@@ -96,7 +101,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
       || filter === "unused" && row.state === "unused"
       || filter === "unsent" && ["queued", "prepared"].includes(row.state)
       || filter === "unresolved" && ["submitted", "uncertain", "received"].includes(row.state);
-    const found = !query || (/^#?\d+$/.test(query) ? row.index + 1 === Number(query.replace("#", "")) : (row.file || "").toLocaleLowerCase().includes(query));
+    const found = !query || (/^#?\d+$/.test(query) ? row.number === Number(query.replace("#", "")) : (row.file || "").toLocaleLowerCase().includes(query));
     return status && found;
   }
   const matching = requests.filter(row => matches(row, view.filter, query));
@@ -114,7 +119,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
   const batches = remote || process.batches || [];
   const errors = [...new Set([...(process.errors || []), ...(["failed", "interrupted"].includes(job.status) && job.message ? [job.message] : []),
     ...batches.flatMap(batch => (batch.errors || []).map(error => [error.code, error.param, error.message].filter(Boolean).join(" · ")))])];
-  const counts = [process.received != null && process.prepared ? ["Received", `${process.received.toLocaleString()}/${process.prepared.toLocaleString()}`]
+  const counts = [process.received != null && process.prepared ? [requests.length < (process.requests?.length || 0) ? "Attempts received" : "Received", `${process.received.toLocaleString()}/${process.prepared.toLocaleString()}`]
     : ["Requests", process.prepared], ["Failed", process.failed], ["Rejected", process.rejected], ["Unused", process.unused], ["Unsent", process.remaining]] as const;
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
@@ -145,17 +150,23 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
           onFocusReady={row => { if (keyboardFocus.current) row.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true }); setFocus(null); }}
           empty={<p className="muted">No requests match.</p>}>{row => <button type="button" className="request-row" aria-current={row.index === index ? "true" : undefined}
             tabIndex={row.index === index || position < 0 && row.index === matching[0]?.index ? 0 : -1} onClick={() => choose(row.index)}>
-            <span className="request-row-number">{row.index + 1}</span><span><strong>{row.file || `Request ${row.index + 1}`}</strong><small><span className={row.state === "rejected" ? "translation-error" : undefined}>{requestStateLabel(row.state)}</span>{row.sourceItems ? ` · ${row.sourceItems} lines` : ""}{!row.file ? " · saved scope" : ""}</small></span>
+            <span className="request-row-number">{row.number}</span><span><strong>{row.file || `Request ${row.number}`}</strong><small><span className={row.state === "rejected" ? "translation-error" : undefined}>{requestStateLabel(row.state)}</span>{row.sourceItems ? ` · ${row.sourceItems} lines` : ""}{row.indices.length > 1 ? ` · ${row.indices.length} attempts` : ""}{!row.file ? " · saved scope" : ""}</small></span>
           </button>}</VirtualList></div>
       </aside>
       <section className="payload-inspector" aria-label="Request details">
-        {!runView && <div className="request-selection"><strong>{index != null ? `Request ${index + 1} / ${requests.length}` : "No saved requests"}</strong>
+        {!runView && <div className="request-selection"><strong>{selected ? `Request ${selected.number} / ${requests.length}` : "No saved requests"}</strong>
           {selected && <span className="badge">{requestStateLabel(visiblePayload?.state || selected.state)}</span>}
           <div className="request-navigation"><Button variant="quiet" aria-label="Previous request" disabled={position <= 0} onClick={() => choose(matching[position - 1].index, true)}>←</Button>
             <Button variant="quiet" aria-label="Next request" disabled={position < 0 || position >= matching.length - 1} onClick={() => choose(matching[position + 1].index, true)}>→</Button>
             {readPayload && <Button variant="quiet" pending={busy} disabled={busy || index == null} onClick={() => { refreshedIndex.current = index ?? null; setRefresh(value => value + 1); }}>{refreshed ? "Updated" : "Refresh request"}</Button>}</div>
         </div>}
-        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={!runView && busy}>
+        {!runView && attempts.length > 1 && <Tabs id={attemptTabId} label="Request attempt" value={String(attemptIndex)}
+          items={attempts.map((attempt, index) => ({ id: String(index), label: attempt.kind === "original" ? "Original" : "Clarification retry" }))}
+          onChange={attempt => setAttemptSelection({ request: index!, attempt: Number(attempt) })} />}
+        <div className="request-reader" ref={reader} tabIndex={0} aria-label="Saved request content" aria-busy={!runView && busy}
+          role={!runView && attempts.length > 1 ? "tabpanel" : undefined}
+          id={!runView && attempts.length > 1 ? `${attemptTabId}-panel-${attemptIndex}` : undefined}
+          aria-labelledby={!runView && attempts.length > 1 ? `${attemptTabId}-tab-${attemptIndex}` : undefined}>
           {!runView && <Message message={error} />}
           {!runView && visiblePayload?.unused && <div className="request-unused">
             <p className="muted">This extra choice response was not used. The saved file uses the validated responses below.</p>
@@ -177,15 +188,12 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
             </> : view.tab === "log" ? <pre>{job.log.join("\n") || "No log was retained."}</pre>
             : view.tab === "response" ? <>
               {requestError != null && <p className="translation-error">{typeof requestError === "string" ? requestError : requestError.message || formatted(requestError)}</p>}
-              {requestError == null && visiblePayload?.response == null && !!errors.length && <p className="translation-error">{errors.join(" · ")}</p>}
+              {requestError == null && visiblePayload?.response == null && !attempts.length && !!errors.length && <p className="translation-error">{errors.join(" · ")}</p>}
               {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}
               {visiblePayload?.responseOrigin === "log" && <p className="muted">Final attempt recovered from the saved validation log. Earlier retry bodies were not retained.</p>}
-              {visiblePayload?.responseAttempts?.length ? visiblePayload.responseAttempts.map((attempt, index) => <div key={index}>
-                <h3>{attempt.kind === "original" ? "Original response" : "Clarification response"}</h3>
-                {attempt.kind === "clarification" && index === visiblePayload.responseAttempts!.length - 1 && comparison ? comparison : <pre>{responseText(attempt.response)}</pre>}
-              </div>) : <><h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
+              <h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
                 : comparison ? comparison
-                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted">{["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for the provider response." : visiblePayload.state === "failed" ? "The provider rejected this request; no translation was returned." : "The original response was not retained for this older request."}</p>}</>}
+                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted">{["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for the provider response." : visiblePayload.state === "uncertain" ? "No response is recorded for this attempt. Its submission outcome is uncertain." : visiblePayload.state === "failed" ? "This attempt failed; no response was retained." : "The original response was not retained for this older request."}</p>}
             </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh request to try again." : "No request payload is available. Run details retains the saved receipts and log."}</p>
               : view.tab === "source" ? <RequestSource payload={visiblePayload} />
               : <><RequestTechnical key={visiblePayload.index} payload={visiblePayload} job={job} />
@@ -194,7 +202,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
                     {readProvider && <ActionControl label="Check provider" pending={provider.busy} error={provider.error} notice={provider.notice} onClick={() => provider.run(async () => setRemote((await readProvider()).batches), "Provider details loaded.")} />}</>}
                   {job.estimate && <><h3>Saved estimate</h3><ExpandableText text={formatted(job.estimate)} label="Saved estimate" /></>}
                   {job.eventTextReview && <><h3>Event text review</h3><ExpandableText text={formatted(job.eventTextReview)} label="Event text review" /></>}
-                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Saved translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.responseAttempts?.length ? visiblePayload.responseAttempts : visiblePayload.response)} label="Saved response" /></>}
+                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Saved translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.response)} label="Saved response" /></>}
                 </>}
 
           </TabPanel>

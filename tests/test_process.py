@@ -18,6 +18,64 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_live_clarification_groups_require_exact_ownership_and_preserve_each_receipt(self):
+        # Interleaved retries used to become unrelated selector rows. Grouping
+        # must preserve both bodies/usage and never merge similar game requests.
+        from dazedtl.translation.refusals import clarified
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                evidence = Evidence(root, 'translate')
+                params = {'model': 'fixture', 'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}
+                refusal = {'text': 'I cannot help with this translation.'}
+                def record(parameters, filename='Items.json', sources=('owned',), response=None, parent=None):
+                    evidence.local.filename, evidence.local.sources = filename, list(sources)
+                    evidence.prepared(parameters, 'rejected' if response else 'submitted', clarification_of=parent)
+                    identity = evidence.local.current
+                    if response:
+                        with evidence.connect() as connection:
+                            connection.execute('UPDATE requests SET raw_response=?,usage=? WHERE id=?',
+                                (json.dumps(response), json.dumps({'prompt_tokens': 3, 'completion_tokens': 1}), identity))
+                    return identity
+                original = record(params, response=refusal)
+                record(params, filename='Other.json', response=refusal)
+                retry = record(clarified(params), parent=None if legacy else original)
+                before = evidence.path.read_bytes()
+                summary = process_view.summary(root, {'mode': 'translate', 'status': 'running'})
+                self.assertEqual([row.get('clarificationOf') for row in summary['requests']], [None, None, 0])
+                self.assertTrue(summary['retryBlocked'])
+                original_payload = process_view.payload(root, 0)
+                retry_payload = process_view.payload(root, 2)
+                self.assertEqual(original_payload['responseAttempts'], retry_payload['responseAttempts'])
+                self.assertEqual([attempt['payload']['index'] for attempt in retry_payload['responseAttempts']], [0, 2])
+                self.assertEqual(retry_payload['responseAttempts'][0]['response'], refusal)
+                self.assertIsNone(retry_payload['responseAttempts'][1]['response'])
+                self.assertEqual(evidence.path.read_bytes(), before)
+                accepted = {'text': '{"Line1":"Potion"}'}
+                with evidence.connect() as connection:
+                    connection.execute("UPDATE requests SET state='validated',raw_response=?,response=?,usage=? WHERE id=?",
+                        (json.dumps(accepted), '["Potion"]', '{"prompt_tokens":5,"completion_tokens":2}', retry))
+                attempts = process_view.payload(root, 0)['responseAttempts']
+                self.assertEqual(attempts[1]['payload']['translations'], ['Potion'])
+                self.assertEqual(attempts[1]['payload']['usage'], {'input_tokens': 5, 'output_tokens': 2})
+                self.assertEqual(attempts[0]['payload']['usage'], {'input_tokens': 3, 'output_tokens': 1})
+                self.assertEqual(attempts[0]['payload']['exact'], params)
+                self.assertEqual(attempts[1]['payload']['exact'], clarified(params))
+                # A changed owner, context, or ambiguous historical parent must
+                # leave the raw request independently inspectable.
+                for changed in ('file', 'source', 'context', 'ambiguous'):
+                    with self.subTest(changed=changed), evidence.connect() as connection:
+                        if changed == 'file': connection.execute("UPDATE requests SET filename='Foreign.json' WHERE id=?", (retry,))
+                        if changed == 'source': connection.execute("UPDATE requests SET sources='[\"other\"]' WHERE id=?", (retry,))
+                        if changed == 'context': connection.execute('UPDATE requests SET params=? WHERE id=?', (json.dumps(clarified({**params, 'model': 'different'})), retry))
+                        if changed == 'ambiguous':
+                            connection.execute('UPDATE requests SET clarification_of=NULL WHERE id=?', (retry,))
+                            connection.execute("UPDATE requests SET filename='Items.json' WHERE id=2")
+                    self.assertNotIn('responseAttempts', process_view.payload(root, 2))
+                    with evidence.connect() as connection:
+                        connection.execute('UPDATE requests SET filename=?,sources=?,params=? WHERE id=?',
+                            ('Items.json', '["owned"]', json.dumps(clarified(params)), retry))
+
     def test_completed_live_rejections_release_only_exact_returned_attempts(self):
         # Old Live rows stopped at "received" and blocked all later estimates.
         # Only a complete, unchanged run and exact unambiguous rejection record

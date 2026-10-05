@@ -118,7 +118,7 @@ def _ledger_records(root, signature, consumed):
         return None
     with closing(connection):
         names = {row[1] for row in connection.execute('PRAGMA table_info(requests)')}
-        fields = ('params', 'state', 'error', 'usage', 'sources', 'filename', 'response', 'raw_response')
+        fields = ('id', 'params', 'state', 'error', 'usage', 'sources', 'filename', 'response', 'raw_response', 'clarification_of')
         rows = connection.execute('SELECT ' + ','.join(name if name in names else 'NULL' for name in fields) + ' FROM requests ORDER BY id').fetchall()
         validated = {}
         if consumed and connection.execute("SELECT 1 FROM sqlite_master WHERE name='validated_items'").fetchone():
@@ -148,10 +148,37 @@ def _ledger_records(root, signature, consumed):
             response = {'text': json.dumps(response, ensure_ascii=False)}
         elif isinstance(response, dict) and 'content' in response:
             response = {**response, 'text': response['content']}
-        if entry['state'] != 'rejected' and response is not None and refused(response, source.values()):
+        entry['provider_refusal'] = response is not None and refused(response, source.values())
+        if entry['state'] != 'rejected' and entry['provider_refusal']:
             entry.update(state='rejected', error={'message': 'The provider declined this request. Review any previously saved output before applying it.'})
         result.append(entry)
+    link_clarifications(result)
     return result
+
+
+def link_clarifications(rows):
+    """Link display attempts only; historical ambiguity never merges requests."""
+    from dazedtl.translation.refusals import CLARIFICATION
+    identities, originals, signatures = {}, {}, {}
+    used = set()
+    for index, row in enumerate(rows):
+        params = row['params']
+        messages = params.get('messages') or []
+        signature = lambda value: digest([row['filename'], row['sources'], value])
+        if messages and messages[-1] == {'role': 'user', 'content': CLARIFICATION}:
+            parent_signature = signature({**params, 'messages': messages[:-1]})
+            if row.get('clarification_of') is not None:
+                parent = identities.get(row['clarification_of'])
+                candidates = [parent] if parent is not None and signatures.get(parent) == parent_signature else []
+            else:
+                candidates = originals.get(parent_signature, [])
+            if len(candidates) == 1 and candidates[0] not in used:
+                row['clarificationOf'] = candidates[0]
+                used.add(candidates[0])
+        identities[row['id']] = index
+        if row['provider_refusal'] and 'clarificationOf' not in row:
+            signatures[index] = signature(params)
+            originals.setdefault(signatures[index], []).append(index)
 
 
 def queue(root):
@@ -423,7 +450,9 @@ def summary(root, job):
             'batches': receipts,
             'noRequestFiles': no_request_files(root, job, items),
             'errors': list(dict.fromkeys(errors)), 'usage': usage, 'fileMetrics': file_metrics(job),
-            'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source'])} for row in items],
+            'requests': [{'index': row['index'], 'state': row['state'], 'file': row['file'], 'sourceItems': len(row['source']),
+                          **({'clarificationOf': records[row['index']]['clarificationOf']}
+                             if records and row['index'] < len(records) and 'clarificationOf' in records[row['index']] else {})} for row in items],
             'retryBlocked': bool(uncertain or any(row['state'] in {'submitted', 'received'} for row in items)
                                  or not items and job.get('mode') == 'translate' and job.get('status') in {'running', 'waiting', 'interrupted', 'stopped'}),
             'uncertain': uncertain, 'duplicateSubmissions': duplicate_submissions,
@@ -490,6 +519,29 @@ def token_usage(value):
     return result or None
 
 
+def batch_payload(index, total, entry, custom_id, params, response, state, error=None):
+    from util.batch_providers import _openai_batch_body
+    provider = entry.get('provider', 'openai')
+    params = _openai_batch_body(provider, params) if provider != 'anthropic' else params
+    exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if provider != 'anthropic' else {'custom_id': custom_id, 'params': params}
+    return {'index': index, 'total': total, 'state': state, 'response': response, 'error': error,
+            'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
+            'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
+            'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,
+            'usage': token_usage(response)}
+
+
+def live_payload(row, index, total):
+    params = row['params']
+    return {'index': index, 'total': total, 'state': row['state'], 'source': source_values(params),
+            'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
+            'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
+            'error': row['error'], 'usage': token_usage(row['usage']),
+            'response': row['raw_response'] if row['raw_response'] is not None else row['response'],
+            'translations': row['response'] if row['state'] == 'validated' else None,
+            'responseOrigin': row.get('responseOrigin') if row['raw_response'] is None or row.get('responseOrigin') == 'log' else None}
+
+
 def payload(root, index):
     if type(index) is not int or index < 0:
         raise ValueError('Choose a valid request index.')
@@ -502,12 +554,15 @@ def payload(root, index):
         entry = requests[key]
         from .request_scope import requests as source_requests
         row = next(item for item in source_requests(root, {}) if item['index'] == index)
-        custom_id = next((custom for batch in saved(evidence_root(root), 'batch_history.json').get('batches', [])
+        history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
+        custom_id = next((custom for batch in history
                           for custom, value in batch.get('custom_ids', {}).items() if value == key), None)
-        from util.batch_providers import _openai_batch_body
-        params = _openai_batch_body(entry.get('provider', 'openai'), entry['params']) if entry.get('provider') != 'anthropic' else entry['params']
-        exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
+        error = next((error for batch in history for error in (batch.get('provider_errors') or [])
+                      if error.get('custom_id') == custom_id), None)
+        value = batch_payload(index, len(keys), entry, custom_id, entry['params'], row['response'], row['state'], row.get('error') or error)
+        value['unused'] = row.get('unused')
         from .batch_refusals import records as clarification_records
+        from dazedtl.translation.refusals import refused, MESSAGE
         attempts, responses = [], []
         for record in clarification_records(evidence_root(root), details=True):
             matching = [(batch, item) for batch in record['batches'] for item in batch['items'] if item['key'] == key]
@@ -516,35 +571,38 @@ def payload(root, index):
             # Native consume deliberately blanks refusals. Inspect the retained
             # provider receipts, including older runs, without changing acceptance.
             if key in record['original_responses']:
-                responses.append({'kind': 'original', 'response': record['original_responses'][key]})
+                original = record['original_responses'][key]
+                original_id = next((custom for batch in history if batch.get('id') == record['original_id']
+                                    for custom, value in batch.get('custom_ids', {}).items() if value == key), None)
+                detail = batch_payload(index, len(keys), entry, original_id, record['requests'][key], original,
+                                       'rejected' if refused(original) else 'received', {'message': MESSAGE} if refused(original) else None)
+                responses.append({'kind': 'original', 'response': original, 'payload': detail})
             for batch, item in matching:
                 attempts.append(item)
-                if key in batch.get('responses', {}):
-                    responses.append({'kind': 'clarification', 'response': batch['responses'][key]})
+                response = batch.get('responses', {}).get(key)
+                state = row['state'] if response is not None else {'pending': 'queued', 'sending': 'uncertain', 'submitted': 'submitted'}.get(batch['state'], 'failed')
+                error = row.get('error') if response is not None else None
+                detail = batch_payload(index, len(keys), entry, item['custom_id'], item['params'], response, state, error)
+                responses.append({'kind': 'clarification', 'response': response, 'payload': detail})
         if attempts:
-            exact = {'original': exact, 'clarifications': attempts}
-        error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in (batch.get('provider_errors') or [])
-                      if error.get('custom_id') == custom_id), None)
-        return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': row.get('error') or error, 'unused': row.get('unused'),
-                'responseAttempts': responses,
-                'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
-                'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
-                'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,
-                'usage': token_usage(row['response'])}
+            value['exact'] = {'original': value['exact'], 'clarifications': attempts}
+        value['responseAttempts'] = responses
+        return value
     rows = ledger_records(root)
     if rows is None:
         raise ValueError('Exact payloads were not recorded for this older Live run.')
     if index >= len(rows):
         raise ValueError('This request is no longer available.')
-    row = rows[index]
-    params = row['params']
-    return {'index': index, 'total': len(rows), 'state': row['state'], 'source': source_values(params),
-            'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
-            'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
-            'error': row['error'], 'usage': token_usage(row['usage']),
-            'response': row['raw_response'] if row['raw_response'] is not None else row['response'],
-            'translations': row['response'] if row['state'] == 'validated' else None,
-            'responseOrigin': row.get('responseOrigin') if row['raw_response'] is None or row.get('responseOrigin') == 'log' else None}
+    value = live_payload(rows[index], index, len(rows))
+    parent = rows[index].get('clarificationOf', index)
+    group = [parent] + [number for number, row in enumerate(rows) if row.get('clarificationOf') == parent]
+    if len(group) > 1:
+        value['responseAttempts'] = []
+        for number in group:
+            detail = live_payload(rows[number], number, len(rows))
+            value['responseAttempts'].append({'kind': 'original' if number == parent else 'clarification',
+                                              'response': detail['response'], 'payload': detail})
+    return value
 
 
 def provider_details(root, resolve_connection):

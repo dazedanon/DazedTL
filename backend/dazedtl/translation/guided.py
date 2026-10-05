@@ -735,7 +735,7 @@ class Guided:
                     if identity and identity != current and identity in self.backend.manual.jobs]
         return overlap(self.backend.manual.folder(current), job, previous)
 
-    def protect_batch_files(self, native, files):
+    def protect_batch_files(self, native, files, *, applying=False):
         from dazedtl.compatibility.batch_control import TERMINAL
         names = set(files)
         for identity in self.owned_runs(native):
@@ -746,9 +746,19 @@ class Guided:
             if not (names.intersection(job.get('files', [])) - set(view.get('retiredFiles', []))):
                 continue
             process = view.get('process') or {}
+            batches = process.get('batches', [])
+            # A failed run with terminal zero-success receipts cannot publish
+            # new output. Keep its uncertainty for recovery and source reloads,
+            # without vetoing a separately reviewed saved runtime publication.
+            failed_without_results = (applying and job.get('status') == 'failed' and bool(batches)
+                                      and all(batch.get('status') in TERMINAL
+                                              and type((batch.get('counts') or {}).get('succeeded')) is int
+                                              and batch['counts']['succeeded'] == 0
+                                              for batch in batches))
             if (identity in self.batch_monitor.busy or job.get('status') in {'ready', 'running', 'waiting'}
-                    or any(batch.get('status') not in TERMINAL for batch in process.get('batches', []))
-                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected')
+                    or (process.get('monitoring') or {}).get('state') in {'monitoring', 'collecting'}
+                    or any(batch.get('status') not in TERMINAL for batch in batches)
+                    or job.get('status') != 'complete' and process.get('retryBlocked') and not process.get('resultsCollected') and not failed_without_results
                     or job.get('status') in {'stopped', 'interrupted'} and (str(job.get('phase', '')).startswith('poll') and process.get('batches') or process.get('resultsCollected'))):
                 raise ValueError('These files still belong to Batch work. Open Batches to track progress or cancel it before changing the files.')
 
@@ -788,7 +798,7 @@ class Guided:
                 raise ValueError("Choose a saved Batch to reapply.")
             run_output, files = self.batch_output(native, options['run_id'], files)
         if action in {'refresh_sources', 'export_selected'}:
-            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'])
+            self.protect_batch_files(native, files if isinstance(files, list) else native['selected'], applying=action == 'export_selected')
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
         self.settings.prepare_engine()
@@ -979,7 +989,7 @@ class Guided:
         self.confirmations.pop(token)
         action = confirmed["action"]
         if action in {'refresh_sources', 'export_selected'}:
-            self.protect_batch_files(native, confirmed['paths'])
+            self.protect_batch_files(native, confirmed['paths'], applying=action == 'export_selected')
         if action != 'start':
             self.idle()
         if action != "backup_source":

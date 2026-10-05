@@ -51,6 +51,8 @@ class Evidence:
             for name in ('sources', 'filename', 'response', 'raw_response'):
                 if name not in columns(connection):
                     connection.execute('ALTER TABLE requests ADD COLUMN ' + name + ' TEXT')
+            if 'clarification_of' not in columns(connection):
+                connection.execute('ALTER TABLE requests ADD COLUMN clarification_of INTEGER')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_provenance (identity TEXT PRIMARY KEY, filename TEXT)')
             for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
@@ -68,17 +70,17 @@ class Evidence:
         finally:
             connection.close()
 
-    def prepared(self, params, state='prepared'):
+    def prepared(self, params, state='prepared', *, clarification_of=None):
         with self.connect() as connection:
-            row = connection.execute('INSERT INTO requests(params,state,sources,filename) VALUES (?,?,?,?)',
+            row = connection.execute('INSERT INTO requests(params,state,sources,filename,clarification_of) VALUES (?,?,?,?,?)',
                                      (json.dumps(params, ensure_ascii=False), state,
-                                      json.dumps(getattr(self.local, 'sources', [])), getattr(self.local, 'filename', None)))
+                                      json.dumps(getattr(self.local, 'sources', [])), getattr(self.local, 'filename', None), clarification_of))
             self.local.current = row.lastrowid
             if getattr(self.local, 'call', None) is not None:
                 self.local.call.append(row.lastrowid)
                 self.local.validation_groups.setdefault(getattr(self.local, 'request_identity', None), []).append(row.lastrowid)
 
-    def record(self, params):
+    def record(self, params, *, clarification_of=None):
         # Durable intent precedes the SDK call; merely built estimate payloads
         # never acquire an uncertain/submitted state.
         values = source_values(params) or {}
@@ -86,7 +88,7 @@ class Evidence:
         cursor = getattr(self.local, 'cursor', 0)
         self.local.sources = keys[cursor:cursor+len(values)] or keys
         self.local.cursor = cursor + len(values)
-        self.prepared(params, 'submitted' if self.mode == 'translate' else 'prepared')
+        self.prepared(params, 'submitted' if self.mode == 'translate' else 'prepared', clarification_of=clarification_of)
 
     def update(self, state, usage=None, error=None):
         current = getattr(self.local, 'current', None)

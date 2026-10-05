@@ -451,6 +451,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
       const pendingBatches = blockingBatches(state.runs, selectedNames);
       const locked = activeRun(current) || activeRun(localEstimate) || translationFlow.active || !!pendingBatches.length;
       const applyFiles = selectedNames.filter(name => state.readiness.outputs.includes(name));
+      const applyBatches = blockingBatches(state.runs, applyFiles, { applying: true });
+      const applyLocked = activeRun(current) || activeRun(localEstimate) || translationFlow.active || !!applyBatches.length;
       const noRemainingWork = estimateRequestCount(quote) === 0;
 
       const prerequisites = !baseline || !!changed.length || !state.provider.model || !phaseFiles.length || phase === "advanced" && !advancedReady || phase === "variables" && state.comparisons.status !== "ready";
@@ -469,7 +471,8 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         : preparing ? "Checking the selected files · please wait"
         : current?.approval ? "Awaiting your cost approval" : activeRun(current) ? current!.message
         : current?.temporary && ["failed", "interrupted", "stopped"].includes(current.status) ? current.message || "Preparation did not finish. Click Translate to try again."
-        : pendingBatches.length ? "Earlier Batches are available in Batches. Translate starts a new estimate."
+        : pendingBatches.length ? applyBatches.length ? "Earlier Batch work still blocks Apply for these files. Open Batches to review it."
+          : "Earlier Batches are available in Batches. Translate starts a new estimate."
         : unresolved.length ? "Earlier requests are unresolved. You can start a new translation."
         : noRemainingWork ? "Checked these files: no new API requests are needed." : "Translate prepares an estimate for your approval.";
       actionContext = <div className="translation-action-scope"><strong>{selectedNames.length} selected{applyFiles.length ? ` · ${applyFiles.length} saved` : ""}</strong><small>{["translate:prepare", "run:answer:false", "run:stop"].includes(action.key) && action.notice || guidance}</small></div>;
@@ -481,7 +484,7 @@ function Workspace({ project, state, translation, settings, backups, versions }:
         <Button variant="primary" pending={preparing}
           disabled={disabled || prerequisites || !state.provider.ready || !state.provider.enabled || !paidModeReady}
           onClick={translateSelected}>Translate</Button>
-        {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || locked || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
+        {!!applyFiles.length && task("export_selected", `Apply (${applyFiles.length})`, {}, !baseline || applyLocked || !!state.collectionError || applyFiles.some(name => changed.includes(name)), "default", applyFiles)}
       </>;
       break;
     }

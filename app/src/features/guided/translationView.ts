@@ -1,8 +1,33 @@
-import type { GuidedState, Job, Phase, RunPayload } from "../../api/contracts.ts";
+import type { GuidedState, Job, Phase, RunPayload, RunProcess } from "../../api/contracts.ts";
 
 export const activeRun = (run?: Job | null) => !!run && ["ready", "running", "waiting"].includes(run.status);
 export const terminalBatch = (status: string) => ["completed", "ended", "failed", "expired", "cancelled", "canceled"].includes(status);
 export const requestStateLabel = (state: string) => state === "unused" ? "Unused duplicate" : state === "rejected" ? "Validation failed" : state;
+
+/** Keep raw receipt indices stable while presenting one selection per source request. */
+export function groupedRequests(rows: NonNullable<RunProcess["requests"]>) {
+  const groups: (typeof rows[number] & { indices: number[]; number: number })[] = [];
+  const owners = new Map<number, typeof groups[number]>();
+  for (const row of rows) {
+    const parent = row.clarificationOf == null ? undefined : owners.get(row.clarificationOf);
+    if (parent && parent.file === row.file) {
+      parent.indices.push(row.index);
+      parent.state = row.state;
+      owners.set(row.index, parent);
+    } else {
+      const group = { ...row, indices: [row.index], number: groups.length + 1 };
+      groups.push(group);
+      owners.set(row.index, group);
+    }
+  }
+  return groups;
+}
+
+/** Attempt changes use the already loaded receipt, without another backend read. */
+export function requestAttempt(payload: RunPayload, index: number) {
+  const attempt = payload.responseAttempts?.[index];
+  return attempt?.payload || (attempt ? { ...payload, response: attempt.response } : payload);
+}
 
 /** Keep the inspector current without replacing its retained full log. */
 export function observedRun(detail: Job | null, observed?: Job) {
@@ -86,10 +111,13 @@ export function fileMetricRun(runs: Job[], phase: Phase, name: string, retired: 
     : !run.process?.noRequestFiles?.includes(name) && !!run.process?.fileMetrics?.[name];
   return matches.find(run => activeRun(run) && changed(run)) || matches.find(changed);
 }
-export function blockingBatches(runs: Job[], selected: readonly string[]) {
+export function blockingBatches(runs: Job[], selected: readonly string[], { applying = false } = {}) {
   return runs.filter(run => run.mode === "batch" && !run.temporary
     && run.files?.some(name => selected.includes(name) && !run.retiredFiles?.includes(name))
-    && (activeRun(run) || run.process?.batches?.some(batch => !terminalBatch(batch.status)) || needsSubmissionReview(run) && !run.process?.resultsCollected
+    && (activeRun(run) || run.process?.batches?.some(batch => !terminalBatch(batch.status))
+      || needsSubmissionReview(run) && !run.process?.resultsCollected
+        && !(applying && run.status === "failed" && !!run.process?.batches?.length
+          && run.process.batches.every(batch => terminalBatch(batch.status) && batch.counts?.succeeded === 0))
       || ["monitoring", "collecting"].includes(run.process?.monitoring?.state || "")
       || ["stopped", "interrupted"].includes(run.status) && (!!run.process?.batches?.length && !!run.phase?.startsWith("poll") || run.process?.resultsCollected)));
 }

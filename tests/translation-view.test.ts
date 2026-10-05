@@ -2,7 +2,31 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
-import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun } from "../app/src/features/guided/translationView.ts";
+import { completeForSelection, estimateFollowup, preparationFollowup, estimateRequestCount, filePreviewRun, fileRun, fileMetricRun, fileStatus, phaseRun, translationTaskComplete, blockingBatches, needsSubmissionReview, canResumeRun, requestContext, translatedLines, translationStopLabel, observedRun, groupedRequests, requestAttempt } from "../app/src/features/guided/translationView.ts";
+
+test("clarification selection groups stable receipt indices and keeps each attempt's response and usage", () => {
+  // A retry must not create another source selection or overwrite the original
+  // while a late receipt changes the group's latest status.
+  const original = { index: 0, state: "rejected", file: "Items.json", sourceItems: 1 };
+  const other = { index: 1, state: "validated", file: "Other.json", sourceItems: 1 };
+  const retry = { ...original, index: 2, clarificationOf: 0, state: "submitted" };
+  const rows = [original, other, retry];
+  assert.deepEqual(groupedRequests(rows).map(row => [row.number, row.index, row.indices, row.state]), [
+    [1, 0, [0, 2], "submitted"], [2, 1, [1], "validated"]]);
+  assert.equal(original.state, "rejected");
+  assert.equal(groupedRequests([original, other, { ...retry, file: "Foreign.json" }]).length, 3);
+  assert.equal(groupedRequests([original, other, { ...retry, clarificationOf: 99 }]).length, 3);
+  assert.equal(groupedRequests([original, other, { ...retry, state: "validated" }])[0].state, "validated");
+  const first = { index: 0, state: "rejected", response: "Original refusal", usage: { input_tokens: 3 } } as RunPayload;
+  const last = { index: 2, state: "validated", response: "Translation", usage: { input_tokens: 5 } } as RunPayload;
+  const payload: RunPayload = { ...first, responseAttempts: [
+    { kind: "original", response: first.response, payload: first },
+    { kind: "clarification", response: last.response, payload: last },
+  ] };
+  assert.equal(requestAttempt(payload, 0), first);
+  assert.equal(requestAttempt(payload, 1), last);
+  assert.equal(requestAttempt(first, 0), first);
+});
 
 test("a later event-code task cannot inherit completion from map outputs or an old Apply receipt", () => {
   const maps: Job = { id: "maps", logicalPhase: "dialogue", mode: "batch", status: "complete", message: "", log: [], files: ["Map001.json", "Map002.json"], outputs: { "Map001.json": "hash", "Map002.json": "missing" }, availableOutputs: ["Map001.json"], outputsAvailable: false, appliedOutputs: [] };
@@ -145,6 +169,18 @@ test("new attempts supersede historical warnings without releasing submission pr
   assert.equal(canResumeRun(unresolved), false);
   const resumed = { ...unresolved, status: "running" };
   assert.equal(phaseRun([next, resumed], "database"), resumed);
+  // Saved output may be applied despite an old terminal zero-success Batch;
+  // unresolved submissions, source reloads and active collection stay guarded.
+  const failedBatch = { id: "paid", status: "failed", counts: { succeeded: 0 } };
+  const terminalFailure = { ...unresolved, process: { ...unresolved.process, batches: [failedBatch] } };
+  assert.deepEqual(blockingBatches([terminalFailure], ["Items.json"], { applying: true }), []);
+  assert.deepEqual(blockingBatches([terminalFailure], ["Items.json"]), [terminalFailure]);
+  assert.equal(needsSubmissionReview(terminalFailure), true);
+  for (const guarded of [unresolved, { ...terminalFailure, status: "running" },
+    { ...terminalFailure, process: { ...terminalFailure.process, monitoring: { state: "collecting" } } },
+    ...[{ ...failedBatch, status: "in_progress" }, { ...failedBatch, counts: {} }, { ...failedBatch, counts: { succeeded: 1 } }]
+      .map(batch => ({ ...terminalFailure, process: { ...terminalFailure.process, batches: [batch] } })),
+  ]) assert.equal(blockingBatches([guarded as Job], ["Items.json"], { applying: true }).length, 1);
 });
 
 // History must not turn local estimates, absent receipts or a stopped/failed

@@ -75,7 +75,12 @@ class BatchMonitorTests(unittest.TestCase):
                     self.assertEqual(sent[0]['params']['messages'][-1]['content'], CLARIFICATION)
                     self.assertEqual(batch_results(root), original)
                     self.assertEqual(summary(root, job)['requests'][0]['state'], 'submitted')
-                    self.assertEqual(payload(root, 0)['responseAttempts'], [{'kind': 'original', 'response': original['key']}])
+                    pending = payload(root, 0)['responseAttempts']
+                    self.assertEqual([attempt['kind'] for attempt in pending], ['original', 'clarification'])
+                    self.assertEqual(pending[0]['response'], original['key'])
+                    self.assertIsNone(pending[1]['response'])
+                    self.assertEqual(pending[1]['payload']['state'], 'submitted')
+                    self.assertEqual(pending[1]['payload']['messages'], sent[0]['params']['messages'])
                     reopened = BatchMonitor(monitor.guided)
                     reopened.tick()
                     monitor.backend.manual.consume_batch.assert_called_once_with('run')
@@ -83,9 +88,16 @@ class BatchMonitorTests(unittest.TestCase):
                     before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
                     inspected = payload(root, 0)
                     self.assertEqual(inspected['state'], 'rejected' if retry_text.startswith('I cannot') else 'received')
-                    self.assertEqual(inspected['responseAttempts'], [
+                    self.assertEqual([{key: attempt[key] for key in ('kind', 'response')} for attempt in inspected['responseAttempts']], [
                         {'kind': 'original', 'response': original['key']},
                         {'kind': 'clarification', 'response': retry['key']}])
+                    original_detail, retry_detail = [attempt['payload'] for attempt in inspected['responseAttempts']]
+                    self.assertEqual(original_detail['usage'], {'input_tokens': 3, 'output_tokens': 1})
+                    self.assertEqual(retry_detail['usage'], {'input_tokens': 5, 'output_tokens': 2})
+                    self.assertEqual(original_detail['state'], 'rejected')
+                    self.assertEqual(retry_detail['state'], inspected['state'])
+                    self.assertEqual(original_detail['exact']['custom_id'], 'one')
+                    self.assertEqual(retry_detail['exact']['custom_id'], sent[0]['custom_id'])
                     self.assertEqual(inspected['usage'], {'input_tokens': 8, 'output_tokens': 3})
                     self.assertEqual({path: path.read_bytes() for path in before}, before)
                     self.assertEqual(summary(root, job)['usage'], {'input_tokens': 8, 'output_tokens': 3})

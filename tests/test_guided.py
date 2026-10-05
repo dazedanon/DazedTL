@@ -406,6 +406,30 @@ class GuidedTests(unittest.TestCase):
         write_json(self.folder / 'translated/System.json', {'gameTitle': 'Other output'})
         self.backend.workflows.preview = lambda *_: {'token': 'apply-preview', 'confirmation': True, 'options': {}}
         self.backend.guided_export_preview = Mock(side_effect=lambda _owner, paths: self.backend.workflows.preview())
+        # A historical failed Batch with no successful responses used to veto
+        # separately saved output. Its receipts must still guard source reloads.
+        old = {'id': 'failed-batch', 'mode': 'batch', 'status': 'failed', 'files': ['Items.json'], 'log': []}
+        self.backend.manual.jobs[old['id']] = old
+        self.guided.runs.remember(self.identity, old, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        root = self.backend.manual.folder(old['id'])
+        batch = {'id': 'provider-batch', 'status': 'error', 'api_status': 'failed', 'custom_ids': {'one': 'key'},
+                 'request_counts': {'processing': 0, 'succeeded': 0, 'errored': 0, 'canceled': 0, 'expired': 0}}
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        write_json(root/'log/batch_state.json', {'status': 'submitted', 'batches': [batch]})
+        write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}', 'params': {}}})
+        self.assertTrue(self.guided.run_view(old['id'])['process']['retryBlocked'])
+        retained = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+            self.guided.preview(self.identity, 'refresh_sources', files=['Items.json'])
+        for status, counts in [('in_progress', {'succeeded': 0}), ('failed', {}), ('failed', {'succeeded': 1})]:
+            write_json(root/'log/batch_history.json', {'batches': [{**batch, 'api_status': status, 'request_counts': counts}]})
+            with self.assertRaisesRegex(ValueError, 'Open Batches'):
+                self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        self.guided.batch_monitor.busy.add(old['id'])
+        with self.assertRaisesRegex(ValueError, 'Open Batches'):
+            self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
+        self.guided.batch_monitor.busy.clear()
         preview = self.guided.preview(self.identity, 'export_selected', files=['Items.json'])
         self.assertEqual(preview['paths'], ['Items.json'])
         self.backend.guided_export_preview.assert_called_once_with('native', ['Items.json'])
@@ -416,7 +440,9 @@ class GuidedTests(unittest.TestCase):
         self.backend.workflows.execute = Mock(return_value={'id': 'apply-operation'})
         with patch.object(self.guided, 'protect_batch_files', wraps=self.guided.protect_batch_files) as guard:
             self.assertEqual(self.guided.execute(self.identity, preview['token']), {'id': 'apply-operation'})
-            guard.assert_called_once_with(self.native, ['Items.json'])
+            guard.assert_called_once_with(self.native, ['Items.json'], applying=True)
+        self.assertEqual({path: path.read_bytes() for path in retained}, retained)
+        self.assertTrue(self.guided.run_view(old['id'])['process']['retryBlocked'])
         with self.assertRaisesRegex(ValueError, 'new preview'):
             self.guided.execute(self.identity, preview['token'])
         self.backend.workflows.execute.assert_called_once_with('apply-preview')

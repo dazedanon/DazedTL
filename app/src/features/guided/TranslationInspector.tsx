@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import { Button } from "../../ui/Button";
 import { Tabs } from "../../ui/Tabs";
 import { Message } from "../../ui/Feedback";
-import { translatedLines } from "./translationView";
+import { groupedRequests, requestAttempt, translatedLines } from "./translationView";
 import { WorkingFileText } from "./WorkingFileText";
 import { RequestContext } from "./RequestContext";
 import { RequestTechnical } from "./RequestTechnical";
@@ -22,25 +22,27 @@ export function TranslationInspector({ projectId, file, job, inspect, close }: {
   const fileCache = useRef(new Map<string, FileTextPreview>());
   const requestCache = useRef(new Map<string, RunPayload>());
   // Never present an unscoped historical request as evidence for this file.
-  const rows = (job?.process?.requests || []).filter(row => row.file === file);
+  const rows = groupedRequests(job?.process?.requests || []).filter(row => row.file === file);
   const index = selected?.job === job?.id && selected?.file === file && rows.some(row => row.index === selected.index) ? selected.index : rows[0]?.index;
-  const key = `${projectId}:${job?.id}:${file}:${index}`;
+  const receiptIndex = rows.find(row => row.index === index)?.indices.at(-1);
+  const key = `${projectId}:${job?.id}:${file}:${index}:${receiptIndex}`;
   const payload = savedPayload?.key === key ? savedPayload.value : null;
   useEffect(() => {
     let current = true;
     setError("");
-    if (!job || index == null) { setPending(false); return; }
+    if (!job || receiptIndex == null) { setPending(false); return; }
     const cached = requestCache.current.get(key);
     if (cached) { setPayload({ key, value: cached }); setPending(false); return; }
     setPending(true);
-    void api.guided.payload(projectId, job.id, index).then(value => {
+    void api.guided.payload(projectId, job.id, receiptIndex).then(receipt => {
       if (!current) return;
+      const value = requestAttempt(receipt, (receipt.responseAttempts?.length || 1) - 1);
       if (requestCache.current.size >= 12) requestCache.current.clear();
       requestCache.current.set(key, value); setPayload({ key, value });
     }).catch(value => { if (current) setError(value instanceof Error ? value.message : "Saved request unavailable."); })
       .finally(() => { if (current) setPending(false); });
     return () => { current = false; };
-  }, [projectId, job?.id, index, file, key, refresh]);
+  }, [projectId, job?.id, receiptIndex, file, key, refresh]);
   const readText = useCallback(async (offset: number, query: string, refresh: boolean) => {
     const prefix = `${projectId}:${file}:`, cacheKey = `${prefix}${job?.id || "unprepared"}:${query}:${offset}`;
     if (refresh) for (const key of fileCache.current.keys()) if (key.startsWith(prefix)) fileCache.current.delete(key);
