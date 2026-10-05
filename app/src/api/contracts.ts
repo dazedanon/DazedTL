@@ -42,7 +42,7 @@ export interface Job {
   model?: string;
   files?: string[];
   progress?: { current: number; total: number; file: string };
-  itemProgress?: { current: number; total: number; file: string };
+  itemProgress?: { current: number; total: number; file: string } | null;
   log: string[];
   estimate?: Record<string, number>;
   outputs?: Record<string, string>;
@@ -99,7 +99,8 @@ export interface BatchCancellation {
   token: string; runId: string; batchId: string; provider: string; model: string; files: string[]; requests: number;
 }
 export interface RunPayload {
-  responseOrigin?: "validated" | null;
+  responseOrigin?: "validated" | "log" | null;
+  translations?: unknown;
   unused?: { appliedRequests: number[] } | null;
   index: number; total: number; state: string; source: Record<string, string> | null;
   context: unknown; parameters: Record<string, unknown>; messages: unknown; system: unknown; exact: unknown; error?: unknown; response?: unknown;

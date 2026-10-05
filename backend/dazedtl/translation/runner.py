@@ -3,6 +3,7 @@
 from dazedtl.storage import write_json
 from .files import read_json
 from .results import Results
+from .refusals import POLICY as REFUSAL_POLICY, MESSAGE as REFUSAL_MESSAGE, clarified, clarifiable, refused
 
 
 class Runner:
@@ -23,15 +24,18 @@ class Runner:
             self.job["message"] = message
         self.store.save(self.job)
 
-    def response_path(self, identity):
+    def response_path(self, identity, *, original=False):
         from .files import digest
-        return self.folder / "responses" / (digest(identity) + ".json")
+        suffix = "-clarified" if not original and identity in self.job.get("refusal_retries", {}) else ""
+        return self.folder / "responses" / (digest(identity) + suffix + ".json")
 
     def accept(self, identity, response):
         request = self.requests[identity]
         write_json(self.response_path(identity), response)
         self.record_usage(identity, response)
         try:
+            if refused(response, request["sources"].values()):
+                raise ValueError(REFUSAL_MESSAGE)
             self.results.accept(request, response["text"], {"run_id": self.job["id"],
                                 "mode": self.plan["configuration"]["mode"], "model": self.plan["configuration"]["model"]})
             self.job["states"][identity] = {"state": "accepted", "message": ""}
@@ -41,6 +45,11 @@ class Runner:
         self.checkpoint()
 
     def record_usage(self, identity, response):
+        if identity in self.job.get("refusal_retries", {}):
+            original = read_json(self.response_path(identity, original=True))
+            response = {key: (response.get(key, 0) if type(response.get(key, 0)) is int else 0) +
+                        (original.get(key, 0) if type(original.get(key, 0)) is int else 0)
+                        for key in set(response) | set(original) if key.endswith("tokens")}
         def count(key):
             value = response.get(key, 0)
             return value if type(value) is int and value >= 0 else 0
@@ -61,7 +70,14 @@ class Runner:
                 self.accept(identity, read_json(self.response_path(identity)))
             elif self.job["states"][identity]["state"] == "sending":
                 self.job["states"][identity] = {"state": "uncertain", "message": "The connection ended without a saved response. Check provider usage before explicitly retrying."}
+        if self.plan['configuration']['mode'] == 'batch':
+            self.record_batch_usage()
         self.save()
+
+    def record_batch_usage(self):
+        receipts = [batch['usage'] for batch in self.job['batches'] if 'usage' in batch]
+        if receipts:
+            self.job['usage'] = {key: sum(row.get(key, 0) for row in receipts) for key in set().union(*receipts)}
 
     def live(self):
         for identity, request in self.requests.items():
@@ -85,6 +101,29 @@ class Runner:
                 self.save("needs_attention" if certain else "uncertain", self.job["states"][identity]["message"])
                 return
             self.accept(identity, response)
+            if (clarifiable(response, request["sources"].values())
+                    and self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
+                    and identity not in self.job.get("refusal_retries", {})):
+                if self.store.stopped(self.job["id"]):
+                    self.save("stopped", "Stopped before the clarification retry.")
+                    return
+                self.validate_current()
+                params = clarified(request["params"])
+                # Journal the exact second payload before sending. A crash or
+                # lost response must never turn this allowance into another call.
+                self.job.setdefault("refusal_retries", {})[identity] = params
+                self.job["states"][identity] = {"state": "sending", "message": "Clarifying the translation context once."}
+                self.save("running", self.job["states"][identity]["message"])
+                try:
+                    response = self.provider.live(params)
+                except Exception as exc:
+                    status = getattr(exc, "status_code", None)
+                    certain = type(status) is int and 400 <= status < 500
+                    self.job["states"][identity] = {"state": "failed" if certain else "uncertain",
+                        "message": "The clarification retry failed. Review the saved request before further paid work."}
+                    self.save("needs_attention" if certain else "uncertain", self.job["states"][identity]["message"])
+                    return
+                self.accept(identity, response)
         self.finish()
 
     def batch(self):
@@ -198,6 +237,32 @@ class Runner:
                 chunk["state"] = "unmatched"
                 self.save("uncertain", "Returned request IDs are incomplete or belong to another job. Attach the matching job before proceeding.")
                 return
+            if self.plan['configuration'].get('refusalRetry') == REFUSAL_POLICY and not cancel:
+                from contextlib import contextmanager
+                from .batch_refusals import advance
+                @contextmanager
+                def retry_commit():
+                    if self.store.stopped(self.job['id']):
+                        raise ValueError('Stopped before submitting a clarification Batch.')
+                    self.validate_current()
+                    yield
+                retried = advance(self.folder, chunk['id'],
+                    {item['request']: self.requests[item['request']]['params'] for item in chunk['items']},
+                    responses, usage, self.provider, limits=self.plan['batch_limits'],
+                    input_tokens=getattr(self.provider, 'input_tokens', lambda _: 0), commit=retry_commit)
+                chunk['clarification_batches'] = retried['batches']
+                if not retried['ready']:
+                    chunk['usage'] = {key: value + sum(batch.get('usage', {}).get(key, 0) for batch in retried['batches'])
+                                      for key, value in usage.items()}
+                    for identity, response in responses.items():
+                        if not refused(response, self.requests[identity]['sources'].values()):
+                            self.accept(identity, response)
+                    self.record_batch_usage()
+                    self.save('uncertain' if retried.get('uncertain') else 'waiting',
+                              'Reconcile the clarification Batch submission.' if retried.get('uncertain') else
+                              'Waiting for the Batch clarification of refused requests.')
+                    return
+                responses, usage = retried['responses'], retried['usage']
             for item in chunk["items"]:
                 identity = item["request"]
                 if identity in responses:

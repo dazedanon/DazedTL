@@ -20,6 +20,14 @@ def no_successful_results(root):
 
 def receipt(root, identity):
     batch = next((row for row in saved(evidence_root(root), 'batch_history.json').get('batches', []) if row.get('id') == identity), None)
+    if batch is None:
+        from .batch_refusals import records
+        for record in records(evidence_root(root)):
+            retry = next((item for item in record['batches'] if item.get('id') == identity), None)
+            if retry:
+                original = receipt(root, record['original_id'])
+                batch = {**original, 'id': identity, 'custom_ids': {item['custom_id']: item['key'] for item in retry['items']}}
+                break
     if not batch or batch.get('provider') not in {'openai', 'anthropic', 'gemini'} or not isinstance(batch.get('custom_ids'), dict) or not batch['custom_ids']:
         raise ValueError('Choose a submitted Batch with retained request IDs.')
     return batch
@@ -39,6 +47,9 @@ def connection(batch, resolve):
         close = getattr(provider.client, 'close', None)
         if close:
             close()
+        google = getattr(provider, 'google', None)
+        if google:
+            google.close()
 
 
 def cancel(root, identity, expected, resolve):

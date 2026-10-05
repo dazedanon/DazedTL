@@ -75,7 +75,7 @@ export function TranslationInspector({ projectId, file, job, inspect, close }: {
         </div>
       </div>}
       <Message message={error} />
-      {payload?.state === "rejected" && <p className="translation-error">This response failed validation. Original text was kept. <Button variant="link" onClick={() => inspect(index!, true)}>Review response</Button></p>}
+      {payload?.state === "rejected" && <p className="translation-error">This response failed validation. Review saved output before applying. <Button variant="link" onClick={() => inspect(index!, true)}>Review response</Button></p>}
       {payload?.state === "unused" && <p className="muted">This extra response was not used. The saved file uses another validated response for these choices. <Button variant="link" onClick={() => inspect(index!)}>View details</Button></p>}
       {views.filter(view => view.id !== "file").map(view => <div className={`translation-reader${view.id === "technical" ? " translation-reader--technical" : ""}`} key={`${key}:${view.id}`} hidden={tab !== view.id} role="tabpanel" id={`translation-inspector-panel-${view.id}`} aria-labelledby={`translation-inspector-tab-${view.id}`} tabIndex={view.id === "technical" && payload ? undefined : 0} aria-busy={pending}>
         {!rows.length ? <p className="muted">{missing}</p> : !payload ? error ? null : <p role="status">{pending ? "Reading prepared text…" : "Use Refresh preview to try again."}</p>

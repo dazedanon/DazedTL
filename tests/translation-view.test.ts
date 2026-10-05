@@ -103,7 +103,9 @@ test("request comparisons reject misaligned or unvalidated Live responses and mi
   assert.equal(translatedLines({ ...payload, response: { text: "Unstructured reply" } }), null);
   assert.equal(translatedLines({ ...payload, state: "rejected", response: { text: '{"Line1":"Medicine","Line2":"Poison"}' } }), null);
   assert.equal(translatedLines({ ...payload, state: "unused", response: { text: '{"Line1":"Medicine","Line2":"Poison"}' } }), null);
-
+  const raw = { text: '{"translations":["__PROTECTED_0__Medicine","Poison"]}', refusal: null };
+  assert.deepEqual(translatedLines({ ...payload, response: raw, translations: ["\\C[1]Medicine", "Poison"] }), { Line1: "\\C[1]Medicine", Line2: "Poison" });
+  assert.equal(translatedLines({ ...payload, state: "received", response: raw, translations: null }), null);
 });
 
 // Prevent dumping the static prompt into the context preview or substituting
@@ -284,8 +286,10 @@ test("Live inspection and file progress follow current receipts without Batch co
   const live = { id: "live", mode: "translate", status: "running", files: ["Items.json"], updated: "2026-10-04T10:00:00Z", log: ["retained"],
     progress: { file: "Items.json", current: 0, total: 1 }, itemProgress: { file: "Items.json", current: 12, total: 50 },
     process: { requests: [{ index: 0, file: "Items.json", state: "submitted", sourceItems: 50 }], errors: [] } } as Job;
-  assert.equal(fileStatus("Items.json", live).label, "Translating 12/50");
-  assert.equal(fileStatus("Items.json", { ...live, process: { ...live.process!, requests: [{ index: 0, file: "Items.json", state: "validated", sourceItems: 50 }] } }).label, "Translating 12/50");
+  assert.equal(fileStatus("Items.json", live).label, "Translating");
+  assert.equal(fileStatus("Items.json", { ...live, process: { ...live.process!, requests: [{ index: 0, file: "Items.json", state: "validated", sourceItems: 50 }] } }).label, "Translating · 1 received");
+  const rejected = { index: 1, file: "Items.json", state: "rejected", sourceItems: 50 };
+  assert.equal(fileStatus("Items.json", { ...live, process: { ...live.process!, requests: [...live.process!.requests!, rejected] } }).label, "Translating · 1 received");
   assert.equal(translationStopLabel(live), "Stop translation");
   assert.equal(fileStatus("Items.json", { ...live, status: "stopped", availableOutputs: ["Items.json"], partialOutputs: ["Items.json"] }).label, "Stopped");
   assert.equal(fileStatus("Items.json", { ...live, status: "failed" }).label, "Needs attention");

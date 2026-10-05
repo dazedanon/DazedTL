@@ -6,6 +6,7 @@ from pathlib import Path
 import uuid
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
+from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 from . import providers, preferences
 
 
@@ -698,6 +699,7 @@ class Settings:
                 "version": 1,
                 "model": values["model"],
                 "generationParameters": preferences.GENERATION_PARAMETERS,
+                "refusalRetry": REFUSAL_POLICY,
                 "stateGrouping": "compatible-states-v1",
                 "choiceCollection": preferences.CHOICE_COLLECTION,
                 "entriesPerRequest": entries,

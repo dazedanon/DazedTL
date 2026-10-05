@@ -106,6 +106,9 @@ The app's progress export is a derived view, not a replacement for an engine's e
 Review the run's complete request set and quote before start --approve TOKEN.
 This is the spending decision inside the same assistant conversation or app run.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
+New runs include one context-clarification retry for a confirmed provider refusal, with any additional
+usage billed in the originally selected mode. Only refused requests are retried; a second refusal stays
+unresolved. Batch clarification jobs retain their own provider IDs and never switch to Live.
 Preserve valid authorization on resume when the exact frozen plan and quote still match.
 
 Live and Batch use the same compiled content. Batch runs retain correlation IDs, provider job IDs,

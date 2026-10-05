@@ -186,6 +186,47 @@ class TranslationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.overlapping("project", {request()["fingerprint"]})
 
+    def test_refusal_clarification_is_bounded_and_retains_both_paid_attempts(self):
+        # A refusal in valid JSON used to pass output validation. A repeated
+        # refusal or lost retry response must not become dialogue or another bill.
+        from dazedtl.translation.refusals import POLICY, CLARIFICATION, refused
+        refusal = {'text': '{"line":"I cannot translate explicit sexual content."}',
+                   'prompt_tokens': 7, 'completion_tokens': 3}
+        valid = {'text': '{"line":"Yes. ⟦P0⟧"}', 'prompt_tokens': 5, 'completion_tokens': 4}
+        for index, outcome in enumerate((valid, refusal, TimeoutError())):
+            with self.subTest(outcome=outcome):
+                job, plan = self.run_record(requests=[request(speaker=str(index))])
+                plan['configuration']['refusalRetry'] = POLICY
+                write_json(self.store.folder(job['id'])/'plan.json', plan)
+                job['plan_sha256'] = digest(plan)
+                self.store.save(job)
+                calls = []
+                class Provider:
+                    def live(self, params):
+                        calls.append(deepcopy(params))
+                        if len(calls) == 1:
+                            return refusal
+                        if isinstance(outcome, Exception):
+                            raise outcome
+                        return outcome
+                provider = Provider()
+                Runner(self.store, job['id'], provider, lambda: None).step()
+                Runner(self.store, job['id'], provider, lambda: None).step()
+                current, frozen = self.store.load(job['id'])
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(calls[1]['messages'], [{'role': 'user', 'content': CLARIFICATION}])
+                self.assertEqual(frozen, plan)
+                self.assertEqual(current['states']['scene']['state'],
+                                 'uncertain' if isinstance(outcome, Exception) else 'failed' if outcome == refusal else 'accepted')
+                self.assertEqual(current['usage']['input_tokens'], 7 if isinstance(outcome, Exception) else 7 + outcome['prompt_tokens'])
+                self.assertEqual(current['usage']['output_tokens'], 3 if isinstance(outcome, Exception) else 3 + outcome['completion_tokens'])
+                self.assertEqual(Results(self.game).get(plan['requests'][0]) is not None, outcome == valid)
+        self.assertFalse(refused({'text': '{"line":"I refuse. Sorry, I cannot help you."}'}))
+        self.assertFalse(refused({'text': refusal['text']}, ['I cannot translate explicit sexual content.']))
+        for text in ("I'm unable to translate graphic content.", "I can't help with sexually explicit content.",
+                     "I'm sorry, but I cannot assist with this request."):
+            self.assertTrue(refused({'text': text}), text)
+
     def test_batch_wait_resume_and_unordered_collection_keep_one_submission(self):
         job, plan = self.run_record("batch", [request("one"), request("two")])
         provider = BatchProvider()
@@ -197,6 +238,63 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(provider.calls, 1)
         self.assertEqual(self.store.load(job["id"])[0]["status"], "complete")
         self.assertTrue(all(Results(self.game).get(row) for row in plan["requests"]))
+
+    def test_batch_refusals_retry_only_rejected_rows_in_batch_and_keep_original_usage(self):
+        # A Batch refusal must not become a Live call, resend successful rows,
+        # or reset its retry allowance when polling resumes in another worker.
+        from dazedtl.translation.refusals import POLICY, CLARIFICATION
+        refusal = {'text': 'I cannot translate explicit sexual content.', 'prompt_tokens': 3, 'completion_tokens': 2}
+        valid = {'text': '{"line":"Yes. ⟦P0⟧"}', 'prompt_tokens': 5, 'completion_tokens': 4}
+        for repeated in (False, True):
+            job, plan = self.run_record('batch', [request('good', str(repeated)), request('refused', str(repeated))])
+            plan['configuration']['refusalRetry'] = POLICY
+            write_json(self.store.folder(job['id'])/'plan.json', plan)
+            job['plan_sha256'] = digest(plan)
+            self.store.save(job)
+            class Provider(BatchProvider):
+                def submit(self, items):
+                    super().submit(items)
+                    return {'id': 'original' if self.calls == 1 else 'clarification'}
+                def collect(self, identity, mapping):
+                    return ({key: (refusal if key == 'refused' and (identity == 'original' or repeated) else valid)
+                             for key in mapping.values()}, [], {'input_tokens': 8 if identity == 'original' else 3 if repeated else 5,
+                                                                'output_tokens': 6 if identity == 'original' else 2 if repeated else 4})
+            provider = Provider()
+            provider.ended = True
+            Runner(self.store, job['id'], provider, lambda: None).step()
+            current, _ = self.store.load(job['id'])
+            self.assertEqual(current['status'], 'waiting')
+            self.assertEqual(current['states']['good']['state'], 'accepted')
+            self.assertEqual(len(provider.items), 1)
+            self.assertEqual(provider.items[0]['params']['messages'], [{'role': 'user', 'content': CLARIFICATION}])
+            Runner(self.store, job['id'], provider, lambda: None).step()
+            Runner(self.store, job['id'], provider, lambda: None).step()
+            current, frozen = self.store.load(job['id'])
+            self.assertEqual(provider.calls, 2)
+            self.assertEqual(frozen, plan)
+            self.assertEqual(current['states']['refused']['state'], 'failed' if repeated else 'accepted')
+            self.assertEqual(current['usage']['input_tokens'], 11 if repeated else 13)
+            self.assertEqual(current['usage']['output_tokens'], 8 if repeated else 10)
+        # An upload/create timeout may still have created a remote Batch. A
+        # restarted worker must retain uncertainty instead of creating another.
+        job, plan = self.run_record('batch', [request('refused', 'lost-batch')])
+        plan['configuration']['refusalRetry'] = POLICY
+        write_json(self.store.folder(job['id'])/'plan.json', plan)
+        job['plan_sha256'] = digest(plan)
+        self.store.save(job)
+        class LostProvider(Provider):
+            def submit(self, items):
+                result = super().submit(items)
+                if self.calls == 2:
+                    raise TimeoutError()
+                return result
+        provider = LostProvider()
+        provider.ended = True
+        with self.assertRaises(TimeoutError):
+            Runner(self.store, job['id'], provider, lambda: None).step()
+        Runner(self.store, job['id'], provider, lambda: None).step()
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(self.store.load(job['id'])[0]['status'], 'uncertain')
 
     def test_unknown_batch_submission_and_wrong_job_results_stay_blocked(self):
         for failure in (True, False):

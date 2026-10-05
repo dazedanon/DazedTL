@@ -375,11 +375,20 @@ class TranslationEngine:
         raise ValueError("Unknown version-update action.")
 
 
+def google_batch_client(secret):
+    from google import genai
+    # A lost create response is reconciled through our journal, never repeated
+    # underneath it by the SDK's default retry loop.
+    return genai.Client(api_key=secret, http_options={'retry_options': {'attempts': 1}})
+
+
 class TranslationProvider:
     """One isolated worker's provider connection; no SDK-level paid retries."""
     @provider_errors
     def __init__(self, configuration, secret):
-        from util.batch_providers import get_client, _google_client
+        from .provider_responses import install
+        install()
+        from util.batch_providers import get_client
         self.configuration = configuration
         self.provider = configuration["protocol"] if configuration["protocol"] in {"anthropic", "gemini"} else "openai"
         self.client = get_client(self.provider, api_key=secret, api_url=configuration["endpoint"], max_retries=0)
@@ -387,17 +396,39 @@ class TranslationProvider:
         if configuration.get("organization") and self.provider != "anthropic":
             extra["organization"] = configuration["organization"]
         self.client = self.client.with_options(**extra)
-        self.google = _google_client(secret) if self.provider == "gemini" and configuration["mode"] == "batch" else None
+        self.google = google_batch_client(secret) if self.provider == "gemini" and configuration["mode"] == "batch" else None
 
     @provider_errors
     def live(self, params):
         from util.batch_providers import execute_live_request
-        return execute_live_request(self.provider, params, client=self.client)
+        from types import SimpleNamespace
+        from dazedtl.translation.refusals import refused, refusal_reason
+        responses = []
+        def capture(create):
+            def call(**kwargs):
+                response = create(**kwargs)
+                responses.append(response)
+                return response
+            return call
+        # The native normalizer drops refusal metadata. Observe the response
+        # without changing SDK state or making an additional request.
+        client = (SimpleNamespace(messages=SimpleNamespace(create=capture(self.client.messages.create)))
+                  if self.provider == "anthropic" else
+                  SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+                      create=capture(self.client.chat.completions.create)))))
+        result = execute_live_request(self.provider, params, client=client)
+        if responses and refused(responses[-1]):
+            result["refusal"] = refusal_reason(responses[-1]) or True
+        return result
 
     @provider_errors
     def submit(self, requests):
         from util.batch_providers import submit_batch
         return submit_batch(self.provider, requests, client=self.client, google_client=self.google)
+
+    def input_tokens(self, params):
+        from util.translation import _estimate_openai_batch_input_tokens
+        return _estimate_openai_batch_input_tokens(params)
 
     @provider_errors
     def status(self, identity):

@@ -102,7 +102,11 @@ def ledger_records(root):
     stat = path.stat()
     history = saved(evidence_root(root), 'batch_history.json').get('batches', [])
     consumed = bool(history) and all(batch.get('status') == 'consumed' for batch in history)
-    rows = _ledger_records(str(root), (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns), consumed)
+    stamp = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    rows = _ledger_records(str(root), stamp, consumed)
+    if not consumed:
+        from .live_validation import reconcile
+        rows = reconcile(root, rows, stamp)
     complete = consumed_files(root) if consumed else frozenset()
     return [{**row, 'state': 'saved'} if row['filename'] in complete and row['state'] in {'prepared', 'uncertain', 'received'} else row for row in rows]
 
@@ -114,7 +118,7 @@ def _ledger_records(root, signature, consumed):
         return None
     with closing(connection):
         names = {row[1] for row in connection.execute('PRAGMA table_info(requests)')}
-        fields = ('params', 'state', 'error', 'usage', 'sources', 'filename', 'response')
+        fields = ('params', 'state', 'error', 'usage', 'sources', 'filename', 'response', 'raw_response')
         rows = connection.execute('SELECT ' + ','.join(name if name in names else 'NULL' for name in fields) + ' FROM requests ORDER BY id').fetchall()
         validated = {}
         if consumed and connection.execute("SELECT 1 FROM sqlite_master WHERE name='validated_items'").fetchone():
@@ -122,7 +126,7 @@ def _ledger_records(root, signature, consumed):
     result = []
     for row in rows:
         entry = dict(zip(fields, row))
-        for key in ('params', 'error', 'usage', 'sources', 'response'):
+        for key in ('params', 'error', 'usage', 'sources', 'response', 'raw_response'):
             entry[key] = json.loads(entry[key]) if entry[key] is not None else None
         source = source_values(entry['params']) or {}
         keys = entry['sources'] or []
@@ -134,6 +138,18 @@ def _ledger_records(root, signature, consumed):
             entry.update(state='validated', response=[validated[key][1] for key in keys], responseOrigin='validated')
         elif consumed and entry['state'] == 'prepared':
             entry['state'] = 'uncertain'
+        if entry['raw_response'] is None and entry['response'] is not None:
+            entry.setdefault('responseOrigin', 'validated' if isinstance(entry['response'], list) else None)
+        # Older workers could accept a refusal that happened to fit the schema.
+        # Flag the saved output without rewriting history or claiming it was fixed.
+        from dazedtl.translation.refusals import refused
+        response = entry['raw_response'] or entry['response']
+        if isinstance(response, list):
+            response = {'text': json.dumps(response, ensure_ascii=False)}
+        elif isinstance(response, dict) and 'content' in response:
+            response = {**response, 'text': response['content']}
+        if entry['state'] != 'rejected' and response is not None and refused(response, source.values()):
+            entry.update(state='rejected', error={'message': 'The provider declined this request. Review any previously saved output before applying it.'})
         result.append(entry)
     return result
 
@@ -163,10 +179,11 @@ def queue(root):
 
 
 def batch_results(root):
-    from .batch_evidence import ARCHIVE, merge
+    from .batch_evidence import ARCHIVE
+    from .batch_refusals import effective_results
     root = evidence_root(root)
     current = saved(root, 'batch_results.json')
-    return merge(saved(root, ARCHIVE).get('results', {}), current.get('results', current))
+    return effective_results(root, saved(root, ARCHIVE).get('results', {}), current.get('results', current))
 
 
 def batch_state(root):
@@ -341,14 +358,15 @@ def summary(root, job):
     if records is not None:
         rows = [(row['state'], row['usage'], row['error']) for row in records]
         prepared = len(rows)
-        received = sum(state in {'received', 'validated'} for state, _, _ in rows)
+        received = sum(state in {'received', 'validated', 'rejected'} for state, _, _ in rows)
         validated = sum(state == 'validated' for state, _, _ in rows)
         failed = sum(state == 'failed' for state, _, _ in rows)
         interrupted = job.get('status') in {'failed', 'stopped', 'interrupted', 'canceled'}
         has_intent = 'sources' in {row[1] for row in ledger_columns(root)}
         uncertain = sum(state in {'submitted', 'uncertain'} or (interrupted and not has_intent and state == 'prepared')
                         for state, _, _ in rows)
-        errors += [clean_message(error.get('message') or 'Provider response unavailable; submission may be uncertain.') for _, _, error in rows if error]
+        errors += [clean_message(error.get('message') or 'Provider response unavailable; submission may be uncertain.')
+                   for _, _, error in rows if error and error.get('code') != 'replaced_response']
         usages = [value for _, value, _ in rows if value]
         if usages:
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('prompt_tokens', 'completion_tokens', 'total_tokens')}
@@ -356,11 +374,19 @@ def summary(root, job):
         usages = [batch['usage'] for batch in batches if batch.get('usage') is not None]
         if usages:
             usage = {key: sum(value.get(key) or 0 for value in usages) for key in ('input_tokens', 'output_tokens')}
+    from .batch_refusals import records as clarification_records
+    clarifications = clarification_records(evidence_root(root)) if batches else []
+    for record in clarifications:
+        for batch in record['batches']:
+            uncertain += batch['state'] == 'sending'
+            if batch.get('usage'):
+                usage = {key: (usage or {}).get(key, 0) + batch['usage'].get(key, 0) for key in ('input_tokens', 'output_tokens')}
     from .request_scope import requests as source_requests
     items = list(source_requests(root, job))
     rejected = sum(row['state'] == 'rejected' for row in items)
-    validation_files = set(job.get('mismatches', {})) | {row['file'] for row in items if row['state'] == 'rejected' and row['file']}
-    validation_issues = [{'file': name, 'rejected': sum(row['state'] == 'rejected' and row['file'] == name for row in items) or None}
+    unresolved = [row for row in items if row['state'] == 'rejected' and (row.get('error') or {}).get('code') != 'replaced_response']
+    validation_files = set(job.get('mismatches', {})) | {row['file'] for row in unresolved if row['file']}
+    validation_issues = [{'file': name, 'rejected': sum(row['file'] == name for row in unresolved) or None}
                          for name in sorted(validation_files)]
     if requests and any(row['state'] in {'validated', 'saved', 'rejected'} for row in items):
         validated = sum(row['state'] in {'validated', 'saved'} for row in items)
@@ -379,13 +405,19 @@ def summary(root, job):
         receipts.append({'id': batch['id'], 'status': status, 'provider': batch.get('provider'),
                          'total': len(batch['custom_ids']) if isinstance(batch.get('custom_ids'), dict) else None,
                          'counts': counts})
+    for record in clarifications:
+        original = next((batch for batch in batches if batch['id'] == record['original_id']), {})
+        for batch in record['batches']:
+            if batch['id']:
+                receipts.append({'id': batch['id'], 'status': batch.get('api_status', 'validating'),
+                                 'provider': original.get('provider'), 'total': len(batch['items']), 'counts': batch.get('counts', {})})
     return {'mode': job.get('mode'), 'prepared': prepared,
             'resultsCollected': batch_state(root).get('status') == 'fetched',
             'sourceItems': sum(len(json.loads(entry['payload'])) for entry in requests.values()) if requests else None,
             'submittedItems': sum(len(json.loads(requests[key]['payload'])) for key in submitted if key in requests) if requests else None,
             'submitted': len(submitted) if batches or requests else sum(row['state'] != 'prepared' for row in records) if records is not None else None,
             'remaining': max(0, len(requests)-len(submitted)) if requests else None, 'received': received if requests or records is not None else None,
-            'validated': validated, 'validatedFiles': len(set(job.get('completed', [])) - set(job.get('mismatches', {})) - set(job.get('errors', {}))),
+            'validated': validated, 'validatedFiles': len(set(job.get('completed', [])) - validation_files - set(job.get('errors', {}))),
             'rejected': rejected, 'validationIssues': validation_issues, 'unused': sum(row['state'] == 'unused' for row in items),
             'appliedFiles': len(job.get('appliedOutputs', [])), 'failed': failed,
             'batches': receipts,
@@ -405,6 +437,17 @@ def phase_feedback(job):
         return {'message': 'Batch requests are ready. Review the cost before submitting.', 'progress': None}
     if job.get('status') == 'waiting' and approval.get('kind') == 'speakers':
         return {'message': 'Speaker check finished. Review unresolved names before translating them.', 'progress': None}
+    if job.get('mode') == 'translate':
+        process = job.get('process') or {}
+        requests = process.get('requests') or []
+        if job.get('status') == 'complete':
+            message = ('Translation finished. Review rejected responses before applying the saved output.'
+                       if process.get('validationIssues') else 'Translation finished. Saved output is ready for review.')
+            return {'phase': 'done', 'message': message, 'progress': None, 'itemProgress': None}
+        if job.get('status') == 'running' and requests:
+            message = ('Waiting for the provider response.' if any(row['state'] == 'submitted' for row in requests)
+                       else 'Processing translation responses and saving progress.')
+            return {'phase': 'translate', 'message': message, 'itemProgress': None}
     if job.get('mode') != 'batch' or job.get('status') not in {'running', 'waiting', 'stopped', 'interrupted'}:
         return {}
     phase = str(job.get('phase', ''))
@@ -464,6 +507,11 @@ def payload(root, index):
         from util.batch_providers import _openai_batch_body
         params = _openai_batch_body(entry.get('provider', 'openai'), entry['params']) if entry.get('provider') != 'anthropic' else entry['params']
         exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
+        from .batch_refusals import records as clarification_records
+        attempts = [item for record in clarification_records(evidence_root(root), details=True) for batch in record['batches']
+                    for item in batch['items'] if item['key'] == key]
+        if attempts:
+            exact = {'original': exact, 'clarifications': attempts}
         error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in (batch.get('provider_errors') or [])
                       if error.get('custom_id') == custom_id), None)
         return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': row.get('error') or error, 'unused': row.get('unused'),
@@ -481,8 +529,10 @@ def payload(root, index):
     return {'index': index, 'total': len(rows), 'state': row['state'], 'source': source_values(params),
             'context': None, 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
             'messages': params.get('messages'), 'system': params.get('system'), 'exact': params,
-            'error': row['error'], 'usage': token_usage(row['usage']), 'response': row['response'],
-            'responseOrigin': row.get('responseOrigin')}
+            'error': row['error'], 'usage': token_usage(row['usage']),
+            'response': row['raw_response'] if row['raw_response'] is not None else row['response'],
+            'translations': row['response'] if row['state'] == 'validated' else None,
+            'responseOrigin': row.get('responseOrigin') if row['raw_response'] is None or row.get('responseOrigin') == 'log' else None}
 
 
 def provider_details(root, resolve_connection):

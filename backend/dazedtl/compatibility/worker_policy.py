@@ -8,6 +8,7 @@ import sys
 
 from dazedtl.storage import write_json
 from dazedtl.settings.preferences import CHOICE_COLLECTION, GENERATION_PARAMETERS
+from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 from .request_parameters import configure_builders
 from . import state_requests, batch_pricing, choice_requests
 from .run_evidence import Evidence
@@ -59,6 +60,7 @@ def install():
             or policy.get("version") != 1
             or policy.get("model") != plan["settings"]["model"]
             or policy.get("generationParameters") not in (None, GENERATION_PARAMETERS)
+            or policy.get("refusalRetry") not in (None, REFUSAL_POLICY)
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or type(policy.get("entriesPerRequest")) is not int
@@ -103,6 +105,8 @@ def install():
         configure_builders(translation, policy.get("generationParameters"), record)
         configure_states(plan, grouping_root, policy)
         checkpoint_reader()
+        from .batch_refusals import install_worker
+        install_worker(grouping_root, {**plan, 'dazedtl_request_policy': policy})
         return result
 
     manual_environment.prepare = prepare

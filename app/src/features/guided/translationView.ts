@@ -103,9 +103,10 @@ export function fileStatus(name: string, run?: Job, historical = false) {
   }
   const saved = run.availableOutputs?.includes(name) ?? (run.outputsAvailable && !!run.outputs?.[name]);
   const states = run.process?.requests?.filter(row => row.file === name).map(row => row.state) || [];
-  const progress = run.itemProgress;
-  const translating = run.mode === "translate" && progress?.file === name && Number.isSafeInteger(progress.current) && Number.isSafeInteger(progress.total)
-    && progress.total > 0 && progress.current >= 0 && progress.current <= progress.total ? `Translating ${progress.current}/${progress.total}` : "Translating";
+  const received = states.filter(state => ["received", "validated", "rejected", "saved"].includes(state)).length;
+  // Map command totals and translated text units are not comparable. Count
+  // actual returned requests, including rejected attempts, without a percentage.
+  const translating = run.mode === "translate" && received ? `Translating · ${received} received` : "Translating";
   if (run.mode === "batch" && run.process?.monitoring) {
     if (["error", "save_error", "blocked"].includes(run.process.monitoring.state)) return { label: "Needs attention", tone: "warning", symbol: "!" };
     return { label: run.process.monitoring.state === "collecting" ? "Receiving results" : "In Batch", tone: "active", symbol: "◷" };
@@ -119,7 +120,7 @@ export function fileStatus(name: string, run?: Job, historical = false) {
     if (states.some(state => ["queued", "prepared"].includes(state))) return { label: run.mode !== "batch" && run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
     if (!saved || run.partialOutputs?.includes(name)) {
       if (run.mode === "batch" && run.phase === "consume") return { label: "Saving results", tone: "active", symbol: "◷" };
-      if (states.some(state => ["received", "validated"].includes(state))) return { label: run.mode === "translate" && run.progress?.file === name ? translating : "Received", tone: "active", symbol: "◐" };
+      if (states.some(state => ["received", "validated", "rejected"].includes(state))) return { label: run.mode === "translate" ? translating : "Received", tone: "active", symbol: "◐" };
       if (run.mode === "batch" && run.phase?.startsWith("poll")) return { label: "In Batch", tone: "active", symbol: "◷" };
       if (run.phase === "submit") return { label: "Submitting", tone: "active", symbol: "◷" };
       return { label: run.progress?.file === name ? translating : "Queued", tone: "active", symbol: "◷" };
@@ -152,7 +153,9 @@ export function translatedLines(payload: RunPayload): Record<string, string> | n
   if (["rejected", "unused"].includes(payload.state)) return null;
   const keys = Object.keys(payload.source || {});
   if (!keys.length) return null;
-  let value = payload.response;
+  // New Live receipts retain both raw bodies and independently validated values.
+  // A received or rejected raw body must not become a saved-text comparison.
+  let value = "translations" in payload ? payload.translations : payload.response;
   const response = value;
   if (Array.isArray(response)) return payload.state === "validated" && response.length === keys.length && response.every(item => typeof item === "string")
     ? Object.fromEntries(keys.map((key, index) => [key, response[index]])) : null;

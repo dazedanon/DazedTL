@@ -314,6 +314,8 @@ class Guided:
         from dazedtl.compatibility.process_view import summary
         try:
             job["process"] = summary(self.backend.manual.folder(identity), job)
+            rejected_files = {row['file'] for row in job['process'].get('validationIssues', [])}
+            job['partialOutputs'] = sorted(set(job.get('partialOutputs', [])) | (rejected_files & set(job.get('outputs', {}))))
         except (OSError, ValueError, KeyError):
             job["process"] = {"retryBlocked": job.get('mode') != 'estimate', "errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
         monitoring = self.batch_monitor.views.get(identity)

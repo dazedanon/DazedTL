@@ -48,13 +48,16 @@ class Evidence:
         with self.connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
             connection.execute('CREATE TABLE IF NOT EXISTS requests (id INTEGER PRIMARY KEY, params TEXT, state TEXT, usage TEXT, error TEXT)')
-            for name in ('sources', 'filename', 'response'):
+            for name in ('sources', 'filename', 'response', 'raw_response'):
                 if name not in columns(connection):
                     connection.execute('ALTER TABLE requests ADD COLUMN ' + name + ' TEXT')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)')
             connection.execute('CREATE TABLE IF NOT EXISTS validated_provenance (identity TEXT PRIMARY KEY, filename TEXT)')
             for key, source, response in connection.execute('SELECT identity,source,response FROM validated_items'):
                 self.reused[key] = {'source': source, 'response': json.loads(response)}
+        from dazedtl.translation.refusals import text_refusal
+        self.reused = {key: row for key, row in self.reused.items()
+                       if not text_refusal(row.get('response'), (row.get('source'),))}
 
     @contextmanager
     def connect(self):
@@ -73,6 +76,7 @@ class Evidence:
             self.local.current = row.lastrowid
             if getattr(self.local, 'call', None) is not None:
                 self.local.call.append(row.lastrowid)
+                self.local.validation_groups.setdefault(getattr(self.local, 'request_identity', None), []).append(row.lastrowid)
 
     def record(self, params):
         # Durable intent precedes the SDK call; merely built estimate payloads
@@ -116,11 +120,29 @@ class Evidence:
             return native_debug(provider, params, usage)
         translation._write_request_debug_log = received
         native_call = translation.translateText
+        from .refusal_retry import receipt
+        @wraps(native_call)
+        def captured(*args, **kwargs):
+            response = native_call(*args, **kwargs)
+            value = receipt(response)
+            # Save every returned body before validation, including malformed
+            # JSON and refusals. Accepted, restored values stay separate.
+            with self.connect() as connection:
+                connection.execute('UPDATE requests SET raw_response=? WHERE id=?',
+                                   (json.dumps({'text': value['content'], 'refusal': value['refusal'],
+                                                'finish_reason': value['finish_reason']}, ensure_ascii=False), self.local.current))
+            return response
+        from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
+        guarded_call = captured
+        if self.mode == 'translate':
+            from .refusal_retry import RefusalRetry
+            guarded_call = RefusalRetry(self, captured, translation=translation, allow_clarification=
+                (self.plan.get('dazedtl_request_policy') or {}).get('refusalRetry') == REFUSAL_POLICY)
         @wraps(native_call)
         def call(*args, **kwargs):
             self.local.current = None
             try:
-                return native_call(*args, **kwargs)
+                return guarded_call(*args, **kwargs)
             except Exception as error:
                 # SDK exceptions can contain credentials or source text. Retain
                 # only structured status/code/param, never str(exception).
@@ -136,6 +158,24 @@ class Evidence:
                 self.update('failed' if status in {400, 401, 403, 404, 405, 413, 415, 422, 429} else 'uncertain', error=json.dumps(detail))
                 raise
         translation.translateText = call
+        native_cache = getattr(translation, 'cache_translation', None)
+        if native_cache is not None and self.mode == 'translate':
+            @wraps(native_cache)
+            def cached(payload, output, *args, **kwargs):
+                result = native_cache(payload, output, *args, **kwargs)
+                current = getattr(self.local, 'current', None)
+                if current is not None and getattr(self.local, 'call', None) is not None:
+                    with self.connect() as connection:
+                        row = connection.execute('SELECT params,state FROM requests WHERE id=?', (current,)).fetchone()
+                        if row and row[1] == 'received' and source_values(json.loads(row[0])) == source_values({'messages': [{'content': payload}]}):
+                            connection.execute("UPDATE requests SET state='validated',response=? WHERE id=?",
+                                               (json.dumps(output if isinstance(output, list) else [output], ensure_ascii=False), current))
+                            previous = self.local.validation_groups.get(getattr(self.local, 'request_identity', None), [])
+                            connection.executemany("UPDATE requests SET state='rejected',error=? WHERE id=? AND state IN ('received','rejected')",
+                                [(json.dumps({'code': 'replaced_response', 'message': 'A later validated response was used for this request.'}), identity)
+                                 for identity in previous if identity != current])
+                return result
+            translation.cache_translation = cached
         native_ai = translation.translateAI
         call_signature = signature(native_ai)
         @wraps(native_ai)
@@ -194,20 +234,32 @@ class Evidence:
                 return [output, tokens]
             previous = getattr(self.local, 'call', None)
             self.local.call = []
+            self.local.request_cursors = {}
+            self.local.validation_groups = {}
             try:
                 result = native_ai(*args, **kwargs)
                 if not translation.last_translation_had_mismatch():
                     with self.connect() as connection:
-                        connection.executemany("UPDATE requests SET state='validated' WHERE id=? AND state='received'",
-                                               [(identity,) for identity in self.local.call])
+                        if native_cache is None or self.mode != 'translate':
+                            connection.executemany("UPDATE requests SET state='validated' WHERE id=? AND state='received'",
+                                                   [(identity,) for identity in self.local.call])
                         output = result[0] if isinstance(result[0], list) else [result[0]]
                         if len(output) == len(values) and (self.mode in {'translate', 'offline'} or translation.get_batch_phase() == 'consume'):
                             connection.executemany('INSERT OR REPLACE INTO validated_items VALUES (?,?,?)',
                                                    [(key, source, json.dumps(response, ensure_ascii=False)) for key, source, response in zip(reuse_keys, values, output)])
                             connection.executemany('INSERT OR REPLACE INTO validated_provenance VALUES (?,?)',
                                                    [(key, filename) for key in reuse_keys])
-                            connection.executemany('UPDATE requests SET response=? WHERE id=?',
-                                                   [(json.dumps(output, ensure_ascii=False), identity) for identity in self.local.call])
+                            if native_cache is None or self.mode != 'translate':
+                                connection.executemany("UPDATE requests SET response=? WHERE id=? AND state='validated'",
+                                                       [(json.dumps(output, ensure_ascii=False), identity) for identity in self.local.call])
+                if self.mode == 'translate' and native_cache is not None:
+                    # Native validation has returned. Bodies not accepted by its
+                    # cache writer are rejected attempts, including earlier retries.
+                    # Exceptions skip this step and retain their recovery guard.
+                    with self.connect() as connection:
+                        connection.executemany("UPDATE requests SET state='rejected',error=? WHERE id=? AND state='received'",
+                            [(json.dumps({'message': 'The response failed translation validation. Original text or a later validated response was used.'}), identity)
+                             for identity in self.local.call])
                 return result
             finally:
                 self.local.call = previous

@@ -207,6 +207,7 @@ class GuidedRuns:
 
     def continuation(self, project_id, native, inputs):
         from dazedtl.compatibility.process_view import ledger
+        from dazedtl.translation.refusals import text_refusal
         result = {}
         jobs = self.guided.backend.manual.jobs
         # Newer compatible attempts own reusable wording. Historical variants
@@ -253,7 +254,9 @@ class GuidedRuns:
                             continue
                     elif legacy_allowed is not None and key not in legacy_allowed:
                         continue
-                    result.setdefault(key, {'source': source, 'response': json.loads(response)})
+                    value = json.loads(response)
+                    if not text_refusal(value, (source,)):
+                        result.setdefault(key, {'source': source, 'response': value})
         return result
 
     def quote(self, project_id, native, phase, mode, *, guard=None, run_view=None):

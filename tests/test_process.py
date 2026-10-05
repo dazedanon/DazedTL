@@ -18,6 +18,145 @@ from dazedtl.settings.store import Settings
 
 
 class ProcessTests(unittest.TestCase):
+    def test_completed_live_rejections_release_only_exact_returned_attempts(self):
+        # Old Live rows stopped at "received" and blocked all later estimates.
+        # Only a complete, unchanged run and exact unambiguous rejection record
+        # can settle them; earlier response bodies must not be invented.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = Evidence(root, 'translate')
+            source = {'Line1': '薬'}
+            evidence.local.filename, evidence.local.sources = 'Map001.json', ['owned']
+            for prefix in ('', 'Retry formatting. ', 'Retry formatting. '):
+                evidence.prepared({'messages': [{'role': 'system', 'content': 'Frozen context'},
+                    {'role': 'user', 'content': prefix + json.dumps(source)}]}, 'received')
+            plan = {'mode': 'translate', 'selected': ['Map001.json']}
+            write_json(root/'plan.json', plan)
+            output = {'name': '薬'}
+            write_json(root/'translated/Map001.json', output)
+            job = {'id': 'old', 'mode': 'translate', 'status': 'complete', 'files': ['Map001.json'],
+                   'completed': ['Map001.json'], 'logicalPhase': 'dialogue',
+                   'outputs': {'Map001.json': digest((root/'translated/Map001.json').read_bytes())},
+                   'plan_hash': digest((root/'plan.json').read_bytes())}
+            write_json(root/'job.json', job)
+            path = root/'log/mismatchHistory.txt'
+            body = json.dumps({'Line1': 'I cannot translate explicit sexual content.'})
+            record = 'Validation mismatch: Map001.json\nOriginal text kept after 3 attempts.\nInput:\n' + json.dumps(source) + '\nProvider output:\n' + body + '\n\n'
+            path.write_text(record)
+            original = {p: p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            value = process_view.summary(root, job)
+            self.assertEqual((value['received'], value['rejected'], value['retryBlocked']), (3, 3, False))
+            self.assertEqual([process_view.payload(root, i)['response'] for i in range(3)], [None, None, {'text': body}])
+            self.assertEqual(process_view.payload(root, 2)['responseOrigin'], 'log')
+            self.assertEqual({p: p.read_bytes() for p in original}, original)
+            current = root/'estimate'
+            write_json(current/'log/estimate_requests.json', {'request': {'payload': json.dumps(source), 'params': {},
+                       'dazedtl_file': 'Map001.json', 'dazedtl_sources': ['owned']}})
+            estimate = {**job, 'mode': 'estimate'}
+            self.assertEqual(request_scope.overlap(current, estimate, [(root, job)]), [])
+            for change in ('output', 'plan', 'running', 'missing', 'context', 'uncertain', 'ambiguous', 'forged'):
+                with self.subTest(change=change):
+                    if change == 'output': write_json(root/'translated/Map001.json', {'name': 'Changed'})
+                    if change == 'plan': write_json(root/'plan.json', {**plan, 'selected': ['Other.json']})
+                    if change == 'running': write_json(root/'job.json', {**job, 'status': 'running'})
+                    if change == 'missing': path.unlink()
+                    if change == 'context':
+                        with evidence.connect() as connection:
+                            connection.execute('UPDATE requests SET params=? WHERE id=1',
+                                (json.dumps({'messages': [{'role': 'system', 'content': 'Other scene'}, {'role': 'user', 'content': json.dumps(source)}]}),))
+                    if change == 'uncertain':
+                        with evidence.connect() as connection:
+                            connection.execute("UPDATE requests SET state='submitted' WHERE id=1")
+                    if change == 'ambiguous': path.write_text(record + record)
+                    if change == 'forged': path.write_text('Malformed provider output\n' + record)
+                    self.assertTrue(process_view.summary(root, job)['retryBlocked'])
+                    self.assertTrue(request_scope.overlap(current, estimate, [(root, job)]))
+                    for p, data in original.items():
+                        p.write_bytes(data)
+
+    def test_guided_refusal_retry_survives_validation_loops_and_restart(self):
+        # Native validation can repeat a call; after clarification it must reuse
+        # its saved response instead of paying again or validating refusal prose.
+        from dazedtl.translation.refusals import POLICY, CLARIFICATION
+        for outcome in ('success', 'refused', 'lost', 'blocked'):
+            library = ModuleType('util.batch_providers')
+            with self.subTest(outcome=outcome), TemporaryDirectory() as temporary, patch.dict('sys.modules', {'util.batch_providers': library}):
+                root = Path(temporary)
+                plan = {'dazedtl_request_policy': {'refusalRetry': POLICY}}
+                sent = []
+                def response(content, refusal=None):
+                    return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',
+                        message=SimpleNamespace(content=content, refusal=refusal))],
+                        usage=SimpleNamespace(prompt_tokens=5, completion_tokens=2))
+                def translator(evidence):
+                    module = SimpleNamespace(queue_batch_request=lambda *_: 'unused', BATCH_LOCK=threading.RLock(),
+                        _batch_queue_pending={}, _write_request_debug_log=lambda *_: None,
+                        _thread_local=threading.local(), get_batch_phase=lambda: None)
+                    def sdk(**params):
+                        sent.append(deepcopy(params))
+                        if len(sent) == 2 and outcome == 'lost':
+                            raise TimeoutError()
+                        if len(sent) == 1:
+                            if outcome == 'blocked':
+                                return response('{"Line1":"I cannot translate sexual content involving minors."}')
+                            return response(None, 'The provider declined the translation.')
+                        return response('{"Line1":"Potion"}' if outcome == 'success' else
+                                        '{"Line1":"I cannot translate explicit sexual content."}')
+                    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=sdk)), close=lambda: None)
+                    client.with_options = lambda **_: client
+                    library.get_client = lambda *_, **kwargs: client
+                    module.openai = SimpleNamespace(api_key='fixture', base_url='https://fixture.invalid')
+                    def native(system, user, history, request_instructions=None):
+                        params = {'messages': [{'role': 'system', 'content': system},
+                            {'role': 'user', 'content': request_instructions or ''}, {'role': 'user', 'content': user}]}
+                        evidence.record(params)
+                        result = sdk(**params)
+                        module._write_request_debug_log('fixture', params, result.usage)
+                        return result
+                    def native_ai(text, history, filename):
+                        tokens = [0, 0]
+                        for prefix in ('', 'IMPORTANT: Your previous attempt was incorrect.\n'):
+                            result = module.translateText('Frozen glossary and system', prefix + '{"Line1":"薬"}',
+                                                          history, request_instructions='Keep formatting.')
+                            tokens = [tokens[0] + result.usage.prompt_tokens, tokens[1] + result.usage.completion_tokens]
+                        content = result.choices[0].message.content
+                        module._thread_local.last_translation_had_mismatch = not content
+                        return [[json.loads(content)['Line1']] if content else text, tokens]
+                    module.translateText, module.translateAI = native, native_ai
+                    module.last_translation_had_mismatch = lambda: getattr(module._thread_local, 'last_translation_had_mismatch', False)
+                    evidence.install(module)
+                    return module
+                evidence = Evidence(root, 'translate', plan)
+                module = translator(evidence)
+                if outcome == 'lost':
+                    with self.assertRaises(TimeoutError):
+                        module.translateAI(['薬'], ['context'], 'Items.json')
+                    recovered = translator(Evidence(root, 'translate', plan))
+                    with self.assertRaisesRegex(RuntimeError, 'no saved response'):
+                        recovered.translateAI(['薬'], ['context'], 'Items.json')
+                else:
+                    value = module.translateAI(['薬'], ['context'], 'Items.json')
+                    self.assertEqual(value, [['Potion' if outcome == 'success' else '薬'], [5, 2] if outcome == 'blocked' else [10, 4]])
+                    recovered = translator(Evidence(root, 'translate', plan))
+                    self.assertEqual(recovered.translateAI(['薬'], ['context'], 'Items.json')[1], [0, 0])
+                if outcome == 'blocked':
+                    self.assertEqual(len(sent), 1)
+                    payload = process_view.payload(root, 0)
+                    self.assertEqual(payload['state'], 'rejected')
+                    self.assertIn('minors', payload['response']['text'])
+                    self.assertIsNone(payload['translations'])
+                    continue
+                self.assertEqual(len(sent), 2)
+                self.assertEqual(sent[0]['messages'][0], sent[1]['messages'][0])
+                self.assertEqual(sent[0]['messages'], sent[1]['messages'][:-1])
+                self.assertEqual(sent[1]['messages'][-1]['content'], CLARIFICATION)
+                with evidence.connect() as connection:
+                    rows = connection.execute('SELECT state,usage,response FROM requests ORDER BY id').fetchall()
+                self.assertEqual(rows[0][0], 'rejected')
+                self.assertEqual(json.loads(rows[0][1])['prompt_tokens'], 5)
+                self.assertIn('provider declined', json.loads(rows[0][2])['refusal'])
+                self.assertEqual(rows[1][0], {'success': 'validated', 'refused': 'rejected', 'lost': 'uncertain'}[outcome])
+
     def test_completed_batch_waits_for_download_without_losing_submission_protection(self):
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -255,8 +394,24 @@ class ProcessTests(unittest.TestCase):
             evidence = Evidence(temporary, 'translate')
             with evidence.connect() as connection:
                 connection.execute('INSERT INTO validated_items VALUES (?,?,?)', ('item', '薬', '"Potion"'))
+                connection.execute('INSERT INTO validated_items VALUES (?,?,?)',
+                                   ('bad', '毒', json.dumps("I can't translate sexualized content involving a child.")))
             reopened = Evidence(temporary, 'translate', {'dazedtl_continuation': {'item': {'source': '薬', 'response': 'Older'}}})
             self.assertEqual(reopened.reused['item'], {'source': '薬', 'response': 'Potion'})
+            self.assertNotIn('bad', reopened.reused)
+            # Historical success flags do not make assistant refusal prose a
+            # translation. The reader flags it without changing saved bytes.
+            evidence.local.filename = 'Map001.json'
+            evidence.prepared({'messages': [{'content': '{"Line1":"毒"}'}]})
+            with evidence.connect() as connection:
+                connection.execute("UPDATE requests SET state='validated',response=?", (json.dumps(["I can't translate sexualized content involving a child."]),))
+            before = evidence.path.read_bytes()
+            payload = process_view.payload(temporary, 0)
+            self.assertEqual(payload['state'], 'rejected')
+            self.assertIsNone(payload['translations'])
+            value = process_view.summary(temporary, {'mode': 'translate', 'completed': ['Map001.json']})
+            self.assertEqual((value['validated'], value['rejected'], value['validatedFiles']), (0, 1, 0))
+            self.assertEqual(evidence.path.read_bytes(), before)
 
     def test_consumed_batch_recovers_only_exact_validated_translations_without_inventing_raw_responses(self):
         # Native cleanup used to leave successful requests looking merely
@@ -591,6 +746,16 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(process_view.phase_feedback(job), {})
         job.update(mode='translate', status='running', phase='translate')
         self.assertEqual(process_view.phase_feedback(job), {})
+        job.update(phase='preparing', process={'requests': [{'state': 'submitted'}]}, itemProgress={'current': 25, 'total': 5887})
+        live = process_view.phase_feedback(job)
+        self.assertEqual(live['phase'], 'translate')
+        self.assertIsNone(live['itemProgress'])
+        self.assertIn('Waiting', live['message'])
+        job.update(status='complete', process={'validationIssues': [{'file': 'Map001.json'}]})
+        finished = process_view.phase_feedback(job)
+        self.assertEqual(finished['phase'], 'done')
+        self.assertIsNone(finished['progress'])
+        self.assertIn('rejected', finished['message'])
 
     def test_live_receipt_usage_and_validation_are_separate_from_preparation(self):
         with TemporaryDirectory() as temporary:

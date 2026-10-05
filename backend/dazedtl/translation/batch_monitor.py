@@ -1,4 +1,4 @@
-"""Observe retained provider jobs without restarting a submission-capable worker."""
+"""Collect saved Batches and their frozen, bounded clarification allowance."""
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -121,6 +121,18 @@ class BatchMonitor:
             with self.backend.lock:
                 self.views[identity]['state'] = 'collecting'
             batch_control.collect(root, resolve, commit=lambda: self._commit(identity, plan))
+        if (plan.get('dazedtl_request_policy') or {}).get('refusalRetry'):
+            from dazedtl.compatibility.batch_refusals import advance_guided
+            outcome = advance_guided(root, plan, resolve, commit=lambda: self._commit(identity, plan),
+                                     allow_submit=job.get('status') != 'canceled' and not job.get('dazedtl_batch_cancellations'))
+            if not outcome['ready']:
+                with self.backend.lock:
+                    self.views[identity] = {'state': 'blocked' if outcome.get('uncertain') else 'monitoring',
+                        'message': 'Reconcile the clarification Batch submission.' if outcome.get('uncertain') else
+                                   'Waiting for the Batch clarification of refused requests.',
+                        'batches': [{'id': batch['id'], 'status': batch.get('api_status', 'validating'),
+                                     'counts': batch.get('counts', {})} for batch in outcome['batches'] if batch['id']]}
+                return
         with self._commit(identity, plan):
             if batch_control.no_successful_results(root):
                 self._finish_empty(identity)

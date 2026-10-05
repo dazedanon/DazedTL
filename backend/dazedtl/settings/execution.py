@@ -2,6 +2,7 @@
 
 from . import providers, preferences
 from dazedtl.translation.files import read_json
+from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
 
 def connection_summary(settings):
@@ -30,6 +31,7 @@ def configuration(settings, mode):
              "protocol": connection["protocol"], "endpoint": providers.address(connection),
              "organization": connection["organization"],
              "generationParameters": preferences.GENERATION_PARAMETERS,
+             "refusalRetry": REFUSAL_POLICY,
              "entries_per_request": selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST,
              "rates": {"input": input_rate, "output": output_rate, "batch_factor": None,
                        "source": "custom" if selected["pricing"] == "custom" else defaults["source"]}}

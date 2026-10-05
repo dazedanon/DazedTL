@@ -16,7 +16,8 @@ import { NameTranslationFeedback } from "./NameTranslationFeedback";
 
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 function responseText(response: unknown) {
-  const body = response && typeof response === "object" && "text" in response ? response.text : response;
+  const body = response && typeof response === "object" && "text" in response
+    ? response.text ?? ("refusal" in response ? response.refusal : null) ?? response : response;
   if (typeof body !== "string") return formatted(body);
   try { return formatted(JSON.parse(body)); } catch { return body; }
 }
@@ -124,7 +125,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
       <dl className="process-counts process-counts--compact">{counts.filter(([label, count]) => count != null && (label === "Requests" || typeof count === "string" || count > 0)).map(([label, count]) => <div key={label}><dt>{label}</dt><dd>{count!.toLocaleString()}</dd></div>)}</dl>
     </div>
     {!!process.validationIssues?.length && <div className="process-validation-notice"><ActionList compact><ActionRow label={<small className="translation-error">
-      Rejected requests retain their original text. Valid translations are kept.
+      Review rejected responses before applying saved output.
     </small>}><Button variant="quiet" onClick={() => {
       if (process.rejected) refine({ filter: "rejected", tab: "response", query: initialRequest?.file || "" }); else change({ tab: "log" });
     }}>{process.rejected ? "Review rejected requests" : "Review validation log"}</Button></ActionRow></ActionList></div>}
@@ -176,7 +177,8 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
             : view.tab === "response" ? <>
               {requestError != null && <p className="translation-error">{typeof requestError === "string" ? requestError : requestError.message || formatted(requestError)}</p>}
               {requestError == null && visiblePayload?.response == null && !!errors.length && <p className="translation-error">{errors.join(" · ")}</p>}
-              {visiblePayload?.responseOrigin === "validated" && <p className="muted">Saved validated translation. The original provider response was not retained.</p>}
+              {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}
+              {visiblePayload?.responseOrigin === "log" && <p className="muted">Final attempt recovered from the saved validation log. Earlier retry bodies were not retained.</p>}
               <h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
                 : translated ? <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>
                 : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted">{["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for the provider response." : visiblePayload.state === "failed" ? "The provider rejected this request; no translation was returned." : "The original response was not retained for this older request."}</p>}
@@ -188,7 +190,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
                     {readProvider && <ActionControl label="Check provider" pending={provider.busy} error={provider.error} notice={provider.notice} onClick={() => provider.run(async () => setRemote((await readProvider()).batches), "Provider details loaded.")} />}</>}
                   {job.estimate && <><h3>Saved estimate</h3><ExpandableText text={formatted(job.estimate)} label="Saved estimate" /></>}
                   {job.eventTextReview && <><h3>Event text review</h3><ExpandableText text={formatted(job.eventTextReview)} label="Event text review" /></>}
-                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Validated translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.response)} label="Saved response" /></>}
+                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Saved translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.response)} label="Saved response" /></>}
                 </>}
 
           </TabPanel>

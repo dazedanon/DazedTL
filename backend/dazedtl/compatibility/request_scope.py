@@ -85,6 +85,11 @@ def requests(root, job):
         complete = consumed_files(root)
         from .batch_validation import outcomes as validation_outcomes
         validation = validation_outcomes(root, queued, results)
+        from .batch_refusals import records as clarification_records
+        from dazedtl.translation.refusals import refused, MESSAGE
+        clarification_pending = {item['key']: 'uncertain' if batch['state'] == 'sending' else 'submitted'
+                                 for record in clarification_records(evidence) for batch in record['batches']
+                                 if batch['state'] in {'pending', 'sending', 'submitted'} for item in batch['items']}
         for index, (key, entry) in enumerate(queued.items()):
             outcome = outcomes.get(key, 'uncertain' if unknown_submission else 'queued')
             receipt = validation.get(key, {}) if outcome == 'received' else {}
@@ -92,6 +97,10 @@ def requests(root, job):
                 outcome = receipt['state']
             elif outcome == 'received' and entry.get('dazedtl_file') in complete:
                 outcome = 'saved'
+            if key in clarification_pending:
+                outcome, receipt = clarification_pending[key], {}
+            elif key in results and refused(results[key]):
+                outcome, receipt = 'rejected', {'error': {'code': 'provider_refusal', 'message': MESSAGE}}
             yield {'index': index, 'state': outcome,
                    'source': json.loads(entry['payload']), 'keys': entry.get('dazedtl_sources'),
                    'file': entry.get('dazedtl_file'), 'response': results.get(key), 'error': receipt.get('error'), 'unused': receipt.get('unused')}
@@ -103,7 +112,7 @@ def requests(root, job):
             if state == 'prepared' and row['sources'] is None:
                 state = 'uncertain'
             yield {'index': index, 'state': state, 'source': source_values(row['params']) or {},
-                   'keys': row['sources'], 'file': row['filename'], 'response': row['response']}
+                   'keys': row['sources'], 'file': row['filename'], 'response': row['response'], 'error': row['error']}
         if rows:
             return
     plan_path = root / 'plan.json'

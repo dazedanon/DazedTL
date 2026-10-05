@@ -1,0 +1,151 @@
+"""Bridge guided Batch collection to the bounded clarification journal."""
+
+from contextlib import nullcontext
+from copy import deepcopy
+from functools import wraps
+from pathlib import Path
+import time
+
+from dazedtl.storage import write_json
+from dazedtl.translation.batch_refusals import advance
+from dazedtl.translation.files import project_path, read_json
+from dazedtl.translation.refusals import POLICY, clarifiable, refused
+
+RESULTS = 'dazedtl-clarified-results.json'
+
+
+def records(root, *, details=False):
+    folder = Path(root)/'log/clarifications'
+    if not folder.exists():
+        return []
+    if folder.is_symlink():
+        raise ValueError('Clarification receipts must stay inside the run.')
+    from .process_view import saved
+    if details:
+        return [read_json(path) for path in sorted(folder.glob('*.json')) if not path.name.endswith('.summary.json')]
+    return [saved(root, 'clarifications/' + path.name) for path in sorted(folder.glob('*.summary.json'))]
+
+
+def effective_results(root, previous, current):
+    from .process_view import saved
+    from .batch_evidence import merge
+    receipt = saved(root, RESULTS)
+    if not receipt:
+        return merge(previous, current)
+    original, effective = receipt['original'], receipt['results']
+    merge(previous, original)
+    if current and current != original and current != effective:
+        raise ValueError('Batch results conflict with the retained clarification receipts.')
+    return effective
+
+
+def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, allow_submit=True):
+    from . import batch_control
+    from .process_view import saved, queue, batch_results
+    if (plan.get('dazedtl_request_policy') or {}).get('refusalRetry') != POLICY:
+        return {'ready': True, 'batches': []}
+    completed = saved(root, RESULTS)
+    if completed:
+        # Repair a crash after publishing the receipt but before replacing the
+        # native consume file; this operation cannot submit provider work.
+        batch_results(root)  # Verify any existing file against the retained chain.
+        with commit():
+            write_json(project_path(root, 'log/batch_results.json', exists=False), completed['results'])
+        return {'ready': True, 'batches': []}
+    results = batch_results(root)
+    queued = queue(root)
+    history = saved(root, 'batch_history.json').get('batches', [])
+    output, pending = deepcopy(results), []
+    for batch in history:
+        mapping = batch.get('custom_ids') or {}
+        part = {key: results[key] for key in mapping.values() if key in results}
+        if not any(clarifiable(value) for value in part.values()):
+            continue
+        # A canceled/failed provider job is not authorization for more work.
+        if batch.get('api_status') not in {'completed', 'ended'}:
+            continue
+        if any(key not in queued for key in mapping.values()):
+            raise ValueError('The original Batch payloads are unavailable for clarification.')
+        with (connection or batch_control.connection)(batch, resolve) as provider:
+            from util.batch_providers import batch_limits
+            result = advance(root, batch['id'], {key: queued[key]['params'] for key in mapping.values()},
+                             part, batch.get('usage') or {}, provider,
+                             limits=(*batch_limits(batch['provider']), saved(root, 'batch_state.json').get('sequential_token_limit')),
+                             input_tokens=provider.input_tokens, commit=commit, allow_submit=allow_submit)
+        pending.extend(result['batches'])
+        if not result['ready']:
+            return {**result, 'batches': pending}
+        output.update(result['responses'])
+    if pending:
+        # Refusal prose must not pass the native JSON/string validators.
+        for value in output.values():
+            if refused(value):
+                value.update(text='', refusal=True)
+        with commit():
+            write_json(project_path(root, 'log/' + RESULTS, exists=False), {'original': results, 'results': output})
+            write_json(project_path(root, 'log/batch_results.json', exists=False), output)
+    return {'ready': True, 'batches': pending}
+
+
+def install_worker(root, plan):
+    if plan.get('mode') != 'batch' or (plan.get('dazedtl_request_policy') or {}).get('refusalRetry') != POLICY:
+        return
+    from util.translation_task import TranslationTask
+    from .provider_responses import install
+    install()
+    import util.translation as translation
+    from .batch_control import TranslationProvider
+    native_result = getattr(translation.require_batch_result, '_dazedtl_native', translation.require_batch_result)
+    @wraps(native_result)
+    def result(*args, **kwargs):
+        value = native_result(*args, **kwargs)
+        return {**value, 'text': ''} if refused(value) else value
+    result._dazedtl_native = native_result
+    translation.require_batch_result = result
+    native = getattr(TranslationTask._run_files, '_dazedtl_native', TranslationTask._run_files)
+
+    @wraps(native)
+    def files(task, matching_files, estimate_only, batch_phase=None):
+        if batch_phase == 'consume':
+            from contextlib import contextmanager
+            @contextmanager
+            def active():
+                if task.should_stop:
+                    raise InterruptedError('Stopped before Batch clarification.')
+                yield
+            # Use the original run's pinned connection, exactly as native fetch.
+            from util.batch_history import client_for_batch
+            from .translation import google_batch_client
+            @contextmanager
+            def connection(batch, _resolve):
+                provider = object.__new__(TranslationProvider)
+                provider.provider = batch['provider']
+                provider.client = client_for_batch(batch['id'], batch['provider'], str(batch.get('key_name') or ''), str(batch.get('endpoint') or '')).with_options(max_retries=0, timeout=45)
+                provider.google = google_batch_client(provider.client.api_key) if batch['provider'] == 'gemini' else None
+                try:
+                    yield provider
+                finally:
+                    provider.client.close()
+                    if provider.google:
+                        provider.google.close()
+            # Pass the worker connection factory explicitly; no global SDK or
+            # connection mutation while other file threads may be active.
+            while not task.should_stop:
+                outcome = advance_guided(root, plan, None, commit=active, connection=connection)
+                if outcome['ready']:
+                    translation._batch_results = None
+                    break
+                if outcome.get('uncertain'):
+                    raise ValueError('The clarification Batch needs provider reconciliation before resuming.')
+                task._emit_batch_phase('poll_status', [
+                    {'id': batch['id'], 'api_status': batch.get('api_status', 'validating'), 'counts': batch.get('counts', {}),
+                     'request_count': len(batch['items'])} for batch in outcome['batches'] if batch['id']])
+                for _ in range(300):
+                    if task.should_stop:
+                        return 'Stopped'
+                    time.sleep(.1)
+            if task.should_stop:
+                return 'Stopped'
+        return native(task, matching_files, estimate_only, batch_phase=batch_phase)
+    files._dazedtl_native = native
+    TranslationTask._run_files = files
