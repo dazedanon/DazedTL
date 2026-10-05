@@ -24,7 +24,7 @@ def configure_states(plan, root, policy):
             state_requests.restore(module)
 
 
-def install():
+def install(*, coordinator=False):
     from desktop.backend import manual_environment
 
     native_prepare = manual_environment.prepare
@@ -46,6 +46,9 @@ def install():
             install_checkpoints(sys.modules.get("modules.rpgmakermvmz"), root, plan)
             install_batch_evidence(sys.modules["util.translation"], root, plan)
             install_speaker_results(sys.modules.get("modules.rpgmakermvmz"), root)
+            if coordinator:
+                from .batch_continuation import install_worker as install_batch_continuation
+                install_batch_continuation(root, plan)
 
         if policy is None:
             result = native_prepare(root)

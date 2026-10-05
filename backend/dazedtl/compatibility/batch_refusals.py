@@ -33,10 +33,15 @@ def effective_results(root, previous, current):
     if not receipt:
         return merge(previous, current)
     original, effective = receipt['original'], receipt['results']
-    merge(previous, original)
-    if current and current != original and current != effective:
-        raise ValueError('Batch results conflict with the retained clarification receipts.')
-    return effective
+    extra = {}
+    for source in (previous, current):
+        for key, value in source.items():
+            if key in original:
+                if value != original[key] and value != effective.get(key):
+                    raise ValueError('Batch results conflict with the retained clarification receipts.')
+            else:
+                extra = merge(extra, {key: value})
+    return merge(effective, extra)
 
 
 def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, allow_submit=True):
@@ -45,14 +50,17 @@ def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, 
     if (plan.get('dazedtl_request_policy') or {}).get('refusalRetry') != POLICY:
         return {'ready': True, 'batches': []}
     completed = saved(root, RESULTS)
-    if completed:
+    results = batch_results(root)
+    if completed and set(results) == set(completed['results']):
         # Repair a crash after publishing the receipt but before replacing the
         # native consume file; this operation cannot submit provider work.
-        batch_results(root)  # Verify any existing file against the retained chain.
         with commit():
             write_json(project_path(root, 'log/batch_results.json', exists=False), completed['results'])
         return {'ready': True, 'batches': []}
-    results = batch_results(root)
+    # More original chunks can arrive after an interrupted run's first chunk
+    # was already clarified. Reuse its journal, and clarify only the new rows.
+    if completed:
+        results = {**results, **completed['original']}
     queued = queue(root)
     history = saved(root, 'batch_history.json').get('batches', [])
     output, pending = deepcopy(results), []
@@ -70,7 +78,8 @@ def advance_guided(root, plan, resolve, *, commit=nullcontext, connection=None, 
             from util.batch_providers import batch_limits
             result = advance(root, batch['id'], {key: queued[key]['params'] for key in mapping.values()},
                              part, batch.get('usage') or {}, provider,
-                             limits=(*batch_limits(batch['provider']), saved(root, 'batch_state.json').get('sequential_token_limit')),
+                             limits=(*batch_limits(batch['provider']), saved(root, 'batch_state.json').get('sequential_token_limit')
+                                     or ((plan.get('dazedtl_request_policy') or {}).get('batchInputTokens') if batch['provider'] == 'openai' else None)),
                              input_tokens=provider.input_tokens, commit=commit, allow_submit=allow_submit)
         pending.extend(result['batches'])
         if not result['ready']:

@@ -160,7 +160,7 @@ class BatchMonitorTests(unittest.TestCase):
             monitor.backend.manual.resume.assert_not_called()
             provider.submit.assert_not_called(); provider.live.assert_not_called(); provider.cancel.assert_not_called()
 
-    def test_partial_queue_collection_cannot_start_a_full_consume_even_after_restart(self):
+    def test_unapproved_partial_queue_cannot_start_a_full_consume_even_after_restart(self):
         # Downloading one terminal chunk used to convert the whole queue to
         # fetched, then launch a worker that failed on every unsent file.
         with TemporaryDirectory() as directory:
@@ -185,6 +185,36 @@ class BatchMonitorTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, '1 requests were not submitted'):
                     batch_control.require_complete_submission(root)
             self.assertEqual((root/'log/batch_requests.json').read_bytes(), frozen)
+            monitor.backend.manual.consume_batch.assert_not_called()
+            provider.submit.assert_not_called(); provider.live.assert_not_called()
+
+    def test_approved_remainder_continues_once_but_stopped_or_superseded_runs_do_not(self):
+        # The original cost approval covers later chunks after an app restart.
+        # It must not restart a withdrawn or overlapping superseded approval.
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            monitor, job, _ = self.fixture(root)
+            job.update(dazedtl_approved=True, created='2026-10-05T00:00:00Z', files=['Map001.json'])
+            monitor.backend.manual.continue_batch = Mock(side_effect=lambda _: job.update(status='running'))
+            provider = Mock()
+            provider.status.return_value = {'api_status': 'in_progress', 'counts': {}}
+            with patch.object(batch_control, 'TranslationProvider', return_value=provider):
+                monitor.tick()
+                monitor.backend.manual.continue_batch.assert_called_once_with('run')
+                provider.status.assert_not_called()
+                monitor.tick()
+                monitor.backend.manual.continue_batch.assert_called_once()
+                job['status'] = 'stopped'
+                for guard in ('stopped', 'canceled', 'superseded'):
+                    if guard == 'stopped': job['dazedtl_batch_stopped'] = True
+                    if guard == 'canceled': job['dazedtl_batch_cancellations'] = {'paid': {'status': 'canceling'}}
+                    if guard == 'superseded':
+                        monitor.backend.manual.jobs['newer'] = {**job, 'id': 'newer', 'created': '2026-10-05T01:00:00Z'}
+                    monitor.check('run')
+                    monitor.backend.manual.continue_batch.assert_called_once()
+                    job.pop('dazedtl_batch_stopped', None)
+                    job.pop('dazedtl_batch_cancellations', None)
+                monitor.backend.manual.jobs.pop('newer')
             monitor.backend.manual.consume_batch.assert_not_called()
             provider.submit.assert_not_called(); provider.live.assert_not_called()
 

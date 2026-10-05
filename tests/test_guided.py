@@ -1163,12 +1163,12 @@ class GuidedTests(unittest.TestCase):
         reopened = Guided(self.backend, self.projects, self.settings, self.translation)
         self.assertIn(identity, reopened.owned_runs(self.native))
         self.assertEqual({path: path.read_bytes() for path in frozen}, frozen)
-        # A later estimate must not turn a saved Batch into a manual paid
-        # resume. Its receipts remain owned and automatic monitoring handles it.
+        # A later estimate cannot authorize a saved queue without its original
+        # paid review; owned and bound approvals can continue without re-review.
         self.native['manual_job'] = estimate_id
         self.backend.manual.resume = Mock(return_value=job)
         self.settings.prepare_engine = Mock()
-        with self.assertRaisesRegex(ValueError, 'monitored automatically'):
+        with self.assertRaisesRegex(ValueError, 'approved'):
             reopened.resume(self.identity, identity)
         with self.assertRaisesRegex(ValueError, 'belonging'):
             reopened.resume(self.identity, 'another-project-run')

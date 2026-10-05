@@ -70,6 +70,10 @@ def manual_jobs(source, workspace, lock, allow_providers):
             )
         directory = Path(arguments[3])
         job = json.loads((directory / 'job.json').read_bytes())
+        if job.get('dazedtl_continue_batch'):
+            from .batch_continuation import approved_binding, validate_submission_records
+            approved_binding(directory, job, json.loads((directory / 'plan.json').read_bytes()))
+            validate_submission_records(directory)
         if job.get('dazedtl_consume_only'):
             attempt = json.loads((directory / 'attempt.json').read_bytes())
             if job.get('mode') != 'batch' or attempt.get('resume') is not True or attempt.get('batch_resume_state') != 'fetched':
@@ -124,13 +128,18 @@ def manual_jobs(source, workspace, lock, allow_providers):
                 prompt = job.get('approval')
                 if not prompt or prompt['token'] != token or identity != self.active or type(approved) is not bool or self.stopping.is_set():
                     raise ValueError('This approval is no longer pending. Prepare a new estimate.')
-                if approved and job.get('dazedtl_preapproval'):
+                if approved and (job.get('dazedtl_preapproval') or prompt.get('kind') == 'batch'):
                     # Persist before the worker can send, including separately
                     # approved speaker requests inside a Batch preparation.
                     previous = deepcopy(job)
                     job['dazedtl_approved'] = True
                     job['estimate'] = prompt['detail']
                     try:
+                        if job.get('mode') == 'batch' and prompt.get('kind') == 'batch':
+                            from .batch_continuation import APPROVAL, binding
+                            root = self.folder(identity)
+                            plan = json.loads((root / 'plan.json').read_bytes())
+                            job[APPROVAL] = binding(root, job, plan, quote=prompt['detail'])
                         self.save(job)
                     except Exception:
                         job.clear(); job.update(previous)
@@ -161,6 +170,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
             return super().save(job)
 
         def stop(self, identity):
+            if not getattr(self, '_closing', False) and self.jobs[identity].get('mode') == 'batch':
+                self.jobs[identity]['dazedtl_batch_stopped'] = True
+                self.save(self.jobs[identity])
             return self.controller(identity).stop(identity) if self.controllers is not None else super().stop(identity)
 
         def resume(self, identity):
@@ -179,13 +191,30 @@ def manual_jobs(source, workspace, lock, allow_providers):
                     raise ValueError('Collect this Batch’s responses before saving results.')
                 from .batch_control import require_complete_submission
                 require_complete_submission(self.folder(identity))
+                job.pop('dazedtl_continue_batch', None)
                 job['dazedtl_consume_only'] = True
+                self.save(job)
+                return self.resume(identity)
+
+        def continue_batch(self, identity, *, explicit=False):
+            from .batch_continuation import prepare_continuation
+            with self.lock:
+                job = self.jobs[identity]
+                running = self.controller(identity).running() if self.controllers is not None else super().running()
+                if running or job.get('status') not in {'stopped', 'interrupted', 'failed'}:
+                    raise ValueError('This Batch already has a running worker.')
+                root = self.folder(identity)
+                prepare_continuation(root, job, json.loads((root / 'plan.json').read_bytes()), explicit=explicit)
                 self.save(job)
                 return self.resume(identity)
 
         def close(self):
             if self.controllers is None:
-                return super().close()
+                self._closing = True
+                try:
+                    return super().close()
+                finally:
+                    self._closing = False
             for identity, item in list(self.controllers.items()):
                 job = self.jobs.get(identity)
                 if job and temporary(job) and discardable(job, self.folder(identity)):

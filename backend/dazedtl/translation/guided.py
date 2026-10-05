@@ -1360,7 +1360,15 @@ class Guided:
         if temporary(self.backend.manual.jobs.get(identity, {})):
             raise ValueError('Unapproved preparation cannot be resumed. Click Translate for a fresh estimate.')
         if self.backend.manual.jobs.get(identity, {}).get('mode') == 'batch':
-            raise ValueError('Submitted Batches are monitored automatically. Use Translate for a fresh estimate of remaining work.')
+            plan = self.backend.saved_run_configuration(identity)
+            if (plan.get('workflow') or {}).get('id') != native['id'] or self.batch_monitor._superseded(identity, plan):
+                raise ValueError('A newer approved run owns these files. Continue that run instead.')
+            from dazedtl.compatibility.batch_continuation import approved_binding, validate_submission_records
+            root = self.backend.manual.folder(identity)
+            approved_binding(root, self.backend.manual.jobs[identity], plan)
+            validate_submission_records(root)
+            self.settings.prepare_engine(resume=plan)
+            return self.backend.manual.continue_batch(identity, explicit=True)
         plan = self.backend.saved_run_configuration(identity)
         if (plan.get('workflow') or {}).get('id') != native['id']:
             raise ValueError('This saved run belongs to another project.')

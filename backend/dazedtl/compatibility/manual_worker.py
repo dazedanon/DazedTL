@@ -11,7 +11,7 @@ if __name__ == "__main__":
     from dazedtl.compatibility.worker_policy import install
     from desktop.backend import manual_worker
 
-    install()
+    install(coordinator=True)
     # Native main resolves its per-file runner beside __file__. ROOT remains the
     # original engine root; redirect only that child entrypoint to our wrapper.
     manual_worker.__file__ = __file__

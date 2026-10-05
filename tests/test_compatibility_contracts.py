@@ -405,6 +405,10 @@ class ManualJobs:
         self.allow_providers = False
     def running(self): return False
     def start(self, source, engine, files, *args, **kwargs): return {'id': str(len(files)), 'files': files}
+    def save(self, job): pass
+    def stop(self, identity): return self.jobs[identity]
+    def close(self):
+        if self.active: self.stop(self.active)
     def launch(self):
         return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), str(self.workspace/'run')],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
@@ -430,6 +434,15 @@ class ManualJobs:
                 write_json(run/'attempt.json', {'resume': True, 'batch_resume_state': 'fetched'})
                 controller.launch()
                 self.assertEqual(launch.call_count, 2)
+                # App shutdown must not revoke an approved Batch's remainder;
+                # an explicit stop must prevent automatic continuation.
+                controller.jobs['batch'] = {'id': 'batch', 'mode': 'batch'}
+                child = controller.controller('batch')
+                child.active = 'batch'
+                child.close()
+                self.assertNotIn('dazedtl_batch_stopped', controller.jobs['batch'])
+                controller.stop('batch')
+                self.assertTrue(controller.jobs['batch']['dazedtl_batch_stopped'])
                 # The preserved phase may find more files than the user checked.
                 # Filter only its new run, preserving its native phase setup.
                 with controller.selected_workflow('owner', ['Items.json']):

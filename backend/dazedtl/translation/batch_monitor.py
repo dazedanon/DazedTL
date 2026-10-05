@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import threading
 
 from dazedtl.compatibility import batch_control
+from dazedtl.compatibility.batch_continuation import BatchContinuationError
 from dazedtl.compatibility.preparations import temporary
 from dazedtl.compatibility.process_view import saved
 
@@ -45,6 +46,9 @@ class BatchMonitor:
                 return
             try:
                 self.check(identity)
+            except BatchContinuationError as error:
+                with self.backend.lock:
+                    self.views[identity] = {'state': 'blocked', 'message': str(error)}
             except Exception:
                 # Provider errors can contain credentials; keep background
                 # feedback fixed and retain the last successful observation.
@@ -65,6 +69,18 @@ class BatchMonitor:
             raise ValueError('The original Batch owner is unavailable.')
         return plan
 
+    def _superseded(self, identity, plan):
+        job = self.backend.manual.jobs[identity]
+        for other_id, other in self.backend.manual.jobs.items():
+            if (other_id == identity or other.get('created', '') <= job.get('created', '')
+                    or not other.get('dazedtl_approved') or other.get('mode') not in {'batch', 'translate'}
+                    or not set(other.get('files', [])) & set(job.get('files', []))):
+                continue
+            other_plan = self.backend.saved_run_configuration(other_id)
+            if (other_plan.get('workflow') or {}).get('id') == (plan.get('workflow') or {}).get('id'):
+                return True
+        return False
+
     @contextmanager
     def _commit(self, identity, expected):
         with self.backend.context():
@@ -84,12 +100,26 @@ class BatchMonitor:
                 return
             root = self.backend.manual.folder(identity)
             history = saved(root, 'batch_history.json').get('batches', [])
-            if not history:
+            if not history and not job.get('dazedtl_batch_approval'):
                 return
             if identity in self.settled:
                 self.views.pop(identity, None)
                 return
             plan = self._owned(identity)
+            # The approval covers the entire frozen queue. A local app close
+            # does not revoke it or turn the first provider chunk into the run.
+            remaining = batch_control.unsent_requests(root)
+            restartable = job['status'] in {'stopped', 'interrupted'} or job.get('dazedtl_consume_only')
+            if (remaining and restartable and job.get('dazedtl_approved')
+                    and not job.get('dazedtl_batch_stopped') and not job.get('dazedtl_batch_cancellations')
+                    and job['status'] != 'canceled' and not self._superseded(identity, plan)):
+                self.guided.settings.prepare_engine(resume=plan)
+                self.backend.manual.continue_batch(identity)
+                self.consumed.discard(identity)
+                self.views.pop(identity, None)
+                return
+            if not history:
+                return
             if batch_control.no_successful_results(root):
                 self._finish_empty(identity)
                 return
@@ -141,7 +171,7 @@ class BatchMonitor:
             if remaining:
                 self.views[identity] = {'state': 'blocked', 'message':
                     f'{remaining:,} requests were not submitted. Collected responses are retained; '
-                    'this incomplete run has not been saved in full.'}
+                    'this stopped or superseded run will not submit more work automatically.'}
                 return
             self.guided.settings.prepare_engine(resume=plan)
             # Only fetched responses can reach the local consume worker.

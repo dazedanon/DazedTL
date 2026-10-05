@@ -23,6 +23,13 @@ def preserve(root, requests, results, state):
     # Never turn an unapproved preparation into retained run history.
     if not any(batch.get('custom_ids') for batch in history):
         return
+    from .batch_refusals import RESULTS, effective_results
+    clarified = saved(root, RESULTS)
+    if clarified:
+        effective_results(root, old.get('results', {}), results)
+        # The archive owns original provider bodies; the clarification journal
+        # supplies their effective replacements. Native cleanup may see either.
+        results = {key: clarified['original'].get(key, value) for key, value in results.items()}
     value = {'version': 1, 'requests': merge(old.get('requests', {}), requests),
              'results': merge(old.get('results', {}), results)}
     if not value['requests']:
