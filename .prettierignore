@@ -3,3 +3,5 @@ backend/dazedtl/engine/
 # Markdown follows the documentation rules; JSON is generated or data.
 *.md
 *.json
+# Agent worktrees are separate checkouts with their own formatting state.
+.claude/
