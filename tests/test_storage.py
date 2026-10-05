@@ -71,14 +71,16 @@ class StorageTests(unittest.TestCase):
             )
         self.assertEqual(error.exception.code, "workspace_upgrade")
         self.assertEqual(self.path.read_bytes(), original)
-        with patch("dazedtl.storage.write_bytes", side_effect=OSError("No space")):
-            with self.assertRaises(WorkspaceError) as error:
-                read_versioned_json(
-                    self.path,
-                    {"version": 2},
-                    {1: lambda value: value},
-                    lambda value: None,
-                )
+        with (
+            patch("dazedtl.storage.write_bytes", side_effect=OSError("No space")),
+            self.assertRaises(WorkspaceError) as error,
+        ):
+            read_versioned_json(
+                self.path,
+                {"version": 2},
+                {1: lambda value: value},
+                lambda value: None,
+            )
         self.assertEqual(error.exception.code, "workspace_backup")
         self.assertEqual(self.path.read_bytes(), original)
 
@@ -91,22 +93,26 @@ class StorageTests(unittest.TestCase):
             write_bytes(path, content)
             self.path.write_bytes(newer)
 
-        with patch("dazedtl.storage.write_bytes", side_effect=backup_then_edit):
-            with self.assertRaises(WorkspaceError):
-                read_versioned_json(
-                    self.path,
-                    {"version": 2},
-                    {1: lambda value: value},
-                    lambda value: None,
-                )
+        with (
+            patch("dazedtl.storage.write_bytes", side_effect=backup_then_edit),
+            self.assertRaises(WorkspaceError),
+        ):
+            read_versioned_json(
+                self.path,
+                {"version": 2},
+                {1: lambda value: value},
+                lambda value: None,
+            )
         self.assertEqual(self.path.read_bytes(), newer)
         self.assertEqual(next((self.root / "backups").iterdir()).read_bytes(), original)
 
     def test_interrupted_atomic_replace_keeps_saved_file_and_cleans_temporary(self):
         original = b'{"saved":"keep"}'
         self.path.write_bytes(original)
-        with patch("dazedtl.storage.os.replace", side_effect=OSError("Replace failed")):
-            with self.assertRaises(OSError):
-                write_json(self.path, {"saved": "new"})
+        with (
+            patch("dazedtl.storage.os.replace", side_effect=OSError("Replace failed")),
+            self.assertRaises(OSError),
+        ):
+            write_json(self.path, {"saved": "new"})
         self.assertEqual(self.path.read_bytes(), original)
         self.assertEqual(list(self.root.iterdir()), [self.path])

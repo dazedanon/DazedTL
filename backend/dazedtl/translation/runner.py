@@ -140,7 +140,7 @@ class Runner:
             self.save("running", "Translating " + identity)
             try:
                 response = self.provider.live(request["params"])
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 status = getattr(exc, "status_code", None)
                 certain = type(status) is int and 400 <= status < 500
                 self.job["states"][identity] = {
@@ -177,7 +177,7 @@ class Runner:
                 self.save("running", self.job["states"][identity]["message"])
                 try:
                     response = self.provider.live(params)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     status = getattr(exc, "status_code", None)
                     certain = type(status) is int and 400 <= status < 500
                     self.job["states"][identity] = {
@@ -292,7 +292,7 @@ class Runner:
                     )
                     chunk.update(id=value["id"], state="submitted")
                     self.save()
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     code = getattr(exc, "status_code", None)
                     certain = type(code) is int and 400 <= code < 500
                     for item in chunk["items"]:
@@ -316,7 +316,7 @@ class Runner:
             if cancel and not chunk.get("cancel_requested"):
                 try:
                     self.provider.cancel(chunk["id"])
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     chunk["cancel_error"] = type(exc).__name__
                 chunk["cancel_requested"] = True
                 self.save()

@@ -185,7 +185,7 @@ class BatchValidationTests(unittest.TestCase):
     ):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            job, _, queue, responses, _, _ = self.choice_fixture(root)
+            job, _, _queue, responses, _, _ = self.choice_fixture(root)
             before = {
                 path: path.read_bytes() for path in root.rglob("*") if path.is_file()
             }

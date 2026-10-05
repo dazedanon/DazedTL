@@ -624,7 +624,6 @@ class GuidedTests(unittest.TestCase):
     def test_completed_phase_and_apply_status_require_that_runs_verified_outputs(self):
         identity = "completed-database"
         output = [{"name": "Fixture term"}]
-        raw = __import__("json").dumps(output).encode()
         write_json(
             self.backend.manual.folder(identity) / "translated/Items.json", output
         )
@@ -2645,7 +2644,7 @@ class GuidedTests(unittest.TestCase):
     ):
         # Prevent recommendations silently enabling settings, selector swaps,
         # stale source approvals, and old reports configuring a new request.
-        request, report = self.event_report()
+        request, _report = self.event_report()
         self.assertEqual(
             self.guided.event_text.request(self.identity, self.native)["request_id"],
             request["request_id"],

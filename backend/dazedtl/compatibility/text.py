@@ -101,7 +101,7 @@ def run_qa(plan, log):
     validate_plan(plan)
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
-        task, state = qa.prepare_task(
+        task, _state = qa.prepare_task(
             plan["project"]["source"],
             plan["project"]["data"],
             plan["options"]["focus"],
@@ -226,7 +226,7 @@ def prepare_publication(plan):
             raise ValueError(
                 "The QA task changed. Choose corrections from the current findings."
             )
-        task_root, task, checkpoint = qa._load_task(state["task"])
+        task_root, task, _checkpoint = qa._load_task(state["task"])
         chosen = options.get("findings")
         if (
             not isinstance(chosen, list)

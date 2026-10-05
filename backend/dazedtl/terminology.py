@@ -58,6 +58,14 @@ def context_group(location):
     )
 
 
+def nearby(rows, group):
+    return [
+        {"text": row["text"][:4000], "shortened": len(row["text"]) > 4000}
+        for row in rows
+        if context_group(row["location"]) == group
+    ]
+
+
 def occurrences(project_id, name, document, terms):
     fields = list(text_fields(document))
     for index, field in enumerate(fields):
@@ -75,14 +83,9 @@ def occurrences(project_id, name, document, terms):
                 f"A matching field in {name} is longer than 64,000 characters. Narrow the terms before scanning."
             )
         group = context_group(field["location"])
-        nearby = lambda rows: [
-            {"text": row["text"][:4000], "shortened": len(row["text"]) > 4000}
-            for row in rows
-            if context_group(row["location"]) == group
-        ]
         before, after = (
-            nearby(fields[max(0, index - 2) : index]),
-            nearby(fields[index + 1 : index + 3]),
+            nearby(fields[max(0, index - 2) : index], group),
+            nearby(fields[index + 1 : index + 3], group),
         )
         source_hash = digest(source.encode("utf-8"))
         for start, term in sorted(matches):

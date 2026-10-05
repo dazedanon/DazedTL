@@ -51,7 +51,7 @@ def endpoint(value):
                 and url.hostname
                 and not (url.username or url.password or url.query or url.fragment)
             )
-            url.port
+            _ = url.port  # Raises ValueError for an invalid port.
         except ValueError:
             valid = False
         if not valid:
@@ -116,22 +116,24 @@ def openrouter_hosts(model=""):
     path = "/models/" + quote(model, safe="/") + "/endpoints" if model else "/providers"
     try:
         deadline = time.monotonic() + 8
-        with httpx.Client(
-            timeout=httpx.Timeout(3, connect=3), follow_redirects=False
-        ) as client:
-            with client.stream(
+        with (
+            httpx.Client(
+                timeout=httpx.Timeout(3, connect=3), follow_redirects=False
+            ) as client,
+            client.stream(
                 "GET",
                 PROVIDERS["openrouter"]["endpoint"] + path,
                 headers={"Accept": "application/json", "Accept-Encoding": "identity"},
-            ) as response:
-                response.raise_for_status()
-                content = bytearray()
-                for chunk in response.iter_raw(chunk_size=65536):
-                    content.extend(chunk)
-                    if len(content) > 1_000_000 or time.monotonic() > deadline:
-                        raise ValueError(
-                            "OpenRouter's host list was too large or took too long. Try again."
-                        )
+            ) as response,
+        ):
+            response.raise_for_status()
+            content = bytearray()
+            for chunk in response.iter_raw(chunk_size=65536):
+                content.extend(chunk)
+                if len(content) > 1_000_000 or time.monotonic() > deadline:
+                    raise ValueError(
+                        "OpenRouter's host list was too large or took too long. Try again."
+                    )
         data = json.loads(content).get("data")
         if model and (not isinstance(data, dict) or data.get("id") != model):
             raise ValueError
@@ -210,49 +212,51 @@ def check(connection):
 
     try:
         deadline = time.monotonic() + 8
-        with httpx.Client(
-            timeout=httpx.Timeout(3, connect=3), follow_redirects=False
-        ) as client:
-            with client.stream("GET", url, headers=headers) as response:
-                status = response.status_code
-                if status == 400:
-                    return result(
-                        "failed",
-                        "The provider rejected the connection details. Check the API key and server URL.",
-                    )
-                if status == 401:
-                    return result(
-                        "failed",
-                        "Authentication was rejected. Check the API key and provider.",
-                    )
-                if status == 403:
+        with (
+            httpx.Client(
+                timeout=httpx.Timeout(3, connect=3), follow_redirects=False
+            ) as client,
+            client.stream("GET", url, headers=headers) as response,
+        ):
+            status = response.status_code
+            if status == 400:
+                return result(
+                    "failed",
+                    "The provider rejected the connection details. Check the API key and server URL.",
+                )
+            if status == 401:
+                return result(
+                    "failed",
+                    "Authentication was rejected. Check the API key and provider.",
+                )
+            if status == 403:
+                return result(
+                    "unavailable",
+                    "Model-list access was refused. This key may have restricted permissions.",
+                )
+            if status == 429:
+                return result(
+                    "unavailable",
+                    "The provider is rate limiting requests. Try checking again later.",
+                )
+            if status in {301, 302, 303, 307, 308, 404, 405}:
+                return result(
+                    "unsupported",
+                    "This address does not expose the expected model list. Check the server's base URL.",
+                )
+            if status != 200:
+                return result(
+                    "unavailable",
+                    f"The provider returned HTTP {status}. The connection was saved, but could not be verified.",
+                )
+            content = bytearray()
+            for chunk in response.iter_raw(chunk_size=65536):
+                content.extend(chunk)
+                if len(content) > byte_limit or time.monotonic() > deadline:
                     return result(
                         "unavailable",
-                        "Model-list access was refused. This key may have restricted permissions.",
+                        "The model list was too large or took too long. Try again later.",
                     )
-                if status == 429:
-                    return result(
-                        "unavailable",
-                        "The provider is rate limiting requests. Try checking again later.",
-                    )
-                if status in {301, 302, 303, 307, 308, 404, 405}:
-                    return result(
-                        "unsupported",
-                        "This address does not expose the expected model list. Check the server's base URL.",
-                    )
-                if status != 200:
-                    return result(
-                        "unavailable",
-                        f"The provider returned HTTP {status}. The connection was saved, but could not be verified.",
-                    )
-                content = bytearray()
-                for chunk in response.iter_raw(chunk_size=65536):
-                    content.extend(chunk)
-                    if len(content) > byte_limit or time.monotonic() > deadline:
-                        return result(
-                            "unavailable",
-                            "The model list was too large or took too long. Try again later.",
-                        )
         payload = json.loads(content)
         rows = (
             payload.get("data")

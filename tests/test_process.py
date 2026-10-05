@@ -838,12 +838,12 @@ class ProcessTests(unittest.TestCase):
             write_json(current / "log/estimate_requests.json", {"key": entry})
             new = {**job, "id": "new", "mode": "estimate"}
             self.assertEqual(
-                list(request_scope.requests(root, job))[0]["state"], "saved"
+                next(iter(request_scope.requests(root, job)))["state"], "saved"
             )
             self.assertEqual(request_scope.overlap(current, new, [(root, job)]), [])
             write_json(root / "translated/Items.json", [{"name": "Unverified edit"}])
             self.assertEqual(
-                list(request_scope.requests(root, job))[0]["state"], "received"
+                next(iter(request_scope.requests(root, job)))["state"], "received"
             )
             self.assertTrue(request_scope.overlap(current, new, [(root, job)]))
             write_json(root / "translated/Items.json", output)

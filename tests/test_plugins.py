@@ -18,23 +18,24 @@ from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 
 
+@lru_cache(maxsize=64)
+def parse_fixture(path, kind, source):
+    return Documents().parse([{"path": path, "kind": kind, "source": source}])[path]
+
+
 class FixtureDocuments:
     """Reuse real parse results only for identical fixture inputs."""
 
-    @lru_cache(maxsize=64)
-    def _parse(self, path, kind, source):
-        return Documents().parse([{"path": path, "kind": kind, "source": source}])[path]
-
     def parse(self, files):
         # Services and later tests must never share mutable parser results.
-        return {row["path"]: deepcopy(self._parse(**row)) for row in files}
+        return {row["path"]: deepcopy(parse_fixture(**row)) for row in files}
 
 
 class PluginTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.documents = FixtureDocuments()
-        cls.addClassCleanup(cls.documents._parse.cache_clear)
+        cls.addClassCleanup(parse_fixture.cache_clear)
 
     def setUp(self):
         temporary = TemporaryDirectory()
@@ -402,7 +403,7 @@ class PluginTests(unittest.TestCase):
         # Keep the real, uncached parser boundary through investigation,
         # translation, Apply and restore, alongside the direct parser checks.
         self.service.documents = Documents()
-        request, report = self.translated()
+        request, _report = self.translated()
         before = {
             row["path"]: (self.game / row["path"]).read_bytes()
             for row in request["files"]
@@ -432,9 +433,11 @@ class PluginTests(unittest.TestCase):
             if len(calls) == 2:
                 raise OSError("Injected second publication failure after its write")
 
-        with patch.object(self.service, "_publish_file", side_effect=fail):
-            with self.assertRaisesRegex(ValueError, "rollback attempted"):
-                self.service.action(self.identity, "apply", {"token": preview["token"]})
+        with (
+            patch.object(self.service, "_publish_file", side_effect=fail),
+            self.assertRaisesRegex(ValueError, "rollback attempted"),
+        ):
+            self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
@@ -569,7 +572,7 @@ class PluginTests(unittest.TestCase):
 
     def test_missing_originals_and_dynamic_configuration_never_authorize_edits(self):
         lifecycle_path(self.profile, self.identity).unlink()
-        request, report = self.investigation()
+        _request, _report = self.investigation()
         self.service.action(self.identity, "recommended")
         self.assertEqual(self.service.state(self.identity)["counts"]["selected"], 0)
         with self.assertRaises(ValueError):
@@ -670,7 +673,7 @@ class PluginTests(unittest.TestCase):
     def test_interrupted_publication_reconciles_exact_bytes_and_rejects_tampered_journal(
         self,
     ):
-        request, report = self.translated()
+        _request, _report = self.translated()
         preview = self.service.action(self.identity, "preview_apply")["preview"]
         publish = self.service._publish_file
         count = 0
@@ -682,10 +685,11 @@ class PluginTests(unittest.TestCase):
                 raise KeyboardInterrupt("Injected process interruption")
             publish(root, path, raw)
 
-        with patch.object(self.service, "_publish_file", side_effect=interrupt):
-            with self.assertRaises(KeyboardInterrupt):
-                self.service.action(self.identity, "apply", {"token": preview["token"]})
-        pending = self.service.load(self.identity)
+        with (
+            patch.object(self.service, "_publish_file", side_effect=interrupt),
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            self.service.action(self.identity, "apply", {"token": preview["token"]})
         journal = self.service.path(
             self.identity, "publications/" + preview["token"] + "/approval.json"
         )

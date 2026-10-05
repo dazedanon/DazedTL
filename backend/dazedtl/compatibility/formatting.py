@@ -26,7 +26,7 @@ def format_json_files(directory, log=None):
                 formatted += 1
                 if log:
                     log(f"  Formatted: {path.relative_to(directory)}")
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 message = f"Error in {path}: {exc}"
                 errors.append(message)
                 if log:

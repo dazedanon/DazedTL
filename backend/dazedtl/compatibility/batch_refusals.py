@@ -3,7 +3,7 @@
 import time
 from contextlib import nullcontext
 from copy import deepcopy
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 
 from dazedtl.storage import write_json
@@ -133,8 +133,12 @@ def advance_guided(
                 input_tokens=provider.input_tokens,
                 commit=commit,
                 allow_submit=allow_submit,
-                reserve=lambda items: reserve_clarification(
-                    root, plan, items, provider.input_tokens, limit
+                reserve=partial(
+                    reserve_clarification,
+                    root,
+                    plan,
+                    count=provider.input_tokens,
+                    limit=limit,
                 ),
             )
         pending.extend(result["batches"])

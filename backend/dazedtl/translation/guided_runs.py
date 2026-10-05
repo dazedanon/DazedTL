@@ -493,12 +493,11 @@ class GuidedRuns:
         ]
         for phase in PHASES:
             try:
-                estimates[phase], current = self.quote(
+                estimates[phase], _ = self.quote(
                     project_id, native, phase, mode, guard=guard, run_view=run_view
                 )
             except (ValueError, OSError):
                 estimates[phase] = {"job": None, "current": False}
-                current = None
             names = self.files(native, phase)
             inputs = self.guided.inputs(native)
             sources = inputs.sources(

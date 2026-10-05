@@ -1532,14 +1532,6 @@ class PluginService:
                     raise ValueError(
                         "JSON dependency loader must belong to this investigation."
                     )
-                match = next(
-                    (
-                        item
-                        for item in allowed[source]["occurrences"]
-                        if item["id"] == literal
-                    ),
-                    None,
-                )
                 # Path literals generally contain no Japanese and are supplied separately below.
                 parsed = self.documents.parse(
                     [
@@ -1949,7 +1941,7 @@ class PluginService:
             raise ValueError("The reviewed batch is empty. Nothing was published.")
         if preview["selection"] != value["selection"]:
             raise ValueError("Selection changed after review.")
-        included, blocked = self.checked_rows(
+        included, _blocked = self.checked_rows(
             project_id, value, mode, {"receipt": preview["receipt"]}
         )
         keys = (
@@ -2022,7 +2014,7 @@ class PluginService:
                     )
                 written.append((row, raw))
                 self._publish_file(root, row["path"], candidate)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             failure = str(exc)
             for row, raw in reversed(written):
                 try:
@@ -2034,7 +2026,7 @@ class PluginService:
                             "File changed after publication; rollback left it untouched."
                         )
                     self._publish_file(root, row["path"], raw)
-                except Exception as rollback:
+                except Exception as rollback:  # noqa: BLE001
                     conflicts.append(row["path"] + ": " + str(rollback))
         completed = [
             row

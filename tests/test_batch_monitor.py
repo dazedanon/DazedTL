@@ -386,7 +386,7 @@ class BatchMonitorTests(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            monitor, job, _ = self.fixture(root)
+            monitor, _job, _ = self.fixture(root)
             provider = Mock()
             provider.status.return_value = {
                 "api_status": "completed",

@@ -241,6 +241,10 @@ def _ledger_records(root, signature, consumed):
     return result
 
 
+def request_signature(row, params):
+    return digest([row["filename"], row["sources"], params])
+
+
 def link_clarifications(rows):
     """Link display attempts only; historical ambiguity never merges requests."""
     from dazedtl.translation.refusals import CLARIFICATION
@@ -250,9 +254,10 @@ def link_clarifications(rows):
     for index, row in enumerate(rows):
         params = row["params"]
         messages = params.get("messages") or []
-        signature = lambda value: digest([row["filename"], row["sources"], value])
         if messages and messages[-1] == {"role": "user", "content": CLARIFICATION}:
-            parent_signature = signature({**params, "messages": messages[:-1]})
+            parent_signature = request_signature(
+                row, {**params, "messages": messages[:-1]}
+            )
             if row.get("clarification_of") is not None:
                 parent = identities.get(row["clarification_of"])
                 candidates = (
@@ -267,7 +272,7 @@ def link_clarifications(rows):
                 used.add(candidates[0])
         identities[row["id"]] = index
         if row["provider_refusal"] and "clarificationOf" not in row:
-            signatures[index] = signature(params)
+            signatures[index] = request_signature(row, params)
             originals.setdefault(signatures[index], []).append(index)
 
 
@@ -602,9 +607,9 @@ def summary(root, job):
     requests = queue(root)
     request_indices = {key: index for index, key in enumerate(requests)}
     batches = saved(evidence_root(root), "batch_history.json").get("batches", [])
-    submitted = set(
+    submitted = {
         key for batch in batches for key in batch.get("custom_ids", {}).values()
-    )
+    }
     duplicate_submissions = sum(
         len(batch.get("custom_ids", {})) for batch in batches
     ) - len(submitted)
@@ -943,7 +948,6 @@ def phase_feedback(job):
             "progress": None,
         }
     if phase.startswith("poll"):
-        paused = job.get("status") in {"stopped", "interrupted"}
         batches = (job.get("process") or {}).get("batches", [])
         counts = [row.get("counts") or {} for row in batches]
         done = sum(row.get("succeeded") or 0 for row in counts)

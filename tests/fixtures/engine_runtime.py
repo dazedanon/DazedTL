@@ -144,20 +144,20 @@ try:
             )
             return page["list"]
 
-        options = dict(
-            CODE101=True,
-            CODE401=True,
-            IGNORETLTEXT=True,
-            PRESERVEORIGINAL=True,
-            FIRSTLINESPEAKERS=False,
-            INLINE401SPEAKERS=False,
-            FACENAME101=False,
-            AUTONAMEPOPUP101=False,
-            SPEAKER_PARSE_MODE=False,
-            FIXTEXTWRAP=False,
-            translateAI=translate,
-            getSpeaker=speaker,
-        )
+        options = {
+            "CODE101": True,
+            "CODE401": True,
+            "IGNORETLTEXT": True,
+            "PRESERVEORIGINAL": True,
+            "FIRSTLINESPEAKERS": False,
+            "INLINE401SPEAKERS": False,
+            "FACENAME101": False,
+            "AUTONAMEPOPUP101": False,
+            "SPEAKER_PARSE_MODE": False,
+            "FIXTEXTWRAP": False,
+            "translateAI": translate,
+            "getSpeaker": speaker,
+        }
         policy = {
             "choiceCollection": CHOICE_COLLECTION,
             "speakerContext": SPEAKER_CONTEXT,

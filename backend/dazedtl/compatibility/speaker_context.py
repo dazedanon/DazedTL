@@ -55,8 +55,10 @@ def corrected_parser(native):
     targets = [
         ast.parse(value).body[0]
         for value in (
-            'if "code" in codeList[i] and codeList[i]["code"] == 101 and '
-            "(CODE101 or AUTONAMEPOPUP101 or SPEAKER_PARSE_MODE): pass",
+            (
+                'if "code" in codeList[i] and codeList[i]["code"] == 101 and '
+                "(CODE101 or AUTONAMEPOPUP101 or SPEAKER_PARSE_MODE): pass"
+            ),
             "currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))",
             "if inlineFmtMatch: pass",
             "previewEnd = _text_group_end(codeList, i, (401, 405, -1))",
@@ -115,7 +117,7 @@ def corrected_parser(native):
     ast.fix_missing_locations(tree)
     ast.increment_lineno(tree, start - 1)
     namespace = {}
-    exec(
+    exec(  # noqa: S102 - compiles a checked rewrite of a bundled engine function
         compile(tree, native.__code__.co_filename, "exec"),
         native.__globals__,
         namespace,

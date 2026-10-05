@@ -165,7 +165,7 @@ def run_locked(workspace, identity, store):
         job, _plan = store.load(identity)
         job.update(status="stopped", message=str(exc))
         store.save(job)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         job, _plan = store.load(identity)
         # Provider exceptions can contain request bodies or auth details; retain only their class.
         message = engine.error_message(exc)

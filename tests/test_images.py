@@ -290,7 +290,7 @@ class ImageTests(unittest.TestCase):
     def test_changed_candidates_invalidate_review_and_batch_authorization_is_one_use(
         self,
     ):
-        candidate = self.reviewed_candidate()
+        self.reviewed_candidate()
         item = self.service.list(self.identity)["items"][0]
         self.assertEqual(item["state"], "ready")
         self.assertTrue(item["aiReviewed"])

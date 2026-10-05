@@ -215,7 +215,7 @@ class Translation:
                 )
         try:
             git = self.engine.git_status(project.root, selected["options"])
-        except Exception:
+        except Exception:  # noqa: BLE001
             git = None
             warnings.append(
                 "Git status is unavailable. Git must be installed and this game's baselines verified before translation."
@@ -303,7 +303,7 @@ class Translation:
     def prepare(self, project_id):
         self.idle(project_id)
         self.clean_drafts(project_id)
-        record, project = self.project(project_id)
+        _record, project = self.project(project_id)
         selected = project.read()
         if not selected["initialized"]:
             selected = project.save(selected["revision"], selected["options"])
@@ -394,7 +394,7 @@ Additional project instructions:
             raise ValueError(
                 "Resume and reconcile the saved phased run before creating a new request corpus. Its paid work and outputs were retained."
             )
-        record, project = self.project(project_id)
+        _record, project = self.project(project_id)
         selected = project.read()["options"]
         require_baseline(
             self.engine, project.root, selected, lifecycle(self.workspace, project_id)
@@ -497,7 +497,7 @@ Additional project instructions:
         return result
 
     def validate_current(self, project_id, plan):
-        record, project = self.project(project_id)
+        _record, project = self.project(project_id)
         if (
             str(project.root) != plan["source"]
             or scope(project.read()["options"]) != plan["scope_sha256"]

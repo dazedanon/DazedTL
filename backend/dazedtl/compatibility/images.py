@@ -370,7 +370,7 @@ class ImageCompatibility:
                 write_bytes(target, original_bytes[target])
                 published.append(target)
             record_asset_baselines(root, [self._asset(root, row) for row in rows])
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             errors = ["Restore failed; runtime rollback was attempted: " + str(exc)]
             for path in reversed(published):
                 try:

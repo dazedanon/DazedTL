@@ -606,7 +606,7 @@ def serve(args, diagnostics):
                     "version": PROTOCOL["version"],
                     "result": result,
                 }
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 name = request.get("method")
                 operation = (
                     name if isinstance(name, str) and name in methods else "native"
@@ -649,7 +649,7 @@ def main():
             return 1
         serve(args, diagnostics)
         return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         diagnostics.failure(exc)
         code = getattr(exc, "code", "internal")
         if code not in {

@@ -41,7 +41,7 @@ def configure(translation, enabled):
         ast.fix_missing_locations(tree)
         ast.increment_lineno(tree, start - 1)
         namespace = {}
-        exec(
+        exec(  # noqa: S102 - compiles a checked rewrite of a bundled engine function
             compile(tree, native.__code__.co_filename, "exec"),
             native.__globals__,
             namespace,
@@ -89,7 +89,7 @@ def configure_batch(translation, enabled):
         ast.fix_missing_locations(tree)
         ast.increment_lineno(tree, start - 1)
         namespace = {}
-        exec(
+        exec(  # noqa: S102 - compiles a checked rewrite of a bundled engine function
             compile(tree, native.__code__.co_filename, "exec"),
             native.__globals__,
             namespace,

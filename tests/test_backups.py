@@ -161,14 +161,16 @@ class BackupTests(unittest.TestCase):
                     "dazedtl.translation.backups.write_json",
                     side_effect=OSError("No disk space"),
                 )
-                with writer if failure == "write_failed" else nullcontext():
-                    with self.assertRaises((InterruptedError, ValueError, OSError)):
-                        backups.snapshot(
-                            self.work,
-                            self.store,
-                            stopped=lambda: stop[0],
-                            progress=progressed,
-                        )
+                with (
+                    writer if failure == "write_failed" else nullcontext(),
+                    self.assertRaises((InterruptedError, ValueError, OSError)),
+                ):
+                    backups.snapshot(
+                        self.work,
+                        self.store,
+                        stopped=lambda: stop[0],
+                        progress=progressed,
+                    )
                 self.assertEqual(self.objects(), previous)
                 self.assertEqual(list((self.store / "temporary").iterdir()), [])
                 self.assertEqual(len(list((self.store / "snapshots").iterdir())), 1)

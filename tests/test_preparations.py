@@ -98,7 +98,7 @@ class ManualJobs:
             self.assertTrue(directory.exists())
             self.assertNotIn("dazedtl_discard_preparation", job)
 
-            draft, draft_directory, _ = prepared("abandoned", "estimate")
+            _draft, draft_directory, _ = prepared("abandoned", "estimate")
             reloaded = manual_jobs(source, source / "profile", threading.RLock(), False)
             self.assertFalse(draft_directory.exists())
             self.assertIn("approved", reloaded.jobs)

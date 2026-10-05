@@ -179,7 +179,7 @@ def collect(root, resolve, *, commit=nullcontext):
                 raise ValueError(
                     "The provider is still working. Keep monitoring until every Batch finishes or cancels."
                 )
-            part, errors, usage = provider.collect_terminal(
+            part, _errors, usage = provider.collect_terminal(
                 batch["id"], batch["custom_ids"]
             )
         if set(part) - set(batch["custom_ids"].values()):

@@ -130,7 +130,7 @@ class BatchContinuationTests(unittest.TestCase):
     ):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            job, plan, requests, state = self.fixture(root)
+            job, plan, requests, _state = self.fixture(root)
             util, translation, providers, task, history = [
                 ModuleType(name)
                 for name in (

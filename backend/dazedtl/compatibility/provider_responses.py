@@ -21,7 +21,7 @@ def error_evidence(error, secret=""):
             response = getattr(current, "response", None)
             try:
                 body = response.text if response is not None else None
-            except Exception:
+            except Exception:  # noqa: BLE001
                 body = None  # An unread response must not trigger a network read.
         if body is not None or getattr(current, "status_code", None) is not None:
             break

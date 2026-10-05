@@ -201,19 +201,21 @@ def live_prices(model, host=""):
     )
     try:
         started, content = time.monotonic(), bytearray()
-        with httpx.Client(timeout=3, follow_redirects=False) as client:
-            with client.stream(
+        with (
+            httpx.Client(timeout=3, follow_redirects=False) as client,
+            client.stream(
                 "GET",
                 "https://openrouter.ai/api/v1" + path,
                 headers={"Accept": "application/json", "Accept-Encoding": "identity"},
-            ) as response:
-                response.raise_for_status()
-                for part in response.iter_bytes(65536):
-                    content.extend(part)
-                    if len(content) > 2_000_000 or time.monotonic() - started > 6:
-                        raise ValueError(
-                            "OpenRouter's price response exceeded its read limit."
-                        )
+            ) as response,
+        ):
+            response.raise_for_status()
+            for part in response.iter_bytes(65536):
+                content.extend(part)
+                if len(content) > 2_000_000 or time.monotonic() - started > 6:
+                    raise ValueError(
+                        "OpenRouter's price response exceeded its read limit."
+                    )
         payload = json.loads(content)
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, dict) or data.get("id") != model:

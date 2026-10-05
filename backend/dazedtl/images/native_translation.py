@@ -210,7 +210,7 @@ class ImageNativeTranslation:
         if mode not in {"estimate", "translate", "batch"}:
             raise ValueError("Choose an estimate, live translation or provider batch.")
         self._idle(project_id)
-        root, binding, _raw, value, fingerprint = self._inputs(project_id)
+        _root, binding, _raw, _value, fingerprint = self._inputs(project_id)
         state = self.state(project_id)
         if mode != "estimate" and (
             not self.backend.allow_providers or not state["quoteCurrent"]

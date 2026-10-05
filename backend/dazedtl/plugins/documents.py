@@ -124,6 +124,7 @@ class Documents:
                 input=json.dumps({"files": js}, ensure_ascii=False).encode(),
                 capture_output=True,
                 timeout=max(10, len(js) * 6),
+                check=False,
             )
             if response.returncode:
                 raise ValueError(

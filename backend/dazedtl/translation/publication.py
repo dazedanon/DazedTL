@@ -188,14 +188,14 @@ def publish(folder, root, plan, log=lambda _: None):
                     target.chmod(row["mode"])
                 if digest(target.read_bytes()) != row["before"]:
                     raise ValueError("rollback verification failed")
-            except BaseException as exc:
+            except BaseException as exc:  # noqa: BLE001
                 errors.append(row["path"] + ": " + str(exc))
         try:
             if receipt_hash(folder) == json_hash(record["next_outputs"]):
                 write_json(
                     Path(folder) / "applied-outputs.json", record["prior_outputs"]
                 )
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001
             errors.append("output receipt: " + str(exc))
         record.update(
             state="recovery_needed" if errors else "rolled_back", recovery_errors=errors

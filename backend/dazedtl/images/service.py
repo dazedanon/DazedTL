@@ -96,7 +96,7 @@ class ImageService:
         return project_path(root, WORK + "/state.json", exists=False).parent
 
     def _load(self, project_id):
-        project, root = self.record(project_id)
+        _project, root = self.record(project_id)
         path = project_path(root, WORK + "/state.json", exists=False)
         if path.exists():
             value = read_json(path, limit=16_000_000)
@@ -448,11 +448,11 @@ class ImageService:
         if (
             row.get("originalRuntimeHash")
             and row.get("sourceHash") != row["originalRuntimeHash"]
+            and row.get("sourceHash") != (row.get("applied") or {}).get("runtimeHash")
         ):
-            if row.get("sourceHash") != (row.get("applied") or {}).get("runtimeHash"):
-                issues.append(
-                    "The runtime source changed after this working copy was prepared. Resolve the source conflict first."
-                )
+            issues.append(
+                "The runtime source changed after this working copy was prepared. Resolve the source conflict first."
+            )
         binding = {
             "sourceHash": row.get("sourceHash"),
             "candidateHash": row.get("candidateHash"),
@@ -682,7 +682,7 @@ class ImageService:
                 raise ValueError(
                     "Finish the current image operation before scanning again."
                 )
-            for identity, event in self.cancellations.items():
+            for event in self.cancellations.values():
                 event.set()
             event = threading.Event()
             self.cancellations[project_id] = event
@@ -806,7 +806,7 @@ class ImageService:
                 value = self._load(project_id)
                 value["lastScan"] = deepcopy(self.jobs[project_id])
                 self._save(project_id, value)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             with self.lock:
                 if self.jobs.get(project_id, {}).get("id") == generation:
                     self.jobs[project_id].update(status="error", message=str(exc))

@@ -228,8 +228,10 @@ class TranslationEngine:
         context = request["context"]
         instructions = [
             context["request_instructions"],
-            "Return only a JSON object mapping each supplied source ID to its translated string. "
-            "Do not add, remove, merge, or rename IDs. Speaker labels and surrounding source are context only.",
+            (
+                "Return only a JSON object mapping each supplied source ID to its translated string. "
+                "Do not add, remove, merge, or rename IDs. Speaker labels and surrounding source are context only."
+            ),
         ]
         references = context.get("reference_translations", {})
         if references.get("matches"):
@@ -247,16 +249,16 @@ class TranslationEngine:
                 "Scene and runtime substitution context (not translatable source):\n"
                 + context["scene_context"]
             )
-        shared = dict(
-            system=context["system"],
-            user=context["user"],
-            history=context["preceding_japanese_source_context"],
-            formatType="json",
-            model=configuration["model"],
-            numLines=None,
-            vocab_text=context["glossary"] + "\n" + context["sfx_reference"],
-            request_instructions="\n\n".join(text for text in instructions if text),
-        )
+        shared = {
+            "system": context["system"],
+            "user": context["user"],
+            "history": context["preceding_japanese_source_context"],
+            "formatType": "json",
+            "model": configuration["model"],
+            "numLines": None,
+            "vocab_text": context["glossary"] + "\n" + context["sfx_reference"],
+            "request_instructions": "\n\n".join(text for text in instructions if text),
+        }
         if configuration["protocol"] == "anthropic":
             params = buildClaudeRequest(
                 **shared, cache_ttl="1h" if configuration["mode"] == "batch" else "5m"

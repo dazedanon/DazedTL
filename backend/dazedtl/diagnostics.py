@@ -17,7 +17,8 @@ class Diagnostics:
             ("app", Path(root)),
             ("engine", Path(legacy)),
         )
-        self.logger = logging.Logger("dazedtl.diagnostics", logging.INFO)
+        # An unregistered logger keeps each instance's handlers separate.
+        self.logger = logging.Logger("dazedtl.diagnostics", logging.INFO)  # noqa: LOG001
         self.logger.propagate = False
         try:
             directory = Path(directory)

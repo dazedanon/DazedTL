@@ -1364,7 +1364,7 @@ class Guided:
             )
 
     def phase_select(self, project_id, phase):
-        project, native = self.record(project_id)
+        _project, _native = self.record(project_id)
         if phase not in PHASES:
             raise ValueError("Choose a supported RPG Maker phase.")
         data = deepcopy(self.projects.data)
@@ -1747,7 +1747,6 @@ class Guided:
             elif action == "export_selected":
                 if value["project"].get("collection_error"):
                     raise ValueError(value["project"]["collection_error"])
-                folder = self.backend.workflows.folder(native["id"])
                 requested = native["selected"] if files is None else files
                 if (
                     not isinstance(requested, list)

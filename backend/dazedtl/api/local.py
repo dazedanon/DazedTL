@@ -64,7 +64,7 @@ class LocalAPI:
                         "version": version,
                         "value": dispatch(method, value.get("params", {})),
                     }
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001
                     result = {
                         "ok": False,
                         "version": version,

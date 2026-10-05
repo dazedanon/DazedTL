@@ -7,3 +7,8 @@ force-exclude = true
 # ValueError is the API's user-facing validation error; TypeError would surface
 # as an internal failure, so isinstance checks keep raising ValueError.
 ignore = ["TRY004"]
+
+[lint.per-file-ignores]
+# Tests define per-iteration fakes that run inside their own loop iteration, and
+# collect worker-thread exceptions broadly so assertions can report them.
+"tests/**" = ["B023", "BLE001"]
