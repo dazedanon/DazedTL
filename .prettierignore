@@ -1,0 +1,5 @@
+# The bundled engine keeps its original bytes.
+backend/dazedtl/engine/
+# Markdown follows the documentation rules; JSON is generated or data.
+*.md
+*.json

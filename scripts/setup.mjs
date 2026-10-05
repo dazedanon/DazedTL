@@ -77,6 +77,8 @@ run(interpreter, [
   "--require-hashes",
   "-r",
   path.join(root, "backend/requirements.lock"),
+  "-r",
+  path.join(root, "backend/requirements-dev.lock"),
 ]);
 console.log(
   "Locked dependencies installed. Run node scripts/build.mjs, then node scripts/start.mjs.",

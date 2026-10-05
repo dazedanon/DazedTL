@@ -1,0 +1,2 @@
+# Development tools installed by scripts/setup.mjs, separate from the runtime lock.
+ruff>=0.16
