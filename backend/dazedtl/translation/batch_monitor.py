@@ -144,7 +144,8 @@ class BatchMonitor:
             batches = [deepcopy(batch_control.receipt(root, batch['id'])) for batch in history]
             connections = {batch['id']: self.guided.settings.batch_connection(batch, plan) for batch in batches}
             self.busy.add(identity)
-            self.views[identity] = {**self.views.get(identity, {}), 'state': 'monitoring', 'message': ''}
+            # Rechecking a recovery record is not provider or local work.
+            # Keep its last outcome visible until there is new evidence.
         resolve = lambda batch: connections[batch['id']]
         if state != 'fetched':
             observed = []
@@ -152,22 +153,19 @@ class BatchMonitor:
                 with batch_control.connection(batch, resolve, receipt_root=root) as provider:
                     current = provider.status(batch['id'])
                 observed.append({'id': batch['id'], 'status': current['api_status'], 'counts': current.get('counts') or {}})
-            with self.backend.lock:
-                if self.stopping.is_set():
-                    return
-                self.views[identity] = {'state': 'monitoring', 'message': '', 'batches': observed,
+            pending = any(row['status'] not in batch_control.TERMINAL for row in observed)
+            with self._commit(identity, plan):
+                self.views[identity] = {'state': 'monitoring' if pending else 'collecting', 'message': '', 'batches': observed,
                                         'checkedAt': datetime.now(timezone.utc).isoformat()}
-            if any(row['status'] not in batch_control.TERMINAL for row in observed):
+            if pending:
                 return
-            with self.backend.lock:
-                self.views[identity]['state'] = 'collecting'
             batch_control.collect(root, resolve, commit=lambda: self._commit(identity, plan))
         if (plan.get('dazedtl_request_policy') or {}).get('refusalRetry'):
             from dazedtl.compatibility.batch_refusals import advance_guided
             outcome = advance_guided(root, plan, resolve, commit=lambda: self._commit(identity, plan),
                                      allow_submit=job.get('status') != 'canceled' and not job.get('dazedtl_batch_cancellations') and not job.get('dazedtl_batch_stopped'))
             if not outcome['ready']:
-                with self.backend.lock:
+                with self._commit(identity, plan):
                     self.views[identity] = {'state': 'blocked' if outcome.get('uncertain') else 'monitoring',
                         'phase': 'poll_capacity' if outcome.get('waiting_capacity') else 'poll_status',
                         'message': 'Reconcile the clarification Batch submission.' if outcome.get('uncertain') else

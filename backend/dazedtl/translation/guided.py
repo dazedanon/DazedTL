@@ -330,19 +330,27 @@ class Guided:
             job['partialOutputs'] = sorted(set(job.get('partialOutputs', [])) | (rejected_files & set(job.get('outputs', {}))))
         except (OSError, ValueError, KeyError):
             job["process"] = {"retryBlocked": job.get('mode') != 'estimate', "errors": ["Saved process evidence is unavailable. The run was retained for recovery."]}
-        monitoring = self.batch_monitor.views.get(identity)
+        # A worker may resume or finish while an earlier monitor read is in
+        # flight. Its activity and completion take precedence over that view.
+        monitoring = self.batch_monitor.views.get(identity) if job['workerStatus'] in {'stopped', 'interrupted', 'failed', 'canceled'} else None
         if monitoring:
-            job['process']['monitoring'] = {key: value for key, value in monitoring.items() if key != 'batches'}
             updates = {batch['id']: batch for batch in monitoring.get('batches', [])}
             refreshed = []
             from dazedtl.compatibility.batch_control import TERMINAL
             for batch in job['process'].get('batches', []):
-                update = updates.get(batch['id'], {})
+                update = updates.get(batch['id'], {}) if batch['status'] not in TERMINAL else {}
                 merged = {**batch, **update}
                 if batch['status'] in {'cancelling', 'canceling'} and update.get('status') not in TERMINAL:
                     merged['status'] = batch['status']
                 refreshed.append(merged)
             job['process']['batches'] = refreshed
+            # Terminal receipts can arrive after a provider poll. Do not turn
+            # their stale monitoring label into a new active run on refresh.
+            if (monitoring['state'] == 'monitoring' and monitoring.get('phase') != 'poll_capacity'
+                    and refreshed and all(batch['status'] in TERMINAL for batch in refreshed)):
+                monitoring = None
+            if monitoring:
+                job['process']['monitoring'] = {key: value for key, value in monitoring.items() if key != 'batches'}
         from dazedtl.compatibility.process_view import phase_feedback
         job.update(phase_feedback(job))
         if monitoring and monitoring['state'] in {'monitoring', 'collecting'}:

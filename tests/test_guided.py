@@ -1006,6 +1006,39 @@ class GuidedTests(unittest.TestCase):
         self.assertFalse(self.backend.manual.temporary_preparation)
         self.assertEqual(self.guided.runs.records(self.identity)['new-estimate']['fingerprint'], fresh['fingerprint'])
 
+    def test_batch_observations_cannot_revive_terminal_receipts_or_replace_worker_activity(self):
+        job = {'id': 'paid-batch', 'mode': 'batch', 'status': 'stopped', 'phase': 'poll_status', 'files': ['Items.json'], 'log': []}
+        self.backend.manual.jobs[job['id']] = job
+        self.guided.runs.remember(self.identity, job, self.guided.runs.inputs(self.identity, self.native, 'database', 'batch'))
+        root = self.backend.manual.folder(job['id'])
+        batch = {'id': 'provider-batch', 'provider': 'openai', 'custom_ids': {'one': 'key'},
+                 'api_status': 'in_progress', 'request_counts': {'succeeded': 0, 'processing': 1}}
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        self.guided.batch_monitor.views[job['id']] = {'state': 'monitoring', 'message': '', 'batches': [
+            {'id': batch['id'], 'status': 'in_progress', 'counts': {'succeeded': 0, 'processing': 1}}]}
+        with self.guided.observations.read():
+            self.assertEqual(self.guided.run_view(job['id'])['status'], 'running')
+        # A newer saved receipt must survive an older monitor observation,
+        # including its counts and the run's inactive state on every refresh.
+        batch.update(api_status='completed', request_counts={'succeeded': 1, 'processing': 0})
+        write_json(root/'log/batch_history.json', {'batches': [batch]})
+        for _ in range(2):
+            with self.guided.observations.read():
+                observed = self.guided.run_view(job['id'])
+            self.assertEqual(observed['status'], 'stopped')
+            self.assertNotIn('monitoring', observed['process'])
+            self.assertEqual(observed['process']['batches'][0]['status'], 'completed')
+            self.assertEqual(observed['process']['batches'][0]['counts'], batch['request_counts'])
+        # Real collection remains active, but a late monitor view cannot
+        # replace a resumed worker's consume phase or a completed run.
+        self.guided.batch_monitor.views[job['id']]['state'] = 'collecting'
+        self.assertEqual(self.guided.run_view(job['id'])['status'], 'running')
+        for status in ('running', 'waiting', 'complete'):
+            job.update(status=status, phase='consume')
+            observed = self.guided.run_view(job['id'])
+            self.assertEqual((observed['status'], observed['phase']), (status, 'consume'))
+            self.assertNotIn('monitoring', observed['process'])
+
     def test_batch_controls_bind_project_review_and_recover_only_through_fetched_state(self):
         from dazedtl.compatibility import batch_control
         job = {'id': 'paid-batch', 'mode': 'batch', 'status': 'running', 'files': ['Items.json'], 'log': []}

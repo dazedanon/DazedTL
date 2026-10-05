@@ -187,6 +187,7 @@ class BatchMonitorTests(unittest.TestCase):
     def test_unapproved_partial_queue_cannot_start_a_full_consume_even_after_restart(self):
         # Downloading one terminal chunk used to convert the whole queue to
         # fetched, then launch a worker that failed on every unsent file.
+        from dazedtl.translation.refusals import POLICY
         with TemporaryDirectory() as directory:
             root = Path(directory)
             monitor, job, _ = self.fixture(root)
@@ -201,10 +202,25 @@ class BatchMonitorTests(unittest.TestCase):
                 self.assertEqual(read_json(root/'log/batch_state.json')['status'], 'fetched')
                 self.assertEqual(read_json(root/'log/batch_results.json'), {'key': {'text': 'retained'}})
                 monitor.consumed.add('run')  # A worker launched by the older bug.
-                monitor.tick()
+                monitor.backend.saved_run_configuration = lambda _: {'mode': 'batch', 'workflow': {'id': 'native'},
+                    'dazedtl_request_policy': {'refusalRetry': POLICY}}
+                observed = []
+                def reconcile(*_args, **_kwargs):
+                    # Auto-refresh may observe the monitor between its local
+                    # checks; a fetched, blocked run must stay inactive then.
+                    observed.append(deepcopy(monitor.views.get('run')))
+                    return {'ready': True, 'batches': []}
+                with patch('dazedtl.compatibility.batch_refusals.advance_guided', side_effect=reconcile):
+                    monitor.tick()
+                    monitor.tick()
+                self.assertEqual([view['state'] for view in observed], ['blocked', 'blocked'])
                 self.assertEqual(monitor.views['run']['state'], 'blocked')
                 reads = provider.status.call_count
-                BatchMonitor(monitor.guided).tick()
+                monitor = BatchMonitor(monitor.guided)
+                with patch('dazedtl.compatibility.batch_refusals.advance_guided', side_effect=reconcile):
+                    monitor.tick()
+                self.assertIsNone(observed[-1])
+                self.assertEqual(monitor.views['run']['state'], 'blocked')
                 self.assertEqual(provider.status.call_count, reads)
                 with self.assertRaisesRegex(ValueError, '1 requests were not submitted'):
                     batch_control.require_complete_submission(root)
@@ -242,18 +258,18 @@ class BatchMonitorTests(unittest.TestCase):
             monitor.backend.manual.consume_batch.assert_not_called()
             provider.submit.assert_not_called(); provider.live.assert_not_called()
 
-    def test_stalled_read_releases_api_lock_and_late_results_cannot_cross_close_or_ownership(self):
-        for change in ('close', 'owner'):
+    def test_stalled_read_releases_api_lock_and_late_results_cannot_cross_close_owner_or_worker(self):
+        for change in ('close', 'owner', 'complete', 'resume'):
             with self.subTest(change=change), TemporaryDirectory() as directory:
                 root = Path(directory)
-                monitor, _, owner = self.fixture(root)
+                monitor, job, owner = self.fixture(root)
                 started, release = threading.Event(), threading.Event()
                 provider = Mock()
                 def status(_):
                     started.set()
                     if not release.wait(2):
                         raise RuntimeError('Fixture read was not released')
-                    return {'api_status': 'completed', 'counts': {'succeeded': 1}}
+                    return {'api_status': 'in_progress' if change == 'complete' else 'completed', 'counts': {'succeeded': 1}}
                 provider.status.side_effect = status
                 provider.collect_terminal.return_value = ({'key': {'text': 'saved'}}, [], {})
                 before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
@@ -266,7 +282,8 @@ class BatchMonitorTests(unittest.TestCase):
                         self.assertTrue(acquired, 'A stalled provider read held the navigation/API lock')
                         if acquired:
                             if change == 'close': monitor.close()
-                            else: owner['source'] = str(root/'another-game')
+                            elif change == 'owner': owner['source'] = str(root/'another-game')
+                            else: job['status'] = 'complete' if change == 'complete' else 'running'
                             monitor.backend.lock.release()
                     finally:
                         release.set()
@@ -274,6 +291,8 @@ class BatchMonitorTests(unittest.TestCase):
                     self.assertFalse(thread.is_alive())
                 self.assertEqual({path: path.read_bytes() for path in before}, before)
                 self.assertFalse((root/'log/batch_results.json').exists())
+                self.assertNotIn(monitor.views.get('run', {}).get('state'), {'monitoring', 'collecting'})
+                provider.collect_terminal.assert_not_called()
                 monitor.backend.manual.consume_batch.assert_not_called()
                 provider.submit.assert_not_called(); provider.live.assert_not_called()
 
