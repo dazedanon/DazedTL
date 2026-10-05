@@ -73,6 +73,8 @@ export interface Job {
   retiredFiles?: string[];
   logicalPhase?: Phase;
   preparationMode?: "batch" | "translate" | null;
+  /** A finished estimate found no source text in any of its files. */
+  nothingToTranslate?: boolean;
   temporary?: boolean;
   repeatSubmission?: boolean;
   nameTranslation?: NameTranslation | null;

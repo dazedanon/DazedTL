@@ -33,7 +33,7 @@ import {
   unsettledBatches,
   canResumeRun,
   completeForSelection,
-  estimateRequestCount,
+  estimateEmpty,
   phaseRun,
   selectionSettled,
   translationTaskComplete,
@@ -1843,7 +1843,7 @@ function Workspace({
       const applyFiles = selectedNames.filter((name) =>
         state.readiness.outputs.includes(name),
       );
-      const noRemainingWork = estimateRequestCount(quote) === 0;
+      const noRemainingWork = estimateEmpty(quote);
 
       const prerequisites =
         resyncPending ||

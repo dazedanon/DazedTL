@@ -504,6 +504,29 @@ def translatable_files(root):
 
     Without the list, or with text not bound to a file, no file is cleared.
     """
+    if not (Path(root) / "log/dazedtl-process.sqlite3").is_file():
+        return None
+    return _translatable_files(str(root), ledger_stamp(root))
+
+
+def nothing_to_translate(root, job):
+    """A finished estimate found no source text in any of its files."""
+    if (
+        job.get("mode") != "estimate"
+        or job.get("status") != "complete"
+        or job.get("errors")
+        or job.get("mismatches")
+    ):
+        return False
+    try:
+        found = translatable_files(root)
+    except (OSError, ValueError, sqlite3.Error):
+        return False
+    return found is not None and not found
+
+
+@lru_cache(maxsize=256)
+def _translatable_files(root, signature):
     connection = ledger(root)
     if connection is None:
         return None

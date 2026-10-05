@@ -629,6 +629,10 @@ class Guided:
             ) == len(job["outputs"])
             workflow = plan.get("workflow") or {}
             job["logicalPhase"] = workflow.get("phase")
+            if job.get("mode") == "estimate":
+                from dazedtl.compatibility.process_view import nothing_to_translate
+
+                job["nothingToTranslate"] = nothing_to_translate(root, job)
             project = next(
                 (
                     item
@@ -774,12 +778,16 @@ class Guided:
         return {"discarded": True}
 
     def settle_empty_estimate(self, project_id, run_id):
-        """Keep a current estimate without requests as file status, then discard it.
+        """Keep a current estimate without work as file status, then discard it.
 
-        Files whose text was only reused from earlier responses still need a
-        run to write it, so they keep the status of their existing work.
+        Batch estimates count requests; Live estimates instead show no work by
+        finding no source text. Files whose text was only reused from earlier
+        responses still need a run to write it, so they keep their status.
         """
-        from dazedtl.compatibility.process_view import translatable_files
+        from dazedtl.compatibility.process_view import (
+            nothing_to_translate,
+            translatable_files,
+        )
 
         _, native = self.record(project_id)
         if self.resyncing(native):
@@ -801,18 +809,18 @@ class Guided:
             record["phase"],
             self.preferences(native)["values"]["mode"],
         )
-        estimate = job.get("estimate") or {}
-        requests = estimate.get("requests", estimate.get("request_count"))
-        if (
-            (quote["job"] or {}).get("id") != run_id
-            or not quote["current"]
-            or type(requests) is not int
-            or requests
-        ):
+        if (quote["job"] or {}).get("id") != run_id or not quote["current"]:
             raise ValueError(
                 "The selection or guidance changed. Prepare a fresh estimate."
             )
-        found = translatable_files(self.backend.manual.folder(run_id))
+        root = self.backend.manual.folder(run_id)
+        estimate = job.get("estimate") or {}
+        requests = estimate.get("requests", estimate.get("request_count"))
+        if not (
+            (type(requests) is int and not requests) or nothing_to_translate(root, job)
+        ):
+            raise ValueError("This estimate has text to translate. Review its cost.")
+        found = translatable_files(root)
         settled = (
             []
             if found is None

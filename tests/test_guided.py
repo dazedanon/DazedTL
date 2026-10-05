@@ -485,33 +485,46 @@ class GuidedTests(unittest.TestCase):
     def test_empty_estimate_settles_only_files_without_text_until_resync(self):
         # Protect resynced, already translated files from staying Not started
         # after an empty estimate, without completing files whose text was
-        # only reused and still needs a run to write it.
+        # only reused and still needs a run to write it. Live estimates count
+        # no requests, so only finding no source text makes them empty.
         from dazedtl.compatibility.run_evidence import Evidence
 
         names = ["Items.json", "States.json"]
+        checked = "2026-10-05T12:00:00+00:00"
         write_json(self.source / "States.json", [{"name": "毒"}])
         self.backend.phase_files = lambda _native, _phase: names
         self.native["selected"] = list(names)
         inputs = self.guided.inputs(self.native)
         inputs.prepare(names)
-        self.backend.manual.discard_preparation = Mock()
-        paid = self.seed_estimate()
-        with self.assertRaisesRegex(ValueError, "fresh estimate"):
-            self.guided.settle_empty_estimate(self.identity, paid)
-        identity = self.seed_estimate()
-        job = self.backend.manual.jobs[identity]
-        job.update(estimate={"requests": 0}, created="2026-10-05T12:00:00+00:00")
-        Evidence(self.backend.manual.folder(identity), "estimate").found_text(
-            "States.json"
+        folder = self.backend.manual.folder
+        self.backend.manual.discard_preparation = lambda identity: shutil.rmtree(
+            folder(identity)
         )
+
+        def estimate(value, found=()):
+            identity = self.seed_estimate()
+            self.backend.manual.jobs[identity].update(estimate=value, created=checked)
+            evidence = Evidence(folder(identity), "estimate")
+            for name in found:
+                evidence.found_text(name)
+            return identity
+
+        live = estimate({"live_cost": 0.01}, ["States.json"])
+        self.assertFalse(self.guided.run_view(live)["nothingToTranslate"])
+        with self.assertRaisesRegex(ValueError, "text to translate"):
+            self.guided.settle_empty_estimate(self.identity, live)
+        batch = estimate({"requests": 0}, ["States.json"])
         self.assertEqual(
-            self.guided.settle_empty_estimate(self.identity, identity),
+            self.guided.settle_empty_estimate(self.identity, batch),
             {"files": ["Items.json"]},
         )
-        self.backend.manual.discard_preparation.assert_called_once_with(identity)
-        self.assertNotIn(identity, self.guided.runs.records(self.identity))
+        self.assertFalse(folder(batch).exists())
+        self.assertNotIn(batch, self.guided.runs.records(self.identity))
+        self.assertEqual(inputs.no_requests(), {"database": {"Items.json": checked}})
+        live = estimate({"live_cost": 0})
+        self.assertTrue(self.guided.run_view(live)["nothingToTranslate"])
         self.assertEqual(
-            inputs.no_requests(), {"database": {"Items.json": job["created"]}}
+            self.guided.settle_empty_estimate(self.identity, live), {"files": names}
         )
         inputs.prepare(
             ["Items.json"],
@@ -520,7 +533,7 @@ class GuidedTests(unittest.TestCase):
                 ["Items.json"], inputs.record()["inputs"], fresh=True
             ),
         )
-        self.assertEqual(inputs.no_requests(), {"database": {}})
+        self.assertEqual(inputs.no_requests(), {"database": {"States.json": checked}})
 
     def test_independent_selection_and_refresh_do_not_reuse_a_retired_quote(self):
         write_json(self.source / "Map001.json", {"events": []})

@@ -81,6 +81,7 @@ def job(value):
             "appliedOutputs",
             "process",
             "preparationMode",
+            "nothingToTranslate",
             "temporary",
             "nameTranslation",
             "repeatSubmission",

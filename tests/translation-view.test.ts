@@ -1058,6 +1058,16 @@ test("translation followup uses the matching estimate count and exits for termin
     ).kind,
     "review",
   );
+  // Live estimates report no request count; finding no source text is empty.
+  assert.equal(
+    estimateFollowup(
+      job.id,
+      { ...quote, job: { ...job, estimate: {}, nothingToTranslate: true } },
+      [job],
+      false,
+    ).kind,
+    "empty",
+  );
   assert.equal(
     estimateFollowup(
       job.id,

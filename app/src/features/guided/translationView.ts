@@ -104,6 +104,9 @@ export function estimateRequestCount(job?: Job | null) {
     ? count
     : undefined;
 }
+/** Live estimates report no request count; finding no source text also means no work. */
+export const estimateEmpty = (job?: Job | null) =>
+  estimateRequestCount(job) === 0 || !!job?.nothingToTranslate;
 
 export function estimateFollowup(
   id: string,
@@ -118,10 +121,7 @@ export function estimateFollowup(
   if (quote?.job?.id !== id || !quote.current || inputsChanged)
     return { kind: "stale" as const, job };
   return {
-    kind:
-      estimateRequestCount(job) === 0
-        ? ("empty" as const)
-        : ("review" as const),
+    kind: estimateEmpty(job) ? ("empty" as const) : ("review" as const),
     job,
   };
 }
