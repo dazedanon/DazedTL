@@ -240,6 +240,31 @@ export default function ConnectionEditor({
                     />
                   )}
                 </FieldRow>
+                <FieldRow
+                  id="connection-protocol"
+                  label="Protocol"
+                  help="Use the protocol supported by your server."
+                >
+                  {(control) => (
+                    <select
+                      {...control}
+                      value={value.protocol}
+                      onChange={(event) =>
+                        setValue({
+                          ...value,
+                          protocol: event.target
+                            .value as ConnectionInput["protocol"],
+                          secret: "",
+                          reuse_secret: false,
+                        })
+                      }
+                    >
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="gemini">Gemini-compatible</option>
+                      <option value="mistral">Mistral-compatible</option>
+                    </select>
+                  )}
+                </FieldRow>
                 <label className="connection-keyless">
                   <input
                     type="checkbox"
@@ -276,33 +301,6 @@ export default function ConnectionEditor({
                   />
                 )}
               </FieldRow>
-              {custom && (
-                <FieldRow
-                  id="connection-protocol"
-                  label="Protocol"
-                  help="Use the protocol supported by your server."
-                >
-                  {(control) => (
-                    <select
-                      {...control}
-                      value={value.protocol}
-                      onChange={(event) =>
-                        setValue({
-                          ...value,
-                          protocol: event.target
-                            .value as ConnectionInput["protocol"],
-                          secret: "",
-                          reuse_secret: false,
-                        })
-                      }
-                    >
-                      <option value="openai">OpenAI-compatible</option>
-                      <option value="gemini">Gemini-compatible</option>
-                      <option value="mistral">Mistral-compatible</option>
-                    </select>
-                  )}
-                </FieldRow>
-              )}
               {value.protocol === "openai" &&
                 value.provider !== "openrouter" && (
                   <FieldRow

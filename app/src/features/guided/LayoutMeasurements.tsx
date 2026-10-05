@@ -12,16 +12,13 @@ export function LayoutMeasurements({
       <summary>Measurement details</summary>
       <p>{reason}</p>
       {!!evidence.length && (
-        <details className="context-report-details">
-          <summary>Sources ({evidence.length})</summary>
-          <ul>
-            {evidence.map((ref, index) => (
-              <li key={index}>
-                <span className="path">{ref.file}</span> — {ref.location}
-              </li>
-            ))}
-          </ul>
-        </details>
+        <ul className="context-measurement-sources">
+          {evidence.map((ref, index) => (
+            <li key={index}>
+              <span className="path">{ref.file}</span> · {ref.location}
+            </li>
+          ))}
+        </ul>
       )}
     </details>
   );

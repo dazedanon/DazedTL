@@ -117,11 +117,6 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-.translation-backup-storage {
-  display: block;
-  margin-top: 5px;
-  color: var(--muted);
-}
 .translation-run {
   padding: 20px 0;
   border-bottom: 1px solid var(--line);
@@ -226,9 +221,17 @@
 }
 .version-panel > .ui-section,
 .backup-panel > .ui-section {
+  /* Span the panel so the divider lines up with the action rows above. */
+  max-width: none;
   border-top: 1px solid var(--line);
   padding-top: var(--space-4);
   margin-top: var(--space-5);
+}
+.backup-panel .action-row-label > .backup-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
 }
 .version-panel .ui-section > p:first-of-type,
 .backup-panel .ui-section > p:first-of-type {
@@ -294,7 +297,7 @@
 .version-file-list {
   display: flex;
   flex-direction: column;
-  height: min(20em, 45dvh);
+  max-height: min(20em, 45dvh);
   margin-block: var(--space-3);
   border-block: 1px solid var(--line);
 }

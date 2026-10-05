@@ -236,7 +236,7 @@
   white-space: pre-wrap;
 }
 .context-finding-details li,
-.context-report-details li {
+.context-measurement-sources li {
   margin-block: var(--space-2);
   overflow-wrap: anywhere;
 }
@@ -251,19 +251,10 @@
   white-space: pre-wrap;
   line-height: 1.6;
 }
-.context-measurements > .context-report-details {
+.context-measurement-sources {
   margin: 0;
-  padding-block: var(--space-3);
+  padding-block: var(--space-2) var(--space-3);
   border-top: 1px solid var(--line);
-  font-size: var(--font-control);
-}
-.context-report-details > summary {
-  margin: 0;
-}
-.context-report-details p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.6;
 }
 .context-guidance-body {
   display: flex;
@@ -285,7 +276,7 @@
   flex: 0 1 auto;
 }
 .context-finding-details .path,
-.context-report-details .path {
+.context-measurement-sources .path {
   padding: 0;
   background: transparent;
 }

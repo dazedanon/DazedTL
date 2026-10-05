@@ -24,6 +24,8 @@ const bytes = (value: number) =>
       : value < 1024 ** 3
         ? (value / 1024 ** 2).toFixed(1) + " MiB"
         : (value / 1024 ** 3).toFixed(2) + " GiB";
+const fileCount = (value: number) =>
+  `${value.toLocaleString()} ${value === 1 ? "file" : "files"}`;
 
 export function BackupSummary({
   record,
@@ -34,7 +36,7 @@ export function BackupSummary({
 }) {
   if (!record) return <>{fallback}</>;
   if (record.available === false) return <>Unavailable · {record.issue}</>;
-  return <>Saved · {record.files.toLocaleString()} files</>;
+  return <>Saved · {fileCount(record.files)}</>;
 }
 
 type Snapshot = BackupCatalog["snapshots"][number];
@@ -112,12 +114,37 @@ export function BackupsPanel({
       onClick={() => operation(name)}
     />
   );
+  const openFolder = (key: "source_backup" | "workspace_backup") => {
+    const record = state.lifecycle[key];
+    return (
+      record && (
+        <ActionControl
+          inline
+          variant="link"
+          label="Open folder"
+          title={record.path}
+          disabled={disabled || record.available === false}
+          pending={action.busy && action.key === key}
+          pendingText="Opening…"
+          error={action.key === key ? action.error : ""}
+          notice={action.key === key ? action.notice : ""}
+          onClick={() =>
+            action.run(
+              () => window.dazedtl.openFolder("backup", record.path),
+              "Backup folder opened.",
+              key,
+            )
+          }
+        />
+      )
+    );
+  };
   if (!recovering)
     return (
       <div className="backup-panel">
         <p>
-          Save copies here before making changes, or recover files from an
-          earlier backup.
+          Save copies before making changes. Backups stay with the game in
+          .dazedtl/backups, and unchanged files share storage.
         </p>
         <ActionList>
           <ActionRow
@@ -127,11 +154,12 @@ export function BackupsPanel({
                 <small>
                   The game as it is now. Earlier backups remain available.
                 </small>
-                <small>
+                <small className="backup-saved">
                   <BackupSummary
                     record={state.lifecycle.source_backup}
                     fallback="No game backup saved yet"
                   />
+                  {openFolder("source_backup")}
                 </small>
               </>
             }
@@ -146,11 +174,12 @@ export function BackupsPanel({
                   Glossary, notes and working files in .dazedtl, saved
                   separately from the game files.
                 </small>
-                <small>
+                <small className="backup-saved">
                   <BackupSummary
                     record={state.lifecycle.workspace_backup}
                     fallback="No project backup saved yet"
                   />
+                  {openFolder("workspace_backup")}
                 </small>
               </>
             }
@@ -161,7 +190,9 @@ export function BackupsPanel({
         <Section title="Need an earlier copy?">
           <p>
             Choose a saved backup and recover it into a new folder. Your current
-            game stays in place.
+            game stays in place. Preparation and patch checkpoints also save
+            backups, and earlier full-copy backups from the app workspace are
+            included.
           </p>
           <ActionSlot target={actionTarget}>
             <Button
@@ -175,58 +206,6 @@ export function BackupsPanel({
             </Button>
           </ActionSlot>
         </Section>
-        <details>
-          <summary>How backups are stored</summary>
-          <p>
-            Preparation and patch checkpoints also save backups, so several
-            saved copies are normal. Unchanged files share storage; repeating an
-            unchanged backup reuses its saved copy.
-          </p>
-          <p>
-            Backups stay with the game in .dazedtl/backups. Earlier full-copy
-            backups in the app workspace are also available for recovery.
-          </p>
-          {state.lifecycle.source_backup && (
-            <p className="translation-path">
-              Game backup: {state.lifecycle.source_backup.path}
-            </p>
-          )}
-          {state.lifecycle.workspace_backup && (
-            <p className="translation-path">
-              Project backup: {state.lifecycle.workspace_backup.path}
-            </p>
-          )}
-          <div className="actions">
-            {(
-              [
-                ["source_backup", "Open game backup folder"],
-                ["workspace_backup", "Open project backup folder"],
-              ] as const
-            ).map(([key, label]) => {
-              const record = state.lifecycle[key];
-              return (
-                record && (
-                  <ActionControl
-                    key={key}
-                    label={label}
-                    disabled={disabled || record.available === false}
-                    pending={action.busy && action.key === key}
-                    pendingText="Opening…"
-                    error={action.key === key ? action.error : ""}
-                    notice={action.key === key ? action.notice : ""}
-                    onClick={() =>
-                      action.run(
-                        () => window.dazedtl.openFolder("backup", record.path),
-                        "Backup folder opened.",
-                        key,
-                      )
-                    }
-                  />
-                )
-              );
-            })}
-          </div>
-        </details>
       </div>
     );
   return (
@@ -311,7 +290,7 @@ export function BackupsPanel({
                     <option key={item.id} value={item.id}>
                       {backupName(item, state)} ·{" "}
                       {new Date(item.created).toLocaleString()} ·{" "}
-                      {item.files.toLocaleString()} files
+                      {fileCount(item.files)}
                     </option>
                   ))}
                 </select>
@@ -319,7 +298,7 @@ export function BackupsPanel({
             </FieldRow>
             {selected && (
               <p className="muted">
-                {selected.files.toLocaleString()} files
+                {fileCount(selected.files)}
                 {selected.bytes_total !== null
                   ? " · " + bytes(selected.bytes_total)
                   : ""}

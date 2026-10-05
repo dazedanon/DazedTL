@@ -260,6 +260,9 @@ export function VersionsPanel({
           </p>
           <VersionChanges value={preview.result!} />
           <ActionSlot target={actionTarget}>
+            <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
+              Choose a different release
+            </Button>
             {control(
               "version_apply",
               `Apply update to ${resultVersion}`,
@@ -267,9 +270,6 @@ export function VersionsPanel({
               false,
               true,
             )}
-            <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
-              Choose a different release
-            </Button>
           </ActionSlot>
         </Section>
       ) : stage || (preview && session.stale) ? (
@@ -279,11 +279,16 @@ export function VersionsPanel({
             before updating the working game.
           </p>
           {stage?.result?.preparation_required === true && (
-            <p className="banner">
-              This engine needs assistant preparation. Prepare the copied game
-              through the same engine-specific process used for the current
-              original, then preview the changes.
-            </p>
+            <>
+              <p className="banner">
+                This engine needs assistant preparation. Prepare the copied game
+                through the same engine-specific process used for the current
+                original, then preview the changes.
+              </p>
+              <p className="translation-path muted">
+                Copied release: {String(stage.result.official)}
+              </p>
+            </>
           )}
           {session.stale && (
             <p className="banner">
@@ -291,13 +296,10 @@ export function VersionsPanel({
               again before applying the update.
             </p>
           )}
-          <details>
-            <summary>Release used for comparison</summary>
-            <p className="translation-path">
-              {String(stage?.result?.official || preview?.result?.source_root)}
-            </p>
-          </details>
           <ActionSlot target={actionTarget}>
+            <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
+              Choose a different release
+            </Button>
             {control(
               "version_preview",
               "Preview changes",
@@ -309,9 +311,6 @@ export function VersionsPanel({
               !state.git?.worktree_clean,
               true,
             )}
-            <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
-              Choose a different release
-            </Button>
           </ActionSlot>
         </Section>
       ) : choosing ||
@@ -411,21 +410,6 @@ export function VersionsPanel({
             </ActionRow>
           </ActionList>
         )}
-      <details>
-        <summary>Version tracking details</summary>
-        <dl className="translation-facts">
-          <div>
-            <dt>Translation branch</dt>
-            <dd>{state.git?.translation_branch || "Not established"}</dd>
-          </div>
-          <div>
-            <dt>Saved translation commit</dt>
-            <dd>
-              {state.git?.translation_commit?.slice(0, 12) || "Not saved yet"}
-            </dd>
-          </div>
-        </dl>
-      </details>
       {!guided && (
         <details
           open={advanced}
