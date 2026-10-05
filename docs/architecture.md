@@ -172,6 +172,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
 Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps. The desktop window fits its display's work area in logical pixels. Reading-focused Guided tasks use the shared content-width limit so their tabs, content and footer remain aligned on wide displays.
+Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited. It retains typed values and keyboard selection without relying on the native datalist popup.
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview,
 so generic completion messages are handled consistently while useful detail remains visible.

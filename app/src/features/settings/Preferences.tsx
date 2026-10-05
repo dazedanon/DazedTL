@@ -12,6 +12,7 @@ import { FieldRow } from "../../ui/FieldRow";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback } from "../../ui/Feedback";
 import { Button } from "../../ui/Button";
+import { ComboBox } from "../../ui/ComboBox";
 
 export default function Preferences({
   config,
@@ -60,21 +61,15 @@ export default function Preferences({
               }
             >
               {(control) => (
-                <>
-                  <input
-                    {...control}
-                    required={!connection}
-                    list="connection-models"
-                    value={String(config.values.model)}
-                    placeholder="Choose or enter a model ID"
-                    onChange={(event) => edit("model", event.target.value)}
-                  />
-                  <datalist id="connection-models">
-                    {connection?.models.map((model) => (
-                      <option key={model} value={model} />
-                    ))}
-                  </datalist>
-                </>
+                <ComboBox
+                  {...control}
+                  required={!connection}
+                  disabled={busy}
+                  options={connection?.models ?? []}
+                  value={String(config.values.model)}
+                  placeholder="Choose or enter a model ID"
+                  onChange={(value) => edit("model", value)}
+                />
               )}
             </FieldRow>
             {connection && !connection.models.length && (
