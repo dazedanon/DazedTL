@@ -17,7 +17,7 @@ import { NameTranslationFeedback } from "./NameTranslationFeedback";
 const formatted = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value, null, 2);
 function responseText(response: unknown) {
   const body = response && typeof response === "object" && "text" in response
-    ? response.text ?? ("refusal" in response ? response.refusal : null) ?? response : response;
+    ? response.text || ("refusal" in response && typeof response.refusal === "string" ? response.refusal : null) || response : response;
   if (typeof body !== "string") return formatted(body);
   try { return formatted(JSON.parse(body)); } catch { return body; }
 }
@@ -117,6 +117,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
   const counts = [process.received != null && process.prepared ? ["Received", `${process.received.toLocaleString()}/${process.prepared.toLocaleString()}`]
     : ["Requests", process.prepared], ["Failed", process.failed], ["Rejected", process.rejected], ["Unused", process.unused], ["Unsent", process.remaining]] as const;
   const translated = visiblePayload && translatedLines(visiblePayload);
+  const comparison = translated && <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>;
   const requestError = visiblePayload?.error as { message?: string } | string | undefined;
   const runView = view.tab === "run" || view.tab === "log";
   return <div className="translation-process" data-view={view.tab}>
@@ -179,9 +180,12 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
               {requestError == null && visiblePayload?.response == null && !!errors.length && <p className="translation-error">{errors.join(" · ")}</p>}
               {visiblePayload?.responseOrigin === "validated" && <p className="muted">Previously saved translation. The original provider response was not retained.</p>}
               {visiblePayload?.responseOrigin === "log" && <p className="muted">Final attempt recovered from the saved validation log. Earlier retry bodies were not retained.</p>}
-              <h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
-                : translated ? <table className="translation-comparison"><thead><tr><th>Original</th><th>Translation</th></tr></thead><tbody>{Object.entries(visiblePayload.source!).map(([key, text]) => <tr key={key}><td><small>{key}</small>{text}</td><td>{translated[key]}</td></tr>)}</tbody></table>
-                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted">{["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for the provider response." : visiblePayload.state === "failed" ? "The provider rejected this request; no translation was returned." : "The original response was not retained for this older request."}</p>}
+              {visiblePayload?.responseAttempts?.length ? visiblePayload.responseAttempts.map((attempt, index) => <div key={index}>
+                <h3>{attempt.kind === "original" ? "Original response" : "Clarification response"}</h3>
+                {attempt.kind === "clarification" && index === visiblePayload.responseAttempts!.length - 1 && comparison ? comparison : <pre>{responseText(attempt.response)}</pre>}
+              </div>) : <><h3>Response</h3>{!visiblePayload ? <p className="muted">{busy ? "Reading saved request…" : "No request response is available. Run details retains the saved receipts and log."}</p>
+                : comparison ? comparison
+                : visiblePayload.response != null ? <pre>{responseText(visiblePayload.response)}</pre> : <p className="muted">{["prepared", "queued"].includes(visiblePayload.state) ? "This request has not been sent." : visiblePayload.state === "submitted" ? "Waiting for the provider response." : visiblePayload.state === "failed" ? "The provider rejected this request; no translation was returned." : "The original response was not retained for this older request."}</p>}</>}
             </> : !visiblePayload ? <p className="muted" role="status">{busy ? "Reading saved request…" : error ? "Use Refresh request to try again." : "No request payload is available. Run details retains the saved receipts and log."}</p>
               : view.tab === "source" ? <RequestSource payload={visiblePayload} />
               : <><RequestTechnical key={visiblePayload.index} payload={visiblePayload} job={job} />
@@ -190,7 +194,7 @@ function RequestProcess({ job, readPayload, readProvider, readNames, initialRequ
                     {readProvider && <ActionControl label="Check provider" pending={provider.busy} error={provider.error} notice={provider.notice} onClick={() => provider.run(async () => setRemote((await readProvider()).batches), "Provider details loaded.")} />}</>}
                   {job.estimate && <><h3>Saved estimate</h3><ExpandableText text={formatted(job.estimate)} label="Saved estimate" /></>}
                   {job.eventTextReview && <><h3>Event text review</h3><ExpandableText text={formatted(job.eventTextReview)} label="Event text review" /></>}
-                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Saved translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.response)} label="Saved response" /></>}
+                  {visiblePayload.response != null && <><h3>{visiblePayload.responseOrigin === "validated" ? "Saved translation" : "Saved response"}</h3><ExpandableText text={formatted(visiblePayload.responseAttempts?.length ? visiblePayload.responseAttempts : visiblePayload.response)} label="Saved response" /></>}
                 </>}
 
           </TabPanel>

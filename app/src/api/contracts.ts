@@ -101,6 +101,7 @@ export interface BatchCancellation {
 }
 export interface RunPayload {
   responseOrigin?: "validated" | "log" | null;
+  responseAttempts?: { kind: "original" | "clarification"; response: unknown }[];
   translations?: unknown;
   unused?: { appliedRequests: number[] } | null;
   index: number; total: number; state: string; source: Record<string, string> | null;

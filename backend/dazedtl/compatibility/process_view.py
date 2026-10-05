@@ -508,13 +508,25 @@ def payload(root, index):
         params = _openai_batch_body(entry.get('provider', 'openai'), entry['params']) if entry.get('provider') != 'anthropic' else entry['params']
         exact = {'custom_id': custom_id, 'method': 'POST', 'url': '/v1/chat/completions', 'body': params} if entry.get('provider') != 'anthropic' else {'custom_id': custom_id, 'params': params}
         from .batch_refusals import records as clarification_records
-        attempts = [item for record in clarification_records(evidence_root(root), details=True) for batch in record['batches']
-                    for item in batch['items'] if item['key'] == key]
+        attempts, responses = [], []
+        for record in clarification_records(evidence_root(root), details=True):
+            matching = [(batch, item) for batch in record['batches'] for item in batch['items'] if item['key'] == key]
+            if not matching:
+                continue
+            # Native consume deliberately blanks refusals. Inspect the retained
+            # provider receipts, including older runs, without changing acceptance.
+            if key in record['original_responses']:
+                responses.append({'kind': 'original', 'response': record['original_responses'][key]})
+            for batch, item in matching:
+                attempts.append(item)
+                if key in batch.get('responses', {}):
+                    responses.append({'kind': 'clarification', 'response': batch['responses'][key]})
         if attempts:
             exact = {'original': exact, 'clarifications': attempts}
         error = next((error for batch in saved(evidence_root(root), 'batch_history.json').get('batches', []) for error in (batch.get('provider_errors') or [])
                       if error.get('custom_id') == custom_id), None)
         return {'index': index, 'total': len(keys), 'state': row['state'], 'response': row['response'], 'error': row.get('error') or error, 'unused': row.get('unused'),
+                'responseAttempts': responses,
                 'source': json.loads(entry['payload']), 'context': entry.get('request_context'),
                 'parameters': {key: value for key, value in params.items() if key not in {'messages', 'system'}},
                 'messages': params.get('messages'), 'system': params.get('system'), 'exact': exact,

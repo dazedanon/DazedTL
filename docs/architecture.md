@@ -59,6 +59,10 @@ records intent before submission and saves returned job IDs before polling, incl
 The guided adapter waits before native consume, while the background monitor can finish the same
 authorized retry after interruption. Uncertain submissions are never retried automatically, and repeated refusals remain
 untranslated. Original payloads and responses remain available beside the clarification evidence.
+The request inspector reads original and clarification responses from their retained receipts,
+separately from the refusal-filtered native consume result, so both replies remain visible even
+when the retry is rejected. Each clarification request retains the original source and instructions
+with one appended clarification; Technical shows both complete request attempts.
 New MV/MZ state runs also freeze compatible state-call grouping before submission.
 The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
 Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.

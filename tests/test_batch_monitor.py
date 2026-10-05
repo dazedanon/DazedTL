@@ -44,43 +44,57 @@ class BatchMonitorTests(unittest.TestCase):
     def test_refused_batch_reopens_its_retry_before_consume_without_resubmission(self):
         # Automatic collection must wait for an already authorized clarification
         # Batch and retain its receipt across app restart, without a Live fallback.
+        # A second refusal must stay visible in the inspector even though native
+        # consume receives an empty body to prevent accepting it as dialogue.
         from dazedtl.translation.refusals import POLICY, CLARIFICATION
-        from dazedtl.compatibility.process_view import batch_results, summary
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            monitor, job, _ = self.fixture(root)
-            plan = {'mode': 'batch', 'workflow': {'id': 'native'}, 'dazedtl_request_policy': {'refusalRetry': POLICY}}
-            monitor.backend.saved_run_configuration = lambda _: plan
-            write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}',
-                'params': {'model': 'fixture', 'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}}})
-            original = {'key': {'text': 'I cannot translate explicit sexual content.', 'prompt_tokens': 3, 'completion_tokens': 1}}
-            provider = Mock()
-            provider.status.return_value = {'api_status': 'completed', 'counts': {'succeeded': 1}, 'ended': True, 'terminal_failure': False}
-            provider.collect_terminal.return_value = (original, [], {'input_tokens': 3, 'output_tokens': 1})
-            provider.collect.return_value = ({'key': {'text': '{"Line1":"Potion"}', 'prompt_tokens': 5, 'completion_tokens': 2}}, [], {'input_tokens': 5, 'output_tokens': 2})
-            provider.submit.return_value = {'id': 'retry'}
-            provider.input_tokens.return_value = 10
-            module = ModuleType('util.batch_providers')
-            module.batch_limits = lambda _: (50, 100_000)
-            with patch.object(batch_control, 'TranslationProvider', return_value=provider), patch.dict(sys.modules, {'util.batch_providers': module}):
-                monitor.tick()
-                monitor.backend.manual.consume_batch.assert_not_called()
-                provider.submit.assert_called_once()
-                sent = provider.submit.call_args.args[0]
-                self.assertEqual(sent[0]['params']['messages'][-1]['content'], CLARIFICATION)
-                self.assertEqual(batch_results(root), original)
-                self.assertEqual(summary(root, job)['requests'][0]['state'], 'submitted')
-                reopened = BatchMonitor(monitor.guided)
-                reopened.tick()
-                monitor.backend.manual.consume_batch.assert_called_once_with('run')
-                self.assertEqual(batch_results(root)['key']['text'], '{"Line1":"Potion"}')
-                self.assertEqual(summary(root, job)['usage'], {'input_tokens': 8, 'output_tokens': 3})
-                self.assertEqual([row['id'] for row in summary(root, job)['batches']], ['paid', 'retry'])
-                provider.submit.assert_called_once()
-                provider.live.assert_not_called()
-                job['status'] = 'stopped'
-                BatchMonitor(monitor.guided).tick()
-                provider.submit.assert_called_once()
+        from dazedtl.compatibility.process_view import batch_results, payload, summary
+        for retry_text in ('{"Line1":"Potion"}', 'I cannot help with this translation.'):
+            with self.subTest(retry=retry_text), TemporaryDirectory() as directory:
+                root = Path(directory)
+                monitor, job, _ = self.fixture(root)
+                plan = {'mode': 'batch', 'workflow': {'id': 'native'}, 'dazedtl_request_policy': {'refusalRetry': POLICY}}
+                monitor.backend.saved_run_configuration = lambda _: plan
+                write_json(root/'log/batch_requests.json', {'key': {'payload': '{"Line1":"薬"}',
+                    'params': {'model': 'fixture', 'messages': [{'role': 'user', 'content': '{"Line1":"薬"}'}]}}})
+                original = {'key': {'text': 'I cannot translate explicit sexual content.', 'prompt_tokens': 3, 'completion_tokens': 1}}
+                provider = Mock()
+                provider.status.return_value = {'api_status': 'completed', 'counts': {'succeeded': 1}, 'ended': True, 'terminal_failure': False}
+                provider.collect_terminal.return_value = (original, [], {'input_tokens': 3, 'output_tokens': 1})
+                retry = {'key': {'text': retry_text, 'prompt_tokens': 5, 'completion_tokens': 2}}
+                provider.collect.return_value = (retry, [], {'input_tokens': 5, 'output_tokens': 2})
+                provider.submit.return_value = {'id': 'retry'}
+                provider.input_tokens.return_value = 10
+                module = ModuleType('util.batch_providers')
+                module.batch_limits = lambda _: (50, 100_000)
+                module._openai_batch_body = lambda provider, params: params
+                with patch.object(batch_control, 'TranslationProvider', return_value=provider), patch.dict(sys.modules, {'util.batch_providers': module}):
+                    monitor.tick()
+                    monitor.backend.manual.consume_batch.assert_not_called()
+                    provider.submit.assert_called_once()
+                    sent = provider.submit.call_args.args[0]
+                    self.assertEqual(sent[0]['params']['messages'][-1]['content'], CLARIFICATION)
+                    self.assertEqual(batch_results(root), original)
+                    self.assertEqual(summary(root, job)['requests'][0]['state'], 'submitted')
+                    self.assertEqual(payload(root, 0)['responseAttempts'], [{'kind': 'original', 'response': original['key']}])
+                    reopened = BatchMonitor(monitor.guided)
+                    reopened.tick()
+                    monitor.backend.manual.consume_batch.assert_called_once_with('run')
+                    self.assertEqual(batch_results(root)['key']['text'], '' if retry_text.startswith('I cannot') else retry_text)
+                    before = {path: path.read_bytes() for path in root.rglob('*') if path.is_file()}
+                    inspected = payload(root, 0)
+                    self.assertEqual(inspected['state'], 'rejected' if retry_text.startswith('I cannot') else 'received')
+                    self.assertEqual(inspected['responseAttempts'], [
+                        {'kind': 'original', 'response': original['key']},
+                        {'kind': 'clarification', 'response': retry['key']}])
+                    self.assertEqual(inspected['usage'], {'input_tokens': 8, 'output_tokens': 3})
+                    self.assertEqual({path: path.read_bytes() for path in before}, before)
+                    self.assertEqual(summary(root, job)['usage'], {'input_tokens': 8, 'output_tokens': 3})
+                    self.assertEqual([row['id'] for row in summary(root, job)['batches']], ['paid', 'retry'])
+                    provider.submit.assert_called_once()
+                    provider.live.assert_not_called()
+                    job['status'] = 'stopped'
+                    BatchMonitor(monitor.guided).tick()
+                    provider.submit.assert_called_once()
 
     def test_old_pauses_monitor_then_consume_once_without_sending_the_unsent_queue(self):
         with TemporaryDirectory() as directory:
