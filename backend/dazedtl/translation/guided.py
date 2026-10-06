@@ -254,7 +254,15 @@ class Guided:
         return {"saved": True}
 
     def preferences(self, native):
-        mode = native["mode"] if native["mode"] in {"batch", "translate"} else "batch"
+        mode = native["mode"]
+        if mode not in {"batch", "translate"}:
+            # Offline launches record "estimate"; start new work in a method the
+            # active connection can run, so a fresh game shows no Batch error.
+            mode = (
+                "batch"
+                if self.settings.translation_defaults().get("batch_supported")
+                else "translate"
+            )
         return {
             "revision": native["revision"],
             "values": {
