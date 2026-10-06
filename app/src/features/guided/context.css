@@ -1,5 +1,5 @@
 .guided-workspace .context-task-body {
-  padding: var(--space-4) var(--space-6);
+  padding-block: var(--space-4);
 }
 .context-task-header {
   display: flex;
@@ -149,7 +149,7 @@
   margin-bottom: var(--space-4);
 }
 .context-layout .guided-widths {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 10rem));
 }
 .context-layout .ui-section {
   margin: var(--space-3) 0;
@@ -296,7 +296,7 @@
 }
 @container guided (max-width: 62em) {
   .guided-workspace .context-task-body {
-    padding: var(--space-3) var(--space-4);
+    padding-block: var(--space-3);
   }
   .context-columns {
     grid-template-columns: minmax(0, 1fr);
@@ -308,6 +308,6 @@
     border-top: 1px solid var(--line);
   }
   .context-layout .guided-widths {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 10rem));
   }
 }

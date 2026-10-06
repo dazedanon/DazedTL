@@ -60,14 +60,16 @@ export default function Settings() {
       aria-label="Application settings"
     >
       <PageHeader title="Settings" />
-      <Tabs
-        id="settings"
-        label="Settings sections"
-        items={sections}
-        value={section}
-        disabled={busy}
-        onChange={move}
-      />
+      <div className="frame-row">
+        <Tabs
+          id="settings"
+          label="Settings sections"
+          items={sections}
+          value={section}
+          disabled={busy}
+          onChange={move}
+        />
+      </div>
       {action.error && section === "api" && (
         <Message message={action.error} onDismiss={action.clear} />
       )}

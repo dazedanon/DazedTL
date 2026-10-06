@@ -43,7 +43,6 @@
   flex-shrink: 0;
 }
 .settings-advanced {
-  max-width: 880px;
   border-top: 1px solid var(--line);
   padding-top: 18px;
   margin: 24px 0 0;

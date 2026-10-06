@@ -1,6 +1,3 @@
-main.editor-main.guided-main {
-  padding: 0;
-}
 .request-inspector-sheet,
 .history-sheet {
   width: min(1440px, calc(100vw - var(--space-6)));
@@ -533,32 +530,9 @@ main.editor-main.guided-main {
     margin: 0;
   }
 }
-.guided-main > .guided-workspace {
-  max-width: none;
-  margin: 0;
-}
 .guided-workspace {
   container: guided / inline-size;
   font-size: var(--font-body);
-}
-.guided-workspace .guided-header {
-  padding: var(--space-4) var(--space-6);
-  margin: 0;
-  border-bottom: 1px solid var(--line);
-}
-.guided-header h1 {
-  font-size: var(--font-body);
-}
-.guided-header > div:first-child {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: baseline;
-}
-.guided-header p {
-  margin: 0;
-  font-size: var(--font-small);
-  color: var(--muted);
 }
 .guided-layout {
   display: flex;
@@ -568,10 +542,10 @@ main.editor-main.guided-main {
 }
 .guided-phase-nav {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-5);
+  padding-block: var(--space-2);
   border-bottom: 1px solid var(--line);
 }
 .guided-phase-nav button {
@@ -596,14 +570,9 @@ main.editor-main.guided-main {
   min-width: 0;
   min-height: 0;
 }
-.guided-workspace--bounded .guided-task-workspace {
-  width: 100%;
-  max-width: var(--workspace-content-width);
-  align-self: center;
-}
 .guided-task-nav {
   flex-shrink: 0;
-  padding: var(--space-2) var(--space-6) 0;
+  padding-top: var(--space-2);
 }
 .guided-task-nav .ui-tabs {
   gap: var(--space-5);
@@ -613,7 +582,7 @@ main.editor-main.guided-main {
   margin-right: var(--space-2);
 }
 .guided-workspace .guided-task-body {
-  padding: var(--space-5) var(--space-6);
+  padding-block: var(--space-5);
 }
 .guided-task-heading {
   margin-bottom: var(--space-5);
@@ -639,7 +608,15 @@ main.editor-main.guided-main {
   font-size: var(--font-small);
 }
 .guided-task-workspace > .action-bar {
-  padding: var(--space-3) var(--space-6);
+  padding-block: var(--space-3);
+}
+@media (max-height: 720px) {
+  .guided-task-nav {
+    padding-top: 0;
+  }
+  .guided-task-workspace > .action-bar {
+    padding-block: var(--space-2);
+  }
 }
 .guided-footer-context {
   display: flex;
@@ -658,7 +635,7 @@ main.editor-main.guided-main {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) var(--space-6);
+  padding-block: var(--space-2);
   border-bottom: 1px solid var(--line);
   font-size: var(--font-control);
 }
@@ -1076,23 +1053,19 @@ main.editor-main.guided-main {
 @container guided (max-width: 62em) {
   .guided-phase-nav {
     gap: var(--space-1);
-    padding-inline: var(--space-3);
+  }
+  .guided-stage-number {
+    display: none;
   }
   .guided-phase-nav button {
     padding-inline: var(--space-2);
     font-size: var(--font-small);
   }
   .guided-workspace .guided-task-body {
-    padding: var(--space-4) var(--space-5);
-  }
-  .guided-task-nav {
-    padding-inline: var(--space-4);
+    padding-block: var(--space-4);
   }
   .guided-task-nav .ui-tabs {
     gap: var(--space-3);
-  }
-  .guided-task-workspace > .action-bar {
-    padding-inline: var(--space-5);
   }
 }
 @container guided (max-width: 36em) {

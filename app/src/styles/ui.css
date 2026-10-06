@@ -179,9 +179,6 @@ pre {
   background: var(--color-path);
   border-radius: 5px;
 }
-.editor-main > .banner {
-  flex-shrink: 0;
-}
 .page-header {
   display: flex;
   align-items: center;
@@ -221,12 +218,43 @@ pre {
   flex: 1;
   min-height: 0;
 }
+/* Page frame. A page fills main; its rows span the window and pad their
+   content to the shared column. Rows that do not scroll reserve the same
+   scrollbar gutter as the scrolling body, so every right edge matches. */
+.frame-row,
+.page-layout--editor > .page-header,
+.page-layout :is(.page-body, .action-bar):not(dialog *) {
+  padding-inline: var(--frame-inline);
+}
+.frame-row,
+.page-layout--editor > .page-header,
+.page-layout .action-bar:not(dialog *) {
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+.page-layout--editor > .page-header {
+  padding-top: var(--space-6);
+  margin-bottom: var(--space-5);
+}
+.page-layout--editor > .banner {
+  flex-shrink: 0;
+  margin: var(--space-3) var(--frame-inline) 0;
+}
 .page-layout--editor .page-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 22px 6px 24px 0;
+  padding-block: 22px 24px;
   scrollbar-gutter: stable;
+}
+.page-layout--document {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-block: var(--space-6) var(--space-8);
+}
+.page-layout--document > * {
+  flex-shrink: 0;
+  margin-inline: var(--frame-inline);
 }
 .ui-section > h2 {
   font-size: var(--font-control);
@@ -295,7 +323,7 @@ pre {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  min-height: 68px;
+  min-height: var(--bar-height);
   padding: 14px 0;
   border-top: 1px solid var(--line);
 }
@@ -356,6 +384,10 @@ pre {
 }
 .page-layout {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .page-header--divided {
   display: flex;
@@ -376,9 +408,6 @@ pre {
 .page-header > div:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.ui-section {
-  max-width: 880px;
 }
 .ui-section + .ui-section {
   border-top: 1px solid var(--line);
@@ -429,13 +458,6 @@ pre {
 .ui-button[aria-busy="true"] {
   cursor: progress;
 }
-.page-layout--editor {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  flex: 1;
-  min-height: 0;
-}
 .virtual-list {
   flex: 1;
   min-height: 0;
@@ -469,7 +491,7 @@ pre {
 }
 .document-editor--fill textarea {
   flex: 1;
-  min-height: 0;
+  min-height: 8lh;
   margin: 0;
   resize: none;
 }

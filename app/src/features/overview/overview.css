@@ -1,6 +1,3 @@
-main.overview-main {
-  padding: 24px 28px;
-}
 .overview-project-name {
   margin: 0 0 15px;
   font-size: 19px;
@@ -148,11 +145,6 @@ main.overview-main {
 .overview-recent-list svg {
   color: var(--muted);
   flex-shrink: 0;
-}
-@media (max-width: 1050px) {
-  main.overview-main {
-    padding: 22px 24px;
-  }
 }
 @media (max-width: 1050px) {
   .overview-facts {

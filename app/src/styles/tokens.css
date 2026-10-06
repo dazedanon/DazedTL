@@ -62,7 +62,16 @@
   --field-label-width: 155px;
   --field-column-gap: 18px;
   --action-column-width: 19rem;
-  --workspace-content-width: 96rem;
+  /* Every page centers one content column; frame rows span the window and
+     pad their content to that column, so edges match across screens. */
+  --content-width: 82rem;
+  --frame-gutter: var(--space-6);
+  --frame-inline: max(
+    var(--frame-gutter),
+    calc((100cqw - var(--content-width)) / 2)
+  );
+  --topbar-height: 68px;
+  --bar-height: 68px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -75,4 +84,11 @@
   --line: var(--color-border);
   --accent: var(--color-accent);
   --surface: var(--color-surface);
+}
+/* Short windows give the chrome less height so task content stays visible. */
+@media (max-height: 720px) {
+  :root {
+    --topbar-height: 52px;
+    --bar-height: 56px;
+  }
 }

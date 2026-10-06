@@ -18,7 +18,7 @@ export function WorkflowNavigation({
   taskFor: (stage: WorkflowStage) => string;
 }) {
   return (
-    <nav className="guided-phase-nav" aria-label="Translation stages">
+    <nav className="guided-phase-nav frame-row" aria-label="Translation stages">
       {stages.map((stage, index) => {
         const done = stage.tasks.every((item) => completed.has(item.id));
         return (

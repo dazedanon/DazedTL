@@ -5,10 +5,8 @@
   overflow: hidden;
 }
 .view-recovery {
-  width: 100%;
-  max-width: var(--width-content, 64rem);
   min-width: 0;
-  padding: var(--space-5);
+  padding-block: var(--space-6);
   overflow: auto;
   overflow-wrap: anywhere;
 }
@@ -22,7 +20,7 @@
   margin: 0 0 var(--space-5);
 }
 .topbar {
-  height: 68px;
+  height: var(--topbar-height);
   flex-shrink: 0;
   border-bottom: 1px solid var(--line);
   background: var(--color-chrome);
@@ -122,21 +120,26 @@
   font-size: var(--font-small);
   color: var(--muted);
 }
+/* Pages own their scrolling; main only frames them. Anything that is not a
+   page (the app error banner, loading text, recovery panels) follows the
+   shared content column. */
 main {
   flex: 1;
   min-width: 0;
-  padding: 32px;
-  overflow: auto;
-  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  container: frame / inline-size;
 }
-main > section {
-  max-width: 1020px;
-  margin: 0 auto;
+main > :not(.page-layout) {
+  margin-inline: var(--frame-inline);
 }
-@media (max-width: 1000px) {
-  main {
-    padding: 24px;
-  }
+main > .banner {
+  flex-shrink: 0;
+  margin-block: var(--space-4) 0;
+}
+main > p {
+  margin-block: var(--space-6);
 }
 @media (max-width: 1000px) {
   .sidebar {
@@ -158,15 +161,12 @@ main > section {
     max-width: 350px;
   }
 }
-main.editor-main {
+.topbar-actions {
   display: flex;
-  flex-direction: column;
-  padding: 24px 28px 0;
-  overflow: hidden;
-  scrollbar-gutter: auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
 }
-@media (max-width: 1050px) {
-  main.editor-main {
-    padding: 22px 24px 0;
-  }
+.topbar-actions:empty {
+  display: none;
 }

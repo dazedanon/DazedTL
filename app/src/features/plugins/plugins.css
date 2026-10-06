@@ -167,7 +167,7 @@
   padding: var(--space-4) 0;
 }
 .plugin-host-footer {
-  padding: var(--space-3) var(--space-7);
+  padding-block: var(--space-3);
   border-top: 1px solid var(--line);
   display: flex;
   align-items: center;

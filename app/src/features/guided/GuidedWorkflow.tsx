@@ -2,12 +2,13 @@ import { FolderOpen } from "lucide-react";
 import type { GuidedState, TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
+import { TopbarActions } from "../../app/TopbarSlot";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
-import { PageBody, PageHeader, PageLayout } from "../../ui/PageLayout";
+import { PageBody, PageLayout } from "../../ui/PageLayout";
 import { Tabs } from "../../ui/Tabs";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
@@ -129,43 +130,35 @@ function Workspace(
   return (
     <PageLayout
       variant="editor"
-      className={`guided-workspace${["context", "plugins"].includes(position.step) ? " guided-workspace--bounded" : ""}`}
+      className="guided-workspace"
       aria-label="Translation workspace"
     >
-      <PageHeader
-        className="guided-header"
-        title="Translation"
-        description={
-          state.engine === "ACE" ? "RPG Maker VX Ace" : "RPG Maker MV / MZ"
-        }
-        actions={
-          <div className="actions">
-            <Button variant="quiet" onClick={() => setPanel("project-tools")}>
-              Project tools
-            </Button>
-            <Button
-              ref={historyControl}
-              variant="quiet"
-              onClick={() => setHistory("all")}
-            >
-              History
-            </Button>
-            <Button
-              variant="quiet"
-              onClick={() =>
-                action.run(
-                  () => window.dazedtl.openFolder("project"),
-                  "Game folder opened.",
-                  "open-game",
-                )
-              }
-            >
-              <FolderOpen size={16} />
-              Game folder
-            </Button>
-          </div>
-        }
-      />
+      <h1 className="sr-only">Translation</h1>
+      <TopbarActions>
+        <Button variant="quiet" onClick={() => setPanel("project-tools")}>
+          Project tools
+        </Button>
+        <Button
+          ref={historyControl}
+          variant="quiet"
+          onClick={() => setHistory("all")}
+        >
+          History
+        </Button>
+        <Button
+          variant="quiet"
+          onClick={() =>
+            action.run(
+              () => window.dazedtl.openFolder("project"),
+              "Game folder opened.",
+              "open-game",
+            )
+          }
+        >
+          <FolderOpen size={16} />
+          Game folder
+        </Button>
+      </TopbarActions>
       <div className="guided-layout">
         <WorkflowNavigation
           stages={stages}
@@ -178,7 +171,7 @@ function Workspace(
         <div className="guided-task-workspace">
           {showTaskTabs && (
             <nav
-              className="guided-task-nav"
+              className="guided-task-nav frame-row"
               aria-label={`${stage.title} tasks`}
             >
               <Tabs
@@ -210,7 +203,7 @@ function Workspace(
             !(
               taskId === "names" && activeOperation.action === "speaker_scan"
             ) && (
-              <div className="guided-operation">
+              <div className="guided-operation frame-row">
                 <JobStatus
                   compact
                   job={{
@@ -396,7 +389,10 @@ function Workspace(
             </ErrorBoundary>
           </PageBody>
           {taskId === "plugins" ? (
-            <div className="plugin-host-footer" ref={setPluginFooter} />
+            <div
+              className="plugin-host-footer frame-row"
+              ref={setPluginFooter}
+            />
           ) : (
             <ActionBar
               feedback={

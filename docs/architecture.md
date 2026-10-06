@@ -427,7 +427,9 @@ A feature's rules override shared primitives regardless of selector specificity,
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
 Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps.
 The desktop window fits its display's work area in logical pixels.
-Reading-focused Guided tasks use the shared content-width limit so their tabs, content and footer remain aligned on wide displays.
+Every page centers one content column, `--content-width` in [tokens.css](../app/src/styles/tokens.css).
+Frame rows (page headers, stage strip, task tabs, scrolling bodies and footers) span the window and pad their content to that column; rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
+Windows 720px tall or shorter compact the top bar and footers; fill editors and file lists keep a minimum height, and the body scrolls instead of collapsing them.
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Focus does not add outlines anywhere in the interface.
@@ -453,7 +455,8 @@ Formatting, GameUpdate creation, initial source backup, and local estimation con
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
 Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts).
-The app sidebar stays global; every phase uses the same wrapping top stage strip.
+The app sidebar stays global; every phase uses the same one-row stage strip, which drops stage numbers when narrow.
+The Translation screen has no header row: its project actions (Project tools, History, Game folder) sit in the top bar beside the project switcher through [TopbarSlot](../app/src/app/TopbarSlot.tsx).
 One task occupies the editing body and its action footer stays outside the scroll region.
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
 Guidance review and layout settings follow before the named database and dialogue actions.
