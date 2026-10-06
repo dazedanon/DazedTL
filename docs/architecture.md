@@ -487,7 +487,7 @@ Other failed, stopped and interrupted paid runs keep their project ownership and
 Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
 Context uses compact Investigation, Guidance and Layout tasks.
 Investigation shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan.
-The shared observer updates saved results and guidance without a separate refresh action.
+The shared observer updates saved results and guidance without a separate refresh action, and so do Event / plugin codes findings and Text QA findings; Image Manager keeps explicit refreshes because importing a saved image report validates it first.
 Reference game folders are retained per project by [reference_folders.py](../backend/dazedtl/translation/reference_folders.py) and included as read-only source material in the copied investigation prompt.
 Adding a folder only registers its path; it does not parse, convert or index the game.
 Missing references remain listed so they can be removed or replaced.

@@ -432,7 +432,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         {qaTask && (
           <ActionRow
             title="Prepared task"
-            description="Paste it into your coding assistant."
+            description="Paste it into your coding assistant; its saved findings appear below automatically."
           >
             <ActionControl
               label="Copy prepared QA task"
@@ -441,24 +441,13 @@ export function qaView(w: GuidedWorkspace): TaskView {
               onClick={() =>
                 action.run(
                   () => window.dazedtl.copyText(String(qaTask.result!.handoff)),
-                  "QA task copied. Return to its saved findings when your assistant finishes.",
+                  "QA task copied. Paste it into your coding assistant.",
                   "copy:qa",
                 )
               }
             />
           </ActionRow>
         )}
-        <ActionRow
-          title="Saved findings"
-          description="Read saved reports without starting an assistant."
-        >
-          {task(
-            "qa_status",
-            "Refresh QA findings",
-            { focus: fields.text.focus },
-            !baseline,
-          )}
-        </ActionRow>
         <ActionRow
           title="Running jokes and terms"
           description="Optional investigation of recurring jokes, callbacks and terminology."

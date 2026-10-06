@@ -2,7 +2,6 @@
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { flushDrafts } from "../../../../state/leaveGuards";
-import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
@@ -286,13 +285,10 @@ export function phaseView(w: GuidedWorkspace): TaskView {
 export function auditView(w: GuidedWorkspace): TaskView {
   const {
     state,
-    application,
-    action,
     eventFiles,
     disabled,
     stepTask,
     skipEventText,
-    feedback,
     copyTask,
     fileSummary,
   } = w;
@@ -308,21 +304,10 @@ export function auditView(w: GuidedWorkspace): TaskView {
       </ActionList>
       <p className="muted">{state.eventText.message}</p>
       <p className="muted">
-        The copied task saves findings. It does not enable controls, edit engine
-        code, start translation, or call providers.
+        The copied task saves findings, and they appear here automatically. It
+        does not enable controls, edit engine code, start translation, or call
+        providers.
       </p>
-      <ActionControl
-        label="Refresh findings"
-        disabled={disabled}
-        {...feedback("event-text:refresh", "Reading saved findings…")}
-        onClick={() =>
-          action.run(
-            () => application.refresh(),
-            "Findings refreshed.",
-            "event-text:refresh",
-          )
-        }
-      />
     </>
   );
   // Investigating comes first; manual review and skipping stay available.
