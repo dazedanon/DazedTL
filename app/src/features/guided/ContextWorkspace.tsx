@@ -5,10 +5,10 @@ import type {
   SpeakerScan,
 } from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
+import { AssistantTask } from "../../ui/AssistantTask";
 import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
-import { StatusIcon } from "../../ui/StatusIcon";
 
 const counted = (label: string, count: number) =>
   count ? `${label} (${count.toLocaleString()})` : label;
@@ -30,62 +30,57 @@ export function ContextWorkspace({
 }) {
   const references = state.referenceFolders || [];
   const saved = results.filter((row) => row.saved).length;
+  const problem = results.find((row) =>
+    ["failed", "unavailable"].includes(row.status),
+  );
+  const taskState =
+    saved === results.length
+      ? "ready"
+      : problem
+        ? "attention"
+        : saved ||
+            results.some((row) => ["waiting", "working"].includes(row.status))
+          ? "waiting"
+          : "idle";
   return (
     <div className="context-columns">
-      <section
-        className="context-investigation"
-        aria-label="Investigation progress"
-      >
-        <div className="context-section-heading">
-          <h3>Saved results</h3>
-          <span>
-            {saved} of {results.length} saved
-          </span>
-        </div>
-        <ActionList compact>
-          {results.map((row) => (
-            <ActionRow
-              key={row.id}
-              label={
-                <>
-                  <span className="context-result-heading">
-                    <StatusIcon
-                      status={
-                        row.status === "working"
-                          ? "active"
-                          : row.status === "failed"
-                            ? "failed"
-                            : row.saved
-                              ? "done"
-                              : "idle"
-                      }
-                    />
-                    <strong>{row.title}</strong>
-                    <span className={`context-result-state ${row.status}`}>
-                      {
-                        {
-                          saved: "Saved",
-                          waiting: "Awaiting files",
-                          idle: "Not saved",
-                          working: "Scanning",
-                          failed: "Scan failed",
-                          unavailable: "Unavailable",
-                        }[row.status]
-                      }
-                    </span>
-                  </span>
-                  <small>{row.detail}</small>
-                </>
-              }
-            >
-              {actions[row.id]}
-            </ActionRow>
-          ))}
-        </ActionList>
-        <p className="context-observation-note">
-          Results update automatically from saved files.
-        </p>
-      </section>
+      <AssistantTask
+        state={taskState}
+        progress={`${saved} of ${results.length} saved`}
+        description={
+          taskState === "ready"
+            ? "Review the guidance before translating."
+            : taskState === "attention"
+              ? problem!.detail
+              : taskState === "waiting"
+                ? "Results appear here as your assistant saves them."
+                : "Your assistant finds speaker formats and writes the glossary and game context; a local scan collects names."
+        }
+        results={results.map((row) => ({
+          id: row.id,
+          title: row.title,
+          status:
+            row.status === "working"
+              ? "active"
+              : row.status === "failed"
+                ? "failed"
+                : row.status === "unavailable"
+                  ? "warning"
+                  : row.saved
+                    ? "done"
+                    : "idle",
+          state: {
+            saved: "Saved",
+            waiting: "Awaiting files",
+            idle: "Not saved",
+            working: "Scanning",
+            failed: "Scan failed",
+            unavailable: "Unavailable",
+          }[row.status],
+          detail: row.detail,
+          action: actions[row.id],
+        }))}
+      />
       <section className="context-references" aria-label="Reference games">
         <div className="context-section-heading">
           <h3>

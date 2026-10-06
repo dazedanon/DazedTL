@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
+import { AssistantTask } from "../../../../ui/AssistantTask";
 import { Message } from "../../../../ui/Feedback";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
@@ -230,15 +231,6 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   content = (
     <>
       <div className="context-layout">
-        <p className="context-layout-status">
-          {widthsDirty
-            ? "Unsaved edits"
-            : discovery.layoutApplication === "applied"
-              ? "Set by investigation"
-              : discovery.layoutStatus === "saved"
-                ? "Saved"
-                : "Using defaults"}
-        </p>
         <Message
           message={
             action.key === "save-options" && action.error
@@ -253,26 +245,46 @@ export function layoutView(w: GuidedWorkspace): TaskView {
               option edits finish.
             </p>
           )}
-        <Section title="Character limits" hint="Characters">
+        <Section
+          title="Character limits"
+          hint={
+            widthsDirty
+              ? "Unsaved edits"
+              : discovery.layoutApplication === "applied"
+                ? "Set by investigation"
+                : discovery.layoutStatus === "saved"
+                  ? "Saved"
+                  : "Using defaults"
+          }
+        >
           {widths}
         </Section>
-        <div className="context-layout-actions">
-          {copyTask(
-            "wrap",
+        <AssistantTask
+          state={discovery.layout ? "ready" : "idle"}
+          description={
             discovery.layout
-              ? "Copy remeasurement task"
-              : "Copy measurement task",
-            "link",
-          )}
-        </div>
-        {discovery.layout ? (
-          <LayoutMeasurements layout={discovery.layout} />
-        ) : (
-          <p className="muted">
-            Measurement is optional. You can keep the current values and
-            continue.
-          </p>
-        )}
+              ? "The measured limits are saved above. Remeasure only if the game's windows or fonts change."
+              : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current limits and continue."
+          }
+          results={[
+            {
+              id: "layout",
+              title: "Measured limits",
+              status: discovery.layout ? "done" : "idle",
+              state: discovery.layout ? "Saved" : "Not measured",
+              detail:
+                "Dialogue, portrait, list and note widths from the game's own layout.",
+              action: copyTask(
+                "wrap",
+                discovery.layout
+                  ? "Copy remeasurement task"
+                  : "Copy measurement task",
+              ),
+            },
+          ]}
+        >
+          {discovery.layout && <LayoutMeasurements layout={discovery.layout} />}
+        </AssistantTask>
       </div>
     </>
   );

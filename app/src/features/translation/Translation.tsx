@@ -31,6 +31,8 @@ import { VersionsPanel } from "./VersionsPanel";
 import { JobStatus } from "../../ui/JobStatus";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
+import { AssistantTask } from "../../ui/AssistantTask";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 type View = "progress" | "context" | "requests" | "versions";
 const labels: Record<string, string> = {
@@ -322,30 +324,55 @@ function Workspace({
                   </div>
                 </fieldset>
               </Section>
-              <Section
-                title="Saved progress"
-                hint={
-                  progress?.updated_at
-                    ? "Last report: " +
-                      new Date(progress.updated_at).toLocaleString()
-                    : "Awaiting the first saved report"
+              <AssistantTask
+                state={
+                  progress?.blocker
+                    ? "attention"
+                    : progress?.updated_at
+                      ? Object.values(progress.phases).every((phase) =>
+                          ["complete", "out_of_scope"].includes(phase),
+                        )
+                        ? "ready"
+                        : "waiting"
+                      : "idle"
                 }
+                progress={
+                  progress?.updated_at
+                    ? "last report " +
+                      new Date(progress.updated_at).toLocaleString()
+                    : undefined
+                }
+                description={
+                  progress?.blocker ||
+                  progress?.next_action ||
+                  "Your assistant sets up source backups, version baselines and shared guidance, then translates; its saved reports appear here."
+                }
+                help="These are saved checkpoints. An assistant's last report does not show that its session is still running, and text completion does not establish runtime QA completion."
               >
                 <div className="translation-phases">
-                  {Object.entries(labels).map(([key, label]) => (
-                    <div
-                      key={key}
-                      data-state={progress?.phases[key] || "pending"}
-                    >
-                      <span>{label}</span>
-                      <strong>
-                        {(progress?.phases[key] || "pending").replaceAll(
-                          "_",
-                          " ",
-                        )}
-                      </strong>
-                    </div>
-                  ))}
+                  {Object.entries(labels).map(([key, label]) => {
+                    const phase = progress?.phases[key] || "pending";
+                    return (
+                      <div key={key} data-state={phase}>
+                        <span>{label}</span>
+                        <strong>
+                          <StatusIcon
+                            size={14}
+                            status={
+                              phase === "complete"
+                                ? "done"
+                                : phase === "active"
+                                  ? "partial"
+                                  : phase === "blocked"
+                                    ? "warning"
+                                    : "idle"
+                            }
+                          />
+                          {phase.replaceAll("_", " ")}
+                        </strong>
+                      </div>
+                    );
+                  })}
                 </div>
                 {!!(text?.translated || text?.reviewed) && (
                   <div className="translation-metrics">
@@ -378,19 +405,7 @@ function Workspace({
                     {images.total ?? "unknown total"}
                   </p>
                 )}
-                {progress?.blocker && (
-                  <p className="banner">{progress.blocker}</p>
-                )}
-                <p>
-                  {progress?.next_action ||
-                    "Copy the starting prompt. Setup establishes source backups, version baselines, and shared guidance before translation."}
-                </p>
-                <p className="footnote">
-                  These are saved checkpoints. An external assistant's last
-                  report does not establish that its session is still running.
-                  Text completion does not establish runtime QA completion.
-                </p>
-              </Section>
+              </AssistantTask>
               {latest && latest.status !== "complete" && (
                 <Section title="App operation">
                   <JobStatus job={latest} />

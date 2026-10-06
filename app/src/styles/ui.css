@@ -1158,3 +1158,61 @@ pre {
   border-style: dashed;
   color: var(--color-muted);
 }
+/* The assistant task panel: its state, what comes back, and each result. */
+.assistant-task-header {
+  padding: var(--space-3) var(--space-4);
+}
+.assistant-task-header + .action-row,
+.assistant-task-header + .assistant-task-body {
+  border-top: 1px solid var(--color-border);
+}
+.assistant-task-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+.assistant-task-title h3 {
+  margin: 0;
+  font-size: var(--font-body);
+}
+.assistant-task-state {
+  margin-inline-start: auto;
+  font-size: var(--font-control);
+  color: var(--color-muted);
+}
+.assistant-task[data-state="waiting"] .assistant-task-state {
+  color: var(--color-accent);
+}
+.assistant-task[data-state="ready"] .assistant-task-state {
+  color: var(--color-success);
+}
+.assistant-task[data-state="attention"] .assistant-task-state {
+  color: var(--color-warning);
+}
+.assistant-task-header > p {
+  margin: var(--space-1) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
+.assistant-result-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.assistant-result-heading > strong {
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.assistant-result-state {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+}
+.assistant-task .action-row-label > small {
+  padding-inline-start: calc(16px + var(--space-2));
+}
+.assistant-task-body {
+  padding: var(--space-3) var(--space-4);
+}

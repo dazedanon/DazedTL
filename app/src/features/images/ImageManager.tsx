@@ -51,6 +51,7 @@ import { ImageFolders } from "./ImageFolders";
 import { useObserved } from "../../state/useObserved";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
+import { AssistantTask } from "../../ui/AssistantTask";
 
 export interface ImageManagerProps {
   projectId: string;
@@ -433,6 +434,13 @@ function Manager({
     !!state.job &&
     ["pending", "running", "stopping"].includes(state.job.status);
   const lastReport = state.editing.lastReport || state.discovery.lastReport;
+  const reportError =
+    state.editing.errors?.[0] || state.discovery.errors?.[0] || "";
+  const copiedAt =
+    (state.editing.status === "awaiting_results" && state.editing.copiedAt) ||
+    (state.discovery.status === "awaiting_results" &&
+      state.discovery.copiedAt) ||
+    "";
   const selectedApplied = draft.dirty ? 0 : counts.selectedApplied || 0;
   const allApplied =
     !!value.selection.length && selectedApplied === value.selection.length;
@@ -472,6 +480,13 @@ function Manager({
   // Refreshing reads a saved assistant report, so it leads only while one is due.
   const awaitingResults = state.editing.status === "awaiting_results";
   const awaitingFindings = state.discovery.status === "awaiting_results";
+  const assistantState = reportError
+    ? "attention"
+    : awaitingResults || awaitingFindings
+      ? "waiting"
+      : lastReport
+        ? "ready"
+        : "idle";
   // The selected batch moves through these steps; each reports beside itself.
   const stepKey =
     ["prepare", "edit_task", "preview_apply"].includes(action.key) ||
@@ -669,9 +684,27 @@ function Manager({
           </Button>
         </div>
       )}
-      <section
-        className="image-discovery"
-        aria-label="Find images to translate"
+      <AssistantTask
+        state={assistantState}
+        progress={
+          assistantState === "waiting" && copiedAt
+            ? `since ${new Date(copiedAt).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+            : undefined
+        }
+        description={
+          assistantState === "waiting"
+            ? "Results appear on the images as your assistant saves them."
+            : assistantState === "attention"
+              ? reportError
+              : lastReport
+                ? `Last saved report ${new Date(lastReport).toLocaleString()}.`
+                : manual
+                  ? "Your assistant edits the selected copies; its results appear on their tiles."
+                  : "Your assistant examines the images in scope and recommends the ones whose text needs translating."
+        }
       >
         {!embedded && (
           <div className="image-discovery-heading">
@@ -769,17 +802,9 @@ function Manager({
               {counts.notExamined.toLocaleString()} not examined
             </Button>
           )}
-          {lastReport ? (
-            <span>
-              Last saved report: {new Date(lastReport).toLocaleString()}
-            </span>
-          ) : state.editing.status === "awaiting_results" ||
-            state.discovery.status === "awaiting_results" ? (
-            <span>Awaiting saved assistant results.</span>
-          ) : null}
           {embedded && modeToggle}
         </div>
-      </section>
+      </AssistantTask>
       <div className="image-browser-toolbar">
         <div className="image-search">
           <Search size={16} aria-hidden="true" />

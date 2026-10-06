@@ -17,7 +17,7 @@ import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionSlot } from "../../ui/ActionSlot";
-import { ActionList, ActionRow } from "../../ui/ActionList";
+import { AssistantTask } from "../../ui/AssistantTask";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
@@ -269,55 +269,104 @@ export function PluginWorkspace({
     0,
     counts.selectedFiles - (list?.selectedMatched || 0),
   );
-  const investigated = ["current", "partial"].includes(state.findings.status);
   const actionKeys = ["plugin_task", "preview_apply", "apply", "restore"];
   const inspect = (path: string) => {
     edit({ currentFile: path });
     setInspecting(true);
   };
-  const taskText =
-    state.activeRequest === state.requestPaths.investigation &&
-    state.findings.status === "awaiting_report"
-      ? "Task ready. Paste it into your agent; it will investigate and continue into translation."
-      : state.activeRequest === state.requestPaths.translation &&
-          state.editing.status === "awaiting_report"
-        ? "Working copies are prepared. Your agent’s saved results appear here after validation."
-        : counts.ready
-          ? `${fileCount(counts.ready)} checked and ready to apply.`
-          : counts.applied
-            ? `${fileCount(counts.applied)} applied to the game.`
-            : "Investigate plugin text, translate confirmed display text, and check the results in one agent task.";
+  const awaiting =
+    (state.activeRequest === state.requestPaths.investigation &&
+      state.findings.status === "awaiting_report") ||
+    (state.activeRequest === state.requestPaths.translation &&
+      state.editing.status === "awaiting_report");
+  const taskState =
+    counts.ready || counts.applied
+      ? "ready"
+      : state.findings.status === "partial" ||
+          state.findings.errors.length ||
+          state.editing.errors.length
+        ? "attention"
+        : awaiting
+          ? "waiting"
+          : "idle";
+  const reportRow = (
+    id: string,
+    title: string,
+    report: typeof state.findings,
+    idle: string,
+  ) => ({
+    id,
+    title,
+    status:
+      report.status === "current"
+        ? ("done" as const)
+        : report.status === "partial"
+          ? ("partial" as const)
+          : ("idle" as const),
+    state:
+      report.status === "current"
+        ? "Saved"
+        : report.status === "partial"
+          ? "Partly saved"
+          : report.status === "awaiting_report"
+            ? "Awaiting results"
+            : "Not saved",
+    detail:
+      report.errors[0] ||
+      (report.expected
+        ? `${report.accepted ?? 0} of ${report.expected} files accepted.`
+        : idle),
+  });
+  const copyControl = (
+    <ActionControl
+      label="Copy plugin task"
+      variant={counts.ready ? "default" : "primary"}
+      disabled={busy}
+      {...feedback("plugin_task")}
+      notice={
+        state.activeRequest === copiedRequest
+          ? feedback("plugin_task").notice
+          : ""
+      }
+      onClick={() =>
+        run(
+          "plugin_task",
+          {},
+          "Task copied. Paste it into your agent; saved progress appears here.",
+        )
+      }
+    />
+  );
   return (
     <section className="plugin-workspace" aria-label="Plugin text workspace">
-      <ActionList>
-        <ActionRow
-          label={
-            <>
-              <strong>Translate plugin text</strong>
-              <small>{taskText}</small>
-            </>
-          }
-        >
-          <ActionControl
-            label="Copy plugin task"
-            variant={counts.ready ? "default" : "primary"}
-            disabled={busy}
-            {...feedback("plugin_task")}
-            notice={
-              state.activeRequest === copiedRequest
-                ? feedback("plugin_task").notice
-                : ""
-            }
-            onClick={() =>
-              run(
-                "plugin_task",
-                {},
-                "Task copied. Paste it into your agent; saved progress appears here.",
-              )
-            }
-          />
-        </ActionRow>
-      </ActionList>
+      <AssistantTask
+        state={taskState}
+        description={
+          taskState === "ready"
+            ? counts.ready
+              ? `${fileCount(counts.ready)} checked and ready to apply.`
+              : `${fileCount(counts.applied)} applied to the game.`
+            : taskState === "attention"
+              ? "Some investigation remains unresolved. Your agent can continue from the same task after resolving the reported issues."
+              : taskState === "waiting"
+                ? "Results appear here after validation as your agent saves them."
+                : "Your agent investigates plugin text, translates confirmed display text and checks the results in one task."
+        }
+        results={[
+          reportRow(
+            "findings",
+            "Plugin findings",
+            state.findings,
+            "Which plugin parameters carry display text.",
+          ),
+          reportRow(
+            "editing",
+            "Translated plugin text",
+            state.editing,
+            "Translations for the confirmed display text.",
+          ),
+        ]}
+      />
       <Message
         message={
           error ||
@@ -329,12 +378,6 @@ export function PluginWorkspace({
           <TriangleAlert size={15} />
           <span>{state.originalIssue}</span>
         </div>
-      )}
-      {investigated && state.findings.status === "partial" && (
-        <p className="muted">
-          Some investigation remains unresolved. Your agent can continue from
-          the same task after resolving the reported issues.
-        </p>
       )}
       {!!counts.files && (
         <section className="plugin-files" aria-label="Plugin files">
@@ -512,6 +555,7 @@ export function PluginWorkspace({
               Recovery
             </Button>
           )}
+          {copyControl}
           {counts.ready > 0 && (
             <ActionControl
               label="Review & apply"

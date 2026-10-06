@@ -8,6 +8,7 @@
 }
 .context-columns > section {
   min-width: 0;
+  align-self: start;
 }
 .context-section-heading {
   display: flex;
@@ -30,46 +31,10 @@
 .context-section-heading h3 span {
   margin-left: var(--space-2);
 }
-.context-investigation .action-row {
-  border-top: 1px solid var(--color-border);
-  padding-top: var(--space-3);
-}
-.context-result-heading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.context-result-heading > span:first-child {
-  display: inline-flex;
-  color: var(--color-muted);
-}
-.context-result-state {
-  font-size: var(--font-small);
-  color: var(--color-muted);
-  font-weight: var(--weight-regular);
-}
-.context-result-state.saved {
-  color: var(--color-success);
-}
-.context-result-state.working {
-  color: var(--color-accent);
-}
-.context-result-state.failed {
-  color: var(--color-error-text);
-}
-.context-investigation .action-row-label small {
-  margin-top: var(--space-2);
-  line-height: 1.5;
-}
-.context-observation-note,
 .context-references p {
   color: var(--color-muted);
   font-size: var(--font-small);
   line-height: 1.6;
-}
-.context-observation-note {
-  margin: var(--space-4) 0 0;
 }
 .context-references {
   padding-left: var(--space-6);
@@ -130,16 +95,6 @@
 }
 .context-layout .ui-section {
   margin: var(--space-3) 0;
-}
-.context-layout-status {
-  color: var(--color-muted);
-  font-size: var(--font-small);
-}
-.context-layout-actions {
-  display: flex;
-  align-items: start;
-  flex-wrap: wrap;
-  gap: var(--space-3);
 }
 .guided-sheet.context-sheet {
   width: min(54rem, calc(100vw - var(--space-8)));

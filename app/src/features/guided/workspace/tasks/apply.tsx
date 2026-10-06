@@ -4,11 +4,11 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { DetailRow, FieldRow } from "../../../../ui/FieldRow";
-import { Notice } from "../../../../ui/Notice";
 import { displayText } from "../../../../ui/displayText";
 import { fileCount, publicationLabels } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
+import { AssistantTask } from "../../../../ui/AssistantTask";
 
 export function applyView(w: GuidedWorkspace): TaskView {
   const {
@@ -407,84 +407,106 @@ export function qaView(w: GuidedWorkspace): TaskView {
           </select>
         )}
       </FieldRow>
-      <ActionList>
-        <ActionRow
-          title="QA task"
-          description="Prepare or resume QA for the current runtime text."
-        >
-          {task(
-            "qa_prepare",
-            "Prepare text QA task",
-            { focus: fields.text.focus },
-            !baseline,
-          )}
-        </ActionRow>
-        {qaTask && (
-          <ActionRow
-            title="Prepared task"
-            description="Paste it into your coding assistant; its saved findings appear below automatically."
-          >
-            <ActionControl
-              label="Copy prepared QA task"
-              disabled={disabled}
-              {...feedback("copy:qa", "Copying…")}
-              onClick={() =>
-                action.run(
-                  () => window.dazedtl.copyText(String(qaTask.result!.handoff)),
-                  "QA task copied. Paste it into your coding assistant.",
-                  "copy:qa",
-                )
-              }
-            />
-          </ActionRow>
-        )}
-        <ActionRow
-          title="Running jokes and terms"
-          description="Optional investigation of recurring jokes, callbacks and terminology."
-        >
-          {copyTask("investigation", "Copy investigation task")}
-        </ActionRow>
-      </ActionList>
-      {/* With no task yet this is an empty state, not a problem. */}
-      <Notice tone={qa.current || !qaStatus.stage ? "neutral" : "warning"}>
-        {qa.message}
-      </Notice>
-      {!!qaStatus.stage && (
-        <div className="guided-qa-status">
-          <strong>
-            Saved discovery stage:{" "}
-            {displayText(qaStatus.stage).replaceAll("_", " ")}
-          </strong>
-          {["mechanical", "screen", "deep"].map((key) => {
-            const counts = qaStatus[key] as Record<string, number> | undefined;
-            return (
-              counts && (
-                <p key={key}>
-                  {key === "screen"
-                    ? "Text screening"
-                    : key === "mechanical"
-                      ? "Mechanical inventory"
-                      : "Deep text review"}{" "}
-                  · {counts.accepted ?? counts.checked ?? 0} /{" "}
-                  {counts.total ?? 0}
-                  {counts.unresolved
-                    ? ` · ${counts.unresolved} unresolved`
-                    : ""}
-                </p>
-              )
-            );
-          })}
-          <small>
-            Discovery completion describes these saved reports. It does not
-            certify the current game as QA passed.
-          </small>
-          {qaJob && (
-            <Button variant="quiet" onClick={() => inspect(qaJob)}>
-              View saved report details
-            </Button>
-          )}
-        </div>
-      )}
+      <AssistantTask
+        state={
+          !qa.current && qaStatus.stage
+            ? "attention"
+            : qa.findings.length
+              ? "ready"
+              : qaTask || qaStatus.stage
+                ? "waiting"
+                : "idle"
+        }
+        description={qa.message}
+        help="Discovery describes the saved reports. It does not certify the current game as QA passed."
+        results={[
+          {
+            id: "qa",
+            title: "QA findings",
+            status: qa.findings.length
+              ? "done"
+              : qaStatus.stage
+                ? "partial"
+                : "idle",
+            state: qa.findings.length
+              ? `${qa.findings.length} saved`
+              : qaTask
+                ? "Task prepared"
+                : "Not prepared",
+            detail: (
+              <>
+                {qaStatus.stage
+                  ? (["mechanical", "screen", "deep"] as const)
+                      .map((key) => {
+                        const counts = qaStatus[key] as
+                          Record<string, number> | undefined;
+                        return counts
+                          ? `${
+                              key === "screen"
+                                ? "Text screening"
+                                : key === "mechanical"
+                                  ? "Mechanical inventory"
+                                  : "Deep text review"
+                            } ${counts.accepted ?? counts.checked ?? 0} / ${counts.total ?? 0}${
+                              counts.unresolved
+                                ? ` · ${counts.unresolved} unresolved`
+                                : ""
+                            }`
+                          : "";
+                      })
+                      .filter(Boolean)
+                      .join(" · ") ||
+                    `Saved stage: ${displayText(qaStatus.stage).replaceAll("_", " ")}`
+                  : "Prepare or resume QA for the current runtime text."}
+                {qaJob && (
+                  <>
+                    {" "}
+                    <Button variant="link" onClick={() => inspect(qaJob)}>
+                      Report details
+                    </Button>
+                  </>
+                )}
+              </>
+            ),
+            action: (
+              <>
+                {task(
+                  "qa_prepare",
+                  qaTask ? "Prepare again" : "Prepare text QA task",
+                  { focus: fields.text.focus },
+                  !baseline,
+                )}
+                {qaTask && (
+                  <ActionControl
+                    label="Copy prepared QA task"
+                    disabled={disabled}
+                    {...feedback("copy:qa", "Copying…")}
+                    onClick={() =>
+                      action.run(
+                        () =>
+                          window.dazedtl.copyText(
+                            String(qaTask.result!.handoff),
+                          ),
+                        "QA task copied. Paste it into your coding assistant.",
+                        "copy:qa",
+                      )
+                    }
+                  />
+                )}
+              </>
+            ),
+          },
+          {
+            id: "investigation",
+            title: "Running jokes and terms",
+            status: "idle",
+            state: "Optional",
+            detail:
+              "An investigation of recurring jokes, callbacks and terminology.",
+            action: copyTask("investigation", "Copy investigation task"),
+          },
+        ]}
+      />
       <section className="text-qa-results">
         <h3>Findings and corrections</h3>
         {!qa.findings.length && (

@@ -794,13 +794,6 @@
 .guided-workspace .guided-choices .toggle {
   margin: 0;
 }
-.guided-qa-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
-}
 .guided-sheet:has(.file-browser) {
   height: min(760px, calc(100dvh - var(--space-8)));
 }
@@ -1281,14 +1274,6 @@
   .event-text-picker-row {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-.guided-qa-status > strong,
-.guided-qa-status > small {
-  flex-basis: 100%;
-}
-.guided-qa-status p {
-  margin: 0;
 }
 
 .release-types {

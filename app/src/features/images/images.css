@@ -26,7 +26,6 @@ main > .image-manager {
 .image-manager--embedded
   > :is(
     .image-profile-issue,
-    .image-discovery,
     .image-action-feedback,
     .image-browser-toolbar,
     .image-index-progress
@@ -86,11 +85,26 @@ main > .image-manager {
   border-bottom: 1px solid var(--color-warning-border);
   font-size: var(--font-small);
 }
-.image-discovery {
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
+/* The assistant task panel sits above the browser; the embedded manager
+   already sits in the shared column, so only the screen keeps a gutter. */
+.image-manager > .assistant-task {
+  flex-shrink: 0;
+  margin: var(--space-3) var(--space-4);
+}
+.image-manager--embedded > .assistant-task {
+  margin: 0 0 var(--space-3);
+}
+.image-manager > .assistant-task > .assistant-task-body {
   display: grid;
   gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+/* Short windows keep the grid's height: the panel keeps its state and
+   counts and drops the one-line explanation. */
+@media (max-height: 720px) {
+  .image-manager > .assistant-task .assistant-task-header > p {
+    display: none;
+  }
 }
 .image-discovery-heading {
   display: flex;

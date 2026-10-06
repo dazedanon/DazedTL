@@ -2,7 +2,6 @@
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { flushDrafts } from "../../../../state/leaveGuards";
-import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
 import { EventTextSources } from "../../EventTextSources";
@@ -19,6 +18,10 @@ import {
 import { actionKey, fileCount } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
+import {
+  AssistantTask,
+  type AssistantTaskState,
+} from "../../../../ui/AssistantTask";
 
 export function phaseView(w: GuidedWorkspace): TaskView {
   const {
@@ -296,18 +299,49 @@ export function auditView(w: GuidedWorkspace): TaskView {
   content = (
     <>
       {fileSummary(eventFiles.length, "dialogue")}
-      <ActionList>
-        <ActionRow
-          title="Investigate source coverage"
-          description="Check every affected use and internal reference before selecting variable IDs, registered handlers or patterns. Found commands and argument keys return as evidence."
-        />
-      </ActionList>
-      <p className="muted">{state.eventText.message}</p>
-      <p className="muted">
-        The copied task saves findings, and they appear here automatically. It
-        does not enable controls, edit engine code, start translation, or call
-        providers.
-      </p>
+      <AssistantTask
+        state={
+          {
+            missing: "idle",
+            waiting: "waiting",
+            ready: "ready",
+            stale: "attention",
+            invalid: "attention",
+          }[state.eventText.status] as AssistantTaskState
+        }
+        description={
+          state.eventText.status === "missing"
+            ? "Your assistant checks every affected use and internal reference, and returns the commands and argument keys it finds as evidence."
+            : state.eventText.status === "waiting"
+              ? "Findings appear here as your assistant saves them."
+              : state.eventText.message
+        }
+        help="The task only saves findings. It does not enable sources, edit engine code, start translation or call providers."
+        results={[
+          {
+            id: "findings",
+            title: "Source findings",
+            status:
+              state.eventText.status === "ready"
+                ? "done"
+                : ["stale", "invalid"].includes(state.eventText.status)
+                  ? "warning"
+                  : "idle",
+            state:
+              state.eventText.status === "ready"
+                ? "Saved"
+                : state.eventText.status === "stale"
+                  ? "Out of date"
+                  : state.eventText.status === "invalid"
+                    ? "Unusable"
+                    : "Not saved",
+            detail:
+              state.eventText.status === "ready"
+                ? "Coverage evidence for each source, ready to review."
+                : "Which event codes, plugin commands and scripts carry player text.",
+          },
+        ]}
+      />
     </>
   );
   // Investigating comes first; manual review and skipping stay available.
