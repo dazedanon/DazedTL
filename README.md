@@ -47,7 +47,7 @@ Tests use temporary workspaces and controlled API responses; no provider, game f
 
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
 Run `node scripts/build.mjs` separately for static checks and the renderer build.
-It checks formatting and that the [generated API contracts](docs/architecture.md#api-changes) are current, lints with type-aware [Oxlint](.oxlintrc.json) (including the React hooks rules) and [Ruff](ruff.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](pyrightconfig.json).
+It checks formatting, that stylesheets use the [design tokens](docs/architecture.md#visual-design) and that the [generated API contracts](docs/architecture.md#api-changes) are current, lints with type-aware [Oxlint](.oxlintrc.json) (including the React hooks rules) and [Ruff](ruff.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](pyrightconfig.json).
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 To skip the one-time formatting commit in local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.

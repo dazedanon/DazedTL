@@ -437,6 +437,7 @@ Pick a control by the choice it offers: a checkbox for on or off, [SegmentedCont
 Color has three accent roles: accent for interactive text (links, the selected tab, focus), accent strong for the one primary button, and accent subtle for selected surfaces (the current sidebar entry and stage, a selected row).
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 Image canvases keep their own `--color-canvas-*` checks and `--color-mark-*` box marks, because they are drawn over game images rather than the app's surfaces.
+Every literal size, weight, color, spacing step and radius lives in [tokens.css](../app/src/styles/tokens.css); [styles.mjs](../scripts/styles.mjs), part of the build checks, rejects literals in any other stylesheet, so a new value starts as a named token.
 The top bar, footers and sidebar take their sizes from tokens.css; below 1100px wide the sidebar becomes a rail of icons over short labels, so small windows give the task the width.
 Icons appear in navigation, on actions that leave the app (opening a folder), on menus and disclosures, and on Add; other actions are text only, and ActionControl's `icon` carries the marked ones.
 Footers start with Back and end with Continue; the task's own action sits just left of Continue and is the primary until the task is done, and then Continue is, so each screen has one primary.
