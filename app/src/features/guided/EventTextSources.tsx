@@ -108,7 +108,12 @@ export function EventTextSources({
                         item.confidence === "high" &&
                         item.coverageStatus === "safe"
                         ? "Recommended"
-                        : "Keep off / review needed"
+                        : item.decision === "review" ||
+                            item.decision === "enable"
+                          ? "Review needed"
+                          : item.coverageStatus === "none"
+                            ? "Keep off · no player text"
+                            : "Keep off"
                       : ""}
                 </small>
               </button>

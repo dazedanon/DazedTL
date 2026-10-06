@@ -15,7 +15,7 @@ import {
   translationStopLabel,
   unsettledBatches,
 } from "../../translationView";
-import { actionKey, fileCount } from "../model";
+import { actionKey, fileCount, selectionNames } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import {
@@ -417,7 +417,11 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
   content = (
     <>
       <div className="translation-source-toolbar">
-        <span>{fileCount(eventFiles.length)} selected</span>
+        <span>
+          {fileCount(eventFiles.length)} selected
+          {!!eventFiles.length &&
+            ` · ${selectionNames(eventFiles.map((file) => file.name))}`}
+        </span>
         <Button
           variant="quiet"
           disabled={disabled}

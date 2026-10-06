@@ -47,6 +47,7 @@ import {
   advancedCodes,
   fileCount,
   jobTime,
+  selectionNames,
 } from "./model";
 
 /** Shared state, derived values and actions behind every Guided task view. */
@@ -994,11 +995,7 @@ export function useGuidedWorkspace({
   ) => (
     <ActionRow
       title={`${fileCount(names.length)} selected`}
-      description={
-        names.length > 3
-          ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
-          : names.join(", ") || undefined
-      }
+      description={selectionNames(names) || undefined}
     >
       <Button disabled={disabled} onClick={() => chooseFiles(scope)}>
         Choose files

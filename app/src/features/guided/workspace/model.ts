@@ -48,6 +48,11 @@ export const jobTime = (job: { updated?: string; created?: string }) =>
   Date.parse(job.updated || job.created || "") || 0;
 export const fileCount = (count: number) =>
   `${count} ${count === 1 ? "file" : "files"}`;
+/** A short selection's names, or two names and a count for a longer one. */
+export const selectionNames = (names: readonly string[]) =>
+  names.length > 3
+    ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+    : names.join(", ");
 export const pathKey = (name: string) => name;
 export const publicationLabels: Record<string, string> = {
   rewrap_apply: "Text fitting",
