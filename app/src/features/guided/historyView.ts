@@ -144,7 +144,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
       detail: [
         output,
         process.rejected
-          ? `${process.rejected} requests rejected`
+          ? `${process.rejected} ${process.rejected === 1 ? "request" : "requests"} rejected`
           : "Translation validation needs review",
       ]
         .filter(Boolean)

@@ -66,7 +66,7 @@ export default function Preferences({
                 !connection
                   ? "Used for estimates until you add an API connection."
                   : connection.models.length
-                    ? `Saved for ${connection.name}. Choose a text model before starting a run.`
+                    ? `Saved for ${connection.name}. Its list can include image and audio models; translation needs a text model.`
                     : `Saved for ${connection.name}. Check the connection to load model suggestions, or enter a model ID.`
               }
             >

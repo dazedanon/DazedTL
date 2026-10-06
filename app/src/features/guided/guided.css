@@ -451,10 +451,6 @@
 .history-status[data-kind="estimate"] {
   color: var(--color-label);
 }
-.history-outcome:has([data-kind="review"]) {
-  border-left: 2px solid var(--color-warning);
-  padding-left: var(--space-2);
-}
 .history-empty {
   padding: var(--space-5) 0;
 }
