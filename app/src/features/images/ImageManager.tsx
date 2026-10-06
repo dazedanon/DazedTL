@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Circle,
+  CircleMinus,
   Image as ImageIcon,
   LockKeyhole,
   MoreHorizontal,
@@ -35,6 +36,7 @@ import { Button } from "../../ui/Button";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
+import { useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
@@ -158,7 +160,9 @@ function Tile({
         >
           {blocked || asset.classification === "uncertain" ? (
             <TriangleAlert size={14} />
-          ) : asset.aiReviewed || asset.userReviewed ? (
+          ) : asset.aiReviewed ||
+            asset.userReviewed ||
+            asset.state === "applied" ? (
             <CheckCircle2 size={14} />
           ) : asset.classification === "recommended" ? (
             <Sparkles size={13} />
@@ -166,6 +170,12 @@ function Tile({
             <LockKeyhole size={13} />
           ) : asset.editable ? (
             <Pencil size={13} />
+          ) : ["no_text", "already_english", "excluded"].includes(
+              asset.classification,
+            ) ? (
+            // Examined with nothing to translate, unlike the plain ring of
+            // an image nobody has looked at.
+            <CircleMinus size={13} />
           ) : (
             <Circle size={12} />
           )}
@@ -319,7 +329,9 @@ function Manager({
     options: Record<string, unknown> = {},
     notice = "",
   ) => {
-    await action.run(
+    // Only a task that reached the clipboard says it was copied.
+    let copied = false;
+    const result = await action.run(
       async () => {
         await draft.session.commit(async () => {
           const reply: ImageActionResult = await imagesApi.action(
@@ -329,23 +341,23 @@ function Manager({
           );
           images.set(reply.state);
           setListRevision((value) => value + 1);
-          if (reply.text) await window.dazedtl.copyText(reply.text);
+          if (reply.text) {
+            await window.dazedtl.copyText(reply.text);
+            copied = true;
+          }
           if (reply.preview) setPreview(reply.preview);
-          if (reply.text)
-            action.succeed(
-              "Task copied. Paste into your coding assistant to begin or resume.",
-              name,
-            );
           if (name === "apply" || name === "restore") setPreview(null);
           return { saved: imageDraft(reply.state) };
         });
       },
-      notice ||
-        (name.includes("task")
-          ? "Task copied. Paste into your coding assistant to begin or resume."
-          : ""),
+      notice,
       name,
     );
+    if (result.ok && copied)
+      action.succeed(
+        "Task copied. Paste into your coding assistant to begin or resume.",
+        name,
+      );
   };
   const scanNewInventory = useEffectEvent(() => {
     if (
@@ -468,6 +480,7 @@ function Manager({
   const stepKey =
     ["prepare", "edit_task", "preview_apply"].includes(action.key) ||
     (action.key === "refresh_results" && awaitingResults);
+  const owned = useOwnedFeedback(action.key);
   const step = (key: string, pendingText: string) => ({
     feedbackKey: key,
     pending: action.busy && action.key === key,
@@ -682,38 +695,40 @@ function Manager({
                 <option value="selected">Selected images</option>
               </select>
             </label>
-            <Button
+            {/* Each discovery step reports its result beside itself. */}
+            <ActionControl
+              inline
+              label="Copy discovery task"
               variant={
                 primaryAction === "discovery_task" ? "primary" : "default"
               }
               disabled={
                 action.busy || jobRunning || scopeMissing || !counts.indexed
               }
-              pending={action.busy && action.key === "discovery_task"}
-              onClick={() => perform("discovery_task", scopeOptions)}
-            >
-              Copy discovery task
-            </Button>
+              {...step("discovery_task", "Copying…")}
+              onClick={() => void perform("discovery_task", scopeOptions)}
+            />
             {awaitingFindings && (
-              <Button
+              <ActionControl
+                inline
+                label="Refresh findings"
                 variant={
                   primaryAction === "refresh_findings" ? "primary" : "default"
                 }
                 disabled={action.busy || jobRunning}
-                pending={action.busy && action.key === "refresh_findings"}
-                onClick={() => perform("refresh_findings")}
-              >
-                Refresh findings
-              </Button>
+                {...step("refresh_findings", "Reading findings…")}
+              />
             )}
             {!!counts.recommended && (
-              <Button
+              <ActionControl
+                inline
+                label={`Use recommendations (${counts.recommended.toLocaleString()})`}
                 disabled={action.busy || jobRunning}
-                pending={action.busy && action.key === "use_recommendations"}
-                onClick={() => perform("use_recommendations", { mode: "add" })}
-              >
-                Use recommendations ({counts.recommended.toLocaleString()})
-              </Button>
+                {...step("use_recommendations", "Selecting…")}
+                onClick={() =>
+                  void perform("use_recommendations", { mode: "add" })
+                }
+              />
             )}
             {value.discoveryScope === "folders" && (
               <span className="image-scope-context">
@@ -998,7 +1013,7 @@ function Manager({
       {/* Other results sit between the images and the footer. */}
       <div className="image-action-feedback">
         <Message
-          message={stepKey ? "" : action.error}
+          message={stepKey || owned ? "" : action.error}
           onDismiss={action.clear}
         />
         {!!action.error && draft.dirty && (

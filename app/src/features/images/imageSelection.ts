@@ -96,6 +96,9 @@ export function imageStatus(asset: ImageAsset) {
   if (asset.aiReviewed)
     return asset.userReviewed ? "AI and user reviewed" : "AI reviewed";
   if (asset.userReviewed) return "User reviewed";
+  // Before an image is made editable, what discovery found says more.
+  if (asset.state === "not_prepared" && asset.classification !== "not_examined")
+    return imageClassificationLabels[asset.classification] || asset.state;
   return (
     imageStateLabels[asset.state] ||
     imageClassificationLabels[asset.classification] ||
