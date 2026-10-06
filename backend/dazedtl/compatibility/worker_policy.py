@@ -5,6 +5,7 @@ import math
 import sys
 import time
 from pathlib import Path
+from typing import Any, cast
 
 from dazedtl.settings.preferences import (
     CHOICE_COLLECTION,
@@ -20,7 +21,6 @@ from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 from . import (
     batch_pricing,
     choice_requests,
-    speaker_context,
     state_requests,
     structured_outputs,
 )
@@ -49,11 +49,8 @@ def configure_batch_allowance(translation, policy):
 def configure_states(plan, root, policy):
     module = sys.modules.get("modules.rpgmakermvmz")
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
-        # Choice handling wraps searchCodes; unwrap it before selecting the
-        # frozen speaker implementation, then reinstall in the same order.
-        choice_requests.configure(module, False)
-        speaker_context.configure(
-            module, bool(policy and policy.get("speakerContext") == SPEAKER_CONTEXT)
+        cast(Any, module).SPEAKER_CONTEXT = bool(
+            policy and policy.get("speakerContext") == SPEAKER_CONTEXT
         )
         choice_requests.configure(
             module, bool(policy and policy.get("choiceCollection") == CHOICE_COLLECTION)

@@ -80,11 +80,10 @@ New MV/MZ runs freeze a [single-pass choice policy](../backend/dazedtl/compatibi
 The write pass cannot queue a duplicate during preparation or consume/retry a rejected choice again.
 Pass state is local to the worker thread; identical text in different menus remains independently contextualized.
 Older frozen plans retain their original preparation and recovery behavior.
-New MV/MZ runs also freeze a [speaker-context policy](../backend/dazedtl/compatibility/speaker_context.py).
+New MV/MZ runs also freeze a speaker-context policy, which enables the [event parser's](../backend/dazedtl/engine/modules/rpgmakermvmz.py) `SPEAKER_CONTEXT` fixes.
 Existing translated code-101 nameplates still supply dialogue context; unnamed messages clear the preceding speaker.
 Implicit square-bracket nameplates must pass short-name plausibility checks, so bracketed tutorial prose receives normal text instructions instead of the nameplate prompt.
 Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
-The adapter makes checked syntax changes to the in-memory event parser, retaining its other branches, native writer and on-disk signature.
 Estimates, Live and Batch use the same policy; older frozen runs retain their original parser and request identities.
 Guided process views read saved queue fragments, manifests, results, and file receipts separately.
 The Batch evidence adapter archives approved request mappings and responses before native scratch cleanup.

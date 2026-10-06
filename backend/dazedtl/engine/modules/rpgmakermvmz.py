@@ -2952,6 +2952,49 @@ def searchNames(data, pbar, context, filename):
     return totalTokens
 
 
+# Speaker context fixes, enabled by the run's frozen request policy. Older runs
+# keep the parser behavior they were prepared with.
+SPEAKER_CONTEXT = False
+
+
+def _standalone_speaker(name):
+    # Re-exported [Name] lines are implicit nameplates, unlike explicit 101
+    # fields. Apply discovery's prose rejection before routing them to the
+    # short-name prompt. Keep resolved runtime names and short Latin labels.
+    display = _speaker_display_name(name)
+    if re.fullmatch(r"\\[nNvV]\[\d+\]", display):
+        return True
+    if _has_japanese_text(display):
+        return _is_plausible_speaker(display)
+    return bool(
+        len(display) <= 40
+        and len(display.split()) <= 4
+        and re.fullmatch(r"[^\W\d_][\w '\u2019\-]*", display)
+    )
+
+
+def _message_end(commands, start, allowed):
+    end = _text_group_end(commands, start, allowed)
+    nameplate = re.fullmatch(
+        rf"\[({SPEAKER_BRACKET_INNER})\]\s*", _param_source(commands[start], 0)
+    )
+    if nameplate and _standalone_speaker(nameplate[1]):
+        # An English [Name] line still needs the following Japanese dialogue
+        # in the eligibility preview; the native name handler advances to it.
+        return end
+    # Each retained scalar original owns an independently translated unit.
+    # In particular, rejecting a former [prose] nameplate must not merge it
+    # into the already-translated line after it and discard either original.
+    return next(
+        (
+            index - 1
+            for index in range(start + 1, end + 1)
+            if _scalar_original(commands[index]) is not None
+        ),
+        end,
+    )
+
+
 def searchCodes(page, pbar, jobList, filename):
     if len(jobList) > 0:
         list401 = jobList[0]
@@ -3058,7 +3101,9 @@ def searchCodes(page, pbar, jobList, filename):
 
                 # Grab String
                 if len(codeList[i]["parameters"]) > 0:
-                    previewEnd = _text_group_end(codeList, i, (401, 405, -1))
+                    previewEnd = (_message_end if SPEAKER_CONTEXT else _text_group_end)(
+                        codeList, i, (401, 405, -1)
+                    )
                     # Speaker parse must inspect source/_original even when live
                     # parameters are already English, or the unresolved count
                     # drifts as translation progress lands in files/.
@@ -3147,7 +3192,9 @@ def searchCodes(page, pbar, jobList, filename):
                 # [Speaker] standalone line format (written back by inline re-export)
                 if len(speakerList) == 0:
                     inlineFmtMatch = re.match(rf"^\[({SPEAKER_BRACKET_INNER})\]\s*$", speakerWork, re.IGNORECASE)
-                    if inlineFmtMatch:
+                    if inlineFmtMatch and (
+                        not SPEAKER_CONTEXT or _standalone_speaker(inlineFmtMatch.group(1))
+                    ):
                         speakerList = [inlineFmtMatch.group(1).strip()]
 
                 # Inline speaker detection — Name「/Name: "/Name: (/[Name] "/[Name] (
@@ -3295,7 +3342,7 @@ def searchCodes(page, pbar, jobList, filename):
 
                 # Join Up 401's into single string
                 if len(codeList) > i + 1:
-                    while codeList[i + 1]["code"] in [401, 405, -1] and len(codeList[i]["parameters"]) > 0 and len(codeList[i + 1]["parameters"]) > 0 and not re.match(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])", codeList[i+1]["parameters"][0]):
+                    while codeList[i + 1]["code"] in [401, 405, -1] and len(codeList[i]["parameters"]) > 0 and len(codeList[i + 1]["parameters"]) > 0 and not re.match(r"^(\s*[\\]+[aAbBdDeEfFgGhHjJlLmMoOpPqQrRsStTuUwWxXyYzZ]+\[[\w\d\[\]\\]+\])", codeList[i+1]["parameters"][0]) and (not SPEAKER_CONTEXT or _scalar_original(codeList[i + 1]) is None):
                         if not setData:
                             codeList[i]["parameters"] = []
                             codeList[i]["code"] = -1
@@ -3942,6 +3989,8 @@ def searchCodes(page, pbar, jobList, filename):
                 and codeList[i]["code"] == 101
                 and (CODE101 or AUTONAMEPOPUP101 or SPEAKER_PARSE_MODE)
             ):
+                if SPEAKER_CONTEXT:
+                    speaker = ""
                 isVar = False
 
                 # Exact plugin mappings take precedence over filename guesses.
@@ -4063,6 +4112,10 @@ def searchCodes(page, pbar, jobList, filename):
                 rawName = _101_name_source(codeList[i], isVar)
                 sourceName = _101_speaker_name(rawName)
                 currentName = _101_speaker_name(_101_name_current(codeList[i], isVar))
+                if SPEAKER_CONTEXT:
+                    # Retain the current display name even when skip-translated
+                    # prevents getSpeaker from running below.
+                    speaker = currentName
                 name_to_check = sourceName if SPEAKER_PARSE_MODE else currentName
                 if sourceName and _text_needs_translation(name_to_check):
                     response = getSpeaker(sourceName)
