@@ -986,21 +986,29 @@ export function useGuidedWorkspace({
       ))}
     </fieldset>
   );
-  // The file choice as one row, for panels that hold a task's other settings.
+  // The file choice as one row, for panels that hold a task's other settings;
+  // a short selection names its files.
   const fileRow = (
-    count = values.selected.length,
+    names: readonly string[] = values.selected,
     scope: "database" | "dialogue" | null = null,
   ) => (
-    <ActionRow title={`${fileCount(count)} selected`}>
+    <ActionRow
+      title={`${fileCount(names.length)} selected`}
+      description={
+        names.length > 3
+          ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+          : names.join(", ") || undefined
+      }
+    >
       <Button disabled={disabled} onClick={() => chooseFiles(scope)}>
         Choose files
       </Button>
     </ActionRow>
   );
   const fileSummary = (
-    count = values.selected.length,
+    names: readonly string[] = values.selected,
     scope: "database" | "dialogue" | null = null,
-  ) => <ActionList>{fileRow(count, scope)}</ActionList>;
+  ) => <ActionList>{fileRow(names, scope)}</ActionList>;
   const formatActions = [
     {
       id: "format_data",

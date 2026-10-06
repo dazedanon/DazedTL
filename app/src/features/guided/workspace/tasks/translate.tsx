@@ -320,7 +320,10 @@ export function auditView(w: GuidedWorkspace): TaskView {
   let content: ReactNode;
   content = (
     <>
-      {fileSummary(eventFiles.length, "dialogue")}
+      {fileSummary(
+        eventFiles.map((file) => file.name),
+        "dialogue",
+      )}
       <AssistantTask
         state={
           {

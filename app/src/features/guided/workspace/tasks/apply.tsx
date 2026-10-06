@@ -223,7 +223,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
             />
           }
         />
-        {fileRow(layoutFiles.length)}
+        {fileRow(layoutFiles)}
       </ActionList>
       <details>
         <summary>Fitting coverage and row protection</summary>
