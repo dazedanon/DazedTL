@@ -199,7 +199,7 @@ export function ReleaseContent({
         )}
       </ActionList>
       {artifact && (
-        <section className="guided-artifact">
+        <section className="guided-artifact" aria-label="Last saved archive">
           <ActionList>
             <ActionRow
               label={
@@ -219,17 +219,16 @@ export function ReleaseContent({
                       ? "Available on disk"
                       : "Unavailable or changed on disk"}
                   </small>
+                  <small className="path">{artifact.path}</small>
+                  <small>
+                    Later game edits are included only when you build again.
+                  </small>
                 </>
               }
             >
               {open}
             </ActionRow>
           </ActionList>
-          <p className="path">{artifact.path}</p>
-          <p className="muted release-note">
-            This is the last build. Later game edits are included only when you
-            build again.
-          </p>
         </section>
       )}
     </>

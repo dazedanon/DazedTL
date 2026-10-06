@@ -259,7 +259,9 @@ export function useGuidedWorkspace({
           "format_data",
           "format_plugins",
           "gameupdate",
-        ].includes(activeOperation.action || "")))
+        ].includes(activeOperation.action || "")) ||
+      (taskId === "package" &&
+        ["release", "release_patch"].includes(activeOperation.action || "")))
       ? activeOperation
       : null;
   const backupPending =
@@ -727,14 +729,19 @@ export function useGuidedWorkspace({
       "rewrap_apply",
       "qa_apply",
     ].includes(name);
-    const appliedHere =
-      name === "export_selected" &&
+    const finishedHere =
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
+    const appliedHere = name === "export_selected" && finishedHere;
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
+    // Release reports a finished build in its saved archive panel; only a
+    // build from this visit also confirms beside its button.
+    const releaseBuild = ["release", "release_patch"].includes(name);
+    const builtHere = releaseBuild && finishedHere;
     const display =
       current?.status === "complete" &&
       (publicationReview ||
+        releaseBuild ||
         (qaOperation && (!qa.current || current.result?.task !== qa.task)))
         ? undefined
         : current;
@@ -781,7 +788,9 @@ export function useGuidedWorkspace({
           {label}
         </Button>
       );
-    if (localOperation?.action === name)
+    // Prepare reports its operations in the footer status; a build reports
+    // its progress beside its own button.
+    if (localOperation?.action === name && !releaseBuild)
       return (
         <Button variant={variant} pending disabled>
           {label}
@@ -801,7 +810,11 @@ export function useGuidedWorkspace({
               ? "Estimating selected files…"
               : "Preparing action…",
         )}
-        {...(appliedHere ? { notice: "Saved translations applied." } : {})}
+        {...(appliedHere
+          ? { notice: "Saved translations applied." }
+          : builtHere
+            ? { notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.` }
+            : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }

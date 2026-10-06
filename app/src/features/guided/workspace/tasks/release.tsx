@@ -3,6 +3,7 @@ import { FolderOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
+import { Button } from "../../../../ui/Button";
 import { ReleaseContent } from "../../Release";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -30,6 +31,8 @@ export function packageView(w: GuidedWorkspace): TaskView {
     feedback,
     task,
     chooseFolder,
+    localOperation,
+    stopOperation,
   } = w;
   let content: ReactNode;
   content = (
@@ -150,5 +153,14 @@ export function packageView(w: GuidedWorkspace): TaskView {
     !state.readiness.unapplied.length && (
       <span>Nothing applied yet: the ZIP keeps the original text.</span>
     );
-  return { content, action: build, actionContext };
+  // A running build reports its progress beside its own button.
+  const secondary = localOperation && (
+    <Button
+      disabled={action.busy}
+      onClick={() => stopOperation(localOperation)}
+    >
+      Stop build
+    </Button>
+  );
+  return { content, secondary, action: build, actionContext };
 }

@@ -28,7 +28,11 @@ export function JobStatus({
   const state = job.status.replaceAll("_", " ");
 
   return (
-    <div className="job-status-status" role="status" aria-atomic="true">
+    <div
+      className={`job-status-status${compact ? " job-status-status--compact" : ""}`}
+      role="status"
+      aria-atomic="true"
+    >
       <div className="job-status-heading">
         {!compact && <strong>{job.label}</strong>}
         <span className="job-status-state" data-state={job.status}>

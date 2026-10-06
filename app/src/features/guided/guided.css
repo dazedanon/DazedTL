@@ -753,17 +753,9 @@
 }
 .guided-backup-location,
 .guided-artifact {
-  display: grid;
-  gap: var(--space-2);
-  font-size: var(--font-control);
-}
-.guided-artifact {
   margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
 }
-.guided-backup-location p,
-.guided-artifact p {
+.guided-backup-location p {
   margin: 0;
 }
 .guided-engine-options {
@@ -1230,20 +1222,6 @@
   }
 }
 
-.release-note {
-  font-size: var(--font-small);
-  margin-top: var(--space-4);
-}
-.guided-artifact {
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-}
-.guided-artifact .action-list .action-row {
-  border: 0;
-  padding: 0;
-}
 .guided-release-review {
   width: min(820px, calc(100vw - var(--space-8)));
 }

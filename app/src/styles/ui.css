@@ -836,6 +836,12 @@ pre {
 .job-status-status p {
   margin: var(--space-2) 0 0;
 }
+/* Beside a control, the detail reads at the size of other action feedback. */
+.job-status-status--compact p {
+  margin-top: var(--space-1);
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
 .job-status-spinner,
 .ui-button-spinner {
   animation: job-status-spin 1s linear infinite;
