@@ -359,16 +359,30 @@ pre {
   color: var(--color-muted);
   margin-left: 10px;
 }
+/* Fields stack their label above the control; Settings and dialog forms,
+   where many short fields line up, use a label column instead. */
 .field-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+:is(.settings-page, dialog) .field-row {
   grid-template-columns: var(--field-label-width) minmax(0, 1fr);
   align-items: start;
-  column-gap: var(--field-column-gap);
+  gap: 0 var(--field-column-gap);
   min-height: var(--control-height);
 }
 .field-row + .field-row,
 .check-field + .field-row,
 .field-row + .check-field {
+  margin-top: var(--space-4);
+}
+:is(.settings-page, dialog)
+  :is(
+    .field-row + .field-row,
+    .check-field + .field-row,
+    .field-row + .check-field
+  ) {
   margin-top: var(--field-row-gap);
 }
 /* Fields lead into the actions they configure with the same gap as a section. */
@@ -391,22 +405,22 @@ pre {
 .field-label {
   display: block;
   font-size: var(--font-control);
-  padding-top: 8px;
   line-height: 1.35;
   color: var(--color-label);
+}
+:is(.settings-page, dialog) :is(.field-row > label, .field-row > .field-label) {
+  padding-top: 8px;
 }
 .field-control {
   min-width: 0;
 }
+/* Choices and short values stay short; paths and free text use the wide variant. */
 .field-control > input:not([type="checkbox"]),
 .field-control > select {
-  width: min(100%, 380px);
+  width: min(100%, 24rem);
 }
 .field-control > input[type="checkbox"] {
   margin: 8px 0 0;
-}
-.field-control > select {
-  max-width: 280px;
 }
 .field-control--wide > input:not([type="checkbox"]),
 .field-control--wide > select {
@@ -502,12 +516,12 @@ pre {
   flex-shrink: 0;
 }
 @media (max-width: 1050px) {
-  .field-row {
+  :is(.settings-page, dialog) .field-row {
     grid-template-columns: minmax(0, min(var(--field-label-width), 45%)) minmax(
         0,
         1fr
       );
-    gap: 12px;
+    column-gap: 12px;
   }
 }
 @media (max-width: 1050px) {
@@ -682,7 +696,7 @@ pre {
   position: relative;
   min-width: 0;
   width: 100%;
-  max-width: 380px;
+  max-width: 24rem;
 }
 .combobox > input {
   width: 100%;
@@ -1244,6 +1258,7 @@ pre {
 .option-cards > .ui-button {
   display: grid;
   align-content: start;
+  justify-content: stretch;
   justify-items: start;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);

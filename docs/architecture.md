@@ -426,6 +426,8 @@ Text uses the five sizes and three weights in [tokens.css](../app/src/styles/tok
 Headings and emphasis are semibold, row titles medium, and everything else regular; stylesheets name a size token instead of a pixel value.
 Headings inside a dialog body sit a step below the dialog title.
 Paragraphs and notes in page and dialog bodies stop at `--measure`, about 72 characters; tables, editors, grids and row labels keep the width their layout gives them.
+Form fields stack their label above the control; Settings and dialog forms, where many short fields line up, use a label column.
+Choices and short values are at most 24rem wide; paths, search and free text use the wide variant.
 Buttons, single-line inputs and selects share `--control-height` and `--control-radius`, so a field and its button line up; textareas keep their own height, and the shell's sidebar and project switcher size themselves as chrome.
 Color has three accent roles: accent for interactive text (links, the selected tab, focus), accent strong for the one primary button, and accent subtle for selected surfaces (the current sidebar entry and stage, a selected row).
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
