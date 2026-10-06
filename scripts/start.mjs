@@ -3,7 +3,23 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { app, root, dependencies } from "./dependencies.mjs";
-if (!fs.existsSync(path.join(app, "dist/index.html")))
+// Rebuild when renderer inputs changed since the last build, such as after
+// updating the checkout; the backend refuses a renderer built from older contracts.
+const built = fs.statSync(path.join(app, "dist/index.html"), {
+  throwIfNoEntry: false,
+})?.mtimeMs;
+const inputs = [
+  ...fs.globSync("app/src/**", { cwd: root }),
+  "app/index.html",
+  "app/package-lock.json",
+  "app/tsconfig.json",
+  "app/vite.config.ts",
+  "backend/dazedtl/api/protocol.json",
+];
+if (
+  built === undefined ||
+  inputs.some((file) => fs.statSync(path.join(root, file)).mtimeMs > built)
+)
   await import("./build.mjs");
 const require = createRequire(
   path.join(dependencies(), "electron/package.json"),
