@@ -773,16 +773,6 @@ pre {
   align-items: start;
   gap: var(--space-6);
 }
-.action-row > .actions {
-  margin-top: 0;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.action-row > .actions > * {
-  flex-shrink: 0;
-  max-width: 100%;
-}
 .action-row-label {
   min-width: 0;
   padding-top: var(--space-2);
@@ -795,10 +785,29 @@ pre {
   display: block;
   margin-top: var(--space-1);
 }
-.action-row > .action-control,
-.action-row > .action-control > button {
+/* A row's actions stack as full-width controls in the shared action column. */
+.action-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.action-row-actions > *,
+.action-row-actions > .action-control > button {
   width: 100%;
   max-width: 100%;
+}
+.action-row-actions > .actions {
+  margin-top: 0;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.action-row-actions > .actions > * {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.action-row:has(> .action-row-label:only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 @container (max-width: 36rem) {
   .action-row {
@@ -809,6 +818,7 @@ pre {
     padding-top: 0;
   }
 }
+/* Compact rows fit their actions to content at the end of the row. */
 .action-list--compact {
   gap: var(--space-3);
 }
@@ -817,27 +827,38 @@ pre {
   align-items: center;
   gap: var(--space-3);
 }
-.action-list--compact > .action-row > :last-child:not(.action-row-label) {
-  justify-self: end;
-}
-.action-list--compact > .action-row > .actions {
-  justify-content: flex-end;
-}
-.action-row:has(> .action-row-label:only-child) {
-  grid-template-columns: minmax(0, 1fr);
-}
 .action-list--compact .action-row-label {
   padding-top: 0;
+}
+.action-list--compact > .action-row > .action-row-actions {
+  justify-self: end;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.action-list--compact .action-row-actions > *,
+.action-list--compact .action-row-actions > .action-control > button {
+  width: auto;
 }
 .action-list--compact > .action-row:has(.action-control-feedback:not(:empty)) {
   align-items: start;
 }
 @container (max-width: 36rem) {
-  .action-list--compact > .action-row:has(> .actions) {
+  .action-list--compact
+    > .action-row:has(
+      > .action-row-actions > :nth-child(2),
+      > .action-row-actions > .actions
+    ) {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
-  .action-list--compact > .action-row > .actions:last-child {
+  .action-list--compact
+    > .action-row:has(
+      > .action-row-actions > :nth-child(2),
+      > .action-row-actions > .actions
+    )
+    > .action-row-actions {
     justify-self: start;
     justify-content: flex-start;
   }
@@ -847,8 +868,9 @@ pre {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
-  .action-list--compact > .action-row > :last-child:not(.action-row-label) {
+  .action-list--compact > .action-row > .action-row-actions {
     justify-self: start;
+    justify-content: flex-start;
   }
 }
 .expandable-text {

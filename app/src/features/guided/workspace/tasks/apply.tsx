@@ -417,7 +417,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
         </select>
       </label>
       <ActionList>
-        <ActionRow label="Prepare or resume QA for current runtime text.">
+        <ActionRow
+          title="QA task"
+          description="Prepare or resume QA for the current runtime text."
+        >
           {task(
             "qa_prepare",
             "Prepare text QA task",
@@ -426,7 +429,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
           )}
         </ActionRow>
         {qaTask && (
-          <ActionRow label="Paste the prepared task into your coding assistant.">
+          <ActionRow
+            title="Prepared task"
+            description="Paste it into your coding assistant."
+          >
             <ActionControl
               label="Copy prepared QA task"
               disabled={disabled}
@@ -441,7 +447,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
             />
           </ActionRow>
         )}
-        <ActionRow label="Read saved reports without starting an assistant.">
+        <ActionRow
+          title="Saved findings"
+          description="Read saved reports without starting an assistant."
+        >
           {task(
             "qa_status",
             "Refresh QA findings",
@@ -449,7 +458,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
             !baseline,
           )}
         </ActionRow>
-        <ActionRow label="Optional investigation of recurring jokes, callbacks, and terminology.">
+        <ActionRow
+          title="Running jokes and terms"
+          description="Optional investigation of recurring jokes, callbacks and terminology."
+        >
           {copyTask("investigation", "Copy investigation task")}
         </ActionRow>
       </ActionList>
@@ -636,7 +648,10 @@ export function toolsView(w: GuidedWorkspace): TaskView {
             Configure tools
           </Button>
         </ActionRow>
-        <ActionRow label="Create a portable player walkthrough with your coding assistant.">
+        <ActionRow
+          title="Player walkthrough"
+          description="Create a portable walkthrough with your coding assistant."
+        >
           {copyTask("walkthrough", "Copy walkthrough task")}
         </ActionRow>
       </ActionList>

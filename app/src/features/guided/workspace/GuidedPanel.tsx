@@ -488,7 +488,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           {panel === "preparation" && (
             <ActionList>
               {formatActions.map((item) => (
-                <ActionRow key={item.id} label={item.hint}>
+                <ActionRow
+                  key={item.id}
+                  title={item.title}
+                  description={item.hint}
+                >
                   {task(
                     item.id,
                     item.id === "gameupdate"

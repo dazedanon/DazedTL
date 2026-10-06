@@ -447,7 +447,7 @@ An action error clears when the user edits the draft it ran with.
 Tertiary actions inside running content use the `link` button variant, whose label aligns with the surrounding text; `quiet` buttons belong in toolbars, headers and footers, where their padding is the hit area.
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
 A control given its `feedbackKey` registers with the nearest [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) scope, so a page's fallback message shows only errors that no mounted control reports.
-Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared action-column width, token-based gaps, wrapping text, and a stacked layout based on available container width.
+Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): a `title` and `description` label (or a custom `label`), one shared action-column width that stacks a row's actions, token-based gaps, wrapping text, and a stacked layout based on available container width.
 The compact variant fits shorter actions to their content and stacks in narrower containers.
 Action groups wrap whole controls and stack below labels in narrower containers.
 Rows grow with feedback rather than fixing heights or clipping content.

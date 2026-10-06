@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 
 export function ActionList({
   children,
@@ -14,17 +14,33 @@ export function ActionList({
   );
 }
 
+/** A label beside its actions; every action sits in the shared action column. */
 export function ActionRow({
+  title,
+  description,
   label,
   children,
 }: {
-  label: ReactNode;
-  children: ReactNode;
+  /** The row's name; with `description`, the standard two-line label. */
+  title?: ReactNode;
+  description?: ReactNode;
+  /** A custom label for rows that show more than a name and one line. */
+  label?: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className="action-row">
-      <span className="action-row-label">{label}</span>
-      {children}
+      <span className="action-row-label">
+        {label ?? (
+          <>
+            {title && <strong>{title}</strong>}
+            {description && <small>{description}</small>}
+          </>
+        )}
+      </span>
+      {Children.toArray(children).length > 0 && (
+        <div className="action-row-actions">{children}</div>
+      )}
     </div>
   );
 }

@@ -116,7 +116,10 @@ export function extractView(w: GuidedWorkspace): TaskView {
         </p>
       )}
       <ActionList>
-        <ActionRow label="Extract the encrypted archive when required.">
+        <ActionRow
+          title="Encrypted archive"
+          description="Extract it when the game ships one."
+        >
           {task(
             "ace_decrypt",
             "Extract archive",
@@ -124,7 +127,10 @@ export function extractView(w: GuidedWorkspace): TaskView {
             !preserved || !state.encrypted.length || !state.aceAvailable,
           )}
         </ActionRow>
-        <ActionRow label="Convert native game data for the JSON translation phases.">
+        <ActionRow
+          title="Native game data"
+          description="Convert it to JSON for the translation phases."
+        >
           {task(
             "ace_extract",
             "Convert to JSON",
