@@ -413,6 +413,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     reviewSources,
     skipEventText,
     chooseFiles,
+    feedback,
   } = w;
   let content: ReactNode;
   content = (
@@ -439,6 +440,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
           edit("engine_options", { ...values.engine_options, [key]: value })
         }
         openPicker={openSourcePicker}
+        recommendationFeedback={feedback("event-text:recommendations")}
         recommendations={() =>
           action.run(
             async () => {

@@ -144,7 +144,7 @@ function Workspace(
       : position.step === "prepare" && preparationPending
         ? "Preparation in progress"
         : position.step !== "context" && draft.dirty
-          ? "Options retained for recovery"
+          ? "Option changes apply to the next run"
           : "";
   // Plugin text and Images bring their own action bar for the shared footer.
   const hostedFooter = taskId === "plugins" || taskId === "images";

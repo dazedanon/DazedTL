@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import type { EngineValue, EventTextState } from "../../api/contracts";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
@@ -18,6 +18,7 @@ export function EventTextSources({
   change,
   openPicker,
   recommendations,
+  recommendationFeedback,
 }: {
   state: EventTextState;
   values: Record<string, EngineValue>;
@@ -25,6 +26,8 @@ export function EventTextSources({
   change: (key: string, value: EngineValue) => void;
   openPicker: (key: SelectorKey) => void;
   recommendations: () => void;
+  /** The staged-recommendations result, reported beside its button. */
+  recommendationFeedback?: Partial<ComponentProps<typeof ActionControl>>;
 }) {
   const manual = manualSources(state, values);
   const [selected, setSelected] = useState(state.rows[0]?.key || "");
@@ -49,6 +52,7 @@ export function EventTextSources({
           }
         >
           <ActionControl
+            {...recommendationFeedback}
             label="Use recommendations"
             disabled={disabled || state.status !== "ready"}
             disabledReason={
