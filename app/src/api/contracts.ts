@@ -513,6 +513,7 @@ export type PreparationStage = {
 export type Preparation = {
   complete: boolean;
   configuration: string;
+  configurationReady: boolean;
   stages: PreparationStage[];
 };
 

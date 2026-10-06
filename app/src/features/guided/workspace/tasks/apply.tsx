@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
+import { Notice } from "../../../../ui/Notice";
 import { displayText } from "../../../../ui/displayText";
 import { fileCount, publicationLabels } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
@@ -465,9 +466,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
           {copyTask("investigation", "Copy investigation task")}
         </ActionRow>
       </ActionList>
-      <p className={qa.current ? "muted" : "guided-source-alert"}>
+      {/* With no task yet this is an empty state, not a problem. */}
+      <Notice tone={qa.current || !qaStatus.stage ? "neutral" : "warning"}>
         {qa.message}
-      </p>
+      </Notice>
       {!!qaStatus.stage && (
         <div className="guided-qa-status">
           <strong>

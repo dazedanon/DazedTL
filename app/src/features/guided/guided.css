@@ -623,14 +623,6 @@
 .guided-operation .job-status {
   margin: 0;
 }
-.guided-source-alert {
-  padding: var(--space-3);
-  margin-bottom: var(--space-4);
-  border-left: 2px solid var(--color-warning);
-}
-.guided-source-alert p {
-  margin-top: 0;
-}
 .guided-workspace fieldset,
 .guided-sheet fieldset {
   min-width: 0;

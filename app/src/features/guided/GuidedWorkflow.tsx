@@ -6,6 +6,7 @@ import { TopbarActions } from "../../app/TopbarSlot";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { Notice } from "../../ui/Notice";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
 import { PageBody, PageLayout } from "../../ui/PageLayout";
@@ -300,11 +301,11 @@ function Workspace(
               ["translate", "advanced", "apply", "review"].includes(
                 position.step,
               ) && (
-                <div className="guided-source-alert">
-                  <p>
+                <Notice tone="warning">
+                  <span>
                     {fileCount(changed.length)} have changed sources. Resync the
                     affected working files before new work.
-                  </p>
+                  </span>
                   {position.step !== "translate" &&
                     task(
                       "refresh_sources",
@@ -314,7 +315,7 @@ function Workspace(
                       "default",
                       changed,
                     )}
-                </div>
+                </Notice>
               )}
             {baselineNotice && taskId === "names" && (
               <p className="guided-success" role="status">

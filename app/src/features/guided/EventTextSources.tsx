@@ -104,15 +104,11 @@ export function EventTextSources({
           <section className="translation-source-detail" aria-label={row.label}>
             <h3>{row.label}</h3>
             <p className="muted">{row.reason}</p>
-            <details>
-              <summary>Investigation summary</summary>
-              <p>{state.message}</p>
-              <p>
-                Recommendations are staged for review. Uncertain or mixed
-                coverage stays off. Manual choices require coverage
-                confirmation.
-              </p>
-            </details>
+            <p className="muted">
+              {state.message} Recommendations are staged for review; uncertain
+              or mixed coverage stays off, and manual choices need coverage
+              confirmation.
+            </p>
             {row.key === "CODE122" && (
               <FieldRow id="event-text-variable-ids" label="Variable IDs">
                 {(props) => (

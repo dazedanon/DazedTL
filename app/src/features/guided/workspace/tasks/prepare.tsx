@@ -3,6 +3,7 @@ import { Check, LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
+import { Notice } from "../../../../ui/Notice";
 import { Message } from "../../../../ui/Feedback";
 import { FieldRow } from "../../../../ui/FieldRow";
 import { JobStatus } from "../../../../ui/JobStatus";
@@ -211,7 +212,23 @@ export function formatView(w: GuidedWorkspace): TaskView {
         </ol>
       )}
       {preparation.configuration && (
-        <p className="muted">{preparation.configuration}</p>
+        <Notice tone={preparation.configurationReady ? "neutral" : "warning"}>
+          <span>{preparation.configuration}</span>
+          {!preparation.configurationReady && (
+            <Button
+              variant="link"
+              onClick={() =>
+                action.run(
+                  () => window.dazedtl.openFolder("project"),
+                  "Game folder opened.",
+                  "open-game",
+                )
+              }
+            >
+              Open game folder
+            </Button>
+          )}
+        </Notice>
       )}
       {localOperation && (
         <JobStatus

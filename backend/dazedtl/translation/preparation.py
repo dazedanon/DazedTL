@@ -89,16 +89,27 @@ def state(native, folder, *, active=False, observed=None):
         "complete": all(row["status"] == "complete" for row in stages),
         "stages": stages,
         "configuration": saved.get("configuration", "") if valid else "",
+        "configurationReady": valid and saved.get("configurationReady") is True,
     }
 
 
 def configuration(native):
+    """The patch delivery note shown after GameUpdate installation, and whether it is set."""
     path = project_path(native["source"], "gameupdate/patch-config.txt", exists=False)
     if not path.is_file():
-        return "GameUpdate files installed; patch configuration is missing. Configure patch delivery before release."
+        return (
+            "GameUpdate files installed. Add gameupdate/patch-config.txt, copied from the example beside it, before release.",
+            False,
+        )
     if "YOUR_PATCH_REPO" in path.read_text(encoding="utf-8"):
-        return "GameUpdate files installed; choose the patch repository before release."
-    return "GameUpdate configuration file is present. Its delivery connection has not been tested."
+        return (
+            "GameUpdate files installed. Set repo= in gameupdate/patch-config.txt before release.",
+            False,
+        )
+    return (
+        "GameUpdate configuration is set. Its delivery connection has not been tested.",
+        True,
+    )
 
 
 def run(plan, log, execute, guard):
@@ -144,7 +155,9 @@ def run(plan, log, execute, guard):
                 raise ValueError(result.get("message") or row["label"] + " failed.")
             row.update(status="complete", result=result)
             if row["action"] == "gameupdate":
-                value["configuration"] = configuration(native)
+                value["configuration"], value["configurationReady"] = configuration(
+                    native
+                )
             save()
         except Exception as error:
             row.update(

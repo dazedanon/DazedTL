@@ -166,12 +166,7 @@
   list-style: none;
 }
 .context-finding > summary::before {
-  content: "›";
   color: var(--muted);
-  font-size: 1.3em;
-}
-.context-finding[open] > summary::before {
-  transform: rotate(90deg);
 }
 .context-finding-summary {
   display: grid;

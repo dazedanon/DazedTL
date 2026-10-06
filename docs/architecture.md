@@ -441,6 +441,8 @@ Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
 Status colors always accompany text or icons.
+Inline notes use [Notice](../app/src/ui/Notice.tsx): neutral notes, including empty states, read as plain secondary text, and warnings get the warning edge with their way forward beside them.
+Disclosures share the app's chevron marker and hold genuine advanced settings or long evidence, not status the task already needs.
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.

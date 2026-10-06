@@ -302,8 +302,10 @@ export function ReleaseReview({
       )}
       <details>
         <summary>
-          Excluded files and folders ({preview.package?.exclusions?.length || 0}
-          )
+          Excluded files and folders
+          {preview.package?.exclusions?.length
+            ? ` (${preview.package.exclusions.length})`
+            : ""}
         </summary>
         <div className="release-exclusions">
           {preview.package?.exclusions?.map((row) => (

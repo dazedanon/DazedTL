@@ -237,6 +237,7 @@ class PreparationStage(TypedDict):
 class Preparation(TypedDict):
     complete: bool
     configuration: str
+    configurationReady: bool
     stages: list[PreparationStage]
 
 
