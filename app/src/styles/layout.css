@@ -26,8 +26,8 @@
   background: var(--color-chrome);
   display: flex;
   align-items: center;
-  gap: 30px;
-  padding: 0 24px;
+  gap: var(--space-6);
+  padding: 0 var(--space-6);
 }
 .brand {
   display: flex;
@@ -37,9 +37,9 @@
   font-weight: var(--weight-semibold);
 }
 .brand > span {
-  width: 32px;
-  height: 34px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--control-radius);
   background: var(--color-accent-strong);
   color: var(--color-on-accent);
   display: grid;
@@ -84,39 +84,47 @@
   min-height: 0;
 }
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-width);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--color-border);
   background: var(--color-chrome);
-  padding: 22px 13px;
+  padding: var(--space-4) var(--space-3);
 }
 .sidebar nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1);
 }
 .sidebar button {
   width: 100%;
+  min-height: 38px;
   justify-content: flex-start;
+  gap: var(--space-3);
   border-color: transparent;
   background: transparent;
-  padding: 12px;
+  padding: 0 var(--space-3);
   font-size: var(--font-body);
   color: var(--color-label);
+}
+.sidebar button > svg {
+  flex-shrink: 0;
 }
 .sidebar button[aria-current="page"] {
   background: var(--color-accent-subtle);
   color: var(--color-accent);
 }
 .sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   margin-top: auto;
-  padding-top: 15px;
+  padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
 }
 .sidebar-feedback {
-  margin: 0 12px 8px;
+  margin: 0 var(--space-3) var(--space-1);
   font-size: var(--font-small);
   color: var(--color-muted);
 }
@@ -141,9 +149,39 @@ main > .banner {
 main > p {
   margin-block: var(--space-6);
 }
-@media (max-width: 1000px) {
+/* Below 1100px the sidebar becomes a rail of icons over short labels, so
+   small windows give the task the width. */
+@media (max-width: 1099px) {
   .sidebar {
-    width: 195px;
+    width: var(--rail-width);
+    padding-inline: 6px;
+  }
+  .sidebar button {
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 52px;
+    padding: 6px 2px;
+    font-size: var(--font-small);
+    line-height: 1.25;
+    text-align: center;
+  }
+  .sidebar button > svg {
+    width: 20px;
+    height: 20px;
+  }
+  /* The unsaved mark sits on the icon's corner instead of below the label. */
+  .sidebar button {
+    position: relative;
+  }
+  .sidebar button > .unsaved-dot {
+    position: absolute;
+    top: var(--space-2);
+    right: calc(50% - 16px);
+  }
+  .sidebar-feedback {
+    margin-inline: 0;
+    text-align: center;
   }
 }
 @media (max-width: 1000px) {

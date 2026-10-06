@@ -71,8 +71,10 @@
     calc((100cqw - var(--content-width)) / 2)
   );
   --focus-ring: 2px solid var(--color-accent);
-  --topbar-height: 68px;
-  --bar-height: 68px;
+  --topbar-height: 56px;
+  --bar-height: 60px;
+  --sidebar-width: 200px;
+  --rail-width: 80px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -85,7 +87,7 @@
 /* Short windows give the chrome less height so task content stays visible. */
 @media (max-height: 720px) {
   :root {
-    --topbar-height: 52px;
+    --topbar-height: 48px;
     --bar-height: 56px;
   }
 }
