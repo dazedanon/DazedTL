@@ -2496,9 +2496,12 @@ class GuidedTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Items.json is still translating"):
             self.guided.preview(self.identity, "start", options={"mode": "estimate"})
-        # A Batch waiting at the provider saves nothing until it is consumed.
+        # A Batch saves only while it consumes provider results.
         job.update(mode="batch", phase="poll")
         self.guided.preview(self.identity, "start", options={"mode": "estimate"})
+        job.update(phase="consume")
+        with self.assertRaisesRegex(ValueError, "still translating"):
+            self.guided.preview(self.identity, "start", options={"mode": "estimate"})
 
     def test_stopped_live_submission_cannot_block_new_preparation_or_batch_approval(
         self,

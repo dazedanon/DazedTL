@@ -144,9 +144,9 @@ class GuidedActions:
 
         Starting copies each file's working translation into the new run's
         inputs, so a run that is still saving would lose its later results.
-        A Batch waiting at the provider saves nothing until it is consumed.
+        A Batch saves only while it consumes provider results; submitting
+        and waiting at the provider write nothing.
         """
-        from dazedtl.compatibility.checkpoints import can_collect_outputs
         from dazedtl.compatibility.preparations import temporary
 
         busy = sorted(
@@ -156,7 +156,7 @@ class GuidedActions:
                 if (job := self.guided.backend.manual.jobs.get(identity))
                 and job.get("status") in {"running", "waiting"}
                 and not temporary(job)
-                and can_collect_outputs(job)
+                and (job.get("mode") != "batch" or job.get("phase") == "consume")
                 for name in job.get("files", [])
             }
             & set(files)
