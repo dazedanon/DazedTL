@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 from types import SimpleNamespace
 
 from util.paths import (
@@ -436,16 +435,18 @@ Additional project instructions (including any explicitly narrower scope):
 def _write_atomic(path: Path, text: str) -> None:
     if path.is_symlink():
         raise ValueError(f"Refusing to replace a symlink: {path}")
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", errors="surrogateescape", dir=path.parent, delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
+    temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
+    try:
+        # Opened with the usual mode so the umask applies; a new file such as
+        # the game's .gitignore is not left private like a mkstemp file.
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        with os.fdopen(descriptor, "w", encoding="utf-8", errors="surrogateescape") as handle:
             handle.write(text)
-            handle.close()
-            if path.exists():
-                temporary.chmod(path.stat().st_mode)
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        if path.exists():
+            temporary.chmod(path.stat().st_mode)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _prepare_local_work(project: LenProject) -> None:
