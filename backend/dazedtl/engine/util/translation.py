@@ -1696,6 +1696,15 @@ def _clear_batch_queue_storage(*, strict=False, queue_file=None):
     _clear_batch_queue_parts(strict=strict, queue_file=queue_file)
 
 
+@extensions.point
+def _clear_run_batch_queue(*, strict=False, queue_file=None):
+    """Clears this run's Batch queue; a host may retain its evidence first.
+
+    Batch History maintenance clears leftover queues through the storage helper.
+    """
+    _clear_batch_queue_storage(strict=strict, queue_file=queue_file)
+
+
 def _compact_batch_queue(*, strict=True, queue_file=None):
     """Merge durable fragments into the legacy queue snapshot once."""
     queue_file = Path(queue_file or _active_batch_queue_file())
@@ -2126,7 +2135,7 @@ def clearBatchFiles(*, strict=False):
                 fetched_ids = list(state.get("batch_ids") or [])
                 if not fetched_ids:
                     fetched_ids = [b.get("id") for b in (state.get("batches") or []) if b.get("id")]
-            _clear_batch_queue_storage(
+            _clear_run_batch_queue(
                 strict=strict, queue_file=BATCH_QUEUE_FILE
             )
             for path in (BATCH_STATE_FILE, BATCH_RESULTS_FILE):
@@ -2172,7 +2181,7 @@ def clearEstimateRequests(*, strict=False):
     global _batch_queue_pending
     with BATCH_LOCK:
         with _batch_file_lock():
-            _clear_batch_queue_storage(
+            _clear_run_batch_queue(
                 strict=strict, queue_file=BATCH_ESTIMATE_QUEUE_FILE
             )
         if get_batch_phase() == "estimate":
@@ -3051,7 +3060,7 @@ def fetchTranslationBatches(batches=None):
             _write_batch_file(BATCH_RESULTS_FILE, results)
             # Drop the queue; keep a lightweight fetched marker (ids for consume→history).
             # custom_ids stay in durable history - do not destroy recovery maps.
-            _clear_batch_queue_storage(queue_file=BATCH_QUEUE_FILE)
+            _clear_run_batch_queue(queue_file=BATCH_QUEUE_FILE)
             fetched_state = {
                 "status": "fetched",
                 "run_id": state.get("run_id"),

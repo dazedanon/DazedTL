@@ -1,8 +1,6 @@
 """Retain approved Batch inspection evidence before native scratch cleanup."""
 
-from functools import wraps
 from pathlib import Path
-from typing import Any, cast
 
 from dazedtl.storage import write_json
 
@@ -62,20 +60,11 @@ def preserve(root, requests, results, state):
 
 
 def install(translation, root, plan):
-    if (
-        plan.get("mode") != "batch"
-        or plan.get("batch_link")
-        or not hasattr(translation, "_clear_batch_queue_storage")
-    ):
+    """Retains a Batch run's queue, results and state before the run clears them."""
+    if plan.get("mode") != "batch" or plan.get("batch_link"):
         return
-    original = getattr(
-        translation._clear_batch_queue_storage,
-        "_dazedtl_native",
-        translation._clear_batch_queue_storage,
-    )
 
-    @wraps(original)
-    def clear(*args, **kwargs):
+    def clear(native, *args, **kwargs):
         if (
             kwargs.get("queue_file", translation.BATCH_QUEUE_FILE)
             == translation.BATCH_QUEUE_FILE
@@ -90,7 +79,6 @@ def install(translation, root, plan):
                 ),
                 translation._read_batch_file(translation.BATCH_STATE_FILE, strict=True),
             )
-        return original(*args, **kwargs)
+        return native(*args, **kwargs)
 
-    cast(Any, clear)._dazedtl_native = original
-    translation._clear_batch_queue_storage = clear
+    translation._clear_run_batch_queue.layer("batch-evidence", clear)

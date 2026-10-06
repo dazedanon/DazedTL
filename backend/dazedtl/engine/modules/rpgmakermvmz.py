@@ -1,4 +1,5 @@
 # Libraries
+import builtins
 import json
 import os
 import re
@@ -535,6 +536,12 @@ def handleMVMZ(filename, estimate):
         return totalString
 
 
+@extensions.point
+def open(file, *args, **kwargs):
+    """Parser file access; a host may resume a file from its saved progress."""
+    return builtins.open(file, *args, **kwargs)
+
+
 def openFiles(filename):
     file_kind = mvmz_file_kind(filename)
     with open("files/" + filename, "r", encoding="utf-8-sig") as f:
@@ -672,6 +679,7 @@ def getResultString(translatedData, translationTime, filename):
             return filename + ": " + totalTokenstring + timeString + Fore.RED + " \u2717 " + errorString + Fore.RESET
 
 
+@extensions.point
 def saveProgress(data, filename, *, force=False):
     """Atomically write current data to translated/filename to avoid progress loss.
     Intermediate checkpoints are throttled; a forced final save always writes.
@@ -6640,6 +6648,7 @@ def _merge_speaker_rows_into_game_characters(content: str, generated_pairs):
     return section + content_without_speakers.lstrip("\r\n")
 
 
+@extensions.point
 def finalizeSpeakerParse():
     """Batch translate collected speakers into # Game Characters."""
     if not SPEAKER_PARSE_MODE:

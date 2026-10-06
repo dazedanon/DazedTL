@@ -956,16 +956,21 @@ class ProcessTests(unittest.TestCase):
             write_json(root / "files/Items.json", source)
             original = (root / "files/Items.json").read_bytes()
             module = SimpleNamespace(
-                saveProgress=lambda data, name, **_: (
-                    write_json(root / "translated" / name, data),
-                    True,
-                )[1]
+                saveProgress=point(
+                    lambda data, name, **_: (
+                        write_json(root / "translated" / name, data),
+                        True,
+                    )[1]
+                ),
+                open=point(open),
             )
             checkpoints.install(module, root, plan)
             module.saveProgress(partial, "Items.json")
             self.assertIn("Items.json", checkpoints.outputs(root, plan))
             # A fresh worker sees the checkpoint even if the previous process died.
-            replacement = SimpleNamespace(saveProgress=module.saveProgress)
+            replacement = SimpleNamespace(
+                saveProgress=module.saveProgress, open=point(open)
+            )
             checkpoints.install(replacement, root, plan)
             with replacement.open(
                 root / "files/Items.json", encoding="utf-8"
@@ -980,10 +985,13 @@ class ProcessTests(unittest.TestCase):
             write_json(root / "plan.json", plan)
             (root / checkpoints.INDEX).unlink()
             batch = SimpleNamespace(
-                saveProgress=lambda data, name, **_: (
-                    write_json(root / "translated" / name, data),
-                    True,
-                )[1]
+                saveProgress=point(
+                    lambda data, name, **_: (
+                        write_json(root / "translated" / name, data),
+                        True,
+                    )[1]
+                ),
+                open=point(open),
             )
             checkpoints.install(batch, root, plan)
             batch.saveProgress(partial, "Items.json")
@@ -1088,16 +1096,18 @@ class ProcessTests(unittest.TestCase):
                 BATCH_STATE_FILE=state_file,
                 _read_batch_queue=lambda **_: read(queue_file),
                 _read_batch_file=read,
-                _clear_batch_queue_storage=lambda **_: queue_file.unlink(
-                    missing_ok=True
+                _clear_run_batch_queue=point(
+                    lambda **_: queue_file.unlink(missing_ok=True)
                 ),
             )
-            original = native._clear_batch_queue_storage
             batch_evidence.install(native, root, {"mode": "translate"})
-            self.assertIs(native._clear_batch_queue_storage, original)
+            with patch.object(batch_evidence, "preserve") as preserve:
+                native._clear_run_batch_queue(queue_file=queue_file)
+            preserve.assert_not_called()
+            write_json(queue_file, requests)
             batch_evidence.install(native, root, {"mode": "batch"})
             # Unapproved preparation creates no durable archive.
-            native._clear_batch_queue_storage(queue_file=queue_file)
+            native._clear_run_batch_queue(queue_file=queue_file)
             self.assertFalse((root / "log" / batch_evidence.ARCHIVE).exists())
             write_json(queue_file, requests)
             write_json(
@@ -1112,9 +1122,9 @@ class ProcessTests(unittest.TestCase):
                     ]
                 },
             )
-            native._clear_batch_queue_storage(queue_file=queue_file)
+            native._clear_run_batch_queue(queue_file=queue_file)
             write_json(state_file, {"status": "fetched", "batches": []})
-            native._clear_batch_queue_storage(queue_file=queue_file)
+            native._clear_run_batch_queue(queue_file=queue_file)
             result_file.unlink()
             state_file.unlink()
             with patch.dict(

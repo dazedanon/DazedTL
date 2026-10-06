@@ -1,11 +1,9 @@
 """Verified incremental JSON outputs and native-reader resume, without game writes."""
 
-import builtins
 import io
 import threading
-from functools import lru_cache, wraps
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
@@ -70,6 +68,9 @@ def outputs(root, plan):
     return result
 
 
+LAYER = "checkpoints"
+
+
 def install(module, root, plan):
     if module is None or plan.get("mode") not in {"translate", "offline", "batch"}:
         return
@@ -77,16 +78,9 @@ def install(module, root, plan):
     names = {row["name"] for row in plan["files"]}
     plan_hash = digest((root / "plan.json").read_bytes())
     lock = threading.Lock()
-    native_save = getattr(module.saveProgress, "_dazedtl_native", module.saveProgress)
-    native_open = getattr(
-        getattr(module, "open", builtins.open),
-        "_dazedtl_native",
-        getattr(module, "open", builtins.open),
-    )
 
-    @wraps(native_save)
-    def save(data, filename, *args, **kwargs):
-        saved = native_save(data, filename, *args, **kwargs)
+    def save(native, data, filename, *args, **kwargs):
+        saved = native(data, filename, *args, **kwargs)
         if saved and filename in names:
             path = project_path(root, "translated/" + filename)
             raw = path.read_bytes()
@@ -105,8 +99,7 @@ def install(module, root, plan):
                 write_json(index, record)
         return saved
 
-    @wraps(native_open)
-    def opening(file, *args, **kwargs):
+    def opening(native, file, *args, **kwargs):
         mode = kwargs.get("mode", args[0] if args else "r")
         # Batch consume must keep its exact frozen request grouping. It already
         # reuses provider receipts; only Live reads partially translated inputs.
@@ -129,8 +122,7 @@ def install(module, root, plan):
                     )
                     stream.name = str(path)
                     return stream
-        return native_open(file, *args, **kwargs)
+        return native(file, *args, **kwargs)
 
-    cast(Any, save)._dazedtl_native = native_save
-    cast(Any, opening)._dazedtl_native = native_open
-    module.saveProgress, module.open = save, opening
+    module.saveProgress.layer(LAYER, save)
+    module.open.layer(LAYER, opening)

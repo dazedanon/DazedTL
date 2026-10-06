@@ -11,6 +11,8 @@ from dazedtl.compatibility import speaker_results
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 
+from tests.engine import point
+
 
 class SpeakerResultTests(unittest.TestCase):
     def setUp(self):
@@ -55,7 +57,7 @@ class SpeakerResultTests(unittest.TestCase):
 
         module = SimpleNamespace(
             pendingSpeakerNames=lambda: list(rows),
-            finalizeSpeakerParse=finalize,
+            finalizeSpeakerParse=point(finalize),
             calls=calls,
             _vocab_speaker_lookup=rows.get,
             _speaker_translation_valid=lambda source, target: (
@@ -98,7 +100,7 @@ class SpeakerResultTests(unittest.TestCase):
 
     def test_failure_and_legacy_approval_never_imply_saved_names(self):
         module = self.translator()
-        module.finalizeSpeakerParse = lambda: False
+        module.finalizeSpeakerParse = point(lambda: False)
         speaker_results.install(module, self.root)
         self.assertFalse(module.finalizeSpeakerParse())
         self.assertEqual(speaker_results.read(self.root, self.job)["state"], "failed")

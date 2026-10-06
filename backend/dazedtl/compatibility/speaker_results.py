@@ -1,9 +1,8 @@
 """Retain the outcome of the native, separately approved name translation."""
 
 import re
-from functools import lru_cache, wraps
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest, project_path
@@ -17,9 +16,6 @@ GLOSSARY = "dazedtl-speaker-glossary.txt"
 def install(module, root):
     if module is None or not hasattr(module, "finalizeSpeakerParse"):
         return
-    original = getattr(
-        module.finalizeSpeakerParse, "_dazedtl_native", module.finalizeSpeakerParse
-    )
     root = Path(root)
 
     def record(value):
@@ -29,11 +25,10 @@ def install(module, root):
         except OSError, ValueError:
             pass
 
-    @wraps(original)
-    def finalize():
+    def finalize(native):
         names = list(module.pendingSpeakerNames())
         if not names:
-            return original()
+            return native()
         value = {
             "version": 1,
             "planHash": digest((root / "plan.json").read_bytes()),
@@ -42,7 +37,7 @@ def install(module, root):
         }
         record(value)
         try:
-            result = original()
+            result = native()
         except BaseException:
             record({**value, "state": "failed"})
             raise
@@ -76,8 +71,7 @@ def install(module, root):
             record({**value, "state": "unavailable"})
         return result
 
-    cast(Any, finalize)._dazedtl_native = original
-    module.finalizeSpeakerParse = finalize
+    module.finalizeSpeakerParse.layer("speaker-results", finalize)
 
 
 @lru_cache(maxsize=16)
