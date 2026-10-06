@@ -79,11 +79,43 @@ def bounded(value, label, limit=4000):
     return value
 
 
+def pick(value, keys):
+    return {key: value[key] for key in keys if key in value}
+
+
 def report_view(value):
+    return pick(value, ("status", "errors", "accepted", "reported", "expected"))
+
+
+# Stored reviews and receipts also keep the working copies and frozen bytes that
+# publication and recovery check; the renderer sees only what it shows.
+REVIEW_KEYS = (
+    "path",
+    "destination",
+    "beforeHash",
+    "afterHash",
+    "originalHash",
+    "candidateHash",
+    "backup",
+    "changes",
+    "kind",
+)
+
+
+def preview_view(preview):
     return {
-        key: value[key]
-        for key in ("status", "errors", "accepted", "reported", "expected")
-        if key in value
+        **pick(preview, ("token", "mode", "blocked", "manifest")),
+        "files": [pick(row, REVIEW_KEYS) for row in preview["files"]],
+    }
+
+
+def receipt_view(receipt):
+    return {
+        **pick(
+            receipt,
+            ("id", "mode", "saved", "status", "failure", "conflicts", "manifest"),
+        ),
+        "files": [pick(row, REVIEW_KEYS) for row in receipt["files"]],
     }
 
 
@@ -706,7 +738,7 @@ class PluginService:
                 "editing": report_view(value["editing"]),
                 "originalIssue": value.get("originalIssue", ""),
                 "originalBackup": value["originals"].get("backupId", ""),
-                "receipts": value["receipts"][-12:],
+                "receipts": [receipt_view(row) for row in value["receipts"][-12:]],
                 "activeRequest": next(
                     (
                         request["path"]
@@ -931,11 +963,13 @@ class PluginService:
                 result = self.request(project_id, value, "translation")
             elif action in {"preview_apply", "preview_restore"}:
                 return {
-                    "preview": self.preview(
-                        project_id,
-                        value,
-                        "apply" if action == "preview_apply" else "restore",
-                        options,
+                    "preview": preview_view(
+                        self.preview(
+                            project_id,
+                            value,
+                            "apply" if action == "preview_apply" else "restore",
+                            options,
+                        )
                     )
                 }
             elif action in {"apply", "restore"}:
@@ -2068,7 +2102,7 @@ class PluginService:
                 + (" Recovery conflicts: " + "; ".join(conflicts) if conflicts else "")
             )
         return {
-            "receipt": receipt,
+            "receipt": receipt_view(receipt),
             "state": self.state(project_id),
             "completed": len(completed),
         }

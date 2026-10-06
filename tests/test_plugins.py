@@ -454,6 +454,9 @@ class PluginTests(unittest.TestCase):
         result = self.service.action(
             self.identity, "apply", {"token": preview["token"]}
         )
+        # Reviews and receipts keep recovery-only fields away from the renderer.
+        check_response("plugins_action", {"preview": preview})
+        check_response("plugins_action", result)
         with self.assertRaisesRegex(ValueError, "already used"):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
         saved = self.service.load(self.identity)
