@@ -77,13 +77,14 @@ export function useGuidedWorkspace({
   };
   useOnChange(draft.value, retireError);
   useOnChange(form.value, retireError);
-  // A run started here that ends replaces an earlier run notice with its
+  // A Live run started here that ends replaces an earlier run notice with its
   // outcome, so the footer never keeps saying an estimate was declined after
   // work finished. Older runs whose saved status is corrected after a restart
-  // are not announced.
+  // are not announced, and a Batch keeps its own provider monitoring, since
+  // its local worker ends long before the provider does.
   const [opened] = useState(() => Date.now());
   const runStates = state.runs
-    .filter((run) => !run.temporary && run.mode !== "estimate")
+    .filter((run) => !run.temporary && run.mode === "translate")
     .map((run) => `${run.id}:${run.status}`)
     .join(" ");
   useOnChange(runStates, (_, before) => {
