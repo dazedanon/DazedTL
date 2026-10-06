@@ -137,7 +137,9 @@ export default function ConnectionEditor({
           <p className="settings-intro">
             {connection?.needsSetup
               ? "Choose the provider, then confirm the saved key or enter a replacement."
-              : "Choose a provider and add your API key."}
+              : value.keyless
+                ? "Choose a provider and its server."
+                : "Choose a provider and add your API key."}
           </p>
           <fieldset disabled={disabled}>
             <FieldRow id="connection-provider" label="Provider">
@@ -357,7 +359,9 @@ export default function ConnectionEditor({
                   ? "Saving connection…"
                   : dirty
                     ? "Unsaved connection changes"
-                    : "The key is stored only when you save this connection.")}
+                    : value.keyless
+                      ? ""
+                      : "The key is stored only when you save this connection.")}
           </div>
         }
       >

@@ -63,9 +63,11 @@ export default function Preferences({
               id="translation-model"
               label="Translation model"
               help={
-                connection
-                  ? `Saved for ${connection.name}. Choose a text model before starting a run.`
-                  : "Used for estimates until you add an API connection."
+                !connection
+                  ? "Used for estimates until you add an API connection."
+                  : connection.models.length
+                    ? `Saved for ${connection.name}. Choose a text model before starting a run.`
+                    : `Saved for ${connection.name}. Check the connection to load model suggestions, or enter a model ID.`
               }
             >
               {(control) => (
@@ -80,12 +82,6 @@ export default function Preferences({
                 />
               )}
             </FieldRow>
-            {connection && !connection.models.length && (
-              <p className="settings-note">
-                Check the connection to load available model suggestions, or
-                enter a model ID.
-              </p>
-            )}
             <FieldRow id="target-language" label="Target language">
               {(control) => (
                 <input
