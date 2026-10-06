@@ -5,11 +5,11 @@ import { Button } from "../../ui/Button";
 import { ComboBox } from "../../ui/ComboBox";
 import { Message } from "../../ui/Feedback";
 import { Tabs, TabPanel } from "../../ui/Tabs";
-import { RequestSource } from "./RequestSource";
+import { ProtectedText, RequestSource } from "./RequestSource";
 import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
-import { requestAttempt, translatedLines } from "./translationView";
+import { activeRun, requestAttempt, translatedLines } from "./translationView";
 import {
   requestOutcome,
   requestBatches,
@@ -55,8 +55,42 @@ export type RequestInspectionTarget = {
   validation?: boolean;
 };
 const inspectorKey = (id: string) => "dazedtl:request-view:" + id;
-function savedView(id: string): InspectorView {
-  const fallback: InspectorView = { index: 0, tab: "source", batch: null };
+/** A Live request still at the provider after its run ended has no
+    confirmed outcome. */
+const unconfirmed = (
+  job: Job,
+  row: { state: string; providerFinished?: boolean },
+) =>
+  row.state === "uncertain" ||
+  (job.mode !== "batch" &&
+    !activeRun(job) &&
+    row.state === "submitted" &&
+    !row.providerFinished);
+/** The request to read first: an unconfirmed submission, then a failed or
+    rejected one. */
+function issueRequest(job: Job) {
+  const requests = job.process?.requests || [];
+  return (
+    requests.find((row) => unconfirmed(job, row)) ||
+    requests.find((row) => ["failed", "rejected"].includes(row.state))
+  );
+}
+function issueView(job: Job): InspectorView {
+  const issue = issueRequest(job);
+  return issue
+    ? {
+        index: issue.index,
+        tab: "response",
+        batch:
+          requestBatches(job.process!, job.mode).find((group) =>
+            group.rows.some((row) => row.indices.includes(issue.index)),
+          )?.id || null,
+      }
+    : { index: 0, tab: "source", batch: null };
+}
+/** The last view of this run, or none so it opens on what needs attention. */
+function savedView(id: string): InspectorView | null {
+  const fallback = null;
   try {
     const value = JSON.parse(localStorage.getItem(inspectorKey(id)) || "null");
     if (value && ["run", "log"].includes(value.tab)) value.tab = "json";
@@ -126,7 +160,7 @@ function RequestProcess({
                   ),
                 )?.id || null,
         }
-      : savedView(job.id),
+      : savedView(job.id) || issueView(job),
   );
   const [payload, setPayload] = useState<RunPayload | null>(null);
   const [attemptSelection, setAttemptSelection] = useState<{
@@ -235,19 +269,33 @@ function RequestProcess({
       tab: "source",
     });
   }
+  const outcomeOf = (
+    row: { state: string; providerFinished?: boolean },
+    outcome: ReturnType<typeof requestOutcome>,
+  ) =>
+    unconfirmed(job, row)
+      ? ({ group: "pending", label: "Submission unconfirmed" } as const)
+      : outcome;
   const selectionOutcome =
     selected &&
     (visiblePayload
-      ? requestOutcome({
-          ...visiblePayload,
-          providerFinished: selected.providerFinished,
-        })
-      : selected.outcome);
+      ? outcomeOf(
+          {
+            state: visiblePayload.state,
+            providerFinished: selected.providerFinished,
+          },
+          requestOutcome({
+            ...visiblePayload,
+            providerFinished: selected.providerFinished,
+          }),
+        )
+      : outcomeOf(selected, selected.outcome));
   const atProvider =
     (visiblePayload?.state || selected?.state) === "submitted" &&
     !selected?.providerFinished &&
-    (job.mode !== "batch" ||
-      selectedProviders.some((batch) => providerBatchActive(batch.status)));
+    (job.mode === "batch"
+      ? selectedProviders.some((batch) => providerBatchActive(batch.status))
+      : activeRun(job));
   const translated = visiblePayload && translatedLines(visiblePayload);
   const comparison = translated && (
     <table className="translation-comparison">
@@ -262,7 +310,7 @@ function RequestProcess({
           <tr key={key}>
             <td>
               <small>{key}</small>
-              {text}
+              <ProtectedText text={text} />
             </td>
             <td>{translated[key]}</td>
           </tr>
@@ -287,7 +335,7 @@ function RequestProcess({
         (row) => row.file === issue.file && row.state === "rejected",
       ),
   );
-  const rejected = process.requests?.find((row) => row.state === "rejected");
+  const issue = issueRequest(job);
   return (
     <div className="translation-process" data-view={view.tab}>
       <div className="process-overview">
@@ -300,31 +348,27 @@ function RequestProcess({
             limit={100}
           />
           {!!job.files?.length && (
-            <span className="muted">{job.files.length} files</span>
+            <span className="muted">
+              {job.files.length} {job.files.length === 1 ? "file" : "files"}
+            </span>
           )}
           {job.mode !== "batch" && (
             <span className="badge">{historyOutcome(job).label}</span>
           )}
         </div>
-        {(rejected || !!process.validationIssues?.length) && (
+        {(issue || !!process.validationIssues?.length) && (
           <Button
             variant="quiet"
             onClick={() => {
               setUnlinkedFile(
-                rejected?.file || process.validationIssues?.[0].file,
+                issue?.file || process.validationIssues?.[0].file,
               );
               setAttemptSelection(null);
-              change({
-                index: rejected?.index ?? -1,
-                tab: rejected ? "response" : "json",
-                batch: rejected
-                  ? groups.find((group) =>
-                      group.rows.some((row) =>
-                        row.indices.includes(rejected.index),
-                      ),
-                    )?.id || null
-                  : "file",
-              });
+              change(
+                issue
+                  ? issueView(job)
+                  : { index: -1, tab: "json", batch: "file" },
+              );
             }}
           >
             Review issues
@@ -445,16 +489,25 @@ function RequestProcess({
                   value={index == null ? "" : String(index)}
                   placeholder="No requests"
                   disabled={!requests.length}
-                  options={requests.map((row, position) => ({
-                    value: String(row.index),
-                    label: `Request ${position + 1} of ${requests.length}`,
-                    searchText: `Request ${position + 1}\n${row.outcome.label}`,
-                    description: row.outcome.label,
-                  }))}
+                  options={requests.map((row, position) => {
+                    const outcome = outcomeOf(row, row.outcome);
+                    return {
+                      value: String(row.index),
+                      label: `Request ${position + 1} of ${requests.length}`,
+                      searchText: `Request ${position + 1}\n${outcome.label}`,
+                      description: outcome.label,
+                      tone:
+                        outcome.group === "failed"
+                          ? ("error" as const)
+                          : unconfirmed(job, row)
+                            ? ("warning" as const)
+                            : undefined,
+                    };
+                  })}
                   onChange={(value) => choose(Number(value))}
                 />
               </div>
-              {selectionOutcome && (
+              {selectionOutcome && contentTab !== "file" && (
                 <span
                   className="request-outcome"
                   data-state={selectionOutcome.group}
@@ -708,7 +761,12 @@ function RequestProcess({
                   ) : comparison ? (
                     comparison
                   ) : visiblePayload.response != null ? (
-                    <pre>{responseText(visiblePayload.response)}</pre>
+                    <>
+                      {["failed", "rejected"].includes(
+                        visiblePayload.state,
+                      ) && <small className="muted">Provider reply</small>}
+                      <pre>{responseText(visiblePayload.response)}</pre>
+                    </>
                   ) : visiblePayload.error != null ? null : (
                     <p className="muted" role="status">
                       {selected?.providerFinished &&
@@ -716,9 +774,12 @@ function RequestProcess({
                         ? "Waiting to download the response."
                         : ["prepared", "queued"].includes(visiblePayload.state)
                           ? "This request has not been sent."
-                          : visiblePayload.state === "submitted"
+                          : visiblePayload.state === "submitted" &&
+                              activeRun(job)
                             ? "Waiting for response."
-                            : visiblePayload.state === "uncertain"
+                            : ["submitted", "uncertain"].includes(
+                                  visiblePayload.state,
+                                )
                               ? "No response recorded. Submission could not be confirmed."
                               : ["failed", "rejected"].includes(
                                     visiblePayload.state,

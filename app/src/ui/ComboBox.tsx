@@ -16,6 +16,8 @@ type Props = Omit<ComponentProps<"input">, "value" | "onChange" | "list"> & {
         value: string;
         label: string;
         description?: string;
+        /** Colors the description for a status that needs attention. */
+        tone?: "error" | "warning";
         searchText?: string;
       }
   )[];
@@ -41,8 +43,9 @@ export function ComboBox({
   const [showAll, setShowAll] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
-  const entries = options.map((option) =>
-    typeof option === "string" ? { value: option, label: option } : option,
+  const entries = options.map(
+    (option): Exclude<Props["options"][number], string> =>
+      typeof option === "string" ? { value: option, label: option } : option,
   );
   const search = (selectionOnly ? query || "" : value).toLowerCase();
   const matches = entries.filter(
@@ -281,7 +284,10 @@ export function ComboBox({
             >
               {option.label}
               {option.description && (
-                <small className="combobox-option-description">
+                <small
+                  className="combobox-option-description"
+                  data-tone={option.tone}
+                >
                   {option.description}
                 </small>
               )}

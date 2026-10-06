@@ -757,6 +757,12 @@ pre {
   font-size: var(--font-small);
   line-height: 1.4;
 }
+.combobox-option-description[data-tone="error"] {
+  color: var(--color-error-text);
+}
+.combobox-option-description[data-tone="warning"] {
+  color: var(--color-warning);
+}
 .combobox-option:hover,
 .combobox-option[aria-selected="true"] {
   background: var(--color-accent-subtle);

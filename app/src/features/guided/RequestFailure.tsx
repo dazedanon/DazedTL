@@ -15,16 +15,29 @@ export function RequestFailure({
     error && typeof error === "object"
       ? (error as Record<string, unknown>)
       : null;
+  // The lines of a failed request are not lost; say what happens to them.
+  const kept = failed && (
+    <p className="muted">
+      Its lines keep their original text until the next Translate.
+    </p>
+  );
   if (details && error != null) {
     const body = record?.body ?? error;
     return (
       <div className="request-failure">
-        {record?.body != null && typeof record.status === "number" && (
-          <small className="muted">HTTP {record.status}</small>
+        {record?.body == null && typeof record?.message === "string" ? (
+          <p className="translation-error">{record.message}</p>
+        ) : (
+          <>
+            {record?.body != null && typeof record.status === "number" && (
+              <small className="muted">HTTP {record.status}</small>
+            )}
+            <pre className="translation-error">
+              {typeof body === "string" ? body : JSON.stringify(body, null, 2)}
+            </pre>
+          </>
         )}
-        <pre className="translation-error">
-          {typeof body === "string" ? body : JSON.stringify(body, null, 2)}
-        </pre>
+        {kept}
       </div>
     );
   }
@@ -47,6 +60,7 @@ export function RequestFailure({
       {!!metadata.length && (
         <small className="muted">{metadata.join(" · ")}</small>
       )}
+      {details && kept}
     </div>
   );
 }

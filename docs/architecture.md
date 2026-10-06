@@ -285,6 +285,8 @@ The owning attempt and exact file-linked request are selected locally; a current
 Files without a linked request show that limitation without borrowing another file’s payload.
 Files without an attempt still open the shared inspector’s file reader.
 Source retains prepared text and matched context, while Response pairs only matching LineN keys or equal-length validated Live responses and retains raw replies when pairing is ambiguous.
+Protected control codes read as a code mark in request text, because the request holds placeholders rather than the codes.
+A run opens on the request a reader last viewed, or on the first that needs attention: a submission its ended run never confirmed, then a failed or rejected one.
 Missing context never substitutes current guidance.
 The cost-review preview keeps Text, Context and API payload tabs, with request paging outside the reader.
 File contents is available for the selected file through the project-bound [file reader](../backend/dazedtl/translation/file_preview.py), which reads staged output, then working input, then current game JSON without preparing or modifying files.

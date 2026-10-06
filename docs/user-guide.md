@@ -75,7 +75,7 @@ Re-applying output or resuming a run from History opens its review in Translatio
 Finished responses, including partial results from canceled Batches, stay available for collection.
 
 Files with validation problems show a warning.
-Open Inspect and choose **Review issues** to read rejected requests and their responses.
+Open Inspect and choose **Review issues** to go to the request that needs attention: an unconfirmed submission first, then a rejected one with the provider's reply.
 Valid translations are kept, and rejected lines keep their original text until the next Translate.
 Older duplicate menu-choice responses appear under **Unused** when the app can show which response supplied the saved text.
 
