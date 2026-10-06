@@ -7,6 +7,7 @@ import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { EventTextPicker } from "../EventTextPicker";
 import { EventTextReview } from "../EventTextReview";
+import { RunHistorySheet } from "../RunHistorySheet";
 import { RunInspector } from "../RunInspector";
 import { TranslationFlowDialog } from "../TranslationFlowDialog";
 import { TranslationReview } from "../TranslationReview";
@@ -45,10 +46,22 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
     inspect,
     reapplyRun,
     openProject,
+    runHistory,
+    setRunHistory,
+    translation,
   } = w;
 
   return (
     <>
+      {runHistory && (
+        <RunHistorySheet
+          state={state}
+          translation={translation}
+          phase={runHistory}
+          inspect={(job) => inspect(job)}
+          close={() => setRunHistory(null)}
+        />
+      )}
       {(inspected || inspectionTarget?.file) && (
         <RunInspector
           key={`${project.id}:${inspected?.id || ""}:${inspectionTarget?.file || ""}`}
@@ -60,11 +73,15 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
             setInspected(null);
             setInspectionTarget(undefined);
           }}
-          history={() => {
-            setInspected(null);
-            setInspectionTarget(undefined);
-            openProject("history");
-          }}
+          history={
+            runHistory || !inspected?.logicalPhase
+              ? undefined
+              : () => {
+                  setInspected(null);
+                  setInspectionTarget(undefined);
+                  setRunHistory(inspected.logicalPhase!);
+                }
+          }
           disabled={disabled || !baseline}
           applied={(() => {
             const startedJob =

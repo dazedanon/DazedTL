@@ -1,4 +1,9 @@
-import type { Job, TranslationState, GuidedState } from "../../api/contracts";
+import type {
+  Job,
+  Phase,
+  TranslationState,
+  GuidedState,
+} from "../../api/contracts";
 import { Tabs } from "../../ui/Tabs";
 import { batchInProgress } from "./batchView";
 import { activeRun, phaseRun } from "./translationView";
@@ -127,13 +132,16 @@ export function ActivityHistory({
   translation,
   inspect,
   initialQuery = "",
+  phase,
   footerTarget,
 }: {
   state: GuidedState;
   translation: TranslationState;
   inspect: (job: Job) => void;
-  /** Opens with this search, such as one stage's runs. */
+  /** Opens with this search. */
   initialQuery?: string;
+  /** Lists only this stage's runs and estimates, as over its task. */
+  phase?: Phase;
   /** The host footer that shows the record count. */
   footerTarget?: HTMLElement | null;
 }) {
@@ -141,13 +149,20 @@ export function ActivityHistory({
   const [tab, setTab] = useState("runs");
   const [query, setQuery] = useState(initialQuery);
   const [filter, setFilter] = useState("all");
+  const saved = useMemo(
+    () =>
+      state.runs.filter(
+        (job) => !job.temporary && (!phase || job.logicalPhase === phase),
+      ),
+    [state.runs, phase],
+  );
   const runs = useMemo(
-    () => state.runs.filter((job) => job.mode !== "estimate" && !job.temporary),
-    [state.runs],
+    () => saved.filter((job) => job.mode !== "estimate"),
+    [saved],
   );
   const estimates = useMemo(
-    () => state.runs.filter((job) => job.mode === "estimate" && !job.temporary),
-    [state.runs],
+    () => saved.filter((job) => job.mode === "estimate"),
+    [saved],
   );
   const operations = useMemo(
     () => projectActivity(state.operations, translation.jobs),
@@ -237,7 +252,7 @@ export function ActivityHistory({
               </>
             ),
           },
-          { id: "operations", label: "Other activity" },
+          ...(phase ? [] : [{ id: "operations", label: "Other activity" }]),
         ]}
         value={tab}
         onChange={(value) => {

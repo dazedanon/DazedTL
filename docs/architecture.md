@@ -460,7 +460,8 @@ Each game has one translation method, chosen in [MethodDialog](../app/src/featur
 The one Translation entry opens that method's workspace.
 The Project page's Status, History, Game updates and Backups tabs serve both methods.
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
-Tasks link to Project tabs (Translate's Run history opens History searched to that stage, Prepare's backup links open Backups), and the Translation entry returns to the same task.
+Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
+Prepare's backup links open the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
 Screens use four kinds of surface, each with one job.
 A page is somewhere you work or browse, reached from the sidebar and kept when you leave and return.

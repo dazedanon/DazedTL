@@ -116,6 +116,8 @@ export function useGuidedWorkspace({
   const [inspection, setInspected] = useState<Job | null>(null);
   const [inspectionTarget, setInspectionTarget] =
     useState<RequestInspectionTarget>();
+  // One stage's Run history opens over its task, so closing returns there.
+  const [runHistory, setRunHistory] = useState<Phase | null>(null);
   const inspected = observedRun(
     inspection,
     state.runs.find((run) => run.id === inspection?.id),
@@ -1122,6 +1124,8 @@ export function useGuidedWorkspace({
     inspectionTarget,
     setInspectionTarget,
     inspected,
+    runHistory,
+    setRunHistory,
     started,
     documentName,
     setDocumentName,

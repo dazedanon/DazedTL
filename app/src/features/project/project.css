@@ -88,20 +88,6 @@
   font-size: var(--font-control);
 }
 /* History fills the tab; its list scrolls and its count sits in the footer. */
-.project-history-body {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.project-history-footer {
-  flex: 1;
-  min-width: 0;
-}
-.project-history-footer .history-footer {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
 /* With no game open, the dazed cat leads the welcome row. It appears only
    here, in the top bar and as the window icon. */
 .project-welcome {

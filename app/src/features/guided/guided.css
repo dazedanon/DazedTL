@@ -282,6 +282,22 @@
     gap: var(--space-2);
   }
 }
+/* A History host, the Project tab or a task's Run history sheet: the list
+   scrolls inside its body and the record count sits in its footer. */
+.history-host-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.history-host-footer {
+  flex: 1;
+  min-width: 0;
+}
+.history-host-footer .history-footer {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .guided-history {
   display: flex;
   flex-direction: column;
@@ -318,6 +334,10 @@
   container: history-day / inline-size;
 }
 /* A quiet day label that stays above its rows while they scroll. */
+/* Day headings stick over the list on the surface it scrolls on. */
+.modal .history-day h3 {
+  background: var(--color-dialog);
+}
 .history-day h3 {
   position: sticky;
   top: 0;

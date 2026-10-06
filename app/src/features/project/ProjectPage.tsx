@@ -435,7 +435,7 @@ function ProjectHistory({
     !!backup && backup.available !== false && !!translation.git?.configured;
   return (
     <>
-      <PageBody className="project-history-body">
+      <PageBody className="history-host-body">
         <ActivityHistory
           state={guided}
           translation={translation}
@@ -445,7 +445,7 @@ function ProjectHistory({
         />
       </PageBody>
       <ActionBar
-        feedback={<div ref={setFooter} className="project-history-footer" />}
+        feedback={<div ref={setFooter} className="history-host-footer" />}
       >
         {null}
       </ActionBar>

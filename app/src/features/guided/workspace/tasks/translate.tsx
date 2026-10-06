@@ -15,7 +15,6 @@ import {
   translationStopLabel,
   unsettledBatches,
 } from "../../translationView";
-import { historyPhaseLabels } from "../../historyView";
 import { actionKey, fileCount } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -37,6 +36,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     setComparisonReview,
     setComparisonsAccepted,
     openProject,
+    setRunHistory,
     inspectionTarget,
     preserved,
     baseline,
@@ -120,7 +120,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       change={edit}
       settings={settings}
       options={() => setPanel("translation-context")}
-      history={() => openProject("history", historyPhaseLabels[phase])}
+      history={() => setRunHistory(phase)}
       inspect={inspect}
       inspectedFile={inspectionTarget?.file}
       fileActions={task(
