@@ -318,6 +318,7 @@ Per-file cost and processing time come from native result receipts, retained bey
 The file list retains cost and time from the latest run that changed the file, comparing its recorded output hash with its frozen input hash; estimates, pending work and unchanged passes do not replace those metrics.
 Missing receipts for a changed file stay unknown.
 Line amounts follow the same receipts through [fileLines](../app/src/features/guided/translationView.ts): the lines a file's latest run saved, out of the lines that run prepared, counting each source request once at its latest attempt; a later "nothing to translate" check closes the file at what is done.
+A Live run prepares requests as it works, so its files show only the lines saved so far until it ends, and Apply leaves them out until then.
 Estimates carry no per-file lines, so a file without a run shows no amount; the Project page totals the known amounts with files applied and the recorded cost.
 Incoming observations preserve the reader's selected file, request, tab and scroll position.
 Selected request receipts update automatically; older records without file provenance identify their scope limitation.
