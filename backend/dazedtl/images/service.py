@@ -71,6 +71,24 @@ def report_view(value):
     return {key: deepcopy(value[key]) for key in REPORT_KEYS if key in value}
 
 
+def receipt_view(receipt):
+    """A publication receipt in the contract's terms; restores read the stored one."""
+    view = {"id": receipt["id"]}
+    if receipt.get("action"):
+        view["action"] = receipt["action"]
+    if receipt.get("saved") or receipt.get("created"):
+        view["created"] = receipt.get("saved") or receipt["created"]
+    if isinstance(receipt.get("completed"), int):
+        view["count"] = receipt["completed"]
+    view["assets"] = [
+        {"id": item} if isinstance(item, str) else {"id": str(item.get("id", ""))}
+        for item in receipt.get("assets", [])
+    ]
+    if receipt.get("message"):
+        view["message"] = receipt["message"]
+    return view
+
+
 class ImageService:
     def __init__(self, projects, translation, settings, backend, *, adapter=None):
         self.projects, self.translation, self.settings, self.backend = (
@@ -210,7 +228,7 @@ class ImageService:
                 "view": deepcopy(value["view"]),
                 "discovery": report_view(value["discovery"]),
                 "editing": report_view(value["editing"]),
-                "receipts": deepcopy(value["receipts"]),
+                "receipts": [receipt_view(row) for row in value["receipts"]],
                 "warnings": deepcopy(value["warnings"]),
                 **(
                     {"lastAction": deepcopy(value["lastAction"])}

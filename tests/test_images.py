@@ -334,6 +334,8 @@ class ImageTests(unittest.TestCase):
         preview = reviewed["preview"]
         self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
+        # The saved receipt then reaches every state read.
+        check_response("images_state", self.service.state(self.identity))
         self.assertEqual(
             self.service.list(self.identity)["items"][0]["state"], "applied"
         )
