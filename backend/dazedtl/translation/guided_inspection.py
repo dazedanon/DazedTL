@@ -306,9 +306,16 @@ class RunInspection:
             or run_id not in self.guided.backend.manual.jobs
         ):
             raise ValueError("Choose a translation run owned by this project.")
-        from dazedtl.compatibility.process_view import payload
+        from dazedtl.compatibility.process_view import payload, queue
 
-        return payload(self.guided.backend.manual.folder(run_id), index)
+        folder = self.guided.backend.manual.folder(run_id)
+        if self.guided.backend.manual.jobs[run_id].get("mode") == "estimate" and not (
+            queue(folder)
+        ):
+            raise ValueError(
+                "This estimate kept no requests to preview. Estimates keep them when the connection supports Batch."
+            )
+        return payload(folder, index)
 
     def file_preview(self, project_id, name, offset=0, query=""):
         _, native = self.guided.record(project_id)

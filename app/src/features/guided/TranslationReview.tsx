@@ -144,7 +144,13 @@ export function TranslationReviewContent({
   if (!detail) return null;
   const batch = !preview && job?.approval?.kind === "batch",
     files = job?.files || preview?.paths || [];
-  const requestRun = preview?.estimate?.jobId || (batch ? job?.id : undefined);
+  // Only estimates built from the request queue keep their exact requests;
+  // connections without Batch support estimate from token counts.
+  const requestRun = batch
+    ? job?.id
+    : preview?.estimate?.value.basis === "request_queue"
+      ? preview.estimate.jobId
+      : undefined;
   const speakerReview = !preview && job?.approval?.kind === "speakers";
   const speakersBeforeBatch = speakerReview && job?.mode === "batch";
   const repeatSubmission =
