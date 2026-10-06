@@ -418,6 +418,10 @@ Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles
 Make current state and the next useful action visible; use translation tasks and familiar language; offer clear exits and recovery; keep shared controls consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring memory; support both guided and experienced use; prioritize relevant actions; give errors a practical recovery path; and put concise help beside the task that needs it.
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
 
+### Visual design
+
+The app ships [Inter](../app/src/assets/fonts/LICENSE.txt), so text widths and wrapping match on every platform; system fonts only supply scripts it lacks, such as Japanese.
+
 ### Workflow and shared presentation
 
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.

@@ -1,3 +1,10 @@
+@font-face {
+  font-family: Inter;
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url("../assets/fonts/InterVariable.woff2") format("woff2");
+}
 :root {
   font-family: var(--font-family);
   font-size: var(--font-body);
