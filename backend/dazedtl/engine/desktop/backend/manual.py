@@ -153,7 +153,7 @@ class ManualJobs:
             if mode not in {"estimate", "offline", "translate", "batch", "speakers"}:
                 raise ValueError("Choose a supported translation mode.")
             if mode in {"translate", "batch", "speakers"} and not self.allow_providers:
-                raise ValueError("Full provider execution is disabled for this migration build. Local estimates and offline tests are available.")
+                raise ValueError("Provider execution is disabled for this launch. Local estimates and offline tests are available.")
             if mode == "speakers" and engine != "RPG Maker MV/MZ":
                 raise ValueError("Explicit speaker collection is available for RPG Maker MV/MZ. WolfDawn checks speakers automatically.")
             inventory = self.inspect(source, engine, managed=managed or workflow is not None)
