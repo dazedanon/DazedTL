@@ -196,8 +196,11 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
+/* Header actions center on the title line without growing the header; the
+   modal rule that spaces footer actions does not apply here. */
 .dialog-header > .actions {
   flex-shrink: 0;
+  margin-block: calc((var(--font-heading) * 1.35 - var(--control-height)) / 2);
 }
 .dialog-close {
   flex-shrink: 0;
