@@ -146,6 +146,21 @@ try:
     saved = {"id": "saved", "status": "complete", "message": "", "log": []}
     saved["estimate"] = {"input_tokens": 1, "cold_cache": False, "speakers": []}
     check_response("guided_inspect", views.job(saved))
+    # A Fitting review carries the scan's rows, which also hold engine fields.
+    scan = {"changes_found": 1, "overflow_skipped": 0, "by_code": {}, "errors": []}
+    scan["previews"] = [
+        {
+            "file_name": "Map001.json",
+            "locator": "/events/1",
+            "before": "a",
+            "after": "b",
+        }
+        | {"category": "dialogue", "code": 401, "rows": 2, "overflow": False}
+    ]
+    fitting = {"token": "t", "label": "Apply rewrap", "destination": "game"}
+    fitting |= {"files": 1, "action": "rewrap_apply", "paths": [], "options": {}}
+    fitting |= {"confirmation": True, "rewrap": scan}
+    check_response("guided_preview", views.preview(fitting))
     # Copied Guided tasks tell the assistant to run these helper commands; the
     # loopback helper used to refuse every Guided request.
     from importlib.util import module_from_spec, spec_from_file_location

@@ -197,7 +197,19 @@ def openrouter_hosts(value):
     return [pick(host, ("slug", "name")) for host in value]
 
 
+def rewrap(value):
+    # Scan rows also carry the engine's category and wrap internals.
+    return {
+        **pick(value, ("changes_found", "overflow_skipped")),
+        "previews": [
+            pick(row, ("file_name", "locator", "before", "after", "rows", "overflow"))
+            for row in value.get("previews", [])
+        ],
+    }
+
+
 def preview(value):
+    value = {**value, "rewrap": rewrap(value["rewrap"])} if "rewrap" in value else value
     return pick(
         value,
         (
