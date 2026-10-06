@@ -140,7 +140,7 @@
   font-weight: var(--weight-medium);
 }
 .project-recent-list small {
-  margin-top: 2px;
+  margin-top: var(--space-half);
 }
 .project-recent-list svg {
   color: var(--color-muted);

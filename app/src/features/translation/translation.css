@@ -6,17 +6,17 @@
 }
 .lens-method label {
   display: block;
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 .lens-method label > input:not([type="checkbox"]),
 .lens-method label > select,
 .lens-method label > textarea {
   display: block;
   width: 100%;
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 .lens-method label > .actions {
-  margin-top: 6px;
+  margin-top: var(--space-2);
 }
 .lens-method label > .actions > input {
   flex: 1;
@@ -45,7 +45,7 @@
   resize: vertical;
 }
 .lens-method details {
-  margin: 18px 0;
+  margin: var(--space-4) 0;
 }
 .lens-method summary {
   cursor: pointer;
@@ -54,14 +54,14 @@
 .translation-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 24px;
+  gap: var(--space-2) var(--space-6);
 }
 .translation-connection {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
-  margin: 16px 0;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
 }
 .translation-connection .translation-facts {
   flex: 1 1 300px;
@@ -72,7 +72,7 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
 }
 .translation-check input {
   margin: 0;
@@ -105,18 +105,18 @@
 .translation-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 28px;
-  margin-top: 12px;
+  gap: var(--space-2) var(--space-7);
+  margin-top: var(--space-3);
 }
 .translation-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 32px;
+  gap: var(--space-3) var(--space-8);
 }
 .translation-facts > div {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-1);
 }
 .translation-facts dt {
   color: var(--color-muted);
@@ -127,24 +127,24 @@
   overflow-wrap: anywhere;
 }
 .translation-run {
-  padding: 20px 0;
+  padding: var(--space-5) 0;
   border-bottom: 1px solid var(--color-border);
 }
 .translation-run:first-child {
   padding-top: 0;
 }
 .translation-quote {
-  padding: 15px 18px;
-  margin: 15px 0;
+  padding: var(--space-4) var(--space-4);
+  margin: var(--space-4) 0;
   border-left: 3px solid var(--color-accent);
   background: var(--color-surface);
 }
 .translation-quote p {
-  margin: 7px 0;
+  margin: var(--space-2) 0;
 }
 .translation-table-wrap {
   overflow: auto;
-  margin: 18px 0;
+  margin: var(--space-4) 0;
 }
 .translation-table {
   width: 100%;
@@ -155,7 +155,7 @@
 .translation-table td {
   text-align: left;
   vertical-align: top;
-  padding: 12px;
+  padding: var(--space-3);
   border-bottom: 1px solid var(--color-border);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -164,16 +164,16 @@
   color: var(--color-muted);
 }
 .translation-table p {
-  margin: 7px 0 0;
+  margin: var(--space-2) 0 0;
 }
 .translation-line-context {
   color: var(--color-muted);
   font-size: var(--font-small);
-  margin-top: 5px;
+  margin-top: var(--space-1);
 }
 .translation-review-note {
-  padding: 10px 12px;
-  margin-top: 12px;
+  padding: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
   border-left: 2px solid var(--color-accent);
   background: var(--color-surface);
   font-size: var(--font-small);
@@ -185,15 +185,15 @@
   max-height: 480px;
   overflow: auto;
   font-size: var(--font-small);
-  padding: 16px;
+  padding: var(--space-4);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--control-radius);
 }
 .translation-path {
   overflow-wrap: anywhere;
 }
 .translation-batch-list {
-  padding-left: 18px;
+  padding-left: var(--space-4);
   overflow-wrap: anywhere;
 }
 @media (max-width: 1000px) {

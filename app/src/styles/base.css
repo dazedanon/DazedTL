@@ -37,7 +37,7 @@ button {
   border: 1px solid var(--color-control-border);
   color: inherit;
   border-radius: var(--control-radius);
-  padding: 10px 15px;
+  padding: var(--space-2) var(--space-4);
   cursor: pointer;
   line-height: 1.35;
 }
@@ -83,7 +83,7 @@ textarea {
   border: 1px solid var(--color-control-border);
   color: inherit;
   border-radius: var(--control-radius);
-  padding: 10px 12px;
+  padding: var(--space-2) var(--space-3);
   min-width: 0;
 }
 /* Single-line fields match the button height; textareas keep their own. */
@@ -91,7 +91,7 @@ input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
 select {
   height: var(--control-height);
   padding-block: 0;
-  padding-inline: 10px;
+  padding-inline: var(--space-3);
   font-size: var(--font-control);
 }
 input[type="checkbox"] {
@@ -105,12 +105,12 @@ textarea {
   resize: vertical;
   width: 100%;
   line-height: 1.6;
-  margin: 16px 0;
+  margin: var(--space-4) 0;
 }
 label {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   font-size: var(--font-control);
 }
 fieldset {
@@ -144,7 +144,7 @@ h1 {
 h2 {
   font-size: var(--font-heading);
   line-height: 1.35;
-  margin: 0 0 15px;
+  margin: 0 0 var(--space-4);
 }
 h3,
 h4 {
@@ -170,7 +170,7 @@ p.muted {
 }
 .footnote {
   font-size: var(--font-small);
-  margin: 18px 0;
+  margin: var(--space-4) 0;
 }
 [hidden] {
   display: none !important;

@@ -32,7 +32,7 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   font-size: var(--font-heading);
   font-weight: var(--weight-semibold);
 }
@@ -67,7 +67,7 @@
   font-size: var(--font-small);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .connection i {
   width: 6px;
@@ -154,14 +154,14 @@ main > p {
 @media (max-width: 1099px) {
   .sidebar {
     width: var(--rail-width);
-    padding-inline: 6px;
+    padding-inline: var(--space-1);
   }
   .sidebar button {
     flex-direction: column;
     justify-content: center;
     gap: var(--space-1);
     min-height: 52px;
-    padding: 6px 2px;
+    padding: var(--space-2) var(--space-half);
     font-size: var(--font-small);
     line-height: 1.25;
     text-align: center;
@@ -177,7 +177,7 @@ main > p {
   .sidebar button > .unsaved-dot {
     position: absolute;
     top: var(--space-2);
-    right: calc(50% - 16px);
+    right: calc(50% - var(--space-4));
   }
   .sidebar-feedback {
     margin-inline: 0;
@@ -186,7 +186,7 @@ main > p {
 }
 @media (max-width: 1000px) {
   .topbar {
-    gap: 20px;
+    gap: var(--space-5);
   }
 }
 /* Narrow windows keep the status dot; its label stays readable to assistive tech. */

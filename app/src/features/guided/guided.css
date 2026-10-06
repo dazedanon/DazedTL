@@ -511,8 +511,8 @@
   border-bottom: 1px solid var(--color-border);
 }
 .guided-phase-nav button {
-  gap: 6px;
-  padding-inline: 10px;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
 }
 .guided-phase-nav button[aria-current="step"] {
   color: var(--color-accent);
@@ -994,7 +994,7 @@
 }
 .guided-baseline-choice input {
   accent-color: var(--color-accent);
-  margin: 2px 0 0;
+  margin: var(--space-half) 0 0;
   flex-shrink: 0;
 }
 .guided-backup-location > .link-button {

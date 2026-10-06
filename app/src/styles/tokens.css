@@ -34,6 +34,29 @@
   --color-error-border: #775060;
   --color-error-surface: #39262d;
   --color-scrollbar: #465363;
+  --color-backdrop: #090d16b3;
+  /* Image canvases: transparency checks and the marks drawn over game
+     images, which must read on any image rather than on the app's surfaces. */
+  --color-canvas-light: #e2e4e7;
+  --color-canvas-light-check: #c8cbd1;
+  --color-canvas-tile-check: #ffffff0b;
+  --color-canvas-overlay: #171a20a6;
+  --color-canvas-check: #343942;
+  --color-canvas-check-a: #414751;
+  --color-canvas-check-b: #272d36;
+  --color-canvas-dark: #111;
+  --color-canvas-white: #eee;
+  --color-mark: #317ce3;
+  --color-mark-fill: rgb(40 120 255 / 8%);
+  --color-mark-selected: #ca8a04;
+  --color-mark-selected-fill: rgb(255 176 30 / 15%);
+  --color-mark-label: #173752;
+  --color-mark-halo: white;
+  --color-mark-drag: #2563eb;
+  --color-mark-drag-fill: rgb(60 120 240 / 20%);
+  /* Elevation: popovers and menus float a little; dialogs sit well above. */
+  --shadow-popover: 0 var(--space-1) var(--space-4) #0006;
+  --shadow-dialog: 0 var(--space-5) 80px #0008;
   /* The bundled Inter (base.css) renders the same widths on every platform;
      the system fonts only supply scripts it does not cover, such as Japanese. */
   --font-family:
@@ -54,14 +77,16 @@
   --measure: 72ch;
   /* Buttons, inputs and selects share one height and radius. */
   --control-height: 34px;
-  --control-padding: 6px 12px;
+  --control-padding: 6px var(--space-3);
   --control-radius: 6px;
   --panel-radius: 8px;
-  --section-gap: 22px;
-  --section-padding: 20px;
-  --field-row-gap: 10px;
+  --dialog-radius: 12px;
+  --icon-size: 16px;
+  --section-gap: var(--space-6);
+  --section-padding: var(--space-5);
+  --field-row-gap: var(--space-3);
   --field-label-width: 155px;
-  --field-column-gap: 18px;
+  --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
   /* Every page centers one content column; frame rows span the window and
      pad their content to that column, so edges match across screens. */
@@ -76,6 +101,9 @@
   --bar-height: 60px;
   --sidebar-width: 200px;
   --rail-width: 80px;
+  /* Spacing in 4px steps: 8 inside a group, 16 between rows, 24 to 32
+     between sections; the half step only nudges small marks into place. */
+  --space-half: 2px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;

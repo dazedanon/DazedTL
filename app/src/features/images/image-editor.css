@@ -27,7 +27,7 @@
 }
 .native-editor-toolbar label {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
 }
 /* Every control shares the button row; field labels sit above it. */
 .native-editor-toolbar label.toggle {
@@ -88,21 +88,37 @@
   min-height: 0;
 }
 .native-editor-canvases figcaption {
-  padding: 0.25rem 0;
+  padding: var(--space-1) 0;
   color: var(--color-muted);
 }
 .native-editor-canvas-scroll {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  padding: 0.5rem;
+  padding: var(--space-2);
   border: 1px solid var(--color-border);
-  background-color: #e2e4e7;
+  background-color: var(--color-canvas-light);
   background-image:
-    linear-gradient(45deg, #c8cbd1 25%, transparent 25%),
-    linear-gradient(-45deg, #c8cbd1 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #c8cbd1 75%),
-    linear-gradient(-45deg, transparent 75%, #c8cbd1 75%);
+    linear-gradient(
+      45deg,
+      var(--color-canvas-light-check) 25%,
+      transparent 25%
+    ),
+    linear-gradient(
+      -45deg,
+      var(--color-canvas-light-check) 25%,
+      transparent 25%
+    ),
+    linear-gradient(
+      45deg,
+      transparent 75%,
+      var(--color-canvas-light-check) 75%
+    ),
+    linear-gradient(
+      -45deg,
+      transparent 75%,
+      var(--color-canvas-light-check) 75%
+    );
   background-size: 20px 20px;
   background-position:
     0 0,
@@ -136,28 +152,28 @@
   pointer-events: none;
 }
 .native-editor-box rect {
-  fill: rgb(40 120 255 / 8%);
-  stroke: #317ce3;
+  fill: var(--color-mark-fill);
+  stroke: var(--color-mark);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
 }
 .native-editor-box.selected rect {
-  fill: rgb(255 176 30 / 15%);
-  stroke: #ca8a04;
+  fill: var(--color-mark-selected-fill);
+  stroke: var(--color-mark-selected);
   stroke-width: 2;
 }
 .native-editor-box text {
   font: var(--font-small) var(--font-family);
-  fill: #173752;
-  stroke: white;
+  fill: var(--color-mark-label);
+  stroke: var(--color-mark-halo);
   paint-order: stroke;
   stroke-width: 3;
   pointer-events: none;
 }
 .native-editor-drag {
-  fill: rgb(60 120 240 / 20%);
-  stroke: #2563eb;
+  fill: var(--color-mark-drag-fill);
+  stroke: var(--color-mark-drag);
   vector-effect: non-scaling-stroke;
 }
 .native-editor-details {
@@ -188,7 +204,7 @@
 }
 .native-editor-block-form label {
   display: grid;
-  gap: 0.2rem;
+  gap: var(--space-1);
   margin-bottom: var(--space-2);
 }
 /* Hosted in Guided, the editor keeps its own spacing for checkbox labels. */

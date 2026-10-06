@@ -426,13 +426,17 @@ Use these principles to evaluate real workflows, rather than adding extra panels
 The app ships [Inter](../app/src/assets/fonts/LICENSE.txt), so text widths and wrapping match on every platform; system fonts only supply scripts it lacks, such as Japanese.
 Text uses the five sizes and three weights in [tokens.css](../app/src/styles/tokens.css): page titles, then task, dialog and section titles, then body text and row titles, then secondary text and controls, then captions.
 Headings and emphasis are semibold, row titles medium, and everything else regular; stylesheets name a size token instead of a pixel value.
-Headings inside a dialog body sit a step below the dialog title.
+Each region has one heading: a page title, then section or panel headings, never a stack of headings before content; headings inside a dialog body sit a step below the dialog title.
 Paragraphs and notes in page and dialog bodies stop at `--measure`, about 72 characters; tables, editors, grids and row labels keep the width their layout gives them.
 Form fields stack their label above the control; Settings and dialog forms, where many short fields line up, use a label column.
 Choices and short values are at most 24rem wide; paths, search and free text use the wide variant.
 Buttons, single-line inputs and selects share `--control-height` and `--control-radius`, so a field and its button line up; textareas keep their own height, and the shell's sidebar and project switcher size themselves as chrome.
+Spacing comes in the 4px `--space-*` steps: 8 inside a group, 16 between rows and 24 to 32 between sections; `--space-half` only nudges small marks into place, and 1px only aligns borders.
+Corners use `--control-radius` for controls and small marks, `--panel-radius` for panels and `--dialog-radius` for dialogs; popovers and menus share `--shadow-popover`, and dialogs use `--shadow-dialog` over `--color-backdrop`.
+Pick a control by the choice it offers: a checkbox for on or off, [SegmentedControl](../app/src/ui/SegmentedControl.tsx) for one of a few short options, [OptionCards](../app/src/ui/OptionCards.tsx) for one of a few that each need a line of explanation, a select for longer lists, and [ComboBox](../app/src/ui/ComboBox.tsx) when a typed value is also allowed.
 Color has three accent roles: accent for interactive text (links, the selected tab, focus), accent strong for the one primary button, and accent subtle for selected surfaces (the current sidebar entry and stage, a selected row).
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
+Image canvases keep their own `--color-canvas-*` checks and `--color-mark-*` box marks, because they are drawn over game images rather than the app's surfaces.
 The top bar, footers and sidebar take their sizes from tokens.css; below 1100px wide the sidebar becomes a rail of icons over short labels, so small windows give the task the width.
 Icons appear in navigation, on actions that leave the app (opening a folder), on menus and disclosures, and on Add; other actions are text only, and ActionControl's `icon` carries the marked ones.
 Footers start with Back and end with Continue; the task's own action sits just left of Continue and is the primary until the task is done, and then Continue is, so each screen has one primary.

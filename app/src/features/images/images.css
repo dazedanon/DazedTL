@@ -267,12 +267,12 @@ main > .image-manager {
 }
 .image-tile-select {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: var(--space-half);
+  left: var(--space-half);
   z-index: 1;
-  padding: 2px;
-  background: #171a20a6;
-  border-radius: 3px;
+  padding: var(--space-half);
+  background: var(--color-canvas-overlay);
+  border-radius: var(--control-radius);
 }
 .image-tile-select input {
   margin: 0;
@@ -286,10 +286,14 @@ main > .image-manager {
   border-radius: 0;
   background-color: var(--color-inset);
   background-image:
-    linear-gradient(45deg, #ffffff0b 25%, transparent 25%),
-    linear-gradient(-45deg, #ffffff0b 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #ffffff0b 75%),
-    linear-gradient(-45deg, transparent 75%, #ffffff0b 75%);
+    linear-gradient(45deg, var(--color-canvas-tile-check) 25%, transparent 25%),
+    linear-gradient(
+      -45deg,
+      var(--color-canvas-tile-check) 25%,
+      transparent 25%
+    ),
+    linear-gradient(45deg, transparent 75%, var(--color-canvas-tile-check) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--color-canvas-tile-check) 75%);
   background-size: 16px 16px;
   background-position:
     0 0,
@@ -306,13 +310,13 @@ main > .image-manager {
 }
 .image-tile-status {
   position: absolute;
-  right: 4px;
-  top: 4px;
+  right: var(--space-1);
+  top: var(--space-1);
   display: flex;
   color: var(--color-success);
-  background: #171a20a6;
+  background: var(--color-canvas-overlay);
   border-radius: 50%;
-  padding: 2px;
+  padding: var(--space-half);
 }
 .image-tile-status:empty {
   display: none;
@@ -323,7 +327,7 @@ main > .image-manager {
 .image-tile-name {
   font-size: var(--font-small);
   line-height: 1.55;
-  padding: 3px 4px;
+  padding: var(--space-half) var(--space-1);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -462,15 +466,18 @@ main > .image-manager {
   max-width: none;
 }
 .image-background-checker {
-  background-color: #343942;
-  background-image: repeating-conic-gradient(#414751 0% 25%, #272d36 0% 50%);
+  background-color: var(--color-canvas-check);
+  background-image: repeating-conic-gradient(
+    var(--color-canvas-check-a) 0% 25%,
+    var(--color-canvas-check-b) 0% 50%
+  );
   background-size: 20px 20px;
 }
 .image-background-dark {
-  background: #111;
+  background: var(--color-canvas-dark);
 }
 .image-background-light {
-  background: #eee;
+  background: var(--color-canvas-white);
 }
 .image-evidence {
   display: grid;

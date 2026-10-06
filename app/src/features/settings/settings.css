@@ -1,16 +1,16 @@
 .settings-page > .banner {
   flex-shrink: 0;
-  margin: 12px 0 0;
+  margin: var(--space-3) 0 0;
 }
 .settings-intro {
   color: var(--color-muted);
   font-size: var(--font-control);
-  margin: 0 0 20px;
+  margin: 0 0 var(--space-5);
 }
 .connection-secret {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 /* Match the shared 380px field width; the reveal button sits beside it. */
 .connection-secret input {
@@ -19,7 +19,7 @@
 }
 .connection-secret button {
   flex-shrink: 0;
-  padding: 7px;
+  padding: var(--space-2);
 }
 .connection-host-actions {
   margin-top: var(--space-2);
@@ -28,8 +28,9 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 9px;
-  margin: 16px 0 0 173px;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0
+    calc(var(--field-label-width) + var(--field-column-gap));
   font-size: var(--font-small);
   color: var(--color-muted);
 }
@@ -38,26 +39,26 @@
 }
 .settings-advanced {
   border-top: 1px solid var(--color-border);
-  padding-top: 18px;
-  margin: 24px 0 0;
+  padding-top: var(--space-4);
+  margin: var(--space-6) 0 0;
 }
 .settings-advanced > summary {
   font-size: var(--font-control);
   margin: 0;
 }
 .settings-advanced[open] > summary {
-  margin-bottom: 18px;
+  margin-bottom: var(--space-4);
 }
 .settings-note {
   font-size: var(--font-small);
   color: var(--color-muted);
-  margin: 12px 0 16px;
+  margin: var(--space-3) 0 var(--space-4);
   line-height: 1.6;
 }
 .paired-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 24px;
+  gap: var(--space-3) var(--space-6);
 }
 .paired-settings .field-row {
   grid-template-columns: 155px minmax(0, 1fr);
@@ -92,7 +93,7 @@
 }
 .connection-details .summary-row {
   grid-template-columns: 155px minmax(0, 1fr);
-  gap: 18px;
+  gap: var(--space-4);
 }
 .connection-address {
   overflow-wrap: anywhere;
@@ -112,18 +113,18 @@
 }
 @media (max-width: 1050px) {
   .connection-keyless {
-    margin-left: 152px;
+    margin-left: calc(min(var(--field-label-width), 45%) + var(--space-3));
   }
   .paired-settings {
-    gap: 12px 18px;
+    gap: var(--space-3) var(--space-4);
   }
   .paired-settings .field-row {
     grid-template-columns: 125px minmax(0, 1fr);
-    gap: 10px;
+    gap: var(--space-3);
   }
   .connection-details .summary-row {
     grid-template-columns: 140px minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--space-3);
   }
 }
 @media (max-width: 800px) {
@@ -132,7 +133,7 @@
   }
   .paired-settings .field-row {
     grid-template-columns: 140px minmax(0, 1fr);
-    gap: 12px;
+    gap: var(--space-3);
   }
 }
 
@@ -144,18 +145,18 @@
   margin-top: 0;
 }
 .custom-rates {
-  margin-top: 18px;
+  margin-top: var(--space-4);
 }
 .effective-rates {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 24px;
-  margin: 18px 0 0;
+  gap: var(--space-2) var(--space-6);
+  margin: var(--space-4) 0 0;
   font-size: var(--font-control);
 }
 .effective-rates strong {
   font-weight: var(--weight-medium);
-  margin-left: 5px;
+  margin-left: var(--space-1);
 }
 .effective-rates small {
   flex-basis: 100%;
@@ -168,7 +169,7 @@
 .model-defaults-error {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: var(--font-small);
   color: var(--color-error-text);
 }
