@@ -53,7 +53,7 @@ export function AssistantTask({
       aria-labelledby={heading}
       data-state={state}
     >
-      <div className="assistant-task-header">
+      <div className="assistant-task-header panel-header">
         <div className="assistant-task-title">
           <h3 id={heading}>Assistant task</h3>
           {help && <HelpPopover label="Assistant task">{help}</HelpPopover>}

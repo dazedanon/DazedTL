@@ -272,7 +272,7 @@ pre {
   color: var(--color-text);
 }
 .ui-tabs button[aria-selected="true"] {
-  color: var(--color-accent);
+  color: var(--color-text);
   border-bottom-color: var(--color-accent);
 }
 .ui-tab-status {
@@ -1194,6 +1194,12 @@ pre {
   border-color: var(--color-control-border);
   border-style: dashed;
   color: var(--color-muted);
+}
+/* A panel's header row names it and its state, on a light accent tint. */
+.panel-header {
+  background: var(--color-panel-header);
+  border-start-start-radius: var(--panel-inner-radius);
+  border-start-end-radius: var(--panel-inner-radius);
 }
 /* The assistant task panel: its state, what comes back, and each result. */
 .assistant-task-header {

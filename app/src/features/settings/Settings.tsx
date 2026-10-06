@@ -153,7 +153,7 @@ export default function Settings({
                     className="action-list connection-panel"
                     aria-labelledby="active-connection-name"
                   >
-                    <header className="connection-panel-header">
+                    <header className="connection-panel-header panel-header">
                       <div>
                         <h2 id="active-connection-name">{current.name}</h2>
                         <span className="connection-panel-state" role="status">

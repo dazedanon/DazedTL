@@ -434,7 +434,10 @@ Buttons, single-line inputs and selects share `--control-height` and `--control-
 Spacing comes in the 4px `--space-*` steps: 8 inside a group, 16 between rows and 24 to 32 between sections; `--space-half` only nudges small marks into place, and 1px only aligns borders.
 Corners use `--control-radius` for controls and small marks, `--panel-radius` for panels and `--dialog-radius` for dialogs; popovers and menus share `--shadow-popover`, and dialogs use `--shadow-dialog` over `--color-backdrop`.
 Pick a control by the choice it offers: a checkbox for on or off, [SegmentedControl](../app/src/ui/SegmentedControl.tsx) for one of a few short options, [OptionCards](../app/src/ui/OptionCards.tsx) for one of a few that each need a line of explanation, a select for longer lists, and [ComboBox](../app/src/ui/ComboBox.tsx) when a typed value is also allowed.
-Color has three accent roles: accent for interactive text (links, the selected tab, focus), accent strong for the one primary button, and accent subtle for selected surfaces (the current sidebar entry and stage, a selected row).
+The palette pairs teal-tinted neutrals with a cyan-green accent, so the app reads as its own tool rather than a stock dark theme; done marks use a leaf green so finished never looks selected.
+Color has three accent roles: accent for interactive text, focus and the edge or underline that marks what is current, accent strong under white text for the one primary button, and accent subtle for selected surfaces (the current sidebar entry, a selected row).
+The current sidebar entry adds an accent bar on its start edge; the selected tab and the current stage keep the text color over an accent underline, and the current stage's number fills with the accent.
+A panel whose first row names it and its state, such as the assistant task and the active connection, gives that row the shared `panel-header` tint.
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 Image canvases keep their own `--color-canvas-*` checks and `--color-mark-*` box marks, because they are drawn over game images rather than the app's surfaces.
 Every literal size, weight, color, spacing step and radius lives in [tokens.css](../app/src/styles/tokens.css); [styles.mjs](../scripts/styles.mjs), part of the build checks, rejects literals in any other stylesheet, so a new value starts as a named token.
@@ -520,7 +523,7 @@ Phase navigation restores the last available task saved for that project, fallin
 Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
 Plugin text and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
-The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done or the stage is current, and becomes a check when every task is done; the Project page's Status holds the full checklist.
+The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done, fills with the accent while the stage is current, and becomes a check when every task is done; the Project page's Status holds the full checklist.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.

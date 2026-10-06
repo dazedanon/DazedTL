@@ -23,7 +23,7 @@
   height: var(--topbar-height);
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-chrome);
+  background: linear-gradient(var(--color-chrome-glow), var(--color-chrome));
   display: flex;
   align-items: center;
   gap: var(--space-6);
@@ -111,9 +111,24 @@
 .sidebar button > svg {
   flex-shrink: 0;
 }
+/* The current entry: a selected fill, an accent icon and an accent bar on
+   its start edge. */
 .sidebar button[aria-current="page"] {
+  position: relative;
   background: var(--color-accent-subtle);
+  color: var(--color-text);
+}
+.sidebar button[aria-current="page"] > svg {
   color: var(--color-accent);
+}
+.sidebar button[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  inset-block: var(--space-2);
+  left: 0;
+  width: 3px;
+  border-radius: 0 var(--control-radius) var(--control-radius) 0;
+  background: var(--color-accent);
 }
 .sidebar-bottom {
   display: flex;
@@ -168,6 +183,11 @@ main > p {
   }
   .sidebar button > svg {
     width: 20px;
+    height: 20px;
+  }
+  /* The label spans the rail, so the current entry's bar spans its icon. */
+  .sidebar button[aria-current="page"]::before {
+    inset-block: var(--space-2) auto;
     height: 20px;
   }
   /* The unsaved mark sits on the icon's corner instead of below the label. */

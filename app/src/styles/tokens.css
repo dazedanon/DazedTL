@@ -1,46 +1,58 @@
 :root {
   /* Surfaces, from the page background to raised controls. */
-  --color-background: #171a20;
-  --color-inset: #191e26;
-  --color-chrome: #1c212a;
-  --color-surface: #20252e;
-  --color-dialog: #222a35;
-  --color-badge: #2a3240;
-  --color-control: #252d39;
-  --color-control-hover: #303a49;
+  --color-background: #0f1617;
+  --color-inset: #0c1314;
+  --color-chrome: #121b1c;
+  --color-surface: #172324;
+  --color-dialog: #1a2829;
+  --color-badge: #20302f;
+  --color-control: #1c2a2b;
+  --color-control-hover: #243637;
+  /* Tints: the top of the top bar and the header row of a panel. */
+  --color-chrome-glow: color-mix(
+    in srgb,
+    var(--color-accent) 6%,
+    var(--color-chrome)
+  );
+  --color-panel-header: color-mix(
+    in srgb,
+    var(--color-accent) 5%,
+    var(--color-surface)
+  );
   /* Lines. */
-  --color-border: #323945;
-  --color-control-border: #435064;
-  --color-control-hover-border: #6680a6;
-  --color-dialog-border: #526279;
+  --color-border: #243435;
+  --color-control-border: #35494a;
+  --color-control-hover-border: #3f8a82;
+  --color-dialog-border: #3f5a59;
   /* Text: content, secondary labels and navigation, then descriptions. */
-  --color-text: #e9edf5;
-  --color-label: #c2ccda;
-  --color-muted: #9eabbc;
-  /* Accent roles. Accent marks interactive text: links, the selected tab and
-     focus. Accent strong fills the one primary button. Accent subtle fills
-     selected surfaces: the current sidebar entry and stage, a selected row. */
-  --color-accent: #adc8ff;
-  --color-accent-strong: #bdd0ff;
-  --color-accent-strong-hover: #d1dfff;
-  --color-on-accent: #172a4d;
-  --color-accent-subtle: #2b3c58;
+  --color-text: #e3f0ee;
+  --color-label: #b7cbc8;
+  --color-muted: #8aa29e;
+  /* Accent roles. Accent marks interactive text, focus and the edge or
+     underline of what is current. Accent strong fills the one primary button
+     under on-accent text. Accent subtle fills selected surfaces: the current
+     sidebar entry and a selected row. */
+  --color-accent: #5bdcc4;
+  --color-accent-strong: #0c7a6e;
+  --color-accent-strong-hover: #0f8a7d;
+  --color-on-accent: #ffffff;
+  --color-accent-subtle: #163d3a;
   /* Status colors always accompany text or an icon. */
-  --color-success: #8fc8ad;
+  --color-success: #a6d672;
   --color-warning: #e1bd78;
   --color-warning-border: #735e37;
   --color-warning-surface: #302a20;
   --color-error-text: #efb0b7;
   --color-error-border: #775060;
   --color-error-surface: #39262d;
-  --color-scrollbar: #465363;
-  --color-backdrop: #090d16b3;
+  --color-scrollbar: #3a5150;
+  --color-backdrop: #050a0ab3;
   /* Image canvases: transparency checks and the marks drawn over game
      images, which must read on any image rather than on the app's surfaces. */
   --color-canvas-light: #e2e4e7;
   --color-canvas-light-check: #c8cbd1;
   --color-canvas-tile-check: #ffffff0b;
-  --color-canvas-overlay: #171a20a6;
+  --color-canvas-overlay: #0f1617a6;
   --color-canvas-check: #343942;
   --color-canvas-check-a: #414751;
   --color-canvas-check-b: #272d36;
@@ -81,6 +93,8 @@
   --control-radius: 6px;
   --panel-radius: 8px;
   --dialog-radius: 12px;
+  /* A panel's first or last row fills to just inside its border. */
+  --panel-inner-radius: calc(var(--panel-radius) - 1px);
   --icon-size: 16px;
   --section-gap: var(--space-6);
   --section-padding: var(--space-5);
