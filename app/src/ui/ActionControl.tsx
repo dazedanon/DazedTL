@@ -4,6 +4,7 @@ import { Button } from "./Button";
 import { Feedback } from "./Feedback";
 import { JobStatus } from "./JobStatus";
 import type { Job } from "../api/contracts";
+import { useFeedbackOwner } from "./FeedbackOwners";
 
 export function ActionControl({
   label,
@@ -13,9 +14,12 @@ export function ActionControl({
   notice = "",
   job,
   inline = false,
+  feedbackKey,
   ...button
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
+  /** The action key whose result this control reports, so fallbacks skip it. */
+  feedbackKey?: string;
   pendingText?: string;
   error?: string;
   notice?: string;
@@ -23,6 +27,7 @@ export function ActionControl({
   job?: Pick<Job, "label" | "status" | "message">;
 }) {
   const active = job && ["ready", "running", "waiting"].includes(job.status);
+  useFeedbackOwner(feedbackKey);
   const feedbackId = useId();
   const control = useRef<HTMLDivElement>(null);
   const feedback = useRef<HTMLDivElement>(null);

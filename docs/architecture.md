@@ -36,6 +36,7 @@ The Translation service owns project operations, request plans, accepted results
 Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
 The Translation workspace composes file selection, preferences and the preserved phased runner.
+Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
 Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
@@ -418,6 +419,7 @@ Saved results, worker logs, frozen scope and record identifiers belong to the in
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
+A control given its `feedbackKey` registers with the nearest [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) scope, so a page's fallback message shows only errors that no mounted control reports.
 Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): one shared action-column width, token-based gaps, wrapping text, and a stacked layout based on available container width.
 The compact variant fits shorter actions to their content and stacks in narrower containers.
 Action groups wrap whole controls and stack below labels in narrower containers.
@@ -560,7 +562,7 @@ Keep cross-task navigation in the phase/task controls, and reuse settings contro
 Route application screens and Guided workflow locations through the shared navigation methods exposed by `useApplication`; keep feature-local view choices in their owning UI state.
 Switching an already-loaded view with clean drafts must not require a Python request or await a project snapshot.
 Retain usable page data across revisits where its ownership and invalidation rules permit; scope any missing-data load and its pending feedback to the feature that needs it.
-[App](../app/src/app/App.tsx) and [GuidedWorkflow](../app/src/features/guided/GuidedWorkflow.tsx) provide working examples.
+[App](../app/src/app/App.tsx) and the [Guided workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) provide working examples.
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
 Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state.
 Reserve `application.refresh` for an intentional re-read, such as an explicit reload control.
