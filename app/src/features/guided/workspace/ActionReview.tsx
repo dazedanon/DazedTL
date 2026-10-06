@@ -128,6 +128,8 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           </>
         )}
         {!["release", "release_patch"].includes(preview.action) &&
+          !preview.rewrap &&
+          !(preview.publication && preview.action !== "export_selected") &&
           !!preview.paths.length && (
             <>
               <p>
@@ -197,49 +199,43 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
         )}
         {preview.action === "runtime_restore" && (
           <p>
-            Return these files to the preserved bytes from before the chosen
-            batch. Review the current and restored text below before continuing.
+            Return these files to how they were before this change. Open a file
+            below to compare its current and restored text. Later edits to these
+            files block the restore.
           </p>
         )}
         {preview.publication && preview.action !== "export_selected" && (
           <>
-            <p>
-              The whole batch is checked before publication. Exact before/after
-              backups are retained; failure attempts rollback. Restore requires
-              another review and rejects newer conflicting edits.
-            </p>
-            {preview.publication.map((row) => (
-              <details className="text-publication" key={row.path}>
-                <summary>
-                  {row.path} · {row.size.toLocaleString()} bytes
-                  {row.later_edits ? " · Replaces later game edits" : ""}
-                </summary>
-                <p className="path">{row.destination}</p>
-                <small>
-                  Current SHA-256 {row.before}
-                  <br />
-                  Candidate SHA-256 {row.after}
-                </small>
-                <strong>
-                  Runtime changes
-                  {row.truncated ? " (diff exceeds 16,000 characters)" : ""}
-                </strong>
-                <pre>
-                  {row.diff || "Runtime bytes already match this candidate."}
-                </pre>
-                <details>
-                  <summary>JSON context</summary>
+            {preview.action !== "runtime_restore" && (
+              <p>
+                Each file is checked again first, and a backup is saved so you
+                can restore it later.
+              </p>
+            )}
+            {/* Fitting lists each change below; the file diff repeats it. */}
+            {!preview.rewrap &&
+              preview.publication.map((row) => (
+                <details className="text-publication" key={row.path}>
+                  {/* The text comparison is what the user reviews; the frozen
+                      plan keeps the hashes it checks. */}
+                  <summary>
+                    {row.path}
+                    {row.later_edits ? " · Replaces later game edits" : ""}
+                  </summary>
                   <strong>
-                    Current runtime JSON (first 16,000 characters)
+                    Changes
+                    {row.truncated ? " (first 16,000 characters)" : ""}
                   </strong>
-                  <pre>{row.before_text}</pre>
-                  <strong>
-                    Reviewed replacement JSON (first 16,000 characters)
-                  </strong>
-                  <pre>{row.after_text}</pre>
+                  <pre>{row.diff || "The game file already matches."}</pre>
+                  <details>
+                    <summary>Full file text</summary>
+                    <strong>Current (first 16,000 characters)</strong>
+                    <pre>{row.before_text}</pre>
+                    <strong>After (first 16,000 characters)</strong>
+                    <pre>{row.after_text}</pre>
+                  </details>
                 </details>
-              </details>
-            ))}
+              ))}
           </>
         )}
         {paid && preview.estimate && (
@@ -355,8 +351,10 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
         {preview.rewrap && (
           <>
             <p>
-              {preview.rewrap.changes_found} fitting changes ·{" "}
-              {preview.rewrap.overflow_skipped} protected overflows skipped
+              {preview.rewrap.changes_found}{" "}
+              {preview.rewrap.changes_found === 1 ? "change" : "changes"}
+              {!!preview.rewrap.overflow_skipped &&
+                ` · ${preview.rewrap.overflow_skipped} protected ${preview.rewrap.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
             </p>
             {preview.rewrap.previews.map((row, index) => (
               <details key={index}>

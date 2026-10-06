@@ -395,7 +395,7 @@ def rewrap_review(backend, native_id, token):
         ):
             return job["result"]
     raise ValueError(
-        "Preview rewrap with these files and settings before applying it. Re-scan after any game changes."
+        "Scan text fitting with these files and settings before applying it. Scan again after any game changes."
     )
 
 

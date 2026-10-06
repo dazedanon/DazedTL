@@ -19,7 +19,7 @@ LABELS = {
     "gameupdate": "Install GameUpdate", "prepare": "Prepare game files", "git_status": "Inspect Git version tracking",
     "git_setup": "Set up Git version tracking", "ace_decrypt": "Decrypt Ace archive", "ace_extract": "Convert Ace data to JSON",
     "ace_pack": "Pack translated Ace data", "export_selected": "Export selected files to game", "export_all": "Export all translated files to game",
-    "rewrap_preview": "Preview rewrap", "rewrap_apply": "Apply rewrap", "qa_prepare": "Prepare or resume translation QA",
+    "rewrap_preview": "Scan text fitting", "rewrap_apply": "Apply text fitting", "qa_prepare": "Prepare or resume translation QA",
     "qa_status": "Refresh translation QA", "qa_rebuild": "Create final QA rebuild handoff", "playtest_status": "Refresh playtest plugins",
     "inspector_install": "Install TL Inspector", "inspector_remove": "Remove TL Inspector", "forge_install": "Install Forge",
     "forge_remove": "Remove Forge", "playtest_install": "Install both playtest plugins", "playtest_apply": "Apply playtest settings",

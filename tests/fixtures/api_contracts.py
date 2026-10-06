@@ -157,7 +157,7 @@ try:
         }
         | {"category": "dialogue", "code": 401, "rows": 2, "overflow": False}
     ]
-    fitting = {"token": "t", "label": "Apply rewrap", "destination": "game"}
+    fitting = {"token": "t", "label": "Apply text fitting", "destination": "game"}
     fitting |= {"files": 1, "action": "rewrap_apply", "paths": [], "options": {}}
     fitting |= {"confirmation": True, "rewrap": scan}
     check_response("guided_preview", views.preview(fitting))
