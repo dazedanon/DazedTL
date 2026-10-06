@@ -501,53 +501,53 @@ export function qaView(w: GuidedWorkspace): TaskView {
           },
         ]}
       />
-      <section className="text-qa-results">
-        <h3>Findings and corrections</h3>
-        {!qa.findings.length && (
-          <p className="muted">No saved findings returned.</p>
-        )}
-        {qa.findings.map((row) => (
-          <details key={row.id}>
-            <summary>
-              {row.id} ·{" "}
-              {row.classification ||
-                row.category ||
-                row.identity ||
-                "Saved finding"}
-            </summary>
-            <strong>Original source</strong>
-            <pre>{row.source || "Source evidence is in the saved task."}</pre>
-            <strong>Current translation</strong>
-            <pre>{row.current || row.live}</pre>
-            <p>{row.reason || row.evidence || row.note}</p>
-          </details>
-        ))}
-        {qa.corrections.map((row, index) => (
-          <div className="text-qa-correction" key={row.finding_id + index}>
-            <label className="toggle">
-              <input
-                type="checkbox"
-                disabled={disabled || !qa.current}
-                checked={chosenFindings.includes(row.finding_id)}
-                onChange={(event) => {
-                  editText("findings_task", qa.task || "");
-                  editText(
-                    "findings",
-                    event.target.checked
-                      ? [...new Set([...chosenFindings, row.finding_id])]
-                      : chosenFindings.filter((id) => id !== row.finding_id),
-                  );
-                }}
-              />
-              {row.finding_id} · {row.file}
-            </label>
-            <strong>Before</strong>
-            <pre>{row.expected}</pre>
-            <strong>Chosen correction</strong>
-            <pre>{row.replacement}</pre>
-          </div>
-        ))}
-      </section>
+      {/* The QA findings row already says whether results are pending. */}
+      {(!!qa.findings.length || !!qa.corrections.length) && (
+        <section className="text-qa-results">
+          <h3>Findings and corrections</h3>
+          {qa.findings.map((row) => (
+            <details key={row.id}>
+              <summary>
+                {row.id} ·{" "}
+                {row.classification ||
+                  row.category ||
+                  row.identity ||
+                  "Saved finding"}
+              </summary>
+              <strong>Original source</strong>
+              <pre>{row.source || "Source evidence is in the saved task."}</pre>
+              <strong>Current translation</strong>
+              <pre>{row.current || row.live}</pre>
+              <p>{row.reason || row.evidence || row.note}</p>
+            </details>
+          ))}
+          {qa.corrections.map((row, index) => (
+            <div className="text-qa-correction" key={row.finding_id + index}>
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  disabled={disabled || !qa.current}
+                  checked={chosenFindings.includes(row.finding_id)}
+                  onChange={(event) => {
+                    editText("findings_task", qa.task || "");
+                    editText(
+                      "findings",
+                      event.target.checked
+                        ? [...new Set([...chosenFindings, row.finding_id])]
+                        : chosenFindings.filter((id) => id !== row.finding_id),
+                    );
+                  }}
+                />
+                {row.finding_id} · {row.file}
+              </label>
+              <strong>Before</strong>
+              <pre>{row.expected}</pre>
+              <strong>Chosen correction</strong>
+              <pre>{row.replacement}</pre>
+            </div>
+          ))}
+        </section>
+      )}
     </>
   );
   // The footer walks QA forward: prepare a task, copy it, then review the
