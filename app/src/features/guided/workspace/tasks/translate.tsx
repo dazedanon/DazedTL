@@ -26,6 +26,7 @@ import {
 
 export function phaseView(w: GuidedWorkspace): TaskView {
   const {
+    advance,
     project,
     state,
     settings,
@@ -57,7 +58,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     resyncPending,
     inspect,
   } = w;
-  let content: ReactNode, primary: ReactNode, actionContext: ReactNode;
+  let content: ReactNode, actionContext: ReactNode;
   const selectedNames = phaseFiles.map((file) => file.name);
   const latest = phaseRun(state.runs, phase, selectedNames);
   const saved =
@@ -219,7 +220,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       </small>
     </div>
   );
-  primary = (
+  const secondary = (
     <>
       {current?.approval && (
         <Button disabled={disabled} onClick={() => setSubmission(current)}>
@@ -242,16 +243,6 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           {stopLabel}
         </Button>
       )}
-      <Button
-        variant="primary"
-        pending={preparing}
-        disabled={
-          disabled || prerequisites || !state.provider.ready || !paidModeReady
-        }
-        onClick={translateSelected}
-      >
-        Translate
-      </Button>
       {!!applyFiles.length &&
         task(
           "export_selected",
@@ -267,7 +258,20 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   );
   return {
     content,
-    primary,
+    secondary,
+    action: (
+      <Button
+        variant="primary"
+        pending={preparing}
+        disabled={
+          disabled || prerequisites || !state.provider.ready || !paidModeReady
+        }
+        onClick={translateSelected}
+      >
+        Translate
+      </Button>
+    ),
+    next: advance(undefined, undefined, "quiet"),
     actionContext,
     heading:
       phase === "advanced"
@@ -296,7 +300,7 @@ export function auditView(w: GuidedWorkspace): TaskView {
     copyTask,
     fileSummary,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       {fileSummary(eventFiles.length, "dialogue")}
@@ -347,33 +351,25 @@ export function auditView(w: GuidedWorkspace): TaskView {
   );
   // Investigating comes first; manual review and skipping stay available.
   const ready = state.eventText.status === "ready";
-  primary = ready ? (
-    <Button
-      variant="primary"
-      disabled={disabled}
-      onClick={() => stepTask("sources")}
-    >
-      Review findings & source choices
-    </Button>
-  ) : (
-    copyTask("advanced", "Copy investigation task", "primary")
-  );
-  secondary = (
-    <>
-      {!ready && (
-        <Button disabled={disabled} onClick={() => stepTask("sources")}>
-          Review sources manually
-        </Button>
-      )}
+  return {
+    content,
+    secondary: (
       <Button variant="quiet" disabled={disabled} onClick={skipEventText}>
         Skip event codes
       </Button>
-    </>
-  );
-  return {
-    content,
-    primary,
-    secondary,
+    ),
+    action:
+      !ready && copyTask("advanced", "Copy investigation task", "primary"),
+    // The source choices come next, with findings or reviewed by hand.
+    next: (
+      <Button
+        variant={ready ? "primary" : "quiet"}
+        disabled={disabled}
+        onClick={() => stepTask("sources")}
+      >
+        {ready ? "Review findings & source choices" : "Review sources manually"}
+      </Button>
+    ),
     heading: {
       title: "Investigate sources",
       description:
@@ -397,7 +393,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     skipEventText,
     chooseFiles,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <div className="translation-source-toolbar">
@@ -434,7 +430,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  primary = enabledCodes.length ? (
+  const review = !!enabledCodes.length && (
     <Button
       variant="primary"
       pending={action.busy && action.key === "event-text:review"}
@@ -447,20 +443,23 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     >
       Review source choices
     </Button>
-  ) : (
-    <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-      Skip event codes
-    </Button>
   );
-  secondary = enabledCodes.length ? (
-    <Button disabled={disabled} onClick={() => stepTask("advanced-run")}>
-      Continue to translation
-    </Button>
-  ) : null;
   return {
     content,
-    primary,
-    secondary,
+    action: review,
+    next: enabledCodes.length ? (
+      <Button
+        variant="quiet"
+        disabled={disabled}
+        onClick={() => stepTask("advanced-run")}
+      >
+        Continue to translation
+      </Button>
+    ) : (
+      <Button variant="primary" disabled={disabled} onClick={skipEventText}>
+        Skip event codes
+      </Button>
+    ),
     heading: {
       title: "Source choices",
       description: "Enable only the sources the investigation confirmed.",

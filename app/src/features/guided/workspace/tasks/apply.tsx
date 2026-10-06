@@ -3,12 +3,13 @@ import type { ReactNode } from "react";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
-import { DetailRow, FieldRow } from "../../../../ui/FieldRow";
+import { CheckField, DetailRow, FieldRow } from "../../../../ui/FieldRow";
 import { displayText } from "../../../../ui/displayText";
 import { fileCount, publicationLabels } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { AssistantTask } from "../../../../ui/AssistantTask";
+import { HelpPopover } from "../../../../ui/HelpPopover";
 
 export function applyView(w: GuidedWorkspace): TaskView {
   const {
@@ -21,7 +22,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
     releaseButton,
     fileSummary,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       {fileSummary()}
@@ -36,11 +37,6 @@ export function applyView(w: GuidedWorkspace): TaskView {
           </DetailRow>
         </dl>
       )}
-      <p className="muted">
-        Only checked files with saved output are included. Apply fully
-        overwrites those game files; it does not merge changes or track
-        synchronization.
-      </p>
 
       <ActionList>
         {state.readiness.publications
@@ -146,7 +142,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
-  primary = task(
+  const review = task(
     "export_selected",
     applied ? "Review Apply again" : "Review Apply",
     {},
@@ -157,14 +153,13 @@ export function applyView(w: GuidedWorkspace): TaskView {
         : !outputFiles.length
           ? "No checked file has saved output yet."
           : false,
-    "primary",
+    applied ? "default" : "primary",
     outputFiles,
   );
-  secondary = releaseButton;
   return {
     content,
-    primary,
-    secondary,
+    action: review,
+    next: releaseButton(applied ? "primary" : "quiet"),
     heading: {
       title: "Apply translations",
       description: "Overwrite the checked game files with their saved output.",
@@ -188,17 +183,23 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     fitting,
     fittingSettingsSaved,
     releaseButton,
-    fileSummary,
+    fileRow,
     fields,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <ActionList>
         <ActionRow
           label={
             <>
-              <strong>Saved widths</strong>
+              <strong>
+                Saved widths{" "}
+                <HelpPopover label="Saved widths">
+                  Widths count characters. They do not measure rendered fonts,
+                  substitutions or window height.
+                </HelpPopover>
+              </strong>
               <small>
                 Dialogue {values.widths.width} · portrait{" "}
                 {values.widths.faceWidth} · list {values.widths.listWidth} ·
@@ -211,17 +212,19 @@ export function fittingView(w: GuidedWorkspace): TaskView {
             Edit widths
           </Button>
         </ActionRow>
-      </ActionList>
-      <label className="toggle">
-        <input
-          type="checkbox"
-          disabled={disabled}
-          checked={fields.only_overflow}
-          onChange={(event) => editForm("only_overflow", event.target.checked)}
+        <ActionRow
+          label={
+            <CheckField
+              id="fitting-only-overflow"
+              label="Only rewrap text over its width limit"
+              checked={fields.only_overflow}
+              disabled={disabled}
+              onChange={(checked) => editForm("only_overflow", checked)}
+            />
+          }
         />
-        Only rewrap text over its width limit
-      </label>
-      {fileSummary(layoutFiles.length)}
+        {fileRow(layoutFiles.length)}
+      </ActionList>
       <details>
         <summary>Fitting coverage and row protection</summary>
         <fieldset disabled={disabled} className="text-fitting-settings">
@@ -285,11 +288,6 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           </label>
         </fieldset>
       </details>
-      <p className="muted">
-        Scans current runtime files. Apply translations first to fit the
-        translated text. Widths count characters; they do not measure rendered
-        fonts, substitutions or window height.
-      </p>
       {fitting && (
         <section className="text-fit-results">
           <h3>Saved fitting scan</h3>
@@ -329,7 +327,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
-  primary =
+  const run =
     state.readiness.layout_scan &&
     !draft.dirty &&
     fittingSettingsSaved &&
@@ -349,11 +347,14 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           !baseline || !layoutFiles.length || !fields.text.categories.length,
           "primary",
         );
-  secondary = releaseButton;
   return {
     content,
-    primary,
-    secondary,
+    action: run,
+    next: releaseButton(),
+    // Fitting reads the game's current text, so it needs applied output.
+    actionContext: !state.readiness.applied.length && (
+      <span>Apply translations first; fitting scans the game’s text.</span>
+    ),
     heading: {
       title: "Text fitting",
       description:
@@ -380,7 +381,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     releaseButton,
     fields,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <FieldRow id="qa-focus" label="QA focus">
@@ -468,33 +469,15 @@ export function qaView(w: GuidedWorkspace): TaskView {
                 )}
               </>
             ),
-            action: (
-              <>
-                {task(
-                  "qa_prepare",
-                  qaTask ? "Prepare again" : "Prepare text QA task",
-                  { focus: fields.text.focus },
-                  !baseline,
-                )}
-                {qaTask && (
-                  <ActionControl
-                    label="Copy prepared QA task"
-                    disabled={disabled}
-                    {...feedback("copy:qa", "Copying…")}
-                    onClick={() =>
-                      action.run(
-                        () =>
-                          window.dazedtl.copyText(
-                            String(qaTask.result!.handoff),
-                          ),
-                        "QA task copied. Paste it into your coding assistant.",
-                        "copy:qa",
-                      )
-                    }
-                  />
-                )}
-              </>
-            ),
+            // Preparing again refreshes a prepared task; the footer copies it.
+            action:
+              qaTask &&
+              task(
+                "qa_prepare",
+                "Prepare again",
+                { focus: fields.text.focus },
+                !baseline,
+              ),
           },
           {
             id: "investigation",
@@ -556,22 +539,47 @@ export function qaView(w: GuidedWorkspace): TaskView {
       </section>
     </>
   );
-  primary = task(
-    "qa_apply",
-    "Review chosen corrections",
-    {
-      focus: fields.text.focus,
-      task: fields.text.findings_task,
-      findings: chosenFindings,
-    },
-    !baseline || !qa.current || !chosenFindings.length,
-    "primary",
+  // The footer walks QA forward: prepare a task, copy it, then review the
+  // corrections chosen from its findings.
+  const review = qa.findings.length ? (
+    task(
+      "qa_apply",
+      "Review chosen corrections",
+      {
+        focus: fields.text.focus,
+        task: fields.text.findings_task,
+        findings: chosenFindings,
+      },
+      !baseline || !qa.current || !chosenFindings.length,
+      "primary",
+    )
+  ) : qaTask ? (
+    <ActionControl
+      label="Copy QA task"
+      variant="primary"
+      disabled={disabled}
+      {...feedback("copy:qa", "Copying…")}
+      onClick={() =>
+        action.run(
+          () => window.dazedtl.copyText(String(qaTask.result!.handoff)),
+          "QA task copied. Paste it into your coding assistant.",
+          "copy:qa",
+        )
+      }
+    />
+  ) : (
+    task(
+      "qa_prepare",
+      "Prepare text QA task",
+      { focus: fields.text.focus },
+      !baseline,
+      "primary",
+    )
   );
-  secondary = releaseButton;
   return {
     content,
-    primary,
-    secondary,
+    action: review,
+    next: releaseButton(),
     heading: {
       title: "Text QA",
       description:
@@ -591,7 +599,7 @@ export function toolsView(w: GuidedWorkspace): TaskView {
     copyTask,
     advance,
   } = w;
-  let content: ReactNode, primary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <ActionList>
@@ -660,10 +668,9 @@ export function toolsView(w: GuidedWorkspace): TaskView {
       </ActionList>
     </>
   );
-  primary = advance();
   return {
     content,
-    primary,
+    next: advance(),
     heading: {
       title: "Game tools",
       description: "Optional in-game tools for checking and editing text.",

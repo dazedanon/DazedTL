@@ -7,7 +7,7 @@ import type { TaskView } from "./view";
 
 export function pluginsView(w: GuidedWorkspace): TaskView {
   const { project, application, taskFooter, disabled, advance, back } = w;
-  let content: ReactNode, primary: ReactNode;
+  let content: ReactNode;
   content = (
     <PluginWorkspace
       key={project.id}
@@ -21,13 +21,10 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       continueControl={advance(undefined, undefined, "quiet")}
     />
   );
-  primary = undefined;
   return {
     content,
-    primary,
     heading: {
-      description:
-        "Paste the task into your coding agent and keep DazedTL open. It continues through safe work automatically and asks only about unresolved choices.",
+      description: "Translate the display text inside plugin settings.",
     },
   };
 }

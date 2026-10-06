@@ -31,7 +31,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
     task,
     chooseFolder,
   } = w;
-  let content: ReactNode, primary: ReactNode;
+  let content: ReactNode;
   content = (
     <ReleaseContent
       value={release}
@@ -127,7 +127,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
       }
     />
   );
-  primary = task(
+  const build = task(
     releaseAction,
     release.kind === "game"
       ? "Build clean game ZIP"
@@ -150,5 +150,5 @@ export function packageView(w: GuidedWorkspace): TaskView {
     !state.readiness.unapplied.length && (
       <span>Nothing applied yet: the ZIP keeps the original text.</span>
     );
-  return { content, primary, actionContext };
+  return { content, action: build, actionContext };
 }

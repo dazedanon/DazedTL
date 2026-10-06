@@ -20,6 +20,5 @@ export function imagesView(w: GuidedWorkspace): TaskView {
         onOpenEditor={setEditorAssets}
       />
     ),
-    primary: undefined,
   };
 }

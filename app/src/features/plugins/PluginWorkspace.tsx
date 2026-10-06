@@ -341,6 +341,7 @@ export function PluginWorkspace({
     <section className="plugin-workspace" aria-label="Plugin text workspace">
       <AssistantTask
         state={taskState}
+        help="Keep DazedTL open while your agent works. It continues through safe work automatically and asks only about unresolved choices."
         description={
           taskState === "ready"
             ? counts.ready

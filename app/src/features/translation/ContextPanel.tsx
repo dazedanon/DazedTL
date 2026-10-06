@@ -15,6 +15,7 @@ import { Button } from "../../ui/Button";
 import { DocumentEditor } from "../../ui/DocumentEditor";
 import { Feedback, Message } from "../../ui/Feedback";
 import { PageBody } from "../../ui/PageLayout";
+import { HelpPopover } from "../../ui/HelpPopover";
 
 export function ContextPanel({
   state,
@@ -52,10 +53,12 @@ export function ContextPanel({
   return (
     <>
       <PageBody ref={body} className="lens-context-body">
-        <p className="muted">
-          Names, character voices, game context, and custom skills stay in the
-          game's portable workspace and serve all three translation modes. Each
-          run retains the exact context it used.
+        <p className="muted lens-context-note">
+          Names, voices and game context for every translation mode.{" "}
+          <HelpPopover label="Context">
+            These files and custom skills stay in the game&apos;s portable
+            workspace. Each run keeps the exact context it used.
+          </HelpPopover>
         </p>
         <Message message={action.error} onDismiss={action.clear} />
         <DocumentEditor

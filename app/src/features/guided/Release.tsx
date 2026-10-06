@@ -5,6 +5,7 @@ import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { VirtualList } from "../../ui/VirtualList";
 import { OptionCards } from "../../ui/OptionCards";
+import { HelpPopover } from "../../ui/HelpPopover";
 
 type Options = GuidedForm["release"];
 const pathKey = (path: string) => path;
@@ -161,7 +162,13 @@ export function ReleaseContent({
         <ActionRow
           label={
             <>
-              <strong>Archive contents</strong>
+              <strong>
+                Archive contents{" "}
+                <HelpPopover label="Archive contents">
+                  Known private and translator files are excluded. Inspect the
+                  contents if you added other local material to the game.
+                </HelpPopover>
+              </strong>
               <small>
                 {kind === "game"
                   ? "Current runtime data, plugins, assets and player documentation."
@@ -190,10 +197,6 @@ export function ReleaseContent({
           </ActionRow>
         )}
       </ActionList>
-      <p className="muted release-note">
-        Known private and translator files are excluded. Inspect contents if you
-        have added other local material to the game.
-      </p>
       {artifact && (
         <section className="guided-artifact">
           <ActionList>
@@ -228,11 +231,6 @@ export function ReleaseContent({
           </p>
         </section>
       )}
-      <p className="muted release-note">
-        Build a local ZIP. Publishing stays separate.{" "}
-        {kind === "patch" &&
-          "Build also saves the reviewed scope as a local checkpoint."}
-      </p>
     </>
   );
 }

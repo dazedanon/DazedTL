@@ -24,7 +24,7 @@ export function backupView(w: GuidedWorkspace): TaskView {
     operationJob,
     task,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       {sourceBackup ? (
@@ -69,38 +69,34 @@ export function backupView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
-  primary = preserved
-    ? advance()
-    : task(
-        "backup_source",
-        backupPending
-          ? "Backing up…"
-          : sourceBackup
-            ? "Back up current game"
-            : "Back up original game",
-        {},
-        false,
-        "primary",
-      );
-  secondary = (
-    <>
-      {localOperation && (
-        <Button
-          disabled={action.busy}
-          onClick={() => stopOperation(localOperation)}
-        >
-          Stop backup
-        </Button>
-      )}
-      {!preserved && advance(undefined, undefined, "quiet")}
-    </>
+  const run =
+    !preserved &&
+    task(
+      "backup_source",
+      backupPending
+        ? "Backing up…"
+        : sourceBackup
+          ? "Back up current game"
+          : "Back up original game",
+      {},
+      false,
+      "primary",
+    );
+  const secondary = localOperation && (
+    <Button
+      disabled={action.busy}
+      onClick={() => stopOperation(localOperation)}
+    >
+      Stop backup
+    </Button>
   );
-  return { content, primary, secondary };
+  const next = advance(undefined, undefined, preserved ? "primary" : "quiet");
+  return { content, secondary, action: run, next };
 }
 
 export function extractView(w: GuidedWorkspace): TaskView {
   const { state, preserved, advance, task } = w;
-  let content: ReactNode, primary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <p>
@@ -143,8 +139,7 @@ export function extractView(w: GuidedWorkspace): TaskView {
       </ActionList>
     </>
   );
-  primary = advance();
-  return { content, primary };
+  return { content, next: advance() };
 }
 
 export function formatView(w: GuidedWorkspace): TaskView {
@@ -164,7 +159,7 @@ export function formatView(w: GuidedWorkspace): TaskView {
     preparationComplete,
     aceNeedsExport,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       {aceNeedsExport && !baseline && (
@@ -255,31 +250,26 @@ export function formatView(w: GuidedWorkspace): TaskView {
       </Button>
     </>
   );
-  primary =
-    (preparationComplete || baseline) && !preparationPending
-      ? advance()
-      : task(
-          "prepare_game",
-          preparationPending ? "Preparing game files…" : "Prepare game files",
-          {},
-          !preserved || aceNeedsExport,
-          "primary",
-        );
-  secondary = (
-    <>
-      {localOperation && (
-        <Button
-          disabled={action.busy}
-          onClick={() => stopOperation(localOperation)}
-        >
-          Stop preparation
-        </Button>
-      )}
-      {(!(preparationComplete || baseline) || preparationPending) &&
-        advance(undefined, undefined, "quiet")}
-    </>
+  const done = (preparationComplete || baseline) && !preparationPending;
+  const run =
+    !done &&
+    task(
+      "prepare_game",
+      preparationPending ? "Preparing game files…" : "Prepare game files",
+      {},
+      !preserved || aceNeedsExport,
+      "primary",
+    );
+  const secondary = localOperation && (
+    <Button
+      disabled={action.busy}
+      onClick={() => stopOperation(localOperation)}
+    >
+      Stop preparation
+    </Button>
   );
-  return { content, primary, secondary };
+  const next = advance(undefined, undefined, done ? "primary" : "quiet");
+  return { content, secondary, action: run, next };
 }
 
 export function baselineView(w: GuidedWorkspace): TaskView {
@@ -296,7 +286,7 @@ export function baselineView(w: GuidedWorkspace): TaskView {
     preparationComplete,
     fields,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = baseline ? (
     <>
       <p className="guided-success">
@@ -373,23 +363,23 @@ export function baselineView(w: GuidedWorkspace): TaskView {
       </fieldset>
     </>
   );
-  primary = baseline
-    ? advance()
-    : task(
-        "git_setup",
-        "Review version baseline",
-        {
-          version: fields.version,
-          original: fields.untranslated ? "" : fields.original,
-          untranslated: fields.untranslated,
-        },
-        !preserved ||
-          !preparationComplete ||
-          fields.untranslated === null ||
-          !fields.version.trim() ||
-          (!fields.untranslated && !fields.original.trim()),
-        "primary",
-      );
-  secondary = !baseline && advance(undefined, undefined, "quiet");
-  return { content, primary, secondary };
+  const save =
+    !baseline &&
+    task(
+      "git_setup",
+      "Review version baseline",
+      {
+        version: fields.version,
+        original: fields.untranslated ? "" : fields.original,
+        untranslated: fields.untranslated,
+      },
+      !preserved ||
+        !preparationComplete ||
+        fields.untranslated === null ||
+        !fields.version.trim() ||
+        (!fields.untranslated && !fields.original.trim()),
+      "primary",
+    );
+  const next = advance(undefined, undefined, baseline ? "primary" : "quiet");
+  return { content, action: save, next };
 }

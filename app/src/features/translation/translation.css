@@ -338,3 +338,7 @@
   gap: var(--space-4);
   margin-top: var(--space-3);
 }
+/* A choice is as wide as its options need; instructions stay wide. */
+.lens-method label > select {
+  max-width: 24rem;
+}

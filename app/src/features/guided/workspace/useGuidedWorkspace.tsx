@@ -914,9 +914,9 @@ export function useGuidedWorkspace({
       "",
       "text:view",
     );
-  const releaseButton = (
+  const releaseButton = (variant: "primary" | "quiet" = "quiet") => (
     <Button
-      variant="quiet"
+      variant={variant}
       disabled={action.busy || form.committing}
       onClick={() => stepTask("package")}
     >
@@ -952,18 +952,21 @@ export function useGuidedWorkspace({
       ))}
     </fieldset>
   );
-  const fileSummary = (
+  // The file choice as one row, for panels that hold a task's other settings.
+  const fileRow = (
     count = values.selected.length,
     scope: "database" | "dialogue" | null = null,
   ) => (
-    <ActionList>
-      <ActionRow title={`${fileCount(count)} selected`}>
-        <Button disabled={disabled} onClick={() => chooseFiles(scope)}>
-          Choose files
-        </Button>
-      </ActionRow>
-    </ActionList>
+    <ActionRow title={`${fileCount(count)} selected`}>
+      <Button disabled={disabled} onClick={() => chooseFiles(scope)}>
+        Choose files
+      </Button>
+    </ActionRow>
   );
+  const fileSummary = (
+    count = values.selected.length,
+    scope: "database" | "dialogue" | null = null,
+  ) => <ActionList>{fileRow(count, scope)}</ActionList>;
   const formatActions = [
     {
       id: "format_data",
@@ -1212,6 +1215,7 @@ export function useGuidedWorkspace({
     releaseButton,
     widths,
     fileSummary,
+    fileRow,
     formatActions,
     preparation,
     preparationComplete,

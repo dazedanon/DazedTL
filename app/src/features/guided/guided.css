@@ -432,10 +432,6 @@
 .history-empty {
   padding: var(--space-5) 0;
 }
-.history-footer .history-purpose {
-  margin: 0;
-  font-size: inherit;
-}
 .history-footer {
   display: flex;
   flex-wrap: wrap;

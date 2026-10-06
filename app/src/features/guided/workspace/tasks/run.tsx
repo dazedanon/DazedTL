@@ -18,7 +18,7 @@ export function runView(w: GuidedWorkspace): TaskView {
     applyRun,
     nextRun,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = job ? (
     <RunPanel
       projectId={project.id}
@@ -45,7 +45,7 @@ export function runView(w: GuidedWorkspace): TaskView {
       No saved translation run is available for this game.
     </p>
   );
-  primary =
+  const next =
     job?.status === "complete" && job.mode !== "estimate" ? (
       job.mode === "speakers" ? (
         <Button variant="primary" onClick={() => stepTask("guidance")}>
@@ -59,12 +59,12 @@ export function runView(w: GuidedWorkspace): TaskView {
         Return to tasks
       </Button>
     );
-  secondary =
+  const apply =
     job?.status === "complete" &&
     job.mode !== "estimate" &&
     job.mode !== "speakers" &&
     job.outputsAvailable
       ? applyRun(job)
       : undefined;
-  return { content, primary, secondary };
+  return { content, action: apply, next };
 }

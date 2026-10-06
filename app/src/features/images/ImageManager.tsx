@@ -577,6 +577,7 @@ function Manager({
         </div>
       }
     >
+      {moreMenu}
       <ActionControl
         label={
           prepareFirst
@@ -615,7 +616,6 @@ function Manager({
         disabled={action.busy || jobRunning || !selectedReady}
         {...step("preview_apply", "Preparing review…")}
       />
-      {moreMenu}
       {host.next(allApplied ? "primary" : "quiet")}
     </ActionBar>
   );

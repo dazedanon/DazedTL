@@ -318,6 +318,7 @@ Missing receipts for a changed file stay unknown.
 Incoming observations preserve the reader's selected file, request, tab and scroll position.
 Selected request receipts update automatically; older records without file provenance identify their scope limitation.
 History, on the Project page, has separate translation, estimate and other-activity tabs.
+A row shows its message only when it adds to the row's title, and other activity shows a status only when it is not Complete.
 Display outcomes use existing observed receipts: estimates, no-request attempts, verified output, partial progress and unavailable output stay distinct.
 Unresolved submissions remain marked for review in history.
 Search and filters operate locally on the already-observed summaries; In progress includes submitted provider work even after its local worker stops.
@@ -430,6 +431,11 @@ Color has three accent roles: accent for interactive text (links, the selected t
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 The top bar, footers and sidebar take their sizes from tokens.css; below 1100px wide the sidebar becomes a rail of icons over short labels, so small windows give the task the width.
 Icons appear in navigation, on actions that leave the app (opening a folder), on menus and disclosures, and on Add; other actions are text only, and ActionControl's `icon` carries the marked ones.
+Footers start with Back and end with Continue; the task's own action sits just left of Continue and is the primary until the task is done, and then Continue is, so each screen has one primary.
+Guided task views hand the footer their `secondary`, `action` and `next` controls, and [GuidedWorkflow](../app/src/features/guided/GuidedWorkflow.tsx) places them in that order.
+A task's main action lives in its footer; rows hold supporting actions, and headers hold task-wide views or settings.
+A task's purpose is its one-line TaskHeader description.
+Consequences sit in the review dialog of the action they qualify, a precondition sits beside its action in the footer, background goes in a help popover beside what it explains, and status stays visible.
 
 ### Workflow and shared presentation
 

@@ -31,6 +31,7 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { StatusIcon } from "../../ui/StatusIcon";
+import { HelpPopover } from "../../ui/HelpPopover";
 
 type View = "progress" | "context" | "images";
 const labels: Record<string, string> = {
@@ -196,7 +197,18 @@ function Workspace({
         {view === "progress" && (
           <>
             <PageBody ref={progressBody}>
-              <Section title="Translation approach">
+              <Section
+                title={
+                  <>
+                    Translation approach{" "}
+                    <HelpPopover label="Translation approach">
+                      The starting prompt handles engine investigation, setup,
+                      translation and delivery. The app tracks saved work in
+                      every mode.
+                    </HelpPopover>
+                  </>
+                }
+              >
                 <fieldset disabled={disabled}>
                   <label>
                     Translation mode
@@ -214,11 +226,6 @@ function Workspace({
                       <option value="batch">API Batch Translation</option>
                     </select>
                   </label>
-                  <p className="muted">
-                    The starting prompt handles engine investigation, setup,
-                    translation, and delivery. The app tracks saved work across
-                    every mode.
-                  </p>
                   {draft.value.options.mode !== "agent" && (
                     <div className="translation-connection">
                       <dl

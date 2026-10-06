@@ -96,8 +96,15 @@ function Workspace(
     completed,
   } = w;
   const owned = useOwnedFeedback(action.key);
-  const { content, primary, secondary, actionContext, heading, save } =
-    renderTask(w);
+  const {
+    content,
+    secondary,
+    action: taskAction,
+    next: taskNext,
+    actionContext,
+    heading,
+    save,
+  } = renderTask(w);
   // Keys only save the open task or move between tasks; they never submit work.
   const frame = useRef<HTMLElement>(null);
   const step = (target: ReturnType<typeof previous>) =>
@@ -310,7 +317,8 @@ function Workspace(
               }
             >
               {secondary}
-              {primary}
+              {taskAction}
+              {taskNext}
             </ActionBar>
           )}
         </div>

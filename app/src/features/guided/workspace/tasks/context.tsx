@@ -30,7 +30,7 @@ export function namesView(w: GuidedWorkspace): TaskView {
     task,
     copyTask,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <ContextWorkspace
@@ -115,20 +115,19 @@ export function namesView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  primary = advance(
-    "Continue to guidance",
-    undefined,
-    investigation.every((row) => row.saved) ? "primary" : "quiet",
-  );
-  secondary = copyTask(
-    "setup",
-    "Copy investigation task",
-    investigation.every((row) => row.saved) ? "default" : "primary",
-  );
+  const done = investigation.every((row) => row.saved);
   return {
     content,
-    primary,
-    secondary,
+    action: copyTask(
+      "setup",
+      "Copy investigation task",
+      done ? "default" : "primary",
+    ),
+    next: advance(
+      "Continue to guidance",
+      undefined,
+      done ? "primary" : "quiet",
+    ),
     heading: {
       title: "Speakers & game context",
       description:
@@ -163,7 +162,7 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     savedNames,
     saveDocuments,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <GuidanceReview
@@ -177,8 +176,8 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  primary = advance();
-  secondary = (
+  const dirty = Object.keys(context.drafts).length > 0;
+  const secondary = (
     <>
       {!!context.drafts[documentName] && (
         <ActionControl
@@ -195,20 +194,23 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
           }
         />
       )}
+    </>
+  );
+  return {
+    content,
+    secondary,
+    action: (
       <ActionControl
         label="Save guidance"
+        variant={dirty ? "primary" : "default"}
         title={`Save guidance (${shortcutLabel.save})`}
         aria-keyshortcuts={shortcutKeys.save}
         disabled={disabled}
         {...feedback("context:save", "Saving guidance…")}
         onClick={() => saveDocuments(savedNames)}
       />
-    </>
-  );
-  return {
-    content,
-    primary,
-    secondary,
+    ),
+    next: advance(undefined, undefined, dirty ? "quiet" : "primary"),
     heading: { title: "Translation guidance" },
     save: disabled ? undefined : () => void saveDocuments(savedNames),
   };
@@ -227,7 +229,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     copyTask,
     widths,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode;
   content = (
     <>
       <div className="context-layout">
@@ -304,14 +306,15 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       "Layout saved.",
       "save-options",
     );
-  primary = advance();
-  secondary = (
+  const pending = widthsDirty || !!discovery.layoutMessage;
+  const saveControl = (
     <ActionControl
       label={
         discovery.layoutMessage && !widthsDirty
           ? "Retry measured layout"
           : "Save layout"
       }
+      variant={pending ? "primary" : "default"}
       title={`Save layout (${shortcutLabel.save})`}
       aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
@@ -321,8 +324,8 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   );
   return {
     content,
-    primary,
-    secondary,
+    action: saveControl,
+    next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     heading: {
       title: "Text layout",
       description:

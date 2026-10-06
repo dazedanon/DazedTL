@@ -26,6 +26,7 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { useMemo, useState } from "react";
 import { Button } from "../../ui/Button";
 import { ActionSlot } from "../../ui/ActionSlot";
+import { HelpPopover } from "../../ui/HelpPopover";
 
 export function operationSummary(job: Job): string {
   const result = job.result;
@@ -44,6 +45,22 @@ export function operationSummary(job: Job): string {
       .filter((value) => typeof value === "string")
       .join(" ");
   return "";
+}
+
+/** What a row adds beyond its title: a result summary or a message that is
+    more than the title marked done. */
+export function activityDetail(job: Job) {
+  const summary = operationSummary(job);
+  if (summary) return summary;
+  const plain = (text: string) =>
+    text
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/[.!\s]+$/, "")
+      .replace(/^(completed|complete|finished|done):\s*/, "")
+      .replace(/\s+(completed|complete|finished|done)$/, "");
+  const message = job.message || "";
+  return message && plain(message) !== plain(job.label || "") ? message : "";
 }
 
 export function projectActivity(
@@ -254,6 +271,10 @@ export function ActivityHistory({
           <option value="failed">Failed / interrupted</option>
           <option value="canceled">Canceled / stopped</option>
         </select>
+        <HelpPopover label="History">
+          Each attempt keeps its date, model and outcome. Inspect an attempt to
+          read its requests and manage Batch work.
+        </HelpPopover>
       </div>
       <div
         key={`${tab}-${filter}-${query}`}
@@ -326,9 +347,7 @@ export function ActivityHistory({
                         </div>
                         {tab === "operations" ? (
                           <div className="history-operation-detail">
-                            <small>
-                              {operationSummary(job) || job.message}
-                            </small>
+                            <small>{activityDetail(job)}</small>
                           </div>
                         ) : (
                           <div className="history-scope">
@@ -345,25 +364,26 @@ export function ActivityHistory({
                             </small>
                           </div>
                         )}
-                        <Outcome
-                          value={
-                            tab === "operations"
-                              ? {
-                                  kind: activeRun(job)
-                                    ? "active"
-                                    : job.status === "complete"
-                                      ? "saved"
-                                      : job.status === "failed"
-                                        ? "failed"
-                                        : "stopped",
-                                  label: sentence(
-                                    job.status.replaceAll("_", " "),
-                                  ),
-                                  detail: "",
-                                }
-                              : outcome
-                          }
-                        />
+                        {/* Finished activity needs no status; others say theirs. */}
+                        {tab === "operations" ? (
+                          job.status !== "complete" && (
+                            <Outcome
+                              value={{
+                                kind: activeRun(job)
+                                  ? "active"
+                                  : job.status === "failed"
+                                    ? "failed"
+                                    : "stopped",
+                                label: sentence(
+                                  job.status.replaceAll("_", " "),
+                                ),
+                                detail: "",
+                              }}
+                            />
+                          )
+                        ) : (
+                          <Outcome value={outcome} />
+                        )}
                       </div>
                     }
                   >
@@ -396,12 +416,6 @@ export function ActivityHistory({
                 ? `${rows.length} ${rows.length === 1 ? "record" : "records"}`
                 : `${matching.length} of ${rows.length} records`}
           </span>
-          {tab === "runs" && (
-            <p className="history-purpose">
-              Each attempt retains its date, model and outcome. Inspect an
-              attempt to read its requests and manage Batch work.
-            </p>
-          )}
           <span>
             {tab === "estimates"
               ? "Local plans · no translation submitted by an estimate"

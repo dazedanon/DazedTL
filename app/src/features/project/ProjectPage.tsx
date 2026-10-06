@@ -326,7 +326,9 @@ function ProjectStatus({
         )}
         {!active && operation && (
           <p className="project-activity">
-            Last activity: {operation.label} · {sentence(operation.status)}
+            Last activity: {operation.label}
+            {operation.status !== "complete" &&
+              ` · ${sentence(operation.status)}`}
           </p>
         )}
         {!state.provider_ready && (
