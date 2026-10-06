@@ -67,10 +67,10 @@ def remaining_calls(current, frozen):
     return result
 
 
+LAYER = "state-groups"
+
+
 def configure(module, translation, root, limit):
-    if getattr(module.parseSS, "_dazedtl_state_groups", False):
-        return
-    native_parse, native_translate = module.parseSS, module.translateAI
     local = threading.local()
 
     def context(call):
@@ -101,10 +101,10 @@ def configure(module, translation, root, limit):
         )
         return system, glossary, sfx, call["history"], call["extra"]
 
-    def dispatch(text, history, *extra):
+    def dispatch(native, text, history, *extra):
         state = getattr(local, "state", None)
         if state is None:
-            return native_translate(text, history, *extra)
+            return native(text, history, *extra)
         if state["capture"]:
             state["calls"].append(
                 {
@@ -158,7 +158,7 @@ def configure(module, translation, root, limit):
                     "\n\nState field associations (context only; translate only the supplied source strings):\n"
                     + json.dumps(mapping, ensure_ascii=False)
                 )
-            response, tokens = native_translate(sources, history, *extra)
+            response, tokens = native(sources, history, *extra)
             if not isinstance(response, list) or len(response) != len(sources):
                 raise ValueError(
                     "Grouped state response IDs do not match the saved source mapping."
@@ -175,7 +175,7 @@ def configure(module, translation, root, limit):
             state["tokens"].get(index, [0, 0]),
         ]
 
-    def parse(data, filename):
+    def parse(native, data, filename):
         state = {"capture": True, "calls": [], "results": {}, "tokens": {}, "index": 0}
         local.state = state
         try:
@@ -204,7 +204,7 @@ def configure(module, translation, root, limit):
             calls = state["calls"]
             if any(not isinstance(call["text"], list) for call in calls):
                 local.state = None
-                return native_parse(data, filename)
+                return native(data, filename)
             path = (
                 Path(root)
                 / "log"
@@ -258,17 +258,14 @@ def configure(module, translation, root, limit):
             state.update(
                 capture=False, groups=chosen, frozen=frozen, remaining=remaining
             )
-            return native_parse(data, filename)
+            return native(data, filename)
         finally:
             local.state = None
 
-    parse._dazedtl_state_groups = True
-    parse._dazedtl_native = native_parse
-    dispatch._dazedtl_native = native_translate
-    module.translateAI, module.parseSS = dispatch, parse
+    module.translateAI.layer(LAYER, dispatch)
+    module.parseSS.layer(LAYER, parse)
 
 
 def restore(module):
-    if getattr(module.parseSS, "_dazedtl_state_groups", False):
-        module.parseSS = module.parseSS._dazedtl_native
-        module.translateAI = module.translateAI._dazedtl_native
+    module.translateAI.remove(LAYER)
+    module.parseSS.remove(LAYER)

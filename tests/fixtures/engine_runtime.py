@@ -144,6 +144,7 @@ try:
         from dazedtl.compatibility.worker_policy import configure_states
         from dazedtl.settings.preferences import CHOICE_COLLECTION, SPEAKER_CONTEXT
         from modules import rpgmakermvmz as parser
+        from util import extensions
 
         def command(code, parameters, **extra):
             return {"code": code, "indent": 0, "parameters": parameters, **extra}
@@ -189,7 +190,7 @@ try:
             "AUTONAMEPOPUP101": False,
             "SPEAKER_PARSE_MODE": False,
             "FIXTEXTWRAP": False,
-            "translateAI": translate,
+            "translateAI": extensions.point(translate),
             "getSpeaker": speaker,
         }
         policy = {
@@ -304,7 +305,9 @@ try:
                 return [list(text), [0, 0]]
 
             menu = command(102, [["特別な品", "やめる"], 1, 0, 2, 0])
-            with patch.multiple(parser, CODE102=True, translateAI=untranslated):
+            with patch.multiple(
+                parser, CODE102=True, translateAI=extensions.point(untranslated)
+            ):
                 for generation, visits in ((policy, 1), ({}, 2)):
                     configure_states({"engine": "MVMZ"}, temporary, generation)
                     menus.clear()

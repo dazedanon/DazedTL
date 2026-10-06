@@ -1326,7 +1326,7 @@ class ProcessTests(unittest.TestCase):
             values = ["EN:" + value for value in text]
             return [values[:-1] if malformed[0] else values, [len(text), len(text) * 2]]
 
-        module.translateAI = translate
+        module.translateAI = point(translate)
 
         def search(item, _bar):
             keys = [
@@ -1350,7 +1350,7 @@ class ProcessTests(unittest.TestCase):
                     module.searchSS(item, None)
             return values
 
-        module.parseSS = parse
+        module.parseSS = point(parse)
 
         def context(_config, payload, _format, _history):
             values = list(json.loads(payload).values())
@@ -1407,7 +1407,11 @@ class ProcessTests(unittest.TestCase):
                 module.parseSS(changed, "States.json")
             self.assertEqual(len(emitted), 1)
             state_requests.restore(module)
-            self.assertIs(module.translateAI, translate)
+            # Native per-state requests resume, without grouped field context.
+            emitted.clear()
+            module.parseSS(changed, "States.json")
+            self.assertTrue(emitted)
+            self.assertEqual({row[1] for row in emitted}, {"State instructions"})
 
     def test_process_counts_payload_and_partial_failure_do_not_rewrite_queue(self):
         with TemporaryDirectory() as temporary:

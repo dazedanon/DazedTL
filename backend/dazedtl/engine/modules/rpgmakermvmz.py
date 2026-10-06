@@ -2302,6 +2302,7 @@ def parseNames(data, filename, context):
     return [data, totalTokens, None]
 
 
+@extensions.point
 def parseSS(data, filename):
     totalTokens = [0, 0]
 
