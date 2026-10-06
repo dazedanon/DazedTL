@@ -8,16 +8,6 @@
   min-width: 0;
   font-size: var(--font-control);
 }
-.plugin-workspace > .action-list {
-  gap: 0;
-}
-.plugin-workspace .action-row {
-  padding: var(--space-5) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.plugin-workspace .action-row:first-child {
-  padding-top: 0;
-}
 .plugin-workspace .action-control-feedback:empty {
   display: none;
 }

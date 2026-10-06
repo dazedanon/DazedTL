@@ -842,20 +842,45 @@ pre {
   align-items: flex-start;
 }
 
+/* Rows that belong together sit in one panel with dividers, which ties each
+   row's actions to its text. Actions keep their natural width at the end of
+   their row and stack below the label in narrow containers. */
 .action-list {
   container-type: inline-size;
   display: grid;
-  gap: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--panel-radius);
+  background: var(--color-surface);
+}
+.dialog-body .action-list {
+  background: transparent;
+}
+.action-list:empty {
+  display: none;
+}
+/* A panel keeps a section's distance from what surrounds it; in block flow
+   this collapses with paragraph and heading margins. */
+.action-list:not(.action-list--compact) {
+  margin-block: var(--space-4);
+}
+.action-list:not(.action-list--compact):first-child {
+  margin-top: 0;
+}
+.action-list:not(.action-list--compact):last-child {
+  margin-bottom: 0;
 }
 .action-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, var(--action-column-width));
-  align-items: start;
-  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) var(--space-4);
+}
+.action-row + .action-row {
+  border-top: 1px solid var(--color-border);
 }
 .action-row-label {
   min-width: 0;
-  padding-top: var(--space-2);
   font-size: var(--font-control);
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -871,21 +896,28 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
-/* A row's actions stack as full-width controls in the shared action column. */
 .action-row-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  max-width: min(100%, var(--action-column-width));
 }
-.action-row-actions > *,
-.action-row-actions > .action-control > button {
-  width: 100%;
-  max-width: 100%;
+.action-row-actions
+  > :is(.ui-button, .action-control > .ui-button):not(.link-button),
+.action-row-actions > .action-control > .ui-button:not(.link-button) {
+  min-width: 8rem;
+}
+.action-row-actions > .action-control {
+  align-items: flex-end;
+  text-align: end;
 }
 .action-row-actions > .actions {
   margin-top: 0;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 .action-row-actions > .actions > * {
@@ -898,34 +930,36 @@ pre {
 @container (max-width: 36rem) {
   .action-row {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
   }
-  .action-row-label {
-    padding-top: 0;
+  .action-row-actions,
+  .action-row-actions > .actions {
+    justify-content: flex-start;
+    max-width: 100%;
+  }
+  .action-row-actions > .action-control {
+    align-items: flex-start;
+    text-align: start;
   }
 }
-/* Compact rows fit their actions to content at the end of the row. */
+/* Compact lists are dense rows without a panel, for lists that already sit
+   in a container of their own or carry their own row styling. */
 .action-list--compact {
   gap: var(--space-3);
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 .action-list--compact > .action-row {
   grid-template-columns: minmax(0, 1fr) fit-content(var(--action-column-width));
-  align-items: center;
   gap: var(--space-3);
+  padding: 0;
 }
-.action-list--compact .action-row-label {
-  padding-top: 0;
+.action-list--compact > .action-row + .action-row {
+  border-top: 0;
 }
-.action-list--compact > .action-row > .action-row-actions {
-  justify-self: end;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-}
-.action-list--compact .action-row-actions > *,
-.action-list--compact .action-row-actions > .action-control > button {
-  width: auto;
+.action-list--compact .action-row-actions > .ui-button,
+.action-list--compact .action-row-actions > .action-control > .ui-button {
+  min-width: 0;
 }
 .action-list--compact > .action-row:has(.action-control-feedback:not(:empty)) {
   align-items: start;
@@ -939,23 +973,12 @@ pre {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
   }
-  .action-list--compact
-    > .action-row:has(
-      > .action-row-actions > :nth-child(2),
-      > .action-row-actions > .actions
-    )
-    > .action-row-actions {
-    justify-self: start;
-    justify-content: flex-start;
-  }
 }
 @container (max-width: 20rem) {
   .action-list--compact > .action-row {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-2);
   }
   .action-list--compact > .action-row > .action-row-actions {
-    justify-self: start;
     justify-content: flex-start;
   }
 }

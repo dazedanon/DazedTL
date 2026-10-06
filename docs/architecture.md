@@ -467,9 +467,10 @@ An action error clears when the user edits the draft it ran with.
 Tertiary actions inside running content use the `link` button variant, whose label aligns with the surrounding text; `quiet` buttons belong in toolbars, headers and footers, where their padding is the hit area.
 Saved operation indexes carry their action identity so feedback can remain beside the correct control after navigation or restart.
 A control given its `feedbackKey` registers with the nearest [FeedbackOwners](../app/src/ui/FeedbackOwners.tsx) scope, so a page's fallback message shows only errors that no mounted control reports.
-Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): a `title` and `description` label (or a custom `label`), one shared action-column width that stacks a row's actions, token-based gaps, wrapping text, and a stacked layout based on available container width.
-The compact variant fits shorter actions to their content and stacks in narrower containers.
-Action groups wrap whole controls and stack below labels in narrower containers.
+Repeated label/action rows use [ActionList and ActionRow](../app/src/ui/ActionList.tsx): a `title` and `description` label (or a custom `label`), wrapping text, and a stacked layout based on available container width.
+A list is one bordered panel with dividers, so each row's actions sit beside the text they belong to; actions keep their natural width at the row's end and stack below the label in narrower containers.
+The compact variant drops the panel for dense lists that already sit in a container or style their own rows.
+Tables, editors and the image grid stay unboxed.
 Rows grow with feedback rather than fixing heights or clipping content.
 Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
 The engine's [JSON](../backend/dazedtl/engine/util/dazedformat.py) and [`plugins.js`](../backend/dazedtl/engine/util/project_preparation.py) preparation formatters write UTF-8 with LF on every platform, matching translated JSON and fitting output.
