@@ -389,6 +389,7 @@ function Manager({
   };
   const counts = state.counts;
   const hidden = Math.max(0, value.selection.length - grid.selectedMatched);
+  const folderSearch = !!value.view.folder && !!value.view.query.trim();
   const selectedReady = draft.dirty ? 0 : counts.selectedReady || 0;
   const selectedBlocked = draft.dirty ? 0 : counts.selectedBlocked || 0;
   const selectedNotPrepared = draft.dirty ? 0 : counts.selectedNotPrepared || 0;
@@ -901,29 +902,45 @@ function Manager({
             <div className="image-grid-empty">
               <ImageIcon size={30} />
               <h3>
-                {counts.indexed ? "No matching images" : "No images indexed"}
+                {!counts.indexed
+                  ? "No images indexed"
+                  : folderSearch
+                    ? "No matches in this folder"
+                    : "No matching images"}
               </h3>
-              <p>
-                {counts.indexed
-                  ? "Hidden images remain selected."
-                  : "Index the image library to begin discovery or choose images yourself."}
-              </p>
+              {/* A search inside a folder looks only there, which the grid
+                  alone does not show. */}
+              {(!counts.indexed || folderSearch || hidden > 0) && (
+                <p>
+                  {!counts.indexed
+                    ? "Index the image library to begin discovery or choose images yourself."
+                    : folderSearch
+                      ? `The search looks only in ${value.view.folder}.`
+                      : `${hidden.toLocaleString()} selected ${hidden === 1 ? "image stays" : "images stay"} selected.`}
+                </p>
+              )}
               <Button
                 onClick={() =>
-                  counts.indexed
-                    ? changeView(
-                        {
-                          query: "",
-                          status: "all",
-                          folder: "",
-                          showSelected: false,
-                        },
-                        true,
-                      )
-                    : perform("scan")
+                  !counts.indexed
+                    ? perform("scan")
+                    : folderSearch
+                      ? changeView({ folder: "" }, true)
+                      : changeView(
+                          {
+                            query: "",
+                            status: "all",
+                            folder: "",
+                            showSelected: false,
+                          },
+                          true,
+                        )
                 }
               >
-                {counts.indexed ? "Clear filters" : "Index images"}
+                {!counts.indexed
+                  ? "Index images"
+                  : folderSearch
+                    ? "Search all folders"
+                    : "Clear filters"}
               </Button>
             </div>
           ) : (
