@@ -5,7 +5,7 @@ import {
   batchInProgress,
   batchProgress,
   canRetrySaving,
-  canReapplyBatch,
+  canReapplyRun,
   batchOutcome,
 } from "../app/src/features/guided/batchView.ts";
 
@@ -53,7 +53,8 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
     outputs: { "Items.json": "retained" },
     outputsAvailable: true,
   };
-  assert.equal(canReapplyBatch(saved), true);
+  assert.equal(canReapplyRun(saved), true);
+  assert.equal(canReapplyRun({ ...saved, mode: "translate" }), true);
   for (const unavailable of [
     { ...saved, status: "running" },
     { ...saved, outputsAvailable: false },
@@ -61,7 +62,7 @@ test("Batch monitoring keeps unknown counts unknown and interrupted work recover
     { ...saved, temporary: true },
     { ...saved, mode: "estimate" },
   ]) {
-    assert.equal(canReapplyBatch(unavailable), false);
+    assert.equal(canReapplyRun(unavailable), false);
   }
   assert.equal(canRetrySaving(paused), false);
   const collected = {

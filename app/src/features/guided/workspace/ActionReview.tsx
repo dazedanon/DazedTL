@@ -164,7 +164,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           )}
         {preview.action === "export_selected" && !!preview.options.run_id && (
           <p>
-            Uses the saved files from this Batch. Reapplying makes no API
+            Uses the saved files from this run. Reapplying makes no API
             requests.
           </p>
         )}

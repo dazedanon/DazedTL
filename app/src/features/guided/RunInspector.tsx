@@ -15,7 +15,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { ProcessPanel, type RequestInspectionTarget } from "./ProcessPanel";
 import { InspectedFile } from "./InspectedFile";
 import { RunLog } from "./RunTechnical";
-import { batchOutcome, canRetrySaving, canReapplyBatch } from "./batchView";
+import { batchOutcome, canRetrySaving, canReapplyRun } from "./batchView";
 import type { RequestBatch } from "./requestView";
 import { observedRun } from "./translationView";
 import { useRead } from "../../state/useRead";
@@ -69,6 +69,27 @@ export function RunInspector({
     error: action.key === key ? action.error : "",
     notice: action.key === key ? action.notice : "",
   });
+  const liveReapply =
+    !!job?.process && job.mode === "translate" && job.status === "complete";
+  // Reapplying publishes a complete run's retained output through its own
+  // Apply review; Batch runs offer it beside their batches, Live in the header.
+  const reapplyControl = (label: string) =>
+    job && (
+      <ActionControl
+        label={label}
+        variant="quiet"
+        disabled={disabled || action.busy || !canReapplyRun(job)}
+        {...feedback("reapply", "Preparing saved output…")}
+        title={
+          !canReapplyRun(job)
+            ? "Saved output is unavailable for this run."
+            : "Review and apply this run’s saved output to the game."
+        }
+        job={applied?.status === "complete" ? undefined : applied}
+        notice={applied?.status === "complete" ? "Saved output applied." : ""}
+        onClick={() => action.run(() => reapply(job), "", "reapply")}
+      />
+    );
   function batchActions(group?: RequestBatch) {
     if (!job) return null;
     const providers = group?.provider
@@ -193,22 +214,7 @@ export function RunInspector({
           )}
           {reapplyVisible && (
             <ActionRow label={<small>Saved output for this run</small>}>
-              <ActionControl
-                label="Reapply"
-                variant="quiet"
-                disabled={disabled || action.busy || !canReapplyBatch(job)}
-                {...feedback("reapply", "Preparing saved output…")}
-                title={
-                  !canReapplyBatch(job)
-                    ? "Saved output is unavailable for this Batch."
-                    : "Review and apply this Batch’s saved output to the game."
-                }
-                job={applied?.status === "complete" ? undefined : applied}
-                notice={
-                  applied?.status === "complete" ? "Batch output applied." : ""
-                }
-                onClick={() => action.run(() => reapply(job), "", "reapply")}
-              />
+              {reapplyControl("Reapply")}
             </ActionRow>
           )}
         </ActionList>
@@ -237,10 +243,19 @@ export function RunInspector({
                 : "Inspect activity"
           }
           actions={
-            history && (
-              <Button variant="quiet" disabled={action.busy} onClick={history}>
-                Run history
-              </Button>
+            (liveReapply || history) && (
+              <>
+                {liveReapply && reapplyControl("Reapply output")}
+                {history && (
+                  <Button
+                    variant="quiet"
+                    disabled={action.busy}
+                    onClick={history}
+                  >
+                    Run history
+                  </Button>
+                )}
+              </>
             )
           }
           onClose={close}

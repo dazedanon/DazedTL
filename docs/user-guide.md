@@ -71,7 +71,8 @@ The Project page's **History** lists approved runs, including failed and cancele
 **Inspect**, or a file's inspect icon, opens the request inspector.
 **Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage, the exact API payload and the run log.
 **File contents** shows the file's current text even when no request was prepared.
-The inspector also holds Batch controls: provider cancellation, queue continuation, collection recovery and reviewed reapplication of saved output.
+A complete Live or Batch run can reapply its saved output to the game through the usual Apply review; Live runs offer **Reapply output** in the inspector header.
+The inspector also holds Batch controls: provider cancellation, queue continuation and collection recovery.
 Re-applying output or resuming a run from History opens its review in Translation.
 Finished responses, including partial results from canceled Batches, stay available for collection.
 

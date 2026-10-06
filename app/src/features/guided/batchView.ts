@@ -77,9 +77,10 @@ export function canRetrySaving(job: Job) {
     ["failed", "stopped", "interrupted", "canceled"].includes(job.status)
   );
 }
-export function canReapplyBatch(job: Job) {
+/** A complete Batch or Live run whose saved output is still intact. */
+export function canReapplyRun(job: Job) {
   return (
-    job.mode === "batch" &&
+    ["batch", "translate"].includes(job.mode || "") &&
     job.status === "complete" &&
     !job.temporary &&
     job.outputsAvailable === true &&

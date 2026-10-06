@@ -1065,7 +1065,7 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Apply the selected saved outputs"):
             self.guided.release_ready(self.identity, self.native, state)
 
-    def test_reapply_batch_freezes_owned_history_outputs_without_using_current_selection(
+    def test_reapply_run_freezes_owned_history_outputs_without_using_current_selection(
         self,
     ):
         import sys
@@ -1157,6 +1157,15 @@ class GuidedTests(unittest.TestCase):
                         self.identity, "export_selected", options={"run_id": identity}
                     )
             job["status"] = "complete"
+            # A complete Live run's saved output reapplies like a Batch's.
+            job["mode"] = "translate"
+            self.assertEqual(
+                self.guided.preview(
+                    self.identity, "export_selected", options={"run_id": identity}
+                )["paths"],
+                ["Items.json"],
+            )
+            job["mode"] = "batch"
             for files in (
                 [],
                 ["Foreign.json"],
@@ -1184,7 +1193,7 @@ class GuidedTests(unittest.TestCase):
             self.backend.saved_run_configuration = lambda _: {
                 "workflow": {"id": "native"}
             }
-            descriptor, _ = self.guided.batch_output(self.native, identity, None)
+            descriptor, _ = self.guided.saved_output(self.native, identity, None)
             write_json(
                 root / "translated/Items.json", [{"name": "Tampered saved output"}]
             )

@@ -64,7 +64,7 @@ class Guided:
         self.actions = GuidedActions(self)
         self.pending_run = self.actions.pending_run
         self.submission_overlap = self.actions.submission_overlap
-        self.batch_output = self.actions.batch_output
+        self.saved_output = self.actions.saved_output
         self.preview = self.actions.preview
         self.execute = self.actions.execute
         self.verify_review = self.actions.verify_review

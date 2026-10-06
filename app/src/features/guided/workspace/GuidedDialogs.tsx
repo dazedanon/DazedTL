@@ -93,7 +93,12 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
               undefined
             );
           })()}
-          reapply={(item) => reapplyRun(item.id)}
+          // The review replaces the inspector rather than stacking on it.
+          reapply={async (item) => {
+            await reapplyRun(item.id);
+            setInspected(null);
+            setInspectionTarget(undefined);
+          }}
           actions={
             inspected &&
             canResumeRun(inspected) && (

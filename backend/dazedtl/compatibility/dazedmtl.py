@@ -476,7 +476,7 @@ class ExistingBackend:
         if run_output:
             plan["run_output"] = run_output
             options["run_id"] = run_output["run_id"]
-            label = "Reapply saved Batch output"
+            label = "Reapply saved run output"
         plan.update(options=options, label=label)
         return {**preview, "label": label, "options": options, "files": len(files)}
 

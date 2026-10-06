@@ -193,24 +193,25 @@ class GuidedActions:
         ]
         return overlap(self.guided.backend.manual.folder(current), job, previous)
 
-    def batch_output(self, native, run_id, files):
+    def saved_output(self, native, run_id, files):
+        """A complete Batch or Live run's retained output, for reapplying."""
         if (
             not isinstance(run_id, str)
             or run_id not in self.guided.owned_runs(native)
             or run_id not in self.guided.backend.manual.jobs
         ):
-            raise ValueError("Choose a saved Batch belonging to this project.")
+            raise ValueError("Choose a saved run belonging to this project.")
         plan = self.guided.backend.saved_run_configuration(run_id)
         if (plan.get("workflow") or {}).get("id") != native["id"]:
-            raise ValueError("This saved Batch belongs to another project.")
+            raise ValueError("This saved run belongs to another project.")
         job = self.guided.run_view(run_id)
         if (
-            job.get("mode") != "batch"
+            job.get("mode") not in {"batch", "translate"}
             or job.get("status") != "complete"
             or job.get("temporary")
         ):
             raise ValueError(
-                "Wait for this Batch to finish saving its results before reapplying it."
+                "Wait for this run to finish saving its results before reapplying it."
             )
         outputs = job.get("outputs", {})
         requested = sorted(outputs) if files is None else files
@@ -226,10 +227,10 @@ class GuidedActions:
                 & self.guided.supported_files(native)
             )
         ):
-            raise ValueError("Choose retained output files from this Batch.")
+            raise ValueError("Choose retained output files from this run.")
         if set(requested) - set(job.get("availableOutputs", [])):
             raise ValueError(
-                "Saved Batch output is missing or changed. Its files cannot be reapplied."
+                "Saved output is missing or changed. Its files cannot be reapplied."
             )
         return {
             "run_id": run_id,
@@ -264,7 +265,7 @@ class GuidedActions:
         if action == "export_selected" and options:
             if set(options) != {"run_id"}:
                 raise ValueError("Choose a saved Batch to reapply.")
-            run_output, files = self.batch_output(native, options["run_id"], files)
+            run_output, files = self.saved_output(native, options["run_id"], files)
         if action not in NATIVE_ACTIONS | SHARED_ACTIONS.keys() | {"start"}:
             raise ValueError("Choose a supported guided action.")
         self.guided.settings.prepare_engine()
