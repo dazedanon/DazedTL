@@ -1721,6 +1721,7 @@ export type PluginReceipt = {
   failure: string;
   conflicts: string[];
   manifest: string;
+  restorable: boolean;
 };
 
 export type PluginCounts = {

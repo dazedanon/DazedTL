@@ -100,6 +100,7 @@ class PluginReceipt(TypedDict):
     failure: str
     conflicts: list[str]
     manifest: str
+    restorable: bool
 
 
 class PluginCounts(TypedDict):

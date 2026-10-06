@@ -256,9 +256,9 @@
   margin-top: var(--space-1);
   color: var(--color-muted);
 }
-.plugin-receipt {
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border);
+.plugin-receipt-problem {
+  display: block;
+  color: var(--color-error-text);
 }
 @media (max-width: 700px) {
   .plugin-table th:first-child {

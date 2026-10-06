@@ -26,3 +26,10 @@ export function countSummary(
     .map(([count, label]) => `${count!.toLocaleString()} ${label}`)
     .join(" · ");
 }
+
+/** A short selection's names, or two names and a count for a longer one. */
+export function selectionNames(names: readonly string[]) {
+  return names.length > 3
+    ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`
+    : names.join(", ");
+}

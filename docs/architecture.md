@@ -603,7 +603,7 @@ Backup history is grouped by game versus project files and appears only after th
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
-Every task that hands work to an assistant (Context investigation and layout, Event / plugin codes, Plugin text, Images, Text QA and Len's method) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (not copied, waiting, results ready or needs attention), what comes back, and a row per expected result.
+Every task that hands work to an assistant (Context investigation and layout, Event / plugin codes, Plugin text, Images, Text QA and Len's method) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (not copied, waiting, results ready, applied or needs attention), what comes back, and a row per expected result.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.

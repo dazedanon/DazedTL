@@ -1257,7 +1257,8 @@ pre {
 .assistant-task[data-state="waiting"] .assistant-task-state {
   color: var(--color-accent);
 }
-.assistant-task[data-state="ready"] .assistant-task-state {
+.assistant-task:is([data-state="ready"], [data-state="applied"])
+  .assistant-task-state {
   color: var(--color-success);
 }
 .assistant-task[data-state="attention"] .assistant-task-state {

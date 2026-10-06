@@ -5,6 +5,7 @@ import { pluginsApi } from "../../api/plugins";
 import type {
   PluginList,
   PluginPreview,
+  PluginReceipt,
   PluginState,
   PluginView,
 } from "../../api/contracts";
@@ -16,14 +17,31 @@ import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionBar } from "../../ui/ActionBar";
+import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
+import { selectionNames } from "../../ui/displayText";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
+/** What a receipt did, in words; its backend status codes stay internal. */
+const receiptTitle = ({ mode, status, files }: PluginReceipt) => {
+  const done = mode === "apply" ? "Applied" : "Restored";
+  const action = mode === "apply" ? "Apply" : "Restore";
+  const count = fileCount(files.length);
+  return status === "partial"
+    ? `Partly ${done.toLowerCase()} · ${count}`
+    : status === "rolled_back"
+      ? `${action} rolled back`
+      : status === "recovered"
+        ? `${done} ${count} after an interruption`
+        : status === "conflict"
+          ? `${action} interrupted · needs review`
+          : `${done} ${count}`;
+};
 
 export const pluginStatus = (status: string) =>
   ({
@@ -279,9 +297,10 @@ export function PluginWorkspace({
       state.findings.status === "awaiting_report") ||
     (state.activeRequest === state.requestPaths.translation &&
       state.editing.status === "awaiting_report");
-  const taskState =
-    counts.ready || counts.applied
-      ? "ready"
+  const taskState = counts.ready
+    ? "ready"
+    : counts.applied
+      ? "applied"
       : state.findings.status === "partial" ||
           state.findings.errors.length ||
           state.editing.errors.length
@@ -344,14 +363,14 @@ export function PluginWorkspace({
         help="Keep DazedTL open while your assistant works. It continues through safe work automatically and asks only about unresolved choices."
         description={
           taskState === "ready"
-            ? counts.ready
-              ? `${fileCount(counts.ready)} checked and ready to apply.`
-              : `${fileCount(counts.applied)} applied to the game.`
-            : taskState === "attention"
-              ? "Some investigation remains unresolved. Your assistant can continue from the same task after resolving the reported issues."
-              : taskState === "waiting"
-                ? "Results appear here after validation as your assistant saves them."
-                : "Your assistant investigates plugin text, translates confirmed display text and checks the results in one task."
+            ? `${fileCount(counts.ready)} checked and ready to apply.`
+            : taskState === "applied"
+              ? `${fileCount(counts.applied)} applied to the game.`
+              : taskState === "attention"
+                ? "Some investigation remains unresolved. Your assistant can continue from the same task after resolving the reported issues."
+                : taskState === "waiting"
+                  ? "Results appear here after validation as your assistant saves them."
+                  : "Your assistant investigates plugin text, translates confirmed display text and checks the results in one task."
         }
         results={[
           reportRow(
@@ -535,14 +554,11 @@ export function PluginWorkspace({
       )}
       {footer(
         <div className="plugin-footer-summary">
+          {/* The task panel owns ready and applied status; this is the scope. */}
           <span>
-            {counts.ready
-              ? `${fileCount(counts.ready)} ready to apply`
-              : counts.selected
-                ? `${counts.selected} text ${counts.selected === 1 ? "location" : "locations"} in ${fileCount(counts.selectedFiles)} included`
-                : counts.applied
-                  ? `${fileCount(counts.applied)} applied`
-                  : "No plugin translations ready"}
+            {counts.selected
+              ? `${counts.selected} text ${counts.selected === 1 ? "location" : "locations"} in ${fileCount(counts.selectedFiles)} included`
+              : "No plugin text included"}
           </span>
           {["apply", "restore"].includes(action.key) && action.notice && (
             <span role="status" className="plugin-success">
@@ -814,45 +830,70 @@ export function PluginWorkspace({
       {recovery && (
         <Modal
           label="Plugin recovery"
-          size="lg"
+          size="md"
           className="plugin-review-modal"
           onDismiss={() => setRecovery(false)}
         >
           <DialogHeader
-            title="Plugin Apply & recovery"
+            title="Plugin recovery"
+            description="Restore plugin files from the backups saved when they were applied."
             onClose={() => setRecovery(false)}
           />
           <DialogBody className="plugin-review-body">
-            {state.receipts
-              .slice()
-              .reverse()
-              .map((receipt) => (
-                <article className="plugin-receipt" key={receipt.id}>
-                  <strong>
-                    {receipt.mode} · {receipt.status} · {receipt.files.length}{" "}
-                    files
-                  </strong>
-                  <p className="muted">{receipt.saved}</p>
-                  {receipt.failure && <Message message={receipt.failure} />}
-                  <p>{receipt.conflicts.join(" · ")}</p>
-                  <ActionControl
-                    label="Review restore"
-                    disabled={
-                      busy || receipt.mode !== "apply" || !receipt.files.length
-                    }
-                    {...feedback("preview_restore:" + receipt.id)}
-                    onClick={async () => {
-                      const result = await run(
-                        "preview_restore",
-                        { receipt: receipt.id },
-                        "",
-                        "preview_restore:" + receipt.id,
-                      );
-                      if (result.ok) setRecovery(false);
-                    }}
-                  />
-                </article>
-              ))}
+            <ActionList>
+              {state.receipts
+                .slice()
+                .reverse()
+                .map((receipt) => {
+                  const problem = [receipt.failure, ...receipt.conflicts]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <ActionRow
+                      key={receipt.id}
+                      title={receiptTitle(receipt)}
+                      description={
+                        <>
+                          {[
+                            new Date(receipt.saved).toLocaleString(),
+                            selectionNames(
+                              receipt.files.map(
+                                (file) =>
+                                  file.destination.split("/").pop() ||
+                                  file.destination,
+                              ),
+                            ),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          {problem && (
+                            <span className="plugin-receipt-problem">
+                              {problem}
+                            </span>
+                          )}
+                        </>
+                      }
+                    >
+                      {receipt.restorable && (
+                        <ActionControl
+                          label="Review restore"
+                          disabled={busy}
+                          {...feedback("preview_restore:" + receipt.id)}
+                          onClick={async () => {
+                            const result = await run(
+                              "preview_restore",
+                              { receipt: receipt.id },
+                              "",
+                              "preview_restore:" + receipt.id,
+                            );
+                            if (result.ok) setRecovery(false);
+                          }}
+                        />
+                      )}
+                    </ActionRow>
+                  );
+                })}
+            </ActionList>
           </DialogBody>
         </Modal>
       )}
@@ -870,7 +911,11 @@ export function PluginWorkspace({
         >
           <DialogHeader
             title={`${preview.mode === "apply" ? "Apply" : "Restore"} ${fileCount(preview.files.length, "plugin file")}`}
-            description={`${preview.files.length} included${preview.blocked.length ? ` · ${preview.blocked.length} blocked, awaiting or excluded` : ""}`}
+            description={
+              preview.blocked.length
+                ? `${preview.blocked.length} blocked, awaiting or excluded`
+                : undefined
+            }
           />
           <DialogBody className="plugin-review-body">
             <p>

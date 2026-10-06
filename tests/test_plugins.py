@@ -457,6 +457,7 @@ class PluginTests(unittest.TestCase):
         # Reviews and receipts keep recovery-only fields away from the renderer.
         check_response("plugins_action", {"preview": preview})
         check_response("plugins_action", result)
+        self.assertTrue(result["receipt"]["restorable"])
         with self.assertRaisesRegex(ValueError, "already used"):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
         saved = self.service.load(self.identity)
@@ -477,6 +478,9 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
+        # A restored application no longer offers another restore.
+        receipts = self.service.state(self.identity)["receipts"]
+        self.assertFalse(any(receipt["restorable"] for receipt in receipts))
         copies = {
             path: deepcopy(row["prepared"])
             for path, row in self.service.load(self.identity)["files"].items()

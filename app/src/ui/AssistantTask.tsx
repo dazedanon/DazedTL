@@ -3,8 +3,9 @@ import { ActionRow } from "./ActionList";
 import { HelpPopover } from "./HelpPopover";
 import { StatusIcon, type StatusKind } from "./StatusIcon";
 
-/** Where a copied task stands: never copied, copied and awaited, or back. */
-export type AssistantTaskState = "idle" | "waiting" | "ready" | "attention";
+/** Where a copied task stands: never copied, copied and awaited, back, or applied. */
+export type AssistantTaskState =
+  "idle" | "waiting" | "ready" | "applied" | "attention";
 
 export interface AssistantResult {
   id: string;
@@ -20,6 +21,7 @@ const stateLabels: Record<AssistantTaskState, string> = {
   idle: "Not copied yet",
   waiting: "Waiting for your assistant",
   ready: "Results ready",
+  applied: "Applied",
   attention: "Needs attention",
 };
 

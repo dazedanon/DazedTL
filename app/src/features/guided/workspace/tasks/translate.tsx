@@ -15,7 +15,8 @@ import {
   translationStopLabel,
   unsettledBatches,
 } from "../../translationView";
-import { actionKey, fileCount, selectionNames } from "../model";
+import { actionKey, fileCount } from "../model";
+import { selectionNames } from "../../../../ui/displayText";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import {

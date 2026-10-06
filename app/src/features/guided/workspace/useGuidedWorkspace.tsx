@@ -47,8 +47,8 @@ import {
   advancedCodes,
   fileCount,
   jobTime,
-  selectionNames,
 } from "./model";
+import { selectionNames } from "../../../ui/displayText";
 
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({

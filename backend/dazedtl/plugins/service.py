@@ -109,13 +109,21 @@ def preview_view(preview):
     }
 
 
-def receipt_view(receipt):
+def receipt_view(receipt, files):
     return {
         **pick(
             receipt,
             ("id", "mode", "saved", "status", "failure", "conflicts", "manifest"),
         ),
         "files": [pick(row, REVIEW_KEYS) for row in receipt["files"]],
+        # Only the application a file still carries can restore it; later
+        # restores and applications supersede older receipts.
+        "restorable": receipt["mode"] == "apply"
+        and any(
+            files.get(row["path"], {}).get("applied", {}).get("receipt")
+            == receipt["id"]
+            for row in receipt["files"]
+        ),
     }
 
 
@@ -738,7 +746,9 @@ class PluginService:
                 "editing": report_view(value["editing"]),
                 "originalIssue": value.get("originalIssue", ""),
                 "originalBackup": value["originals"].get("backupId", ""),
-                "receipts": [receipt_view(row) for row in value["receipts"][-12:]],
+                "receipts": [
+                    receipt_view(row, value["files"]) for row in value["receipts"][-12:]
+                ],
                 "activeRequest": next(
                     (
                         request["path"]
@@ -2102,7 +2112,7 @@ class PluginService:
                 + (" Recovery conflicts: " + "; ".join(conflicts) if conflicts else "")
             )
         return {
-            "receipt": receipt_view(receipt),
+            "receipt": receipt_view(receipt, value["files"]),
             "state": self.state(project_id),
             "completed": len(completed),
         }
