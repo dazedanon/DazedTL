@@ -328,9 +328,6 @@ main > .image-manager {
   font-size: var(--font-small);
   line-height: 1.55;
   padding: var(--space-half) var(--space-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   flex-shrink: 0;
 }
 .image-grid-loading {

@@ -1326,3 +1326,22 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
+/* A file name shortened in the middle: the head gives way, the ending stays. */
+.file-name {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* A hidden head still shows its ellipsis. */
+.file-name-head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-name-head:not(:empty) {
+  min-width: 1.2em;
+}
+.file-name-tail {
+  flex-shrink: 0;
+}

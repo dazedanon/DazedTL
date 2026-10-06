@@ -42,6 +42,20 @@ export function ImageFolders({
     observer.observe(sample.current);
     return () => observer.disconnect();
   }, [folders.length, first]);
+  // The list renders only nearby rows, so a saved or chosen folder further
+  // down would be neither visible nor marked; bring it into view when the
+  // selection or list changes, and again once rows are measured.
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    const index = folders.findIndex((item) => item.path === folder);
+    if (!element || index < 0) return;
+    const top = index * rowHeight;
+    if (
+      top < element.scrollTop ||
+      top + rowHeight > element.scrollTop + element.clientHeight
+    )
+      element.scrollTop = Math.max(0, top - element.clientHeight / 2);
+  }, [folder, folders, rowHeight]);
   return (
     <aside className="image-folder-rail" aria-label="Image folders">
       <Button

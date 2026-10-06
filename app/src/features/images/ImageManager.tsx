@@ -1,3 +1,4 @@
+import { FileName } from "../../ui/FileName";
 import {
   useEffect,
   useEffectEvent,
@@ -170,9 +171,11 @@ function Tile({
           )}
         </span>
       </button>
-      <span className="image-tile-name" title={asset.path}>
-        {asset.filename}
-      </span>
+      <FileName
+        className="image-tile-name"
+        name={asset.filename}
+        title={asset.path}
+      />
     </article>
   );
 }

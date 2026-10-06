@@ -497,6 +497,7 @@ Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including the Project page, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
 Status colors always accompany text or icons.
+Shortened file names use [FileName](../app/src/ui/FileName.tsx), which gives way in the middle and keeps the extension and the characters before it, where numbered names differ.
 Status marks come from [StatusIcon](../app/src/ui/StatusIcon.tsx) (done, running, partly done, not started, warning, failed) rather than text characters, so they keep their shape in every font.
 Inline notes use [Notice](../app/src/ui/Notice.tsx): neutral notes, including empty states, read as plain secondary text, and warnings get the warning edge with their way forward beside them.
 Disclosures share the app's chevron marker and hold genuine advanced settings or long evidence, not status the task already needs.
