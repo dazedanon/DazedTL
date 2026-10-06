@@ -1095,6 +1095,16 @@ pre {
   color: var(--color-text);
   box-shadow: var(--shadow-popover);
 }
+/* A long menu's search stays at its top while the items scroll beneath; its
+   ring of the menu's surface covers items scrolling past the padding. */
+.menu-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  width: 100%;
+  margin-bottom: var(--space-1);
+  box-shadow: 0 0 0 var(--space-1) var(--color-surface);
+}
 .menu-item {
   display: flex;
   align-items: center;

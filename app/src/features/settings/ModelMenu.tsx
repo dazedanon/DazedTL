@@ -6,7 +6,7 @@ import type { Settings } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { Feedback } from "../../ui/Feedback";
-import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
+import { Menu, MenuItem, MenuSearch, MenuSeparator } from "../../ui/Menu";
 import { settingsSaved } from "./settingsChanges";
 
 /**
@@ -28,8 +28,10 @@ export function ModelMenu({
   const action = useAction({ after: application.settle });
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [query, setQuery] = useState("");
   const load = () => {
     setLoadError("");
+    setQuery("");
     api
       .settings()
       .then(setSettings, (error: unknown) => setLoadError(messageOf(error)));
@@ -38,6 +40,11 @@ export function ModelMenu({
     (item) => item.id === settings.activeConnectionId,
   );
   const models = active?.models ?? [];
+  // Provider lists can hold hundreds of models; long ones get a search.
+  const searchable = models.length > 12;
+  const matches = models.filter((item) =>
+    item.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
   // Pending Settings edits stay theirs; the menu never overwrites them.
   const pending = !!settings?.draft;
   const choose = (next: string) =>
@@ -83,15 +90,27 @@ export function ModelMenu({
             here.
           </p>
         ) : models.length ? (
-          models.map((item) => (
-            <MenuItem
-              key={item}
-              current={item === model}
-              onSelect={() => choose(item)}
-            >
-              {item}
-            </MenuItem>
-          ))
+          <>
+            {searchable && (
+              <MenuSearch
+                label="Search models"
+                value={query}
+                onChange={setQuery}
+              />
+            )}
+            {matches.map((item) => (
+              <MenuItem
+                key={item}
+                current={item === model}
+                onSelect={() => choose(item)}
+              >
+                {item}
+              </MenuItem>
+            ))}
+            {!matches.length && (
+              <p className="menu-note">No models match “{query.trim()}”.</p>
+            )}
+          </>
         ) : (
           <p className="menu-note">
             No model list for {active?.name || "this connection"} yet. Check the
@@ -105,6 +124,7 @@ export function ModelMenu({
         <Feedback
           loading={action.busy}
           loadingText="Switching model…"
+          notice="Saved as your default model"
           error={action.error}
         />
       )}

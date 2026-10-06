@@ -485,6 +485,7 @@ One choice among a few, such as Batch or Live and the file-group filters, uses [
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 Action lists that open from a button, such as the project switcher, the [model menu](../app/src/features/settings/ModelMenu.tsx) and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
 The model menu reads the connection's models only when opened and saves against a fresh settings revision; it refuses while Settings holds unsaved edits, and a clean Settings page reloads after it saves.
+A long model list opens with a [MenuSearch](../app/src/ui/Menu.tsx) field focused, and Down moves into its matches; choosing a model saves it as the Settings default, which the feedback beside the menu says.
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Keyboard focus shows the shared `--focus-ring`; pointer focus adds no outline, and text fields mark focus with their border.
 Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to the visible screen and the top dialog: the save key saves the open editor and Alt+Left/Right move between Guided tasks; nothing that spends, applies or packages gets a shortcut.

@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useId,
+  useLayoutEffect,
   useRef,
   type ComponentProps,
   type KeyboardEvent,
@@ -54,9 +55,24 @@ export function Menu({
     popup.style.top = `${Math.max(margin, upwards ? rect.top - gap - box.height : rect.bottom + gap)}px`;
     popup.style.maxHeight = `${(upwards ? rect.top : window.innerHeight - rect.bottom) - gap - margin}px`;
   };
+  const search = () =>
+    list.current?.querySelector<HTMLInputElement>("[data-menu-search]");
   const keys = (event: KeyboardEvent) => {
     const all = items();
+    // Typing stays in the search field; Down moves into its matches and Up
+    // from the first match returns to it.
+    if (document.activeElement === search()) {
+      if (event.key !== "ArrowDown" || !all.length) return;
+      event.preventDefault();
+      all[0].focus();
+      return;
+    }
     const index = all.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "ArrowUp" && index === 0 && search()) {
+      event.preventDefault();
+      search()!.focus();
+      return;
+    }
     const next =
       event.key === "ArrowDown"
         ? (index + 1) % all.length
@@ -100,7 +116,7 @@ export function Menu({
           }
           onOpen?.();
           position();
-          items()[0]?.focus();
+          (search() || items()[0])?.focus();
         }}
       >
         {children}
@@ -134,6 +150,35 @@ export function MenuItem({
     >
       {children}
     </button>
+  );
+}
+
+/** Filters a long menu's items; the menu focuses it when opened, including
+    when items load after opening. */
+export function MenuSearch({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (input.current?.closest(":popover-open")) input.current.focus();
+  }, []);
+  return (
+    <input
+      ref={input}
+      type="search"
+      data-menu-search
+      className="menu-search"
+      aria-label={label}
+      placeholder="Search…"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
 
