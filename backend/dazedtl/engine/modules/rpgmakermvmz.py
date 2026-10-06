@@ -508,11 +508,10 @@ def handleMVMZ(filename, estimate):
     translatedData[1][0] += batch_map_name_tokens[0]
     translatedData[1][1] += batch_map_name_tokens[1]
 
-    # Translate
-    # Skip writing output file during speaker-parse mode
+    # Parsers return the exception that stopped them after saving each finished
+    # page. Fail the file so partial output is never presented as complete.
     if translatedData[2] is not None:
-        if isinstance(translatedData[2], BatchResultUnavailableError):
-            raise translatedData[2]
+        raise translatedData[2]
 
     if not estimate and not SPEAKER_PARSE_MODE:
         if not saveProgress(translatedData[0], filename, force=True):
@@ -2339,14 +2338,13 @@ def parseSS(data, filename):
             if ss is not None:
                 try:
                     result = searchSS(ss, pbar)
-                    totalTokens[0] += result[0]
-                    totalTokens[1] += result[1]
                 except Exception as e:
                     traceback.print_exc()
                     return [data, totalTokens, e]
-                finally:
-                    # Persist progress only if this state produced tokens
-                    checkSave(data, filename, result)
+                totalTokens[0] += result[0]
+                totalTokens[1] += result[1]
+                # Persist progress only if this state produced tokens
+                checkSave(data, filename, result)
     return [data, totalTokens, None]
 
 
@@ -2409,14 +2407,13 @@ def parseSystem(data, filename):
         PBAR = pbar
         try:
             result = searchSystem(data, pbar)
-            totalTokens[0] += result[0]
-            totalTokens[1] += result[1]
         except Exception as e:
             traceback.print_exc()
             return [data, totalTokens, e]
-        finally:
-            # Persist only if system sections produced tokens
-            checkSave(data, filename, result)
+        totalTokens[0] += result[0]
+        totalTokens[1] += result[1]
+        # Persist only if system sections produced tokens
+        checkSave(data, filename, result)
     return [data, totalTokens, None]
 
 

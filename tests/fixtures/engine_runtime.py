@@ -253,6 +253,19 @@ try:
             with patch.object(parser, "CODE101", False):
                 parse([name("Hana"), command(401, ["こんにちは"])])
                 assert calls == [(["こんにちは"], "")] and not names, calls
+            # A parser exception fails its file. It used to be masked by an
+            # unbound result, or saved and reported as a completed translation.
+            data, tokens, error = parser.parseSystem(
+                {"gameTitle": "テスト"}, "System.json"
+            )
+            assert isinstance(error, KeyError), error
+            with patch.object(parser, "openFiles", return_value=[data, tokens, error]):
+                try:
+                    parser.handleMVMZ("System.json", True)
+                except KeyError:
+                    pass
+                else:
+                    raise AssertionError("A parser exception was reported as success.")
         configure_states({"engine": "MVMZ"}, temporary, None)
     # A map call can contain a malformed attempt, an accepted retry, a refused
     # chunk, and another success. Keep every body and only its own validation;
