@@ -45,7 +45,6 @@ import { ImageApply } from "./ImageApply";
 import { ImageFolders } from "./ImageFolders";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
-import "./images.css";
 
 export interface ImageManagerProps {
   projectId: string;

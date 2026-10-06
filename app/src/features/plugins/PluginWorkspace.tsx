@@ -24,7 +24,6 @@ import { ActionSlot } from "../../ui/ActionSlot";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
-import "./plugins.css";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;

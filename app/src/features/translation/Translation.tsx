@@ -19,7 +19,6 @@ import { ContextPanel } from "./ContextPanel";
 import { RequestsPanel } from "./RequestsPanel";
 import { VersionsPanel } from "./VersionsPanel";
 import { JobStatus } from "../../ui/JobStatus";
-import "./translation.css";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 

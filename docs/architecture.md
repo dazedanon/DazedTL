@@ -420,6 +420,8 @@ Use these principles to evaluate real workflows, rather than adding extra panels
 
 Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
+Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
+A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
 Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps.
 The desktop window fits its display's work area in logical pixels.

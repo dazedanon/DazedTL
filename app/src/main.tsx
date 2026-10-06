@@ -1,9 +1,9 @@
+import "./styles/index.css";
 import { createRoot } from "react-dom/client";
 import App from "./app/App";
 import { ApplicationProvider } from "./app/ApplicationProvider";
 import { ErrorBoundary } from "./app/ErrorBoundary";
 import { reportRendererFailure } from "./app/rendererErrors";
-import "./styles/index.css";
 window.addEventListener("error", (event) =>
   reportRendererFailure(event.error, "error"),
 );

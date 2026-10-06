@@ -9,7 +9,6 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
-import "./context.css";
 
 export function ContextTaskHeader({
   title,

@@ -1,7 +1,20 @@
-@import "./tokens.css";
-@import "./base.css";
-@import "./layout.css";
-@import "./ui.css";
-@import "../features/guided/guided.css";
-@import "../features/settings/settings.css";
-@import "../features/overview/overview.css";
+/* Every stylesheet loads here, in its cascade layer. Later layers win
+   regardless of selector specificity: the app shell and features customize
+   shared primitives, and shared primitives never override them. */
+@layer tokens, base, ui, layout, features;
+
+@import "./tokens.css" layer(tokens);
+@import "./base.css" layer(base);
+@import "./ui.css" layer(ui);
+@import "./layout.css" layer(layout);
+/* Feature sheets keep their original relative order; screen-specific sheets
+   come first and the guided, settings and overview sheets follow them. */
+@import "../features/guided/context.css" layer(features);
+@import "../features/guided/translation.css" layer(features);
+@import "../features/translation/translation.css" layer(features);
+@import "../features/plugins/plugins.css" layer(features);
+@import "../features/images/images.css" layer(features);
+@import "../features/images/image-editor.css" layer(features);
+@import "../features/guided/guided.css" layer(features);
+@import "../features/settings/settings.css" layer(features);
+@import "../features/overview/overview.css" layer(features);

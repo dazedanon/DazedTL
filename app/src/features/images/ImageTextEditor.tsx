@@ -18,7 +18,6 @@ import { Message } from "../../ui/Feedback";
 import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
 import { ExpandableText } from "../../ui/ExpandableText";
-import "./image-editor.css";
 import { useRead } from "../../state/useRead";
 
 export interface ImageTextEditorProps {

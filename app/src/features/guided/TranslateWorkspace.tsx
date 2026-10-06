@@ -18,7 +18,6 @@ import {
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
-import "./translation.css";
 
 export function TranslateWorkspace({
   state,
