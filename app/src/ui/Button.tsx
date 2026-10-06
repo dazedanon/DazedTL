@@ -2,12 +2,10 @@ import type { ComponentProps } from "react";
 import { LoaderCircle } from "lucide-react";
 type Props = ComponentProps<"button"> & {
   variant?: "default" | "primary" | "quiet" | "danger" | "link";
-  size?: "compact" | "comfortable";
   pending?: boolean;
 };
 export function Button({
   variant = "default",
-  size = "compact",
   pending = false,
   disabled,
   type = "button",
@@ -21,9 +19,7 @@ export function Button({
     <button
       {...props}
       type={type}
-      className={["ui-button", `ui-button--${size}`, appearance, className]
-        .filter(Boolean)
-        .join(" ")}
+      className={["ui-button", appearance, className].filter(Boolean).join(" ")}
       disabled={disabled || pending}
       aria-busy={pending || undefined}
     >

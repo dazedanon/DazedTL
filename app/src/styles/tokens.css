@@ -62,9 +62,10 @@
   --weight-semibold: 600;
   /* Running text stops near this many characters per line. */
   --measure: 72ch;
-  --control-height: 33px;
-  --control-padding: 7px 11px;
-  --control-radius: 5px;
+  /* Buttons, inputs and selects share one height and radius. */
+  --control-height: 34px;
+  --control-padding: 6px 12px;
+  --control-radius: 6px;
   --page-padding: 24px 28px;
   --section-gap: 22px;
   --section-padding: 20px;

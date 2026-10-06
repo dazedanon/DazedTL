@@ -98,7 +98,6 @@ export default function App() {
         </div>
         {state?.project && (
           <Menu
-            size="comfortable"
             variant="quiet"
             className="current-project"
             title={state.project.name}
@@ -147,7 +146,6 @@ export default function App() {
           <aside className="sidebar">
             <nav aria-label="Main navigation">
               <Button
-                size="comfortable"
                 aria-current={state?.screen === "overview" ? "page" : undefined}
                 onClick={() => navigate("overview")}
               >
@@ -157,7 +155,6 @@ export default function App() {
               {state?.project && (
                 <>
                   <Button
-                    size="comfortable"
                     aria-current={
                       ["guided", "manual"].includes(state.screen)
                         ? "page"
@@ -173,7 +170,6 @@ export default function App() {
                     Translation
                   </Button>
                   <Button
-                    size="comfortable"
                     aria-current={
                       state.screen === "translation" ? "page" : undefined
                     }
@@ -188,7 +184,6 @@ export default function App() {
             <div className="sidebar-bottom">
               <DiagnosticsAction />
               <Button
-                size="comfortable"
                 aria-current={state?.screen === "settings" ? "page" : undefined}
                 onClick={() => navigate("settings")}
               >

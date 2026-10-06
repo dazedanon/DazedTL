@@ -119,12 +119,6 @@ main > .image-manager {
   align-items: center;
   gap: var(--space-2);
 }
-.image-discovery-actions select,
-.image-browser-toolbar select {
-  padding: var(--control-padding);
-  min-height: var(--control-height);
-  font-size: var(--font-control);
-}
 .image-discovery-counts {
   font-size: var(--font-small);
   color: var(--muted);
@@ -155,12 +149,13 @@ main > .image-manager {
   border-radius: var(--control-radius);
   padding-left: var(--space-2);
 }
+/* The wrapper draws the field border, so the input fills its inside. */
 .image-search input {
   width: 100%;
-  padding: var(--control-padding);
+  height: calc(var(--control-height) - 2px);
+  padding-inline: 0 var(--space-2);
   border: 0;
   background: transparent;
-  font-size: var(--font-control);
 }
 .image-search svg {
   flex-shrink: 0;
@@ -448,9 +443,6 @@ main > .image-manager {
 .image-compare-toolbar label {
   flex-direction: row;
   align-items: center;
-}
-.image-compare-toolbar select {
-  padding: var(--control-padding);
 }
 .image-review-status {
   margin-right: auto;

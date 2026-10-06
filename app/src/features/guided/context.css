@@ -260,7 +260,6 @@
 .guided-document-state > select {
   width: auto;
   max-width: 100%;
-  font-size: var(--font-control);
 }
 @container guided (max-width: 62em) {
   .guided-workspace .context-task-body {

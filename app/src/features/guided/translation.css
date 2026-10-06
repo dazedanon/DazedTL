@@ -202,8 +202,6 @@
 }
 .file-browser-inline .file-browser-search > input {
   flex-basis: 8em;
-  padding: var(--space-2);
-  font-size: var(--font-control);
 }
 .file-browser-inline .file-browser-toolbar {
   gap: var(--space-1);
@@ -595,9 +593,6 @@
   flex: 1;
   min-width: 8em;
   width: 0;
-  font-size: var(--font-control);
-  padding: var(--control-padding);
-  min-height: var(--control-height);
 }
 .file-text-caption {
   display: flex;

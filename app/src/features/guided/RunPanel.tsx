@@ -134,7 +134,6 @@ export default function RunPanel({
           </p>
           <div className="actions">
             <Button
-              size="comfortable"
               variant="primary"
               disabled={busy}
               pending={pendingKey === "run:answer:true"}
@@ -145,7 +144,6 @@ export default function RunPanel({
                 : "Translate speakers"}
             </Button>
             <Button
-              size="comfortable"
               disabled={busy}
               pending={pendingKey === "run:answer:false"}
               onClick={() => answer(false)}
@@ -158,7 +156,6 @@ export default function RunPanel({
       <div className="actions">
         {active && job.mode !== "batch" ? (
           <Button
-            size="comfortable"
             disabled={busy}
             pending={pendingKey === "run:stop"}
             onClick={stop}
@@ -167,7 +164,6 @@ export default function RunPanel({
           </Button>
         ) : canResumeRun(job) ? (
           <Button
-            size="comfortable"
             disabled={
               busy ||
               (job.process?.retryBlocked &&
@@ -181,12 +177,7 @@ export default function RunPanel({
         {job.status === "complete" &&
           Object.keys(job.outputs || {}).length > 0 &&
           apply && (
-            <Button
-              size="comfortable"
-              variant="primary"
-              onClick={apply}
-              disabled={busy}
-            >
+            <Button variant="primary" onClick={apply} disabled={busy}>
               Review & apply outputs
             </Button>
           )}

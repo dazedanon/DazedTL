@@ -567,11 +567,6 @@ pre {
   min-height: auto;
   padding: 0;
 }
-.ui-button--comfortable {
-  font-size: var(--font-body);
-  padding: 10px 15px;
-  min-height: auto;
-}
 .ui-button[aria-busy="true"] {
   cursor: progress;
 }
@@ -656,13 +651,6 @@ pre {
   font-size: var(--font-control);
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-.field-control input:not([type="checkbox"]),
-.field-control select {
-  font-size: var(--font-control);
-  padding: 7px 10px;
-  min-height: var(--control-height);
-  border-radius: var(--control-radius);
 }
 .combobox {
   position: relative;

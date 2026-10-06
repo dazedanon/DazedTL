@@ -39,9 +39,6 @@
 .native-editor-toolbar select {
   width: 100%;
   min-width: 0;
-  min-height: var(--control-height);
-  padding: var(--control-padding);
-  font-size: var(--font-control);
 }
 .native-editor-body {
   flex: 1;
