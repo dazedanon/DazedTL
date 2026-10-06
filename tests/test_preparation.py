@@ -1,74 +1,14 @@
 """Preparation must retain completed stages without letting failures create a baseline."""
 
-import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
 
-from dazedtl.compatibility.formatting import format_json_files, format_plugins_js
 from dazedtl.storage import write_json
 from dazedtl.translation import preparation
 
 
 class PreparationTests(unittest.TestCase):
-    def test_formatting_normalizes_existing_crlf_without_changing_game_text(self):
-        # Already-pretty CRLF files used to bypass formatting, then produce a
-        # whole-file diff against the translation writer's LF output.
-        document = {"name": "薬", "text": "one\r\ntwo\nthree", "control": r"\C[2]"}
-        expected_json = json.dumps(document, ensure_ascii=False, indent=4).encode(
-            "utf-8"
-        )
-        expected_plugins = (
-            'var $plugins = [{\n  "name": "薬",\n  "status": true\n}];\n'.encode()
-        )
-        with TemporaryDirectory() as directory:
-            root = Path(directory)
-            data = root / "data"
-            data.mkdir()
-            nested = data / "nested"
-            nested.mkdir()
-            source, plugins = nested / "Items.JSON", root / "plugins.js"
-            for newline in (b"\r\n", b"\r", b"\n"):
-                with self.subTest(newline=newline):
-                    source.write_bytes(expected_json.replace(b"\n", newline))
-                    plugins.write_bytes(expected_plugins.replace(b"\n", newline))
-                    self.assertEqual(format_json_files(data), (1, []))
-                    self.assertEqual(
-                        format_plugins_js(plugins),
-                        len(expected_plugins.decode("utf-8")),
-                    )
-                    self.assertEqual(source.read_bytes(), expected_json)
-                    self.assertEqual(json.loads(source.read_bytes()), document)
-                    self.assertEqual(plugins.read_bytes(), expected_plugins)
-            # BOM/minified inputs follow the same formatting, while a second
-            # pass leaves canonical files untouched.
-            source.write_bytes(
-                b"\xef\xbb\xbf"
-                + json.dumps(document, ensure_ascii=False).encode("utf-8")
-            )
-            plugins.write_bytes(
-                b'\xef\xbb\xbfvar $plugins=[{"name":"'
-                + "薬".encode()
-                + b'","status":true}];'
-            )
-            self.assertEqual(format_json_files(data), (1, []))
-            format_plugins_js(plugins)
-            self.assertEqual(source.read_bytes(), expected_json)
-            self.assertEqual(plugins.read_bytes(), expected_plugins)
-            with patch.object(
-                Path,
-                "write_bytes",
-                side_effect=AssertionError("Already LF; no rewrite needed"),
-            ):
-                self.assertEqual(format_json_files(data), (1, []))
-                format_plugins_js(plugins)
-            invalid = data / "broken.json"
-            invalid.write_bytes(b"{invalid\r\n")
-            count, errors = format_json_files(data)
-            self.assertEqual((count, len(errors)), (1, 1))
-            self.assertEqual(invalid.read_bytes(), b"{invalid\r\n")
-
     def test_stop_failure_resume_and_changed_files_retain_only_current_work(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)

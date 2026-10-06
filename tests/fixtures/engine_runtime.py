@@ -58,19 +58,46 @@ try:
         legacy = "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa"
         assert compatible(engine, legacy) and compatible(engine, signature(engine))
         assert not compatible("CSV", legacy) and not compatible(engine, "changed")
-        # Real engine preparation imports must reach the LF adapter, including
-        # a file whose only difference is CRLF (hidden by read_text()).
+        # Engine preparation writes LF bytes, including for a file whose only
+        # difference is CRLF (hidden by read_text()).
         from util.dazedformat import format_json_files
         from util.project_preparation import format_plugins_js
 
         prepared = temporary / "formatting"
         prepared.mkdir()
-        (prepared / "Items.json").write_bytes(b'{\r\n    "name": "Potion"\r\n}')
-        (prepared / "plugins.js").write_bytes(b"var $plugins = [];\r\n")
-        assert format_json_files(prepared) == (1, [])
-        format_plugins_js(prepared / "plugins.js")
-        assert (prepared / "Items.json").read_bytes() == b'{\n    "name": "Potion"\n}'
-        assert (prepared / "plugins.js").read_bytes() == b"var $plugins = [];\n"
+        document = {"name": "薬", "text": "one\r\ntwo\nthree", "control": r"\C[2]"}
+        expected_json = json.dumps(document, ensure_ascii=False, indent=4).encode()
+        expected_plugins = 'var $plugins = [{\n  "name": "薬",\n  "status": true\n}];\n'
+        items, plugins = prepared / "Items.JSON", prepared / "plugins.js"
+        minified = (
+            b"\xef\xbb\xbf" + json.dumps(document, ensure_ascii=False).encode(),
+            b'\xef\xbb\xbfvar $plugins=[{"name":"\xe8\x96\xac","status":true}];',
+        )
+        for json_input, plugins_input in (
+            *(
+                (
+                    expected_json.replace(b"\n", newline),
+                    expected_plugins.encode().replace(b"\n", newline),
+                )
+                for newline in (b"\r\n", b"\r")
+            ),
+            minified,
+        ):
+            items.write_bytes(json_input)
+            plugins.write_bytes(plugins_input)
+            assert format_json_files(prepared) == (1, [])
+            assert format_plugins_js(plugins) == len(expected_plugins)
+            assert items.read_bytes() == expected_json
+            assert plugins.read_bytes() == expected_plugins.encode()
+        with patch.object(
+            Path, "write_bytes", side_effect=AssertionError("rewrote LF")
+        ):
+            assert format_json_files(prepared) == (1, [])
+            format_plugins_js(plugins)
+        (prepared / "broken.json").write_bytes(b"{invalid\r\n")
+        count, errors = format_json_files(prepared)
+        assert (count, len(errors)) == (1, 1)
+        assert (prepared / "broken.json").read_bytes() == b"{invalid\r\n"
         assert runtime_data_file(PROMPT_PATH).is_relative_to(
             root / "backend/dazedtl/data"
         )

@@ -18,16 +18,20 @@ def format_plugins_js(path: str | Path) -> int:
     import jsbeautifier
 
     path = Path(path)
-    original = path.read_text(encoding="utf-8-sig")
+    original = path.read_bytes()
+    text = original.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     options = jsbeautifier.default_options()
     options.indent_size = 2
     options.indent_char = " "
     options.max_preserve_newlines = 2
     options.preserve_newlines = True
     options.end_with_newline = True
-    formatted = jsbeautifier.beautify(original, options)
-    if formatted != original:
-        path.write_text(formatted, encoding="utf-8")
+    options.eol = "\n"
+    formatted = jsbeautifier.beautify(text, options)
+    # Write LF bytes on every platform; text writes would reintroduce CRLF.
+    output = formatted.encode("utf-8")
+    if output != original:
+        path.write_bytes(output)
     return len(formatted)
 
 

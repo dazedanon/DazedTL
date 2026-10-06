@@ -30,12 +30,13 @@ def format_json_files(
                 continue
             fp = Path(root) / name
             try:
-                text = fp.read_text(encoding="utf-8-sig")
-                data = json.loads(text)
-                pretty = json.dumps(data, indent=4, ensure_ascii=False)
-                # Only write if the content actually changed
-                if pretty != text:
-                    fp.write_text(pretty, encoding="utf-8")
+                original = fp.read_bytes()
+                data = json.loads(original.decode("utf-8-sig"))
+                pretty = json.dumps(data, indent=4, ensure_ascii=False).encode("utf-8")
+                # Compare and write bytes: universal-newline reads hide CRLF,
+                # and platform text writes can reintroduce it on Windows.
+                if pretty != original:
+                    fp.write_bytes(pretty)
                 formatted += 1
                 if log:
                     log(f"  Formatted: {fp.relative_to(directory)}")

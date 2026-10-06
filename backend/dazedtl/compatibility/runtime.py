@@ -20,7 +20,4 @@ def activate():
     from .openrouter_batch import install as install_openrouter
 
     install_openrouter()
-    from .formatting import install as install_formatting
-
-    install_formatting()
     return ENGINE_ROOT
