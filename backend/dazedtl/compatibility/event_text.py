@@ -57,7 +57,7 @@ def _literals(tree):
             if isinstance(target, ast.Name):
                 try:
                     result[target.id] = ast.literal_eval(value)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
     return result
 

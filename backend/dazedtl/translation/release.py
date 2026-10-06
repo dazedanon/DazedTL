@@ -253,7 +253,7 @@ def packing_state(native, folder):
             and receipt.get("outputs")
             == evidence(native["source"], list(receipt["outputs"]))
         )
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         current = False
     return {
         "required": True,
@@ -327,7 +327,7 @@ def stamp(path):
 def available(value):
     try:
         return stamp(value["path"]) == value["stamp"]
-    except (OSError, ValueError, KeyError):
+    except OSError, ValueError, KeyError:
         return False
 
 

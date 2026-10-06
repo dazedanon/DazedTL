@@ -185,6 +185,6 @@ def unused_responses(root, queued, responses, receipts, files, mapped):
                 "state": "unused",
                 "unused": {"appliedRequests": [indices[other] for other in used]},
             }
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+        except OSError, ValueError, KeyError, TypeError, AttributeError, IndexError:
             continue
     return result

@@ -33,7 +33,7 @@ def provider_errors(function):
     def call(*args, **kwargs):
         try:
             return function(*args, **kwargs)
-        except (ProviderFailure, ResultsUnavailable):
+        except ProviderFailure, ResultsUnavailable:
             raise
         except Exception as error:
             raise ProviderFailure(function.__name__, error) from error

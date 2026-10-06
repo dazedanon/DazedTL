@@ -31,7 +31,7 @@ def leaves(value, path=(), depth=0):
     if isinstance(value, str):
         try:
             inner = decode(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             if re.match(r'^\s*(?:\{\s*"|\[\s*["\[{])', value):
                 raise ValueError(
                     "A JSON-shaped parameter does not decode; retain it for investigation."

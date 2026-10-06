@@ -30,7 +30,7 @@ def rate(value):
         return None
     try:
         amount = float(Decimal(str(value)) * 1_000_000)
-    except (ValueError, OverflowError, DecimalException):
+    except ValueError, OverflowError, DecimalException:
         return None
     return amount if math.isfinite(amount) and 0 <= amount <= 1_000_000 else None
 
@@ -172,7 +172,7 @@ def describe(connection, model):
             or (datetime.now(UTC) - datetime.fromisoformat(stamp)).total_seconds()
             > 86400
         )
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         stale = True
     return {
         "model": model,
@@ -330,7 +330,7 @@ def check_endpoints(connection, known):
     }
     try:
         rows = _endpoint_rows(model, connection["secret"])
-    except (httpx.HTTPError, ValueError, UnicodeError):
+    except httpx.HTTPError, ValueError, UnicodeError:
         return unavailable
     selected_endpoints, eligible, unsupported = [], set(), set()
     for row in rows:

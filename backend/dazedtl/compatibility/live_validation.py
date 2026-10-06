@@ -46,7 +46,7 @@ def finished_files(root):
             ):
                 result.add(name)
         return frozenset(result)
-    except (OSError, ValueError, KeyError):
+    except OSError, ValueError, KeyError:
         return frozenset()
 
 
@@ -153,5 +153,5 @@ def reconcile(root, rows, ledger_stamp):
             {**row, **changes[index]} if index in changes else row
             for index, row in enumerate(rows)
         ]
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return rows

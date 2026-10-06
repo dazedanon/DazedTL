@@ -42,7 +42,7 @@ def file_titles(native):
                 )
             )
         }
-    except (OSError, ValueError, UnicodeError):
+    except OSError, ValueError, UnicodeError:
         return {}
 
 
@@ -56,7 +56,7 @@ def tools_state(native):
     for key, module in (("inspector", inspector), ("forge", forge)):
         try:
             value = module.status(Path(native["source"]))
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             result[key] = {
                 "installed": False,
                 "present": False,
@@ -320,7 +320,7 @@ def phased_workflows(workspace, lock, operations, manual):
                         write_bytes(destination, output.read_bytes())
                         collected[marker] = expected
                         changed = True
-                except (OSError, ValueError, KeyError):
+                except OSError, ValueError, KeyError:
                     continue
             if changed:
                 self.save(project)

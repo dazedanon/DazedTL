@@ -227,7 +227,7 @@ class GuidedRuns:
                 ):
                     continue
                 candidates.append((root, job))
-            except (OSError, ValueError, KeyError):
+            except OSError, ValueError, KeyError:
                 continue
         return reusable(candidates)
 
@@ -496,7 +496,7 @@ class GuidedRuns:
                 estimates[phase], _ = self.quote(
                     project_id, native, phase, mode, guard=guard, run_view=run_view
                 )
-            except (ValueError, OSError):
+            except ValueError, OSError:
                 estimates[phase] = {"job": None, "current": False}
             names = self.files(native, phase)
             inputs = self.guided.inputs(native)

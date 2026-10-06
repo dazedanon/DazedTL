@@ -159,7 +159,7 @@ def openrouter_hosts(model=""):
         raise ValueError(
             "OpenRouter's host list could not be loaded. Check your connection and try again."
         ) from None
-    except (ValueError, TypeError, KeyError, AttributeError):
+    except ValueError, TypeError, KeyError, AttributeError:
         raise ValueError(
             "OpenRouter returned an unavailable or invalid host list. Try again later."
         ) from None
@@ -315,7 +315,7 @@ def check(connection):
             "unavailable",
             "The server could not be reached securely. Check the address, network, and certificate.",
         )
-    except (ValueError, UnicodeError):
+    except ValueError, UnicodeError:
         return result(
             "unsupported",
             "The key, address, or server response could not be used. Review the connection details.",

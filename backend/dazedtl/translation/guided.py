@@ -537,7 +537,7 @@ class Guided:
                     "id"
                 ) == native["id"]:
                     historical.append(identity)
-            except (OSError, ValueError, KeyError):
+            except OSError, ValueError, KeyError:
                 pass
         identities = list(
             dict.fromkeys(
@@ -670,7 +670,7 @@ class Guided:
                     if self.observed_digest(project_path(native["data"], name))
                     == expected
                 ]
-        except (OSError, ValueError, KeyError):
+        except OSError, ValueError, KeyError:
             job["outputsAvailable"] = False
             job["availableOutputs"] = []
         if compact:
@@ -691,7 +691,7 @@ class Guided:
                 set(job.get("partialOutputs", []))
                 | (rejected_files & set(job.get("outputs", {})))
             )
-        except (OSError, ValueError, KeyError):
+        except OSError, ValueError, KeyError:
             job["process"] = {
                 "retryBlocked": job.get("mode") != "estimate",
                 "errors": [
@@ -1080,7 +1080,7 @@ class Guided:
                     for name, sha in review["evidence"].items()
                 )
             )
-        except (OSError, ValueError, KeyError):
+        except OSError, ValueError, KeyError:
             pass
         scan = next(
             (
@@ -1095,7 +1095,7 @@ class Guided:
                 plan = read_json(
                     self.backend.operations.root / scan["id"] / "plan.json"
                 )
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 plan = {}
             configured = plan.get("options", {})
             form = self.saved_form(project_id)
@@ -1652,7 +1652,7 @@ class Guided:
                         quote["repeatSubmission"] = bool(
                             self.submission_overlap(native, quote)
                         )
-                    except (OSError, ValueError, KeyError):
+                    except OSError, ValueError, KeyError:
                         # Unreadable historical evidence cannot veto a separately
                         # approved run either; keep the repeat-charge notice.
                         quote["repeatSubmission"] = True
@@ -2570,7 +2570,7 @@ class Guided:
         try:
             artifact = project_path(native["source"], ".dazedtl/guided/speakers.json")
             artifact_hash = self.observed_digest(artifact)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             artifact_hash = None
         saved = next(
             (
@@ -2619,7 +2619,7 @@ class Guided:
                         for name, sha in result["source_inputs"].items()
                     )
                 )
-            except (OSError, ValueError):
+            except OSError, ValueError:
                 current = False
         return {
             "job": job,

@@ -41,7 +41,7 @@ def discardable(job, root):
         return all(
             row["state"] in {"prepared", "queued"} for row in requests(root, job)
         )
-    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error):
+    except OSError, ValueError, KeyError, TypeError, sqlite3.Error:
         return False
 
 

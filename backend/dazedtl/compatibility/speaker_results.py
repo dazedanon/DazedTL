@@ -26,7 +26,7 @@ def install(module, root):
         # Reporting must not turn a completed paid call into a translation retry.
         try:
             write_json(project_path(root, "log/" + RECEIPT, exists=False), value)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass
 
     @wraps(original)
@@ -72,7 +72,7 @@ def install(module, root):
                     "rows": rows,
                 }
             )
-        except (OSError, ValueError):
+        except OSError, ValueError:
             record({**value, "state": "unavailable"})
         return result
 
@@ -190,7 +190,7 @@ def read(root, job):
             else "unavailable"
         )
         return {"state": state, "count": len(names), "rows": []}
-    except (OSError, ValueError, UnicodeError):
+    except OSError, ValueError, UnicodeError:
         return {"state": "unavailable", "count": 0, "rows": []}
 
 

@@ -598,7 +598,7 @@ class ImageService:
                         continue
                     try:
                         actual = sha_file(project_path(root, frozen["runtime"]))
-                    except (ValueError, OSError):
+                    except ValueError, OSError:
                         conflicts.append(frozen["id"])
                         continue
                     if actual == frozen["expectedRuntimeHash"]:
@@ -1574,7 +1574,7 @@ class ImageService:
                             != row["runtimeBackupHash"]
                         ):
                             reason = "The preserved original runtime bytes changed."
-                    except (OSError, ValueError):
+                    except OSError, ValueError:
                         reason = "The preserved original runtime backup is missing."
             if reason:
                 blocked.append({"id": identity, "path": row["path"], "reason": reason})

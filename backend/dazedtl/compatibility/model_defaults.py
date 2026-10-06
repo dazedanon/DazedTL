@@ -80,7 +80,7 @@ class ModelDefaults:
             value = json.loads(result.stdout)
             if value["model"] != model:
                 raise ValueError("Unexpected model defaults.")
-        except (subprocess.SubprocessError, OSError, ValueError, KeyError):
+        except subprocess.SubprocessError, OSError, ValueError, KeyError:
             raise ValueError(
                 "Model defaults are unavailable. Try again before starting a run."
             ) from None

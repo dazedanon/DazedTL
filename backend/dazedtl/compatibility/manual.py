@@ -72,7 +72,7 @@ def canceled_before_submission(job, directory, *, finishing=False):
             return False
         if any((directory / "log").glob("batch*")):
             return False
-    except (OSError, ValueError, TypeError):
+    except OSError, ValueError, TypeError:
         return False
     return True
 

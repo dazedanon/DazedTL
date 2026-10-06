@@ -203,7 +203,7 @@ class RunStore:
                 continue
             try:
                 value = self.record(path.parent.name)
-            except (ValueError, OSError, KeyError, TypeError):
+            except ValueError, OSError, KeyError, TypeError:
                 self.warnings.append(
                     "Saved run "
                     + path.parent.name

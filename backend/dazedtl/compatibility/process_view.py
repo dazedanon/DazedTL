@@ -119,7 +119,7 @@ def consumed_files(root, *, allow_mismatches=False):
             ):
                 verified.add(name)
         return frozenset(verified)
-    except (OSError, ValueError, KeyError):
+    except OSError, ValueError, KeyError:
         return frozenset()
 
 
@@ -454,7 +454,7 @@ def fresh_start(root, job):
             "remaining": len(requests) - len(submitted),
             "reason": "Saved provider receipts confirm that every submitted request was rejected, with no successful or pending responses.",
         }
-    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+    except OSError, ValueError, TypeError, KeyError, sqlite3.Error:
         return protected
 
 
@@ -526,7 +526,7 @@ def nothing_to_translate(root, job):
         return False
     try:
         found = translatable_files(root)
-    except (OSError, ValueError, sqlite3.Error):
+    except OSError, ValueError, sqlite3.Error:
         return False
     return found is not None and not found
 

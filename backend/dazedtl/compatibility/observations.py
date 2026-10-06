@@ -113,7 +113,7 @@ class RunObservations:
         root = Path(root)
         try:
             signature = (digest(job), process_stamp(root))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return process_view.summary(root, job)
         cached = self.processes.get(root)
         if cached and cached[0] == signature:
@@ -122,7 +122,7 @@ class RunObservations:
         value = process_view.summary(root, job)
         try:
             unchanged = signature[1] == process_stamp(root)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             unchanged = False
         previous = self.processes.pop(root, None)
         if previous:

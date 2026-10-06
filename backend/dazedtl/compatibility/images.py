@@ -130,7 +130,7 @@ class ImageCompatibility:
 
         try:
             return read_encryption_key(root)
-        except (ValueError, OSError, KeyError, TypeError):
+        except ValueError, OSError, KeyError, TypeError:
             return None
 
     def source_bytes(self, root, asset, key):

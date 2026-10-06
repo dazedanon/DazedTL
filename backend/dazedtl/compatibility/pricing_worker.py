@@ -66,7 +66,7 @@ def resolve(cache, model, online):
                 cached = None
             else:
                 cached["prices"] = catalog(cached.get("prices"))
-        except (ValueError, OSError, AttributeError):
+        except ValueError, OSError, AttributeError:
             cached = None
     now = time.time()
     if online and (
@@ -96,7 +96,7 @@ def resolve(cache, model, online):
             from dazedtl.storage import write_json
 
             write_json(cache, cached)
-        except (httpx.HTTPError, ValueError, OSError):
+        except httpx.HTTPError, ValueError, OSError:
             pass
     translation._load_litellm_pricing = lambda: cached["prices"] if cached else None
     catalog_rate = translation._lookup_model_price(model)

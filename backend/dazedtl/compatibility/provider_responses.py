@@ -82,7 +82,7 @@ def sanitized_body(body, secret=""):
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
-            except (ValueError, RecursionError):
+            except ValueError, RecursionError:
                 parsed = None
             if isinstance(parsed, (dict, list)):
                 return json.dumps(clean(parsed, depth + 1), ensure_ascii=False)
@@ -101,7 +101,7 @@ def sanitized_body(body, secret=""):
     if isinstance(body, str):
         try:
             body = json.loads(body)
-        except (ValueError, RecursionError):
+        except ValueError, RecursionError:
             pass
     result = clean(body)
     text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)

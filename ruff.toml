@@ -1,5 +1,5 @@
 # Formats and lints DazedTL-owned Python. The bundled engine keeps its original bytes.
-target-version = "py312"
+target-version = "py314"
 extend-exclude = ["backend/dazedtl/engine"]
 force-exclude = true
 

@@ -93,7 +93,7 @@ class Application:
             elif project.get("backend_id"):
                 try:
                     native = self.backend.workflows.state(project["backend_id"])
-                except (ValueError, OSError, KeyError):
+                except ValueError, OSError, KeyError:
                     project.update(
                         status="Saved phased work unavailable",
                         detail="The saved job reference was retained for recovery.",

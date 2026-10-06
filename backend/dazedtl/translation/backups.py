@@ -575,7 +575,7 @@ def catalog(game, legacy_root):
                         else None,
                     }
                 )
-            except (OSError, ValueError, TypeError):
+            except OSError, ValueError, TypeError:
                 warnings.append(
                     "Backup "
                     + folder.name

@@ -190,7 +190,7 @@ def expected_bodies(entries):
                 json.dumps(value, indent=4, ensure_ascii=False),
                 canonical(value),
             )
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             body, identity = raw, raw
         result.setdefault(canonical(json.loads(payload)), set()).add((body, identity))
     return {
@@ -274,7 +274,7 @@ def failure(source, response):
     message = "Translation validation rejected this response. Original text was kept for this request."
     try:
         translated = response_value(response.get("text", ""))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return {
             "code": "invalid_response",
             "message": "The response was not valid translation JSON. Original text was kept for this request.",
@@ -332,7 +332,7 @@ def outcomes(root, queued, responses):
             good, bad = records(path, stamp, entries)
             accepted.update(good)
             rejected.update(bad)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             continue
     bound = frozenset(mapped - unbound)
     result = dict(
@@ -366,7 +366,7 @@ def match_outcomes(rows, accepted, rejected, files, mapped):
             continue
         try:
             body = canonical(response_value(response))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             body = response
         good, bad = (identity, body) in accepted, (filename, identity, body) in rejected
         if good == bad:

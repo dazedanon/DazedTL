@@ -410,7 +410,7 @@ class Client:
                 )
             try:
                 result, error = _openai_result(row, "openrouter")
-            except (ValueError, TypeError, KeyError, OverflowError):
+            except ValueError, TypeError, KeyError, OverflowError:
                 raise ResultsUnavailable(
                     "OpenRouter returned an invalid request response. Its receipt was retained for inspection."
                 ) from None

@@ -56,7 +56,7 @@ def reconcile_source_backup(workspace, project_id, source, state):
             backups.lookup(source, Path(saved["path"]).parent, saved["id"])
         except backups.BackupMissing:
             retired["workspace_backup"] = saved
-        except (OSError, ValueError, KeyError, TypeError):
+        except OSError, ValueError, KeyError, TypeError:
             pass  # Unreadable or damaged artifacts still need recovery, not cleanup.
 
     identification = (
@@ -74,7 +74,7 @@ def reconcile_source_backup(workspace, project_id, source, state):
                 break
             else:
                 retired["engine"] = identified
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         pass
 
     if not retired:

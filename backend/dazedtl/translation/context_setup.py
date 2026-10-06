@@ -67,7 +67,7 @@ def optional_record(path):
     try:
         value = read_json(path, limit=200_000)
         return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
 
 
@@ -218,7 +218,7 @@ def inspect(
             if layout
             else result["layoutApplication"],
         }
-    except (OSError, ValueError, TypeError, KeyError):
+    except OSError, ValueError, TypeError, KeyError:
         return result
 
 

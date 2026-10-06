@@ -364,7 +364,7 @@ class Evidence:
                         if path.is_file()
                         else {}
                     )
-                except (OSError, ValueError):
+                except OSError, ValueError:
                     self.locations[filename] = {}
             locations = self.locations[filename]
             keys = identities(

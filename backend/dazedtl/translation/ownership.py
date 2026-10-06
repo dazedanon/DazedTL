@@ -8,7 +8,7 @@ from .files import read_json
 def alive(workspace, pid, token):
     try:
         current = read_json(workspace / "translation/owner.json", limit=4096)
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return False
     if current != {"pid": pid, "token": token} or os.getppid() != pid:
         return False

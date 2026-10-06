@@ -205,7 +205,7 @@ class Translation:
         warnings = []
         try:
             progress = self.engine.progress(project.root, selected["options"])
-        except (ValueError, OSError, TypeError, KeyError):
+        except ValueError, OSError, TypeError, KeyError:
             progress = None
             warnings.append(
                 "Saved progress could not be read. Inspect the workspace before continuing."
@@ -213,7 +213,7 @@ class Translation:
         if progress and progress["phases"].get("qa") == "complete":
             try:
                 delivery.verify(project.root)
-            except (ValueError, OSError, KeyError, TypeError):
+            except ValueError, OSError, KeyError, TypeError:
                 warnings.append(
                     "Runtime QA evidence is missing or stale. Review affected outputs before packaging."
                 )
@@ -257,7 +257,7 @@ class Translation:
             try:
                 verify_evidence(project.root, identified["evidence"])
                 engine = identified["engine"]
-            except (ValueError, OSError):
+            except ValueError, OSError:
                 warnings.append(
                     "The reported engine evidence changed. Recheck the engine before adapting its tools."
                 )

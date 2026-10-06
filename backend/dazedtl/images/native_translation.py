@@ -167,7 +167,7 @@ class ImageNativeTranslation:
                         )
                     }
                 jobs.append(view)
-            except (ValueError, OSError):
+            except ValueError, OSError:
                 continue
             if len(jobs) == 20:
                 break

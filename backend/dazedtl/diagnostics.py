@@ -47,7 +47,7 @@ class Diagnostics:
                     }
                 )
             )
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass  # Logging must not prevent returning the original error.
 
     def started(self):
@@ -60,7 +60,7 @@ class Diagnostics:
     def location(self, filename):
         try:
             path = Path(filename).resolve()
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return "external"
         for label, root in self.roots:
             if path.is_relative_to(root):
