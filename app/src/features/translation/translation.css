@@ -1,38 +1,38 @@
-.translation-workspace fieldset {
+.lens-method fieldset {
   border: 0;
   padding: 0;
   margin: 0;
   min-width: 0;
 }
-.translation-workspace label {
+.lens-method label {
   display: block;
   margin: 16px 0;
 }
-.translation-workspace label > input:not([type="checkbox"]),
-.translation-workspace label > select,
-.translation-workspace label > textarea {
+.lens-method label > input:not([type="checkbox"]),
+.lens-method label > select,
+.lens-method label > textarea {
   display: block;
   width: 100%;
   margin-top: 6px;
 }
-.translation-workspace label > .actions {
+.lens-method label > .actions {
   margin-top: 6px;
 }
-.translation-workspace label > .actions > input {
+.lens-method label > .actions > input {
   flex: 1;
   min-width: 180px;
 }
-.translation-workspace [role="tabpanel"] {
+.lens-method [role="tabpanel"] {
   padding-top: 20px;
 }
-.translation-workspace textarea {
+.lens-method textarea {
   width: 100%;
   resize: vertical;
 }
-.translation-workspace details {
+.lens-method details {
   margin: 18px 0;
 }
-.translation-workspace summary {
+.lens-method summary {
   cursor: pointer;
   color: var(--muted);
 }
@@ -53,7 +53,7 @@
   min-width: 0;
   margin: 0;
 }
-.translation-workspace .translation-check {
+.lens-method .translation-check {
   display: flex;
   flex-direction: row;
   align-items: center;

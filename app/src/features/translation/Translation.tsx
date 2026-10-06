@@ -131,10 +131,7 @@ function Workspace({
     );
   }
   return (
-    <PageLayout
-      className="translation-workspace"
-      aria-label="Translation workspace"
-    >
+    <PageLayout className="lens-method" aria-label="Translation workspace">
       <PageHeader
         title="Translation"
         description={project.name + " · " + state.engine}
