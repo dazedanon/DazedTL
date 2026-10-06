@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from util.paths import PROJECT_ROOT, PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
+from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
 from util.translation_task import TRANSLATION_MODULE_SPECS, translation_module
 from .project import atomic_json, digest
 from .settings import SettingsStore
@@ -31,11 +31,47 @@ def relative_file(value):
     return path
 
 
+# A saved plan records the engine version that prepared it, and only that
+# version resumes it. Raise ENGINE_VERSION when a change would make a resumed run
+# build requests or parse files differently; refactors and fixes outside saved
+# runs keep it.
+ENGINE_VERSION = 1
+# Before explicit versions, plans recorded a hash of the engine's bytes. These
+# hashes identify the code released as version 1.
+VERSION_1_SIGNATURES = {
+    "RPG Maker MV/MZ": "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa",
+    "CSV": "feac19c75ed96e4ab8df848549a58765e5a8811af74157822a41c5fa775a62d9",
+    "Tyrano": "92b1f3d802c863b37acbdb98f36f08df2dc0f45ac908565dc6a0f32e2e7d5637",
+    "Kirikiri": "56b3ef53f3ab20dcbf8a4a145d26d7267ccb525a30beea4d0b16b48d8ee80196",
+    "JSON": "ec45802d1a7419f297c21f5f9262c2d35c3f5e7ddf47aa58752a7d424e9bc61a",
+    "Lune": "547bd97a3df9142e510c66b26868aa7ea663a7c30a4138a3ebbd5db4fc7006bd",
+    "Yuris": "3b3a3a8e63cbcaa29c90381e89c64b70b06c4aec2a7f06c32929809aa8ff42cb",
+    "NScript": "7065ec236bae36749df411802bc6563db5873e29a15f7dd53d3269880db3d773",
+    "Wolf RPG (WolfDawn)": "df296a00594525e1b7f9ee1ae74e7cde0eacf21e5a19ba18407722821aa91830",
+    "Wolf RPG": "f6dcfd847a260ab24b835f9736e89b0f46d7d3d200544e57ac7168adae677e8f",
+    "Wolf RPG 2": "8e636adf8f70439d0a47f1feb0791f4f58045822a73cb21aa1be312e85f2a48e",
+    "Regex": "c207a4851d8f8c8ccc5c552a4e1f8adae1a7b27225ebd9e2cd1552a887c8ddbb",
+    "Text": "60c69329ce7a3061662639b3668aa17dfd3f4055412aaae779d1849b266aa684",
+    "RenPy": "1ed4b6f478bfedfa275f9e95cf2e00a24c0d964e125b4bf1582a4ed6f61b5f9a",
+    "Unity": "d049c8d504ef00a7752d000b960690553d9a0c1a59b8fb505a9a3bbd4a847480",
+    "Image Text": "86654651e329cf0fc086888f58b9f23549f9e77113ca6087e4becc53dc49bce1",
+    "RPG Maker Plugin": "ab09c95d0dc393c3aab440bc9eb3945b012a3506ec92c567f1f28c2e6f80c3de",
+    "Aquedi4 Prepared JSON": "2cd6e880b7d35d5196927abf54d35735c1c1c8e6265dab4d6472621269131668",
+    "SRPG Studio": "a9dafa1960558e1e55f0e60c67cb48a20599455d5f62a48b456a8a37e5680437",
+}
+
+
 def signature(engine):
-    module_path = next(spec[2] for spec in TRANSLATION_MODULE_SPECS if spec[0] == engine)
-    paths = [PROJECT_ROOT / (module_path.replace(".", "/") + ".py"), *sorted((PROJECT_ROOT / "util").rglob("*.py")),
-             *sorted(Path(__file__).parent.glob("manual*.py"))]
-    return digest(b"".join(path.read_bytes() for path in paths))
+    if not any(spec[0] == engine for spec in TRANSLATION_MODULE_SPECS):
+        raise ValueError("Unsupported engine.")
+    return f"dazedtl-engine-{ENGINE_VERSION}"
+
+
+def compatible(engine, recorded):
+    """Whether a plan's recorded engine identity is the engine version running now."""
+    return recorded == signature(engine) or (
+        ENGINE_VERSION == 1 and recorded == VERSION_1_SIGNATURES.get(engine)
+    )
 
 
 class ManualJobs:
@@ -252,7 +288,7 @@ class ManualJobs:
             if plan_path.is_symlink() or digest(plan_path.read_bytes()) != job["plan_hash"]:
                 raise ValueError("The saved plan changed. Start a new run.")
             plan = json.loads(plan_path.read_text(encoding="utf-8"))
-            if plan["signature"] != signature(plan["engine"]):
+            if not compatible(plan["engine"], plan["signature"]):
                 raise ValueError("The engine changed. Start a new run to keep saved requests tied to their original code.")
             for name, expected in plan["context_hashes"].items():
                 if resume and name == "game/.dazedtl/glossary.txt":

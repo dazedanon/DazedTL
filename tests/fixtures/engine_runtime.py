@@ -47,16 +47,16 @@ try:
     assert app.state()["project"] is None
     assert app.backend.source == ENGINE_ROOT
     with app.backend.context():
-        from desktop.backend.manual import signature
+        from desktop.backend.manual import compatible, signature
         from util.paths import PROMPT_PATH, runtime_data_file
         from util.skills import load_project_setup, load_system_prompt
 
-        # A real saved run's pre-relocation signature must still pass the native
-        # resume guard. Updating engine behavior needs its own recovery decision.
-        assert (
-            signature("RPG Maker MV/MZ")
-            == "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa"
-        )
+        # A real saved run recorded this pre-version byte hash; it must still pass
+        # the native resume guard, alongside plans that record the version.
+        engine = "RPG Maker MV/MZ"
+        legacy = "b0aa0546c511a7b996fad0dad1d62619258d5eb7ec1f23e9e0ebf113bd9284aa"
+        assert compatible(engine, legacy) and compatible(engine, signature(engine))
+        assert not compatible("CSV", legacy) and not compatible(engine, "changed")
         # Real engine preparation imports must reach the LF adapter, including
         # a file whose only difference is CRLF (hidden by read_text()).
         from util.dazedformat import format_json_files

@@ -23,7 +23,8 @@ Neither checkout is a runtime dependency.
 The [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects the engine shipped inside this package in the app, workers and standalone helpers, independently of cwd and old engine environment variables.
 There is no external-engine fallback.
 The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with its [license](../backend/dazedtl/engine/LICENSE.md) and component notices.
-Parser modules, utilities and native manual workers retain their original bytes so relocation preserves the signatures checked by existing saved runs.
+Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; plans from before explicit versions match by their recorded byte hash.
+Raise the version when a change would make a resumed run build requests or parse files differently.
 Their historical Python namespaces are internal to the compatibility boundary; the old UI and application server are not shipped.
 DazedTL owns the base translation rules in [system.md](../backend/dazedtl/data/skills/system.md), along with the shared prompt templates, field instructions, base glossary and SFX reference under [data](../backend/dazedtl/data).
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
