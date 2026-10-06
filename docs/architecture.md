@@ -17,8 +17,19 @@
 The shell composes features; features use shared services without importing each other's internals.
 Shared UI components do not import features or call the backend.
 The renderer is sandboxed and has no direct filesystem, process, or network access.
-The adapter retains existing engine behavior while capabilities are extracted incrementally.
 The Qt GUI from `DazedMTLTool` is the reference for guided workflow ordering and behavior; its retired Electron interface is not a UX reference.
+The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
+Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
+The preserved runner continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
+App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
+The Translation workspace composes file selection, preferences and the preserved phased runner.
+Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
+Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
+Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
+
+## Engine and resources
+
+The adapter retains existing engine behavior while capabilities are extracted incrementally.
 Neither checkout is a runtime dependency.
 The [runtime locator](../backend/dazedtl/compatibility/runtime.py) selects the engine shipped inside this package in the app, workers and standalone helpers, independently of cwd and old engine environment variables.
 There is no external-engine fallback.
@@ -33,13 +44,12 @@ Existing workspace `engine/shared-data` overrides retain precedence and native p
 Resources are not seeded into profiles, so future default changes reach new preparations without overwriting customizations.
 Frozen run context stays authoritative for execution and recovery.
 Engine parsers, context assembly and Len's maintained methodology/tool bundle are shipped in the owned engine behind the compatibility boundary.
-The Translation service owns project operations, request plans, accepted results, and run recovery for both the UI and the external agent helper.
-Len's maintained skills own engine investigation and methodology; the compatibility layer supplies the existing context, Git, preparation, injection, and provider helpers.
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
-The Translation workspace composes file selection, preferences and the preserved phased runner.
-Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
-Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
-Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
+
+## Guided runs and paid work
+
+### Estimates and approval
+
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
 New estimate and Batch preparation workspaces are temporary until approval; they do not enter saved history or contribute translated outputs.
@@ -49,11 +59,64 @@ Approved work is retained before signaling the worker, including separately appr
 Existing historical runs remain intact.
 Paid review requires that matching estimate and rechecks it before the one-use submission.
 Cost dialogs focus on price, selected scope and approval; an optional Preview request opens the existing prepared text, context and exact payload without preparing or submitting work.
-Live review previews its matching local estimate, while Batch review previews its collected requests.
+Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews its collected requests.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
-The selected-file list takes the remaining dialog height with its own scroll area, keeping the heading, cost, notice and approval controls visible.
-When other content cannot fit, the body remains scrollable with approval controls outside it.
+Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
+Database and map task completion aggregates verified per-file progress across their full file groups, independent of checkbox selection.
+The current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
+Event-code and comparison completion retain their reviewed scope checks.
+Translate is complete only when all its tasks are complete; action and cost reviews remain bound to the selected scope.
+Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation.
+Failed, stopped and stale estimates stop preparation with feedback.
+An explicit zero-request estimate opens a result explaining that no new API work was needed; absent saved request payloads never imply zero work.
+Stop translation is available for Live execution.
+Batch work keeps monitoring automatically; Run history opens its progress and controls.
+Navigation never submits work.
+App restarts can continue the unchanged approved queue and its saved clarification allowance.
+Legacy estimate continuation records remain readable for recovery.
+Each pending Batch or speaker approval opens once in a focused cost review with visible token counts, mode-specific pricing, prepared file scope and an explicit Decline action.
+Cost comparisons use plain labels for totals without prompt caching and with estimated prompt caching, explain reuse of repeated instructions, and include cache creation without promising savings.
+The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
+Inspection leaves Review cost available, while Translate always prepares again.
+Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
+Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
+The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
+Nameplates may contain character names or other display labels, so the review does not assume a character identity.
+This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
+The file-text Batch receives its own cost review after names are resolved.
+The [name-result adapter](../backend/dazedtl/compatibility/speaker_results.py) retains the native save outcome and a verified glossary snapshot independently of the later Batch decision.
+The shared observer exposes pending, saved and unavailable outcomes; Batch review and the request inspector’s Technical tab show the result with bounded, read-only translation inspection.
+Name feedback is a compact secondary note below the reviewed cost and file scope, or beneath the active preparation status, with its inspection action adjacent.
+Approval alone never establishes success.
+Declining or stopping the file Batch keeps approved names reusable in the next run’s frozen glossary, with current glossary entries and aliases taking precedence.
+Reuse is bound to the project, target language and source pass, participates in estimate identity, and preserves the shared guidance and drafts.
+Older runs can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
+Closing preparation after approving names preserves the paid run.
+Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
+Provider monitoring and new runs have independent isolated workers.
+Cost approval checks its own frozen preparation and one-use token under the API lock; other runs cannot revoke it.
+Existing Live resumes retain their frozen settings and require explicit review; Batch recovery follows saved provider receipts and the frozen clarification allowance described above.
+New remaining work requires a fresh estimate and spending review.
+The compact footer keeps Translate and available Apply actions beside the selected scope.
+Translate immediately opens one stable estimate dialog; preparation, cost approval, no-work results and actionable failures stay inside it.
+An estimate without work is a result, not a preparation to cancel.
+Batch estimates count no requests; Live estimates report no request count, so they qualify only by finding no source text.
+Then each selected file with no text left to translate shows Complete for that phase until a newer attempt includes it or a resync replaces it, and Close only closes.
+Text reused from earlier responses still needs a run to write it, so it never completes a file this way.
+The existing observer advances only that dialog’s owned estimate, and a canceled late reply cannot open a review or start paid work.
+Saved active runs do not disable Translate or lock its file selection and mode; only the current preparation/action owns pending feedback.
+Selecting more files or clicking Translate again retains the engine’s skip-translated behavior.
+Apply includes only checked files with saved output in the current task, including output from earlier runs.
+Model and method live in the toolbar.
+Resync sits beside file selection; Options edits translation behavior and opens saved translations; wrapping limits belong to the layout workflow.
+Live file rows count returned requests, including rejected attempts; native map-command totals are not used as translation percentages.
+Finished Live runs clear progress and preparation labels.
+Batch rows use provider request receipts.
+The request inspector reconciles the selected run against the shared observer and reloads a selected response when its receipt state changes, without adding a polling loop.
+
+### Frozen request policies
+
 New API runs freeze a provider-default generation policy before estimation and review.
 The compatibility adapter omits the native engine's implicit temperature, frequency penalty, and reasoning effort; current model preferences expose no explicit overrides for these parameters.
 The policy participates in estimate identity and applies to both Live and Batch request construction.
@@ -85,6 +148,50 @@ Existing translated code-101 nameplates still supply dialogue context; unnamed m
 Implicit square-bracket nameplates must pass short-name plausibility checks, so bracketed tutorial prose receives normal text instructions instead of the nameplate prompt.
 Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
 Estimates, Live and Batch use the same policy; older frozen runs retain their original parser and request identities.
+
+### Batch execution and recovery
+
+The provider adapter normalizes cancellation acknowledgements before the guided handler saves them; the saved status takes precedence over a stale worker poll.
+Retrying cancellation checks provider status first, so an already cancelling or terminal Batch does not receive another cancellation request.
+Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
+The [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) retains the last outcome while rechecking recovery records; the check itself does not make a run active.
+Late observations recheck ownership and worker state before publication.
+Saved terminal receipts and their counts take precedence over monitor polls, and a resumed or completed worker supersedes its old monitoring view.
+For runs split across provider Batches, inactive summaries retain original request totals and finished outcomes across completed chunks, without counting clarifications again.
+Current provider work keeps its own counts.
+Status text pairs with an active spinner or an outcome icon; saved success requires verified output without outstanding work or reported issues.
+Missing counts stay unknown, and provider completion remains separate from saving local output.
+The app-owned [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) fills the configured total input-token allowance with multiple provider jobs and refills when any terminal job releases capacity.
+It targets one quarter of that allowance per job, capped by the native chunk target, so a slow request cannot hold the entire window.
+Individual requests remain intact, and provider file/request limits still apply.
+A shared connection/model lock accounts for other Guided runs, clarification attempts and uncertain submissions before reserving capacity.
+Partial request progress does not release a pending job’s tokens.
+Only the owning worker advances its approved queue; the background monitor restarts that worker after interruption and collects its retained responses.
+A fully successful provider receipt with a matching submission manifest remains submitted while awaiting download; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
+Cancellation binds one provider Batch and its request mapping through a project-owned, one-use review; it retains the queue and receipts.
+Terminal collection uses the recorded connection and retains successful responses.
+It settles any authorized clarification Batch before native fetched-results consumption, including partial results from canceled Batches.
+Unknown or conflicting responses retain their recovery guard.
+Consumed Batch history plus a matching frozen plan and unchanged, complete output receipts settle finished requests without inventing per-request validation.
+Missing outputs and native mismatches retain unresolved receipt states; identical text in different known files does not create an overlap.
+The backend-owned [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) checks interrupted runs automatically across registered projects, independently of the current screen and native worker pointer.
+A Batch approval binds the full frozen queue and plan.
+After an app interruption, the original worker continues that unchanged approved queue, skipping recorded provider requests and preserving already collected results.
+Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submission outcomes prevent automatic continuation.
+Older app approvals require the matching saved quote and prepared request ledger before adopting the same binding.
+Native submission is wrapped by a durable intent/returned-ID journal; known receipts are recovered after a checkpoint interruption, while unknown HTTP outcomes are never submitted again automatically.
+Provider reads and downloads run outside the API lock; cached observations feed the existing application observer.
+Collection rechecks ownership, worker state and shutdown before committing.
+Automatic local consumption requires both a durable fetched marker and submission receipts covering every prepared request.
+The controller and worker-launch boundary recheck that coverage: collecting one completed chunk cannot turn an unsent remainder into a full consume pass.
+Incomplete submissions retain their downloaded responses while the approved remainder continues.
+Unapproved or changed work requires its own estimate and paid review; an app restart does not require a second approval for the unchanged original queue.
+Clarification receipts can extend as later original chunks arrive, preserving both original responses and settled retries without repeating them.
+Local consume failures with received responses expose Retry saving results instead of an automatic restart loop; Batches with confirmed zero successes are left failed without attempting an empty consume pass.
+No pause/resume monitoring control is presented.
+
+### Evidence and validation
+
 Guided process views read saved queue fragments, manifests, results, and file receipts separately.
 The Batch evidence adapter archives approved request mappings and responses before native scratch cleanup.
 Older consumed Batches can display translations only when their retained source identities and native validation records match exactly; these are identified as validated translations, not original provider bodies.
@@ -119,60 +226,58 @@ A pending or failed clarification remains visible in the group's status.
 Counts and file overlap never infer membership or parentage; an unlinked clarification remains separate.
 Content tabs and request selection remain local view state, and a missing response shows only its waiting or unavailable state.
 A fully successful Batch with matching submission receipts may identify requests as finished at the provider while download is pending; partial provider totals never identify individual results or release execution guards.
+Validation mismatches are file warnings with a direct action into the request inspector's rejected-translation filter.
+Provider completion and local validation stay distinct.
+The [Batch validation reader](../backend/dazedtl/compatibility/batch_validation.py) matches retained native acceptance/rejection records to exact source identities and provider responses only after verifying the consumed submission mapping, frozen plan and unchanged output.
+Matching rejected requests retain their source text and can enter a fresh estimate; matching valid requests remain settled even when another request in the same file fails.
+Missing, ambiguous or conflicting evidence keeps the affected requests unresolved, and older file-only mismatch records show an unknown count with log inspection.
+Parsed validation records are cached by file stamps and exact input/response bindings; observations do not rewrite history or rerun validators.
+Rejected responses remain inspectable as raw evidence and never appear as saved translations.
+The [choice history reader](../backend/dazedtl/compatibility/choice_history.py) identifies an older unused response only when one extra context-free request accompanies the exact contextualized requests for every physical menu, and each menu's saved text and original metadata match a validated sibling response.
+Frozen input/output hashes and submission mappings must still match.
+Proven extras are labeled Unused duplicate, keep their provider bodies and usage, and link to the requests whose wording was saved.
+They do not count as validated or unresolved work; ambiguous associations remain unresolved.
+Menu locations are cached by source/output file stamps, without rewriting historical runs.
+
+### Result reuse
+
+New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values.
+Continuation reuses these values locally across expanded or narrowed selections when the relevant source bindings and file versions match.
+If compatible runs contain different validated wording for one identity, the newest run by creation time supplies the reusable value; historical alternatives stay unchanged and do not block preparation.
+Existing working translations still go through the native skip-translated behavior.
+Every selected file is still parsed; untranslated or changed text within a previously translated file remains eligible.
+Reuse is per text identity, never a file-complete skip.
+New provenance associates validated identities with their files so changing one source does not reuse its old values.
+Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
+When a call mixes reused translations with remaining source spans, a mismatch in one span preserves that span's native fallback and continues the others.
+The adapter retains successful translations, all attempted usage and the final mismatch flag without changing native chunking, context, validation or retry rules.
+The MV/MZ comment handler also retains aligned partial results instead of discarding every comment after one rejected chunk.
+Its length/type guard and the separate name-preflight checks remain intact; native mismatch records still identify the file for review.
+Source identity currently treats repeated identical strings within one file and phase as aliases.
+Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase.
+Interrupted old Live runs without request evidence flag only their shared file/phase scope for the advisory; their send outcomes cannot be reconstructed locally.
+
+### Run history and inspection
+
 Run history is the single run list.
 Its shared inspector owns provider cancellation, stopping or continuing an approved OpenRouter queue, collection/saving recovery and reviewed reapplication of verified output.
 Cancellation controls bind the selected provider Batch, including its linked clarifications; concurrent jobs keep independent targets.
 Run-wide queue and recovery actions remain distinct from request selection.
 They use the shared guarded action feedback, preserve the existing one-use reviews, and render the single application observer’s receipts without another polling loop.
-Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
-Database and map task completion aggregates verified per-file progress across their full file groups, independent of checkbox selection.
-The current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
-Event-code and comparison completion retain their reviewed scope checks.
-Translate is complete only when all its tasks are complete; action and cost reviews remain bound to the selected scope.
-Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation.
-Failed, stopped and stale estimates stop preparation with feedback.
-An explicit zero-request estimate opens a result explaining that no new API work was needed; absent saved request payloads never imply zero work.
-Stop translation is available for Live execution.
-Batch work keeps monitoring automatically; Run history opens its progress and controls.
-Navigation never submits work.
-App restarts can continue the unchanged approved queue and its saved clarification allowance.
-Legacy estimate continuation records remain readable for recovery.
-Each pending Batch or speaker approval opens once in a focused cost review with visible token counts, mode-specific pricing, prepared file scope and an explicit Decline action.
-Cost comparisons use plain labels for totals without prompt caching and with estimated prompt caching, explain reuse of repeated instructions, and include cache creation without promising savings.
-The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
-Inspection leaves Review cost available, while Translate always prepares again.
-Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.
-Once approved, the frozen request remains authoritative for recovery and is never silently rebuilt.
-The fresh Batch speaker check validates unresolved nameplates against frozen files and the current glossary before collection; it retains its separate approval if translation is needed.
-Nameplates may contain character names or other display labels, so the review does not assume a character identity.
-This small preparation uses Live pricing to avoid waiting for a separate name Batch, and the review distinguishes it from the selected Batch mode for file text.
-The file-text Batch receives its own cost review after names are resolved.
-The [name-result adapter](../backend/dazedtl/compatibility/speaker_results.py) retains the native save outcome and a verified glossary snapshot independently of the later Batch decision.
-The shared observer exposes pending, saved and unavailable outcomes; Batch review and the request inspector’s Technical tab show the result with bounded, read-only translation inspection.
-Name feedback is a compact secondary note below the reviewed cost and file scope, or beneath the active preparation status, with its inspection action adjacent.
-Approval alone never establishes success.
-Declining or stopping the file Batch keeps approved names reusable in the next run’s frozen glossary, with current glossary entries and aliases taking precedence.
-Reuse is bound to the project, target language and source pass, participates in estimate identity, and preserves the shared guidance and drafts.
-Older runs can recover exact entries only from retained approved names, native save evidence and that run’s glossary.
-Closing preparation after approving names preserves the paid run.
-Read-only provider details resolve the submitted connection from canonical settings by its recorded runtime name, endpoint and organization, regardless of the active account.
-The provider adapter normalizes cancellation acknowledgements before the guided handler saves them; the saved status takes precedence over a stale worker poll.
-Retrying cancellation checks provider status first, so an already cancelling or terminal Batch does not receive another cancellation request.
-Pending provider counts and errors may be null; saved polling receipts take precedence over earlier file-scan progress without rewriting run evidence.
-The [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) retains the last outcome while rechecking recovery records; the check itself does not make a run active.
-Late observations recheck ownership and worker state before publication.
-Saved terminal receipts and their counts take precedence over monitor polls, and a resumed or completed worker supersedes its old monitoring view.
-For runs split across provider Batches, inactive summaries retain original request totals and finished outcomes across completed chunks, without counting clarifications again.
-Current provider work keeps its own counts.
-Status text pairs with an active spinner or an outcome icon; saved success requires verified output without outstanding work or reported issues.
-Missing counts stay unknown, and provider completion remains separate from saving local output.
-The app-owned [OpenAI Batch window](../backend/dazedtl/compatibility/batch_window.py) fills the configured total input-token allowance with multiple provider jobs and refills when any terminal job releases capacity.
-It targets one quarter of that allowance per job, capped by the native chunk target, so a slow request cannot hold the entire window.
-Individual requests remain intact, and provider file/request limits still apply.
-A shared connection/model lock accounts for other Guided runs, clarification attempts and uncertain submissions before reserving capacity.
-Partial request progress does not release a pending job’s tokens.
-Only the owning worker advances its approved queue; the background monitor restarts that worker after interruption and collects its retained responses.
-A fully successful provider receipt with a matching submission manifest remains submitted while awaiting download; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
+Approved project-owned runs remain in History automatically, including failed and canceled runs.
+Legacy history remains readable; new unapproved preparation is excluded.
+The native pointer is not the ownership registry.
+Creation order determines the newest attempt in each task; an active worker stays visible, while a newer estimate or different scope never falls back to an older overlapping failure.
+The application-wide run view represents active work only.
+Runs have no dismissible notices, hidden-history preference or separate output-copy action; Apply and the translated-folder tool remain the guided output workflow.
+Legacy `kept_failed_runs` keys remain an ownership-discovery source only; they do not hide runs or settle receipts.
+Unresolved submissions remain inspectable in history and subject to the existing execution guards and overlapping-charge review.
+Saved run status never vetoes an explicitly requested new Guided translation.
+Live and Batch preparation and cost approval allow overlapping submitted, uncertain or received requests.
+The existing cost review shows an advisory about possible duplicate charges when the estimate overlaps unresolved history or that history cannot be read; no extra confirmation or recovery step is required.
+This advisory is saved with the estimate for the Batch review without reconstructing history during observation.
+Fresh source/scope/settings checks, project ownership and one-use approval tokens still apply.
+Older runs and their receipts stay intact, and automatic recovery never gains authority to resend uncertain work.
 File inspect buttons open the same [run inspector](../app/src/features/guided/RunInspector.tsx) used by Run history, independently of checkbox selection.
 The owning attempt and exact file-linked request are selected locally; a current estimate takes precedence over older completed output.
 Files without a linked request show that limitation without borrowing another file’s payload.
@@ -184,12 +289,9 @@ File contents is available for the selected file through the project-bound [file
 It identifies this current text separately from saved run evidence.
 It omits text identical to retained source, keeps changed and unmatched fields, and never claims request eligibility.
 The reader loads only after opening its tab and retains its search, page and scroll while switching content tabs.
-Search and compact paging stay outside its scroll region.
 Translate embeds the existing [FileSelection](../app/src/features/guided/FileSelection.tsx) component rather than a second picker.
 Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift ranges and keyboard movement.
 A separate Inspect icon does not change scope; the open file is marked independently of selection.
-File status labels remain plain text.
-Compact rows keep map names beneath filenames and always show a status, including in narrow lists.
 File status follows that file's request receipts and verified output independently of checkbox selection or the current attempt.
 The file list uses five labels: Not started, In progress, Incomplete, Complete and Applied.
 Untouched files show Not started; verified passes with no new requests show Complete.
@@ -207,7 +309,6 @@ Pending collection also requires matching completed-Batch and finished-request e
 These display rules never settle submissions or release execution guards.
 A finished Batch collection can identify files with no new requests only when its recorded builder provenance covers the selected scope; deduplicated callers remain included, and absent legacy evidence stays unknown.
 Provider-waiting rows and active Batch stages use the shared activity indicator, while cost approval and files with no requests stay still.
-Selection counts stay in the existing footer; selection-dependent run banners do not shift the file list.
 Selection locks during active work while search and inspection remain available.
 Per-file cost and processing time come from native result receipts, retained beyond the log cap; Batch collection figures are excluded and consumption time excludes provider waiting.
 The file list retains cost and time from the latest run that changed the file, comparing its recorded output hash with its frozen input hash; estimates, pending work and unchanged passes do not replace those metrics.
@@ -215,8 +316,6 @@ Missing receipts for a changed file stay unknown.
 Incoming observations preserve the reader's selected file, request, tab and scroll position.
 Selected request receipts update automatically; older records without file provenance identify their scope limitation.
 Run history opens directly from Translate with separate translation, estimate and other-activity tabs.
-Date headers separate groups without an extra spacer or trailing row divider.
-Aligned task, scope and outcome fields support scanning; status colors always accompany text and icons.
 Display outcomes use existing observed receipts: estimates, no-request attempts, verified output, partial progress and unavailable output stay distinct.
 Unresolved submissions remain marked for review in history.
 Search and filters operate locally on the already-observed summaries; In progress includes submitted provider work even after its local worker stops.
@@ -225,39 +324,18 @@ Source retains matched context; Response shows the retained reply or a concise m
 Technical starts with the run record and exposes collection errors, provider receipts and the exact request, including when no request payload is available.
 Request failures stay with the selected attempt’s response and technical payload; request-bound provider errors do not become run-wide diagnostics.
 File-only legacy validation evidence stays explicitly scoped to its file without identifying a guessed failed request.
-The searchable request picker lists only request numbers and outcomes for the selected group; Up/Down highlights choices and Enter opens one.
-Search text is local to the open picker and never changes request selection or triggers a read until a choice is committed.
 The picker is the sole request navigation control and has no hidden failure or file filters.
 Raw worker logs are not a separate content view: Technical ends with the retained log tail, which the compatibility readers still use as evidence.
 Other-activity records open with their status, saved result and log in the same presentation.
 Request selection and tabs persist locally without storing payloads in browser preferences.
-Navigation stays outside the single content reader, with stable dimensions and request controls across tabs.
 The inspector has no separate provider-check control or transient remote status overlay; tab changes never contact the provider.
 Saved translated output and currently verified runtime files are separate counts.
 Active per-file request states take precedence over retained checkpoints; a resumed worker takes ownership of its rows even when a newer completed attempt exists.
 Live rows also retain the worker's current filename from `itemProgress` between requests, including after rejected replies.
 The completed-file counter identifies the last finished file and cannot establish current activity; native command totals are not translation percentages.
-Cancellation binds one provider Batch and its request mapping through a project-owned, one-use review; it retains the queue and receipts.
-Terminal collection uses the recorded connection and retains successful responses.
-It settles any authorized clarification Batch before native fetched-results consumption, including partial results from canceled Batches.
-Unknown or conflicting responses retain their recovery guard.
-Consumed Batch history plus a matching frozen plan and unchanged, complete output receipts settle finished requests without inventing per-request validation.
-Missing outputs and native mismatches retain unresolved receipt states; identical text in different known files does not create an overlap.
-The backend-owned [Batch monitor](../backend/dazedtl/translation/batch_monitor.py) checks interrupted runs automatically across registered projects, independently of the current screen and native worker pointer.
-A Batch approval binds the full frozen queue and plan.
-After an app interruption, the original worker continues that unchanged approved queue, skipping recorded provider requests and preserving already collected results.
-Explicit stops, provider cancellations, newer approved overlapping runs, changed scope and uncertain submission outcomes prevent automatic continuation.
-Older app approvals require the matching saved quote and prepared request ledger before adopting the same binding.
-Native submission is wrapped by a durable intent/returned-ID journal; known receipts are recovered after a checkpoint interruption, while unknown HTTP outcomes are never submitted again automatically.
-Provider reads and downloads run outside the API lock; cached observations feed the existing application observer.
-Collection rechecks ownership, worker state and shutdown before committing.
-Automatic local consumption requires both a durable fetched marker and submission receipts covering every prepared request.
-The controller and worker-launch boundary recheck that coverage: collecting one completed chunk cannot turn an unsent remainder into a full consume pass.
-Incomplete submissions retain their downloaded responses while the approved remainder continues.
-Unapproved or changed work requires its own estimate and paid review; an app restart does not require a second approval for the unchanged original queue.
-Clarification receipts can extend as later original chunks arrive, preserving both original responses and settled retries without repeating them.
-Local consume failures with received responses expose Retry saving results instead of an automatic restart loop; Batches with confirmed zero successes are left failed without attempting an empty consume pass.
-No pause/resume monitoring control is presented.
+
+### Apply and release
+
 Completed Batches offer Reapply in the shared run inspector.
 The review resolves the chosen project-owned run independently of the current selection and freezes its hash-verified retained output; it never substitutes the latest working translation or submits provider work.
 Missing or changed historical files cannot be reapplied.
@@ -273,72 +351,9 @@ It validates and freezes the saved JSON without requiring translation completion
 Isolated translation workers do not veto Apply, while runtime operations, source/output checks and one-use publication guards still apply.
 Applying output does not settle request receipts, cancel work or establish translation completion.
 Compact run counts preserve preparation, submission, receipt, validation and application as separate evidence, and full request/provider errors remain available in Response & error.
-Validation mismatches are file warnings with a direct action into the request inspector's rejected-translation filter.
-Provider completion and local validation stay distinct.
-The [Batch validation reader](../backend/dazedtl/compatibility/batch_validation.py) matches retained native acceptance/rejection records to exact source identities and provider responses only after verifying the consumed submission mapping, frozen plan and unchanged output.
-Matching rejected requests retain their source text and can enter a fresh estimate; matching valid requests remain settled even when another request in the same file fails.
-Missing, ambiguous or conflicting evidence keeps the affected requests unresolved, and older file-only mismatch records show an unknown count with log inspection.
-Parsed validation records are cached by file stamps and exact input/response bindings; observations do not rewrite history or rerun validators.
-Rejected responses remain inspectable as raw evidence and never appear as saved translations.
-The [choice history reader](../backend/dazedtl/compatibility/choice_history.py) identifies an older unused response only when one extra context-free request accompanies the exact contextualized requests for every physical menu, and each menu's saved text and original metadata match a validated sibling response.
-Frozen input/output hashes and submission mappings must still match.
-Proven extras are labeled Unused duplicate, keep their provider bodies and usage, and link to the requests whose wording was saved.
-They do not count as validated or unresolved work; ambiguous associations remain unresolved.
-Menu locations are cached by source/output file stamps, without rewriting historical runs.
-Approved project-owned runs remain in History automatically, including failed and canceled runs.
-Legacy history remains readable; new unapproved preparation is excluded.
-The native pointer is not the ownership registry.
-Creation order determines the newest attempt in each task; an active worker stays visible, while a newer estimate or different scope never falls back to an older overlapping failure.
-The application-wide run view represents active work only.
-Runs have no dismissible notices, hidden-history preference or separate output-copy action; Apply and the translated-folder tool remain the guided output workflow.
-Legacy `kept_failed_runs` keys remain an ownership-discovery source only; they do not hide runs or settle receipts.
-Unresolved submissions remain inspectable in history and subject to the existing execution guards and overlapping-charge review.
-Saved run status never vetoes an explicitly requested new Guided translation.
-Live and Batch preparation and cost approval allow overlapping submitted, uncertain or received requests.
-The existing cost review shows an advisory about possible duplicate charges when the estimate overlaps unresolved history or that history cannot be read; no extra confirmation or recovery step is required.
-This advisory is saved with the estimate for the Batch review without reconstructing history during observation.
-Fresh source/scope/settings checks, project ownership and one-use approval tokens still apply.
-Older runs and their receipts stay intact, and automatic recovery never gains authority to resend uncertain work.
-New workers record durable submission intent separately from preparation, source identities independent of model/prompt/chunk size, and native-validated response values.
-Continuation reuses these values locally across expanded or narrowed selections when the relevant source bindings and file versions match.
-If compatible runs contain different validated wording for one identity, the newest run by creation time supplies the reusable value; historical alternatives stay unchanged and do not block preparation.
-Existing working translations still go through the native skip-translated behavior.
-Every selected file is still parsed; untranslated or changed text within a previously translated file remains eligible.
-Reuse is per text identity, never a file-complete skip.
-New provenance associates validated identities with their files so changing one source does not reuse its old values.
-Verified completed files from partial runs are collected only when their frozen inputs still match the working copy; newer edits are retained.
-When a call mixes reused translations with remaining source spans, a mismatch in one span preserves that span's native fallback and continues the others.
-The adapter retains successful translations, all attempted usage and the final mismatch flag without changing native chunking, context, validation or retry rules.
-The MV/MZ comment handler also retains aligned partial results instead of discarding every comment after one rejected chunk.
-Its length/type guard and the separate name-preflight checks remain intact; native mismatch records still identify the file for review.
-Source identity currently treats repeated identical strings within one file and phase as aliases.
-Legacy queues without file provenance use a conservative source-text intersection within shared saved files/phase.
-Interrupted old Live runs without request evidence flag only their shared file/phase scope for the advisory; their send outcomes cannot be reconstructed locally.
-Provider monitoring and new runs have independent isolated workers.
-Cost approval checks its own frozen preparation and one-use token under the API lock; other runs cannot revoke it.
-Existing Live resumes retain their frozen settings and require explicit review; Batch recovery follows saved provider receipts and the frozen clarification allowance described above.
-New remaining work requires a fresh estimate and spending review.
-The compact footer keeps Translate and available Apply actions beside the selected scope.
-Translate immediately opens one stable estimate dialog; preparation, cost approval, no-work results and actionable failures stay inside it.
-An estimate without work is a result, not a preparation to cancel.
-Batch estimates count no requests; Live estimates report no request count, so they qualify only by finding no source text.
-Then each selected file with no text left to translate shows Complete for that phase until a newer attempt includes it or a resync replaces it, and Close only closes.
-Text reused from earlier responses still needs a run to write it, so it never completes a file this way.
-The existing observer advances only that dialog’s owned estimate, and a canceled late reply cannot open a review or start paid work.
-Saved active runs do not disable Translate or lock its file selection and mode; only the current preparation/action owns pending feedback.
-Selecting more files or clicking Translate again retains the engine’s skip-translated behavior.
-Apply includes only checked files with saved output in the current task, including output from earlier runs.
-Model and method live in the toolbar.
-Resync sits beside file selection; Options edits translation behavior and opens saved translations; wrapping limits belong to the layout workflow.
-Live file rows count returned requests, including rejected attempts; native map-command totals are not used as translation percentages.
-Finished Live runs clear progress and preparation labels.
-Batch rows use provider request receipts.
-The request inspector reconciles the selected run against the shared observer and reloads a selected response when its receipt state changes, without adding a polling loop.
 Audited assignments produce variable mappings, and the later comparison step consumes only mappings matching its selected events.
 Their controller exposes specific engine actions through one-use, project-bound previews; source, selection, settings and working-output changes invalidate the relevant preview.
 Explicit full-overwrite Apply does not track runtime JSON conflicts.
-The preserved runner continues to own parsing, speaker preparation, phase profiles, glossary collection and Batch receipts.
-App workers own source backup, Git baselines, checkpoints and local patch packaging for both approaches.
 Guided release freezes the current runtime scope and original-source bindings through an app-only, one-use preview.
 Patch packaging saves its checkpoint and workspace restore point as part of the same operation.
 The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material, and verifies the source and destination before atomically replacing a ZIP.
@@ -350,6 +365,8 @@ Archive names and additional asset choices are retained per project, with separa
 Neither operation manufactures a user-review record or completes Len's report-based QA.
 The project helper cannot invoke Guided packaging; its separate QA requirements remain in force.
 Legacy Guided review receipts remain readable for existing records.
+
+## Plugins and images
 
 Guided Plugin text and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
 The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
@@ -367,8 +384,6 @@ Missing or uncertain findings cannot inherit safety from a previous report; inac
 The helper cannot preview or publish runtime files, and only app-issued automatic tasks can continue.
 Repeated continuation of the immediately preceding request returns its existing successor; stale tasks cannot replace newer work.
 Agent questions concern unresolved choices; runtime replacement retains its exact-file review.
-The phase uses one flat task row with adjacent feedback and an optional file list.
-Text, evidence and validation details open on demand.
 File details and Apply/restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
 Filtering preserves occurrence overrides, and bounded renderer reads share the application observer and serialized drafts.
 Plugin view revisions are independent of agent-updated scope, so incoming reports do not invalidate pending view edits.
@@ -416,6 +431,7 @@ ComboBox choice labels hide automatic text-selection highlighting while retainin
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
+Status colors always accompany text or icons.
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.
@@ -428,7 +444,7 @@ Rows grow with feedback rather than fixing heights or clipping content.
 Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
 The [preparation formatting adapter](../backend/dazedtl/compatibility/formatting.py) writes JSON and `plugins.js` as UTF-8 with LF on every platform, matching translated JSON and fitting output.
 Byte comparisons normalize already-formatted CRLF/CR files too, preventing whole-file line-ending diffs on Apply.
-Runtime activation installs these writers without changing the engine bytes used by saved-run signatures; frozen outputs and exact backup/restore bytes remain authoritative.
+Runtime activation installs these writers; frozen outputs and exact backup/restore bytes remain authoritative.
 Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click; the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
@@ -449,10 +465,6 @@ Setup investigation may inspect narrowly relevant font, window-skin or image geo
 Context uses compact Investigation, Guidance and Layout tasks.
 Investigation shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan.
 The shared observer updates saved results and guidance without a separate refresh action.
-Names, actor/variable lookup tables and detection settings open in focused panels.
-Findings show rule state and confidence first, with complete explanations and sources on expansion.
-Layout keeps character limits on the page once, with measurement notes and sources in a collapsed inline disclosure.
-Detection controls use the shared field layout and adjacent help popovers.
 Reference game folders are retained per project by [reference_folders.py](../backend/dazedtl/translation/reference_folders.py) and included as read-only source material in the copied investigation prompt.
 Adding a folder only registers its path; it does not parse, convert or index the game.
 Missing references remain listed so they can be removed or replaced.
@@ -481,7 +493,6 @@ Guidance setup is complete when the glossary, style and game-context files exist
 Edits, drafts, scan freshness and old investigation records do not revoke completion.
 No document review or conflict receipts are required; the optional context findings record supplies measured layout recommendations only.
 The guidance editor keeps glossary, translation style/quirks and game context in separate tabs, with custom guidance available in its file toolbar.
-Its shared fill layout uses the remaining task height for text while keeping tabs and save actions accessible; format help sits beside the file path.
 The selected tab is retained per project, and legacy glossary/voice review positions open the corresponding tab.
 Missing custom files remain addressable while their recovery drafts exist.
 Switching tabs and continuing retain drafts.
@@ -614,7 +625,7 @@ The adapter materializes legacy settings only before engine actions and checks t
 Connection checks are explicit model-list requests, with bounded reads, no redirects, and no generated text.
 Provider presets declare their transport protocol independently of their identity.
 OpenRouter keeps the OpenAI-compatible Live request format and has a distinct [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py), installed before native consumers bind provider helpers.
-Both Guided workers and compiled plans use that adapter, preserving engine bytes and request semantics.
+Both Guided workers and compiled plans use that adapter, preserving request semantics.
 The authenticated `/models/user` check retains a bounded, private [catalog](../backend/dazedtl/settings/openrouter.py); saving a model, host or active connection automatically resolves missing matching Batch endpoint capabilities and prices outside the application lock, then retains them within the same settings mutation.
 Model-option reads resolve draft selections without changing saved Batch eligibility.
 Matching saved endpoint checks are reused; late replies recheck the connection, credentials, model, host and authenticated catalog before publication.
@@ -657,13 +668,13 @@ The override uses the existing serialized preference drafts.
 The pricing metadata reader retains exact model output limits without borrowing a limit from the engine's fuzzy price fallback.
 Custom pricing can reuse cached limits without adding an observation-time network read.
 The shared [request adapter](../backend/dazedtl/compatibility/request_parameters.py) applies the frozen budget to OpenAI-compatible and Anthropic payloads and the native late Mistral override.
-Live, Batch and speaker requests share that policy; prompt construction, reasoning defaults, parser behavior and engine bytes stay unchanged.
+Live, Batch and speaker requests share that policy; prompt construction, reasoning defaults and parser behavior stay unchanged.
 Missing fields retain the native budget when reopening older plans, so new defaults never reinterpret approved requests.
 The optional per-connection/model `batchInputTokens` override resolves to the [application default](../backend/dazedtl/settings/preferences.py) for new OpenAI runs and joins the frozen policy and compiled plan configuration.
 The Settings response exposes that same default for display.
 It leaves 20% headroom below the published Tier 1 [GPT-5.5 Pro](https://developers.openai.com/api/docs/models/gpt-5.5-pro) Batch queue allowance, which is lower than the published [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) and [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna) allowances.
 This is a conservative fallback rather than an account quota: older models can have lower limits, GPT-6.1 Sol's public page does not currently list its Batch limit, and other pending jobs share queue capacity.
-The [worker adapter](../backend/dazedtl/compatibility/worker_policy.py) supplies the frozen value to the Guided OpenAI Batch window as a combined active-token allowance, without changing engine bytes.
+The [worker adapter](../backend/dazedtl/compatibility/worker_policy.py) supplies the frozen value to the Guided OpenAI Batch window as a combined active-token allowance.
 Clarification batches reserve from that same allowance before recording submission intent.
 Account usage outside the tracked Guided runs still needs headroom; the local estimate is not a provider quota lookup.
 Older preferences need no rewrite, and older runs retain their native default or saved sequential limit.
@@ -736,7 +747,7 @@ No delta chain or live-file hardlinks are used.
 Snapshot identity covers file content, paths, modes and directories, so unchanged captures reuse a manifest.
 Backup presentation checks manifest and payload availability instead of treating a profile reference as proof that its files still exist.
 Each observation checks shared object directories and payload sizes once, without retaining availability across observations.
-Each available backup offers Open folder with its resolved location as the tooltip; Electron opens only backup folders returned as available by the backend.
+Electron opens only backup folders the backend returns as available.
 Full content hashes are still verified at restore and reuse boundaries.
 The managed store has its own writer lock.
 Content is verified before reuse/publication; source mutations abort capture.
