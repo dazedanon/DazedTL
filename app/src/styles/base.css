@@ -103,7 +103,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-control);
 }
 fieldset {
   padding: 0;
@@ -117,18 +117,35 @@ h3,
 p {
   overflow-wrap: anywhere;
 }
+h1,
+h2,
+h3,
+h4,
+strong,
+b,
+th,
+legend {
+  font-weight: var(--weight-semibold);
+}
 h1 {
-  font-size: 29px;
-  letter-spacing: -0.6px;
-  line-height: 1.2;
+  font-size: var(--font-page-title);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   margin: 0;
 }
 h2 {
-  font-size: 17px;
+  font-size: var(--font-heading);
+  line-height: 1.35;
   margin: 0 0 15px;
 }
-h3 {
-  font-size: 15px;
+h3,
+h4 {
+  font-size: var(--font-body);
+  line-height: 1.4;
+}
+/* Small text is a caption, not a relative size, so nesting cannot shrink it. */
+small {
+  font-size: var(--font-small);
 }
 p {
   line-height: 1.6;
@@ -144,7 +161,7 @@ p.muted {
   line-height: 1.5;
 }
 .footnote {
-  font-size: 12px;
+  font-size: var(--font-small);
   margin: 18px 0;
 }
 [hidden] {

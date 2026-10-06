@@ -446,7 +446,7 @@
   font-size: var(--font-control);
 }
 .translation-cost-total strong {
-  font-size: 2em;
+  font-size: var(--font-page-title);
   line-height: 1.3;
   color: var(--accent);
   overflow-wrap: anywhere;
@@ -471,7 +471,7 @@
 }
 .translation-cost-tokens dd {
   margin: var(--space-1) 0 0;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }

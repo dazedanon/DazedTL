@@ -10,7 +10,7 @@
 }
 .settings-intro {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-control);
   margin: 0 0 20px;
 }
 .connection-secret {
@@ -36,7 +36,7 @@
   align-items: center;
   gap: 9px;
   margin: 16px 0 0 173px;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--muted);
 }
 .connection-keyless input {
@@ -48,14 +48,14 @@
   margin: 24px 0 0;
 }
 .settings-advanced > summary {
-  font-size: 13px;
+  font-size: var(--font-control);
   margin: 0;
 }
 .settings-advanced[open] > summary {
   margin-bottom: 18px;
 }
 .settings-note {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--muted);
   margin: 12px 0 16px;
   line-height: 1.6;
@@ -70,8 +70,8 @@
   margin-top: 0;
 }
 .connection-title {
-  font-size: 19px;
-  font-weight: 500;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-medium);
   margin: 6px 0 18px;
 }
 .connection-details {
@@ -93,7 +93,7 @@
   gap: 10px;
   padding-top: 19px;
   border-top: 1px solid var(--line);
-  font-size: 13px;
+  font-size: var(--font-control);
 }
 .connection-status > svg {
   margin-top: 2px;
@@ -104,15 +104,15 @@
   color: var(--color-success);
 }
 .connection-status strong {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .connection-status p {
   margin: 5px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 .connection-status small {
-  font-size: 11px;
+  font-size: var(--font-small);
 }
 @media (max-width: 1050px) {
   .connection-keyless {
@@ -155,10 +155,10 @@
   flex-wrap: wrap;
   gap: 10px 24px;
   margin: 18px 0 0;
-  font-size: 13px;
+  font-size: var(--font-control);
 }
 .effective-rates strong {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   margin-left: 5px;
 }
 .effective-rates small {
@@ -173,6 +173,6 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--color-error-text);
 }

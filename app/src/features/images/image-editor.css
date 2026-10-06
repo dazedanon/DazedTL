@@ -151,7 +151,7 @@
   stroke-width: 2;
 }
 .native-editor-box text {
-  font: 12px sans-serif;
+  font: var(--font-small) var(--font-family);
   fill: #173752;
   stroke: white;
   paint-order: stroke;
@@ -235,7 +235,7 @@
   max-height: 10rem;
   white-space: pre-wrap;
   overflow: auto;
-  font-size: 0.85rem;
+  font-size: var(--font-small);
 }
 .native-editor-costs {
   margin: var(--space-2) 0;

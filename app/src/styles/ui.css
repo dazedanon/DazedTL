@@ -2,7 +2,7 @@
   background: var(--color-primary);
   color: var(--color-primary-text);
   border-color: var(--color-primary);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 .primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
@@ -54,7 +54,7 @@
   border-radius: 7px;
   padding: 13px 16px;
   margin: 0 0 20px;
-  font-size: 13px;
+  font-size: var(--font-control);
 }
 .section-heading {
   display: flex;
@@ -110,7 +110,7 @@ details ul {
 }
 pre {
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-small);
   line-height: 1.6;
   background: var(--color-code);
   padding: 15px;
@@ -185,7 +185,7 @@ pre {
 }
 .dialog-heading h2 {
   margin: 0;
-  font-size: 1.2em;
+  font-size: var(--font-heading);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -229,8 +229,9 @@ pre {
   font-size: var(--font-control);
   line-height: 1.8;
 }
-:where(.modal) h2 {
-  font-size: 21px;
+/* Headings inside a dialog sit a step below its title. */
+.dialog-body :is(h2, h3) {
+  font-size: var(--font-body);
 }
 :where(.modal) p {
   font-size: var(--font-control);
@@ -326,15 +327,20 @@ pre {
   flex-shrink: 0;
   margin-inline: var(--frame-inline);
 }
+/* Running text stops near the measure; tables, editors, grids and row
+   labels keep the width their layout gives them. */
+:is(.page-body, .page-layout--document, .dialog-body) :is(p, .notice),
+.field-control > small {
+  max-width: var(--measure);
+}
 .ui-section > h2 {
   font-size: var(--font-heading);
-  font-weight: 600;
   margin: 0 0 14px;
 }
 .ui-section > h2 > span {
   display: inline-block;
   font-size: var(--font-small);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   color: var(--muted);
   margin-left: 10px;
 }
@@ -532,13 +538,13 @@ pre {
 }
 .summary-row dt {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-control);
   line-height: 1.5;
 }
 .summary-row dd {
   min-width: 0;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-control);
   line-height: 1.5;
 }
 @media (max-width: 1050px) {
@@ -858,13 +864,19 @@ pre {
   min-width: 0;
   padding-top: var(--space-2);
   font-size: var(--font-control);
-  font-weight: 500;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+/* Row titles read as content: body size, medium weight. */
+.action-row-label > strong {
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
 }
 .action-row-label > small {
   display: block;
   margin-top: var(--space-1);
+  font-size: var(--font-control);
+  line-height: 1.5;
 }
 /* A row's actions stack as full-width controls in the shared action column. */
 .action-row-actions {

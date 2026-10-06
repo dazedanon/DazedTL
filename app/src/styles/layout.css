@@ -33,9 +33,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-semibold);
 }
 .brand > span {
   width: 32px;
@@ -45,7 +44,7 @@
   color: var(--color-brand-text);
   display: grid;
   place-items: center;
-  font-size: 23px;
+  font-size: var(--font-control);
 }
 .current-project {
   max-width: 430px;
@@ -64,7 +63,7 @@
 .connection {
   margin-left: auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -103,7 +102,7 @@
   border-color: transparent;
   background: transparent;
   padding: 12px;
-  font-size: 14px;
+  font-size: var(--font-body);
   color: var(--color-navigation);
 }
 .sidebar button[aria-current="page"] {
@@ -185,7 +184,7 @@ main > p {
 }
 .project-menu-item strong {
   display: block;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .project-menu-item small {
   display: block;

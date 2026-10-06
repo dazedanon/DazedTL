@@ -1,7 +1,7 @@
 .overview-project-name {
   margin: 0 0 15px;
-  font-size: 19px;
-  font-weight: 600;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-semibold);
   line-height: 1.35;
 }
 .overview-facts {
@@ -22,12 +22,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--muted);
 }
 .overview-folder button {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--font-small);
   min-height: 28px;
   padding: 4px 7px;
 }
@@ -42,12 +42,12 @@
   min-width: 0;
 }
 .overview-status strong {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--font-body);
+  font-weight: var(--weight-semibold);
 }
 .overview-status p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
   line-height: 1.5;
   margin: 4px 0 0;
 }
@@ -64,8 +64,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 16px;
-  font-weight: 550;
+  font-size: var(--font-heading);
+  font-weight: var(--weight-semibold);
   margin: 0;
 }
 .overview-empty h3 svg {
@@ -73,7 +73,7 @@
   flex-shrink: 0;
 }
 .overview-empty p {
-  font-size: 13px;
+  font-size: var(--font-control);
   color: var(--muted);
   margin: 6px 0 0 28px;
 }
@@ -108,15 +108,15 @@
 }
 .overview-recent-list strong {
   display: block;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--font-control);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .overview-recent-list small {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-small);
   margin-top: 3px;
   white-space: nowrap;
   overflow: hidden;

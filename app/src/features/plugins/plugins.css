@@ -84,7 +84,7 @@
 .plugin-table th {
   text-align: left;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .plugin-table th:first-child {
   width: 52%;

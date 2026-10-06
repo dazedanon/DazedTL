@@ -99,12 +99,12 @@
   background: var(--surface);
 }
 .translation-phases span {
-  font-size: 12px;
+  font-size: var(--font-small);
   color: var(--muted);
 }
 .translation-phases strong {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-small);
+  font-weight: var(--weight-medium);
   text-transform: capitalize;
 }
 .translation-phases [data-state="complete"] strong {
@@ -128,7 +128,7 @@
 }
 .translation-facts dt {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 .translation-facts dd {
   margin: 0;
@@ -176,7 +176,7 @@
 }
 .translation-line-context {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-small);
   margin-top: 5px;
 }
 .translation-review-note {
@@ -184,7 +184,7 @@
   margin-top: 12px;
   border-left: 2px solid var(--accent);
   background: var(--surface);
-  font-size: 12px;
+  font-size: var(--font-small);
 }
 .translation-json,
 .translation-report {
@@ -192,7 +192,7 @@
   overflow-wrap: anywhere;
   max-height: 480px;
   overflow: auto;
-  font-size: 12px;
+  font-size: var(--font-small);
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -305,7 +305,7 @@
 }
 .version-counts dd {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .version-file-list {
   display: flex;
@@ -326,7 +326,7 @@
 }
 .version-file strong {
   overflow-wrap: anywhere;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .version-file p {
   margin: var(--space-2) 0 0;

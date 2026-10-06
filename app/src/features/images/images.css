@@ -65,7 +65,7 @@ main > .image-manager {
 }
 .image-manager-heading h2 {
   margin: 0;
-  font-size: 1.2em;
+  font-size: var(--font-heading);
 }
 .image-manager-heading span {
   color: var(--muted);
@@ -229,11 +229,11 @@ main > .image-manager {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: normal;
+  font-weight: var(--weight-regular);
 }
 .image-folder-name small {
   color: var(--muted);
-  font-size: var(--font-caption);
+  font-size: var(--font-small);
 }
 .image-folder-rail .image-folder-all .image-folder-name {
   margin-left: 0;
@@ -356,7 +356,7 @@ main > .image-manager {
   color: var(--color-warning);
 }
 .image-tile-name {
-  font-size: var(--font-caption);
+  font-size: var(--font-small);
   line-height: 1.55;
   padding: 3px 4px;
   white-space: nowrap;

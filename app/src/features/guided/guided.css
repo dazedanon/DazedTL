@@ -129,7 +129,7 @@
 .request-batch-summary small {
   color: var(--muted);
   font-size: var(--font-small);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 .payload-inspector.request-batch-reader {
   flex: 1;
@@ -184,7 +184,7 @@
 }
 .request-reader h4 {
   font-size: var(--font-small);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--muted);
   margin: var(--space-3) 0 var(--space-2);
 }
@@ -330,7 +330,7 @@
   padding: var(--space-1) var(--space-2);
   color: var(--color-navigation-text);
   font-size: var(--font-control);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .history-day .action-list {
   gap: 0;
@@ -370,14 +370,14 @@
 }
 .history-latest {
   color: var(--muted);
-  font-size: var(--font-caption);
+  font-size: var(--font-small);
 }
 .guided-history .action-row-label .history-entry small {
   display: block;
   color: var(--muted);
   margin: 0;
   font-size: var(--font-small);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -405,7 +405,7 @@
   flex-shrink: 0;
 }
 .history-status strong {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .history-status[data-kind="saved"] {
   color: var(--color-success);
@@ -555,7 +555,7 @@
 }
 .task-header h2 {
   margin: 0;
-  font-size: var(--font-body);
+  font-size: var(--font-heading);
   line-height: 1.5;
 }
 .task-header p {
@@ -649,9 +649,9 @@
 .guided-workspace .action-row-label small {
   display: block;
   color: var(--muted);
-  font-size: var(--font-small);
-  font-weight: 400;
-  margin-top: var(--space-2);
+  font-size: var(--font-control);
+  font-weight: var(--weight-regular);
+  margin-top: var(--space-1);
   line-height: 1.5;
 }
 .guided-workspace .action-row-label .guided-completed {
@@ -723,10 +723,14 @@
   padding: var(--space-4) 0;
   border-bottom: 1px solid var(--line);
 }
+.guided-preparation-list strong {
+  font-weight: var(--weight-medium);
+}
 .guided-preparation-list small {
   display: block;
   color: var(--muted);
   margin-top: var(--space-1);
+  font-size: var(--font-control);
 }
 .guided-widths,
 .guided-package-fields {
@@ -880,7 +884,7 @@
 .estimate dd {
   margin: var(--space-2) 0 0;
   font-size: var(--font-body);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .file-browser {
   display: flex;
@@ -1065,7 +1069,7 @@
   margin: var(--space-5) 0;
 }
 .guided-baseline-choice legend {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-bottom: var(--space-3);
 }
 .guided-baseline-choice label {
@@ -1324,7 +1328,7 @@
   color: var(--muted);
   font-size: var(--font-small);
   line-height: 1.5;
-  font-weight: normal;
+  font-weight: var(--weight-regular);
 }
 .release-note {
   font-size: var(--font-small);
