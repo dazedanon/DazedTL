@@ -451,6 +451,12 @@ The Project page's Status, History, Game updates and Backups tabs serve both met
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
 Tasks link to Project tabs (Translate's Run history opens History searched to that stage, Prepare's backup links open Backups), and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
+Screens use four kinds of surface, each with one job.
+A page is somewhere you work or browse, reached from the sidebar and kept when you leave and return.
+A tab is another view of the same thing, and switching never loses your place or drafts.
+A dialog holds one decision or one focused edit and ends in an explicit choice; it never opens another dialog except a detail view that returns to it, and a dialog that leads to a review closes before the review opens.
+A menu is a short list of choices that closes when you pick one.
+New pages start from one of three templates: the task page (stepper, task tabs, TaskHeader, the task's panels, its work area, footer), the project page (header, tabs, a body and footer per tab) and the decision dialog (the decision as its title, what will happen, explicit footer choices).
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
 Settings, the Project page and [Len's method](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Len's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
