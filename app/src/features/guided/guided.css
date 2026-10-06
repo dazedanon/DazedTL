@@ -890,8 +890,9 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* Rows top-align for wrapping titles; the checkbox matches the first line. */
 .file-browser-row > input {
-  margin: var(--space-1) 0 0;
+  margin: 0;
 }
 .file-browser-row:hover {
   background: var(--color-control);

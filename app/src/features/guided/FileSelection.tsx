@@ -27,6 +27,14 @@ const groups = [
   ["maps", "Maps"],
   ["common", "Other events"],
 ] as const;
+/** What a count of each group's files reads as, singular and plural. */
+const groupNouns: Record<string, readonly [string, string]> = {
+  database: ["database file", "database files"],
+  maps: ["map", "maps"],
+  common: ["other event file", "other event files"],
+};
+const groupCount = (group: string, count: number) =>
+  `${count} ${groupNouns[group][count === 1 ? 0 : 1]}`;
 const keyOf = (file: GuidedFile) => file.name;
 type Modifiers = { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean };
 const gesture = (event: Modifiers, checkbox = false): SelectionGesture =>
@@ -91,8 +99,8 @@ export function FileSelection({
   const hidden = selected.length - matchedSelection;
   const counts = groups
     .slice(1)
-    .map(([value, label]) => ({
-      label: label.toLowerCase(),
+    .map(([value]) => ({
+      group: value,
       count: files.filter(
         (file) => fileGroup(file) === value && selection.has(file.name),
       ).length,
@@ -371,20 +379,21 @@ export function FileSelection({
       {!inline && (
         <div className="file-browser-selection" aria-live="polite">
           <div>
-            <strong>{selected.length} selected</strong>
+            {/* One kind of file reads "3 maps selected"; a mix breaks down below. */}
+            <strong>
+              {counts.length === 1
+                ? `${groupCount(counts[0].group, counts[0].count)} selected`
+                : `${selected.length} selected`}
+            </strong>
             {hidden > 0 && (
               <span className="muted"> · {hidden} outside this filter</span>
             )}
-            {counts.length === 1 ? (
-              <span className="muted"> · {counts[0].label}</span>
-            ) : (
-              counts.length > 1 && (
-                <span className="file-browser-counts">
-                  {counts
-                    .map((item) => `${item.count} ${item.label}`)
-                    .join(" · ")}
-                </span>
-              )
+            {counts.length > 1 && (
+              <span className="file-browser-counts">
+                {counts
+                  .map((item) => groupCount(item.group, item.count))
+                  .join(" · ")}
+              </span>
             )}
           </div>
           <div className="actions">
