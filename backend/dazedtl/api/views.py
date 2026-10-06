@@ -1,6 +1,9 @@
 """Public application views; legacy worker records never cross the UI boundary."""
 
 from dazedtl.api.contracts import ContractViolation
+from dazedtl.api.contracts.runs import RunEstimate
+
+ESTIMATE_FIELDS = RunEstimate.__required_keys__ | RunEstimate.__optional_keys__
 
 
 def pick(value, names):
@@ -96,6 +99,9 @@ def job(value):
         ),
     )
     result.setdefault("log", [])
+    if result.get("estimate"):
+        # Runs saved by earlier versions keep estimate fields since removed.
+        result["estimate"] = pick(result["estimate"], ESTIMATE_FIELDS)
     return result
 
 

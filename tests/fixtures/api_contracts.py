@@ -139,6 +139,13 @@ try:
     ):
         call(method, {"project_id": project_id})
     call("workspace_snapshot", {})
+    # Runs saved by earlier versions keep estimate fields the contract dropped.
+    from dazedtl.api import views
+    from dazedtl.api.contracts.validation import check_response
+
+    saved = {"id": "saved", "status": "complete", "message": "", "log": []}
+    saved["estimate"] = {"input_tokens": 1, "cold_cache": False, "speakers": []}
+    check_response("guided_inspect", views.job(saved))
 finally:
     app.closing = True
     app.guided.batch_monitor.close()
