@@ -722,6 +722,8 @@ export type PreviewEstimate = {
   jobId: string;
   fingerprint: string;
   value: RunEstimate;
+  model: string;
+  connection: string;
   repeatSubmission?: boolean;
 };
 

@@ -450,6 +450,8 @@ class PreviewEstimate(TypedDict):
     jobId: str
     fingerprint: str
     value: RunEstimate
+    model: str
+    connection: str
     repeatSubmission: NotRequired[bool]
 
 
