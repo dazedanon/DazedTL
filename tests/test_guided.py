@@ -2467,6 +2467,30 @@ class GuidedTests(unittest.TestCase):
         self.backend.manual.resume.assert_not_called()
         self.settings.prepare_engine.assert_not_called()
 
+    def test_saving_run_blocks_new_preparation_of_its_files(self):
+        # Preparing copies working translations into the new run's inputs; a
+        # Live run that later saved its final output used to lose it unseen.
+        job = {
+            "id": "live-run",
+            "mode": "translate",
+            "status": "running",
+            "files": ["Items.json"],
+            "log": [],
+        }
+        self.backend.manual.jobs[job["id"]] = job
+        self.guided.runs.remember(
+            self.identity,
+            job,
+            self.guided.runs.inputs(
+                self.identity, self.native, "database", "translate"
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "Items.json is still translating"):
+            self.guided.preview(self.identity, "start", options={"mode": "estimate"})
+        # A Batch waiting at the provider saves nothing until it is consumed.
+        job.update(mode="batch", phase="poll")
+        self.guided.preview(self.identity, "start", options={"mode": "estimate"})
+
     def test_stopped_live_submission_cannot_block_new_preparation_or_batch_approval(
         self,
     ):

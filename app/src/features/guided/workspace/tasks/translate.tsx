@@ -103,6 +103,9 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     estimating || current?.mode === "batch"
       ? null
       : translationStopLabel(current);
+  // A Live run saves results until it ends; a new run would copy its partial
+  // working files and drop the rest. Stop it or wait instead.
+  const liveRunning = activeRun(current) && current?.mode !== "batch";
   content = (
     <TranslateWorkspace
       key={phase}
@@ -264,7 +267,11 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         variant="primary"
         pending={preparing}
         disabled={
-          disabled || prerequisites || !state.provider.ready || !paidModeReady
+          disabled ||
+          prerequisites ||
+          liveRunning ||
+          !state.provider.ready ||
+          !paidModeReady
         }
         onClick={translateSelected}
       >

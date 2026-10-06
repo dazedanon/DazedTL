@@ -139,6 +139,34 @@ class GuidedActions:
         ):
             raise ValueError(changed)
 
+    def require_idle_files(self, native, files):
+        """Refuse a run on files an unfinished run will still save results into.
+
+        Starting copies each file's working translation into the new run's
+        inputs, so a run that is still saving would lose its later results.
+        A Batch waiting at the provider saves nothing until it is consumed.
+        """
+        from dazedtl.compatibility.checkpoints import can_collect_outputs
+        from dazedtl.compatibility.preparations import temporary
+
+        busy = sorted(
+            {
+                name
+                for identity in self.guided.owned_runs(native)
+                if (job := self.guided.backend.manual.jobs.get(identity))
+                and job.get("status") in {"running", "waiting"}
+                and not temporary(job)
+                and can_collect_outputs(job)
+                for name in job.get("files", [])
+            }
+            & set(files)
+        )
+        if busy:
+            raise ValueError(
+                f"{', '.join(busy)} {'is' if len(busy) == 1 else 'are'} still "
+                "translating. Wait for that run to finish or stop it first."
+            )
+
     @staticmethod
     def pending_run(value):
         job = value.get("manual_job")
@@ -332,6 +360,7 @@ class GuidedActions:
         ]
         if not paths:
             raise ValueError("Select game files belonging to this phase first.")
+        self.require_idle_files(native, paths)
         if self.guided.inputs(native).status(
             sorted(self.guided.supported_files(native))
         )["changed"]:
@@ -957,6 +986,7 @@ class GuidedActions:
                     and record.get("fingerprint") == run_inputs["fingerprint"]
                 ):
                     return self.guided.run_view(identity)
+        self.require_idle_files(native, files)
         self.guided.inputs(native).prepare(files)
         native["imported"] = list(dict.fromkeys([*native["imported"], *files]))
         self.guided.backend.workflows.save(native)
