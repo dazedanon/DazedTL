@@ -52,13 +52,24 @@ export function ImageApply({
         }
       />
       <DialogBody className="image-apply-body">
-        <p>
-          <strong>
-            {selected} selected · {count} included · {preview.blocked.length}{" "}
-            blocked
-          </strong>
-          {!!preview.unchanged && <span> · {preview.unchanged} unchanged</span>}
-        </p>
+        {/* The title gives the count; the line explains only a difference
+            from the selection. */}
+        {(selected !== count ||
+          !!preview.blocked.length ||
+          !!preview.unchanged) && (
+          <p>
+            <strong>
+              {[
+                `${selected} selected`,
+                `${count} included`,
+                preview.blocked.length && `${preview.blocked.length} blocked`,
+                preview.unchanged && `${preview.unchanged} unchanged`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </strong>
+          </p>
+        )}
         <p>
           {restore
             ? "Verified backups replace these runtime assets. Editable copies remain available."
