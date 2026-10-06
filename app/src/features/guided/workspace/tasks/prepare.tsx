@@ -176,32 +176,39 @@ export function formatView(w: GuidedWorkspace): TaskView {
           repeated.
         </p>
       ) : (
-        <ol className="guided-preparation-list">
+        <ActionList>
           {preparation.stages.map((item) => (
-            <li key={item.action}>
-              <StatusIcon
-                status={
-                  item.status === "complete"
-                    ? "done"
-                    : item.status === "running"
-                      ? "active"
-                      : "idle"
-                }
-              />
-              <div>
-                <strong>{item.label}</strong>
-                {item.message && <small>{item.message}</small>}
-              </div>
-              {item.status !== "complete" && (
-                <span className="guided-preparation-state">
-                  {item.status === "pending"
-                    ? "Waiting"
-                    : item.status.replaceAll("_", " ")}
-                </span>
-              )}
-            </li>
+            <ActionRow
+              key={item.action}
+              label={
+                <>
+                  <span className="status-heading">
+                    <StatusIcon
+                      status={
+                        item.status === "complete"
+                          ? "done"
+                          : item.status === "running"
+                            ? "active"
+                            : item.status === "failed"
+                              ? "failed"
+                              : "idle"
+                      }
+                    />
+                    <strong>{item.label}</strong>
+                    {item.status !== "complete" && (
+                      <span className="status-heading-state">
+                        {item.status === "pending"
+                          ? "Waiting"
+                          : item.status.replaceAll("_", " ")}
+                      </span>
+                    )}
+                  </span>
+                  {item.message && <small>{item.message}</small>}
+                </>
+              }
+            />
           ))}
-        </ol>
+        </ActionList>
       )}
       {preparation.configuration && (
         <Notice tone={preparation.configurationReady ? "neutral" : "warning"}>

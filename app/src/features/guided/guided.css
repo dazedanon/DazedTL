@@ -317,17 +317,23 @@
 .history-day {
   container: history-day / inline-size;
 }
+/* A quiet day label that stays above its rows while they scroll. */
 .history-day h3 {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--color-accent-subtle);
-  border-bottom: 1px solid var(--color-control-border);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
   margin: 0;
-  padding: var(--space-1) var(--space-2);
-  color: var(--color-accent);
-  font-size: var(--font-control);
+  padding: var(--space-3) 0 var(--space-2);
+  color: var(--color-muted);
+  font-size: var(--font-small);
   font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.history-identity strong {
+  font-weight: var(--weight-medium);
 }
 .history-day .action-list {
   gap: 0;
@@ -680,27 +686,6 @@
   --summary-label-width: 9rem;
   margin: var(--space-5) 0;
 }
-.guided-preparation-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-4);
-}
-.guided-preparation-list li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.guided-preparation-list strong {
-  font-weight: var(--weight-medium);
-}
-.guided-preparation-list small {
-  display: block;
-  color: var(--color-muted);
-  margin-top: var(--space-1);
-  font-size: var(--font-control);
-}
 .guided-widths,
 .guided-package-fields {
   display: grid;
@@ -988,13 +973,6 @@
   }
 }
 
-.guided-preparation-state {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: var(--font-small);
-  color: var(--color-muted);
-  text-transform: capitalize;
-}
 .guided-prerequisite {
   display: grid;
   justify-items: start;

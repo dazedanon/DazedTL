@@ -88,7 +88,18 @@ export function EventTextSources({
                 aria-pressed={row?.key === item.key}
                 onClick={() => setSelected(item.key)}
               >
-                <strong>{item.label}</strong>
+                {(() => {
+                  // "Variable assignments (122)": the code reads as a label.
+                  const [, name, code] = /^(.*?)\s*\(([^)]+)\)$/.exec(
+                    item.label,
+                  ) || ["", item.label, ""];
+                  return (
+                    <span className="translation-source-name">
+                      <strong>{name}</strong>
+                      {code && <span>{code}</span>}
+                    </span>
+                  );
+                })()}
                 <small>
                   {manual.includes(item.key)
                     ? "Manual choice · coverage confirmation needed"

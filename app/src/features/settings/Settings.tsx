@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, KeyRound, Plus, ShieldCheck } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { useOnChange } from "../../state/useOnChange";
@@ -8,7 +8,7 @@ import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
 import Preferences from "./Preferences";
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
-import { Section } from "../../ui/Section";
+import { StatusIcon } from "../../ui/StatusIcon";
 import { FieldRow, DetailRow } from "../../ui/FieldRow";
 import { Tabs, TabPanel } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
@@ -120,114 +120,126 @@ export default function Settings({
           ) : (
             <>
               <PageBody>
-                <Section title="Active connection">
-                  {config.connections.length > 1 || !current ? (
-                    <FieldRow id="active-connection" label="Connection">
-                      {(control) => (
-                        <select
-                          {...control}
-                          value={config.activeConnectionId}
-                          disabled={busy || running}
-                          onChange={(event) =>
-                            action.run(
-                              () => draft.selectConnection(event.target.value),
-                              "Connection selected.",
-                            )
-                          }
-                        >
-                          <option value="" disabled>
-                            Choose a connection
+                {(config.connections.length > 1 || !current) && (
+                  <FieldRow id="active-connection" label="Connection">
+                    {(control) => (
+                      <select
+                        {...control}
+                        value={config.activeConnectionId}
+                        disabled={busy || running}
+                        onChange={(event) =>
+                          action.run(
+                            () => draft.selectConnection(event.target.value),
+                            "Connection selected.",
+                          )
+                        }
+                      >
+                        <option value="" disabled>
+                          Choose a connection
+                        </option>
+                        {config.connections.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                            {item.needsSetup ? " (needs setup)" : ""}
                           </option>
-                          {config.connections.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                              {item.needsSetup ? " (needs setup)" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </FieldRow>
-                  ) : (
-                    <h3 className="connection-title">{current.name}</h3>
-                  )}
-                  {current && (
-                    <>
-                      <dl className="connection-details">
-                        <DetailRow label="Provider">
-                          {provider?.label || "Choose a provider"}
-                        </DetailRow>
-                        {current.provider === "openrouter" &&
-                          current.openrouter_host && (
-                            <DetailRow label="Host">
-                              {current.openrouter_host}
-                            </DetailRow>
-                          )}
-                        <DetailRow label="API key">
-                          {current.keyless
-                            ? "Not required"
-                            : current.has_secret
-                              ? "Saved"
-                              : "Not configured"}
-                        </DetailRow>
-                        {current.endpoint && (
-                          <DetailRow label="Server">
-                            <span className="connection-address">
-                              {current.endpoint}
-                            </span>
+                        ))}
+                      </select>
+                    )}
+                  </FieldRow>
+                )}
+                {current && (
+                  // One panel per connection, headed by its name and state.
+                  <section
+                    className="action-list connection-panel"
+                    aria-labelledby="active-connection-name"
+                  >
+                    <header className="connection-panel-header">
+                      <div>
+                        <h2 id="active-connection-name">{current.name}</h2>
+                        <span className="connection-panel-state" role="status">
+                          <StatusIcon
+                            size={14}
+                            status={
+                              current.needsSetup
+                                ? "warning"
+                                : successful
+                                  ? "done"
+                                  : checked?.status === "not_checked"
+                                    ? "idle"
+                                    : "failed"
+                            }
+                          />
+                          {current.needsSetup
+                            ? "Provider setup required"
+                            : checked?.status === "not_checked"
+                              ? "Saved, not checked"
+                              : checked?.status === "verified"
+                                ? "Authentication verified"
+                                : checked?.status === "reachable"
+                                  ? "Server reachable"
+                                  : "Could not verify connection"}
+                        </span>
+                      </div>
+                      <Button
+                        disabled={busy || running}
+                        onClick={() => {
+                          action.clear();
+                          setEditor(current.id);
+                        }}
+                      >
+                        Edit
+                      </Button>
+                    </header>
+                    <dl className="connection-details">
+                      <DetailRow label="Provider">
+                        {provider?.label || "Choose a provider"}
+                      </DetailRow>
+                      {current.provider === "openrouter" &&
+                        current.openrouter_host && (
+                          <DetailRow label="Host">
+                            {current.openrouter_host}
                           </DetailRow>
                         )}
-                        <DetailRow label="Model">
-                          {current.model || (
-                            <Button
-                              variant="link"
-                              onClick={() => move("preferences")}
-                            >
-                              Choose a model in Preferences
-                            </Button>
-                          )}
+                      <DetailRow label="API key">
+                        {current.keyless
+                          ? "Not required"
+                          : current.has_secret
+                            ? "Saved"
+                            : "Not configured"}
+                      </DetailRow>
+                      {current.endpoint && (
+                        <DetailRow label="Server">
+                          <span className="connection-address">
+                            {current.endpoint}
+                          </span>
                         </DetailRow>
-                      </dl>
-                      <div
-                        className={`connection-status ${successful ? "connection-status--good" : ""}`}
-                        role="status"
-                      >
-                        {checked?.status === "verified" ? (
-                          <ShieldCheck size={17} />
-                        ) : checked?.status === "reachable" ? (
-                          <Check size={17} />
-                        ) : (
-                          <KeyRound size={17} />
+                      )}
+                      <DetailRow label="Model">
+                        {current.model || (
+                          <Button
+                            variant="link"
+                            onClick={() => move("preferences")}
+                          >
+                            Choose a model in Preferences
+                          </Button>
                         )}
-                        <div>
-                          <strong>
-                            {current.needsSetup
-                              ? "Provider setup required"
-                              : checked?.status === "not_checked"
-                                ? "Saved, not checked"
-                                : checked?.status === "verified"
-                                  ? "Authentication verified"
-                                  : checked?.status === "reachable"
-                                    ? "Server reachable"
-                                    : "Could not verify connection"}
-                          </strong>
-                          <p>
-                            {current.needsSetup
-                              ? "Edit this connection to choose its provider."
-                              : checked?.status === "not_checked"
-                                ? "Check the connection when you are ready. Saving does not contact the provider."
-                                : checked?.message}
-                          </p>
-                          {checked?.checkedAt && (
-                            <small>
-                              Last checked{" "}
-                              {new Date(checked.checkedAt).toLocaleString()}
-                            </small>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </Section>
+                      </DetailRow>
+                    </dl>
+                    <div className="connection-panel-note">
+                      {current.needsSetup
+                        ? "Edit this connection to choose its provider."
+                        : checked?.status === "not_checked"
+                          ? "Check the connection when you are ready. Saving does not contact the provider."
+                          : checked?.message}
+                      {checked?.checkedAt && (
+                        <small>
+                          Last checked{" "}
+                          {new Date(checked.checkedAt).toLocaleString()}
+                        </small>
+                      )}
+                    </div>
+                  </section>
+                )}
               </PageBody>
               <ActionBar
                 feedback={
@@ -250,15 +262,6 @@ export default function Settings({
                 >
                   <Plus size={14} />
                   Add another
-                </Button>
-                <Button
-                  disabled={!current || busy || running}
-                  onClick={() => {
-                    action.clear();
-                    setEditor(current!.id);
-                  }}
-                >
-                  Edit
                 </Button>
                 <ActionControl
                   variant="primary"

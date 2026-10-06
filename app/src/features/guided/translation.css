@@ -77,9 +77,10 @@
 }
 .translation-source-choice {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
 }
 .translation-source-choice.selected {
@@ -87,7 +88,22 @@
 }
 .translation-source-choice input {
   flex-shrink: 0;
-  margin-top: var(--space-1);
+  margin: 0;
+}
+.translation-source-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+.translation-source-name > strong {
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.translation-source-name > span {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  font-variant-numeric: tabular-nums;
 }
 .translation-source-choice button {
   display: block;
@@ -99,6 +115,9 @@
   border-radius: 0;
   background: transparent;
   overflow-wrap: anywhere;
+}
+.translation-source-choice small:empty {
+  display: none;
 }
 .translation-source-choice small {
   display: block;

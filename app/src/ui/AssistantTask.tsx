@@ -69,10 +69,10 @@ export function AssistantTask({
           key={row.id}
           label={
             <>
-              <span className="assistant-result-heading">
+              <span className="status-heading">
                 <StatusIcon status={row.status} />
                 <strong>{row.title}</strong>
-                <span className="assistant-result-state">{row.state}</span>
+                <span className="status-heading-state">{row.state}</span>
               </span>
               {row.detail && <small>{row.detail}</small>}
             </>

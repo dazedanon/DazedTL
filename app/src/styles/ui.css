@@ -352,6 +352,10 @@ pre {
   font-size: var(--font-heading);
   margin: 0 0 14px;
 }
+/* Inside a dialog, section headings sit a step below the dialog title. */
+.dialog-body .ui-section > h2 {
+  font-size: var(--font-body);
+}
 .ui-section > h2 > span {
   display: inline-block;
   font-size: var(--font-small);
@@ -1229,21 +1233,23 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
-.assistant-result-heading {
+/* A row title led by its status mark; the description lines up with the
+   title rather than the mark. */
+.status-heading {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.assistant-result-heading > strong {
+.status-heading > strong {
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
 }
-.assistant-result-state {
+.status-heading-state {
   color: var(--color-muted);
   font-size: var(--font-small);
 }
-.assistant-task .action-row-label > small {
+.action-row-label:has(> .status-heading) > small {
   padding-inline-start: calc(16px + var(--space-2));
 }
 .assistant-task-body {

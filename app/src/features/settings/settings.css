@@ -63,15 +63,32 @@
   grid-template-columns: 155px minmax(0, 1fr);
   margin-top: 0;
 }
-.connection-title {
+/* The active connection: its name and state head the panel, Edit beside them. */
+.connection-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.connection-panel-header h2 {
+  margin: 0;
   font-size: var(--font-heading);
-  font-weight: var(--weight-medium);
-  margin: 6px 0 18px;
+}
+.connection-panel-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--font-control);
 }
 .connection-details {
   display: grid;
-  gap: 12px;
-  margin: 18px 0 22px;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
 }
 .connection-details .summary-row {
   grid-template-columns: 155px minmax(0, 1fr);
@@ -81,32 +98,17 @@
   overflow-wrap: anywhere;
   color: var(--color-muted);
 }
-.connection-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding-top: 19px;
+.connection-panel-note {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
   font-size: var(--font-control);
 }
-.connection-status > svg {
-  margin-top: 2px;
-  flex-shrink: 0;
-  color: var(--color-muted);
-}
-.connection-status--good > svg {
-  color: var(--color-success);
-}
-.connection-status strong {
-  font-weight: var(--weight-medium);
-}
-.connection-status p {
-  margin: 5px 0;
-  color: var(--color-muted);
-  font-size: var(--font-small);
-}
-.connection-status small {
-  font-size: var(--font-small);
+.field-row + .connection-panel {
+  margin-top: var(--space-5);
 }
 @media (max-width: 1050px) {
   .connection-keyless {
