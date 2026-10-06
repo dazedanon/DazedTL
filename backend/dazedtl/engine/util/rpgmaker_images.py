@@ -403,22 +403,15 @@ def _escape_gitignore_component(value: str) -> str:
     return escaped
 
 
-def _gitignore_pattern(relative: Path, *, directory: bool = False) -> str:
-    parts = [_escape_gitignore_component(part) for part in relative.parts]
-    pattern = "!/" + "/".join(parts)
-    if directory:
-        pattern += "/"
-    return pattern
-
-
 def add_patch_exceptions(
     game_root: str | Path, targets: Iterable[str | Path]
 ) -> list[Path]:
-    """Append exact allow-rules to applicable .gitignore files.
+    """Add exact allow-rules to applicable .gitignore files.
 
     Root and nested ignore files can both affect an asset.  Adding a precise
     exception to each existing file ensures a deeper rule cannot hide a chosen
-    image again.  Existing content is preserved and entries are idempotent.
+    image again.  Content before the managed image section is preserved, and
+    the section is idempotent.
     """
 
     root = Path(game_root).expanduser().resolve()
@@ -448,20 +441,41 @@ def add_patch_exceptions(
             if ignore_path.exists()
             else ""
         )
+        marker = existing.find(GAME_IMAGE_PATCH_GITIGNORE_COMMENT)
+        before = existing if marker < 0 else existing[:marker]
+        section = "" if marker < 0 else existing[marker:]
+        # The section is rebuilt from every file it lists, so a later image
+        # can never land after a rule that hides it.
+        files = {
+            tuple(line[2:].split("/"))
+            for line in section.splitlines()
+            if line.startswith("!/") and not line.endswith("/")
+        } | {
+            tuple(_escape_gitignore_component(part) for part in relative.parts)
+            for relative in entries
+        }
+        # Where everything is ignored (`/*`), re-including a folder would also
+        # re-include all its other files, so each level is ignored again
+        # before the next one is allowed, as the patch file rules are.
+        allowlist = "/*" in before.splitlines()
         rules: list[str] = []
-        for relative in entries:
-            for depth in range(1, len(relative.parts)):
-                rules.append(_gitignore_pattern(Path(*relative.parts[:depth]), directory=True))
-            rules.append(_gitignore_pattern(relative))
-        additions = [rule for rule in dict.fromkeys(rules) if rule not in existing.splitlines()]
-        if not additions:
+        for parts in sorted(files, key=lambda item: "/".join(item).casefold()):
+            for depth in range(1, len(parts)):
+                folder = "/".join(parts[:depth])
+                rules.append(f"!/{folder}/")
+                if allowlist:
+                    rules.append(f"/{folder}/*")
+            rules.append("!/" + "/".join(parts))
+        rebuilt = (
+            GAME_IMAGE_PATCH_GITIGNORE_COMMENT
+            + "\n"
+            + "\n".join(dict.fromkeys(rules))
+            + "\n"
+        )
+        if section.strip() == rebuilt.strip():
             continue
-        text = existing
-        if text and not text.endswith("\n"):
-            text += "\n"
-        if GAME_IMAGE_PATCH_GITIGNORE_COMMENT not in text:
-            text += f"\n{GAME_IMAGE_PATCH_GITIGNORE_COMMENT}\n"
-        text += "\n".join(additions) + "\n"
+        before = before.rstrip("\r\n")
+        text = (before + "\n\n" if before else "") + rebuilt
         if ignore_path == root / ".gitignore":
             text = normalize_game_tool_gitignore_text(
                 text, path_label=str(ignore_path)

@@ -98,6 +98,35 @@ try:
         count, errors = format_json_files(prepared)
         assert (count, len(errors)) == (1, 1)
         assert (prepared / "broken.json").read_bytes() == b"{invalid\r\n"
+        # Applying one image must add only that image to an allowlisted patch
+        # repository; re-including its folder once exposed every game image.
+        import subprocess
+
+        from util.rpgmaker_images import add_patch_exceptions
+
+        repo = temporary / "image-patch"
+        for image in ("img/pictures/menu/save.png", "img/pictures/menu/load.png"):
+            (repo / image).parent.mkdir(parents=True, exist_ok=True)
+            (repo / image).write_bytes(b"png")
+        (repo / "img/faces/arina.png").parent.mkdir(parents=True)
+        (repo / "img/faces/arina.png").write_bytes(b"png")
+        (repo / ".gitignore").write_text(
+            "/*\n!/.gitignore\n\n# DazedTL selected image patches\n"
+            "!/img/\n!/img/faces/\n!/img/faces/arina.png\n"
+        )
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        add_patch_exceptions(repo, [repo / "img/pictures/menu/save.png"])
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "-uall"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        assert sorted(listed[1::2]) == [
+            ".gitignore",
+            "img/faces/arina.png",
+            "img/pictures/menu/save.png",
+        ], listed
         assert runtime_data_file(PROMPT_PATH).is_relative_to(
             root / "backend/dazedtl/engine/data"
         )
