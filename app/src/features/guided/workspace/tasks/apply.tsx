@@ -6,7 +6,7 @@ import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { CheckField, DetailRow, FieldRow } from "../../../../ui/FieldRow";
 import { displayText } from "../../../../ui/displayText";
-import { fileCount, publicationLabels } from "../model";
+import { fileCount, publicationLabels, publicationTitle } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { AssistantTask } from "../../../../ui/AssistantTask";
@@ -27,7 +27,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
   content = (
     <>
       {fileSummary()}
-      {/* With nothing saved, Review Apply's reason says so once. */}
+      {/* With nothing saved, Review & apply's reason says so once. */}
       {!!outputFiles.length && (
         <dl className="guided-scope-summary">
           <DetailRow label="Saved outputs">
@@ -52,12 +52,11 @@ export function applyView(w: GuidedWorkspace): TaskView {
               label={
                 <>
                   <strong>
-                    {publicationLabels[row.kind] || "Text Apply"} ·{" "}
                     {row.state === "publishing"
-                      ? "Interrupted publication"
+                      ? `${publicationLabels[row.kind] || "Text"} · Interrupted publication`
                       : row.state === "recovery_needed"
-                        ? "Rollback needs recovery"
-                        : row.state.replaceAll("_", " ")}
+                        ? `${publicationLabels[row.kind] || "Text"} · Rollback needs recovery`
+                        : publicationTitle(row)}
                   </strong>
                   <small>{row.files.join(", ")}</small>
                   {["publishing", "recovery_needed"].includes(row.state) && (
@@ -107,10 +106,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
                   key={row.id}
                   label={
                     <>
-                      <strong>
-                        {publicationLabels[row.kind] || "Text Apply"} ·{" "}
-                        {row.state}
-                      </strong>
+                      <strong>{publicationTitle(row)}</strong>
                       <small>{row.files.join(", ")}</small>
                     </>
                   }
@@ -145,7 +141,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
   );
   const review = task(
     "export_selected",
-    applied ? "Review Apply again" : "Review Apply",
+    applied ? "Review & apply again" : "Review & apply",
     {},
     !baseline
       ? "Save a version baseline first."
