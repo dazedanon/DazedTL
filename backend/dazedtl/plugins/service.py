@@ -80,11 +80,13 @@ def bounded(value, label, limit=4000):
 
 
 def safe_name(name):
+    # MZ loads plugins from subfolders of js/plugins, such as Author/Plugin;
+    # each folder and file name must still be a plain name.
     if (
         not isinstance(name, str)
         or not name
-        or any(c in name for c in "\\/:\x00\r\n")
-        or name in {".", ".."}
+        or any(c in name for c in "\\:\x00\r\n")
+        or any(part in {"", ".", ".."} for part in name.split("/"))
     ):
         raise ValueError("Configured plugin names must be exact safe filenames.")
     return name

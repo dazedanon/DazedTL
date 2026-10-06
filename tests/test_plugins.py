@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
+from dazedtl.plugins.service import safe_name
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
@@ -337,6 +338,11 @@ class PluginTests(unittest.TestCase):
             self.service.action(self.identity, "translation_task")
 
     def test_foreign_duplicate_traversal_and_stale_reports_are_atomic(self):
+        # MZ plugin subfolders are valid names; traversal and empty parts are not.
+        self.assertEqual(safe_name("Author/Plugin"), "Author/Plugin")
+        for name in ("../Plugin", "Author/../Plugin", "Author//Plugin", "./Plugin"):
+            with self.assertRaises(ValueError):
+                safe_name(name)
         request, report = self.investigation()
         prior = deepcopy(self.service.load(self.identity))
         with self.assertRaisesRegex(ValueError, "Copy a plugin task"):
