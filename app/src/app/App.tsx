@@ -281,15 +281,10 @@ export default function App() {
                   key={state.project.id}
                   project={state.project}
                   settings={() => navigate("settings")}
-                  legacy={
-                    application.snapshot?.guided ? (
-                      <Button
-                        variant="primary"
-                        onClick={() => navigate("guided")}
-                      >
-                        Open Translation and saved runs
-                      </Button>
-                    ) : null
+                  openGuided={
+                    application.snapshot?.guided
+                      ? () => navigate("guided")
+                      : undefined
                   }
                 />
               ) : null}

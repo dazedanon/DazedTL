@@ -22,11 +22,32 @@
   flex: 1;
   min-width: 180px;
 }
-.lens-method [role="tabpanel"] {
-  padding-top: 20px;
+.lens-method > [role="tabpanel"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
-.lens-method textarea {
-  width: 100%;
+.lens-method > .banner {
+  flex-shrink: 0;
+  margin: var(--space-3) var(--frame-inline) 0;
+}
+/* The link to phased work closes Progress like another section. */
+.lens-method .ui-section + .action-list {
+  border-top: 1px solid var(--line);
+  padding-top: var(--section-padding);
+  margin-top: var(--section-gap);
+}
+/* The context editor fills the body above its footer. */
+.lens-context-body {
+  display: flex;
+  flex-direction: column;
+}
+.lens-context-body > p {
+  flex-shrink: 0;
+  margin-top: 0;
+}
+.lens-method label > textarea {
   resize: vertical;
 }
 .lens-method details {
@@ -178,10 +199,6 @@
 }
 .translation-path {
   overflow-wrap: anywhere;
-}
-.translation-notice {
-  color: var(--accent);
-  margin: 10px 0;
 }
 .translation-batch-list {
   padding-left: 18px;
