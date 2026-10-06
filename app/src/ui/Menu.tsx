@@ -1,0 +1,138 @@
+import {
+  createContext,
+  useContext,
+  useId,
+  useRef,
+  type ComponentProps,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { Button } from "./Button";
+
+const MenuClose = createContext<() => void>(() => {});
+
+/**
+ * A button that opens a list of actions in the top layer. The list closes on
+ * a choice, Escape or a click elsewhere, and arrow keys move between items.
+ */
+export function Menu({
+  trigger,
+  label,
+  align = "end",
+  children,
+  ...button
+}: Omit<ComponentProps<typeof Button>, "children" | "popoverTarget"> & {
+  trigger: ReactNode;
+  /** Names the list for assistive technology. */
+  label: string;
+  align?: "start" | "end";
+  children: ReactNode;
+}) {
+  const id = useId();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const items = () => [
+    ...(list.current?.querySelectorAll<HTMLButtonElement>(
+      "[role=menuitem]:not(:disabled)",
+    ) || []),
+  ];
+  const position = () => {
+    const popup = list.current,
+      target = anchor.current;
+    if (!popup || !target) return;
+    const rect = target.getBoundingClientRect();
+    const box = popup.getBoundingClientRect();
+    const margin = 8,
+      gap = 4;
+    const below = window.innerHeight - rect.bottom - gap - margin;
+    const upwards = box.height > below && rect.top - gap - margin > below;
+    const left = align === "end" ? rect.right - box.width : rect.left;
+    popup.style.left = `${Math.max(margin, Math.min(left, window.innerWidth - box.width - margin))}px`;
+    popup.style.top = `${Math.max(margin, upwards ? rect.top - gap - box.height : rect.bottom + gap)}px`;
+    popup.style.maxHeight = `${(upwards ? rect.top : window.innerHeight - rect.bottom) - gap - margin}px`;
+  };
+  const keys = (event: KeyboardEvent) => {
+    const all = items();
+    const index = all.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === "ArrowDown"
+        ? (index + 1) % all.length
+        : event.key === "ArrowUp"
+          ? (index - 1 + all.length) % all.length
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? all.length - 1
+              : null;
+    if (next === null || !all.length) return;
+    event.preventDefault();
+    all[next].focus();
+  };
+  return (
+    <MenuClose.Provider value={() => list.current?.hidePopover()}>
+      <Button {...button} ref={anchor} popoverTarget={id} aria-haspopup="menu">
+        {trigger}
+      </Button>
+      <div
+        ref={list}
+        id={id}
+        popover="auto"
+        role="menu"
+        aria-label={label}
+        className="menu-list"
+        onKeyDown={keys}
+        onToggle={(event) => {
+          anchor.current?.setAttribute(
+            "aria-expanded",
+            String(event.newState === "open"),
+          );
+          if (event.newState !== "open") {
+            // Return focus to the trigger unless a choice moved it elsewhere.
+            if (
+              document.activeElement === document.body ||
+              list.current?.contains(document.activeElement)
+            )
+              anchor.current?.focus({ preventScroll: true });
+            return;
+          }
+          position();
+          items()[0]?.focus();
+        }}
+      >
+        {children}
+      </div>
+    </MenuClose.Provider>
+  );
+}
+
+export function MenuItem({
+  onSelect,
+  current = false,
+  children,
+  ...button
+}: Omit<ComponentProps<"button">, "onClick" | "role"> & {
+  onSelect: () => void;
+  /** Marks the item that matches the present state, such as the open project. */
+  current?: boolean;
+}) {
+  const close = useContext(MenuClose);
+  return (
+    <button
+      type="button"
+      {...button}
+      role="menuitem"
+      aria-current={current || undefined}
+      className={`menu-item ${button.className || ""}`}
+      onClick={() => {
+        close();
+        onSelect();
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+export const MenuSeparator = () => (
+  <div className="menu-separator" role="separator" />
+);

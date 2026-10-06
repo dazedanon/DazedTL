@@ -96,7 +96,7 @@ export function ImageFolders({
       </div>
       <div className="image-folder-views">
         <Button variant="quiet" onClick={() => onStatus("ready")}>
-          Ready to apply <span>{ready}</span>
+          Ready to apply {!!ready && <span>{ready.toLocaleString()}</span>}
         </Button>
       </div>
     </aside>

@@ -5,8 +5,8 @@ import {
   Settings2,
   FolderOpen,
   ChevronDown,
-  X,
   ListChecks,
+  Check,
 } from "lucide-react";
 import { api } from "../api/client";
 import { flushDrafts } from "../state/leaveGuards";
@@ -19,7 +19,7 @@ import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import Translation from "../features/translation/Translation";
 import { BackupsPanel } from "../features/translation/BackupsPanel";
 import { VersionsPanel } from "../features/translation/VersionsPanel";
-import { Modal } from "../ui/Modal";
+import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
@@ -30,7 +30,6 @@ export default function App() {
   const application = useApplication();
   const state = application.snapshot?.application;
   const action = useAction({ after: application.settle });
-  const [picker, setPicker] = useState(false);
   const [topbarSlot, setTopbarSlot] = useState<HTMLElement | null>(null);
   // Settings stays mounted after its first visit so its session survives.
   const [settingsOpened, setSettingsOpened] = useState(false);
@@ -51,7 +50,6 @@ export default function App() {
       await api.open(source);
       await application.settle();
       application.navigate("overview");
-      setPicker(false);
     });
   const select = (id: string) =>
     action.run(async () => {
@@ -59,7 +57,6 @@ export default function App() {
       await api.select(id);
       await application.settle();
       application.navigate("overview");
-      setPicker(false);
     });
   const navigate = (screen: Screen) =>
     action.run(async () => {
@@ -84,18 +81,44 @@ export default function App() {
           <span>D</span>DazedTL
         </div>
         {state?.project && (
-          <Button
+          <Menu
             size="comfortable"
             variant="quiet"
             className="current-project"
             title={state.project.name}
-            onClick={() => setPicker(true)}
+            label="Switch project"
+            align="start"
             disabled={action.busy}
+            trigger={
+              <>
+                <FolderOpen size={17} aria-hidden="true" />
+                <span>{state.project.name}</span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </>
+            }
           >
-            <FolderOpen size={17} />
-            <span>{state.project.name}</span>
-            <ChevronDown size={14} />
-          </Button>
+            {state.recent.map((project) => (
+              <MenuItem
+                key={project.id}
+                className="project-menu-item"
+                current={project.id === state.project?.id}
+                onSelect={() => {
+                  if (project.id !== state.project?.id) void select(project.id);
+                }}
+              >
+                <FolderOpen size={16} aria-hidden="true" />
+                <span>
+                  <strong>{project.name}</strong>
+                  <small title={project.source}>{project.source}</small>
+                </span>
+                {project.id === state.project?.id && (
+                  <Check size={15} aria-label="Open now" />
+                )}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+            <MenuItem onSelect={() => void open()}>Open a game…</MenuItem>
+          </Menu>
         )}
         <div className="topbar-actions" ref={setTopbarSlot} />
         <span className="connection">
@@ -253,49 +276,6 @@ export default function App() {
           </main>
         </div>
       </TopbarSlot.Provider>
-      {picker && (
-        <Modal
-          label="Switch project"
-          onDismiss={() => setPicker(false)}
-          dismissible={!action.busy}
-        >
-          <div className="section-heading">
-            <h2>Switch project</h2>
-            <Button
-              size="comfortable"
-              variant="quiet"
-              aria-label="Close project picker"
-              onClick={() => setPicker(false)}
-            >
-              <X size={17} />
-            </Button>
-          </div>
-          <div className="recents">
-            {state?.recent.map((project) => (
-              <Button
-                size="comfortable"
-                key={project.id}
-                disabled={action.busy}
-                onClick={() => select(project.id)}
-              >
-                <FolderOpen size={18} />
-                <span>
-                  <strong>{project.name}</strong>
-                  <small>{project.source}</small>
-                </span>
-              </Button>
-            ))}
-          </div>
-          <Button
-            size="comfortable"
-            variant="primary"
-            disabled={action.busy}
-            onClick={open}
-          >
-            Open a game
-          </Button>
-        </Modal>
-      )}
     </div>
   );
 }

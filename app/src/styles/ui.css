@@ -38,52 +38,11 @@
   color: var(--color-badge-text);
   background: var(--color-badge);
 }
-.recents h2 {
-  font-size: 14px;
-  margin-bottom: 13px;
-}
 .actions {
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-}
-.recents {
-  margin: 28px 0 0;
-}
-.recents > button {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  gap: 13px;
-  justify-content: flex-start;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  text-align: left;
-  padding: 15px 3px;
-}
-.recents > button > span {
-  flex: 1;
-  min-width: 0;
-}
-.recents strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-}
-.recents small {
-  display: block;
-  font-size: 11px;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.recents svg {
-  color: var(--muted);
-  flex-shrink: 0;
 }
 .banner {
   display: flex;
@@ -243,9 +202,6 @@ pre {
   overflow: auto;
   font-size: var(--font-control);
   line-height: 1.8;
-}
-:where(.modal) .recents {
-  margin-bottom: 22px;
 }
 :where(.modal) h2 {
   font-size: 21px;
@@ -1001,4 +957,44 @@ pre {
   min-height: 0;
   overflow: auto;
   scrollbar-gutter: stable;
+}
+.menu-list {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: var(--space-1);
+  min-width: 14rem;
+  max-width: calc(100vw - var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--control-radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 var(--space-1) var(--space-4) #0006;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: var(--control-padding);
+  border-radius: var(--control-radius);
+  font-size: var(--font-control);
+}
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: var(--color-navigation-selected);
+  border-color: transparent;
+}
+.menu-item[aria-current="true"] {
+  color: var(--accent);
+}
+.menu-separator {
+  margin: var(--space-1) 0;
+  border-top: 1px solid var(--line);
 }

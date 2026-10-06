@@ -30,6 +30,7 @@ import type {
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
+import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { countSummary } from "../../ui/displayText";
 import { ActionBar } from "../../ui/ActionBar";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
@@ -173,8 +174,6 @@ function Manager({
   const [listRevision, setListRevision] = useState(0);
   const [compare, setCompare] = useState<ImageAsset | null>(null);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
-  const [menu, setMenu] = useState(false);
-  const [selectMenu, setSelectMenu] = useState(false);
   const [folderDialog, setFolderDialog] = useState(false);
   const [imageRoot, setImageRoot] = useState(initial.profile.imageRoot || "");
   const action = useAction();
@@ -312,8 +311,6 @@ function Manager({
     options: Record<string, unknown> = {},
     notice = "",
   ) => {
-    setMenu(false);
-    setSelectMenu(false);
     await action.run(
       async () => {
         await draft.session.commit(async () => {
@@ -620,59 +617,38 @@ function Manager({
             </option>
           ))}
         </select>
-        <div className="image-menu-anchor">
-          <Button
-            aria-expanded={selectMenu}
-            disabled={action.busy}
-            onClick={() => {
-              setSelectMenu(!selectMenu);
-              setMenu(false);
-            }}
+        <Menu
+          trigger="Select…"
+          label="Bulk image selection"
+          align="start"
+          disabled={action.busy}
+        >
+          <MenuItem
+            onSelect={() =>
+              perform("select_matching", {
+                query: value.view.query,
+                filter: value.view.status,
+                folder: value.view.folder,
+                selected_only: value.view.showSelected,
+                mode: "add",
+              })
+            }
           >
-            Select…
-          </Button>
-          {selectMenu && (
-            <div
-              className="image-popover"
-              role="group"
-              aria-label="Bulk image selection"
-            >
-              <Button
-                onClick={() =>
-                  perform("select_matching", {
-                    query: value.view.query,
-                    filter: value.view.status,
-                    folder: value.view.folder,
-                    selected_only: value.view.showSelected,
-                    mode: "add",
-                  })
-                }
-              >
-                Add matching ({grid.total.toLocaleString()})
-              </Button>
-              <Button
-                onClick={() =>
-                  perform("select_matching", {
-                    query: "",
-                    filter: "all",
-                    folder: "",
-                    mode: "add",
-                  })
-                }
-              >
-                Select all ({counts.indexed.toLocaleString()})
-              </Button>
-              <Button
-                onClick={() => {
-                  change({ selection: [] });
-                  setSelectMenu(false);
-                }}
-              >
-                Clear selection
-              </Button>
-            </div>
-          )}
-        </div>
+            Add matching ({grid.total.toLocaleString()})
+          </MenuItem>
+          <MenuItem
+            onSelect={() =>
+              perform("select_matching", {
+                query: "",
+                filter: "all",
+                folder: "",
+                mode: "add",
+              })
+            }
+          >
+            Select all ({counts.indexed.toLocaleString()})
+          </MenuItem>
+        </Menu>
         <label className="image-size-label">
           Size
           <input
@@ -897,85 +873,74 @@ function Manager({
             pending={action.busy && action.key === "preview_apply"}
             onClick={() => perform("preview_apply")}
           >
-            Review &amp; apply ({selectedReady})
+            Review &amp; apply{selectedReady ? ` (${selectedReady})` : ""}
           </Button>
-          <div className="image-menu-anchor">
-            <Button
-              aria-label="Image tools and recovery"
-              aria-expanded={menu}
-              disabled={action.busy}
-              onClick={() => {
-                setMenu(!menu);
-                setSelectMenu(false);
+          <Menu
+            trigger={
+              <>
+                <MoreHorizontal size={16} aria-hidden="true" />
+                More
+              </>
+            }
+            label="Image tools and recovery"
+            aria-label="Image tools and recovery"
+            disabled={action.busy}
+          >
+            <MenuItem
+              disabled={!value.selection.length}
+              onSelect={() => {
+                void action.run(async () => {
+                  await draft.session.flush();
+                  const current = draft.session.getSnapshot().value!;
+                  onOpenEditor(
+                    current.selection,
+                    current.view.workflowMode || "discovery",
+                  );
+                });
               }}
             >
-              <MoreHorizontal size={16} />
-              More
-            </Button>
-            {menu && (
-              <div
-                className="image-popover image-popover-up"
-                role="group"
-                aria-label="Image tools and recovery"
+              Edit text…
+            </MenuItem>
+            <MenuItem onSelect={() => perform("scan")}>
+              Refresh inventory
+            </MenuItem>
+            {state.profile.id === "generic" && (
+              <MenuItem
+                onSelect={() => {
+                  setImageRoot(state.profile.imageRoot || "");
+                  setFolderDialog(true);
+                }}
               >
-                <Button
-                  disabled={!value.selection.length}
-                  onClick={() => {
-                    setMenu(false);
-                    void action.run(async () => {
-                      await draft.session.flush();
-                      const current = draft.session.getSnapshot().value!;
-                      onOpenEditor(
-                        current.selection,
-                        current.view.workflowMode || "discovery",
-                      );
-                    });
-                  }}
-                >
-                  Edit text…
-                </Button>
-                <Button onClick={() => perform("scan")}>
-                  Refresh inventory
-                </Button>
-                {state.profile.id === "generic" && (
-                  <Button
-                    onClick={() => {
-                      setMenu(false);
-                      setImageRoot(state.profile.imageRoot || "");
-                      setFolderDialog(true);
-                    }}
-                  >
-                    Choose image folder…
-                  </Button>
-                )}
-                <Button
-                  disabled={!value.selection.length}
-                  onClick={() => perform("preview_restore")}
-                >
-                  Review restore originals…
-                </Button>
-                <Button
-                  disabled={!value.selection.length}
-                  onClick={() =>
-                    perform("exclude", {
-                      asset_ids: value.selection,
-                      reason: "Excluded from this image translation scope.",
-                    })
-                  }
-                >
-                  Exclude selected
-                </Button>
-                <Button
-                  disabled={!value.selection.length}
-                  onClick={() =>
-                    perform("include", { asset_ids: value.selection })
-                  }
-                >
-                  Include selected again
-                </Button>
-              </div>
+                Choose image folder…
+              </MenuItem>
             )}
-          </div>
+            <MenuSeparator />
+            <MenuItem
+              disabled={!value.selection.length}
+              onSelect={() => perform("preview_restore")}
+            >
+              Review restore originals…
+            </MenuItem>
+            <MenuItem
+              disabled={!value.selection.length}
+              onSelect={() =>
+                perform("exclude", {
+                  asset_ids: value.selection,
+                  reason: "Excluded from this image translation scope.",
+                })
+              }
+            >
+              Exclude selected
+            </MenuItem>
+            <MenuItem
+              disabled={!value.selection.length}
+              onSelect={() =>
+                perform("include", { asset_ids: value.selection })
+              }
+            >
+              Include selected again
+            </MenuItem>
+          </Menu>
         </div>
         <div className="image-action-feedback">
           <Message message={action.error} />

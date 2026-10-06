@@ -170,3 +170,21 @@ main > p {
 .topbar-actions:empty {
   display: none;
 }
+.project-menu-item {
+  min-width: min(26rem, calc(100vw - var(--space-8)));
+}
+.project-menu-item > span {
+  flex: 1;
+  min-width: 0;
+}
+.project-menu-item strong {
+  display: block;
+  font-weight: 500;
+}
+.project-menu-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-small);
+}
