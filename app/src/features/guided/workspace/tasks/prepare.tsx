@@ -1,3 +1,4 @@
+import { PathInput } from "../../../../ui/PathInput";
 import { FolderOpen } from "lucide-react";
 /** Prepare: preserve the original, extract Ace data, format files and save the baseline. */
 import type { ReactNode } from "react";
@@ -354,7 +355,7 @@ export function baselineView(w: GuidedWorkspace): TaskView {
           >
             {(props) => (
               <div className="guided-folder-field">
-                <input
+                <PathInput
                   {...props}
                   value={fields.original}
                   placeholder="Select matching original game folder"

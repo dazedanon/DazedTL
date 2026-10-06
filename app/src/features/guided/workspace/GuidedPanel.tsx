@@ -1,3 +1,4 @@
+import { PathInput } from "../../../ui/PathInput";
 import { api } from "../../../api/client";
 import { flushDrafts } from "../../../state/leaveGuards";
 import { ActionBar } from "../../../ui/ActionBar";
@@ -444,7 +445,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 >
                   {(props) => (
                     <div className="guided-folder-field">
-                      <input
+                      <PathInput
                         {...props}
                         value={release.tools.editorCmd}
                         onChange={(event) =>

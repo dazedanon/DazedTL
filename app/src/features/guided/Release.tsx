@@ -1,3 +1,4 @@
+import { PathInput } from "../../ui/PathInput";
 import type { ReactNode } from "react";
 import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
@@ -89,7 +90,7 @@ export function ReleaseContent({
           <label>
             Save in
             <div className="guided-folder-field">
-              <input
+              <PathInput
                 aria-label="Save in"
                 value={value.directory}
                 aria-invalid={destinationError ? true : undefined}
