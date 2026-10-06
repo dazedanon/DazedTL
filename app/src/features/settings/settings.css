@@ -61,7 +61,7 @@
   gap: var(--space-3) var(--space-6);
 }
 .paired-settings .field-row {
-  grid-template-columns: 155px minmax(0, 1fr);
+  grid-template-columns: var(--field-label-width) minmax(0, 1fr);
   margin-top: 0;
 }
 /* The active connection: its name and state head the panel, Edit beside them. */
@@ -92,7 +92,7 @@
   padding: var(--space-3) var(--space-4);
 }
 .connection-details .summary-row {
-  grid-template-columns: 155px minmax(0, 1fr);
+  grid-template-columns: var(--field-label-width) minmax(0, 1fr);
   gap: var(--space-4);
 }
 .connection-address {
