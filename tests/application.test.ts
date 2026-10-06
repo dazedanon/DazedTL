@@ -13,6 +13,7 @@ import {
   fileRun,
   fileStatus,
 } from "../app/src/features/guided/translationView.ts";
+import { reconcile, replied } from "../app/src/state/useObserved.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 const snapshot = (ready = false): WorkspaceSnapshot => ({
@@ -321,4 +322,23 @@ test("external project reports refresh even while no app job is running", async 
   store.stop();
   t.mock.timers.tick(10000);
   assert.equal(calls, 2);
+});
+
+test("held views refresh progress, adopt snapshots after release, and keep newer replies", () => {
+  type State = { revision: number; progress: number };
+  const merge = (current: State, next: State) => ({
+    ...current,
+    progress: next.progress,
+  });
+  const before = { revision: 1, progress: 0 };
+  const reply = replied<State, State>({ revision: 2, progress: 0 }, before);
+  const progress = { revision: 2, progress: 5 };
+  const held = reconcile(reply, progress, true, merge);
+  assert.deepEqual(held.value, { revision: 2, progress: 5 });
+  assert.equal(reconcile(held, progress, true, merge), held);
+  const released = reconcile(held, progress, false, merge);
+  assert.equal(released.value, progress);
+  assert.deepEqual(released.adopted?.previous, held.value);
+  const newer = replied<State, State>({ revision: 3, progress: 5 }, progress);
+  assert.equal(reconcile(newer, progress, false, merge), newer);
 });

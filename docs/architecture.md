@@ -580,6 +580,7 @@ Retain usable page data across revisits where its ownership and invalidation rul
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
 Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state.
 Reserve `application.refresh` for an intentional re-read, such as an explicit reload control.
+Views that show their own replies before the next observation, such as Plugin text and Image Manager, use [`useObserved`](../app/src/state/useObserved.ts): a newer snapshot replaces a reply during render but waits while unsaved edits or actions build on the current revision.
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.

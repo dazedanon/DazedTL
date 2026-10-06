@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { FileCode2, Search, TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { pluginsApi } from "../../api/plugins";
@@ -16,6 +10,7 @@ import type {
 } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
+import { useObserved } from "../../state/useObserved";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
@@ -76,8 +71,6 @@ export function PluginWorkspace({
   const application = useApplication();
   const action = useAction({ after: application.settle });
   const [copiedRequest, setCopiedRequest] = useState("");
-  const [state, setState] = useState<PluginState | null>(observed || null);
-  const stateRef = useRef(state);
   const [list, setList] = useState<PluginList | null>(null);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [manual, setManual] = useState<{
@@ -102,36 +95,20 @@ export function PluginWorkspace({
     },
     report: action.report,
     persist: async (view) => {
-      if (!stateRef.current) throw Error("Plugin state is loading.");
-      const next = await pluginsApi.update(
-        projectId,
-        stateRef.current.revision,
-        view,
-      );
-      stateRef.current = next;
-      setState(next);
+      const current = plugins.latest();
+      if (!current) throw Error("Plugin state is loading.");
+      plugins.set(await pluginsApi.update(projectId, current.revision, view));
     },
   });
-  const view = draft.value || state?.view;
-  const adoptObserved = useEffectEvent((next: PluginState) => {
-    if (next.projectId !== projectId) return;
-    if (
-      draft.session.getSnapshot().dirty ||
-      draft.session.getSnapshot().committing ||
-      action.busy
-    )
-      return;
-    const changed = stateRef.current?.revision !== next.revision;
-    stateRef.current = next;
-    setState(next);
-    if (changed) draft.session.adopt(next.view);
+  const own = observed?.projectId === projectId ? observed : null;
+  const plugins = useObserved(own, own, {
+    hold: draft.dirty || draft.committing || action.busy,
+    onAdopt: (next, previous) => {
+      if (next.revision !== previous?.revision) draft.session.adopt(next.view);
+    },
   });
-  useEffect(() => {
-    // Pushed observer state also updates the external draft session, which
-    // cannot change during render. Busy work defers adoption until it ends.
-    // oxlint-disable-next-line react/set-state-in-effect
-    if (observed) adoptObserved(observed);
-  }, [observed, action.busy]);
+  const state = plugins.value;
+  const view = draft.value || state?.view;
   const report = useEffectEvent((error: unknown, key = "") =>
     action.report(error, key),
   );
@@ -141,8 +118,7 @@ export function PluginWorkspace({
       .state(projectId)
       .then((next) => {
         if (!alive()) return;
-        stateRef.current = next;
-        setState(next);
+        plugins.set(next);
         draft.session.adopt(next.view);
       })
       .catch((error: unknown) => report(error));
@@ -216,10 +192,7 @@ export function PluginWorkspace({
         let reply: Awaited<ReturnType<typeof pluginsApi.action>> = {};
         await draft.session.commit(async (current) => {
           reply = await pluginsApi.action(projectId, name, options);
-          if (reply.state) {
-            stateRef.current = reply.state;
-            setState(reply.state);
-          }
+          if (reply.state) plugins.set(reply.state);
           if (reply.text) {
             await window.dazedtl.copyText(reply.text);
             setCopiedRequest(reply.state?.activeRequest || "");

@@ -43,6 +43,7 @@ import { ThumbnailQueue, useImageGrid, useThumbnail } from "./useImageGrid";
 import { ImageCompare } from "./ImageCompare";
 import { ImageApply } from "./ImageApply";
 import { ImageFolders } from "./ImageFolders";
+import { useObserved } from "../../state/useObserved";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 
@@ -51,7 +52,6 @@ export interface ImageManagerProps {
   onClose: () => void;
   onOpenEditor: (assetIds: string[], mode?: ImageEntryMode) => void;
   observed?: ImageManagerState | null;
-  observationKey?: unknown;
   initialMode?: ImageEntryMode;
   backLabel?: string;
 }
@@ -165,12 +165,9 @@ function Manager({
   onOpenEditor,
   initial,
   observed,
-  observationKey,
   initialMode,
   backLabel,
 }: ImageManagerProps & { initial: ImageManagerState }) {
-  const [state, setState] = useState(initial);
-  const stateRef = useRef(initial);
   const [listRevision, setListRevision] = useState(0);
   const [compare, setCompare] = useState<ImageAsset | null>(null);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
@@ -179,27 +176,49 @@ function Manager({
   const [folderDialog, setFolderDialog] = useState(false);
   const [imageRoot, setImageRoot] = useState(initial.profile.imageRoot || "");
   const action = useAction();
-  const adopt = (next: ImageManagerState) => {
-    if (next.projectId !== projectId) return;
-    stateRef.current = next;
-    setState(next);
-  };
   const draft = useDraft<ImageDraft>("images:" + projectId, {
     autosave: true,
     initial: { saved: imageDraft(initial) },
     report: action.report,
     persist: async (changes) => {
+      const current = images.latest();
       const selectionChanged =
-        stateRef.current.selection.join("\n") !== changes.selection.join("\n");
-      const next = await imagesApi.update(
-        projectId,
-        stateRef.current.revision,
-        changes,
-      );
-      adopt(next);
+        current.selection.join("\n") !== changes.selection.join("\n");
+      images.set(await imagesApi.update(projectId, current.revision, changes));
       if (selectionChanged) setListRevision((value) => value + 1);
     },
   });
+  const images = useObserved(
+    observed?.projectId === projectId ? observed : null,
+    initial,
+    {
+      hold: draft.dirty || action.busy,
+      // Unsaved choices keep their revision; progress and folders stay live.
+      merge: (current, next) => ({
+        ...current,
+        counts: next.counts,
+        job: next.job,
+        folders: next.folders,
+        warnings: next.warnings,
+      }),
+      onAdopt: (next, previous) => {
+        if (next.revision !== previous.revision)
+          draft.session.adopt(imageDraft(next));
+      },
+    },
+  );
+  const state = images.value;
+  // Inventory and report changes reload the visible page and comparison.
+  useOnChange(
+    JSON.stringify([
+      state.inventoryRevision,
+      state.observationRevision,
+      state.counts.indexed,
+      state.editing.lastReport,
+      state.discovery.lastReport,
+    ]),
+    () => setListRevision((value) => value + 1),
+  );
   const value = draft.value || imageDraft(state);
   const manual = value.view.workflowMode === "manual";
   const applyInitialMode = useEffectEvent(() => {
@@ -286,56 +305,6 @@ function Manager({
       view: { ...current.view, ...patch, ...(reset ? { scroll: 0 } : {}) },
     }));
   };
-  const applyObserved = async (next: ImageManagerState) => {
-    if (next.projectId !== projectId) return;
-    const previous = stateRef.current;
-    const inventoryChanged =
-      previous.inventoryRevision !== next.inventoryRevision ||
-      previous.counts.indexed !== next.counts.indexed ||
-      previous.observationRevision !== next.observationRevision;
-    if (draft.session.getSnapshot().dirty || action.busy) {
-      setState((current) => ({
-        ...current,
-        counts: next.counts,
-        job: next.job,
-        folders: next.folders,
-        warnings: next.warnings,
-      }));
-      return;
-    }
-    adopt(next);
-    if (next.revision !== previous.revision)
-      draft.session.adopt(imageDraft(next));
-    if (
-      inventoryChanged ||
-      next.editing.lastReport !== previous.editing.lastReport ||
-      next.discovery.lastReport !== previous.discovery.lastReport
-    )
-      setListRevision((value) => value + 1);
-  };
-  const observe = useEffectEvent(applyObserved);
-  const reportObservation = useEffectEvent((error: unknown) =>
-    action.report(error),
-  );
-  useEffect(() => {
-    // Pushed observer state also updates the external draft session, which
-    // cannot change during render.
-    // oxlint-disable-next-line react/set-state-in-effect
-    if (observed) void observe(observed);
-  }, [observed]);
-  useEffect(() => {
-    if (observed || observationKey === undefined) return;
-    let alive = true;
-    void imagesApi
-      .state(projectId)
-      .then((next) => {
-        if (alive) void observe(next);
-      })
-      .catch(reportObservation);
-    return () => {
-      alive = false;
-    };
-  }, [observed, observationKey, projectId]);
   const perform = async (
     name: string,
     options: Record<string, unknown> = {},
@@ -351,7 +320,7 @@ function Manager({
             name,
             options,
           );
-          adopt(reply.state);
+          images.set(reply.state);
           setListRevision((value) => value + 1);
           if (reply.text) await window.dazedtl.copyText(reply.text);
           if (reply.preview) setPreview(reply.preview);
@@ -391,14 +360,13 @@ function Manager({
     action.run(
       async () => {
         await draft.session.commit(async () => {
-          const next = await imagesApi.update(
-            projectId,
-            stateRef.current.revision,
-            { imageRoot: imageRoot.trim() },
+          images.set(
+            await imagesApi.update(projectId, images.latest().revision, {
+              imageRoot: imageRoot.trim(),
+            }),
           );
-          adopt(next);
           const reply = await imagesApi.action(projectId, "scan");
-          adopt(reply.state);
+          images.set(reply.state);
           setListRevision((value) => value + 1);
           setFolderDialog(false);
           return { saved: imageDraft(reply.state) };
@@ -1000,8 +968,7 @@ function Manager({
               onClick={() =>
                 action.run(
                   async () => {
-                    const latest = await imagesApi.state(projectId);
-                    adopt(latest);
+                    images.set(await imagesApi.state(projectId));
                     await draft.session.flush();
                   },
                   "Choices saved.",
