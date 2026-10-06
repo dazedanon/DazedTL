@@ -317,9 +317,10 @@ def prepare_publication(plan):
                 truncated = True
                 break
             diff.append(line)
+        # The frozen row's index and mode stay internal to publication.
         rows.append(
             {
-                **row,
+                **{key: row[key] for key in ("path", "before", "after", "size")},
                 "destination": str(root / row["path"]),
                 "later_edits": action == "export_selected"
                 and name in previous
