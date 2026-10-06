@@ -1263,3 +1263,12 @@ pre {
 .option-cards > .ui-button[aria-pressed="true"] > small {
   color: var(--color-label);
 }
+/* A line of text inside a menu, such as a loading or empty state. */
+.menu-note {
+  margin: 0;
+  padding: var(--control-padding);
+  max-width: 22rem;
+  color: var(--color-muted);
+  font-size: var(--font-control);
+  line-height: 1.5;
+}

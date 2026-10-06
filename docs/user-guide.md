@@ -172,7 +172,7 @@ Do not edit the store's objects or remove snapshot files manually; several resto
 
 In Settings, choose a provider, paste its API key and save the connection.
 **Check connection** requests the provider's model list without generating text.
-Choose the connection's model under Preferences.
+Choose the connection's model under Preferences, or from the **Model** menu on Translate and in Len's method, which lists the active connection's checked models.
 
 **Advanced model options** sets per-connection and per-model request options, and new runs keep the values they started with:
 

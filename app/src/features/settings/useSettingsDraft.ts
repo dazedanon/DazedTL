@@ -8,6 +8,7 @@ import type {
 } from "../../api/contracts";
 import { useDraft } from "../../state/useDraft";
 import type { Commit } from "../../state/DraftSession";
+import { onSettingsSaved } from "./settingsChanges";
 
 const content = (value: Settings) =>
   JSON.stringify({ values: value.values, modelOptions: value.modelOptions });
@@ -83,6 +84,19 @@ export function useSettingsDraft(report: (error: unknown) => void) {
       active = false;
     };
   }, [draft.session]);
+  // A save from elsewhere replaces a clean page; pending edits keep theirs and
+  // meet the revision check when saved.
+  const reload = useEffectEvent(() => {
+    if (draft.dirty || draft.committing) return;
+    api
+      .settings()
+      .then((value) => {
+        const loaded = split(value, true);
+        draft.session.adopt(loaded.saved, loaded.draft);
+      })
+      .catch(reportLoad);
+  });
+  useEffect(() => onSettingsSaved(() => reload()), []);
   const edit = (name: keyof PreferenceValues, value: string) => {
     if (changingConnection.current) return;
     draft.session.edit((current) => ({

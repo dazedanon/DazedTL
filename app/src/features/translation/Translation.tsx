@@ -24,6 +24,7 @@ import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
 import type { ProjectLink } from "../guided/workspace/model";
+import { ModelMenu } from "../settings/ModelMenu";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { JobStatus } from "../../ui/JobStatus";
@@ -232,12 +233,16 @@ function Workspace({
                         </div>
                         <div>
                           <dt>Model</dt>
-                          <dd>{state.connection?.model || "Not selected"}</dd>
+                          <dd>
+                            <ModelMenu
+                              model={state.connection?.model || ""}
+                              connection={state.connection?.name || ""}
+                              disabled={disabled}
+                              manage={settings}
+                            />
+                          </dd>
                         </div>
                       </dl>
-                      <Button onClick={settings}>
-                        Choose connection and model
-                      </Button>
                     </div>
                   )}
                   <label>

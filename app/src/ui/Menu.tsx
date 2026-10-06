@@ -19,6 +19,7 @@ export function Menu({
   trigger,
   label,
   align = "end",
+  onOpen,
   children,
   ...button
 }: Omit<ComponentProps<typeof Button>, "children" | "popoverTarget"> & {
@@ -26,6 +27,8 @@ export function Menu({
   /** Names the list for assistive technology. */
   label: string;
   align?: "start" | "end";
+  /** Loads items that are only needed while the list is open. */
+  onOpen?: () => void;
   children: ReactNode;
 }) {
   const id = useId();
@@ -95,6 +98,7 @@ export function Menu({
               anchor.current?.focus({ preventScroll: true });
             return;
           }
+          onOpen?.();
           position();
           items()[0]?.focus();
         }}

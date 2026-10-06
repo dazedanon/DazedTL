@@ -453,7 +453,8 @@ Frame rows (page headers, stage strip, task tabs, scrolling bodies and footers) 
 Windows 720px tall or shorter compact the top bar and footers; fill editors and file lists keep a minimum height, and the body scrolls instead of collapsing them.
 One choice among a few, such as Batch or Live and the file-group filters, uses [SegmentedControl](../app/src/ui/SegmentedControl.tsx), so it reads as one choice rather than separate actions.
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
-Action lists that open from a button, such as the project switcher and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
+Action lists that open from a button, such as the project switcher, the [model menu](../app/src/features/settings/ModelMenu.tsx) and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
+The model menu reads the connection's models only when opened and saves against a fresh settings revision; it refuses while Settings holds unsaved edits, and a clean Settings page reloads after it saves.
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Keyboard focus shows the shared `--focus-ring`; pointer focus adds no outline, and text fields mark focus with their border.
 Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to the visible screen and the top dialog: the save key saves the open editor and Alt+Left/Right move between Guided tasks; nothing that spends, applies or packages gets a shortcut.

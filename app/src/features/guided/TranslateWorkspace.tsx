@@ -19,6 +19,7 @@ import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { SegmentedControl } from "../../ui/SegmentedControl";
+import { ModelMenu } from "../settings/ModelMenu";
 
 export function TranslateWorkspace({
   state,
@@ -87,14 +88,12 @@ export function TranslateWorkspace({
       <div className="translation-toolbar" aria-label="Translation setup">
         <span className="translation-model">
           <span className="muted">Model</span>
-          <Button
-            variant="link"
+          <ModelMenu
+            model={state.provider.model}
+            connection={state.provider.connection}
             disabled={locked}
-            onClick={settings}
-            title={`${state.provider.connection} · change in Settings`}
-          >
-            {state.provider.model || "Choose a model"}
-          </Button>
+            manage={settings}
+          />
         </span>
         <SegmentedControl
           label="Translation method"
