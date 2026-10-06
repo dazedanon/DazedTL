@@ -76,7 +76,7 @@ New MV/MZ state runs also freeze compatible state-call grouping before submissio
 The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
 Grouped requests carry their state-ID and field associations as context beside the unchanged LineN source/output schema.
 Actor-substitution calls and note calls retain their original boundaries.
-New MV/MZ runs freeze a [single-pass choice policy](../backend/dazedtl/compatibility/choice_requests.py): built-in menu choices are visited only on the first event pass, retaining their scene context.
+New MV/MZ runs freeze a single-pass choice policy, the [event parser's](../backend/dazedtl/engine/modules/rpgmakermvmz.py) `CHOICE_COLLECTION`: built-in menu choices are visited only on the first event pass, retaining their scene context.
 The write pass cannot queue a duplicate during preparation or consume/retry a rejected choice again.
 Pass state is local to the worker thread; identical text in different menus remains independently contextualized.
 Older frozen plans retain their original preparation and recovery behavior.

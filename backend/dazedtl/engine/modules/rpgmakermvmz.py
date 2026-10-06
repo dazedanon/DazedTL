@@ -1146,6 +1146,11 @@ def _choice_source(cmd, index: int) -> str:
 
 def _choice_current(cmd, index: int) -> str:
     """Return the current visible choice without consulting _original."""
+    if CHOICE_COLLECTION and getattr(_EVENT_PASS, "second", False):
+        # Choices still contain Japanese on the write pass of collect and
+        # estimate runs. No eligible value avoids a second request without
+        # writing placeholders, and a rejected chunk is not consumed twice.
+        return ""
     params = cmd.get("parameters") or [[]]
     choices = params[0] if params else []
     if isinstance(choices, list) and index < len(choices) and choices[index] is not None:
@@ -2995,7 +3000,23 @@ def _message_end(commands, start, allowed):
     )
 
 
+# Runs whose frozen policy collects menu choices once translate them on the
+# first event pass; the write pass then leaves them alone instead of requesting
+# them again. Older runs keep the native two-pass behavior.
+CHOICE_COLLECTION = False
+_EVENT_PASS = threading.local()
+
+
 def searchCodes(page, pbar, jobList, filename):
+    previous = getattr(_EVENT_PASS, "second", False)
+    _EVENT_PASS.second = bool(jobList)
+    try:
+        return _searchCodes(page, pbar, jobList, filename)
+    finally:
+        _EVENT_PASS.second = previous
+
+
+def _searchCodes(page, pbar, jobList, filename):
     if len(jobList) > 0:
         list401 = jobList[0]
         list122 = jobList[1]

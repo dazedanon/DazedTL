@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import sys
+import threading
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -266,6 +267,55 @@ try:
                     pass
                 else:
                     raise AssertionError("A parser exception was reported as success.")
+            # Single-pass choice collection requests a menu once, even when the
+            # first visit leaves it untranslated as collect and estimate do.
+            menus = []
+
+            def untranslated(text, *_args):
+                if text == ["特別な品", "やめる"]:
+                    menus.append(text)
+                return [list(text), [0, 0]]
+
+            menu = command(102, [["特別な品", "やめる"], 1, 0, 2, 0])
+            with patch.multiple(parser, CODE102=True, translateAI=untranslated):
+                for generation, visits in ((policy, 1), ({}, 2)):
+                    configure_states({"engine": "MVMZ"}, temporary, generation)
+                    menus.clear()
+                    parse([command(401, ["こんにちは"]), menu])
+                    assert len(menus) == visits, (generation, menus)
+            # Pass state belongs to each call and thread; a parse error restores it.
+            configure_states({"engine": "MVMZ"}, temporary, policy)
+            entered, release = threading.Event(), threading.Event()
+            seen, errors = [], []
+            choice = {"parameters": [["選択"]]}
+
+            def search(page, *_args):
+                if page == "waiting":
+                    entered.set()
+                    assert release.wait(1), "Test synchronization failed"
+                    seen.append(parser._choice_current(choice, 0))
+                    raise ValueError("Generated parse failure")
+                seen.append(parser._choice_current(choice, 0))
+
+            def second_pass():
+                try:
+                    parser.searchCodes("waiting", None, [[]], "Map001.json")
+                except ValueError:
+                    seen.append(parser._choice_current(choice, 0))
+                except Exception as error:
+                    errors.append(error)
+
+            with patch.object(parser, "_searchCodes", search):
+                worker = threading.Thread(target=second_pass)
+                worker.start()
+                try:
+                    assert entered.wait(1)
+                    parser.searchCodes("other", None, [], "Map002.json")
+                finally:
+                    release.set()
+                    worker.join(1)
+            assert not worker.is_alive() and not errors, errors
+            assert seen == ["選択", "", "選択"], seen
         configure_states({"engine": "MVMZ"}, temporary, None)
     # A map call can contain a malformed attempt, an accepted retry, a refused
     # chunk, and another success. Keep every body and only its own validation;

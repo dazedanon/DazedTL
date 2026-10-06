@@ -20,7 +20,6 @@ from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
 from . import (
     batch_pricing,
-    choice_requests,
     state_requests,
 )
 from .request_parameters import configure_builders
@@ -51,8 +50,8 @@ def configure_states(plan, root, policy):
         cast(Any, module).SPEAKER_CONTEXT = bool(
             policy and policy.get("speakerContext") == SPEAKER_CONTEXT
         )
-        choice_requests.configure(
-            module, bool(policy and policy.get("choiceCollection") == CHOICE_COLLECTION)
+        cast(Any, module).CHOICE_COLLECTION = bool(
+            policy and policy.get("choiceCollection") == CHOICE_COLLECTION
         )
         if policy and policy.get("stateGrouping") == state_requests.POLICY:
             state_requests.configure(
