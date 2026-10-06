@@ -419,7 +419,7 @@ class GuidedTests(unittest.TestCase):
             "seed": self.backend.manual.reused_names,
         }
         self.assertEqual(
-            self.guided._start(
+            self.guided.actions._start(
                 self.identity, "estimate", "database", ["Items.json"], before
             )["seed"],
             reused,
@@ -459,7 +459,7 @@ class GuidedTests(unittest.TestCase):
             "batch",
         )
         self.assertEqual(
-            reopened._start(
+            reopened.actions._start(
                 self.identity,
                 "estimate",
                 "database",
@@ -1959,7 +1959,9 @@ class GuidedTests(unittest.TestCase):
         self.backend.guided_phase = start
         fresh = self.guided.runs.inputs(self.identity, self.native, "database", "batch")
         self.assertNotEqual(inputs["fingerprint"], fresh["fingerprint"])
-        self.guided._start(self.identity, "estimate", "database", ["Items.json"], fresh)
+        self.guided.actions._start(
+            self.identity, "estimate", "database", ["Items.json"], fresh
+        )
         self.assertEqual(discarded, ["temporary"])
         self.assertIn("approved", self.backend.manual.jobs)
         self.assertFalse(self.backend.manual.temporary_preparation)
@@ -2139,7 +2141,9 @@ class GuidedTests(unittest.TestCase):
             "status": "running",
         }
         with self.assertRaisesRegex(ValueError, "finish resyncing"):
-            self.guided._start(self.identity, "estimate", "database", ["Items.json"])
+            self.guided.actions._start(
+                self.identity, "estimate", "database", ["Items.json"]
+            )
         self.backend.operations.jobs.clear()
         self.backend.running = lambda: False
         self.pending = None
@@ -2542,7 +2546,7 @@ class GuidedTests(unittest.TestCase):
         # Historical read errors also stay advisory instead of blocking review.
         self.seed_estimate(mode="translate")
         with patch.object(
-            self.guided,
+            self.guided.actions,
             "submission_overlap",
             side_effect=ValueError("Unreadable saved evidence"),
         ):

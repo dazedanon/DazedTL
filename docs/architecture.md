@@ -37,6 +37,7 @@ Len's maintained skills own engine investigation and methodology; the compatibil
 Existing phased jobs retain their original engine-owned records and recovery path rather than being rewritten into a different request format.
 The Translation workspace composes file selection, preferences and the preserved phased runner.
 Its [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) owns shared state, navigation and action review; each task's body and footer controls come from its [task view](../app/src/features/guided/workspace/tasks/index.ts), with sheets and dialogs as separate components.
+Its backend, [Guided](../backend/dazedtl/translation/guided.py), composes collaborators for [action review and execution](../backend/dazedtl/translation/guided_actions.py), [run inspection](../backend/dazedtl/translation/guided_inspection.py), the [release form](../backend/dazedtl/translation/guided_release.py) and [context setup](../backend/dazedtl/translation/guided_context.py).
 Working-copy ownership and resync behavior are described under [Workflow and shared presentation](#workflow-and-shared-presentation).
 Guided main text shares configuration while retaining independent database and event selections.
 Each phase binds its estimate to source, scope, provider and pricing, guidance, and layout.
