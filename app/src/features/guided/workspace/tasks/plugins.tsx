@@ -6,7 +6,7 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
 export function pluginsView(w: GuidedWorkspace): TaskView {
-  const { project, application, pluginFooter, disabled, advance, back } = w;
+  const { project, application, taskFooter, disabled, advance, back } = w;
   let content: ReactNode, primary: ReactNode;
   content = (
     <PluginWorkspace
@@ -14,7 +14,7 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       projectId={project.id}
       observed={application.snapshot?.plugins}
       error={application.snapshot?.pluginsError}
-      footerTarget={pluginFooter}
+      footerTarget={taskFooter}
       backControl={back()}
       beforeAction={flushDrafts}
       disabled={disabled}

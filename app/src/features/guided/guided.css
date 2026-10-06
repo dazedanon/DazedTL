@@ -595,6 +595,10 @@
     padding-block: var(--space-2);
   }
 }
+/* The footer slot a hosted task fills with its own ActionBar. */
+.guided-task-footer {
+  display: contents;
+}
 .guided-footer-context {
   display: flex;
   align-items: center;
@@ -1057,15 +1061,6 @@
   font-size: var(--font-small);
   color: var(--muted);
   text-transform: capitalize;
-}
-.guided-image-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  color: var(--muted);
 }
 .guided-prerequisite {
   display: grid;

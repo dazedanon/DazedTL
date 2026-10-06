@@ -12,6 +12,33 @@ main > .image-manager {
   flex: 1;
   align-self: stretch;
 }
+/* As the Images task, the manager fills the Guided body inside the shared
+   column; its rows drop their own gutters and the grid scrolls, not the body. */
+.image-task-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.image-task-body > .image-manager {
+  flex: 1;
+  height: auto;
+}
+.image-manager--embedded
+  > :is(
+    .image-profile-issue,
+    .image-discovery,
+    .image-action-feedback,
+    .image-browser-toolbar,
+    .image-index-progress
+  ) {
+  padding-inline: 0;
+}
+.image-manager--embedded .image-folder-rail {
+  padding-left: 0;
+}
+.image-manager--embedded.image-manager-loading > :is(p, .banner) {
+  margin-inline: 0;
+}
 .image-manager {
   display: flex;
   flex-direction: column;
@@ -75,7 +102,8 @@ main > .image-manager {
   color: var(--muted);
   font-size: var(--font-small);
 }
-.image-discovery-heading > button {
+.image-discovery-heading > button,
+.image-manager--embedded .image-mode-toggle {
   margin-left: auto;
 }
 .image-discovery-actions,
@@ -364,45 +392,25 @@ main > .image-manager {
 .image-grid-empty p {
   color: var(--muted);
 }
-.image-manager-footer {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: minmax(12em, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2) var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-top: 1px solid var(--line);
+/* Standalone, the manager fills main edge to edge with its own bar. */
+.image-manager > .action-bar {
+  padding-inline: var(--space-4);
 }
-.image-selection-context {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--font-small);
-}
-.image-selection-context span {
-  color: var(--muted);
-}
-.image-selection-links {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.image-selection-links > button {
-  padding: 0;
-  font-size: var(--font-small);
-}
-.image-main-actions {
+.image-footer-context {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  min-width: 0;
+  font-size: var(--font-small);
+  color: var(--muted);
 }
-.image-main-actions .ui-button {
-  white-space: normal;
+.image-footer-context .link-button {
+  padding: 0;
+  font-size: inherit;
 }
 .image-action-feedback {
-  grid-column: 1 / -1;
+  padding: var(--space-2) var(--space-4);
   font-size: var(--font-small);
   color: var(--muted);
 }
@@ -554,12 +562,6 @@ main > .image-manager {
   gap: var(--space-2);
 }
 @container (max-width: 1050px) {
-  .image-manager-footer {
-    grid-template-columns: 1fr;
-  }
-  .image-main-actions {
-    justify-content: flex-start;
-  }
   .image-browser {
     grid-template-columns: 9em minmax(0, 1fr);
   }
@@ -583,6 +585,9 @@ main > .image-manager {
   .image-folder-rail .image-folder-all {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .image-folder-rail .image-folder-all > span {
+    margin-left: 0;
   }
 }
 @media (max-width: 950px) {

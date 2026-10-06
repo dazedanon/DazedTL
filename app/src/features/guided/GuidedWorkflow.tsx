@@ -13,7 +13,6 @@ import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
 import { PageBody, PageLayout } from "../../ui/PageLayout";
 import { Tabs } from "../../ui/Tabs";
-import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { runPhase, taskForStage } from "./workflow";
@@ -73,11 +72,9 @@ function Workspace(
     showTaskTabs,
     taskTabsId,
     setPanel,
-    imageView,
-    setImageView,
     editorAssets,
     setEditorAssets,
-    setPluginFooter,
+    setTaskFooter,
     preview,
     setHistory,
     baselineNotice,
@@ -146,29 +143,8 @@ function Workspace(
         : position.step !== "context" && draft.dirty
           ? "Options retained for recovery"
           : "";
-  if (imageView && taskId === "images") {
-    if (editorAssets)
-      return (
-        <ImageTextEditor
-          projectId={project.id}
-          assetIds={editorAssets}
-          observationKey={application.snapshot}
-          onClose={() => setEditorAssets(null)}
-        />
-      );
-    return (
-      <ImageManager
-        projectId={project.id}
-        initialMode={imageView}
-        observed={application.snapshot?.images}
-        onClose={() => setImageView(null)}
-        onOpenEditor={(ids, mode) => {
-          setImageView(mode || imageView);
-          setEditorAssets(ids);
-        }}
-      />
-    );
-  }
+  // Plugin text and Images bring their own action bar for the shared footer.
+  const hostedFooter = taskId === "plugins" || taskId === "images";
   return (
     <PageLayout
       ref={frame}
@@ -272,7 +248,7 @@ function Workspace(
                 ? `${taskTabsId}-tab-${taskId}`
                 : undefined
             }
-            className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}
+            className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "images" ? " image-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}
           >
             {viewTabs && (
               <Tabs
@@ -341,8 +317,8 @@ function Workspace(
               {content}
             </ErrorBoundary>
           </PageBody>
-          {taskId === "plugins" ? (
-            <div className="plugin-host-footer" ref={setPluginFooter} />
+          {hostedFooter ? (
+            <div className="guided-task-footer" ref={setTaskFooter} />
           ) : (
             <ActionBar
               feedback={
@@ -369,6 +345,14 @@ function Workspace(
           )}
         </div>
       </div>
+      {editorAssets && taskId === "images" && (
+        <ImageTextEditor
+          projectId={project.id}
+          assetIds={editorAssets}
+          observationKey={application.snapshot}
+          onClose={() => setEditorAssets(null)}
+        />
+      )}
       <GuidedPanel w={w} />
       <GuidedDialogs w={w} />
       <ActionReview w={w} />

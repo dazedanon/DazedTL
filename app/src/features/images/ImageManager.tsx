@@ -5,9 +5,11 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Circle,
   Image as ImageIcon,
   LockKeyhole,
@@ -23,7 +25,6 @@ import type {
   ImageActionResult,
   ImageAsset,
   ImageDraft,
-  ImageEntryMode,
   ImageManagerState,
   ImagePreview,
 } from "../../api/contracts";
@@ -31,8 +32,9 @@ import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
-import { countSummary } from "../../ui/displayText";
 import { ActionBar } from "../../ui/ActionBar";
+import { ActionControl } from "../../ui/ActionControl";
+import { ActionSlot } from "../../ui/ActionSlot";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
@@ -52,28 +54,55 @@ import { useRead } from "../../state/useRead";
 
 export interface ImageManagerProps {
   projectId: string;
-  onClose: () => void;
-  onOpenEditor: (assetIds: string[], mode?: ImageEntryMode) => void;
+  onClose?: () => void;
+  onOpenEditor: (assetIds: string[]) => void;
   observed?: ImageManagerState | null;
-  initialMode?: ImageEntryMode;
   backLabel?: string;
+  /** Hosted as a task: no own heading, and its footer fills the host's slot. */
+  embedded?: {
+    footerTarget: HTMLElement | null;
+    back?: ReactNode;
+    next: (variant: "primary" | "quiet") => ReactNode;
+  };
 }
 
 export function ImageManager(props: ImageManagerProps) {
-  const loaded = useRead(props.projectId, () =>
+  // A revisit starts from the observed state; only a missing one is read.
+  const own =
+    props.observed?.projectId === props.projectId ? props.observed : null;
+  const [start, setStart] = useState(own);
+  if (own && start?.projectId !== props.projectId) setStart(own);
+  const observed = start?.projectId === props.projectId ? start : null;
+  const loaded = useRead(observed ? null : props.projectId, () =>
     imagesApi.state(props.projectId),
   );
-  const initial = loaded.value;
+  const initial = observed || loaded.value;
   const error = loaded.error === undefined ? "" : messageOf(loaded.error);
   if (!initial || initial.projectId !== props.projectId)
     return (
-      <section className="image-manager image-manager-loading">
-        <header className="image-manager-heading">
-          <h2>Image Manager</h2>
-          <Button onClick={props.onClose}>
-            {props.backLabel || "Back to Images"}
-          </Button>
-        </header>
+      <section
+        className={`image-manager image-manager-loading${props.embedded ? " image-manager--embedded" : ""}`}
+      >
+        {props.embedded ? (
+          <ActionSlot target={props.embedded.footerTarget}>
+            <ActionBar
+              feedback={
+                <div className="image-footer-context">
+                  {props.embedded.back}
+                </div>
+              }
+            >
+              {props.embedded.next("quiet")}
+            </ActionBar>
+          </ActionSlot>
+        ) : (
+          <header className="image-manager-heading">
+            <h2>Image Manager</h2>
+            <Button onClick={props.onClose}>
+              {props.backLabel || "Back to Images"}
+            </Button>
+          </header>
+        )}
         <Message message={error} />
         <p role="status">
           {error
@@ -168,8 +197,8 @@ function Manager({
   onOpenEditor,
   initial,
   observed,
-  initialMode,
   backLabel,
+  embedded,
 }: ImageManagerProps & { initial: ImageManagerState }) {
   const [listRevision, setListRevision] = useState(0);
   const [compare, setCompare] = useState<ImageAsset | null>(null);
@@ -222,14 +251,6 @@ function Manager({
   );
   const value = draft.value || imageDraft(state);
   const manual = value.view.workflowMode === "manual";
-  const applyInitialMode = useEffectEvent(() => {
-    if (initialMode)
-      draft.session.edit((current) => ({
-        ...current,
-        view: { ...current.view, workflowMode: initialMode },
-      }));
-  });
-  useEffect(() => applyInitialMode(), []);
   const reportCompare = useEffectEvent((error: unknown) =>
     action.report(error, "compare"),
   );
@@ -383,7 +404,7 @@ function Manager({
     void action.run(
       async () => {
         await draft.session.flush();
-        onClose();
+        onClose?.();
       },
       "",
       "close",
@@ -436,23 +457,202 @@ function Manager({
   const activeCompare =
     compare &&
     (grid.items.find(({ asset }) => asset.id === compare.id)?.asset || compare);
-  return (
-    <section className="image-manager" aria-label="Image Manager">
-      <header className="image-manager-heading">
-        <div>
-          <h2>Image Manager</h2>
-          <span>
-            {state.name} · {counts.indexed.toLocaleString()} images
-          </span>
-        </div>
-        <Button
-          variant={primaryAction === "close" ? "primary" : "default"}
-          disabled={action.busy}
-          onClick={close}
+  const modeToggle = (
+    <Button
+      variant="link"
+      className="image-mode-toggle"
+      disabled={action.busy}
+      onClick={() =>
+        changeView({ workflowMode: manual ? "discovery" : "manual" })
+      }
+    >
+      {manual ? "Use AI discovery" : "Choose images myself"}
+    </Button>
+  );
+  // Refreshing reads a saved assistant report, so it leads only while one is due.
+  const awaitingResults = state.editing.status === "awaiting_results";
+  const awaitingFindings = state.discovery.status === "awaiting_results";
+  // The selected batch moves through these steps; each reports beside itself.
+  const stepKey =
+    ["prepare", "edit_task", "preview_apply"].includes(action.key) ||
+    (action.key === "refresh_results" && awaitingResults);
+  const step = (key: string, pendingText: string) => ({
+    feedbackKey: key,
+    pending: action.busy && action.key === key,
+    pendingText,
+    error: action.key === key ? action.error : "",
+    notice: action.key === key ? action.notice : "",
+    onClick: () => void perform(key),
+  });
+  // One slot walks the selection from editable copies to the image task; it
+  // follows the saved counts so the label holds while choices save.
+  const prepareFirst = !!counts.selectedNotPrepared;
+  const editKey = action.key === "prepare" || action.key === "edit_task";
+  const moreMenu = (
+    <Menu
+      trigger={
+        <>
+          <MoreHorizontal size={16} aria-hidden="true" />
+          More
+        </>
+      }
+      label="Image tools and recovery"
+      aria-label="Image tools and recovery"
+      disabled={action.busy}
+    >
+      <MenuItem
+        disabled={!value.selection.length}
+        onSelect={() => {
+          void action.run(async () => {
+            await draft.session.flush();
+            onOpenEditor(draft.session.getSnapshot().value!.selection);
+          });
+        }}
+      >
+        Edit text…
+      </MenuItem>
+      {!awaitingFindings && (
+        <MenuItem
+          disabled={jobRunning || state.discovery.status === "idle"}
+          onSelect={() => void perform("refresh_findings")}
         >
-          {backLabel || "Back to Images"}
-        </Button>
-      </header>
+          Refresh findings
+        </MenuItem>
+      )}
+      {!awaitingResults && (
+        <MenuItem
+          disabled={jobRunning || state.editing.status === "idle"}
+          onSelect={() => void perform("refresh_results")}
+        >
+          Refresh results
+        </MenuItem>
+      )}
+      <MenuItem onSelect={() => perform("scan")}>Refresh inventory</MenuItem>
+      {state.profile.id === "generic" && (
+        <MenuItem
+          onSelect={() => {
+            setImageRoot(state.profile.imageRoot || "");
+            setFolderDialog(true);
+          }}
+        >
+          Choose image folder…
+        </MenuItem>
+      )}
+      <MenuSeparator />
+      <MenuItem
+        disabled={!value.selection.length}
+        onSelect={() => perform("preview_restore")}
+      >
+        Review restore originals…
+      </MenuItem>
+      <MenuItem
+        disabled={!value.selection.length}
+        onSelect={() =>
+          perform("exclude", {
+            asset_ids: value.selection,
+            reason: "Excluded from this image translation scope.",
+          })
+        }
+      >
+        Exclude selected
+      </MenuItem>
+      <MenuItem
+        disabled={!value.selection.length}
+        onSelect={() => perform("include", { asset_ids: value.selection })}
+      >
+        Include selected again
+      </MenuItem>
+    </Menu>
+  );
+  const footer = (
+    <ActionBar
+      feedback={
+        <div className="image-footer-context">
+          {embedded?.back}
+          {draft.dirty ? (
+            <span>Saving choices…</span>
+          ) : (
+            !!hidden && (
+              <span>{hidden.toLocaleString()} selected hidden by filters</span>
+            )
+          )}
+          {!draft.dirty && !!selectedBlocked && (
+            <Button
+              variant="link"
+              onClick={() =>
+                changeView({ status: "blocked", showSelected: true }, true)
+              }
+            >
+              {selectedBlocked.toLocaleString()} blocked
+            </Button>
+          )}
+        </div>
+      }
+    >
+      <ActionControl
+        label={
+          prepareFirst
+            ? `Make editable (${(counts.selectedNotPrepared || 0).toLocaleString()})`
+            : "Copy image task"
+        }
+        variant={
+          primaryAction === (prepareFirst ? "prepare" : "edit_task")
+            ? "primary"
+            : "default"
+        }
+        disabled={
+          action.busy ||
+          jobRunning ||
+          !value.selection.length ||
+          (!prepareFirst && draft.dirty)
+        }
+        {...step(
+          prepareFirst ? "prepare" : "edit_task",
+          prepareFirst ? "Making editable…" : "Copying task…",
+        )}
+        error={editKey ? action.error : ""}
+        notice={editKey ? action.notice : ""}
+      />
+      {awaitingResults && (
+        <ActionControl
+          label="Refresh results"
+          variant={primaryAction === "refresh_results" ? "primary" : "default"}
+          disabled={action.busy || jobRunning}
+          {...step("refresh_results", "Reading results…")}
+        />
+      )}
+      <ActionControl
+        label={`Review & apply${selectedReady ? ` (${selectedReady.toLocaleString()})` : ""}`}
+        variant={primaryAction === "preview_apply" ? "primary" : "default"}
+        disabled={action.busy || jobRunning || !selectedReady}
+        {...step("preview_apply", "Preparing review…")}
+      />
+      {moreMenu}
+      {embedded?.next(allApplied ? "primary" : "quiet")}
+    </ActionBar>
+  );
+  return (
+    <section
+      className={`image-manager${embedded ? " image-manager--embedded" : ""}`}
+      aria-label="Image Manager"
+    >
+      {!embedded && (
+        <header className="image-manager-heading">
+          <div>
+            <h2>Image Manager</h2>
+            <span>
+              {state.name} · {counts.indexed.toLocaleString()} images
+            </span>
+          </div>
+          <Button
+            variant={primaryAction === "close" ? "primary" : "default"}
+            disabled={action.busy}
+            onClick={close}
+          >
+            {backLabel || "Back to Images"}
+          </Button>
+        </header>
+      )}
       {!state.profile.supported && (
         <div className="image-profile-issue">
           <span>
@@ -473,21 +673,15 @@ function Manager({
         className="image-discovery"
         aria-label="Find images to translate"
       >
-        <div className="image-discovery-heading">
-          <strong>Find images to translate</strong>
-          <span>
-            AI findings help choose a batch; you can adjust the selection.
-          </span>
-          <Button
-            variant="link"
-            disabled={action.busy}
-            onClick={() =>
-              changeView({ workflowMode: manual ? "discovery" : "manual" })
-            }
-          >
-            {manual ? "Use AI discovery" : "Choose images myself"}
-          </Button>
-        </div>
+        {!embedded && (
+          <div className="image-discovery-heading">
+            <strong>Find images to translate</strong>
+            <span>
+              AI findings help choose a batch; you can adjust the selection.
+            </span>
+            {modeToggle}
+          </div>
+        )}
         {!manual && (
           <div className="image-discovery-actions">
             <label>
@@ -519,22 +713,27 @@ function Manager({
             >
               Copy discovery task
             </Button>
-            <Button
-              variant={
-                primaryAction === "refresh_findings" ? "primary" : "default"
-              }
-              disabled={action.busy || jobRunning}
-              pending={action.busy && action.key === "refresh_findings"}
-              onClick={() => perform("refresh_findings")}
-            >
-              Refresh findings
-            </Button>
-            <Button
-              disabled={action.busy || jobRunning || !counts.recommended}
-              onClick={() => perform("use_recommendations", { mode: "add" })}
-            >
-              Use recommended selection ({counts.recommended})
-            </Button>
+            {awaitingFindings && (
+              <Button
+                variant={
+                  primaryAction === "refresh_findings" ? "primary" : "default"
+                }
+                disabled={action.busy || jobRunning}
+                pending={action.busy && action.key === "refresh_findings"}
+                onClick={() => perform("refresh_findings")}
+              >
+                Refresh findings
+              </Button>
+            )}
+            {!!counts.recommended && (
+              <Button
+                disabled={action.busy || jobRunning}
+                pending={action.busy && action.key === "use_recommendations"}
+                onClick={() => perform("use_recommendations", { mode: "add" })}
+              >
+                Use recommendations ({counts.recommended.toLocaleString()})
+              </Button>
+            )}
             {value.discoveryScope === "folders" && (
               <span className="image-scope-context">
                 {value.view.folder || "Choose a folder in the browser."}
@@ -578,6 +777,7 @@ function Manager({
             state.discovery.status === "awaiting_results" ? (
             <span>Awaiting saved assistant results.</span>
           ) : null}
+          {embedded && modeToggle}
         </div>
       </section>
       <div className="image-browser-toolbar">
@@ -618,7 +818,16 @@ function Manager({
           ))}
         </select>
         <Menu
-          trigger="Select…"
+          trigger={
+            value.selection.length ? (
+              <>
+                {value.selection.length.toLocaleString()} selected
+                <ChevronDown size={14} aria-hidden="true" />
+              </>
+            ) : (
+              "Select…"
+            )
+          }
           label="Bulk image selection"
           align="start"
           disabled={action.busy}
@@ -647,6 +856,20 @@ function Manager({
             }
           >
             Select all ({counts.indexed.toLocaleString()})
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            onSelect={() =>
+              changeView({ showSelected: !value.view.showSelected }, true)
+            }
+          >
+            {value.view.showSelected ? "Show all images" : "Show only selected"}
+          </MenuItem>
+          <MenuItem
+            disabled={!value.selection.length}
+            onSelect={() => change({ selection: [] })}
+          >
+            Clear selection
           </MenuItem>
         </Menu>
         <label className="image-size-label">
@@ -779,212 +1002,59 @@ function Manager({
           )}
         </div>
       </div>
-      <footer className="image-manager-footer">
-        <div className="image-selection-context">
-          <div>
-            <strong>{value.selection.length.toLocaleString()} selected</strong>
-            {!!hidden && <span> · {hidden.toLocaleString()} hidden</span>}
-            {draft.dirty ? (
-              <span> · Saving choices…</span>
-            ) : (
-              !!(
-                selectedReady ||
-                selectedNotPrepared ||
-                selectedApplied ||
-                selectedBlocked
-              ) && (
-                <span>
-                  {" · "}
-                  {countSummary([
-                    [selectedReady, "ready"],
-                    [selectedNotPrepared, "not prepared"],
-                    [selectedApplied, "applied"],
-                    [selectedBlocked, "blocked"],
-                  ])}
-                </span>
+      {/* Other results sit between the images and the footer. */}
+      <div className="image-action-feedback">
+        <Message
+          message={stepKey ? "" : action.error}
+          onDismiss={action.clear}
+        />
+        {!!action.error && draft.dirty && (
+          <Button
+            pending={action.busy}
+            onClick={() =>
+              action.run(
+                async () => {
+                  images.set(await imagesApi.state(projectId));
+                  await draft.session.flush();
+                },
+                "Choices saved.",
+                "retry-save",
               )
-            )}
-          </div>
-          <div className="image-selection-links">
-            <Button
-              variant="link"
-              aria-pressed={value.view.showSelected}
-              onClick={() =>
-                changeView({ showSelected: !value.view.showSelected }, true)
-              }
-            >
-              {value.view.showSelected ? "Show all" : "Show selected"}
-            </Button>
-            <Button
-              variant="link"
-              disabled={!value.selection.length || action.busy}
-              onClick={() => change({ selection: [] })}
-            >
-              Clear selection
-            </Button>
-            {!!selectedBlocked && (
+            }
+          >
+            Retry saving choices
+          </Button>
+        )}
+        {action.notice && !stepKey && (
+          <span role="status">{action.notice}</span>
+        )}
+        {!!reportIssues.length && (
+          <details>
+            <summary>{reportIssues.length} image issues</summary>
+            {reportIssues.slice(0, 50).map((warning, index) => (
+              <p key={index}>{warning}</p>
+            ))}
+            {reportIssues.length > 50 && (
               <Button
-                variant="link"
                 onClick={() =>
-                  changeView({ status: "blocked", showSelected: true }, true)
+                  void action.run(
+                    () => window.dazedtl.copyText(reportIssues.join("\n")),
+                    "Issue list copied.",
+                    "copy-issues",
+                  )
                 }
               >
-                View issues
+                Copy all {reportIssues.length} issues
               </Button>
             )}
-          </div>
-        </div>
-        <div className="image-main-actions">
-          <Button
-            variant={primaryAction === "prepare" ? "primary" : "default"}
-            disabled={action.busy || jobRunning || !value.selection.length}
-            pending={action.busy && action.key === "prepare"}
-            onClick={() => perform("prepare")}
-          >
-            Make editable
-          </Button>
-          <Button
-            variant={primaryAction === "edit_task" ? "primary" : "default"}
-            disabled={
-              action.busy ||
-              jobRunning ||
-              draft.dirty ||
-              !value.selection.length ||
-              !!selectedNotPrepared
-            }
-            pending={action.busy && action.key === "edit_task"}
-            onClick={() => perform("edit_task")}
-          >
-            Copy image task
-          </Button>
-          <Button
-            variant={
-              primaryAction === "refresh_results" ? "primary" : "default"
-            }
-            disabled={action.busy || jobRunning}
-            pending={action.busy && action.key === "refresh_results"}
-            onClick={() => perform("refresh_results")}
-          >
-            Refresh results
-          </Button>
-          <Button
-            variant={primaryAction === "preview_apply" ? "primary" : "default"}
-            disabled={action.busy || jobRunning || !selectedReady}
-            pending={action.busy && action.key === "preview_apply"}
-            onClick={() => perform("preview_apply")}
-          >
-            Review &amp; apply{selectedReady ? ` (${selectedReady})` : ""}
-          </Button>
-          <Menu
-            trigger={
-              <>
-                <MoreHorizontal size={16} aria-hidden="true" />
-                More
-              </>
-            }
-            label="Image tools and recovery"
-            aria-label="Image tools and recovery"
-            disabled={action.busy}
-          >
-            <MenuItem
-              disabled={!value.selection.length}
-              onSelect={() => {
-                void action.run(async () => {
-                  await draft.session.flush();
-                  const current = draft.session.getSnapshot().value!;
-                  onOpenEditor(
-                    current.selection,
-                    current.view.workflowMode || "discovery",
-                  );
-                });
-              }}
-            >
-              Edit text…
-            </MenuItem>
-            <MenuItem onSelect={() => perform("scan")}>
-              Refresh inventory
-            </MenuItem>
-            {state.profile.id === "generic" && (
-              <MenuItem
-                onSelect={() => {
-                  setImageRoot(state.profile.imageRoot || "");
-                  setFolderDialog(true);
-                }}
-              >
-                Choose image folder…
-              </MenuItem>
-            )}
-            <MenuSeparator />
-            <MenuItem
-              disabled={!value.selection.length}
-              onSelect={() => perform("preview_restore")}
-            >
-              Review restore originals…
-            </MenuItem>
-            <MenuItem
-              disabled={!value.selection.length}
-              onSelect={() =>
-                perform("exclude", {
-                  asset_ids: value.selection,
-                  reason: "Excluded from this image translation scope.",
-                })
-              }
-            >
-              Exclude selected
-            </MenuItem>
-            <MenuItem
-              disabled={!value.selection.length}
-              onSelect={() =>
-                perform("include", { asset_ids: value.selection })
-              }
-            >
-              Include selected again
-            </MenuItem>
-          </Menu>
-        </div>
-        <div className="image-action-feedback">
-          <Message message={action.error} />
-          {!!action.error && draft.dirty && (
-            <Button
-              pending={action.busy}
-              onClick={() =>
-                action.run(
-                  async () => {
-                    images.set(await imagesApi.state(projectId));
-                    await draft.session.flush();
-                  },
-                  "Choices saved.",
-                  "retry-save",
-                )
-              }
-            >
-              Retry saving choices
-            </Button>
-          )}
-          {action.notice && <span role="status">{action.notice}</span>}
-          {!!reportIssues.length && (
-            <details>
-              <summary>{reportIssues.length} image issues</summary>
-              {reportIssues.slice(0, 50).map((warning, index) => (
-                <p key={index}>{warning}</p>
-              ))}
-              {reportIssues.length > 50 && (
-                <Button
-                  onClick={() =>
-                    void action.run(
-                      () => window.dazedtl.copyText(reportIssues.join("\n")),
-                      "Issue list copied.",
-                      "copy-issues",
-                    )
-                  }
-                >
-                  Copy all {reportIssues.length} issues
-                </Button>
-              )}
-            </details>
-          )}
-        </div>
-      </footer>
+          </details>
+        )}
+      </div>
+      {embedded ? (
+        <ActionSlot target={embedded.footerTarget}>{footer}</ActionSlot>
+      ) : (
+        footer
+      )}
       {activeCompare && (
         <ImageCompare
           projectId={projectId}

@@ -76,8 +76,9 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 
 ### Images
 
-Images opens the shared Image Manager.
+Images is the Image Manager, the same one Len's method opens.
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
+The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.

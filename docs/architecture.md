@@ -474,6 +474,7 @@ Guidance review and layout settings follow before the named database and dialogu
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
 Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
+Plugin text and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
 The stage strip marks finished stages, shows a dot for stages with some completed tasks, and ends with All tasks, which marks completed and current tasks.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
@@ -599,6 +600,7 @@ Automatic refreshes yield to the next operation in a chained action, so saving a
 Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state.
 Reserve `application.refresh` for an intentional re-read, such as an explicit reload control.
 Views that show their own replies before the next observation, such as Plugin text and Image Manager, use [`useObserved`](../app/src/state/useObserved.ts): a newer snapshot replaces a reply during render but waits while unsaved edits or actions build on the current revision.
+They start from the observed state when the snapshot already has it, so revisiting them reads only what is missing.
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.

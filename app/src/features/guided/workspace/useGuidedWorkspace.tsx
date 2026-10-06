@@ -21,7 +21,6 @@ import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
 import { projectActivity } from "../ActivityHistory";
 import type { SourceReview } from "../EventTextReview";
-import type { ImageEntryMode } from "../GuidedImages";
 import type { RequestInspectionTarget } from "../ProcessPanel";
 import { investigationResults } from "../contextView";
 import {
@@ -89,12 +88,12 @@ export function useGuidedWorkspace({
   const taskTabsId = `${stage.id}-tasks`;
   const [panel, setPanel] = useState<Panel>(null);
   const [speakerTab, setSpeakerTab] = useState("findings");
-  const [imageView, setImageView] = useState<ImageEntryMode | null>(null);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [utilityActions, setUtilityActions] = useState<HTMLDivElement | null>(
     null,
   );
-  const [pluginFooter, setPluginFooter] = useState<HTMLDivElement | null>(null);
+  // Hosted tasks with their own action bar fill the Guided footer through this slot.
+  const [taskFooter, setTaskFooter] = useState<HTMLDivElement | null>(null);
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<"database" | "dialogue" | null>(
     null,
@@ -1093,14 +1092,12 @@ export function useGuidedWorkspace({
     setPanel,
     speakerTab,
     setSpeakerTab,
-    imageView,
-    setImageView,
     editorAssets,
     setEditorAssets,
     utilityActions,
     setUtilityActions,
-    pluginFooter,
-    setPluginFooter,
+    taskFooter,
+    setTaskFooter,
     fileScope,
     preview,
     setPreview,

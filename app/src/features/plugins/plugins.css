@@ -154,10 +154,6 @@
   color: var(--muted);
   padding: var(--space-4) 0;
 }
-/* The Guided host's footer slot; the plugin task fills it with an ActionBar. */
-.plugin-host-footer {
-  display: contents;
-}
 .plugin-footer-context {
   display: flex;
   align-items: center;
