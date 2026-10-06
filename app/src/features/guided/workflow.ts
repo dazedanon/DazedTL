@@ -51,7 +51,7 @@ export const workflow: WorkflowStage[] = [
   },
   {
     id: "context",
-    title: "Names & context",
+    title: "Context",
     short: "Context",
     tasks: [
       {

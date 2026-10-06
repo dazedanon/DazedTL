@@ -172,7 +172,15 @@ export function applyView(w: GuidedWorkspace): TaskView {
     outputFiles,
   );
   secondary = releaseButton;
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Apply translations",
+      description: "Overwrite the checked game files with their saved output.",
+    },
+  };
 }
 
 export function fittingView(w: GuidedWorkspace): TaskView {
@@ -353,7 +361,16 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           "primary",
         );
   secondary = releaseButton;
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Text fitting",
+      description:
+        "Rewrap applied text that exceeds the saved character limits.",
+    },
+  };
 }
 
 export function qaView(w: GuidedWorkspace): TaskView {
@@ -377,10 +394,6 @@ export function qaView(w: GuidedWorkspace): TaskView {
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   content = (
     <>
-      <p>
-        Optional text QA. Prepare a saved task, copy it to your assistant, then
-        refresh actual findings. Release remains available.
-      </p>
       <label>
         QA focus
         <select
@@ -540,7 +553,16 @@ export function qaView(w: GuidedWorkspace): TaskView {
     "primary",
   );
   secondary = releaseButton;
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Text QA",
+      description:
+        "Optional. Prepare a QA task, copy it to your assistant, then review its saved findings.",
+    },
+  };
 }
 
 export function toolsView(w: GuidedWorkspace): TaskView {
@@ -552,10 +574,9 @@ export function toolsView(w: GuidedWorkspace): TaskView {
     disabled,
     task,
     copyTask,
-    textView,
-    releaseButton,
+    advance,
   } = w;
-  let content: ReactNode, primary: ReactNode, secondary: ReactNode;
+  let content: ReactNode, primary: ReactNode;
   content = (
     <>
       <ActionList>
@@ -621,9 +642,13 @@ export function toolsView(w: GuidedWorkspace): TaskView {
       </ActionList>
     </>
   );
-  primary = (
-    <Button onClick={() => textView("apply")}>Back to Apply & Fitting</Button>
-  );
-  secondary = releaseButton;
-  return { content, primary, secondary };
+  primary = advance();
+  return {
+    content,
+    primary,
+    heading: {
+      title: "Game tools",
+      description: "Optional in-game tools for checking and editing text.",
+    },
+  };
 }

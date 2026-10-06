@@ -15,6 +15,7 @@ import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
+import { ActionBar } from "../../ui/ActionBar";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Message } from "../../ui/Feedback";
@@ -56,6 +57,7 @@ export function PluginWorkspace({
   observed,
   error,
   footerTarget,
+  backControl,
   continueControl,
   beforeAction,
   disabled = false,
@@ -64,6 +66,7 @@ export function PluginWorkspace({
   observed?: PluginState | null;
   error?: string;
   footerTarget: HTMLElement | null;
+  backControl?: ReactNode;
   continueControl: ReactNode;
   beforeAction: () => Promise<unknown>;
   disabled?: boolean;
@@ -226,8 +229,28 @@ export function PluginWorkspace({
       selected ? "File scope retained." : "File excluded.",
     );
   };
+  // Every state keeps the host's footer, so it never appears or vanishes.
+  const footer = (summary: ReactNode, actions: ReactNode) => (
+    <ActionSlot target={footerTarget}>
+      <ActionBar
+        feedback={
+          <div className="plugin-footer-context">
+            {backControl}
+            {summary}
+          </div>
+        }
+      >
+        {actions}
+      </ActionBar>
+    </ActionSlot>
+  );
   if (!state || !view)
-    return <Message message={error || "Loading saved plugin work…"} />;
+    return (
+      <>
+        <Message message={error || "Loading saved plugin work…"} />
+        {footer(null, continueControl)}
+      </>
+    );
   if (!state.supported)
     return (
       <section className="plugin-workspace">
@@ -237,7 +260,7 @@ export function PluginWorkspace({
           workflow. This guarded workspace does not claim Ruby publication
           support.
         </p>
-        <ActionSlot target={footerTarget}>{continueControl}</ActionSlot>
+        {footer(null, continueControl)}
       </section>
     );
   const counts = state.counts;
@@ -265,11 +288,6 @@ export function PluginWorkspace({
             : "Investigate plugin text, translate confirmed display text, and check the results in one agent task.";
   return (
     <section className="plugin-workspace" aria-label="Plugin text workspace">
-      <p className="plugin-intro">
-        Paste the task into your coding agent and keep DazedTL open. It
-        continues through safe work automatically and asks only about unresolved
-        choices.
-      </p>
       <ActionList>
         <ActionRow
           label={
@@ -470,7 +488,7 @@ export function PluginWorkspace({
           )}
         </section>
       )}
-      <ActionSlot target={footerTarget}>
+      {footer(
         <div className="plugin-footer-summary">
           <span>
             {counts.ready
@@ -486,8 +504,8 @@ export function PluginWorkspace({
               {action.notice}
             </span>
           )}
-        </div>
-        <div className="plugin-footer-actions">
+        </div>,
+        <>
           {!!state.receipts.length && (
             <Button disabled={busy} onClick={() => setRecovery(true)}>
               Recovery
@@ -503,8 +521,8 @@ export function PluginWorkspace({
             />
           )}
           {continueControl}
-        </div>
-      </ActionSlot>
+        </>,
+      )}
       {inspecting && (
         <Modal
           label="Plugin text details"

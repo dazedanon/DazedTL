@@ -33,6 +33,8 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     draft,
     values,
     stages,
+    completed,
+    taskId,
     panel,
     setPanel,
     speakerTab,
@@ -243,9 +245,18 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                     <Button
                       key={entry.id}
                       variant="quiet"
+                      aria-current={entry.id === taskId ? "step" : undefined}
                       onClick={() => move(item.id, entry.id)}
                     >
                       {entry.title}
+                      {completed.has(entry.id) && (
+                        <span
+                          className="guided-completed"
+                          aria-label="Complete"
+                        >
+                          ✓
+                        </span>
+                      )}
                     </Button>
                   ))}
                 </section>

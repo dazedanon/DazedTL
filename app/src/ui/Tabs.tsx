@@ -2,6 +2,8 @@ import { useRef, type ReactNode } from "react";
 export interface Tab<T extends string> {
   id: T;
   label: ReactNode;
+  /** A trailing state mark, such as a completion check, after the label. */
+  status?: ReactNode;
   disabled?: boolean;
 }
 export function Tabs<T extends string>({
@@ -11,6 +13,7 @@ export function Tabs<T extends string>({
   value,
   onChange,
   disabled = false,
+  variant = "primary",
 }: {
   id: string;
   label: string;
@@ -18,13 +21,19 @@ export function Tabs<T extends string>({
   value: T;
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** Secondary tabs switch views inside a task, below its primary tabs. */
+  variant?: "primary" | "secondary";
 }) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   const focusable =
     items.find((item) => item.id === value && !item.disabled) ||
     items.find((item) => !item.disabled);
   return (
-    <div role="tablist" aria-label={label} className="ui-tabs">
+    <div
+      role="tablist"
+      aria-label={label}
+      className={`ui-tabs${variant === "secondary" ? " ui-tabs--secondary" : ""}`}
+    >
       {items.map((item) => (
         <button
           type="button"
@@ -63,6 +72,7 @@ export function Tabs<T extends string>({
           }}
         >
           {item.label}
+          {item.status && <span className="ui-tab-status">{item.status}</span>}
         </button>
       ))}
     </div>

@@ -422,6 +422,25 @@ export function useGuidedWorkspace({
       stage.tasks[taskIndex + 1] || stages[stages.indexOf(stage) + 1]?.tasks[0]
     );
   };
+  const previous = () =>
+    taskIndex > 0
+      ? stage.tasks[taskIndex - 1]
+      : stages[stages.indexOf(stage) - 1]?.tasks.at(-1);
+  /** Every task's footer starts with the same way back. */
+  const back = () => {
+    const target = previous();
+    return (
+      target && (
+        <Button
+          variant="quiet"
+          disabled={action.busy}
+          onClick={() => stepTask(target.id)}
+        >
+          Back
+        </Button>
+      )
+    );
+  };
   const advance = (
     label?: string,
     target = next(),
@@ -433,7 +452,11 @@ export function useGuidedWorkspace({
         disabled={action.busy || draft.committing || context.committing}
         onClick={() => stepTask(target.id)}
       >
-        {label || "Continue to " + target.title.toLowerCase()}
+        {label ||
+          "Continue to " +
+            (stage.tasks.includes(target)
+              ? target.title.toLowerCase()
+              : stages.find((item) => item.tasks.includes(target))!.short)}
       </Button>
     );
   // Controls report their own action; fallback messages skip owned keys.
@@ -982,7 +1005,7 @@ export function useGuidedWorkspace({
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
   const aceNeedsExport = state.engine === "ACE" && !state.files.length;
-  // A saved baseline continues to names & context once. Failed attempts stay
+  // A saved baseline continues to Context once. Failed attempts stay
   // on this task; a later review tracks its own run.
   const baselineSaved =
     baseline &&
@@ -1210,6 +1233,7 @@ export function useGuidedWorkspace({
     reviewSources,
     skipEventText,
     advance,
+    back,
     feedback,
     operationJob,
     execute,

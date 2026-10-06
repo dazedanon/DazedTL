@@ -6,4 +6,6 @@ export type TaskView = {
   primary?: ReactNode;
   secondary?: ReactNode;
   actionContext?: ReactNode;
+  /** Overrides the task's title and description, and adds header actions. */
+  heading?: { title?: string; description?: string; actions?: ReactNode };
 };

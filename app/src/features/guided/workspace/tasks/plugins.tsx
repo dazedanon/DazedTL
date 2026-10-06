@@ -6,7 +6,7 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
 export function pluginsView(w: GuidedWorkspace): TaskView {
-  const { project, application, pluginFooter, disabled, advance } = w;
+  const { project, application, pluginFooter, disabled, advance, back } = w;
   let content: ReactNode, primary: ReactNode;
   content = (
     <PluginWorkspace
@@ -15,11 +15,19 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       observed={application.snapshot?.plugins}
       error={application.snapshot?.pluginsError}
       footerTarget={pluginFooter}
+      backControl={back()}
       beforeAction={flushDrafts}
       disabled={disabled}
-      continueControl={advance("Continue to Images", undefined, "quiet")}
+      continueControl={advance(undefined, undefined, "quiet")}
     />
   );
   primary = undefined;
-  return { content, primary };
+  return {
+    content,
+    primary,
+    heading: {
+      description:
+        "Paste the task into your coding agent and keep DazedTL open. It continues through safe work automatically and asks only about unresolved choices.",
+    },
+  };
 }

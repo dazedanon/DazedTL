@@ -1,29 +1,6 @@
 .guided-workspace .context-task-body {
   padding-block: var(--space-4);
 }
-.context-task-header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-}
-.context-task-header > div:first-child {
-  flex: 1 1 20em;
-  min-width: 0;
-}
-.context-task-header h2 {
-  margin: 0;
-  font-size: var(--font-body);
-  line-height: 1.5;
-}
-.context-task-header p {
-  margin: var(--space-1) 0 0;
-  color: var(--muted);
-  font-size: var(--font-control);
-  line-height: 1.5;
-}
 .context-columns {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
@@ -260,9 +237,8 @@
   display: flex;
   flex-direction: column;
 }
-.context-guidance-body > .context-task-header {
+.context-guidance-body > .task-header {
   flex-shrink: 0;
-  align-items: center;
   margin-bottom: var(--space-3);
 }
 .context-document-path {

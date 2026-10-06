@@ -3,9 +3,6 @@
   flex-direction: column;
   padding-block: var(--space-4);
 }
-.translation-task-body > .guided-task-heading {
-  flex-shrink: 0;
-}
 .translation-workspace {
   display: flex;
   flex-direction: column;
@@ -61,16 +58,6 @@
   display: block;
   color: var(--muted);
   margin-bottom: var(--space-2);
-}
-.translation-substeps {
-  display: flex;
-  gap: var(--space-3);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  margin-bottom: var(--space-4);
-}
-.translation-substeps button[aria-pressed="true"] {
-  color: var(--accent);
 }
 @media (max-width: 1050px) {
   .guided-workspace .guided-task-body.translation-task-body {

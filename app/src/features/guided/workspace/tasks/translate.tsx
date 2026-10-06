@@ -261,7 +261,25 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         )}
     </>
   );
-  return { content, primary, actionContext };
+  return {
+    content,
+    primary,
+    actionContext,
+    heading:
+      phase === "advanced"
+        ? {
+            title: "Translate event codes",
+            description:
+              "Translate the enabled sources in the selected event files.",
+          }
+        : phase === "variables"
+          ? {
+              title: "Update comparisons",
+              description:
+                "Update variable comparisons from the audited assignments.",
+            }
+          : undefined,
+  };
 }
 
 export function auditView(w: GuidedWorkspace): TaskView {
@@ -332,7 +350,16 @@ export function auditView(w: GuidedWorkspace): TaskView {
       Continue without other event text
     </Button>
   );
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Investigate sources",
+      description:
+        "Your assistant checks which event codes, plugin commands and scripts carry player text.",
+    },
+  };
 }
 
 export function sourcesView(w: GuidedWorkspace): TaskView {
@@ -410,5 +437,13 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
       Continue to translation
     </Button>
   ) : null;
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Source choices",
+      description: "Enable only the sources the investigation confirmed.",
+    },
+  };
 }

@@ -9,6 +9,7 @@ export function WorkflowNavigation({
   disabled,
   move,
   taskFor,
+  allTasks,
 }: {
   stages: WorkflowStage[];
   step: GuidedStep;
@@ -16,11 +17,14 @@ export function WorkflowNavigation({
   disabled: boolean;
   move: (step: GuidedStep, task: string) => void;
   taskFor: (stage: WorkflowStage) => string;
+  allTasks: () => void;
 }) {
   return (
     <nav className="guided-phase-nav frame-row" aria-label="Translation stages">
       {stages.map((stage, index) => {
         const done = stage.tasks.every((item) => completed.has(item.id));
+        const started =
+          !done && stage.tasks.some((item) => completed.has(item.id));
         return (
           <Button
             key={stage.id}
@@ -31,14 +35,25 @@ export function WorkflowNavigation({
           >
             <span className="guided-stage-number">{index + 1}</span>
             {stage.short}
-            {done && (
+            {done ? (
               <span className="guided-completed" aria-label="Tasks completed">
                 ✓
               </span>
+            ) : (
+              started && (
+                <span className="guided-started" aria-label="In progress" />
+              )
             )}
           </Button>
         );
       })}
+      <Button
+        variant="quiet"
+        className="guided-all-tasks-button"
+        onClick={allTasks}
+      >
+        All tasks
+      </Button>
     </nav>
   );
 }

@@ -465,7 +465,9 @@ One task occupies the editing body and its action footer stays outside the scrol
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
 Guidance review and layout settings follow before the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
-Every phase with multiple tasks uses the same clickable task tabs.
+Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
+Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
+The stage strip marks finished stages, shows a dot for stages with some completed tasks, and ends with All tasks, which marks completed and current tasks.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.

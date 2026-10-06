@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode, type Ref } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Check, Circle, LoaderCircle } from "lucide-react";
 import type {
   GuidedState,
@@ -12,30 +12,6 @@ import type { InvestigationPart, InvestigationResult } from "./contextView";
 
 const counted = (label: string, count: number) =>
   count ? `${label} (${count.toLocaleString()})` : label;
-
-export function ContextTaskHeader({
-  title,
-  description,
-  actions,
-  headingRef,
-}: {
-  title: string;
-  description?: string;
-  actions?: ReactNode;
-  headingRef: Ref<HTMLHeadingElement>;
-}) {
-  return (
-    <header className="context-task-header">
-      <div>
-        <h2 ref={headingRef} tabIndex={-1}>
-          {title}
-        </h2>
-        {description && <p>{description}</p>}
-      </div>
-      {actions && <div className="actions">{actions}</div>}
-    </header>
-  );
-}
 
 export function ContextWorkspace({
   state,

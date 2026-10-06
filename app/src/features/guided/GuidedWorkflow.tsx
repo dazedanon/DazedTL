@@ -19,6 +19,7 @@ import { GuidedDialogs } from "./workspace/GuidedDialogs";
 import { GuidedPanel } from "./workspace/GuidedPanel";
 import { type GuidedProps, fileCount, phaseLabels } from "./workspace/model";
 import { renderTask } from "./workspace/tasks";
+import { TaskHeader } from "./workspace/TaskHeader";
 import { useGuidedWorkspace } from "./workspace/useGuidedWorkspace";
 
 export default function GuidedWorkflow(props: GuidedProps) {
@@ -66,7 +67,6 @@ function Workspace(
     selectedTask,
     taskId,
     taskView,
-    taskIndex,
     showTaskTabs,
     taskTabsId,
     setPanel,
@@ -82,7 +82,6 @@ function Workspace(
     headingRef,
     historyControl,
     preserved,
-    baseline,
     changed,
     activeOperation,
     localOperation,
@@ -93,17 +92,45 @@ function Workspace(
     disabled,
     move,
     stepTask,
+    back,
     task,
     textView,
-    preparationComplete,
     completed,
   } = w;
   const owned = useOwnedFeedback(action.key);
-  const { content, primary, secondary, actionContext } = renderTask(w);
-  const previous =
-    taskIndex > 0
-      ? stage.tasks[taskIndex - 1]
-      : stages[stages.indexOf(stage) - 1]?.tasks.at(-1);
+  const { content, primary, secondary, actionContext, heading } = renderTask(w);
+  // Views inside one task share the secondary tabs below the task tabs.
+  const optional = <span className="ui-tab-hint">optional</span>;
+  const viewTabs =
+    taskId === "apply"
+      ? [
+          { id: "apply", label: "Apply" },
+          { id: "fitting", label: "Fitting" },
+          { id: "qa", label: <>Text QA{optional}</> },
+          ...(state.engine === "MVMZ"
+            ? [{ id: "tools", label: <>Tools{optional}</> }]
+            : []),
+        ]
+      : taskId === "other-event-text"
+        ? [
+            { id: "audit", label: "Investigate" },
+            { id: "sources", label: "Source choices" },
+            { id: "advanced-run", label: "Translate" },
+            ...(state.comparisons.status !== "not_needed"
+              ? [{ id: "variables", label: "Update comparisons" }]
+              : []),
+          ]
+        : null;
+  // The footer reports only this task's own state; Prepare's operations are
+  // the one stage-wide status, while they run.
+  const status =
+    position.step === "prepare" && backupPending
+      ? "Backup in progress"
+      : position.step === "prepare" && preparationPending
+        ? "Preparation in progress"
+        : position.step !== "context" && draft.dirty
+          ? "Options retained for recovery"
+          : "";
   if (imageView && taskId === "images") {
     if (editorAssets)
       return (
@@ -161,6 +188,7 @@ function Workspace(
       </TopbarActions>
       <div className="guided-layout">
         <WorkflowNavigation
+          allTasks={() => setPanel("tasks")}
           stages={stages}
           step={position.step}
           completed={completed}
@@ -182,13 +210,9 @@ function Workspace(
                 onChange={stepTask}
                 items={stage.tasks.map((item) => ({
                   id: item.id,
-                  label: (
-                    <>
-                      {completed.has(item.id) && (
-                        <span aria-label="Complete">✓</span>
-                      )}
-                      {item.title}
-                    </>
+                  label: item.title,
+                  status: completed.has(item.id) && (
+                    <span aria-label="Complete">✓</span>
                   ),
                 }))}
               />
@@ -234,47 +258,31 @@ function Workspace(
             }
             className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}
           >
-            {position.step !== "translate" &&
-              (position.step !== "context" || taskId === "run") && (
-                <div className="guided-task-heading">
-                  <div className="guided-task-location">
-                    <span>
-                      {stage.title}
-                      {taskId === "plugins"
-                        ? ""
-                        : taskIndex >= 0
-                          ? ` · Task ${taskIndex + 1} of ${stage.tasks.length}`
-                          : " · Saved run"}
-                    </span>
-                    <Button variant="quiet" onClick={() => setPanel("tasks")}>
-                      All tasks
-                    </Button>
-                  </div>
-                  <h2 ref={headingRef} tabIndex={-1}>
-                    {taskId === "apply" && taskView === "qa"
-                      ? "Text QA · optional"
-                      : taskId === "apply" && taskView === "tools"
-                        ? "Game tools · optional"
-                        : selectedTask?.title ||
-                          phaseLabels[runPhase(state)] + " run"}
-                  </h2>
-                  {selectedTask?.description && (
-                    <p>{selectedTask.description}</p>
-                  )}
-                  {taskId === "other-event-text" && (
-                    <p className="muted">
-                      {
-                        {
-                          audit: "Investigation",
-                          sources: "Findings & source choices",
-                          "advanced-run": "Translation",
-                          variables: "Comparison updates",
-                        }[state.eventText.view]
-                      }
-                    </p>
-                  )}
-                </div>
-              )}
+            {viewTabs && (
+              <Tabs
+                id={`${taskId}-views`}
+                label={`${selectedTask?.title || stage.title} views`}
+                variant="secondary"
+                value={taskView}
+                disabled={disabled}
+                onChange={(view) =>
+                  taskId === "apply"
+                    ? textView(view as Parameters<typeof textView>[0])
+                    : stepTask(view)
+                }
+                items={viewTabs}
+              />
+            )}
+            <TaskHeader
+              headingRef={headingRef}
+              title={
+                heading?.title ||
+                selectedTask?.title ||
+                phaseLabels[runPhase(state)] + " run"
+              }
+              description={heading?.description ?? selectedTask?.description}
+              actions={heading?.actions}
+            />
             <Message
               message={
                 !preview &&
@@ -313,101 +321,19 @@ function Workspace(
                 {baselineNotice}
               </p>
             )}
-            {taskId === "apply" && (
-              <div className="text-workspace-nav">
-                <div role="group" aria-label="Apply and Fitting views">
-                  {(["apply", "fitting"] as const).map((view) => (
-                    <Button
-                      key={view}
-                      aria-pressed={taskView === view}
-                      disabled={disabled}
-                      onClick={() => textView(view)}
-                    >
-                      {view === "apply" ? "Apply" : "Fitting"}
-                    </Button>
-                  ))}
-                </div>
-                <div className="actions">
-                  <Button
-                    variant="quiet"
-                    aria-pressed={taskView === "qa"}
-                    disabled={disabled}
-                    onClick={() => textView("qa")}
-                  >
-                    Text QA · optional
-                  </Button>
-                  {state.engine === "MVMZ" && (
-                    <Button
-                      variant="quiet"
-                      aria-pressed={taskView === "tools"}
-                      disabled={disabled}
-                      onClick={() => textView("tools")}
-                    >
-                      Tools · optional
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-            {taskId === "other-event-text" && (
-              <div
-                className="translation-substeps"
-                role="group"
-                aria-label="Event text steps"
-              >
-                {(
-                  [
-                    "audit",
-                    "sources",
-                    "advanced-run",
-                    ...(state.comparisons.status !== "not_needed"
-                      ? ["variables"]
-                      : []),
-                  ] as string[]
-                ).map((view) => (
-                  <Button
-                    key={view}
-                    variant="quiet"
-                    aria-pressed={taskView === view}
-                    disabled={disabled}
-                    onClick={() => stepTask(view)}
-                  >
-                    {
-                      {
-                        audit: "Investigate",
-                        sources: "Source choices",
-                        "advanced-run": "Translate",
-                        variables: "Update comparisons",
-                      }[view]
-                    }
-                  </Button>
-                ))}
-              </div>
-            )}
             <ErrorBoundary resetKey={`${taskId}:${taskView}`} label="This task">
               {content}
             </ErrorBoundary>
           </PageBody>
           {taskId === "plugins" ? (
-            <div
-              className="plugin-host-footer frame-row"
-              ref={setPluginFooter}
-            />
+            <div className="plugin-host-footer" ref={setPluginFooter} />
           ) : (
             <ActionBar
               feedback={
-                actionContext || (
-                  <div className="guided-footer-context">
-                    {previous && (
-                      <Button
-                        variant="quiet"
-                        disabled={action.busy}
-                        onClick={() => stepTask(previous.id)}
-                      >
-                        Back
-                      </Button>
-                    )}
-                    {position.step !== "context" && (
+                <div className="guided-footer-context">
+                  {back()}
+                  {actionContext ||
+                    (status && (
                       <span
                         className={
                           backupPending || preparationPending
@@ -415,22 +341,10 @@ function Workspace(
                             : undefined
                         }
                       >
-                        {backupPending
-                          ? "Backup in progress"
-                          : preparationPending
-                            ? "Preparation in progress"
-                            : taskId === "format" &&
-                                (preparationComplete || baseline)
-                              ? "Game files prepared"
-                              : draft.dirty
-                                ? "Options retained for recovery"
-                                : preserved
-                                  ? "Original preserved"
-                                  : "Start by preserving the original"}
+                        {status}
                       </span>
-                    )}
-                  </div>
-                )
+                    ))}
+                </div>
               }
             >
               {secondary}

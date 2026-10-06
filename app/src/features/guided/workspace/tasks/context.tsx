@@ -5,7 +5,7 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
 import { Section } from "../../../../ui/Section";
-import { ContextTaskHeader, ContextWorkspace } from "../../ContextWorkspace";
+import { ContextWorkspace } from "../../ContextWorkspace";
 import { GuidanceReview } from "../../GuidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
@@ -18,7 +18,6 @@ export function namesView(w: GuidedWorkspace): TaskView {
     action,
     setPanel,
     setSpeakerTab,
-    headingRef,
     scan,
     investigation,
     disabled,
@@ -31,23 +30,6 @@ export function namesView(w: GuidedWorkspace): TaskView {
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   content = (
     <>
-      <ContextTaskHeader
-        headingRef={headingRef}
-        title="Speakers & game context"
-        description="Copy the task into your assistant to investigate this game."
-        actions={
-          <Button
-            variant="quiet"
-            disabled={disabled}
-            onClick={() => {
-              setSpeakerTab("settings");
-              setPanel("speakers");
-            }}
-          >
-            Detection settings
-          </Button>
-        }
-      />
       <ContextWorkspace
         state={state}
         results={investigation}
@@ -139,7 +121,28 @@ export function namesView(w: GuidedWorkspace): TaskView {
     "Copy investigation task",
     investigation.every((row) => row.saved) ? "default" : "primary",
   );
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Speakers & game context",
+      description:
+        "Copy the task into your assistant to investigate this game.",
+      actions: (
+        <Button
+          variant="quiet"
+          disabled={disabled}
+          onClick={() => {
+            setSpeakerTab("settings");
+            setPanel("speakers");
+          }}
+        >
+          Detection settings
+        </Button>
+      ),
+    },
+  };
 }
 
 export function guidanceView(w: GuidedWorkspace): TaskView {
@@ -149,7 +152,6 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     context,
     documentName,
     setDocumentName,
-    headingRef,
     discovery,
     disabled,
     advance,
@@ -160,25 +162,6 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   content = (
     <>
-      <ContextTaskHeader
-        headingRef={headingRef}
-        title="Translation guidance"
-        actions={
-          <ActionControl
-            label="Discard draft"
-            variant="quiet"
-            disabled={disabled || !context.drafts[documentName]}
-            {...feedback("context:discard", "Discarding…")}
-            onClick={() =>
-              action.run(
-                () => context.discard(documentName),
-                "Draft discarded.",
-                "context:discard",
-              )
-            }
-          />
-        }
-      />
       <GuidanceReview
         documents={state.documents}
         context={context}
@@ -190,23 +173,44 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  primary = advance("Continue to layout");
+  primary = advance();
   secondary = (
-    <ActionControl
-      label="Save guidance"
-      disabled={disabled}
-      {...feedback("context:save", "Saving guidance…")}
-      onClick={() => saveDocuments(savedNames)}
-    />
+    <>
+      {!!context.drafts[documentName] && (
+        <ActionControl
+          label="Discard draft"
+          variant="quiet"
+          disabled={disabled}
+          {...feedback("context:discard", "Discarding…")}
+          onClick={() =>
+            action.run(
+              () => context.discard(documentName),
+              "Draft discarded.",
+              "context:discard",
+            )
+          }
+        />
+      )}
+      <ActionControl
+        label="Save guidance"
+        disabled={disabled}
+        {...feedback("context:save", "Saving guidance…")}
+        onClick={() => saveDocuments(savedNames)}
+      />
+    </>
   );
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: { title: "Translation guidance" },
+  };
 }
 
 export function layoutView(w: GuidedWorkspace): TaskView {
   const {
     project,
     action,
-    headingRef,
     discovery,
     widthsDirty,
     save,
@@ -219,11 +223,6 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   content = (
     <>
-      <ContextTaskHeader
-        headingRef={headingRef}
-        title="Text layout"
-        description="Character limits for the game’s dialogue and interface text."
-      />
       <div className="context-layout">
         <p className="context-layout-status">
           {widthsDirty
@@ -271,7 +270,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       </div>
     </>
   );
-  primary = advance("Continue to translation");
+  primary = advance();
   secondary = (
     <ActionControl
       label={
@@ -300,5 +299,14 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       }
     />
   );
-  return { content, primary, secondary };
+  return {
+    content,
+    primary,
+    secondary,
+    heading: {
+      title: "Text layout",
+      description:
+        "Character limits for the game’s dialogue and interface text.",
+    },
+  };
 }

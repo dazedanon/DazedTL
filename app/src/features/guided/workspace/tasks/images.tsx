@@ -45,6 +45,6 @@ export function imagesView(w: GuidedWorkspace): TaskView {
       }}
     />
   );
-  primary = advance("Continue to text Apply");
+  primary = advance();
   return { content, primary };
 }

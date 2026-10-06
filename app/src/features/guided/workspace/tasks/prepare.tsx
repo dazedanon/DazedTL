@@ -353,7 +353,7 @@ export function baselineView(w: GuidedWorkspace): TaskView {
     </>
   );
   primary = baseline
-    ? advance("Continue to names & context")
+    ? advance()
     : task(
         "git_setup",
         "Review version baseline",
@@ -369,7 +369,6 @@ export function baselineView(w: GuidedWorkspace): TaskView {
           (!fields.untranslated && !fields.original.trim()),
         "primary",
       );
-  secondary =
-    !baseline && advance("Continue to names & context", undefined, "quiet");
+  secondary = !baseline && advance(undefined, undefined, "quiet");
   return { content, primary, secondary };
 }

@@ -212,6 +212,15 @@ pre {
   color: var(--color-tab-selected);
   border-bottom-color: var(--accent);
 }
+.ui-tab-status {
+  margin-left: var(--space-2);
+  color: var(--color-success);
+}
+.ui-tab-hint {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-small);
+}
 .editor-form {
   display: flex;
   flex-direction: column;
@@ -640,6 +649,15 @@ pre {
 .ui-tabs button {
   font-size: var(--font-control);
   min-height: var(--control-height);
+}
+/* Views inside a task: same mechanics, lighter so the primary row leads. */
+.ui-tabs--secondary {
+  gap: var(--space-5);
+  border-bottom: 0;
+}
+.ui-tabs--secondary button {
+  min-height: 0;
+  padding: var(--space-1) 0 var(--space-2);
 }
 
 .job-status-status {
