@@ -423,7 +423,8 @@ Use these principles to evaluate real workflows, rather than adding extra panels
 
 ### Visual design
 
-The app ships [Inter](../app/src/assets/fonts/LICENSE.txt), so text widths and wrapping match on every platform; system fonts only supply scripts it lacks, such as Japanese.
+The app ships [Inter](../app/src/assets/fonts/Inter-OFL.txt), so text widths and wrapping match on every platform; system fonts only supply scripts it lacks, such as Japanese.
+The rounded [Fredoka](../app/src/assets/fonts/Fredoka-OFL.txt) sets only the wordmark and page titles, through `--font-family-display`, and falls back to Inter for characters it lacks.
 Text uses the five sizes and three weights in [tokens.css](../app/src/styles/tokens.css): page titles, then task, dialog and section titles, then body text and row titles, then secondary text and controls, then captions.
 Headings and emphasis are semibold, row titles medium, and everything else regular; stylesheets name a size token instead of a pixel value.
 Each region has one heading: a page title, then section or panel headings, never a stack of headings before content; headings inside a dialog body sit a step below the dialog title.

@@ -5,6 +5,14 @@
   font-display: block;
   src: url("../assets/fonts/InterVariable.woff2") format("woff2");
 }
+/* Fredoka, trimmed to the regular to semibold weights at normal width. */
+@font-face {
+  font-family: Fredoka;
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: block;
+  src: url("../assets/fonts/FredokaVariable.woff2") format("woff2");
+}
 :root {
   font-family: var(--font-family);
   font-size: var(--font-body);
@@ -136,8 +144,8 @@ legend {
   font-weight: var(--weight-semibold);
 }
 h1 {
+  font-family: var(--font-family-display);
   font-size: var(--font-page-title);
-  letter-spacing: -0.01em;
   line-height: 1.25;
   margin: 0;
 }

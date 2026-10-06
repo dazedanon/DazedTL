@@ -153,7 +153,9 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          DazedTL
+          <span>
+            Dazed<span className="brand-accent">TL</span>
+          </span>
         </div>
         {project && (
           <Menu
