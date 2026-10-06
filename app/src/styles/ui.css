@@ -327,8 +327,8 @@ pre {
   margin-inline: var(--frame-inline);
 }
 .ui-section > h2 {
-  font-size: var(--font-control);
-  font-weight: 650;
+  font-size: var(--font-heading);
+  font-weight: 600;
   margin: 0 0 14px;
 }
 .ui-section > h2 > span {

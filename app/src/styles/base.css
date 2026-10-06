@@ -107,6 +107,11 @@ small,
 .footnote {
   color: var(--muted);
 }
+/* Secondary paragraphs share one size, a step below body text. */
+p.muted {
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
 .footnote {
   font-size: 12px;
   margin: 18px 0;
