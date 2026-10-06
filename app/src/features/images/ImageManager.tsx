@@ -767,6 +767,17 @@ function Manager({
             }
           />
         </div>
+        {/* The same pressed toggle as the translation file list, so the
+            narrowed grid always shows why it is narrowed. */}
+        <Button
+          aria-pressed={value.view.showSelected}
+          disabled={!value.selection.length && !value.view.showSelected}
+          onClick={() =>
+            changeView({ showSelected: !value.view.showSelected }, true)
+          }
+        >
+          Selected only
+        </Button>
         <select
           aria-label="Image status"
           value={value.view.status}
@@ -831,13 +842,6 @@ function Manager({
             Select all ({counts.indexed.toLocaleString()})
           </MenuItem>
           <MenuSeparator />
-          <MenuItem
-            onSelect={() =>
-              changeView({ showSelected: !value.view.showSelected }, true)
-            }
-          >
-            {value.view.showSelected ? "Show all images" : "Show only selected"}
-          </MenuItem>
           <MenuItem
             disabled={!value.selection.length}
             onSelect={() => change({ selection: [] })}

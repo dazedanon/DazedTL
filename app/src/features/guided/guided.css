@@ -697,12 +697,6 @@
 .guided-folder-field button {
   flex-shrink: 0;
 }
-.file-browser-toolbar button[aria-pressed="true"],
-.file-browser-search button[aria-pressed="true"] {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
-  border-color: var(--color-control-border);
-}
 .guided-utilities {
   display: flex;
   gap: var(--space-2);

@@ -634,6 +634,13 @@ pre {
 .ui-button[aria-busy="true"] {
   cursor: progress;
 }
+/* A default button that toggles a filter reads as on while pressed. Grouped
+   choices (segmented controls, option cards, folder lists) style their own. */
+.ui-button:not(.quiet, .primary, .danger, .link-button)[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  border-color: var(--color-control-border);
+}
 .virtual-list {
   flex: 1;
   min-height: 0;
