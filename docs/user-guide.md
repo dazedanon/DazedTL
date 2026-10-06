@@ -44,6 +44,7 @@ All supported files start selected.
 Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
 The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
 
+The file list's **Lines** shows the lines saved of the lines the latest run prepared, and the Project page totals lines translated, files applied and the recorded cost.
 Each **Translate** click prepares a fresh local estimate and opens the cost review.
 Nothing is charged until you approve it, and declining discards the preparation.
 If the estimate finds no new API requests, the result says so and no charge occurs.

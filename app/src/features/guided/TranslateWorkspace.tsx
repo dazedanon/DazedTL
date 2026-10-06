@@ -10,6 +10,7 @@ import { FileSelection } from "./FileSelection";
 import {
   filePreviewRun,
   fileRun,
+  fileLines,
   fileMetricRun,
   fileStatus,
   groupedRequests,
@@ -155,6 +156,12 @@ export function TranslateWorkspace({
               previewed: inspectedFile,
               columns: (
                 <>
+                  <span
+                    className="translation-file-lines"
+                    title="Lines saved of the lines the latest run prepared"
+                  >
+                    Lines
+                  </span>
                   <span>Status</span>
                   <span className="translation-file-cost">Cost</span>
                   <span
@@ -180,8 +187,21 @@ export function TranslateWorkspace({
                     state.sourceStatus.retired,
                   ),
                   metrics = metricRun?.process?.fileMetrics?.[row.name];
+                const lines = fileLines(state, phase, row.name);
                 return (
                   <>
+                    <span
+                      className="translation-file-lines"
+                      title={
+                        lines.total
+                          ? "Lines saved of the lines the latest run prepared"
+                          : "Line counts appear once a run prepares this file"
+                      }
+                    >
+                      {lines.total
+                        ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`
+                        : "-"}
+                    </span>
                     <span className={`translation-file-status ${status.tone}`}>
                       <StatusIcon
                         status={status.pending ? "active" : status.icon}

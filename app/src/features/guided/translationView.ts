@@ -231,6 +231,34 @@ export function settledWithoutRequests(
     !!checked && (!run || (!activeWorker(run) && (run.created || "") < checked))
   );
 }
+/**
+ * A file's translated and total lines from the engine's own receipts: the
+ * lines its latest run saved, out of the lines that run prepared. A saved
+ * "nothing to translate" check closes the file at what is done. Estimates
+ * carry no per-file lines, so without a run the amounts stay unknown.
+ */
+export function fileLines(
+  state: Pick<GuidedState, "runs" | "sourceStatus">,
+  phase: Phase,
+  name: string,
+): { done: number; total: number | null } {
+  const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  // One row per source request, at its latest attempt; duplicates never count.
+  const rows =
+    run && !run.temporary
+      ? groupedRequests(run.process?.requests || []).filter(
+          (row) => row.file === name && row.state !== "unused",
+        )
+      : [];
+  const sum = (items: typeof rows) =>
+    items.reduce((total, row) => total + row.sourceItems, 0);
+  const done = sum(
+    rows.filter((row) => ["validated", "saved"].includes(row.state)),
+  );
+  if (settledWithoutRequests(state, phase, name, run))
+    return { done, total: done };
+  return { done, total: rows.length ? sum(rows) : null };
+}
 /** Run-scoped tasks are also complete when every selected file needs nothing. */
 export function selectionSettled(
   state: Pick<GuidedState, "runs" | "sourceStatus">,

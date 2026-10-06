@@ -7,6 +7,7 @@ import { investigationResults } from "./contextView";
 import { guidanceAvailability } from "./guidanceReview";
 import {
   completeForSelection,
+  fileLines,
   selectionSettled,
   translationTaskComplete,
 } from "./translationView";
@@ -145,5 +146,41 @@ export function guidedProgress(
         title: task?.title || stage?.short || "",
       };
     })(),
+  };
+}
+
+/**
+ * The project's amounts from saved engine receipts: lines translated (with a
+ * total only when every file's total is known), files applied and the cost the
+ * engine recorded. Batch charges without a receipt are not included.
+ */
+export function projectAmounts(state: GuidedState) {
+  let done = 0,
+    total: number | null = 0;
+  for (const file of state.files) {
+    const lines = fileLines(state, file.group, file.name);
+    done += lines.done;
+    total = total === null || lines.total === null ? null : total + lines.total;
+  }
+  const outputs = state.readiness.outputs;
+  const cost = state.runs
+    .filter((run) => run.mode !== "estimate")
+    .reduce(
+      (sum, run) =>
+        sum +
+        Object.values(run.process?.fileMetrics || {}).reduce(
+          (files, metric) => files + metric.cost,
+          0,
+        ) +
+        (run.process?.billing?.openrouter_cost || 0),
+      0,
+    );
+  return {
+    done,
+    total,
+    applied: outputs.filter((name) => state.readiness.applied.includes(name))
+      .length,
+    outputs: outputs.length,
+    cost,
   };
 }

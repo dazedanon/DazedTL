@@ -15,7 +15,7 @@ import type { GuidedStep, Screen, TranslationMethod } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
 import Settings from "../features/settings/Settings";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
-import { guidedProgress } from "../features/guided/progress";
+import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
 import ProjectPage, { type ProjectTab } from "../features/project/ProjectPage";
 import { MethodDialog } from "../features/project/MethodDialog";
@@ -138,6 +138,7 @@ export default function App() {
     translationState?.projectId === project.id
       ? guidedProgress(guidedState, translationState)
       : null;
+  const amounts = progress && guidedState ? projectAmounts(guidedState) : null;
   const error = application.stopped
     ? application.error
     : action.error || application.error;
@@ -298,6 +299,7 @@ export default function App() {
                 select={select}
                 report={action.report}
                 progress={progress}
+                amounts={amounts}
                 tab={projectTab}
                 onTab={(tab) =>
                   void action.run(async () => {

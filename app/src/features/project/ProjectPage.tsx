@@ -5,6 +5,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
+import { HelpPopover } from "../../ui/HelpPopover";
 import { JobStatus } from "../../ui/JobStatus";
 import { Notice } from "../../ui/Notice";
 import { PageBody, PageHeader, PageLayout } from "../../ui/PageLayout";
@@ -13,7 +14,7 @@ import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
 import { engineLabel } from "../../ui/displayText";
 import { ActivityHistory } from "../guided/ActivityHistory";
-import type { GuidedProgress } from "../guided/progress";
+import type { GuidedProgress, projectAmounts } from "../guided/progress";
 import { RunInspector } from "../guided/RunInspector";
 import { canResumeRun, observedRun } from "../guided/translationView";
 import type { GuidedIntent } from "../guided/workspace/model";
@@ -23,6 +24,7 @@ import { VersionsPanel } from "../translation/VersionsPanel";
 import { methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
+type Amounts = ReturnType<typeof projectAmounts>;
 
 const sentence = (value: string) =>
   value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
@@ -38,6 +40,7 @@ export default function ProjectPage({
   select,
   report,
   progress,
+  amounts,
   tab,
   onTab,
   historyQuery,
@@ -53,6 +56,7 @@ export default function ProjectPage({
   select: (id: string) => void;
   report: (error: unknown) => void;
   progress: GuidedProgress | null;
+  amounts: Amounts | null;
   tab: ProjectTab;
   onTab: (tab: ProjectTab) => void;
   /** A search the History tab opens with, such as one stage's runs. */
@@ -122,6 +126,7 @@ export default function ProjectPage({
             busy={busy}
             open={open}
             progress={progress}
+            amounts={amounts}
             openTask={openTask}
             openTranslation={openTranslation}
             chooseMethod={chooseMethod}
@@ -156,6 +161,7 @@ function ProjectStatus({
   busy,
   open,
   progress,
+  amounts,
   openTask,
   openTranslation,
   chooseMethod,
@@ -166,6 +172,7 @@ function ProjectStatus({
   busy: boolean;
   open: () => void;
   progress: GuidedProgress | null;
+  amounts: Amounts | null;
   openTask: (step: string, task: string) => void;
   openTranslation: () => void;
   chooseMethod: () => void;
@@ -254,6 +261,7 @@ function ProjectStatus({
                   )}
               </ActionRow>
             </ActionList>
+            {amounts && <ProjectAmounts amounts={amounts} />}
             <Section title="Tasks" className="project-tasks-section">
               <ol className="project-stages">
                 {progress.stages.map((stage, index) => (
@@ -342,6 +350,55 @@ function ProjectStatus({
       </PageBody>
       <ActionBar feedback={null}>{primary}</ActionBar>
     </>
+  );
+}
+
+/** Amounts appear once there is something to count; zeroes stay hidden. */
+function ProjectAmounts({ amounts }: { amounts: Amounts }) {
+  const figures = [
+    amounts.done > 0 && {
+      key: "lines",
+      value:
+        amounts.total !== null
+          ? `${amounts.done.toLocaleString()} / ${amounts.total.toLocaleString()}`
+          : amounts.done.toLocaleString(),
+      label: "lines translated",
+    },
+    amounts.outputs > 0 && {
+      key: "applied",
+      value: `${amounts.applied} / ${amounts.outputs}`,
+      label: "files applied",
+    },
+    amounts.cost > 0 && {
+      key: "cost",
+      value: `$${amounts.cost.toFixed(2)}`,
+      label: "recorded cost",
+      help: "The engine's per-file cost receipts and OpenRouter Batch charges. Other Batch charges appear only in your provider's billing.",
+    },
+  ].filter(Boolean) as {
+    key: string;
+    value: string;
+    label: string;
+    help?: string;
+  }[];
+  if (!figures.length) return null;
+  return (
+    <dl className="project-amounts">
+      {figures.map((figure) => (
+        <div key={figure.key}>
+          <dt>
+            {figure.label}
+            {figure.help && (
+              <>
+                {" "}
+                <HelpPopover label={figure.label}>{figure.help}</HelpPopover>
+              </>
+            )}
+          </dt>
+          <dd>{figure.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

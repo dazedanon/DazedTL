@@ -17,6 +17,7 @@ import {
   filePreviewRun,
   fileRun,
   fileMetricRun,
+  fileLines,
   fileStatus,
   phaseRun,
   settledWithoutRequests,
@@ -1920,4 +1921,61 @@ test("Live inspection and file progress follow current receipts without Batch co
   assert.deepEqual(observedRun(live, completed)?.log, ["retained"]);
   assert.equal(observedRun(completed, live), completed);
   assert.equal(observedRun(live, { ...completed, id: "foreign" }), live);
+});
+
+test("file line amounts count each source request once at its latest attempt", () => {
+  // A retried request must not count its lines twice, and duplicate
+  // responses never add lines.
+  const run = {
+    id: "run",
+    status: "complete",
+    mode: "translate",
+    logicalPhase: "database",
+    files: ["Items.json"],
+    created: "2026-10-05T10:00:00+00:00",
+    log: [],
+    message: "",
+    process: {
+      errors: [],
+      requests: [
+        { index: 0, state: "validated", file: "Items.json", sourceItems: 40 },
+        { index: 1, state: "rejected", file: "Items.json", sourceItems: 10 },
+        { index: 2, state: "validated", file: "Other.json", sourceItems: 5 },
+        { index: 3, state: "unused", file: "Items.json", sourceItems: 7 },
+      ],
+    },
+  } as Job;
+  const state = (runs: Job[], noRequests = {}) =>
+    ({
+      runs,
+      sourceStatus: { changed: [], ready: [], noRequests },
+    }) as unknown as GuidedState;
+  const lines = (value: GuidedState) =>
+    fileLines(value, "database", "Items.json");
+  assert.deepEqual(lines(state([run])), { done: 40, total: 50 });
+  const retried = {
+    ...run,
+    process: {
+      ...run.process!,
+      requests: [
+        ...run.process!.requests!,
+        {
+          index: 4,
+          state: "validated",
+          file: "Items.json",
+          sourceItems: 10,
+          clarificationOf: 1,
+        },
+      ],
+    },
+  } as Job;
+  assert.deepEqual(lines(state([retried])), { done: 50, total: 50 });
+  // A later "nothing to translate" check closes the file at what is done.
+  assert.deepEqual(
+    lines(
+      state([run], { database: { "Items.json": "2026-10-05T12:00:00+00:00" } }),
+    ),
+    { done: 40, total: 40 },
+  );
+  assert.deepEqual(lines(state([])), { done: 0, total: null });
 });

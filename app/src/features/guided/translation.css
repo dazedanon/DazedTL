@@ -233,7 +233,7 @@
 }
 .file-browser-inline .file-browser-heading,
 .file-browser-inline .file-browser-row {
-  grid-template-columns: 1.2em minmax(0, 1fr) 10em 5.5em 4.5em 2em;
+  grid-template-columns: 1.2em minmax(0, 1fr) 7em 10em 5.5em 4.5em 2em;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-2);
   align-items: center;
@@ -245,7 +245,7 @@
 /* Cost and time columns appear once any listed file has run metrics. */
 .translation-files[data-metrics="false"]
   :is(.file-browser-heading, .file-browser-row) {
-  grid-template-columns: 1.2em minmax(0, 1fr) 10em 2em;
+  grid-template-columns: 1.2em minmax(0, 1fr) 7em 10em 2em;
 }
 .translation-files[data-metrics="false"]
   :is(.translation-file-cost, .translation-file-time) {
@@ -652,8 +652,7 @@
   align-items: center;
   gap: var(--space-2);
 }
-.file-text-pages small,
-.history-purpose {
+.file-text-pages small {
   font-size: var(--font-small);
   color: var(--color-muted);
 }
@@ -668,7 +667,8 @@
     grid-template-columns: 1.2em minmax(0, 1fr) fit-content(40%) auto;
   }
   .file-browser-inline .translation-file-cost,
-  .file-browser-inline .translation-file-time {
+  .file-browser-inline .translation-file-time,
+  .file-browser-inline .translation-file-lines {
     display: none;
   }
   .file-browser-inline .translation-file-status {
@@ -688,4 +688,10 @@
 }
 .translation-model > .ui-button {
   overflow-wrap: anywhere;
+}
+.translation-file-lines {
+  text-align: right;
+  font-size: var(--font-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-label);
 }

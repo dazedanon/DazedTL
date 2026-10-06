@@ -13,6 +13,28 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* The project's amounts: a figure over its caption, figure first to scan. */
+.project-amounts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+}
+.project-amounts > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-1);
+}
+.project-amounts dd {
+  margin: 0;
+  font-size: var(--font-page-title);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+.project-amounts dt {
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}
 .project-tasks-section {
   margin-top: var(--space-6);
 }
