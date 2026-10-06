@@ -1,4 +1,10 @@
-import { useEffect, useId, useRef, type ComponentProps } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Button } from "./Button";
 import { Feedback } from "./Feedback";
 import { JobStatus } from "./JobStatus";
@@ -23,9 +29,12 @@ export function ActionControl({
   feedbackKey,
   disabledReason = "",
   job: reported,
+  icon,
   ...button
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
+  /** An icon before the label, for actions the icon rule marks (open a folder, add). */
+  icon?: ReactNode;
   /** The action key whose result this control reports, so fallbacks skip it. */
   feedbackKey?: string;
   pendingText?: string;
@@ -97,6 +106,7 @@ export function ActionControl({
           .filter(Boolean)
           .join(" ")}
       >
+        {!(pending || active) && icon}
         <span className="action-control-label">
           {inline && (pending || active) ? pendingText : label}
         </span>

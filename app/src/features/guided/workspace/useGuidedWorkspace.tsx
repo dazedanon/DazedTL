@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../../api/client";
 import type {
@@ -762,6 +763,7 @@ export function useGuidedWorkspace({
       >
         <ActionControl
           label="Open translated folder"
+          icon={<FolderOpen size={16} aria-hidden="true" />}
           disabled={disabled}
           {...feedback("translated-folder", "Opening folder…")}
           onClick={() =>

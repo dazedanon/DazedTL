@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client";
 import type {
@@ -123,6 +124,7 @@ export function BackupsPanel({
           inline
           variant="link"
           label="Open folder"
+          icon={<FolderOpen size={14} aria-hidden="true" />}
           title={record.path}
           disabled={disabled || record.available === false}
           pending={action.busy && action.key === key}

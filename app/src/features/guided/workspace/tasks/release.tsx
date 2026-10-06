@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 /** Release: build the game or patch archive. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
@@ -94,6 +95,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
       open={
         <ActionControl
           label="Open release folder"
+          icon={<FolderOpen size={16} aria-hidden="true" />}
           disabled={!artifact?.available || action.busy}
           {...feedback("open-release", "Opening…")}
           onClick={() =>

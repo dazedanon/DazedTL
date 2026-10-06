@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 /** Prepare: preserve the original, extract Ace data, format files and save the baseline. */
 import type { ReactNode } from "react";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
@@ -221,6 +222,7 @@ export function formatView(w: GuidedWorkspace): TaskView {
                 )
               }
             >
+              <FolderOpen size={14} aria-hidden="true" />
               Open game folder
             </Button>
           )}

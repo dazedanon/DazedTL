@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 /** Context: speaker investigation, translation guidance and text layout. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
@@ -69,6 +70,7 @@ export function namesView(w: GuidedWorkspace): TaskView {
         addReference={
           <ActionControl
             label="Add game folder"
+            icon={<Plus size={16} aria-hidden="true" />}
             disabled={disabled}
             {...feedback("reference:add", "Adding folder…")}
             onClick={async () => {

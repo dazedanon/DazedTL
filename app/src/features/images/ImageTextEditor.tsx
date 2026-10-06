@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { imagesApi } from "../../api/images";
@@ -529,7 +530,14 @@ function Editor({
             setDrawing(!drawing);
           }}
         >
-          {drawing ? "Cancel drawing" : "Add box"}
+          {drawing ? (
+            "Cancel drawing"
+          ) : (
+            <>
+              <Plus size={16} aria-hidden="true" />
+              Add box
+            </>
+          )}
         </Button>
         <Button
           disabled={busy || !selected.length}

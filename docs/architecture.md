@@ -429,6 +429,7 @@ Buttons, single-line inputs and selects share `--control-height` and `--control-
 Color has three accent roles: accent for interactive text (links, the selected tab, focus), accent strong for the one primary button, and accent subtle for selected surfaces (the current sidebar entry and stage, a selected row).
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 The top bar, footers and sidebar take their sizes from tokens.css; below 1100px wide the sidebar becomes a rail of icons over short labels, so small windows give the task the width.
+Icons appear in navigation, on actions that leave the app (opening a folder), on menus and disclosures, and on Add; other actions are text only, and ActionControl's `icon` carries the marked ones.
 
 ### Workflow and shared presentation
 

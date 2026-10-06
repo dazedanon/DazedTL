@@ -21,6 +21,7 @@
   border-color: transparent;
 }
 .link-button {
+  gap: var(--space-1);
   border: 0;
   background: transparent;
   padding: 0;
