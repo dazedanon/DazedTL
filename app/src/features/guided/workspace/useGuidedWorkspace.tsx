@@ -733,6 +733,14 @@ export function useGuidedWorkspace({
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
     const appliedHere = name === "export_selected" && finishedHere;
+    // Applying fitting closes its review and the page returns to scanning,
+    // so the scan control confirms an apply from this visit.
+    const fittingApplied = operationJob("rewrap_apply");
+    const fittedHere =
+      name === "rewrap_preview" &&
+      fittingApplied?.status === "complete" &&
+      fittingApplied.id === started["rewrap_apply"]?.id &&
+      jobTime(fittingApplied) >= jobTime(current || {});
     const qaOperation = ["qa_prepare", "qa_status"].includes(name);
     // Release reports a finished build in its saved archive panel; only a
     // build from this visit also confirms beside its button.
@@ -823,9 +831,13 @@ export function useGuidedWorkspace({
         )}
         {...(appliedHere
           ? { notice: "Saved translations applied." }
-          : builtHere
-            ? { notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.` }
-            : {})}
+          : fittedHere
+            ? { notice: "Text fitting applied. Restore it from Apply." }
+            : builtHere
+              ? {
+                  notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
+                }
+              : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }
