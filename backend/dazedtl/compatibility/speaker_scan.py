@@ -12,19 +12,18 @@ from dazedtl.translation.files import digest, project_path
 def collect(engine, files, progress):
     engine.resetSpeakerState()
     engine.setSpeakerParseMode(True)
+
     # The native parser returns some file errors in its result tuple. Do not
     # let a partial scan look complete just because handleMVMZ logged them.
-    original = engine.openFiles
-
-    def checked(filename):
-        result = original(filename)
+    def checked(native, filename):
+        result = native(filename)
         if result[2] is not None:
             raise ValueError(
                 "Speaker scan could not parse " + filename + ". Review its scan log."
             )
         return result
 
-    engine.openFiles = checked
+    engine.openFiles.layer("speaker-scan", checked)
     try:
         for index, name in enumerate(files):
             progress(f"Scanning speaker names · {index + 1}/{len(files)} · {name}")
@@ -38,7 +37,7 @@ def collect(engine, files, progress):
             )
         )
     finally:
-        engine.openFiles = original
+        engine.openFiles.remove("speaker-scan")
         engine.setSpeakerParseMode(False)
 
 

@@ -1,11 +1,8 @@
 """Retain operation recovery while launching the app's compatibility worker."""
 
 import importlib.util
-import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, cast
 
 
 def workflow_operations(source, workspace, lock):
@@ -19,7 +16,7 @@ def workflow_operations(source, workspace, lock):
     sys.modules[name] = native
     spec.loader.exec_module(native)
 
-    def launch(arguments, **kwargs):
+    def launch(native_launch, arguments, **kwargs):
         if (
             len(arguments) != 4
             or Path(arguments[2]) != source / "desktop/backend/workflow_worker.py"
@@ -28,7 +25,7 @@ def workflow_operations(source, workspace, lock):
                 "The workflow worker changed. Update its compatibility adapter."
             )
         kwargs["env"] = {**kwargs["env"], "PYTHONDONTWRITEBYTECODE": "1"}
-        return subprocess.Popen(
+        return native_launch(
             [
                 *arguments[:2],
                 str(Path(__file__).with_name("workflow_worker.py")),
@@ -37,10 +34,5 @@ def workflow_operations(source, workspace, lock):
             **kwargs,
         )
 
-    cast(Any, native).subprocess = SimpleNamespace(
-        Popen=launch,
-        run=subprocess.run,
-        PIPE=subprocess.PIPE,
-        DEVNULL=subprocess.DEVNULL,
-    )
+    native.launch_worker.layer("dazedtl-worker", launch)
     return native.Operations(workspace, lock)

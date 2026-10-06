@@ -542,6 +542,7 @@ def open(file, *args, **kwargs):
     return builtins.open(file, *args, **kwargs)
 
 
+@extensions.point
 def openFiles(filename):
     file_kind = mvmz_file_kind(filename)
     with open("files/" + filename, "r", encoding="utf-8-sig") as f:

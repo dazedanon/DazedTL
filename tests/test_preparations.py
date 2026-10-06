@@ -19,6 +19,8 @@ class PreparationTests(unittest.TestCase):
             module.parent.mkdir(parents=True)
             module.write_text("""import json, threading
 from pathlib import Path
+from tests.engine import point
+launch_worker = point(lambda *_args, **_kwargs: None)
 class ManualJobs:
     busy = False
     def __init__(self, workspace, lock, **kwargs):

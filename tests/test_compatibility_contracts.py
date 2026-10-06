@@ -472,6 +472,8 @@ class CompatibilityContracts(unittest.TestCase):
             module.parent.mkdir(parents=True)
             module.write_text("""import json, threading
 from pathlib import Path
+from tests.engine import point
+launch_worker = point(lambda *_args, **_kwargs: None)
 class ManualJobs:
     def __init__(self, workspace, lock, **kwargs):
         self.root = Path(workspace)/'manual'
@@ -637,10 +639,12 @@ def parse(codeList, i, headerString, jaString):
                 side_effect=AssertionError("Must not translate names")
             ),
         )
-        engine.openFiles = lambda name: (
-            {},
-            [0, 0],
-            ValueError("broken JSON") if name == "bad.json" else None,
+        engine.openFiles = point(
+            lambda name: (
+                {},
+                [0, 0],
+                ValueError("broken JSON") if name == "bad.json" else None,
+            )
         )
 
         def handle(name, _estimate):
@@ -827,13 +831,18 @@ def parse(codeList, i, headerString, jaString):
     def test_phased_worker_launcher_preserves_pipe_controls_and_isolates_the_child(
         self,
     ):
-        # The native runner failed before launch when PIPE was absent from its substituted namespace.
+        # A substituted subprocess namespace once dropped PIPE before launch; the
+        # launch layer must keep the native pipe controls.
         with TemporaryDirectory() as temporary:
             source = Path(temporary)
             module = source / "desktop/backend/manual.py"
             module.parent.mkdir(parents=True)
             module.write_text("""import subprocess, sys, threading
 from pathlib import Path
+from tests.engine import point
+@point
+def launch_worker(arguments, **kwargs):
+    return subprocess.Popen(arguments, **kwargs)
 class ManualJobs:
     def __init__(self, workspace, lock, **kwargs):
         self.workspace = workspace
@@ -848,8 +857,8 @@ class ManualJobs:
     def close(self):
         if self.active: self.stop(self.active)
     def launch(self):
-        return subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), str(self.workspace/'run')],
-                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
+        return launch_worker([sys.executable, '-u', str(Path(__file__).with_name('manual_worker.py')), str(self.workspace/'run')],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, env={})
 """)
             with patch("subprocess.Popen") as launch:
                 controller = manual_jobs(source, source / "profile", None, False)

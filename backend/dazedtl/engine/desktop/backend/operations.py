@@ -12,6 +12,13 @@ import uuid
 
 from .project import atomic_json, digest
 from .manual import timestamp
+from util import extensions
+
+
+@extensions.point
+def launch_worker(arguments, **kwargs):
+    """Starts an operation's worker process; a host may launch its own worker instead."""
+    return subprocess.Popen(arguments, **kwargs)
 
 
 class Operations:
@@ -72,9 +79,9 @@ class Operations:
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
                 environment['DAZEDTL_TEST_OFFLINE'] = '1'
             with (directory / "worker.log").open("a", encoding="utf-8") as errors:
-                process = subprocess.Popen([sys.executable, "-u", str(Path(__file__).with_name("workflow_worker.py")), str(plan)],
-                                           cwd=directory, env=environment, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=errors,
-                                           encoding="utf-8", text=True, bufsize=1, start_new_session=os.name != "nt")
+                process = launch_worker([sys.executable, "-u", str(Path(__file__).with_name("workflow_worker.py")), str(plan)],
+                                        cwd=directory, env=environment, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=errors,
+                                        encoding="utf-8", text=True, bufsize=1, start_new_session=os.name != "nt")
                 with self.lock:
                     self.process = process
                     if self.stopping.is_set():

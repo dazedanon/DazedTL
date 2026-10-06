@@ -16,6 +16,13 @@ from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PAT
 from util.translation_task import TRANSLATION_MODULE_SPECS, translation_module
 from .project import atomic_json, digest
 from .settings import SettingsStore
+from util import extensions
+
+
+@extensions.point
+def launch_worker(arguments, **kwargs):
+    """Starts a run's worker process; a host may launch its own worker instead."""
+    return subprocess.Popen(arguments, **kwargs)
 
 
 def timestamp():
@@ -366,9 +373,9 @@ class ManualJobs:
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
                 env['DAZEDTL_TEST_OFFLINE'] = '1'
             with (directory / "log/startup.txt").open("a", encoding="utf-8") as error_log:
-                process = subprocess.Popen([sys.executable, "-u", str(Path(__file__).with_name("manual_worker.py")), str(directory)],
-                                           cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_log,
-                                           text=True, encoding="utf-8", bufsize=1, start_new_session=os.name != "nt")
+                process = launch_worker([sys.executable, "-u", str(Path(__file__).with_name("manual_worker.py")), str(directory)],
+                                        cwd=directory, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=error_log,
+                                        text=True, encoding="utf-8", bufsize=1, start_new_session=os.name != "nt")
                 with self.lock:
                     self.process = process
                     if self.stopping.is_set():

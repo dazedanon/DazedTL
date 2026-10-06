@@ -3,14 +3,12 @@
 import hashlib
 import importlib.util
 import json
-import subprocess
 import sys
 import threading
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 from .preparations import discard, discardable, temporary
 
@@ -78,8 +76,8 @@ def canceled_before_submission(job, directory, *, finishing=False):
 
 
 def manual_jobs(source, workspace, lock, allow_providers):
-    # Load an isolated module namespace so substituting its launcher never changes
-    # the shared subprocess module or the preserved application's controller.
+    # Load an isolated module namespace so its launcher layer never changes the
+    # preserved application's controller.
     name = "desktop.backend._dazedtl_manual"
     spec = importlib.util.spec_from_file_location(
         name, source / "desktop/backend/manual.py"
@@ -91,7 +89,7 @@ def manual_jobs(source, workspace, lock, allow_providers):
     spec.loader.exec_module(native)
     expected = source / "desktop/backend/manual_worker.py"
 
-    def launch(arguments, **kwargs):
+    def launch(native_launch, arguments, **kwargs):
         if len(arguments) != 4 or Path(arguments[2]) != expected:
             raise RuntimeError(
                 "The preserved worker entrypoint changed. Update the compatibility adapter."
@@ -130,14 +128,9 @@ def manual_jobs(source, workspace, lock, allow_providers):
             **kwargs["env"],
             "PYTHONDONTWRITEBYTECODE": "1",
         }
-        return subprocess.Popen(arguments, **kwargs)
+        return native_launch(arguments, **kwargs)
 
-    cast(Any, native).subprocess = SimpleNamespace(
-        Popen=launch,
-        PIPE=subprocess.PIPE,
-        DEVNULL=subprocess.DEVNULL,
-        run=subprocess.run,
-    )
+    native.launch_worker.layer("dazedtl-worker", launch)
 
     class ManualJobs(native.ManualJobs):
         request_policy = None
