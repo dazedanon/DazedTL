@@ -623,20 +623,6 @@ try:
             )
 
         original_http = httpx.Client
-        originals = {
-            name: getattr(translation, name)
-            for name in (
-                "estimateCostComparison",
-                "translateAI",
-                "calculateCost",
-                "require_batch_result",
-                "cache_translation",
-                "queue_batch_request",
-                "_write_request_debug_log",
-                "translateText",
-                "_clear_batch_queue_storage",
-            )
-        }
         with (
             patch.dict(
                 os.environ,
@@ -662,7 +648,6 @@ try:
             ),
             patch.multiple(
                 translation,
-                **originals,
                 _batch_results=None,
                 _batch_queue_pending={},
                 _global_accurate_cost=0,
