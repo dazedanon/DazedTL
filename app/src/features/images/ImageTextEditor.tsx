@@ -13,6 +13,7 @@ import type {
 } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
+import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback, Message } from "../../ui/Feedback";
@@ -39,6 +40,21 @@ const backgroundRepairs: Record<BackgroundRepair, string> = {
   hgradient: "Horizontal gradient",
   patch: "Clone clean strip",
   inpaint: "Local OpenCV repair",
+};
+/** Keep side-by-side canvases on the same region as one is scrolled. */
+const syncScroll = (source: HTMLElement) => {
+  const area = source.closest(".native-editor-canvases");
+  for (const element of area?.querySelectorAll<HTMLElement>(
+    ".native-editor-canvas-scroll",
+  ) ?? [])
+    if (
+      element !== source &&
+      (element.scrollLeft !== source.scrollLeft ||
+        element.scrollTop !== source.scrollTop)
+    ) {
+      element.scrollLeft = source.scrollLeft;
+      element.scrollTop = source.scrollTop;
+    }
 };
 const isBackgroundRepair = (value: string): value is BackgroundRepair =>
   Object.hasOwn(backgroundRepairs, value);
@@ -167,6 +183,21 @@ function Editor({
   useEffect(() => {
     if (detailsPanel.current) detailsPanel.current.scrollTop = 0;
   }, [imageId, firstSelected]);
+  // The original and the editable copy scroll as one, and open on the box
+  // being edited: a large image at 100% otherwise shows empty corners.
+  const canvasArea = useRef<HTMLDivElement>(null);
+  const focusBox = (block ?? current?.blocks[0])?.box;
+  const focusKey = focusBox ? focusBox.join(",") : "";
+  useEffect(() => {
+    if (!focusKey || !canvasArea.current) return;
+    const [x, y, width, height] = focusKey.split(",").map(Number);
+    for (const element of canvasArea.current.querySelectorAll<HTMLElement>(
+      ".native-editor-canvas-scroll",
+    )) {
+      element.scrollLeft = (x + width / 2) * zoom - element.clientWidth / 2;
+      element.scrollTop = (y + height / 2) * zoom - element.clientHeight / 2;
+    }
+  }, [imageId, focusKey, zoom, comparison]);
   const busy = action.busy || draft.committing;
   const refreshNative = async () => {
     setNativeState(await api.images.editorTranslationState(projectId));
@@ -570,8 +601,8 @@ function Editor({
         <div className="native-editor-workspace">
           {image && current ? (
             <>
+              {/* The Image menu above names the file. */}
               <div className="native-editor-image-caption">
-                <strong title={image.path}>{image.path}</strong>
                 <span>
                   {image.width} × {image.height} · {current.blocks.length}{" "}
                   {current.blocks.length === 1 ? "box" : "boxes"}
@@ -584,11 +615,15 @@ function Editor({
                 </p>
               )}
               <div
+                ref={canvasArea}
                 className={`native-editor-canvases ${comparison ? "native-editor-compare" : ""}`}
               >
                 <figure>
                   <figcaption>Original</figcaption>
-                  <div className="native-editor-canvas-scroll">
+                  <div
+                    className="native-editor-canvas-scroll"
+                    onScroll={(event) => syncScroll(event.currentTarget)}
+                  >
                     <div
                       className="native-editor-pixels"
                       style={{
@@ -714,7 +749,10 @@ function Editor({
                 {comparison && (
                   <figure>
                     <figcaption>Editable copy</figcaption>
-                    <div className="native-editor-canvas-scroll">
+                    <div
+                      className="native-editor-canvas-scroll"
+                      onScroll={(event) => syncScroll(event.currentTarget)}
+                    >
                       <div
                         className="native-editor-pixels"
                         style={{
@@ -858,10 +896,12 @@ function Editor({
                       ))}
                     </select>
                   </label>
+                  {/* The renderer sizes type by its capital height, which
+                      is what the measurement reads off the original. */}
                   <label>
-                    Size
+                    Letter height (px)
                     <input
-                      aria-label="Image font size"
+                      aria-label="Image letter height in pixels"
                       type="number"
                       min={1}
                       max={512}
@@ -1212,27 +1252,38 @@ function Editor({
           )
         }
       >
-        <Button
-          disabled={busy || !image}
-          onClick={() => {
-            void operate("undo");
-          }}
-        >
-          Undo render
-        </Button>
-        <Button
+        {/* Undo returns the copy to its original pixels, so it appears
+            while the copy differs from the game image; later text edits
+            leave a render in place. */}
+        {!!image && image.candidateHash !== image.sourceHash && (
+          <Button
+            disabled={busy}
+            onClick={() => {
+              void operate("undo");
+            }}
+          >
+            Undo render
+          </Button>
+        )}
+        <ActionControl
+          label="Render image"
           variant="primary"
           pending={action.key === "render" && action.busy}
           disabled={
             busy || !current?.blocks.length || current.status !== "confirmed"
           }
+          disabledReason={
+            !current?.blocks.length
+              ? "Add a text box first."
+              : current.status !== "confirmed"
+                ? "Confirm the source text and boxes first."
+                : ""
+          }
           onClick={() => {
             setComparison(true);
             void operate("render");
           }}
-        >
-          Render image
-        </Button>
+        />
       </ActionBar>
       {replaceOcr && (
         <Modal

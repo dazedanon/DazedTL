@@ -59,12 +59,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--space-2);
-}
-.native-editor-image-caption strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 .native-editor-image-caption span {
   color: var(--color-muted);
@@ -219,9 +214,11 @@
   width: 100%;
   min-width: 0;
 }
+/* Position, then size: four across left each field too narrow for a
+   four-digit coordinate beside its spinner. */
 .native-editor-box-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-2);
 }
 .native-editor-style-fields {
@@ -273,9 +270,6 @@
 @media (max-width: 1100px) {
   .native-editor-body {
     grid-template-columns: minmax(0, 1fr) 18rem;
-  }
-  .native-editor-box-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 760px) {
