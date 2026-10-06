@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.api.contracts.validation import check_response
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
 from dazedtl.plugins.service import safe_name
@@ -298,9 +299,11 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(
             {excluded, uncertain["id"], omitted["id"]}.isdisjoint(value["selection"])
         )
-        uncertain_files = [
-            row for row in self.service.list(self.identity)["items"] if row["uncertain"]
-        ]
+        listed = self.service.list(self.identity)
+        # Real rows and a bound request must match what the renderer validates.
+        check_response("plugins_list", listed)
+        check_response("plugins_state", self.service.state(self.identity))
+        uncertain_files = [row for row in listed["items"] if row["uncertain"]]
         self.assertEqual(
             {row["path"] for row in uncertain_files},
             {"www/js/plugins.js", "www/js/plugins/PluginA.js"},

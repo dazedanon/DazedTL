@@ -1675,6 +1675,7 @@ export type PluginRow = {
   candidateHash: string;
   working: string;
   ready: boolean;
+  applied: boolean;
 };
 
 export type PluginView = {

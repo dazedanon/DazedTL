@@ -54,6 +54,7 @@ class PluginRow(TypedDict):
     candidateHash: str
     working: str
     ready: bool
+    applied: bool
 
 
 class PluginView(TypedDict):

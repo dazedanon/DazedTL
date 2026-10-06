@@ -79,6 +79,14 @@ def bounded(value, label, limit=4000):
     return value
 
 
+def report_view(value):
+    return {
+        key: value[key]
+        for key in ("status", "errors", "accepted", "reported", "expected")
+        if key in value
+    }
+
+
 def safe_name(name):
     # MZ loads plugins from subfolders of js/plugins, such as Author/Plugin;
     # each folder and file name must still be a plain name.
@@ -693,8 +701,9 @@ class PluginService:
                 "source": str(root),
                 "view": value["view"],
                 "counts": counts,
-                "findings": value["findings"],
-                "editing": value["editing"],
+                # The stored report also binds its request, which stays here.
+                "findings": report_view(value["findings"]),
+                "editing": report_view(value["editing"]),
                 "originalIssue": value.get("originalIssue", ""),
                 "originalBackup": value["originals"].get("backupId", ""),
                 "receipts": value["receipts"][-12:],
