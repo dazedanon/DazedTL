@@ -6,6 +6,7 @@ For setup and current limitations, see the [README](../README.md).
 ## Open a game
 
 Choose **Open a game** on Overview and select the game folder.
+Overview then shows the next unfinished task and each stage's progress; **Continue** reopens Translation where you left off.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 RPG Maker MV/MZ and Ace games use the guided **Translation** workflow.
 Any game folder can use [Len's method](#lens-method).

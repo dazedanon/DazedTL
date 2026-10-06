@@ -38,12 +38,6 @@
 .overview-status dt {
   padding-top: 3px;
 }
-.overview-status dd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22px;
-}
 .overview-status-copy {
   min-width: 0;
 }
@@ -56,9 +50,6 @@
   font-size: 12px;
   line-height: 1.5;
   margin: 4px 0 0;
-}
-.overview-status button {
-  flex-shrink: 0;
 }
 .overview-workflow-actions {
   margin-top: var(--space-4);
@@ -88,17 +79,6 @@
 }
 .overview-empty button {
   flex-shrink: 0;
-}
-.overview-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px 16px;
-  flex-wrap: wrap;
-}
-.overview-setup-note {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
 }
 .overview-recents > h2 {
   margin-bottom: 4px;
@@ -157,8 +137,7 @@
   }
 }
 @media (max-width: 800px) {
-  .overview-empty,
-  .overview-status dd {
+  .overview-empty {
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 12px;
@@ -179,4 +158,30 @@
   .overview-folder > span {
     max-width: 100%;
   }
+}
+.overview-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-control);
+}
+.overview-stages li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--muted);
+}
+.overview-stages li:has(.guided-completed) {
+  color: var(--color-text);
+}
+.overview-stage-count {
+  color: var(--accent);
+  font-size: var(--font-small);
+  font-variant-numeric: tabular-nums;
+}
+.overview-activity {
+  color: var(--muted);
 }

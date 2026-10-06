@@ -3,9 +3,26 @@ import { PageLayout, PageHeader } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { Button } from "../../ui/Button";
 import { JobStatus } from "../../ui/JobStatus";
+import { Notice } from "../../ui/Notice";
 import { engineLabel } from "../../ui/displayText";
-import { ArrowRight, Folder, FolderOpen, Settings2 } from "lucide-react";
+import { ArrowRight, Folder, FolderOpen } from "lucide-react";
 import type { AppState, Screen } from "../../api/contracts";
+
+const sentence = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
+
+/** Where a Guided project stands, as the shell reads it from saved state. */
+type Progress = {
+  stages: { id: string; short: string; done: number; total: number }[];
+  next: {
+    step: string;
+    stage: string;
+    task: string;
+    title: string;
+    description: string;
+  } | null;
+  current: { step: string; task: string; stage: string; title: string };
+};
 
 export default function Overview({
   state,
@@ -14,6 +31,8 @@ export default function Overview({
   select,
   go,
   report,
+  progress,
+  openTask,
 }: {
   state: AppState;
   busy: boolean;
@@ -21,12 +40,18 @@ export default function Overview({
   select: (id: string) => void;
   go: (screen: Screen) => void;
   report: (error: unknown) => void;
+  progress?: Progress | null;
+  openTask: (step: string, task: string) => void;
 }) {
   const project = state.project;
   const recent = state.recent
     .filter((item) => item.id !== project?.id)
     .slice(0, 3);
   const switchingDisabled = busy;
+  const operation = project?.operation;
+  const active =
+    !!operation && ["ready", "running", "waiting"].includes(operation.status);
+  const guided = !!project && ["MVMZ", "ACE"].includes(project.engine);
   return (
     <PageLayout className="overview" aria-label="Project overview">
       <PageHeader title="Overview" divided />
@@ -59,8 +84,22 @@ export default function Overview({
                 <dt>Status</dt>
                 <dd>
                   <div className="overview-status-copy">
-                    {project.operation ? (
-                      <JobStatus job={project.operation} />
+                    {active ? (
+                      <JobStatus job={operation} />
+                    ) : progress ? (
+                      progress.next ? (
+                        <>
+                          <strong role="status">
+                            Next: {progress.next.stage} · {progress.next.title}
+                          </strong>
+                          <p>{progress.next.description}</p>
+                        </>
+                      ) : (
+                        <>
+                          <strong role="status">Required tasks are done</strong>
+                          <p>Build a release when the translation is ready.</p>
+                        </>
+                      )
                     ) : (
                       <>
                         <strong role="status">{project.status}</strong>
@@ -68,36 +107,81 @@ export default function Overview({
                       </>
                     )}
                   </div>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    disabled={busy || (!project.available && state.running)}
-                    onClick={() =>
-                      project.available
-                        ? go(
-                            ["MVMZ", "ACE"].includes(project.engine)
-                              ? "guided"
-                              : "translation",
-                          )
-                        : open()
-                    }
-                  >
-                    {project.available &&
-                    ["MVMZ", "ACE"].includes(project.engine)
-                      ? "Open Translation"
-                      : project.next_label}
-                    <ArrowRight size={15} />
-                  </Button>
                 </dd>
               </div>
+              {progress && (
+                <div className="summary-row overview-wide">
+                  <dt>Stages</dt>
+                  <dd>
+                    <ol className="overview-stages">
+                      {progress.stages.map((stage) => (
+                        <li key={stage.id}>
+                          {stage.short}
+                          {stage.done === stage.total ? (
+                            <span
+                              className="guided-completed"
+                              aria-label="Tasks completed"
+                            >
+                              ✓
+                            </span>
+                          ) : stage.done ? (
+                            <span className="overview-stage-count">
+                              {stage.done}/{stage.total}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ol>
+                  </dd>
+                </div>
+              )}
+              {!active && operation && progress && (
+                <DetailRow label="Last activity">
+                  <span className="overview-activity">
+                    {operation.label} · {sentence(operation.status)}
+                  </span>
+                </DetailRow>
+              )}
             </dl>
-            {project.available && ["MVMZ", "ACE"].includes(project.engine) && (
-              <div className="actions overview-workflow-actions">
+            <div className="actions overview-workflow-actions">
+              <Button
+                type="button"
+                variant="primary"
+                disabled={busy || (!project.available && state.running)}
+                onClick={() =>
+                  !project.available
+                    ? open()
+                    : progress
+                      ? openTask(progress.current.step, progress.current.task)
+                      : go(guided ? "guided" : "translation")
+                }
+              >
+                {!project.available
+                  ? project.next_label
+                  : progress
+                    ? `Continue: ${progress.current.title}`
+                    : guided
+                      ? "Open Translation"
+                      : project.next_label}
+                <ArrowRight size={15} />
+              </Button>
+              {progress?.next &&
+                progress.next.task !== progress.current.task && (
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      openTask(progress.next!.step, progress.next!.task)
+                    }
+                  >
+                    Go to {progress.next.title}
+                  </Button>
+                )}
+              {project.available && guided && (
                 <Button disabled={busy} onClick={() => go("translation")}>
-                  Open Len's method
+                  Open Len&apos;s method
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </>
         ) : (
           <div className="overview-empty">
@@ -123,25 +207,14 @@ export default function Overview({
           </div>
         )}
       </Section>
-      <Section title="Quickstart" id="overview-quickstart">
-        <div className="overview-actions">
-          {project && (
-            <Button type="button" disabled={switchingDisabled} onClick={open}>
-              <FolderOpen size={15} />
-              Open another game
-            </Button>
-          )}
-          <Button type="button" disabled={busy} onClick={() => go("settings")}>
-            <Settings2 size={15} />
-            Translation settings
+      {!state.provider_ready && (
+        <Notice tone="warning">
+          <span>Choose a connection and model before API translation.</span>
+          <Button variant="link" disabled={busy} onClick={() => go("settings")}>
+            Open Settings
           </Button>
-          {!state.provider_ready && (
-            <span className="overview-setup-note">
-              Choose a connection and model for live or batch translation.
-            </span>
-          )}
-        </div>
-      </Section>
+        </Notice>
+      )}
       {!!recent.length && (
         <Section
           title="Recent projects"

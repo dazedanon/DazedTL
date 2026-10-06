@@ -29,20 +29,12 @@ import {
   type SourcePickerDraft,
   sourceErrors,
 } from "../eventTextSelection";
-import {
-  guidanceAvailability,
-  guidanceNames,
-  saveGuidanceSet,
-} from "../guidanceReview";
-import {
-  completeForSelection,
-  observedRun,
-  selectionSettled,
-  translationTaskComplete,
-} from "../translationView";
+import { guidanceNames, saveGuidanceSet } from "../guidanceReview";
+import { observedRun } from "../translationView";
 import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
+import { completedTasks } from "../progress";
 import { initialPosition, stagesFor } from "../workflow";
 import {
   type GuidedProps,
@@ -158,7 +150,6 @@ export function useGuidedWorkspace({
   const findings = state.speakerSetup;
   const scan = state.speakerScan;
   const discovery = state.contextSetup;
-  const guidance = guidanceAvailability(discovery.documents);
   const investigation = investigationResults(state);
   const scanOptionsDirty =
     JSON.stringify(values.engine_options) !==
@@ -1060,35 +1051,7 @@ export function useGuidedWorkspace({
             : "Continue to plugin text"}
     </Button>
   );
-  const phaseComplete = (target: Phase) => {
-    if (target === "database" || target === "dialogue")
-      return translationTaskComplete(state, target);
-    const saved = state.phaseRuns[target];
-    const names = eventFiles.map((file) => file.name);
-    return (
-      (!!saved && completeForSelection(saved, names)) ||
-      selectionSettled(state, target, names)
-    );
-  };
-  const completed = new Set<string>([
-    ...(preserved ? ["backup"] : []),
-    ...(baseline ? ["baseline"] : []),
-    ...(applied ? ["apply"] : []),
-    ...(phaseComplete("database") ? ["database"] : []),
-    ...(phaseComplete("dialogue") ? ["dialogue"] : []),
-    ...(phaseComplete("advanced") &&
-    (state.comparisons.status === "not_needed" ||
-      (state.comparisons.status === "ready" && phaseComplete("variables")))
-      ? ["other-event-text"]
-      : []),
-    ...(investigation.every((row) => row.saved) ? ["names"] : []),
-    ...(guidance.complete ? ["guidance"] : []),
-    ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
-    ...(preparationComplete || baseline ? ["format"] : []),
-    ...(state.tools?.inspector.installed && state.tools.forge.installed
-      ? ["tools"]
-      : []),
-  ]);
+  const completed = completedTasks(state, translation, values, widthsDirty);
   const applySpeakerControl = findings.status === "ready" && (
     <ActionControl
       label={

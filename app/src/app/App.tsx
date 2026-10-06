@@ -11,11 +11,12 @@ import {
 import { api } from "../api/client";
 import { flushDrafts } from "../state/leaveGuards";
 import { useAction } from "../state/useAction";
-import type { Screen } from "../api/contracts";
+import type { GuidedStep, Screen } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
 import Overview from "../features/overview/Overview";
 import Settings from "../features/settings/Settings";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
+import { guidedProgress } from "../features/guided/progress";
 import Translation from "../features/translation/Translation";
 import { BackupsPanel } from "../features/translation/BackupsPanel";
 import { VersionsPanel } from "../features/translation/VersionsPanel";
@@ -71,6 +72,15 @@ export default function App() {
         await api.navigate(screen);
       }
     });
+  // Overview reads Guided progress from the observed snapshot; no extra read.
+  const guidedState = application.snapshot?.guided;
+  const translationState = application.snapshot?.translation;
+  const progress =
+    state?.project &&
+    guidedState?.projectId === state.project.id &&
+    translationState?.projectId === state.project.id
+      ? guidedProgress(guidedState, translationState)
+      : null;
   const error = application.stopped
     ? application.error
     : action.error || application.error;
@@ -225,6 +235,17 @@ export default function App() {
                   select={select}
                   go={navigate}
                   report={action.report}
+                  progress={progress}
+                  openTask={(step, task) =>
+                    void action.run(async () => {
+                      await flushDrafts();
+                      application.navigateGuided(state.project!.id, {
+                        step: step as GuidedStep,
+                        task,
+                      });
+                      application.navigate("guided");
+                    })
+                  }
                 />
               ) : state.screen === "settings" ? null : state.project &&
                 (state.screen === "guided" || state.screen === "manual") ? (
