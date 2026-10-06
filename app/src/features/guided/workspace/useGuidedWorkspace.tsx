@@ -47,7 +47,6 @@ import {
   fileCount,
   jobTime,
 } from "./model";
-import { SegmentedControl } from "../../../ui/SegmentedControl";
 
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({
@@ -965,40 +964,6 @@ export function useGuidedWorkspace({
       </ActionRow>
     </ActionList>
   );
-  const connection = (
-    <div className="guided-connection">
-      <div>
-        <span>
-          {state.provider.connection} ·{" "}
-          {state.provider.model || "No model selected"}
-        </span>
-        <Button variant="quiet" onClick={settings}>
-          Connection & model
-        </Button>
-      </div>
-      <SegmentedControl
-        label="Translation mode"
-        value={mode === "batch" ? "batch" : "translate"}
-        disabled={disabled}
-        onChange={(next) => edit("mode", next)}
-        options={[
-          { value: "translate", label: "Live API" },
-          ...(state.provider.batchSupported
-            ? [{ value: "batch" as const, label: "Batch API" }]
-            : []),
-        ]}
-      />
-      {!state.provider.ready && (
-        <p className="muted">Configure a connection before paid translation.</p>
-      )}
-      {!state.provider.enabled && (
-        <p className="muted">
-          Provider execution is disabled for this launch. Local estimates are
-          available.
-        </p>
-      )}
-    </div>
-  );
   const formatActions = [
     {
       id: "format_data",
@@ -1247,7 +1212,6 @@ export function useGuidedWorkspace({
     releaseButton,
     widths,
     fileSummary,
-    connection,
     formatActions,
     preparation,
     preparationComplete,

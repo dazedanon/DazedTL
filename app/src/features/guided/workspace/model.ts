@@ -59,7 +59,6 @@ export type Panel =
   | "files"
   | "speakers"
   | "speaker-names"
-  | "name-translation"
   | "widths"
   | "translation-context"
   | "tools"
@@ -70,7 +69,6 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   files: "Choose files for this pass",
   speakers: "Speaker detection",
   "speaker-names": "Speaker names",
-  "name-translation": "API name translation",
   widths: "Character limits",
   "translation-context": "Translation options",
   tools: "Configure game tools",

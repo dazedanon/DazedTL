@@ -23,11 +23,7 @@ import { fileCount, panelTitles, phaseLabels, speakers } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
 
 // Sheets with file lists or tables get the large size; the rest stay compact.
-const wideSheets = new Set<string>([
-  "files",
-  "speaker-names",
-  "name-translation",
-]);
+const wideSheets = new Set<string>(["files", "speaker-names"]);
 
 /** The open tool sheet: file choice, options and task tools. */
 export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
@@ -65,14 +61,27 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     copyTask,
     closePanel,
     widths,
-    fileSummary,
-    connection,
     formatActions,
     applySpeakerControl,
+    review,
   } = w;
   const owned = useOwnedFeedback(action.key);
   if (!panel) return null;
   const findingsReady = ["ready", "applied"].includes(findings.status);
+  // Name translation is optional paid work; its review shows files and cost.
+  const nameTranslationBlocked: string | boolean = !scan.names.length
+    ? findingsReady
+      ? "No names to translate yet."
+      : true
+    : !baseline
+      ? "Save the version baseline first."
+      : !eventFiles.length
+        ? "Choose event files to translate first."
+        : !state.provider.ready
+          ? "Choose a connection and model in Settings first."
+          : !state.provider.enabled
+            ? "Provider execution is off for this launch."
+            : "";
   // Panels that edit the options draft say whether it is saved.
   const draftPanel =
     ["widths", "translation-context"].includes(panel) ||
@@ -127,14 +136,18 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
         {panel === "speaker-names" && (
           <>
             <ActionControl
-              label="API name translation"
-              disabled={disabled || !scan.names.length}
+              label="Translate names with API…"
+              disabled={disabled || !!nameTranslationBlocked}
               disabledReason={
-                findingsReady && !scan.names.length
-                  ? "No names to translate yet."
+                typeof nameTranslationBlocked === "string"
+                  ? nameTranslationBlocked
                   : ""
               }
-              onClick={() => setPanel("name-translation")}
+              onClick={() => {
+                // The paid review replaces this dialog rather than stacking on it.
+                setPanel(null);
+                void review("start", { mode: "speakers" });
+              }}
             />
             <ActionControl
               label={scan.available ? "Scan again" : "Run local scan"}
@@ -336,25 +349,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                   compact
                   job={{ ...scan.job, label: "Local speaker scan" }}
                 />
-              )}
-            </>
-          )}
-          {panel === "name-translation" && (
-            <>
-              {fileSummary(eventFiles.length)}
-              {connection}
-              <p className="muted">
-                Optional · creates provisional translated names using the API.
-                Investigation and local scanning do not require this.
-              </p>
-              {task(
-                "start",
-                "Review paid name translation",
-                { mode: "speakers" },
-                !baseline ||
-                  !eventFiles.length ||
-                  !state.provider.ready ||
-                  !state.provider.enabled,
               )}
             </>
           )}

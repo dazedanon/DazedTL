@@ -33,7 +33,7 @@ The scanner makes no API requests.
 **Add game folder** includes an earlier game as a read-only terminology reference in the next copied task.
 Re-copy the task after changing reference folders.
 **View names** opens the saved scan, and **Speaker detection** holds speaker rules and overrides.
-Optional API name translation is available from the name-scan panel.
+Optional **Translate names with API…** in the name scan opens the paid review directly, using the project's Batch or Live choice.
 Edit the resulting files in **Guidance**.
 Measured character limits are saved automatically during investigation; **Layout** shows them and allows manual changes.
 

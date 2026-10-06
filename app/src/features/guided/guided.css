@@ -668,20 +668,6 @@
 .guided-folder-field button {
   flex-shrink: 0;
 }
-.guided-connection {
-  display: grid;
-  gap: var(--space-3);
-  margin: var(--space-5) 0;
-}
-.guided-connection > div:first-child {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.guided-connection p {
-  margin: 0;
-}
 .file-browser-toolbar button[aria-pressed="true"],
 .file-browser-search button[aria-pressed="true"] {
   background: var(--color-accent-subtle);
