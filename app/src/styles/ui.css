@@ -486,8 +486,12 @@ pre {
   gap: var(--space-2);
   max-width: 100%;
 }
+/* A percentage cap would be ignored while the bar sizes its controls, letting
+   a long result claim a whole row; a fixed cap that can shrink keeps it beside
+   its button. */
 .action-bar .action-control > .action-control-feedback {
-  max-width: min(30rem, 100%);
+  max-width: 30rem;
+  min-width: 0;
   text-align: right;
 }
 .action-bar .action-control > .action-control-feedback:not(:empty) {
@@ -515,6 +519,12 @@ pre {
 }
 .feedback.error {
   color: var(--color-error-text);
+}
+/* An expanded result scrolls in its own space instead of growing its bar or
+   row past the page. */
+.feedback > .expandable-text {
+  max-height: 12rem;
+  overflow-y: auto;
 }
 .unsaved-dot {
   width: 6px;

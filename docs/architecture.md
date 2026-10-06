@@ -506,6 +506,7 @@ Saved results, worker logs, frozen scope and record identifiers belong to the in
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.
 Inside action bars a control's result or disabled reason sits just left of its own button, so buttons keep their place and the bar keeps its height.
+A long error shows a short excerpt with Show more, and the expanded text scrolls within a bounded height instead of growing past the page.
 Successful operations that finished before the interface loaded stay in History rather than beside their control; failures remain until a newer attempt replaces them.
 An action error clears when the user edits the draft it ran with.
 Tertiary actions inside running content use the `link` button variant, whose label aligns with the surrounding text; `quiet` buttons belong in toolbars, headers and footers, where their padding is the hit area.

@@ -1,5 +1,6 @@
 import { Check, X } from "lucide-react";
 import { Button } from "./Button";
+import { ExpandableText } from "./ExpandableText";
 export function Feedback({
   error = "",
   loading = false,
@@ -20,22 +21,30 @@ export function Feedback({
       className={`feedback ${error ? "error" : ""}`}
       role={error ? "alert" : "status"}
     >
-      {error ||
-        (loading ? (
-          loadingText
-        ) : pending ? (
-          "Saving…"
-        ) : dirty ? (
-          <>
-            <span className="unsaved-dot" />
-            Unsaved changes
-          </>
-        ) : (
-          <>
-            <Check size={15} />
-            {notice || "All changes saved"}
-          </>
-        ))}
+      {error ? (
+        // Results sit beside their control, so a long failure stays a short
+        // excerpt until the user asks for all of it.
+        <ExpandableText
+          text={error}
+          label="Error details"
+          appearance="inline"
+          limit={120}
+        />
+      ) : loading ? (
+        loadingText
+      ) : pending ? (
+        "Saving…"
+      ) : dirty ? (
+        <>
+          <span className="unsaved-dot" />
+          Unsaved changes
+        </>
+      ) : (
+        <>
+          <Check size={15} />
+          {notice || "All changes saved"}
+        </>
+      )}
     </div>
   );
 }
