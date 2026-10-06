@@ -34,6 +34,7 @@ export default function App() {
   const [topbarSlot, setTopbarSlot] = useState<HTMLElement | null>(null);
   // Settings stays mounted after its first visit so its session survives.
   const [settingsOpened, setSettingsOpened] = useState(false);
+  const [settingsDirty, setSettingsDirty] = useState(false);
   if (state?.screen === "settings" && !settingsOpened) setSettingsOpened(true);
   const loaded = !!state;
   const reportReady = useEffectEvent((error: unknown) => action.report(error));
@@ -84,6 +85,11 @@ export default function App() {
   const error = application.stopped
     ? application.error
     : action.error || application.error;
+  const connection = application.stopped
+    ? "App unavailable"
+    : state
+      ? "App ready"
+      : "Starting…";
   return (
     <div className="app">
       <header className="topbar">
@@ -131,13 +137,9 @@ export default function App() {
           </Menu>
         )}
         <div className="topbar-actions" ref={setTopbarSlot} />
-        <span className="connection">
+        <span className="connection" title={connection}>
           <i className={application.stopped ? "disconnected" : ""} />
-          {application.stopped
-            ? "App unavailable"
-            : state
-              ? "App ready"
-              : "Starting…"}
+          <span className="connection-label">{connection}</span>
         </span>
       </header>
       <TopbarSlot.Provider value={topbarSlot}>
@@ -192,6 +194,13 @@ export default function App() {
               >
                 <Settings2 size={18} />
                 Settings
+                {settingsDirty && state?.screen !== "settings" && (
+                  <span
+                    className="unsaved-dot"
+                    role="img"
+                    aria-label="Unsaved changes"
+                  />
+                )}
               </Button>
             </div>
           </aside>
@@ -213,7 +222,7 @@ export default function App() {
                 style={{ display: "contents" }}
               >
                 <ErrorBoundary label="Settings">
-                  <Settings />
+                  <Settings onDirty={setSettingsDirty} />
                 </ErrorBoundary>
               </div>
             )}

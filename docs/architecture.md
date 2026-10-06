@@ -644,7 +644,7 @@ Engine-owned settings and run formats remain the adapter's responsibility.
 Diagnostics record only fixed metadata and relative code locations, excluding exception messages, payloads, and raw stderr.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
-The Settings editor retains its session while hidden, so returning preserves its current view and fields without another initial settings read.
+The Settings editor retains its session while hidden, so returning preserves its current view and fields without another initial settings read; the sidebar marks Settings while that hidden draft is unsaved.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
 The public preference schema contains language, model, and per-model request/pricing options; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.

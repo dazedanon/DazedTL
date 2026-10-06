@@ -151,9 +151,15 @@ main > p {
     gap: 20px;
   }
 }
+/* Narrow windows keep the status dot; its label stays readable to assistive tech. */
 @media (max-width: 1000px) {
-  .connection {
-    display: none;
+  .connection-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
 @media (max-width: 1000px) {

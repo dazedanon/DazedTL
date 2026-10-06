@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, KeyRound, Plus, ShieldCheck } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
@@ -22,10 +22,16 @@ const sections = [
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
 
-export default function Settings() {
+export default function Settings({
+  onDirty,
+}: {
+  /** Tells the shell about a kept draft, so it can mark Settings while hidden. */
+  onDirty?: (dirty: boolean) => void;
+}) {
   const application = useApplication();
   const action = useAction();
   const draft = useSettingsDraft(action.report);
+  useEffect(() => onDirty?.(draft.dirty), [onDirty, draft.dirty]);
   const { config } = draft;
   const [section, setSection] = useState<SectionId>("api");
   const busy = action.busy || draft.committing;
