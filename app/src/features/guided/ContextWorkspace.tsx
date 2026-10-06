@@ -10,6 +10,9 @@ import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
 
+const counted = (label: string, count: number) =>
+  count ? `${label} (${count.toLocaleString()})` : label;
+
 export function ContextTaskHeader({
   title,
   description,
@@ -208,14 +211,17 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
         value={tab}
         onChange={setTab}
         items={[
-          { id: "nameplates", label: `Nameplates (${scan.names.length})` },
+          { id: "nameplates", label: counted("Nameplates", scan.names.length) },
           {
             id: "actors",
-            label: `Actors (${Object.keys(scan.actorNames).length})`,
+            label: counted("Actors", Object.keys(scan.actorNames).length),
           },
           {
             id: "variables",
-            label: `Variable links (${Object.keys(scan.variableActorIds).length})`,
+            label: counted(
+              "Variable links",
+              Object.keys(scan.variableActorIds).length,
+            ),
           },
         ]}
       />

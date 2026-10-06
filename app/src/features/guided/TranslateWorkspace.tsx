@@ -121,7 +121,7 @@ export function TranslateWorkspace({
         <small className="translation-method-hint">
           {state.provider.batchSupported
             ? "Batch recommended · often 50% cheaper"
-            : "Live · saves results as they arrive"}
+            : `Live · saves results as they arrive. ${state.provider.batchReason || "This connection does not support Batch."}`}
         </small>
         <div className="translation-tools">
           <Button variant="quiet" onClick={history}>
@@ -134,7 +134,19 @@ export function TranslateWorkspace({
       </div>
       <div className="translation-notices">{children}</div>
       <div className="translation-columns">
-        <section className="translation-files" aria-label="Translation files">
+        <section
+          className="translation-files"
+          aria-label="Translation files"
+          data-metrics={rows.some(
+            (row) =>
+              fileMetricRun(
+                state.runs,
+                phase,
+                row.name,
+                state.sourceStatus.retired,
+              )?.process?.fileMetrics?.[row.name],
+          )}
+        >
           <FileSelection
             state={{ ...state, files: rows }}
             selected={scoped.map((row) => row.name)}

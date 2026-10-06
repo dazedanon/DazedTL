@@ -30,6 +30,7 @@ import type {
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
+import { countSummary } from "../../ui/displayText";
 import { ActionBar } from "../../ui/ActionBar";
 import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
@@ -544,25 +545,33 @@ function Manager({
           </div>
         )}
         <div className="image-discovery-counts">
-          <span>{counts.examined.toLocaleString()} examined</span>
-          <Button
-            variant="link"
-            onClick={() => changeView({ status: "recommended" }, true)}
-          >
-            {counts.recommended.toLocaleString()} recommended
-          </Button>
-          <Button
-            variant="link"
-            onClick={() => changeView({ status: "uncertain" }, true)}
-          >
-            {counts.uncertain.toLocaleString()} uncertain
-          </Button>
-          <Button
-            variant="link"
-            onClick={() => changeView({ status: "not_examined" }, true)}
-          >
-            {counts.notExamined.toLocaleString()} not examined
-          </Button>
+          {!!counts.examined && (
+            <span>{counts.examined.toLocaleString()} examined</span>
+          )}
+          {!!counts.recommended && (
+            <Button
+              variant="link"
+              onClick={() => changeView({ status: "recommended" }, true)}
+            >
+              {counts.recommended.toLocaleString()} recommended
+            </Button>
+          )}
+          {!!counts.uncertain && (
+            <Button
+              variant="link"
+              onClick={() => changeView({ status: "uncertain" }, true)}
+            >
+              {counts.uncertain.toLocaleString()} uncertain
+            </Button>
+          )}
+          {!!counts.notExamined && (
+            <Button
+              variant="link"
+              onClick={() => changeView({ status: "not_examined" }, true)}
+            >
+              {counts.notExamined.toLocaleString()} not examined
+            </Button>
+          )}
           {lastReport ? (
             <span>
               Last saved report: {new Date(lastReport).toLocaleString()}
@@ -797,19 +806,26 @@ function Manager({
         <div className="image-selection-context">
           <div>
             <strong>{value.selection.length.toLocaleString()} selected</strong>
-            <span> · {hidden.toLocaleString()} hidden</span>
+            {!!hidden && <span> · {hidden.toLocaleString()} hidden</span>}
             {draft.dirty ? (
               <span> · Saving choices…</span>
             ) : (
-              <span>
-                {" "}
-                · {selectedReady} ready
-                {selectedNotPrepared
-                  ? ` · ${selectedNotPrepared} not prepared`
-                  : ""}
-                {selectedApplied ? ` · ${selectedApplied} applied` : ""} ·{" "}
-                {selectedBlocked} blocked
-              </span>
+              !!(
+                selectedReady ||
+                selectedNotPrepared ||
+                selectedApplied ||
+                selectedBlocked
+              ) && (
+                <span>
+                  {" · "}
+                  {countSummary([
+                    [selectedReady, "ready"],
+                    [selectedNotPrepared, "not prepared"],
+                    [selectedApplied, "applied"],
+                    [selectedBlocked, "blocked"],
+                  ])}
+                </span>
+              )
             )}
           </div>
           <div className="image-selection-links">

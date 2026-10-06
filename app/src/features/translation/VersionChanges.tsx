@@ -33,16 +33,20 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
   return (
     <div className="version-changes">
       <dl className="version-counts">
-        {[
-          ["Added", counts.added],
-          ["Changed", counts.changed],
-          ["Removed", counts.removed],
-        ].map(([label, count]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{count}</dd>
-          </div>
-        ))}
+        {(
+          [
+            ["Added", counts.added],
+            ["Changed", counts.changed],
+            ["Removed", counts.removed],
+          ] as const
+        )
+          .filter(([, count]) => count)
+          .map(([label, count]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{count}</dd>
+            </div>
+          ))}
       </dl>
       {!!overlap.length && (
         <p>

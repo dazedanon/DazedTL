@@ -10,6 +10,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
 import { PageLayout, PageHeader } from "../../ui/PageLayout";
+import { engineLabel } from "../../ui/displayText";
 import { Section } from "../../ui/Section";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
@@ -134,7 +135,7 @@ function Workspace({
     <PageLayout className="lens-method" aria-label="Translation workspace">
       <PageHeader
         title="Translation"
-        description={project.name + " · " + state.engine}
+        description={project.name + " · " + engineLabel(state.engine)}
         divided
         actions={
           <div className="actions">

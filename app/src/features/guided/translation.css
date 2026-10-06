@@ -238,6 +238,15 @@
   overflow: hidden;
   scrollbar-gutter: stable;
 }
+/* Cost and time columns appear once any listed file has run metrics. */
+.translation-files[data-metrics="false"]
+  :is(.file-browser-heading, .file-browser-row) {
+  grid-template-columns: 1.2em minmax(0, 1fr) 10em 2em;
+}
+.translation-files[data-metrics="false"]
+  :is(.translation-file-cost, .translation-file-time) {
+  display: none;
+}
 .file-browser-inline .file-browser-row {
   border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
   min-height: var(--control-height);

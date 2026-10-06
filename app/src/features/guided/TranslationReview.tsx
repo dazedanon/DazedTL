@@ -58,10 +58,12 @@ export function TranslationCost({
         <small>Final cost depends on actual usage.</small>
       </div>
       <dl className="translation-cost-tokens">
-        <div>
-          <dt>Requests</dt>
-          <dd>{count(value.requests ?? value.request_count)}</dd>
-        </div>
+        {numeric(value.requests ?? value.request_count) && (
+          <div>
+            <dt>Requests</dt>
+            <dd>{count(value.requests ?? value.request_count)}</dd>
+          </div>
+        )}
         <div>
           <dt>Input tokens</dt>
           <dd>{count(value.input_tokens)}</dd>

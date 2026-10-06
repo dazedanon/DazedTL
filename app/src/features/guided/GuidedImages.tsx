@@ -1,5 +1,6 @@
 import type { ImageManagerState } from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
+import { countSummary } from "../../ui/displayText";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
 
@@ -26,7 +27,11 @@ export function GuidedImages({
       <div className="guided-image-summary">
         <span>
           {counts
-            ? `${counts.indexed.toLocaleString()} indexed · ${counts.examined.toLocaleString()} examined · ${counts.notExamined.toLocaleString()} not examined`
+            ? countSummary([
+                [counts.indexed, "indexed"],
+                [counts.examined, "examined"],
+                [counts.notExamined, "not examined"],
+              ])
             : "Image inventory is loading."}
         </span>
         <Button
@@ -69,7 +74,10 @@ export function GuidedImages({
               <strong>Choose image candidates</strong>
               <small>
                 {counts
-                  ? `${counts.recommended.toLocaleString()} recommended · ${counts.uncertain.toLocaleString()} uncertain`
+                  ? countSummary([
+                      [counts.recommended, "recommended"],
+                      [counts.uncertain, "uncertain"],
+                    ]) || "No candidates yet."
                   : "Recommendations will appear with a saved discovery report."}
               </small>
             </>
@@ -118,7 +126,8 @@ export function GuidedImages({
             disabled={busy || !counts?.selectedReady}
             onClick={() => open("review")}
           >
-            Review &amp; apply ({counts?.selectedReady || 0})
+            Review &amp; apply
+            {counts?.selectedReady ? ` (${counts.selectedReady})` : ""}
           </Button>
         </ActionRow>
       </ActionList>

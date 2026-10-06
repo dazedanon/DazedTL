@@ -193,13 +193,13 @@ export function formatView(w: GuidedWorkspace): TaskView {
                 <strong>{item.label}</strong>
                 {item.message && <small>{item.message}</small>}
               </div>
-              <span className="guided-preparation-state">
-                {item.status === "complete"
-                  ? "Done"
-                  : item.status === "pending"
+              {item.status !== "complete" && (
+                <span className="guided-preparation-state">
+                  {item.status === "pending"
                     ? "Waiting"
                     : item.status.replaceAll("_", " ")}
-              </span>
+                </span>
+              )}
             </li>
           ))}
         </ol>

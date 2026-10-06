@@ -3,14 +3,9 @@ import { PageLayout, PageHeader } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { Button } from "../../ui/Button";
 import { JobStatus } from "../../ui/JobStatus";
+import { engineLabel } from "../../ui/displayText";
 import { ArrowRight, Folder, FolderOpen, Settings2 } from "lucide-react";
 import type { AppState, Screen } from "../../api/contracts";
-
-const engines: Record<string, string> = {
-  MVMZ: "RPG Maker MV / MZ",
-  ACE: "RPG Maker VX Ace",
-  WOLF: "WOLF RPG",
-};
 
 export default function Overview({
   state,
@@ -41,9 +36,7 @@ export default function Overview({
             <h3 className="overview-project-name">{project.name}</h3>
             <dl className="overview-facts">
               <DetailRow label="Engine">
-                {project.engine_label ||
-                  engines[project.engine] ||
-                  project.engine}
+                {engineLabel(project.engine_label || project.engine)}
               </DetailRow>
               <div className="summary-row overview-wide">
                 <dt>Folder</dt>

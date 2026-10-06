@@ -85,6 +85,8 @@ const outcomeIcons = {
   empty: CircleSlash,
   finished: CircleHelp,
 };
+const sentence = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1);
 function Outcome({ value }: { value: HistoryOutcome }) {
   const Icon = outcomeIcons[value.kind];
   return (
@@ -196,7 +198,9 @@ export function ActivityHistory({
             label: (
               <>
                 Translations{" "}
-                <span className="history-tab-count">{runs.length}</span>
+                {!!runs.length && (
+                  <span className="history-tab-count">{runs.length}</span>
+                )}
               </>
             ),
           },
@@ -205,7 +209,9 @@ export function ActivityHistory({
             label: (
               <>
                 Estimates{" "}
-                <span className="history-tab-count">{estimates.length}</span>
+                {!!estimates.length && (
+                  <span className="history-tab-count">{estimates.length}</span>
+                )}
               </>
             ),
           },
@@ -334,24 +340,25 @@ export function ActivityHistory({
                             </small>
                           </div>
                         )}
-                        {tab === "operations" ? (
-                          <span
-                            className="history-status"
-                            data-kind={
-                              activeRun(job)
-                                ? "active"
-                                : job.status === "complete"
-                                  ? "saved"
-                                  : job.status === "failed"
-                                    ? "failed"
-                                    : "stopped"
-                            }
-                          >
-                            {job.status.replaceAll("_", " ")}
-                          </span>
-                        ) : (
-                          <Outcome value={outcome} />
-                        )}
+                        <Outcome
+                          value={
+                            tab === "operations"
+                              ? {
+                                  kind: activeRun(job)
+                                    ? "active"
+                                    : job.status === "complete"
+                                      ? "saved"
+                                      : job.status === "failed"
+                                        ? "failed"
+                                        : "stopped",
+                                  label: sentence(
+                                    job.status.replaceAll("_", " "),
+                                  ),
+                                  detail: "",
+                                }
+                              : outcome
+                          }
+                        />
                       </div>
                     }
                   >
@@ -377,9 +384,11 @@ export function ActivityHistory({
       </div>
       <div className="history-footer">
         <span>
-          {matching.length === rows.length
-            ? `${rows.length} ${rows.length === 1 ? "record" : "records"}`
-            : `${matching.length} of ${rows.length} records`}
+          {!rows.length
+            ? ""
+            : matching.length === rows.length
+              ? `${rows.length} ${rows.length === 1 ? "record" : "records"}`
+              : `${matching.length} of ${rows.length} records`}
         </span>
         {tab === "runs" && (
           <p className="history-purpose">
