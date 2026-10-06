@@ -55,13 +55,11 @@ import { AssistantTask } from "../../ui/AssistantTask";
 
 export interface ImageManagerProps {
   projectId: string;
-  onClose?: () => void;
   onOpenEditor: (assetIds: string[]) => void;
   observed?: ImageManagerState | null;
-  backLabel?: string;
-  /** Hosted as a task: no own heading, and its footer fills the host's slot. */
-  embedded?: {
-    footerTarget: HTMLElement | null;
+  /** The host page's footer slot, which this manager's ActionBar fills. */
+  footer: {
+    target: HTMLElement | null;
     back?: ReactNode;
     next: (variant: "primary" | "quiet") => ReactNode;
   };
@@ -81,29 +79,16 @@ export function ImageManager(props: ImageManagerProps) {
   const error = loaded.error === undefined ? "" : messageOf(loaded.error);
   if (!initial || initial.projectId !== props.projectId)
     return (
-      <section
-        className={`image-manager image-manager-loading${props.embedded ? " image-manager--embedded" : ""}`}
-      >
-        {props.embedded ? (
-          <ActionSlot target={props.embedded.footerTarget}>
-            <ActionBar
-              feedback={
-                <div className="image-footer-context">
-                  {props.embedded.back}
-                </div>
-              }
-            >
-              {props.embedded.next("quiet")}
-            </ActionBar>
-          </ActionSlot>
-        ) : (
-          <header className="image-manager-heading">
-            <h2>Image Manager</h2>
-            <Button onClick={props.onClose}>
-              {props.backLabel || "Back to Images"}
-            </Button>
-          </header>
-        )}
+      <section className="image-manager image-manager-loading">
+        <ActionSlot target={props.footer.target}>
+          <ActionBar
+            feedback={
+              <div className="image-footer-context">{props.footer.back}</div>
+            }
+          >
+            {props.footer.next("quiet")}
+          </ActionBar>
+        </ActionSlot>
         <Message message={error} />
         <p role="status">
           {error
@@ -194,12 +179,10 @@ function Tile({
 
 function Manager({
   projectId,
-  onClose,
   onOpenEditor,
   initial,
   observed,
-  backLabel,
-  embedded,
+  footer: host,
 }: ImageManagerProps & { initial: ImageManagerState }) {
   const [listRevision, setListRevision] = useState(0);
   const [compare, setCompare] = useState<ImageAsset | null>(null);
@@ -401,16 +384,6 @@ function Manager({
     changeView({ currentImage: asset.id });
     action.clear();
   };
-  const close = () => {
-    void action.run(
-      async () => {
-        await draft.session.flush();
-        onClose?.();
-      },
-      "",
-      "close",
-    );
-  };
   const counts = state.counts;
   const hidden = Math.max(0, value.selection.length - grid.selectedMatched);
   const selectedReady = draft.dirty ? 0 : counts.selectedReady || 0;
@@ -445,7 +418,7 @@ function Manager({
   const allApplied =
     !!value.selection.length && selectedApplied === value.selection.length;
   const primaryAction = allApplied
-    ? "close"
+    ? "next"
     : selectedReady
       ? "preview_apply"
       : selectedNotPrepared
@@ -583,7 +556,7 @@ function Manager({
     <ActionBar
       feedback={
         <div className="image-footer-context">
-          {embedded?.back}
+          {host.back}
           {draft.dirty ? (
             <span>Saving choices…</span>
           ) : (
@@ -643,31 +616,11 @@ function Manager({
         {...step("preview_apply", "Preparing review…")}
       />
       {moreMenu}
-      {embedded?.next(allApplied ? "primary" : "quiet")}
+      {host.next(allApplied ? "primary" : "quiet")}
     </ActionBar>
   );
   return (
-    <section
-      className={`image-manager${embedded ? " image-manager--embedded" : ""}`}
-      aria-label="Image Manager"
-    >
-      {!embedded && (
-        <header className="image-manager-heading">
-          <div>
-            <h2>Image Manager</h2>
-            <span>
-              {state.name} · {counts.indexed.toLocaleString()} images
-            </span>
-          </div>
-          <Button
-            variant={primaryAction === "close" ? "primary" : "default"}
-            disabled={action.busy}
-            onClick={close}
-          >
-            {backLabel || "Back to Images"}
-          </Button>
-        </header>
-      )}
+    <section className="image-manager" aria-label="Image Manager">
       {!state.profile.supported && (
         <div className="image-profile-issue">
           <span>
@@ -706,15 +659,6 @@ function Manager({
                   : "Your assistant examines the images in scope and recommends the ones whose text needs translating."
         }
       >
-        {!embedded && (
-          <div className="image-discovery-heading">
-            <strong>Find images to translate</strong>
-            <span>
-              AI findings help choose a batch; you can adjust the selection.
-            </span>
-            {modeToggle}
-          </div>
-        )}
         {!manual && (
           <div className="image-discovery-actions">
             <label>
@@ -802,7 +746,7 @@ function Manager({
               {counts.notExamined.toLocaleString()} not examined
             </Button>
           )}
-          {embedded && modeToggle}
+          {modeToggle}
         </div>
       </AssistantTask>
       <div className="image-browser-toolbar">
@@ -1075,11 +1019,7 @@ function Manager({
           </details>
         )}
       </div>
-      {embedded ? (
-        <ActionSlot target={embedded.footerTarget}>{footer}</ActionSlot>
-      ) : (
-        footer
-      )}
+      <ActionSlot target={host.target}>{footer}</ActionSlot>
       {activeCompare && (
         <ImageCompare
           projectId={projectId}

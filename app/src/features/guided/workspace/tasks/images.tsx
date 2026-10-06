@@ -12,8 +12,8 @@ export function imagesView(w: GuidedWorkspace): TaskView {
         key={project.id}
         projectId={project.id}
         observed={application.snapshot?.images}
-        embedded={{
-          footerTarget: taskFooter,
+        footer={{
+          target: taskFooter,
           back: back(),
           next: (variant) => advance(undefined, undefined, variant),
         }}

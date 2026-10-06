@@ -479,8 +479,8 @@ function Workspace({
                 key={project.id}
                 projectId={project.id}
                 observed={application.snapshot?.images}
-                embedded={{
-                  footerTarget: imageFooter,
+                footer={{
+                  target: imageFooter,
                   next: (variant) =>
                     copyControl(variant === "primary" ? "primary" : "default"),
                 }}
