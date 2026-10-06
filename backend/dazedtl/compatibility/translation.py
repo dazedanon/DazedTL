@@ -184,13 +184,12 @@ class TranslationEngine:
     def compiler_fingerprint(self):
         from dazedtl.translation import compilation, requests
 
-        from . import resources
-
         # Retain the compiler's code identity without hashing obsolete prompt
         # copies in its checkout. Actual guidance also binds each logical request.
         engine_files = (
             "util/len_api.py",
             "util/len_translation.py",
+            "util/paths.py",
             "util/translation.py",
             "util/skills/__init__.py",
             "util/skills/contexts.py",
@@ -205,7 +204,6 @@ class TranslationEngine:
                     name: digest((self.source / name).read_bytes())
                     for name in engine_files
                 },
-                "resources": digest(Path(resources.__file__).read_bytes()),
                 "bridge": digest(Path(__file__).read_bytes()),
                 "contract": digest(Path(requests.__file__).read_bytes()),
                 "compilation": digest(Path(compilation.__file__).read_bytes()),

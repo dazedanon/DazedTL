@@ -14,9 +14,6 @@ def activate():
     source = str(ENGINE_ROOT)
     if source not in sys.path:
         sys.path.insert(0, source)
-    from .resources import install
-
-    install()
     from .openrouter_batch import install as install_openrouter
 
     install_openrouter()

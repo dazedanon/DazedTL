@@ -37,10 +37,9 @@ The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with it
 Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; plans from before explicit versions match by their recorded byte hash.
 Raise the version when a change would make a resumed run build requests or parse files differently.
 Their historical Python namespaces are internal to the compatibility boundary; the old UI and application server are not shipped.
-DazedTL owns the base translation rules in [system.md](../backend/dazedtl/data/skills/system.md), along with the shared prompt templates, field instructions, base glossary and SFX reference under [data](../backend/dazedtl/data).
+The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the shared prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) directory.
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
-The [resource bridge](../backend/dazedtl/compatibility/resources.py) routes engine readers to these packaged files before importing consumers in the app and its workers.
-Existing workspace `engine/shared-data` overrides retain precedence and native path validation; missing packaged defaults fail instead of falling back to the engine checkout.
+Existing workspace `engine/shared-data` overrides retain precedence and native path validation.
 Resources are not seeded into profiles, so future default changes reach new preparations without overwriting customizations.
 Frozen run context stays authoritative for execution and recovery.
 Engine parsers, context assembly and Len's maintained methodology/tool bundle are shipped in the owned engine behind the compatibility boundary.

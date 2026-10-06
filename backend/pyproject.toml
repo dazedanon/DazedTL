@@ -14,4 +14,4 @@ exclude = ["dazedtl.engine*"]
 
 [tool.setuptools.package-data]
 "dazedtl.api" = ["protocol.json"]
-"dazedtl" = ["data/*.txt", "data/*.json", "data/skills/*.md", "data/skills/*/*.md", "data/sfx_reference/*", "engine/**/*", "engine/data/skills/game-translation/tools/.NET/**/*", "engine/data/skills/game-translation/tools/.NET/**/.*"]
+"dazedtl" = ["engine/**/*", "engine/data/skills/game-translation/tools/.NET/**/*", "engine/data/skills/game-translation/tools/.NET/**/.*"]

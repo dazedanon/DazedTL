@@ -99,7 +99,7 @@ try:
         assert (count, len(errors)) == (1, 1)
         assert (prepared / "broken.json").read_bytes() == b"{invalid\r\n"
         assert runtime_data_file(PROMPT_PATH).is_relative_to(
-            root / "backend/dazedtl/data"
+            root / "backend/dazedtl/engine/data"
         )
         assert load_system_prompt() and load_project_setup("rpgmaker")
         manual = app.backend.manual
@@ -126,7 +126,7 @@ try:
     frozen = manual.folder(job["id"]) / "context/system.md"
     assert (
         frozen.read_bytes()
-        == (root / "backend/dazedtl/data/skills/system.md").read_bytes()
+        == (root / "backend/dazedtl/engine/data/skills/system.md").read_bytes()
     )
     # Already-translated 101 names used to disappear from requests. Bracketed
     # tutorial prose also took the short-name prompt and became a bogus label.
