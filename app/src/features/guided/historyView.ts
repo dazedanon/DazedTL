@@ -20,16 +20,16 @@ export type HistoryOutcome = {
 };
 const count = (value: number, noun: string) =>
   `${value.toLocaleString()} ${noun}${value === 1 ? "" : "s"}`;
+/** How History names each phase, so links can search for one stage's runs. */
+export const historyPhaseLabels: Record<string, string> = {
+  database: "Database",
+  dialogue: "Maps & events",
+  advanced: "Event / plugin codes",
+  variables: "Comparisons",
+  speakers: "Speakers",
+};
 export const historyPhase = (job: Job) =>
-  (job.logicalPhase &&
-    {
-      database: "Database",
-      dialogue: "Maps & events",
-      advanced: "Event / plugin codes",
-      variables: "Comparisons",
-      speakers: "Speakers",
-    }[job.logicalPhase]) ||
-  "Translation";
+  (job.logicalPhase && historyPhaseLabels[job.logicalPhase]) || "Translation";
 export const historyMode = (job: Job) =>
   job.mode === "estimate"
     ? "Estimate"

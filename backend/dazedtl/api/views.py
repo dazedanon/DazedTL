@@ -10,6 +10,12 @@ def pick(value, names):
 def project(value):
     if value is None:
         return None
+    value = {
+        **value,
+        "method": value.get("method")
+        if value.get("method") in {"guided", "len"}
+        else None,
+    }
     return pick(
         value,
         (

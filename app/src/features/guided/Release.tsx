@@ -4,6 +4,7 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { VirtualList } from "../../ui/VirtualList";
+import { OptionCards } from "../../ui/OptionCards";
 
 type Options = GuidedForm["release"];
 const pathKey = (path: string) => path;
@@ -44,37 +45,29 @@ export function ReleaseContent({
   return (
     <>
       <fieldset disabled={disabled}>
-        <div className="release-types" role="group" aria-label="Package type">
-          {(
-            [
-              [
-                "game",
-                "Clean game ZIP",
-                "Complete game folder, ready to extract and play.",
-              ],
-              [
-                "patch",
-                "Patch ZIP",
-                "Runtime patch for the matching original version.",
-              ],
-            ] as const
-          ).map(([key, label, hint]) => (
-            <Button
-              key={key}
-              aria-pressed={kind === key}
-              onClick={() =>
-                edit({
-                  kind: key,
-                  name: value.names[key],
-                  names: { ...value.names, [kind]: value.name },
-                })
-              }
-            >
-              <strong>{label}</strong>
-              <small>{hint}</small>
-            </Button>
-          ))}
-        </div>
+        <OptionCards
+          label="Package type"
+          value={kind}
+          onChange={(key) =>
+            edit({
+              kind: key,
+              name: value.names[key],
+              names: { ...value.names, [kind]: value.name },
+            })
+          }
+          options={[
+            {
+              value: "game",
+              title: "Clean game ZIP",
+              description: "Complete game folder, ready to extract and play.",
+            },
+            {
+              value: "patch",
+              title: "Patch ZIP",
+              description: "Runtime patch for the matching original version.",
+            },
+          ]}
+        />
         <div className="guided-package-fields">
           <label>
             Archive name

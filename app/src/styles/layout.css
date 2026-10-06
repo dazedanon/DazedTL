@@ -205,15 +205,6 @@ main > p {
     max-width: 350px;
   }
 }
-.topbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.topbar-actions:empty {
-  display: none;
-}
 .project-menu-item {
   min-width: min(26rem, calc(100vw - var(--space-8)));
 }

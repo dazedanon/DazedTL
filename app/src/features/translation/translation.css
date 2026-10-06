@@ -22,12 +22,6 @@
   flex: 1;
   min-width: 180px;
 }
-.lens-method > [role="tabpanel"] {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
 .lens-method > .banner {
   flex-shrink: 0;
   margin: var(--space-3) var(--frame-inline) 0;
@@ -337,4 +331,10 @@
   .version-folder input {
     flex-basis: 100%;
   }
+}
+.lens-project-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
 }

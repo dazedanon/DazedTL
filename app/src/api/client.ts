@@ -3,6 +3,7 @@ import { imagesApi } from "./images";
 import type {
   ImageEditorSave,
   Screen,
+  TranslationMethod,
   Phase,
   GuidedOptions,
   GuidedPreferences,
@@ -170,6 +171,8 @@ export const api = {
   open: (source: string) => request("open_project", { source }),
   select: (project_id: string) => request("select_project", { project_id }),
   navigate: (screen: Screen) => request("navigate", { screen }),
+  method: (project_id: string, method: TranslationMethod) =>
+    request("project_method", { project_id, method }),
   phase: (project_id: string, phase: Phase) =>
     request("guided_phase_select", { project_id, phase }),
   preview: (

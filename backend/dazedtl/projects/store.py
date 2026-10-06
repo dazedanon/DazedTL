@@ -7,9 +7,10 @@ from pathlib import Path
 
 from dazedtl.storage import WorkspaceError, read_versioned_json, write_json
 
+# "translation" records a game whose method has not been chosen yet.
 METHODS = {"guided", "len", "translation"}
-SCREENS = {"overview", "translation", "guided", "manual", "settings"}
-SCHEMA_VERSION = 4
+SCREENS = {"project", "translation", "guided", "manual", "settings"}
+SCHEMA_VERSION = 5
 
 
 def upgrade_v1(value):
@@ -41,7 +42,15 @@ def upgrade_v3(value):
     return deepcopy(value)
 
 
-UPGRADES = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3}
+def upgrade_v4(value):
+    # The Project page replaced Overview as the project's own page.
+    upgraded = deepcopy(value)
+    if upgraded.get("screen") == "overview":
+        upgraded["screen"] = "project"
+    return upgraded
+
+
+UPGRADES = {1: upgrade_v1, 2: upgrade_v2, 3: upgrade_v3, 4: upgrade_v4}
 
 
 def validate(value):
@@ -82,7 +91,7 @@ class Projects:
             {
                 "version": SCHEMA_VERSION,
                 "current_id": "",
-                "screen": "overview",
+                "screen": "project",
                 "projects": [],
             },
             UPGRADES,
@@ -139,9 +148,17 @@ class Projects:
     def _select(self, data, project):
         project["last_opened"] = datetime.now(UTC).isoformat()
         data["current_id"] = project["id"]
-        data["screen"] = "overview"
+        data["screen"] = "project"
         self._commit(data)
         return project
+
+    def choose_method(self, project_id, method):
+        """Record the method chosen for a game; the other method's work stays."""
+        if method not in {"guided", "len"}:
+            raise ValueError("Choose Guided steps or Len's method.")
+        data = deepcopy(self.data)
+        self._get(data, project_id)["method"] = method
+        self._commit(data)
 
     def navigate(self, screen):
         if screen not in SCREENS:

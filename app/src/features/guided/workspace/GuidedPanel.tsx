@@ -21,36 +21,27 @@ import { retainOtherScope } from "../selection";
 import { commentTextHelp, speakerOptions } from "../speakerOptions";
 import { fileCount, panelTitles, phaseLabels, speakers } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
-import { StatusIcon } from "../../../ui/StatusIcon";
 
 // Sheets with file lists or tables get the large size; the rest stay compact.
 const wideSheets = new Set<string>([
   "files",
-  "versions",
   "speaker-names",
   "name-translation",
 ]);
 
-/** The open tool sheet: file choice, options, tools and recovery utilities. */
+/** The open tool sheet: file choice, options and task tools. */
 export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
   const {
     project,
     state,
-    backups,
-    versions,
     action,
     speakerAction,
     draft,
     values,
-    stages,
-    completed,
-    taskId,
     panel,
     setPanel,
     speakerTab,
     setSpeakerTab,
-    utilityActions,
-    setUtilityActions,
     fileScope,
     running,
     preserved,
@@ -67,11 +58,8 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     editRelease,
     save,
     disabled,
-    move,
-    stepTask,
     feedback,
     operationJob,
-    review,
     task,
     workingFileActions,
     copyTask,
@@ -136,7 +124,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
       </>
     ) : (
       <>
-        <div ref={setUtilityActions} className="action-bar-slot" />
         {panel === "speaker-names" && (
           <>
             <ActionControl
@@ -248,73 +235,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
         />
       ) : (
         <DialogBody>
-          {panel === "tasks" && (
-            <div className="guided-all-tasks">
-              {stages.map((item) => (
-                <section key={item.id}>
-                  <h3>{item.title}</h3>
-                  {item.tasks.map((entry) => (
-                    <Button
-                      key={entry.id}
-                      variant="quiet"
-                      aria-current={entry.id === taskId ? "step" : undefined}
-                      onClick={() => move(item.id, entry.id)}
-                    >
-                      {entry.title}
-                      {completed.has(entry.id) && (
-                        <StatusIcon status="done" label="Complete" size={14} />
-                      )}
-                    </Button>
-                  ))}
-                </section>
-              ))}
-            </div>
-          )}
-          {panel === "project-tools" && (
-            <ActionList>
-              <ActionRow
-                label={
-                  <>
-                    <strong>Move to a newer game release</strong>
-                    <small>
-                      Bring a developer’s update into the game you’re
-                      translating.
-                    </small>
-                  </>
-                }
-              >
-                <Button onClick={() => setPanel("versions")}>
-                  Game updates
-                </Button>
-              </ActionRow>
-              <ActionRow
-                label={
-                  <>
-                    <strong>Save or recover files</strong>
-                    <small>
-                      Manage backups and recover an earlier copy when you need
-                      one.
-                    </small>
-                  </>
-                }
-              >
-                <Button onClick={() => setPanel("backups")}>
-                  Backups & recovery
-                </Button>
-              </ActionRow>
-            </ActionList>
-          )}
-          {panel === "backups" && backups?.(utilityActions)}
-          {panel === "versions" &&
-            versions?.({
-              backups: () => setPanel("backups"),
-              prepare: () => stepTask("baseline"),
-              checkpoint: () => {
-                setPanel(null);
-                void review("checkpoint");
-              },
-              target: utilityActions,
-            })}
           {panel === "speakers" && (
             <>
               <div className="context-detection-tabs">

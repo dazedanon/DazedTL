@@ -25,6 +25,7 @@ import {
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { useMemo, useState } from "react";
 import { Button } from "../../ui/Button";
+import { ActionSlot } from "../../ui/ActionSlot";
 
 export function operationSummary(job: Job): string {
   const result = job.result;
@@ -108,17 +109,21 @@ export function ActivityHistory({
   state,
   translation,
   inspect,
-  initialFilter = "all",
+  initialQuery = "",
+  footerTarget,
 }: {
   state: GuidedState;
   translation: TranslationState;
   inspect: (job: Job) => void;
-  initialFilter?: string;
+  /** Opens with this search, such as one stage's runs. */
+  initialQuery?: string;
+  /** The host footer that shows the record count. */
+  footerTarget?: HTMLElement | null;
 }) {
   const [visible, setVisible] = useState(30);
   const [tab, setTab] = useState("runs");
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState(initialFilter);
+  const [query, setQuery] = useState(initialQuery);
+  const [filter, setFilter] = useState("all");
   const runs = useMemo(
     () => state.runs.filter((job) => job.mode !== "estimate" && !job.temporary),
     [state.runs],
@@ -382,26 +387,28 @@ export function ActivityHistory({
           </Button>
         )}
       </div>
-      <div className="history-footer">
-        <span>
-          {!rows.length
-            ? ""
-            : matching.length === rows.length
-              ? `${rows.length} ${rows.length === 1 ? "record" : "records"}`
-              : `${matching.length} of ${rows.length} records`}
-        </span>
-        {tab === "runs" && (
-          <p className="history-purpose">
-            Each attempt retains its date, model and outcome. Inspect an attempt
-            to read its requests and manage Batch work.
-          </p>
-        )}
-        <span>
-          {tab === "estimates"
-            ? "Local plans · no translation submitted by an estimate"
-            : "Newest first"}
-        </span>
-      </div>
+      <ActionSlot target={footerTarget}>
+        <div className="history-footer">
+          <span>
+            {!rows.length
+              ? ""
+              : matching.length === rows.length
+                ? `${rows.length} ${rows.length === 1 ? "record" : "records"}`
+                : `${matching.length} of ${rows.length} records`}
+          </span>
+          {tab === "runs" && (
+            <p className="history-purpose">
+              Each attempt retains its date, model and outcome. Inspect an
+              attempt to read its requests and manage Batch work.
+            </p>
+          )}
+          <span>
+            {tab === "estimates"
+              ? "Local plans · no translation submitted by an estimate"
+              : "Newest first"}
+          </span>
+        </div>
+      </ActionSlot>
     </div>
   );
 }

@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { Phase, Project } from "../../../api/contracts";
 import { displayText } from "../../../ui/displayText";
 
@@ -57,44 +56,42 @@ export const publicationLabels: Record<string, string> = {
   export_selected: "Text Apply",
 };
 export type Panel =
-  | "tasks"
   | "files"
-  | "backups"
-  | "versions"
   | "speakers"
   | "speaker-names"
   | "name-translation"
   | "widths"
   | "translation-context"
   | "tools"
-  | "project-tools"
   | "preparation"
   | "release-assets"
   | null;
 export const panelTitles: Record<Exclude<Panel, null>, string> = {
-  tasks: "Translation tasks",
   files: "Choose files for this pass",
-  backups: "Backups & recovery",
-  versions: "Game updates",
   speakers: "Speaker detection",
   "speaker-names": "Speaker names",
   "name-translation": "API name translation",
   widths: "Character limits",
   "translation-context": "Translation options",
   tools: "Configure game tools",
-  "project-tools": "Project tools",
   preparation: "Preparation tools",
   "release-assets": "Additional runtime assets",
 };
+/** A review the Project page asks the Translation workspace to open. */
+export type GuidedIntent =
+  | { kind: "checkpoint" }
+  | { kind: "reapply"; runId: string }
+  | { kind: "resume"; runId: string };
+/** Project tools live on the Project page; tasks link to their tab. */
+export type ProjectLink = (
+  tab: "history" | "versions" | "backups",
+  historyQuery?: string,
+) => void;
 export type GuidedProps = {
   project: Project;
   opening?: boolean;
   settings: () => void;
-  backups?: (target: HTMLElement | null) => ReactNode;
-  versions?: (actions: {
-    backups: () => void;
-    prepare: () => void;
-    checkpoint: () => void;
-    target: HTMLElement | null;
-  }) => ReactNode;
+  openProject: ProjectLink;
+  intent?: GuidedIntent | null;
+  intentHandled?: () => void;
 };

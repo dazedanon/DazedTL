@@ -309,6 +309,12 @@ pre {
   padding-top: var(--space-6);
   margin-bottom: var(--space-5);
 }
+.page-layout--editor > [role="tabpanel"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .page-layout--editor > .banner {
   flex-shrink: 0;
   margin: var(--space-3) var(--frame-inline) 0;
@@ -401,6 +407,10 @@ pre {
   max-width: none;
 }
 .action-bar-slot {
+  display: contents;
+}
+/* The footer slot a hosted workspace fills with its own ActionBar. */
+.footer-slot {
   display: contents;
 }
 .field-control > .short-control {
@@ -527,7 +537,9 @@ pre {
 .page-header--divided {
   flex-wrap: wrap;
 }
+/* The title block shrinks first, so header actions stay on its line. */
 .page-header > div:first-child {
+  flex: 1 1 20rem;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -1215,4 +1227,39 @@ pre {
 }
 .assistant-task-body {
   padding: var(--space-3) var(--space-4);
+}
+/* Described choices: each option is a card, the chosen one accent-subtle. */
+.option-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+.option-cards > .ui-button {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  white-space: normal;
+}
+.option-cards > .ui-button > strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.option-cards > .ui-button > small {
+  color: var(--color-muted);
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
+.option-cards > .ui-button[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+}
+.option-cards > .ui-button[aria-pressed="true"] > small {
+  color: var(--color-label);
 }

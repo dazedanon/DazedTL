@@ -86,8 +86,10 @@ export type GuidedProgress = {
   stages: {
     id: GuidedStep;
     short: string;
+    title: string;
     done: number;
     total: number;
+    tasks: { id: string; title: string; done: boolean }[];
   }[];
   /** The first unfinished required task, in workflow order. */
   next: {
@@ -115,8 +117,14 @@ export function guidedProgress(
     stages: stages.map((stage) => ({
       id: stage.id,
       short: stage.short,
+      title: stage.title,
       done: stage.tasks.filter((task) => done.has(task.id)).length,
       total: stage.tasks.length,
+      tasks: stage.tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        done: done.has(task.id),
+      })),
     })),
     next: next
       ? {

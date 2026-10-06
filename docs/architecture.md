@@ -317,7 +317,7 @@ The file list retains cost and time from the latest run that changed the file, c
 Missing receipts for a changed file stay unknown.
 Incoming observations preserve the reader's selected file, request, tab and scroll position.
 Selected request receipts update automatically; older records without file provenance identify their scope limitation.
-Run history opens directly from Translate with separate translation, estimate and other-activity tabs.
+History, on the Project page, has separate translation, estimate and other-activity tabs.
 Display outcomes use existing observed receipts: estimates, no-request attempts, verified output, partial progress and unavailable output stay distinct.
 Unresolved submissions remain marked for review in history.
 Search and filters operate locally on the already-observed summaries; In progress includes submitted provider work even after its local worker stops.
@@ -433,10 +433,16 @@ Icons appear in navigation, on actions that leave the app (opening a folder), on
 
 ### Workflow and shared presentation
 
-Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Overview](../app/src/features/overview/Overview.tsx) implementations as page examples.
-Overview shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, each stage's completed tasks and the last activity; its primary action resumes the saved workspace position.
-Compose shared UI primitives with design tokens; editing footers sit outside scrolling content, and Overview keeps project/status/actions together.
-Settings and [Len's method](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Len's footers end with its starting-prompt copy, and its context documents use the same DocumentEditor tabs as Guided guidance.
+Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and [Project page](../app/src/features/project/ProjectPage.tsx) implementations as page examples.
+The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
+Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx) when it is first opened and kept in the project registry; games opened before the choice keep the method they already have work in, and changing it keeps the other method's work.
+The one Translation entry opens that method's workspace.
+The Project page's Status, History, Game updates and Backups tabs serve both methods.
+Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
+Tasks link to Project tabs (Translate's Run history opens History searched to that stage, Prepare's backup links open Backups), and the Translation entry returns to the same task.
+Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
+Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
+Settings, the Project page and [Len's method](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Len's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
 A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
@@ -455,7 +461,7 @@ ComboBox choice labels hide automatic text-selection highlighting while retainin
 Sized dialogs use [Modal](../app/src/ui/Modal.tsx)'s `size` with [DialogHeader and DialogBody](../app/src/ui/Dialog.tsx) and an ActionBar footer.
 Sheets and inspectors close with the header's one close button; decisions such as spending reviews, resyncs and Apply have no close button and end with explicit footer choices.
 Reserve cards for content requiring a distinct container.
-Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
+Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including the Project page, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
 Status colors always accompany text or icons.
 Status marks come from [StatusIcon](../app/src/ui/StatusIcon.tsx) (done, running, partly done, not started, warning, failed) rather than text characters, so they keep their shape in every font.
@@ -484,7 +490,7 @@ Replacement backups, paid work, runtime replacement, and file resync retain thei
 
 Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts).
 The app sidebar stays global; every phase uses the same one-row stage strip, which compacts when narrow.
-The Translation screen has no header row: its project actions (Project tools, History, Game folder) sit in the top bar beside the project switcher through [TopbarSlot](../app/src/app/TopbarSlot.tsx).
+The Translation screen has no header row; the top bar holds only the project switcher and app status.
 One task occupies the editing body and its action footer stays outside the scroll region.
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
 Guidance review and layout settings follow before the named database and dialogue actions.
@@ -492,7 +498,7 @@ Phase navigation restores the last available task saved for that project, fallin
 Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
 Plugin text and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
-The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done or the stage is current, and becomes a check when every task is done; it ends with All tasks, which marks completed and current tasks.
+The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done or the stage is current, and becomes a check when every task is done; the Project page's Status holds the full checklist.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
@@ -554,9 +560,9 @@ New baselines require current preparation evidence at preview and execution; exi
 The explicit untranslated/original-source choice and version are retained in the Guided form.
 Saving a reviewed baseline continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
-Their primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the host dialog's footer while content scrolls.
+They are the Project page's Game updates and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.
-Guided keeps update steps in Run history's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
+Guided keeps update steps in History's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
 Backup history is grouped by game versus project files and appears only after the user chooses recovery.
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
@@ -606,7 +612,7 @@ Source guidance remains in the established game files.
 The application provider supplies its API and browser event subscriptions; the observer owns response ordering and refresh scheduling.
 The shared [navigation state](../app/src/app/navigation.ts) owns the visible screen and per-project workflow views independently of backend observations.
 Existing screens switch from already observed data after draft leave guards finish; a background read cannot move the user back.
-The shell starts at Overview on launch or project selection.
+The shell starts at the Project page on launch or project selection.
 Workflow tasks, document tabs, event-code views and fitting views are small browser-profile preferences, written before the view changes; older backend positions supply the fallback until local preferences exist.
 These preferences contain no game text, drafts or execution authority.
 The first entry into an uninitialized Guided workspace still links it through the backend.

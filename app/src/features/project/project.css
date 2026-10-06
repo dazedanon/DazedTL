@@ -1,0 +1,130 @@
+/* The Project page: the game's status, history, game updates and backups. */
+.project-page .page-header p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-next-stage {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.project-tasks-section {
+  margin-top: var(--space-6);
+}
+/* Every stage with its tasks, so the whole checklist reads at a glance. */
+.project-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--space-5) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.project-stages h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.project-stage-count {
+  margin-inline-start: auto;
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  font-weight: var(--weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+.project-stages ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.project-stages ul li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-control);
+}
+.project-stages .link-button {
+  color: var(--color-text);
+  text-align: left;
+}
+.project-stages .link-button[aria-current="step"] {
+  color: var(--color-accent);
+}
+.project-activity {
+  margin: var(--space-5) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}
+/* History fills the tab; its list scrolls and its count sits in the footer. */
+.project-history-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.project-history-footer {
+  flex: 1;
+  min-width: 0;
+}
+.project-history-footer .history-footer {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.project-recents {
+  margin-top: var(--space-6);
+}
+.project-recent-list > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-3);
+  justify-content: flex-start;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  padding: var(--space-3) 0;
+}
+.project-recent-list > button:last-child {
+  border-bottom: 0;
+}
+.project-recent-list > button:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+.project-recent-list > button > span {
+  flex: 1;
+  min-width: 0;
+}
+.project-recent-list strong,
+.project-recent-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-recent-list strong {
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.project-recent-list small {
+  margin-top: 2px;
+}
+.project-recent-list svg {
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+.method-note {
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}

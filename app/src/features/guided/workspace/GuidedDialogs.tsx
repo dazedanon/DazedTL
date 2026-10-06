@@ -5,7 +5,6 @@ import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
-import { ActivityHistory } from "../ActivityHistory";
 import { EventTextPicker } from "../EventTextPicker";
 import { EventTextReview } from "../EventTextReview";
 import { RunInspector } from "../RunInspector";
@@ -20,12 +19,8 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
   const {
     project,
     state,
-    translation,
     application,
     action,
-    setPreview,
-    setPreviewRequest,
-    setInspectRelease,
     submission,
     setSubmission,
     resume,
@@ -36,8 +31,6 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
     setComparisonReview,
     comparisonsAccepted,
     setComparisonsAccepted,
-    history,
-    setHistory,
     setInspected,
     inspectionTarget,
     setInspectionTarget,
@@ -49,30 +42,13 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
     translationFlow,
     disabled,
     saveSourcePicker,
-    preparePreview,
     inspect,
+    reapplyRun,
+    openProject,
   } = w;
 
   return (
     <>
-      {history && (
-        <Modal
-          label="Run history"
-          size="full"
-          className="history-sheet"
-          onDismiss={() => setHistory(null)}
-        >
-          <DialogHeader title="Run history" onClose={() => setHistory(null)} />
-          <DialogBody className="history-body">
-            <ActivityHistory
-              state={state}
-              translation={translation}
-              inspect={inspect}
-              initialFilter={history}
-            />
-          </DialogBody>
-        </Modal>
-      )}
       {(inspected || inspectionTarget?.file) && (
         <RunInspector
           key={`${project.id}:${inspected?.id || ""}:${inspectionTarget?.file || ""}`}
@@ -84,15 +60,11 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
             setInspected(null);
             setInspectionTarget(undefined);
           }}
-          history={
-            history
-              ? undefined
-              : () => {
-                  setInspected(null);
-                  setInspectionTarget(undefined);
-                  setHistory("all");
-                }
-          }
+          history={() => {
+            setInspected(null);
+            setInspectionTarget(undefined);
+            openProject("history");
+          }}
           disabled={disabled || !baseline}
           applied={(() => {
             const startedJob =
@@ -104,13 +76,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
               undefined
             );
           })()}
-          reapply={async (item) => {
-            const options = { run_id: item.id };
-            const result = await preparePreview("export_selected", options);
-            setPreviewRequest({ name: "export_selected", options });
-            setInspectRelease(false);
-            setPreview(result);
-          }}
+          reapply={(item) => reapplyRun(item.id)}
           actions={
             inspected &&
             canResumeRun(inspected) && (
@@ -266,7 +232,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
           translationFlow.dismiss();
           const run = state.runs.find((item) => item.id === id);
           if (run) inspect(run);
-          else setHistory("all");
+          else openProject("history");
         }}
       />
       {submission?.approval && (

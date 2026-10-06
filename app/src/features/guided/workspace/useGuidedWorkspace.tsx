@@ -38,6 +38,7 @@ import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks } from "../progress";
 import { initialPosition, stagesFor } from "../workflow";
 import {
+  type GuidedIntent,
   type GuidedProps,
   type Panel,
   actionKey,
@@ -54,8 +55,9 @@ export function useGuidedWorkspace({
   state,
   translation,
   settings,
-  backups,
-  versions,
+  openProject,
+  intent,
+  intentHandled,
 }: GuidedProps & { state: GuidedState; translation: TranslationState }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
@@ -92,9 +94,6 @@ export function useGuidedWorkspace({
   const [panel, setPanel] = useState<Panel>(null);
   const [speakerTab, setSpeakerTab] = useState("findings");
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
-  const [utilityActions, setUtilityActions] = useState<HTMLDivElement | null>(
-    null,
-  );
   // Hosted tasks with their own action bar fill the Guided footer through this slot.
   const [taskFooter, setTaskFooter] = useState<HTMLDivElement | null>(null);
   const [fileBaseline, setFileBaseline] = useState<string[]>([]);
@@ -115,7 +114,6 @@ export function useGuidedWorkspace({
   const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
   const [comparisonsAccepted, setComparisonsAccepted] = useState(false);
-  const [history, setHistory] = useState<string | null>(null);
   const [inspection, setInspected] = useState<Job | null>(null);
   const [inspectionTarget, setInspectionTarget] =
     useState<RequestInspectionTarget>();
@@ -135,7 +133,6 @@ export function useGuidedWorkspace({
   const [baselineNotice, setBaselineNotice] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const historyControl = useRef<HTMLButtonElement>(null);
   const [inspectorReturnFocus, setInspectorReturnFocus] =
     useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -575,6 +572,38 @@ export function useGuidedWorkspace({
       "",
       actionKey(name, options),
     );
+  // Re-applying a saved run's output opens its Apply review.
+  const reapplyRun = async (runId: string) => {
+    const options = { run_id: runId };
+    const result = await preparePreview("export_selected", options);
+    setPreviewRequest({ name: "export_selected", options });
+    setInspectRelease(false);
+    setPreview(result);
+  };
+  // A review the Project page asked for opens once, over the saved task.
+  const openIntent = useEffectEvent((request: GuidedIntent) => {
+    const opened =
+      request.kind === "checkpoint"
+        ? review("checkpoint")
+        : action.run(
+            async () => {
+              if (request.kind === "reapply") await reapplyRun(request.runId);
+              else {
+                const run = state.runs.find(
+                  (item) => item.id === request.runId,
+                );
+                if (!run) throw new Error("That run is no longer saved.");
+                setResume(run);
+              }
+            },
+            "",
+            request.kind,
+          );
+    void opened.finally(() => intentHandled?.());
+  });
+  useEffect(() => {
+    if (intent) openIntent(intent);
+  }, [intent]);
   const refreshPreview = () =>
     action.run(
       async () => {
@@ -610,7 +639,6 @@ export function useGuidedWorkspace({
       panel ||
       inspection ||
       inspectionTarget ||
-      history ||
       preview ||
       submission ||
       position.step !== "translate"
@@ -633,7 +661,6 @@ export function useGuidedWorkspace({
     panel,
     inspection,
     inspectionTarget,
-    history,
     preview,
     submission,
     position.step,
@@ -811,9 +838,7 @@ export function useGuidedWorkspace({
   );
   const inspect = (item: Job | null, target?: RequestInspectionTarget) => {
     const current = document.activeElement;
-    setInspectorReturnFocus(
-      current instanceof HTMLElement ? current : historyControl.current,
-    );
+    setInspectorReturnFocus(current instanceof HTMLElement ? current : null);
     setInspectionTarget(target);
     setInspected(item);
   };
@@ -1083,8 +1108,7 @@ export function useGuidedWorkspace({
     state,
     translation,
     settings,
-    backups,
-    versions,
+    openProject,
     application,
     action,
     speakerAction,
@@ -1107,8 +1131,6 @@ export function useGuidedWorkspace({
     setSpeakerTab,
     editorAssets,
     setEditorAssets,
-    utilityActions,
-    setUtilityActions,
     taskFooter,
     setTaskFooter,
     fileScope,
@@ -1128,8 +1150,6 @@ export function useGuidedWorkspace({
     setComparisonReview,
     comparisonsAccepted,
     setComparisonsAccepted,
-    history,
-    setHistory,
     setInspected,
     inspectionTarget,
     setInspectionTarget,
@@ -1140,8 +1160,8 @@ export function useGuidedWorkspace({
     baselineNotice,
     bodyRef,
     headingRef,
-    historyControl,
     inspectorReturnFocus,
+    reapplyRun,
     running,
     sourceBackup,
     preserved,

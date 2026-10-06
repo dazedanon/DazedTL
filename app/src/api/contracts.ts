@@ -1792,7 +1792,9 @@ export type PluginActionResult = {
 };
 
 export type Screen =
-  "overview" | "translation" | "guided" | "manual" | "settings";
+  "project" | "translation" | "guided" | "manual" | "settings";
+
+export type TranslationMethod = "guided" | "len";
 
 export type ProjectOperation = {
   label: string;
@@ -1806,7 +1808,7 @@ export type Project = {
   source: string;
   engine: string;
   engine_label?: string;
-  method: "guided" | "len" | "translation";
+  method: TranslationMethod | null;
   phase: string;
   available?: boolean;
   status?: string;
@@ -2063,6 +2065,11 @@ export type NavigateRequest = {
   screen: Screen;
 };
 
+export type ProjectMethodRequest = {
+  project_id: string;
+  method: TranslationMethod;
+};
+
 export type SettingsModelDefaultsRequest = {
   connection_id: string;
   model: string;
@@ -2232,6 +2239,7 @@ export type RpcContract = {
   open_project: { request: OpenProjectRequest; response: AppState };
   select_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };
+  project_method: { request: ProjectMethodRequest; response: AppState };
   settings_get: { request: NoParams; response: Settings };
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };

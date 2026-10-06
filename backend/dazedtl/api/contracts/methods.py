@@ -74,7 +74,12 @@ from dazedtl.api.contracts.translation import (
     TranslationProgress,
     TranslationState,
 )
-from dazedtl.api.contracts.workspace import AppState, Screen, WorkspaceSnapshot
+from dazedtl.api.contracts.workspace import (
+    AppState,
+    Screen,
+    TranslationMethod,
+    WorkspaceSnapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -317,6 +322,11 @@ class NavigateRequest(TypedDict):
     screen: Screen
 
 
+class ProjectMethodRequest(TypedDict):
+    project_id: str
+    method: TranslationMethod
+
+
 class SettingsModelDefaultsRequest(TypedDict):
     connection_id: str
     model: str
@@ -489,6 +499,7 @@ METHODS: dict[str, Method] = {
     "open_project": Method(OpenProjectRequest, AppState),
     "select_project": Method(ProjectRequest, AppState),
     "navigate": Method(NavigateRequest, AppState),
+    "project_method": Method(ProjectMethodRequest, AppState),
     # Settings
     "settings_get": Method(NoParams, Settings, refresh=False),
     "settings_save": Method(PreferencesRequest, Settings),

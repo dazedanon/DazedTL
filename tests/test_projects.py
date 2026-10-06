@@ -59,6 +59,11 @@ class ProjectTests(unittest.TestCase):
         self.projects.navigate("settings")
         second = self.projects.open(self.game("second"), "len")
         self.assertNotEqual(second["id"], identity)
+        # The chosen method survives reopening; only the two methods qualify.
+        self.projects.choose_method(identity, "len")
+        with self.assertRaises(ValueError):
+            self.projects.choose_method(identity, "translation")
+        self.assertEqual(self.projects.open(detected)["method"], "len")
         self.projects.select(identity)
         restored = Projects(self.root)
         self.assertEqual(restored.data["version"], SCHEMA_VERSION)
@@ -66,6 +71,19 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(restored.current["id"], identity)
         self.assertEqual(restored.current["backend_id"], "saved-job-owner")
         self.assertEqual(restored.current["phase"], "dialogue")
+
+    def test_version_four_overview_opens_on_the_project_page(self):
+        self.projects.path.write_text(
+            json.dumps(
+                {
+                    "version": 4,
+                    "current_id": "",
+                    "screen": "overview",
+                    "projects": [],
+                }
+            )
+        )
+        self.assertEqual(Projects(self.root).data["screen"], "project")
 
     def test_invalid_navigation_cannot_switch_or_modify_projects(self):
         self.projects.open(self.game("first"), "len")

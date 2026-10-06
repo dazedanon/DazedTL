@@ -7,7 +7,8 @@ from dazedtl.api.contracts.images import ImageManagerState
 from dazedtl.api.contracts.plugins import PluginState
 from dazedtl.api.contracts.translation import TranslationState
 
-type Screen = Literal["overview", "translation", "guided", "manual", "settings"]
+type Screen = Literal["project", "translation", "guided", "manual", "settings"]
+type TranslationMethod = Literal["guided", "len"]
 
 
 class ProjectOperation(TypedDict):
@@ -22,7 +23,8 @@ class Project(TypedDict):
     source: str
     engine: str
     engine_label: NotRequired[str]
-    method: Literal["guided", "len", "translation"]
+    # None until the method is chosen; existing work implies it.
+    method: TranslationMethod | None
     phase: str
     available: NotRequired[bool]
     status: NotRequired[str]

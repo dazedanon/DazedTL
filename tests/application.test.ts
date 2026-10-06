@@ -20,7 +20,7 @@ const snapshot = (ready = false): WorkspaceSnapshot => ({
   application: {
     project: null,
     recent: [],
-    screen: "overview",
+    screen: "project",
     running: false,
     observing: false,
     provider_ready: ready,
@@ -259,7 +259,7 @@ test("workflow views persist per project and storage failures leave the previous
   fail = false;
   current = projectSnapshot("two");
   await store.refresh();
-  assert.equal(store.getSnapshot().snapshot?.application.screen, "overview");
+  assert.equal(store.getSnapshot().snapshot?.application.screen, "project");
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "guidance");
   assert.throws(
     () => store.navigateGuided("one", { task: "apply" }),

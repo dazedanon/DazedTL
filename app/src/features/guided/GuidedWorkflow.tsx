@@ -1,9 +1,7 @@
 import { useRef } from "react";
-import { FolderOpen } from "lucide-react";
 import type { GuidedState, TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
-import { TopbarActions } from "../../app/TopbarSlot";
 import { saveKey, taskKey, useShortcut } from "../../state/useShortcut";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
@@ -72,16 +70,13 @@ function Workspace(
     taskView,
     showTaskTabs,
     taskTabsId,
-    setPanel,
     editorAssets,
     setEditorAssets,
     setTaskFooter,
     preview,
-    setHistory,
     baselineNotice,
     bodyRef,
     headingRef,
-    historyControl,
     preserved,
     changed,
     activeOperation,
@@ -154,34 +149,8 @@ function Workspace(
       aria-label="Translation workspace"
     >
       <h1 className="sr-only">Translation</h1>
-      <TopbarActions>
-        <Button variant="quiet" onClick={() => setPanel("project-tools")}>
-          Project tools
-        </Button>
-        <Button
-          ref={historyControl}
-          variant="quiet"
-          onClick={() => setHistory("all")}
-        >
-          History
-        </Button>
-        <Button
-          variant="quiet"
-          onClick={() =>
-            action.run(
-              () => window.dazedtl.openFolder("project"),
-              "Game folder opened.",
-              "open-game",
-            )
-          }
-        >
-          <FolderOpen size={16} />
-          Game folder
-        </Button>
-      </TopbarActions>
       <div className="guided-layout">
         <WorkflowNavigation
-          allTasks={() => setPanel("tasks")}
           stages={stages}
           step={position.step}
           completed={completed}
@@ -319,7 +288,7 @@ function Workspace(
             </ErrorBoundary>
           </PageBody>
           {hostedFooter ? (
-            <div className="guided-task-footer" ref={setTaskFooter} />
+            <div className="footer-slot" ref={setTaskFooter} />
           ) : (
             <ActionBar
               feedback={

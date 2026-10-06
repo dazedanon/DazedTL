@@ -40,7 +40,7 @@ class Application:
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.workspace_lock = WorkspaceLock(self.workspace)
         self.projects = Projects(self.workspace)
-        self.projects.data["screen"] = "overview"
+        self.projects.data["screen"] = "project"
         self.backend = ExistingBackend(self.workspace / "engine", allow_providers)
         with self.backend.context():
             self.settings = Settings(self.workspace, self.backend)
@@ -165,6 +165,17 @@ class Application:
         if project and project["available"]:
             try:
                 current = self.translation.state(project["id"])
+                # A game opened before the method choice keeps the method it
+                # already has work in; the choice itself is never inferred later.
+                if project["method"] not in {"guided", "len"}:
+                    project["method"] = (
+                        "guided"
+                        if project.get("backend_id")
+                        else "len"
+                        if current["jobs"]
+                        or (current["progress"] or {}).get("updated_at")
+                        else "translation"
+                    )
                 project["next_label"] = "Open translation"
                 project["engine_label"] = current["engine"]
                 project["engine"] = self.translation.engine.detect(project["source"])
@@ -279,6 +290,13 @@ class Application:
 
     def select_project(self, project_id):
         self.projects.select(project_id)
+        return self.state()
+
+    def project_method(self, project_id, method):
+        """Choose a game's method; Guided steps link the game's Guided workspace."""
+        if method == "guided":
+            self.guided.open(project_id)
+        self.projects.choose_method(project_id, method)
         return self.state()
 
     def navigate(self, screen):
@@ -408,7 +426,7 @@ def routes(app):
         "workspace_snapshot": (app.snapshot, lambda value, _params: value),
         **{
             name: (getattr(app, name), lambda value, _params: views.application(value))
-            for name in ("open_project", "select_project", "navigate")
+            for name in ("open_project", "select_project", "navigate", "project_method")
         },
         **{
             name: (getattr(app, name), lambda value, _params: views.settings(value))

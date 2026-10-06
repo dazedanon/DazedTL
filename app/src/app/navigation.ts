@@ -132,7 +132,7 @@ export class Navigation {
 
   navigate(snapshot: WorkspaceSnapshot, screen: Screen) {
     if (
-      !["overview", "translation", "guided", "manual", "settings"].includes(
+      !["project", "translation", "guided", "manual", "settings"].includes(
         screen,
       )
     )

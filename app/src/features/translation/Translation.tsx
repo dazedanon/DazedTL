@@ -18,23 +18,21 @@ import {
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
-import { ActionList, ActionRow } from "../../ui/ActionList";
 import { engineLabel } from "../../ui/displayText";
 import { Section } from "../../ui/Section";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
+import type { ProjectLink } from "../guided/workspace/model";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
-import { RequestsPanel } from "./RequestsPanel";
-import { VersionsPanel } from "./VersionsPanel";
 import { JobStatus } from "../../ui/JobStatus";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { StatusIcon } from "../../ui/StatusIcon";
 
-type View = "progress" | "context" | "requests" | "versions";
+type View = "progress" | "context" | "images";
 const labels: Record<string, string> = {
   preparation: "Preparation",
   extraction: "Extraction",
@@ -47,12 +45,12 @@ const labels: Record<string, string> = {
 export default function Translation({
   project,
   settings,
-  openGuided,
+  openProject,
 }: {
   project: Project;
   settings: () => void;
-  /** Opens the Translation screen when this game also has phased work there. */
-  openGuided?: () => void;
+  /** History, game updates and backups live on the Project page. */
+  openProject: ProjectLink;
 }) {
   const application = useApplication();
   const state = application.snapshot?.translation;
@@ -73,7 +71,7 @@ export default function Translation({
       project={project}
       state={state}
       settings={settings}
-      openGuided={openGuided}
+      openProject={openProject}
     />
   );
 }
@@ -82,27 +80,23 @@ function Workspace({
   project,
   state,
   settings,
-  openGuided,
+  openProject,
 }: {
   project: Project;
   state: TranslationState;
   settings: () => void;
-  openGuided?: () => void;
+  openProject: ProjectLink;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
   const draft = useProjectOptions(state, action.report);
   const [view, setView] = useState<View>("progress");
-  const [imageManager, setImageManager] = useState(false);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
-  const [versionActions, setVersionActions] = useState<HTMLDivElement | null>(
-    null,
-  );
+  const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
   const tabs: Tab<View>[] = [
     { id: "progress", label: "Progress" },
     { id: "context", label: "Context" },
-    { id: "requests", label: "Requests & results" },
-    { id: "versions", label: "Game updates" },
+    { id: "images", label: "Images" },
   ];
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
@@ -152,26 +146,6 @@ function Workspace({
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
   const latest = state.jobs[0];
-  if (imageManager)
-    return (
-      <>
-        <ImageManager
-          projectId={project.id}
-          observed={application.snapshot?.images}
-          backLabel="Back to Len’s method"
-          onClose={() => setImageManager(false)}
-          onOpenEditor={setEditorAssets}
-        />
-        {editorAssets && (
-          <ImageTextEditor
-            projectId={project.id}
-            assetIds={editorAssets}
-            observationKey={application.snapshot}
-            onClose={() => setEditorAssets(null)}
-          />
-        )}
-      </>
-    );
   return (
     <PageLayout
       variant="editor"
@@ -191,17 +165,6 @@ function Workspace({
             >
               <FolderOpen size={16} />
               Workspace
-            </Button>
-            <Button
-              disabled={disabled}
-              onClick={() =>
-                action.run(async () => {
-                  await flushDrafts();
-                  setImageManager(true);
-                })
-              }
-            >
-              Image Manager
             </Button>
           </div>
         }
@@ -453,17 +416,18 @@ function Workspace({
                     <dd>{state.git?.translation_commit ? "Saved" : "None"}</dd>
                   </div>
                 </dl>
-              </Section>
-              {openGuided && (
-                <ActionList>
-                  <ActionRow
-                    title="Existing phased work"
-                    description="Runs and choices from the Translation screen stay there."
+                <div className="lens-project-links">
+                  <Button variant="link" onClick={() => openProject("backups")}>
+                    Backups & recovery
+                  </Button>
+                  <Button
+                    variant="link"
+                    onClick={() => openProject("versions")}
                   >
-                    <Button onClick={openGuided}>Open Translation</Button>
-                  </ActionRow>
-                </ActionList>
-              )}
+                    Game updates
+                  </Button>
+                </div>
+              </Section>
               {state.statusText && (
                 <details>
                   <summary>Detailed agent report</summary>
@@ -503,31 +467,33 @@ function Workspace({
         {view === "context" && (
           <ContextPanel state={state} copy={copyControl} />
         )}
-        {view === "requests" && (
+        {view === "images" && (
           <>
-            <PageBody>
-              <RequestsPanel state={state} />
-            </PageBody>
-            <ActionBar feedback={null}>{copyControl()}</ActionBar>
-          </>
-        )}
-        {view === "versions" && (
-          <>
-            <PageBody>
-              <VersionsPanel
-                project={project}
-                state={state}
-                actionTarget={versionActions}
+            <PageBody className="image-task-body">
+              <ImageManager
+                key={project.id}
+                projectId={project.id}
+                observed={application.snapshot?.images}
+                embedded={{
+                  footerTarget: imageFooter,
+                  next: (variant) =>
+                    copyControl(variant === "primary" ? "primary" : "default"),
+                }}
+                onOpenEditor={setEditorAssets}
               />
             </PageBody>
-            {/* Update steps lead here; the prompt copy steps back. */}
-            <ActionBar feedback={null}>
-              <div ref={setVersionActions} className="action-bar-slot" />
-              {copyControl("default")}
-            </ActionBar>
+            <div className="footer-slot" ref={setImageFooter} />
           </>
         )}
       </TabPanel>
+      {editorAssets && (
+        <ImageTextEditor
+          projectId={project.id}
+          assetIds={editorAssets}
+          observationKey={application.snapshot}
+          onClose={() => setEditorAssets(null)}
+        />
+      )}
     </PageLayout>
   );
 }

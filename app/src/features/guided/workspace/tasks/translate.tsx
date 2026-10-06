@@ -15,6 +15,7 @@ import {
   translationStopLabel,
   unsettledBatches,
 } from "../../translationView";
+import { historyPhaseLabels } from "../../historyView";
 import { actionKey, fileCount } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -34,7 +35,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     setSubmission,
     setComparisonReview,
     setComparisonsAccepted,
-    setHistory,
+    openProject,
     inspectionTarget,
     preserved,
     baseline,
@@ -115,7 +116,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       change={edit}
       settings={settings}
       options={() => setPanel("translation-context")}
-      history={() => setHistory("all")}
+      history={() => openProject("history", historyPhaseLabels[phase])}
       inspect={inspect}
       inspectedFile={inspectionTarget?.file}
       fileActions={task(
@@ -161,7 +162,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         <>
           <p>{state.comparisons.message}</p>
           {state.comparisons.status === "recovery_needed" ? (
-            <Button onClick={() => setPanel("backups")}>
+            <Button onClick={() => openProject("backups")}>
               Backups & recovery
             </Button>
           ) : (

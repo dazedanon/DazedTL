@@ -10,7 +10,6 @@ export function WorkflowNavigation({
   disabled,
   move,
   taskFor,
-  allTasks,
 }: {
   stages: WorkflowStage[];
   step: GuidedStep;
@@ -18,7 +17,6 @@ export function WorkflowNavigation({
   disabled: boolean;
   move: (step: GuidedStep, task: string) => void;
   taskFor: (stage: WorkflowStage) => string;
-  allTasks: () => void;
 }) {
   return (
     <nav className="guided-phase-nav frame-row" aria-label="Translation stages">
@@ -54,13 +52,6 @@ export function WorkflowNavigation({
           </Button>
         );
       })}
-      <Button
-        variant="quiet"
-        className="guided-all-tasks-button"
-        onClick={allTasks}
-      >
-        All tasks
-      </Button>
     </nav>
   );
 }

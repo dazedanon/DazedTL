@@ -1,5 +1,5 @@
 /* Inspector and history bodies hand scrolling to their panels. */
-.dialog--full > :is(.inspector-body, .history-body) {
+.dialog--full > .inspector-body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -282,9 +282,6 @@
     gap: var(--space-2);
   }
 }
-.history-sheet.dialog--full {
-  width: min(1200px, calc(100vw - var(--space-6)));
-}
 .guided-history {
   display: flex;
   flex-direction: column;
@@ -549,10 +546,6 @@
 .guided-success {
   color: var(--color-success);
 }
-.guided-all-tasks-button {
-  margin-inline-start: auto;
-  flex-shrink: 0;
-}
 /* Every task starts with its name and purpose on one line, actions at the end. */
 .task-header {
   display: flex;
@@ -605,10 +598,6 @@
   .guided-task-nav {
     padding-top: 0;
   }
-}
-/* The footer slot a hosted task fills with its own ActionBar. */
-.guided-task-footer {
-  display: contents;
 }
 .guided-footer-context {
   display: flex;
@@ -799,28 +788,6 @@
 }
 .guided-sheet .actions {
   margin-top: 0;
-}
-.guided-all-tasks {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15em, 1fr));
-  gap: var(--space-5);
-}
-.guided-all-tasks section {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-.guided-all-tasks h3 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-body);
-}
-.guided-all-tasks button {
-  text-align: left;
-  gap: var(--space-2);
-}
-.guided-all-tasks button[aria-current="step"] {
-  color: var(--color-accent);
-  background: var(--color-accent-subtle);
 }
 .guided-preview-files {
   display: flex;
@@ -1276,30 +1243,6 @@
   }
 }
 
-.release-types {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.release-types button {
-  text-align: left;
-  white-space: normal;
-  display: grid;
-  justify-content: stretch;
-  justify-items: start;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4);
-}
-.release-types button[aria-pressed="true"] {
-  background: var(--color-accent-subtle);
-  border-color: var(--color-accent);
-}
-.release-types small {
-  color: var(--color-muted);
-  font-size: var(--font-small);
-  line-height: 1.5;
-  font-weight: var(--weight-regular);
-}
 .release-note {
   font-size: var(--font-small);
   margin-top: var(--space-4);

@@ -14,7 +14,7 @@ import { StatusIcon } from "../../../../ui/StatusIcon";
 export function backupView(w: GuidedWorkspace): TaskView {
   const {
     action,
-    setPanel,
+    openProject,
     sourceBackup,
     preserved,
     localOperation,
@@ -43,7 +43,7 @@ export function backupView(w: GuidedWorkspace): TaskView {
             />
           )}
           {preserved && (
-            <Button variant="link" onClick={() => setPanel("backups")}>
+            <Button variant="link" onClick={() => openProject("backups")}>
               Backups & recovery
             </Button>
           )}
@@ -63,7 +63,7 @@ export function backupView(w: GuidedWorkspace): TaskView {
         />
       )}
       {sourceBackup && !preserved && (
-        <Button onClick={() => setPanel("backups")}>
+        <Button onClick={() => openProject("backups")}>
           Recover a saved backup
         </Button>
       )}

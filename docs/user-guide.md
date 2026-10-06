@@ -5,11 +5,13 @@ For setup and current limitations, see the [README](../README.md).
 
 ## Open a game
 
-Choose **Open a game** on Overview and select the game folder.
-Overview then shows the next unfinished task and each stage's progress; **Continue** reopens Translation where you left off.
+Choose **Open a game** on the Project page and select the game folder.
+A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Len's method](#lens-method) for any game.
+**Translation** in the sidebar then opens that method.
+**Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
+The Project page's **Status** shows the next unfinished task and every stage's tasks; **Continue** reopens Translation where you left off.
+Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
-RPG Maker MV/MZ and Ace games use the guided **Translation** workflow.
-Any game folder can use [Len's method](#lens-method).
 
 ## Translation workflow
 
@@ -62,11 +64,12 @@ Reloading archives previous working copies and their cached results.
 
 ### Run history and inspection
 
-**Run history** on Translate lists approved runs, including failed and canceled ones; **History** also includes other project activity.
+The Project page's **History** lists approved runs, including failed and canceled ones, estimates and other project activity; **Run history** on Translate opens it searched to that stage.
 **Inspect**, or a file's inspect icon, opens the request inspector.
 **Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage, the exact API payload and the run log.
 **File contents** shows the file's current text even when no request was prepared.
 The inspector also holds Batch controls: provider cancellation, queue continuation, collection recovery and reviewed reapplication of saved output.
+Re-applying output or resuming a run from History opens its review in Translation.
 Finished responses, including partial results from canceled Batches, stay available for collection.
 
 Files with validation problems show a warning.
@@ -76,7 +79,7 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 
 ### Images
 
-Images is the Image Manager, the same one Len's method opens.
+Images is the Image Manager, the same one Len's method shows in its **Images** tab.
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
 The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
@@ -116,11 +119,11 @@ DazedTL shows the assistant's saved reports; it does not host or keep the assist
 
 The helper preserves the selected source, sets up the original and translation Git branches, records the game version and prepares shared guidance before compiling requests.
 For engines other than RPG Maker, extraction, fitting, native reconstruction and runtime QA remain the assistant's work through the bundled skills and tools.
-Existing phased RPG Maker jobs keep their recovery path in Translation.
+Guided steps work on the same game keeps its recovery path when you switch the method back.
 Resume an unfinished API run before starting another phase or estimate so its provider work stays attached.
 
 API runs require reviewing the complete request set and cost estimate.
-Inspect context, source text and accepted outputs under **Requests & results**.
+Inspect context, source text and accepted outputs in the Project page's **History**.
 Each line shows its text type and known or unknown speaker; source ambiguities appear as review notes beside the translation.
 Check those notes against the source before marking the request source-checked; a correction makes that review pending again.
 Pausing a Batch run stops local polling, and **Cancel provider batch** requests cancellation while keeping completed results.
@@ -129,9 +132,10 @@ Len's manual checkpoint and patch controls are under **Advanced setup & patch to
 
 ## Game updates
 
-For a new official release, **Project tools → Game updates** stages a separate copy for comparison.
+For a new official release, the Project page's **Game updates** stages a separate copy for comparison.
 Finish any engine-specific preparation of that copy, preview the changes, then apply the update.
 Each step appears under **History → Other activity**, where **Inspect** shows its saved result and log.
+**Backups & recovery** on that tab opens the **Backups** tab.
 Ordinary MV/MZ writes keep the existing Japanese in `_original`.
 Rebasing source metadata after an update requires the exact current original-branch bytes and commit.
 Native formats use their engine's source and injection sidecars.
@@ -145,7 +149,7 @@ Backups live in `.dazedtl/backups/v2`, where unchanged files are stored once.
 Keep that folder with the game when moving it.
 Older full-copy backups in the app workspace remain readable and are never deleted automatically.
 
-**Project tools → Backups & recovery** saves game and project backups and opens their folders.
+The Project page's **Backups** saves game and project backups and opens their folders.
 **Recover files…** restores a chosen copy into a new folder outside the game; existing folders are never overwritten.
 Game backups restore game files.
 Project backups restore the contents of `.dazedtl`, such as guidance, accepted translations, custom tools and image work, but not the backup store itself.

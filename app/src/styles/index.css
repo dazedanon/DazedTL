@@ -8,7 +8,7 @@
 @import "./ui.css" layer(ui);
 @import "./layout.css" layer(layout);
 /* Feature sheets keep their original relative order; screen-specific sheets
-   come first and the guided, settings and overview sheets follow them. */
+   come first and the guided, settings and project sheets follow them. */
 @import "../features/guided/context.css" layer(features);
 @import "../features/guided/translation.css" layer(features);
 @import "../features/translation/translation.css" layer(features);
@@ -17,4 +17,4 @@
 @import "../features/images/image-editor.css" layer(features);
 @import "../features/guided/guided.css" layer(features);
 @import "../features/settings/settings.css" layer(features);
-@import "../features/overview/overview.css" layer(features);
+@import "../features/project/project.css" layer(features);
