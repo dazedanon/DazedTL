@@ -111,7 +111,7 @@ Saved active runs do not disable Translate or lock its file selection and mode; 
 Selecting more files or clicking Translate again retains the engine’s skip-translated behavior.
 Apply includes only checked files with saved output in the current task, including output from earlier runs.
 Model and method live in the toolbar.
-Resync sits beside file selection; Options edits translation behavior and opens saved translations; wrapping limits belong to the layout workflow.
+Resync, labelled Reload from game, sits beside file selection apart from its selection helpers; Options edits translation behavior and opens saved translations; wrapping limits belong to the layout workflow.
 Live file rows count returned requests, including rejected attempts; native map-command totals are not used as translation percentages.
 Finished Live runs clear progress and preparation labels.
 Batch rows use provider request receipts.

@@ -488,7 +488,7 @@ class ExistingBackend:
                 "project": native,
                 "folder": str(folder),
                 "action": "refresh_sources",
-                "label": "Resync selected files from game",
+                "label": "Reload selected files from game",
                 "options": {"files": files, "sources": sources, "retired": []},
                 "guard": self.guided_guard(native, folder),
             }

@@ -927,6 +927,16 @@
 .file-browser-toolbar .actions {
   gap: var(--space-1);
 }
+.file-browser-toolbar > .actions {
+  margin-inline-start: auto;
+}
+/* Actions on the files themselves sit apart from the selection helpers. */
+.file-browser-file-actions {
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--space-2);
+  border-inline-start: 1px solid var(--line);
+}
 .file-browser-heading,
 .file-browser-row {
   display: grid;
@@ -955,9 +965,6 @@
 }
 .file-browser-row:hover {
   background: var(--color-control);
-}
-.file-browser-row[data-selected="true"] {
-  background: var(--color-navigation-selected);
 }
 .file-browser-title {
   color: var(--muted);

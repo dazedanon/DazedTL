@@ -677,7 +677,7 @@ export function useGuidedWorkspace({
             !active &&
             current?.status === "complete" &&
             current.id === started[name]?.id
-              ? `${typeof current.result?.files === "number" ? fileCount(current.result.files) : "Files"} resynced.`
+              ? `${typeof current.result?.files === "number" ? fileCount(current.result.files) : "Files"} reloaded from the game.`
               : ""
           }
           error={
@@ -915,17 +915,7 @@ export function useGuidedWorkspace({
     scope: "database" | "dialogue" | null = null,
   ) => (
     <ActionList>
-      <ActionRow
-        label={
-          <>
-            <strong>{fileCount(count)} selected</strong>
-            <small>
-              Selections remain checked when you filter, switch phases, or
-              return later.
-            </small>
-          </>
-        }
-      >
+      <ActionRow title={`${fileCount(count)} selected`}>
         <Button disabled={disabled} onClick={() => chooseFiles(scope)}>
           Choose files
         </Button>

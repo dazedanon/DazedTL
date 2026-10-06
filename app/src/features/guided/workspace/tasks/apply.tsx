@@ -165,7 +165,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
     !baseline
       ? "Save a version baseline first."
       : changed.length
-        ? "Resync the changed files first."
+        ? "Reload the changed files from the game first."
         : !outputFiles.length
           ? "No checked file has saved output yet."
           : false,

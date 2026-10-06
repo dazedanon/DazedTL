@@ -407,7 +407,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
                     : paid && preview.options.mode === "batch"
                       ? "Prepare Batch for cost review"
                       : preview.action === "refresh_sources"
-                        ? "Resync files"
+                        ? "Reload files"
                         : ["release", "release_patch"].includes(preview.action)
                           ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP`
                           : "Run this action"}

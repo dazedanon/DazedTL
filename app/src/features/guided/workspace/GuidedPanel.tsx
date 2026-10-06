@@ -224,6 +224,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     >
       <DialogHeader
         title={title}
+        description={
+          panel === "files"
+            ? "Selections stay checked when you filter, switch phases or return later."
+            : undefined
+        }
         onClose={closePanel}
         closeDisabled={action.busy}
       />

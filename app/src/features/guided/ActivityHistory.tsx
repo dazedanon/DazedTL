@@ -30,7 +30,7 @@ export function operationSummary(job: Job): string {
   const result = job.result;
   if (!result) return "";
   if (typeof result.archive === "string")
-    return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} resynced. Previous copies and outputs archived.`;
+    return `${Number(result.files || 0)} ${result.files === 1 ? "file" : "files"} reloaded from the game. Previous copies and outputs archived.`;
   if (typeof result.files === "number")
     return `${result.files} ${result.files === 1 ? "file" : "files"} saved.`;
   if (typeof result.changes_found === "number")

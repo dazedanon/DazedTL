@@ -244,8 +244,8 @@ export function FileSelection({
           >
             Clear {inline && !query ? "all" : "matching"}
           </Button>
-          {actions}
         </div>
+        {actions && <div className="file-browser-file-actions">{actions}</div>}
       </div>
       <div className="file-browser-heading" aria-hidden="true">
         <span />

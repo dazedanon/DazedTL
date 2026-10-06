@@ -318,13 +318,13 @@ function Workspace(
               ) && (
                 <Notice tone="warning">
                   <span>
-                    {fileCount(changed.length)} have changed sources. Resync the
-                    affected working files before new work.
+                    {fileCount(changed.length)} changed in the game. Reload them
+                    from the game before new work.
                   </span>
                   {position.step !== "translate" &&
                     task(
                       "refresh_sources",
-                      "Resync",
+                      "Reload from game…",
                       {},
                       !preserved || !!activeOperation,
                       "default",

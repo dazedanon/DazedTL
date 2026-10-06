@@ -84,14 +84,17 @@ export function TranslateWorkspace({
   return (
     <div className="translation-workspace">
       <div className="translation-toolbar" aria-label="Translation setup">
-        <Button
-          variant="quiet"
-          disabled={locked}
-          onClick={settings}
-          title={state.provider.connection}
-        >
-          {state.provider.model || "Choose a model"}
-        </Button>
+        <span className="translation-model">
+          <span className="muted">Model</span>
+          <Button
+            variant="link"
+            disabled={locked}
+            onClick={settings}
+            title={`${state.provider.connection} · change in Settings`}
+          >
+            {state.provider.model || "Choose a model"}
+          </Button>
+        </span>
         <div
           className="guided-mode"
           role="group"

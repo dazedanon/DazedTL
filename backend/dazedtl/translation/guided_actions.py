@@ -74,7 +74,7 @@ SHARED_ACTIONS = {
     "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",
-    "refresh_sources": "Resync selected files from game",
+    "refresh_sources": "Reload selected files from game",
 }
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 

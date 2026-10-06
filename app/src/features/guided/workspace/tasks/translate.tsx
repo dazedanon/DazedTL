@@ -118,7 +118,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       inspectedFile={inspectionTarget?.file}
       fileActions={task(
         "refresh_sources",
-        "Resync",
+        "Reload from game…",
         {},
         !preserved || !selectedNames.length || !!activeOperation,
         "default",
@@ -302,19 +302,9 @@ export function auditView(w: GuidedWorkspace): TaskView {
       {fileSummary(eventFiles.length, "dialogue")}
       <ActionList>
         <ActionRow
-          label={
-            <>
-              <strong>Investigate source coverage</strong>
-              <small>
-                Check every affected use and internal reference before selecting
-                variable IDs, registered handlers or patterns. Found commands
-                and argument keys return as evidence.
-              </small>
-            </>
-          }
-        >
-          {copyTask("advanced", "Copy investigation task")}
-        </ActionRow>
+          title="Investigate source coverage"
+          description="Check every affected use and internal reference before selecting variable IDs, registered handlers or patterns. Found commands and argument keys return as evidence."
+        />
       </ActionList>
       <p className="muted">{state.eventText.message}</p>
       <p className="muted">
@@ -335,21 +325,30 @@ export function auditView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  primary = (
+  // Investigating comes first; manual review and skipping stay available.
+  const ready = state.eventText.status === "ready";
+  primary = ready ? (
     <Button
       variant="primary"
       disabled={disabled}
       onClick={() => stepTask("sources")}
     >
-      {state.eventText.status === "ready"
-        ? "Review findings & source choices"
-        : "Review sources manually"}
+      Review findings & source choices
     </Button>
+  ) : (
+    copyTask("advanced", "Copy investigation task", "primary")
   );
   secondary = (
-    <Button disabled={disabled} onClick={skipEventText}>
-      Continue without other event text
-    </Button>
+    <>
+      {!ready && (
+        <Button disabled={disabled} onClick={() => stepTask("sources")}>
+          Review sources manually
+        </Button>
+      )}
+      <Button variant="quiet" disabled={disabled} onClick={skipEventText}>
+        Skip event codes
+      </Button>
+    </>
   );
   return {
     content,
@@ -430,7 +429,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     </Button>
   ) : (
     <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-      Continue without other event text
+      Skip event codes
     </Button>
   );
   secondary = enabledCodes.length ? (

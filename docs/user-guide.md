@@ -56,7 +56,8 @@ Files with active or unresolved Batch work are locked against source reloads.
 Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns, or skip the task if none are needed.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
 
-**Options** holds task settings, opens the translated folder, and reloads checked files from the current game.
+**Options** holds task settings and opens the translated folder.
+**Reload from game…** beside the file list replaces the checked working files with the current game files.
 Reloading archives previous working copies and their cached results.
 
 ### Run history and inspection

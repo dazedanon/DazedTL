@@ -40,7 +40,11 @@ export function EventTextSources({
                   ? "Findings ready"
                   : "Manual source choices"}
               </strong>
-              <small>Review coverage before enabling sources.</small>
+              <small>
+                {state.status === "ready"
+                  ? "Review coverage before enabling sources."
+                  : "No source is investigated yet. Review coverage before enabling any."}
+              </small>
             </>
           }
         >
@@ -94,7 +98,7 @@ export function EventTextSources({
                         item.coverageStatus === "safe"
                         ? "Recommended"
                         : "Keep off / review needed"
-                      : "Not investigated"}
+                      : ""}
                 </small>
               </button>
             </div>
