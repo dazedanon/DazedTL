@@ -156,17 +156,22 @@ function Workspace({
       <PageHeader
         title="Len's method"
         actions={
-          <div className="actions">
-            <Button
-              disabled={action.busy || !state.initialized}
-              onClick={() =>
-                action.run(() => window.dazedtl.openFolder("projectWorkspace"))
-              }
-            >
-              <FolderOpen size={16} />
-              Workspace
-            </Button>
-          </div>
+          // The workspace folder exists once the assistant sets it up.
+          state.initialized && (
+            <div className="actions">
+              <Button
+                disabled={action.busy}
+                onClick={() =>
+                  action.run(() =>
+                    window.dazedtl.openFolder("projectWorkspace"),
+                  )
+                }
+              >
+                <FolderOpen size={16} />
+                Open workspace folder
+              </Button>
+            </div>
+          )
         }
       />
       <div className="frame-row">
