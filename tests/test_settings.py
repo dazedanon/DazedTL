@@ -1127,6 +1127,11 @@ class SettingsTests(unittest.TestCase):
             settings.draft(view["revision"], "first", view["values"], options)
             settings = Settings(temporary, adapter)
             self.assertEqual(settings.describe()["draft"]["modelOptions"], options)
+            # Another connection's draft must not block this one's model menu.
+            other = settings.select(view["revision"], "second")
+            self.assertNotIn("draft", other)
+            view = settings.select(other["revision"], "first")
+            self.assertEqual(view["draft"]["modelOptions"], options)
             self.assertEqual(
                 configuration(settings, "batch")["batchInputTokens"],
                 frozen_default["batchInputTokens"],

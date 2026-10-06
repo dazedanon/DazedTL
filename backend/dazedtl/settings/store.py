@@ -391,9 +391,12 @@ class Settings:
             ],
             "checksEnabled": self.adapter.allow_providers,
         }
-        if state["draft"]:
-            draft = state["draft"]
-            profile = draft["connections"].get(state["active"])
+        draft = state["draft"]
+        profile = draft and draft["connections"].get(state["active"])
+        # Drafts belong to one connection. Another connection's draft, or one an
+        # earlier version left for a connection that no longer exists, is not a
+        # pending edit here; only a changed shared language would be.
+        if profile or (draft and draft["language"] != values["language"]):
             result["draft"] = {
                 "values": {
                     "language": draft["language"],
