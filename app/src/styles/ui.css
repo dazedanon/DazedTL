@@ -345,9 +345,10 @@ pre {
   flex-shrink: 0;
   margin-inline: var(--frame-inline);
 }
-/* Running text stops near the measure; tables, editors, grids and row
-   labels keep the width their layout gives them. */
-:is(.page-body, .page-layout--document, .dialog-body) :is(p, .notice),
+/* Running text stops near the measure; tables, editors, grids, row labels
+   and path values keep the width their layout gives them. */
+:is(.page-body, .page-layout--document, .dialog-body)
+  :is(p:not(.path), .notice),
 .field-control > small {
   max-width: var(--measure);
 }

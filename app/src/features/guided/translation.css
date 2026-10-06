@@ -338,7 +338,9 @@
 .translation-matched-context > h3 {
   margin: 0 0 var(--space-2);
 }
-.guided-sheet.translation-review:has(.translation-review-body),
+/* A long scope list needs a fixed sheet to scroll in; a short one sizes the
+   review to its content. The flow keeps its size from progress to review. */
+.guided-sheet.translation-review:has(.guided-preview-files),
 .guided-sheet.translation-flow,
 .guided-sheet.prepared-request-preview {
   height: min(680px, calc(100dvh - var(--space-8)));
@@ -522,7 +524,7 @@
 .translation-review-scope {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: none;
   gap: var(--space-2);
   border-top: 1px solid var(--color-border);
   padding-top: var(--space-2);
@@ -533,8 +535,13 @@
   margin: 0;
   font-size: var(--font-control);
 }
+/* Only a long list fills the sheet; a short one leaves the notes beside it and
+   any spare room below them. */
+.translation-review-scope:has(> .guided-preview-files) {
+  flex: 1;
+}
 /* A definite basis keeps row content from setting the scope's minimum height. */
-.translation-review-scope > :is(.guided-preview-files, .guided-preview-paths) {
+.translation-review-scope > .guided-preview-files {
   flex: 1 1 0px;
   height: 0;
   min-height: 4.5em;
@@ -542,7 +549,6 @@
 .translation-review-scope > .guided-preview-paths {
   margin: 0;
   max-height: none;
-  overflow: auto;
   overflow-wrap: anywhere;
 }
 .translation-review-speakers {

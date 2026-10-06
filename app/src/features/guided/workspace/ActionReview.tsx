@@ -398,8 +398,8 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
               ? "Refresh preview"
               : preview.publication
                 ? preview.action === "runtime_restore"
-                  ? "Restore reviewed batch"
-                  : "Apply reviewed batch"
+                  ? "Restore reviewed files"
+                  : "Apply reviewed files"
                 : preview.action === "git_setup"
                   ? "Save baseline & continue"
                   : paid && preview.options.mode === "translate"
