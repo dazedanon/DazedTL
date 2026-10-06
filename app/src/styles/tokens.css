@@ -71,6 +71,7 @@
     var(--frame-gutter),
     calc((100cqw - var(--content-width)) / 2)
   );
+  --focus-ring: 2px solid var(--accent);
   --topbar-height: 68px;
   --bar-height: 68px;
   --space-1: 4px;

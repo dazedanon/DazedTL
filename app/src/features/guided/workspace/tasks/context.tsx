@@ -9,6 +9,7 @@ import { ContextWorkspace } from "../../ContextWorkspace";
 import { GuidanceReview } from "../../GuidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
+import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
 import type { TaskView } from "./view";
 
 export function namesView(w: GuidedWorkspace): TaskView {
@@ -193,6 +194,8 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
       )}
       <ActionControl
         label="Save guidance"
+        title={`Save guidance (${shortcutLabel.save})`}
+        aria-keyshortcuts={shortcutKeys.save}
         disabled={disabled}
         {...feedback("context:save", "Saving guidance…")}
         onClick={() => saveDocuments(savedNames)}
@@ -204,6 +207,7 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
     primary,
     secondary,
     heading: { title: "Translation guidance" },
+    save: disabled ? undefined : () => void saveDocuments(savedNames),
   };
 }
 
@@ -270,6 +274,22 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       </div>
     </>
   );
+  const saveLayout = () =>
+    void action.run(
+      async () => {
+        await save();
+        const current = await api.guided.context(project.id, true);
+        if (current.layoutMessage) throw new Error(current.layoutMessage);
+        await api.guided.reviewContext(
+          project.id,
+          "layout",
+          current.layoutRevision,
+          "layout",
+        );
+      },
+      "Layout saved.",
+      "save-options",
+    );
   primary = advance();
   secondary = (
     <ActionControl
@@ -278,25 +298,11 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           ? "Retry measured layout"
           : "Save layout"
       }
+      title={`Save layout (${shortcutLabel.save})`}
+      aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
       {...feedback("save-options", "Saving layout…")}
-      onClick={() =>
-        action.run(
-          async () => {
-            await save();
-            const current = await api.guided.context(project.id, true);
-            if (current.layoutMessage) throw new Error(current.layoutMessage);
-            await api.guided.reviewContext(
-              project.id,
-              "layout",
-              current.layoutRevision,
-              "layout",
-            );
-          },
-          "Layout saved.",
-          "save-options",
-        )
-      }
+      onClick={saveLayout}
     />
   );
   return {
@@ -308,5 +314,6 @@ export function layoutView(w: GuidedWorkspace): TaskView {
       description:
         "Character limits for the game’s dialogue and interface text.",
     },
+    save: disabled ? undefined : saveLayout,
   };
 }

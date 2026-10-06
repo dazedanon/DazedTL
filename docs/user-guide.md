@@ -14,6 +14,7 @@ Any game folder can use [Len's method](#lens-method).
 
 Translation follows seven stages: **Prepare → Context → Translate → Plugin text → Images → Apply & Fitting → Release**.
 Each stage opens one focused task, and you can move between tasks without finishing them.
+Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Layout and Settings.
 Navigation never starts paid work.
 
 ### Prepare

@@ -433,7 +433,8 @@ Windows 720px tall or shorter compact the top bar and footers; fill editors and 
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 Action lists that open from a button, such as the project switcher and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
 It retains typed values and keyboard selection without relying on the native datalist popup.
-Focus does not add outlines anywhere in the interface.
+Keyboard focus shows the shared `--focus-ring`; pointer focus adds no outline, and text fields mark focus with their border.
+Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to the visible screen and the top dialog: the save key saves the open editor and Alt+Left/Right move between Guided tasks; nothing that spends, applies or packages gets a shortcut.
 ComboBox choice labels hide automatic text-selection highlighting while retaining select-to-replace search; typed queries and editable text keep normal selection behavior.
 Sized dialogs use [Modal](../app/src/ui/Modal.tsx)'s `size` with [DialogHeader and DialogBody](../app/src/ui/Dialog.tsx) and an ActionBar footer.
 Sheets and inspectors close with the header's one close button; decisions such as spending reviews, resyncs and Apply have no close button and end with explicit footer choices.

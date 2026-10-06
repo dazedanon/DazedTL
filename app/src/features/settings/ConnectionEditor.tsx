@@ -8,6 +8,11 @@ import type {
 } from "../../api/contracts";
 import { registerLeaveGuard } from "../../state/leaveGuards";
 import { useAction } from "../../state/useAction";
+import {
+  shortcutKeys,
+  shortcutLabel,
+  useSaveForm,
+} from "../../state/useShortcut";
 import { PageBody } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
@@ -44,6 +49,8 @@ export default function ConnectionEditor({
   const [value, setValue] = useState(initial);
   const [revealed, setRevealed] = useState(false);
   const action = useAction();
+  const form = useRef<HTMLFormElement>(null);
+  useSaveForm(form);
   const dirty = JSON.stringify(value) !== JSON.stringify(initial);
   // The leave guard is registered once and reads the latest dirty state.
   const unsaved = useRef(dirty);
@@ -119,7 +126,12 @@ export default function ConnectionEditor({
   }
   const disabled = action.busy || running;
   return (
-    <form className="editor-form" onSubmit={submit} autoComplete="off">
+    <form
+      ref={form}
+      className="editor-form"
+      onSubmit={submit}
+      autoComplete="off"
+    >
       <PageBody>
         <Section title={connection ? "Edit connection" : "Connect your API"}>
           <p className="settings-intro">
@@ -355,6 +367,8 @@ export default function ConnectionEditor({
         <Button
           type="submit"
           variant="primary"
+          title={`Save connection (${shortcutLabel.save})`}
+          aria-keyshortcuts={shortcutKeys.save}
           pending={action.busy}
           disabled={running || !dirty || !value.provider}
         >

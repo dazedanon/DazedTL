@@ -1,8 +1,10 @@
+import { useRef } from "react";
 import { FolderOpen } from "lucide-react";
 import type { GuidedState, TranslationState } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { TopbarActions } from "../../app/TopbarSlot";
+import { saveKey, taskKey, useShortcut } from "../../state/useShortcut";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
@@ -94,12 +96,24 @@ function Workspace(
     move,
     stepTask,
     back,
+    previous,
+    next,
     task,
     textView,
     completed,
   } = w;
   const owned = useOwnedFeedback(action.key);
-  const { content, primary, secondary, actionContext, heading } = renderTask(w);
+  const { content, primary, secondary, actionContext, heading, save } =
+    renderTask(w);
+  // Keys only save the open task or move between tasks; they never submit work.
+  const frame = useRef<HTMLElement>(null);
+  const step = (target: ReturnType<typeof previous>) =>
+    target && !action.busy && !draft.committing
+      ? () => stepTask(target.id)
+      : undefined;
+  useShortcut(saveKey, save, frame, { inFields: true });
+  useShortcut(taskKey("back"), step(previous()), frame);
+  useShortcut(taskKey("next"), step(next()), frame);
   // Views inside one task share the secondary tabs below the task tabs.
   const optional = <span className="ui-tab-hint">optional</span>;
   const viewTabs =
@@ -157,6 +171,7 @@ function Workspace(
   }
   return (
     <PageLayout
+      ref={frame}
       variant="editor"
       className="guided-workspace"
       aria-label="Translation workspace"

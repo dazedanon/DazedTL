@@ -15,6 +15,7 @@ import { flushDrafts } from "../../../state/leaveGuards";
 import { useAction } from "../../../state/useAction";
 import { useDraft } from "../../../state/useDraft";
 import { useOnChange } from "../../../state/useOnChange";
+import { shortcutKeys, shortcutLabel } from "../../../state/useShortcut";
 import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
@@ -433,6 +434,8 @@ export function useGuidedWorkspace({
       target && (
         <Button
           variant="quiet"
+          title={`Back (${shortcutLabel.back})`}
+          aria-keyshortcuts={shortcutKeys.back}
           disabled={action.busy}
           onClick={() => stepTask(target.id)}
         >
@@ -449,6 +452,10 @@ export function useGuidedWorkspace({
     target && (
       <Button
         variant={variant}
+        {...(target === next() && {
+          title: `Continue (${shortcutLabel.next})`,
+          "aria-keyshortcuts": shortcutKeys.next,
+        })}
         disabled={action.busy || draft.committing || context.committing}
         onClick={() => stepTask(target.id)}
       >
@@ -1227,6 +1234,8 @@ export function useGuidedWorkspace({
     skipEventText,
     advance,
     back,
+    previous,
+    next,
     feedback,
     operationJob,
     execute,

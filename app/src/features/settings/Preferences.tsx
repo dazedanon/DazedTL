@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import ModelOptionsEditor from "./ModelOptionsEditor";
 import type {
   Connection,
@@ -6,6 +6,11 @@ import type {
   PreferenceValues,
   ModelOptions,
 } from "../../api/contracts";
+import {
+  shortcutKeys,
+  shortcutLabel,
+  useSaveForm,
+} from "../../state/useShortcut";
 import { PageBody } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
@@ -40,8 +45,11 @@ export default function Preferences({
   revert: () => void;
 }) {
   const [advanced, setAdvanced] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  useSaveForm(form);
   return (
     <form
+      ref={form}
       className="editor-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -124,6 +132,8 @@ export default function Preferences({
         <Button
           type="submit"
           variant="primary"
+          title={`Save preferences (${shortcutLabel.save})`}
+          aria-keyshortcuts={shortcutKeys.save}
           disabled={!dirty || busy || running}
         >
           Save preferences

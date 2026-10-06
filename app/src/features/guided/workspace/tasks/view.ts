@@ -8,4 +8,6 @@ export type TaskView = {
   actionContext?: ReactNode;
   /** Overrides the task's title and description, and adds header actions. */
   heading?: { title?: string; description?: string; actions?: ReactNode };
+  /** What the save shortcut does on this task, when it has a save. */
+  save?: () => void;
 };
