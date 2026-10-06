@@ -1327,6 +1327,11 @@ pre {
   font-size: var(--font-body);
   font-weight: var(--weight-medium);
 }
+/* A badge's padding overhangs the title line, so cards with and without one
+   keep their titles and descriptions level. */
+.option-cards > .ui-button > strong > .badge {
+  margin-block: calc(-1 * var(--space-1));
+}
 .option-cards > .ui-button > small {
   color: var(--color-muted);
   font-size: var(--font-control);
