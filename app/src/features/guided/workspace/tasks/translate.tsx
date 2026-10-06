@@ -147,7 +147,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
             {advancedReady ? "Coverage reviewed" : "Source review needed"}
           </p>
           <Button
-            variant="quiet"
+            variant="link"
             disabled={disabled || locked}
             onClick={() => stepTask("sources")}
           >

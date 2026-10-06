@@ -229,7 +229,7 @@ export function formatView(w: GuidedWorkspace): TaskView {
             }}
           />
         )}
-      <Button variant="quiet" onClick={() => setPanel("preparation")}>
+      <Button variant="link" onClick={() => setPanel("preparation")}>
         Preparation tools
       </Button>
     </>

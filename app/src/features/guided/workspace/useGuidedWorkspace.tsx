@@ -744,7 +744,7 @@ export function useGuidedWorkspace({
   const copyTask = (
     name: string,
     label: string,
-    variant: "default" | "primary" | "quiet" = "default",
+    variant: "default" | "primary" | "quiet" | "link" = "default",
   ) => (
     <ActionControl
       label={label}

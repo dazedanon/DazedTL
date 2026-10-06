@@ -211,7 +211,7 @@ export function BackupsPanel({
   return (
     <div className="backup-panel">
       <Button
-        variant="quiet"
+        variant="link"
         disabled={action.busy}
         onClick={() => {
           setRecovering(false);
@@ -263,7 +263,7 @@ export function BackupsPanel({
         ))}
         <ActionControl
           label={catalog ? "Refresh saved copies" : "Load saved copies"}
-          variant="quiet"
+          variant="link"
           disabled={disabled}
           pending={action.busy && action.key === "list"}
           pendingText="Loading saved copies…"

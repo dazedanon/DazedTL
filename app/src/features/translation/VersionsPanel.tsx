@@ -125,7 +125,7 @@ export function VersionsPanel({
   if (recovery)
     return (
       <>
-        <Button variant="quiet" onClick={() => setRecovery(false)}>
+        <Button variant="link" onClick={() => setRecovery(false)}>
           Back to game updates
         </Button>
         <BackupsPanel state={state} actionTarget={actionTarget} />
@@ -430,7 +430,7 @@ export function VersionsPanel({
         </details>
       )}
       <Button
-        variant="quiet"
+        variant="link"
         disabled={action.busy}
         onClick={() => (onBackups ? onBackups() : setRecovery(true))}
       >

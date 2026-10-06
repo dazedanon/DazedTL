@@ -257,7 +257,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
             discovery.layout
               ? "Copy remeasurement task"
               : "Copy measurement task",
-            "quiet",
+            "link",
           )}
         </div>
         {discovery.layout ? (
