@@ -133,18 +133,12 @@ def configure(translation, policy):
     wrap("calculateCost", calculate)
     parser_aliases()
 
-    from util import batch_history
+    from util import batch_history, extensions
 
-    if not getattr(batch_history._price_usage, "_dazedtl_openrouter_pricing", False):
-        original = batch_history._price_usage
+    extensions.layer(batch_history._price_usage, "openrouter", price_usage)
 
-        @wraps(original)
-        def price(usage, model, provider="anthropic"):
-            # Provider-reported charges remain separate in usage. A BYOK fee
-            # must never be presented as the total cost of inference.
-            return (
-                None if provider == "openrouter" else original(usage, model, provider)
-            )
 
-        cast(Any, price)._dazedtl_openrouter_pricing = True
-        batch_history._price_usage = price
+def price_usage(native, usage, model, provider="anthropic"):
+    # Provider-reported charges remain separate in usage. A BYOK fee must never
+    # be presented as the total cost of inference.
+    return None if provider == "openrouter" else native(usage, model, provider)

@@ -39,6 +39,7 @@ from util.batch_providers import (
     retrieve_batch as provider_retrieve_batch,
 )
 from util.provider_costs import cache_write_multiplier
+from util import extensions
 
 BATCH_HISTORY_FILE = Path("log/batch_history.json")
 
@@ -559,6 +560,7 @@ def _usage_from_message(u) -> dict:
     }
 
 
+@extensions.point
 def _price_usage(usage: dict, model: str, provider: str = "anthropic") -> float:
     """Price real batch usage with cache multipliers and 50% batch discount."""
     pricing = getPricingConfig(model)
@@ -648,6 +650,7 @@ def usage_for_batch(batch_id: str, model: Optional[str] = None) -> dict:
     }
 
 
+@extensions.point
 def _result_entry_from_message(msg) -> dict:
     text = "".join(getattr(b, "text", "") or "" for b in msg.content)
     u = msg.usage

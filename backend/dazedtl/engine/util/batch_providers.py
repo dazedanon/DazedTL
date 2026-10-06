@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 
 import anthropic
 import openai
+from util import extensions
 
 
 PROVIDER_ANTHROPIC = "anthropic"
@@ -45,6 +46,7 @@ class BatchProviderJobError(RuntimeError):
         super().__init__(message)
 
 
+@extensions.point
 def detect_batch_provider(model: str = "", api_url: str | None = None,
                           api_provider: str | None = None) -> str | None:
     """Return the supported batch backend for the current route."""
@@ -63,6 +65,7 @@ def detect_batch_provider(model: str = "", api_url: str | None = None,
     return None
 
 
+@extensions.point
 def batch_provider_label(provider: str | None) -> str:
     return {
         PROVIDER_ANTHROPIC: "Anthropic",
@@ -71,6 +74,7 @@ def batch_provider_label(provider: str | None) -> str:
     }.get(provider, str(provider or "Provider"))
 
 
+@extensions.point
 def batch_limits(provider: str) -> tuple[int, int]:
     """Return conservative (request count, encoded bytes) limits."""
     if provider == PROVIDER_OPENAI:
@@ -89,6 +93,7 @@ def _api_key() -> str:
     return key
 
 
+@extensions.point
 def get_client(provider: str, *, api_key: str | None = None,
                api_url: str | None = None, max_retries: int | None = None):
     """Create the SDK client needed for status/create/cancel operations.
@@ -198,6 +203,7 @@ def _openai_batch_body(provider: str, params: dict) -> dict:
     return body
 
 
+@extensions.point
 def submit_batch(provider: str, requests: list[dict], *, client=None,
                  google_client=None) -> dict:
     """Submit normalized ``{custom_id, params}`` requests and return metadata."""
@@ -299,6 +305,7 @@ def _batch_errors(batch: Any) -> list[dict]:
     return normalized
 
 
+@extensions.point
 def retrieve_batch(provider: str, batch_id: str, *, client=None) -> dict:
     client = client or get_client(provider)
     if provider == PROVIDER_ANTHROPIC:
@@ -330,6 +337,7 @@ def retrieve_batch(provider: str, batch_id: str, *, client=None) -> dict:
     }
 
 
+@extensions.point
 def cancel_batch(provider: str, batch_id: str, *, client=None) -> dict:
     client = client or get_client(provider)
     if provider == PROVIDER_ANTHROPIC:
@@ -351,6 +359,7 @@ def _empty_usage() -> dict:
     }
 
 
+@extensions.point
 def _openai_result(
     row: dict, provider: str = PROVIDER_OPENAI
 ) -> tuple[dict | None, str | None]:
@@ -448,6 +457,7 @@ def _download_file_text(provider: str, file_id: str, *, client=None,
     return data.decode("utf-8") if isinstance(data, bytes) else str(data)
 
 
+@extensions.point
 def download_results(provider: str, batch_id: str, custom_ids: dict,
                      *, client=None, google_client=None) -> tuple[dict, list, dict]:
     """Return ``(cache-key results, errors, aggregate usage)``."""
@@ -510,6 +520,7 @@ def download_results(provider: str, batch_id: str, custom_ids: dict,
     return results, errors, totals
 
 
+@extensions.point
 def _download_anthropic(client, batch_id: str, custom_ids: dict):
     results, errors, totals = {}, [], _empty_usage()
     for row in client.messages.batches.results(batch_id):

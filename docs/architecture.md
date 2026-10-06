@@ -37,6 +37,8 @@ The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with it
 Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; plans from before explicit versions match by their recorded byte hash.
 Raise the version when a change would make a resumed run build requests or parse files differently.
 Their historical Python namespaces are internal to the compatibility boundary; the old UI and application server are not shipped.
+The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine module attributes.
+Every import alias shares a point's dispatcher, and reconfiguring a named layer replaces it in place.
 The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the shared prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) directory.
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
 Existing workspace `engine/shared-data` overrides retain precedence and native path validation.

@@ -68,23 +68,36 @@ class OpenRouterBatchTests(unittest.TestCase):
         # Exercise the preserved serializer/normalizer without loading SDKs or
         # tokenizers in the unit-test process; the existing engine probe tests
         # real runtime installation in its already-budgeted isolated process.
-        path = (
-            Path(__file__).resolve().parents[1]
-            / "backend/dazedtl/engine/util/batch_providers.py"
-        )
-        spec = importlib.util.spec_from_file_location("fixture_batch_providers", path)
-        cls.native = importlib.util.module_from_spec(spec)
+        engine = Path(__file__).resolve().parents[1] / "backend/dazedtl/engine/util"
+
+        def load(name):
+            path = engine / f"{name}.py"
+            spec = importlib.util.spec_from_file_location(f"fixture_{name}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+
+        cls.package = ModuleType("util")
+        cls.package.extensions = load("extensions")
         with patch.dict(
             sys.modules,
-            {"anthropic": ModuleType("anthropic"), "openai": ModuleType("openai")},
+            {
+                "anthropic": ModuleType("anthropic"),
+                "openai": ModuleType("openai"),
+                "util": cls.package,
+                "util.extensions": cls.package.extensions,
+            },
         ):
-            spec.loader.exec_module(cls.native)
+            cls.native = cls.package.batch_providers = load("batch_providers")
 
     def setUp(self):
-        package = ModuleType("util")
-        package.batch_providers = self.native
         self.modules = patch.dict(
-            sys.modules, {"util": package, "util.batch_providers": self.native}
+            sys.modules,
+            {
+                "util": self.package,
+                "util.batch_providers": self.native,
+                "util.extensions": self.package.extensions,
+            },
         )
         self.modules.start()
         self.addCleanup(self.modules.stop)
@@ -382,7 +395,7 @@ class OpenRouterBatchTests(unittest.TestCase):
             "batch_cost": 0.0011,
         }
         history = ModuleType("util.batch_history")
-        history._price_usage = lambda *_: 999
+        history._price_usage = self.package.extensions.point(lambda *_: 999)
         local = SimpleNamespace(
             file_batch_regular=100,
             file_batch_output=20,

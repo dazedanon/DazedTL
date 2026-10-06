@@ -530,7 +530,7 @@ try:
         from dazedtl.compatibility.request_parameters import batch_routing
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT
-        from util import batch_history, batch_providers
+        from util import batch_history, batch_providers, extensions
 
         router_root = temporary / "router-batch"
         router_root.mkdir()
@@ -670,7 +670,8 @@ try:
                     "frequencyPenalty": 0,
                 },
             ),
-            patch.object(batch_history, "_price_usage", batch_history._price_usage),
+            # Restores the host layers this journey adds to the engine.
+            patch.dict(extensions._layers),
         ):
             openrouter_pricing.configure(translation, router_policy)
             translation.STRICT_STRUCTURED_OUTPUTS = True

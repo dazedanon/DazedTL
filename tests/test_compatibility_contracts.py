@@ -1,5 +1,6 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
+import importlib.util
 import json
 import subprocess
 import sys
@@ -35,6 +36,42 @@ from dazedtl.translation.files import digest
 
 
 class CompatibilityContracts(unittest.TestCase):
+    def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
+        # Host wrappers used to reassign module attributes: aliases bound at
+        # import missed them, and repeated configuration stacked duplicates.
+        path = (
+            Path(__file__).resolve().parents[1]
+            / "backend/dazedtl/engine/util/extensions.py"
+        )
+        spec = importlib.util.spec_from_file_location("fixture_extensions", path)
+        extensions = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(extensions)
+
+        @extensions.point
+        def native(value):
+            return [value]
+
+        alias = native
+
+        def tag(label):
+            return lambda call, value: [*call(value), label]
+
+        extensions.layer(native, "inner", tag("inner"))
+        extensions.layer(native, "outer", tag("outer"))
+        extensions.layer(native, "inner", tag("again"))
+        self.assertEqual(alias(1), [1, "again", "outer"])
+        extensions.remove(native, "inner")
+        extensions.remove(native, "outer")
+        self.assertEqual(alias(1), [1])
+
+        class Task:
+            @extensions.point
+            def run(self):
+                return "native"
+
+        extensions.layer(Task().run, "host", lambda call, task: "host " + call(task))
+        self.assertEqual(Task().run(), "host native")
+
     def test_frozen_worker_defaults_preserve_payloads_and_legacy_recovery(self):
         # Regression: the native builder injects unsupported temperature into a
         # new guided Batch. Normalize before collection and Live serialization,

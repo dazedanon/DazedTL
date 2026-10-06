@@ -6,9 +6,8 @@ import os
 import time
 from contextlib import nullcontext
 from copy import deepcopy
-from functools import wraps
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -480,89 +479,81 @@ def usage(batch, results):
     return totals
 
 
+def detect(native, model="", api_url=None, api_provider=None):
+    endpoint = os.getenv("api", "") if api_url is None else api_url
+    protocol = (
+        os.getenv("API_PROVIDER", "openai") if api_provider is None else api_provider
+    )
+    if protocol in {"openai", "openrouter"} and is_route(endpoint):
+        return (
+            "openrouter"
+            if not _worker_configured or _worker_policy is not None
+            else None
+        )
+    return native(model, api_url, api_provider)
+
+
+def client(native, provider, *, api_key=None, api_url=None, max_retries=None):
+    if provider == "openrouter":
+        return Client(
+            api_key if api_key is not None else os.getenv("key", ""),
+            api_url=api_url or os.getenv("api", "") or BASE_URL,
+            policy=_worker_policy,
+            receipt_root=_worker_root,
+        )
+    return native(provider, api_key=api_key, api_url=api_url, max_retries=max_retries)
+
+
+def limits(native, provider):
+    if provider != "openrouter":
+        return native(provider)
+    return (
+        (_worker_policy or {}).get("max_requests", MAX_REQUESTS),
+        (_worker_policy or {}).get("max_bytes", MAX_BYTES) - 4096,
+    )
+
+
+def label(native, provider):
+    return "OpenRouter" if provider == "openrouter" else native(provider)
+
+
+def operation(name):
+    def call(native, provider, *args, client=None, **kwargs):
+        if provider != "openrouter":
+            return native(provider, *args, client=client, **kwargs)
+        if name == "cancel_batch":
+            raise ValueError(
+                "OpenRouter does not expose Batch cancellation. Submitted work continues at the provider."
+            )
+        from util import batch_providers
+
+        # The provider's get_client layer returns this module's Client.
+        owner: Any = (
+            nullcontext(client)
+            if client is not None
+            else batch_providers.get_client(provider)
+        )
+        with owner as connection:
+            if name == "submit_batch":
+                return connection.submit(*args)
+            if name == "retrieve_batch":
+                return normalize(connection.retrieve(*args), args[0])
+            return connection.collect(*args)
+
+    return call
+
+
 def install():
-    """Install before native consumers bind their provider-function aliases."""
+    """Adds OpenRouter as a Batch provider beside the engine's own providers."""
     from util import batch_providers as native
+    from util import extensions
 
-    if getattr(native.detect_batch_provider, "_dazedtl_openrouter", False):
-        return
-    original_detect = native.detect_batch_provider
-
-    @wraps(original_detect)
-    def detect(model="", api_url=None, api_provider=None):
-        endpoint = os.getenv("api", "") if api_url is None else api_url
-        protocol = (
-            os.getenv("API_PROVIDER", "openai")
-            if api_provider is None
-            else api_provider
-        )
-        if protocol in {"openai", "openrouter"} and is_route(endpoint):
-            return (
-                "openrouter"
-                if not _worker_configured or _worker_policy is not None
-                else None
-            )
-        return original_detect(model, api_url, api_provider)
-
-    cast(Any, detect)._dazedtl_openrouter = True
-    native.detect_batch_provider = detect
-    original_client, original_limits, original_label = (
-        native.get_client,
-        native.batch_limits,
-        native.batch_provider_label,
-    )
-
-    def client(provider, *, api_key=None, api_url=None, max_retries=None):
-        if provider == "openrouter":
-            return Client(
-                api_key if api_key is not None else os.getenv("key", ""),
-                api_url=api_url or os.getenv("api", "") or BASE_URL,
-                policy=_worker_policy,
-                receipt_root=_worker_root,
-            )
-        return original_client(
-            provider, api_key=api_key, api_url=api_url, max_retries=max_retries
-        )
-
-    native.get_client = client
-    native.batch_limits = lambda provider: (
-        (
-            (_worker_policy or {}).get("max_requests", MAX_REQUESTS),
-            (_worker_policy or {}).get("max_bytes", MAX_BYTES) - 4096,
-        )
-        if provider == "openrouter"
-        else original_limits(provider)
-    )
-    native.batch_provider_label = lambda provider: (
-        "OpenRouter" if provider == "openrouter" else original_label(provider)
-    )
+    extensions.layer(native.detect_batch_provider, "openrouter", detect)
+    extensions.layer(native.get_client, "openrouter", client)
+    extensions.layer(native.batch_limits, "openrouter", limits)
+    extensions.layer(native.batch_provider_label, "openrouter", label)
     for name in ("submit_batch", "retrieve_batch", "download_results", "cancel_batch"):
-        original = getattr(native, name)
-
-        @wraps(original)
-        def call(
-            provider, *args, _name=name, _original=original, client=None, **kwargs
-        ):
-            if provider != "openrouter":
-                return _original(provider, *args, client=client, **kwargs)
-            if _name == "cancel_batch":
-                raise ValueError(
-                    "OpenRouter does not expose Batch cancellation. Submitted work continues at the provider."
-                )
-            # The patched get_client returns this module's Client for OpenRouter.
-            owner: Any = (
-                nullcontext(client)
-                if client is not None
-                else native.get_client(provider)
-            )
-            with owner as connection:
-                if _name == "submit_batch":
-                    return connection.submit(*args)
-                if _name == "retrieve_batch":
-                    return normalize(connection.retrieve(*args), args[0])
-                return connection.collect(*args)
-
-        setattr(native, name, call)
+        extensions.layer(getattr(native, name), "openrouter", operation(name))
 
 
 def configure(policy, root):
