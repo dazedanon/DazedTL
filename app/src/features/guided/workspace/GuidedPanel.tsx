@@ -28,8 +28,6 @@ const wideSheets = new Set<string>([
   "versions",
   "speaker-names",
   "name-translation",
-  "options",
-  "exclusions",
 ]);
 
 /** The open tool sheet: file choice, options, tools and recovery utilities. */
@@ -88,7 +86,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
   const findingsReady = ["ready", "applied"].includes(findings.status);
   // Panels that edit the options draft say whether it is saved.
   const draftPanel =
-    ["widths", "options", "translation-context"].includes(panel) ||
+    ["widths", "translation-context"].includes(panel) ||
     (panel === "speakers" && speakerTab === "settings");
   const title =
     panel === "translation-context"
@@ -191,13 +189,9 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
             />
           </>
         )}
-        {[
-          "speakers",
-          "widths",
-          "options",
-          "tools",
-          "translation-context",
-        ].includes(panel) &&
+        {["speakers", "widths", "tools", "translation-context"].includes(
+          panel,
+        ) &&
           (panel !== "speakers" || speakerTab === "settings") && (
             <>
               {draft.dirty && (
@@ -279,15 +273,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 </section>
               ))}
             </div>
-          )}
-          {panel === "file-tools" && (
-            <>
-              <p>
-                Working copies are managed automatically for this game.
-                Reopening or changing selection keeps saved progress.
-              </p>
-              <ActionList>{workingFileActions()}</ActionList>
-            </>
           )}
           {panel === "project-tools" && (
             <ActionList>
@@ -461,32 +446,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
             <>
               {widths}
               {copyTask("wrap", "Copy width-measurement task")}
-            </>
-          )}
-          {panel === "options" && (
-            <>
-              <EngineOptions
-                state={state}
-                values={values.engine_options}
-                keys={[
-                  "IGNORETLTEXT",
-                  "PRESERVEORIGINAL",
-                  "FIXTEXTWRAP",
-                  "BRFLAG",
-                  "TLSYSTEMVARIABLES",
-                  "TLSYSTEMSWITCHES",
-                ]}
-                disabled={disabled}
-                change={(key, value) =>
-                  edit("engine_options", {
-                    ...values.engine_options,
-                    [key]: value,
-                  })
-                }
-              />
-              <Button variant="quiet" onClick={() => setPanel("file-tools")}>
-                Working file options
-              </Button>
             </>
           )}
           {panel === "preparation" && (

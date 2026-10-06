@@ -57,7 +57,6 @@ export const publicationLabels: Record<string, string> = {
   export_selected: "Text Apply",
 };
 export type Panel =
-  | "file-tools"
   | "tasks"
   | "files"
   | "backups"
@@ -66,16 +65,13 @@ export type Panel =
   | "speaker-names"
   | "name-translation"
   | "widths"
-  | "options"
   | "translation-context"
   | "tools"
   | "project-tools"
   | "preparation"
-  | "exclusions"
   | "release-assets"
   | null;
 export const panelTitles: Record<Exclude<Panel, null>, string> = {
-  "file-tools": "Working files",
   tasks: "Translation tasks",
   files: "Choose files for this pass",
   backups: "Backups & recovery",
@@ -84,12 +80,10 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   "speaker-names": "Speaker names",
   "name-translation": "API name translation",
   widths: "Character limits",
-  options: "Engine options",
   "translation-context": "Translation options",
   tools: "Configure game tools",
   "project-tools": "Project tools",
   preparation: "Preparation tools",
-  exclusions: "Release exclusions",
   "release-assets": "Additional runtime assets",
 };
 export type GuidedProps = {
