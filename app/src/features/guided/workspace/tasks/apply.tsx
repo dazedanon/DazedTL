@@ -186,6 +186,15 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     fileRow,
     fields,
   } = w;
+  // A scan is current while its widths and options are the saved ones.
+  const scanCurrent =
+    state.readiness.layout_scan &&
+    !draft.dirty &&
+    fittingSettingsSaved &&
+    !!fitting;
+  const eligible = fitting
+    ? fitting.changes_found - fitting.overflow_skipped
+    : 0;
   let content: ReactNode;
   content = (
     <>
@@ -294,19 +303,24 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           <ActionList>
             <ActionRow
               label={
-                <p>
-                  Eligible changes:{" "}
-                  {fitting.changes_found - fitting.overflow_skipped} · Protected
-                  overflows skipped: {fitting.overflow_skipped}
-                </p>
+                <span>
+                  {eligible
+                    ? `${eligible} ${eligible === 1 ? "change" : "changes"} to review`
+                    : "No text needs fitting at these widths."}
+                  {!!fitting.overflow_skipped &&
+                    ` · ${fitting.overflow_skipped} protected ${fitting.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
+                </span>
               }
             >
-              {task(
-                "rewrap_preview",
-                "Scan again",
-                layoutOptions,
-                !baseline || !layoutFiles.length,
-              )}
+              {/* With changes found the footer reviews them; scanning again
+                  stays beside the result. Otherwise the footer scans. */}
+              {eligible > 0 &&
+                task(
+                  "rewrap_preview",
+                  "Scan again",
+                  layoutOptions,
+                  !baseline || !layoutFiles.length,
+                )}
             </ActionRow>
           </ActionList>
           {fitting.previews.map((row, index) => (
@@ -328,11 +342,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     </>
   );
   const run =
-    state.readiness.layout_scan &&
-    !draft.dirty &&
-    fittingSettingsSaved &&
-    !!fitting &&
-    fitting.changes_found > fitting.overflow_skipped
+    scanCurrent && eligible > 0
       ? task(
           "rewrap_apply",
           "Review fitting Apply",
@@ -345,12 +355,13 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           "Scan text fitting",
           layoutOptions,
           !baseline || !layoutFiles.length || !fields.text.categories.length,
-          "primary",
+          scanCurrent ? "default" : "primary",
         );
   return {
     content,
     action: run,
-    next: releaseButton(),
+    // A current scan that found nothing to fit completes the task.
+    next: releaseButton(scanCurrent && eligible === 0 ? "primary" : "quiet"),
     // Fitting reads the game's current text, so it needs applied output.
     actionContext: !state.readiness.applied.length && (
       <span>Apply translations first; fitting scans the game’s text.</span>
