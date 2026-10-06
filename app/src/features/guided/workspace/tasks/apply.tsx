@@ -389,6 +389,13 @@ export function qaView(w: GuidedWorkspace): TaskView {
     releaseButton,
     fields,
   } = w;
+  // The app prepares the task and its mechanical inventory itself; the
+  // assistant has the task once it is copied or its screening has begun.
+  const qaCopied = action.key === "copy:qa" && !!action.notice;
+  const qaStarted = (["screen", "deep"] as const).some((key) => {
+    const counts = qaStatus[key] as Record<string, number> | undefined;
+    return !!(counts?.accepted || counts?.checked);
+  });
   let content: ReactNode;
   content = (
     <>
@@ -422,7 +429,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
             ? "attention"
             : qa.findings.length
               ? "ready"
-              : qaTask || qaStatus.stage
+              : qaCopied || qaStarted
                 ? "waiting"
                 : "idle"
         }
@@ -449,16 +456,17 @@ export function qaView(w: GuidedWorkspace): TaskView {
                       .map((key) => {
                         const counts = qaStatus[key] as
                           Record<string, number> | undefined;
-                        return counts
+                        // A stage with nothing to review is left out.
+                        return counts?.total
                           ? `${
                               key === "screen"
                                 ? "Text screening"
                                 : key === "mechanical"
                                   ? "Mechanical inventory"
                                   : "Deep text review"
-                            } ${counts.accepted ?? counts.checked ?? 0} / ${counts.total ?? 0}${
+                            } ${(counts.accepted ?? counts.checked ?? 0).toLocaleString()} of ${counts.total.toLocaleString()}${
                               counts.unresolved
-                                ? ` · ${counts.unresolved} unresolved`
+                                ? ` · ${counts.unresolved.toLocaleString()} unresolved`
                                 : ""
                             }`
                           : "";

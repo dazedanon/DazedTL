@@ -747,7 +747,8 @@ export function useGuidedWorkspace({
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
     // A tool row's own status says whether the tool is installed, the
-    // editor search lists what it found, and a fitting scan states its result.
+    // editor search lists what it found, and fitting and QA rows state the
+    // result of their scan or preparation.
     const toolChange = [
       "inspector_install",
       "inspector_remove",
@@ -755,6 +756,7 @@ export function useGuidedWorkspace({
       "forge_remove",
       "editors",
       "rewrap_preview",
+      "qa_prepare",
     ].includes(name);
     const display =
       current?.status === "complete" &&
