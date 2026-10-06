@@ -146,6 +146,22 @@ try:
     saved = {"id": "saved", "status": "complete", "message": "", "log": []}
     saved["estimate"] = {"input_tokens": 1, "cold_cache": False, "speakers": []}
     check_response("guided_inspect", views.job(saved))
+    # Copied Guided tasks tell the assistant to run these helper commands; the
+    # loopback helper used to refuse every Guided request.
+    from importlib.util import module_from_spec, spec_from_file_location
+
+    from dazedtl.api.local import LocalAPI
+    from dazedtl.api.server import PROTOCOL
+
+    spec = spec_from_file_location("project_helper", root / "scripts/project.py")
+    helper = module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    local = LocalAPI(app.workspace, PROTOCOL["version"], call)
+    try:
+        for method in ("guided_context_status", "guided_event_text_request"):
+            helper.call(app.workspace, method, {"project_id": project_id})
+    finally:
+        local.close()
 finally:
     app.closing = True
     app.guided.batch_monitor.close()

@@ -10,6 +10,23 @@ from pathlib import Path
 
 from dazedtl.storage import write_json
 
+# The selected project's operations an external assistant may call: every
+# translation operation, and the image, plugin and Guided requests that its
+# copied tasks name.
+AGENT_METHODS = frozenset(
+    {
+        "images_state",
+        "images_list",
+        "images_preview",
+        "plugins_state",
+        "plugins_list",
+        "plugins_detail",
+        "plugins_continue",
+        "guided_context_status",
+        "guided_event_text_request",
+    }
+)
+
 
 class LocalAPI:
     def __init__(self, workspace, version, dispatch):
@@ -44,17 +61,7 @@ class LocalAPI:
                         )
                     method = value.get("method")
                     if not isinstance(method, str) or not (
-                        method.startswith("translation_")
-                        or method
-                        in {
-                            "images_state",
-                            "images_list",
-                            "images_preview",
-                            "plugins_state",
-                            "plugins_list",
-                            "plugins_detail",
-                            "plugins_continue",
-                        }
+                        method.startswith("translation_") or method in AGENT_METHODS
                     ):
                         raise ValueError(
                             "This helper only exposes the selected translation project's operations."
