@@ -5,15 +5,17 @@ import re
 import sqlite3
 import threading
 from contextlib import contextmanager
-from functools import wraps
+from functools import partial
 from inspect import signature
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from dazedtl.translation.files import digest
 
 from .process_view import source_values
 from .request_scope import columns, identities, source_locations
+
+LAYER = "evidence"
 
 
 def keep_aligned_partial_results(module):
@@ -29,10 +31,8 @@ def keep_aligned_partial_results(module):
         or not hasattr(module, "translateAI")
     ):
         return
-    native = getattr(module.translateAI, "_dazedtl_partial_native", module.translateAI)
 
-    @wraps(native)
-    def translate(text, *args, **kwargs):
+    def translate(native, text, *args, **kwargs):
         result = native(text, *args, **kwargs)
         output = result[0] if isinstance(result, (list, tuple)) and result else None
         if (
@@ -45,8 +45,7 @@ def keep_aligned_partial_results(module):
             module.THREAD_CTX.last_translation_had_mismatch = False
         return result
 
-    cast(Any, translate)._dazedtl_partial_native = native
-    module.translateAI = translate
+    module.translateAI.layer("partial-results", translate)
 
 
 def source_text(value, config):
@@ -174,11 +173,10 @@ class Evidence:
                 )
 
     def install(self, translation, module=None):
-        native_queue = translation.queue_batch_request
+        """Records each request, response and validation outcome of this run."""
 
-        @wraps(native_queue)
-        def queued(*args, **kwargs):
-            key = native_queue(*args, **kwargs)
+        def queued(native, *args, **kwargs):
+            key = native(*args, **kwargs)
             with translation.BATCH_LOCK:
                 entry = translation._batch_queue_pending.get(key)
                 if entry is not None:
@@ -188,11 +186,9 @@ class Evidence:
                     )
             return key
 
-        translation.queue_batch_request = queued
-        native_debug = translation._write_request_debug_log
+        translation.queue_batch_request.layer(LAYER, queued)
 
-        @wraps(native_debug)
-        def received(provider, params, usage):
+        def received(native, provider, params, usage):
             current = getattr(self.local, "current", None)
             with self.connect() as connection:
                 row = connection.execute(
@@ -215,15 +211,13 @@ class Evidence:
                     for key in ("prompt_tokens", "completion_tokens", "total_tokens")
                 },
             )
-            return native_debug(provider, params, usage)
+            return native(provider, params, usage)
 
-        translation._write_request_debug_log = received
-        native_call = translation.translateText
+        translation._write_request_debug_log.layer(LAYER, received)
         from .refusal_retry import receipt
 
-        @wraps(native_call)
-        def captured(*args, **kwargs):
-            response = native_call(*args, **kwargs)
+        def captured(native, *args, **kwargs):
+            response = native(*args, **kwargs)
             value = receipt(response)
             # Save every returned body before validation, including malformed
             # JSON and refusals. Accepted, restored values stay separate.
@@ -246,13 +240,13 @@ class Evidence:
 
         from dazedtl.translation.refusals import POLICY as REFUSAL_POLICY
 
-        guarded_call = captured
+        retry = None
         if self.mode == "translate":
             from .refusal_retry import RefusalRetry
 
-            guarded_call = RefusalRetry(
+            retry = RefusalRetry(
                 self,
-                captured,
+                signature(translation.translateText),
                 translation=translation,
                 allow_clarification=(self.plan.get("dazedtl_request_policy") or {}).get(
                     "refusalRetry"
@@ -260,11 +254,13 @@ class Evidence:
                 == REFUSAL_POLICY,
             )
 
-        @wraps(native_call)
-        def call(*args, **kwargs):
+        def call(native, *args, **kwargs):
             self.local.current = None
+            attempt = partial(captured, native)
             try:
-                return guarded_call(*args, **kwargs)
+                if retry is not None:
+                    return retry(attempt, *args, **kwargs)
+                return attempt(*args, **kwargs)
             except Exception as error:
                 from .provider_responses import error_evidence
 
@@ -283,13 +279,17 @@ class Evidence:
                 )
                 raise
 
-        translation.translateText = call
-        native_cache = getattr(translation, "cache_translation", None)
-        if native_cache is not None and self.mode == "translate":
+        translation.translateText.layer(LAYER, call)
+        # Translate runs validate through the native cache writer; others settle
+        # requests when translateAI returns.
+        validates_cache = (
+            self.mode == "translate"
+            and getattr(translation, "cache_translation", None) is not None
+        )
+        if validates_cache:
 
-            @wraps(native_cache)
-            def cached(payload, output, *args, **kwargs):
-                result = native_cache(payload, output, *args, **kwargs)
+            def cached(native, payload, output, *args, **kwargs):
+                result = native(payload, output, *args, **kwargs)
                 current = getattr(self.local, "current", None)
                 if (
                     current is not None
@@ -338,12 +338,10 @@ class Evidence:
                             )
                 return result
 
-            translation.cache_translation = cached
-        native_ai = translation.translateAI
-        call_signature = signature(native_ai)
+            translation.cache_translation.layer(LAYER, cached)
+        call_signature = signature(translation.translateAI)
 
-        @wraps(native_ai)
-        def validated(*args, **kwargs):
+        def validated(native, *args, **kwargs):
             bound = call_signature.bind(*args, **kwargs)
             text = bound.arguments.get("text")
             filename = bound.arguments.get("filename")
@@ -353,7 +351,7 @@ class Evidence:
             ):
                 self.found_text(filename)
             if not all(isinstance(value, str) for value in values):
-                return native_ai(*args, **kwargs)
+                return native(*args, **kwargs)
             if filename not in self.locations:
                 path = self.root / "files" / str(filename)
                 try:
@@ -422,7 +420,9 @@ class Evidence:
                         segment.arguments["history"] = (history + values[:cursor])[
                             -limit:
                         ]
-                    translated, used = validated(*segment.args, **segment.kwargs)
+                    translated, used = validated(
+                        native, *segment.args, **segment.kwargs
+                    )
                     mismatched |= translation.last_translation_had_mismatch()
                     output.extend(translated)
                     tokens = [a + b for a, b in zip(tokens, used)]
@@ -434,10 +434,10 @@ class Evidence:
             self.local.request_cursors = {}
             self.local.validation_groups = {}
             try:
-                result = native_ai(*args, **kwargs)
+                result = native(*args, **kwargs)
                 if not translation.last_translation_had_mismatch():
                     with self.connect() as connection:
-                        if native_cache is None or self.mode != "translate":
+                        if not validates_cache:
                             connection.executemany(
                                 "UPDATE requests SET state='validated' WHERE id=? AND state='received'",
                                 [(identity,) for identity in self.local.call],
@@ -466,7 +466,7 @@ class Evidence:
                                 "INSERT OR REPLACE INTO validated_provenance VALUES (?,?)",
                                 [(key, filename) for key in reuse_keys],
                             )
-                            if native_cache is None or self.mode != "translate":
+                            if not validates_cache:
                                 connection.executemany(
                                     "UPDATE requests SET response=? WHERE id=? AND state='validated'",
                                     [
@@ -477,7 +477,7 @@ class Evidence:
                                         for identity in self.local.call
                                     ],
                                 )
-                if self.mode == "translate" and native_cache is not None:
+                if validates_cache:
                     # Native validation has returned. Bodies not accepted by its
                     # cache writer are rejected attempts, including earlier retries.
                     # Exceptions skip this step and retain their recovery guard.
@@ -500,11 +500,9 @@ class Evidence:
             finally:
                 self.local.call = previous
 
-        translation.translateAI = validated
+        translation.translateAI.layer(LAYER, validated)
         if self.mode == "batch":
             from .batch_validation import install
 
             install(self, translation)
-        if module is not None and hasattr(module, "sharedtranslateAI"):
-            module.sharedtranslateAI = translation.translateAI
         keep_aligned_partial_results(module)

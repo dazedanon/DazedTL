@@ -16,6 +16,8 @@ from dazedtl.settings.store import Settings
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
+from tests.engine import point
+
 
 class ProcessTests(unittest.TestCase):
     def test_live_provider_errors_retain_sanitized_bodies_without_changing_submission_guards(
@@ -90,10 +92,10 @@ class ProcessTests(unittest.TestCase):
                         raise failure
 
                     translation = SimpleNamespace(
-                        queue_batch_request=lambda *_: "unused",
-                        _write_request_debug_log=lambda *_: None,
-                        translateText=native,
-                        translateAI=lambda text: None,
+                        queue_batch_request=point(lambda *_: "unused"),
+                        _write_request_debug_log=point(lambda *_: None),
+                        translateText=point(native),
+                        translateAI=point(lambda text: None),
                         openai=SimpleNamespace(api_key=secret),
                     )
                     evidence.install(translation)
@@ -685,12 +687,12 @@ class ProcessTests(unittest.TestCase):
 
             def translator():
                 return SimpleNamespace(
-                    queue_batch_request=lambda *_: "unused",
+                    queue_batch_request=point(lambda *_: "unused"),
                     BATCH_LOCK=threading.RLock(),
                     _batch_queue_pending={},
-                    _write_request_debug_log=lambda *_: None,
-                    translateText=lambda *_: None,
-                    translateAI=native_ai,
+                    _write_request_debug_log=point(lambda *_: None),
+                    translateText=point(lambda *_: None),
+                    translateAI=point(native_ai),
                     _thread_local=threading.local(),
                     last_translation_had_mismatch=lambda: False,
                     get_batch_phase=lambda: None,
@@ -717,8 +719,10 @@ class ProcessTests(unittest.TestCase):
             write_json(estimate_root / "files/Items.json", data)
             self.assertIsNone(process_view.translatable_files(root))
             estimated = translator()
-            estimated.translateAI = lambda text, history, config, filename: (
-                sent.append(text) or [text, [0, 0]]
+            estimated.translateAI = point(
+                lambda text, history, config, filename: (
+                    sent.append(text) or [text, [0, 0]]
+                )
             )
             Evidence(estimate_root, "estimate", plan).install(estimated)
             config = SimpleNamespace(langRegex="[぀-ヿ一-鿿]")
@@ -750,7 +754,7 @@ class ProcessTests(unittest.TestCase):
                 mixed._thread_local.last_translation_had_mismatch = text == [values[0]]
                 return [text if text == [values[0]] else ["Translated"], [3, 4]]
 
-            mixed.translateAI = mixed_ai
+            mixed.translateAI = point(mixed_ai)
             mixed.last_translation_had_mismatch = lambda: getattr(
                 mixed._thread_local, "last_translation_had_mismatch", False
             )
@@ -777,7 +781,7 @@ class ProcessTests(unittest.TestCase):
                 module.THREAD_CTX.last_translation_had_mismatch = True
                 return [[text[0], "Translated"], [3, 4]]
 
-            module.translateAI = native_module
+            module.translateAI = point(native_module)
             keep_aligned_partial_results(module)
             self.assertEqual(
                 module.translateAI(values[:2]), [[values[0], "Translated"], [3, 4]]

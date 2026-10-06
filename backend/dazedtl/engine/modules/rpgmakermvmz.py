@@ -32,6 +32,7 @@ from util.translation import (
     translateAI as sharedtranslateAI,
 )
 from util.speakers import SPEAKER_BRACKET_INNER, strip_speaker_prefix
+from util import extensions
 from util.skills import ctx, load_system_prompt
 from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
@@ -6399,6 +6400,7 @@ def resetActorMapCache():
         _AUTONAMEPOPUP_CACHE = None
 
 
+@extensions.point
 def translateAI(text, history, history_ctx=None):
     """
     Legacy wrapper function for the new shared translation utility.

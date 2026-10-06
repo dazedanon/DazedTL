@@ -12,6 +12,8 @@ from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest
 
+from tests.engine import point
+
 
 class BatchValidationTests(unittest.TestCase):
     def test_native_receipts_bind_failures_to_exact_responses_and_leave_interrupted_validation_unsettled(
@@ -53,11 +55,13 @@ class BatchValidationTests(unittest.TestCase):
                 return text
 
             translator = SimpleNamespace(
-                translateAI=native,
+                translateAI=point(native),
                 _batch_results=responses,
                 get_cache_key=lambda payload, *_: by_source[payload],
-                require_batch_result=lambda payload, *_: responses[by_source[payload]],
-                cache_translation=lambda *_: None,
+                require_batch_result=point(
+                    lambda payload, *_: responses[by_source[payload]]
+                ),
+                cache_translation=point(lambda *_: None),
             )
             install(Evidence(root, "batch"), translator)
             translator.translateAI(["good", "bad"], filename="Items.json")

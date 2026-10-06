@@ -10,7 +10,7 @@ import re
 import threading
 from collections import Counter
 from contextlib import closing
-from functools import lru_cache, wraps
+from functools import lru_cache
 from inspect import signature
 
 from dazedtl.translation.files import digest
@@ -57,6 +57,9 @@ def source_value(value):
     )
 
 
+LAYER = "batch-validation"
+
+
 def install(evidence, translation):
     """Record native pass/fail per consumed response, independent of its wording."""
     with evidence.connect() as connection:
@@ -65,16 +68,10 @@ def install(evidence, translation):
             "(request_key TEXT PRIMARY KEY, filename TEXT, source TEXT, response_hash TEXT, state TEXT)"
         )
     local = threading.local()
-    native_result, native_cache, native_ai = (
-        translation.require_batch_result,
-        translation.cache_translation,
-        translation.translateAI,
-    )
-    call_signature = signature(native_ai)
+    call_signature = signature(translation.translateAI)
 
-    @wraps(native_result)
-    def received(payload, language, cache_context=None, request_context=None):
-        response = native_result(payload, language, cache_context, request_context)
+    def received(native, payload, language, cache_context=None, request_context=None):
+        response = native(payload, language, cache_context, request_context)
         if getattr(local, "call", None) is not None:
             key = translation.get_cache_key(
                 payload, language, cache_context, request_context
@@ -97,9 +94,10 @@ def install(evidence, translation):
                     )
         return response
 
-    @wraps(native_cache)
-    def accepted(payload, output, language, cache_context=None, request_context=None):
-        result = native_cache(payload, output, language, cache_context, request_context)
+    def accepted(
+        native, payload, output, language, cache_context=None, request_context=None
+    ):
+        result = native(payload, output, language, cache_context, request_context)
         matching = [
             key
             for key, args in (getattr(local, "call", None) or {}).items()
@@ -113,13 +111,12 @@ def install(evidence, translation):
                 )
         return result
 
-    @wraps(native_ai)
-    def validated(*args, **kwargs):
+    def validated(native, *args, **kwargs):
         previous = getattr(local, "call", None), getattr(local, "filename", None)
         local.call = {}
         local.filename = call_signature.bind(*args, **kwargs).arguments.get("filename")
         try:
-            result = native_ai(*args, **kwargs)
+            result = native(*args, **kwargs)
             # Only a returned native validation pass settles rejected responses.
             # Exceptions retain received state and the existing execution guard.
             if local.call:
@@ -132,11 +129,9 @@ def install(evidence, translation):
         finally:
             local.call, local.filename = previous
 
-    (
-        translation.require_batch_result,
-        translation.cache_translation,
-        translation.translateAI,
-    ) = received, accepted, validated
+    translation.require_batch_result.layer(LAYER, received)
+    translation.cache_translation.layer(LAYER, accepted)
+    translation.translateAI.layer(LAYER, validated)
 
 
 @lru_cache(maxsize=8)

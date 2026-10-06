@@ -1,7 +1,6 @@
 """One durable clarification allowance for a guided Live translation request."""
 
 import json
-from inspect import signature
 from types import SimpleNamespace
 from typing import Any
 
@@ -112,10 +111,12 @@ def send_once(translation, evidence, params):
 
 
 class RefusalRetry:
+    """Retries one refused translateText call with a clarification, at most once."""
+
     def __init__(
-        self, evidence, native, *, allow_clarification=False, translation=None
+        self, evidence, call_signature, *, allow_clarification=False, translation=None
     ):
-        self.evidence, self.native, self.signature = evidence, native, signature(native)
+        self.evidence, self.signature = evidence, call_signature
         self.allow_clarification = allow_clarification
         self.translation = translation
         with evidence.connect() as connection:
@@ -134,7 +135,7 @@ class RefusalRetry:
                 (json.dumps(value, ensure_ascii=False), evidence.local.current),
             )
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, native, *args, **kwargs):
         evidence = self.evidence
         bound = self.signature.bind(*args, **kwargs)
         bound.apply_defaults()
@@ -167,7 +168,7 @@ class RefusalRetry:
             if getattr(evidence.local, "call", None) is not None:
                 evidence.local.call.append(saved[1])
             return restored(json.loads(saved[0]), replay=True)
-        response = self.native(*args, **kwargs)
+        response = native(*args, **kwargs)
         if not refused(response, (source or {}).values()):
             return response
         self.reject(response)

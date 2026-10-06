@@ -153,6 +153,7 @@ def _append_rotating_debug_log(path: Path, text: str) -> None:
     )
 
 
+@extensions.point
 def _write_request_debug_log(provider, request_payload, usage):
     """Write the exact SDK payload text and returned token usage when enabled."""
     request_debug.write_request(
@@ -1313,6 +1314,7 @@ def get_cached_translation(
 
         time.sleep(CACHE_WAIT_INTERVAL)
 
+@extensions.point
 def cache_translation(
     payload, translation, language, cache_context=None, request_context=None
 ):
@@ -1758,6 +1760,7 @@ def peek_cached_translation(
     return entry
 
 
+@extensions.point
 def queue_batch_request(
     payload, language, params, cache_context=None, provider=None,
     request_context=None,
@@ -1964,6 +1967,7 @@ class BatchResultUnavailableError(RuntimeError):
     """A consume pass could not safely match a fetched provider result."""
 
 
+@extensions.point
 def require_batch_result(
     payload, language, cache_context=None, request_context=None
 ):
@@ -4718,6 +4722,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
     return params
 
 
+@extensions.point
 def translateText(system, user, history, penalty, formatType, model, numLines=None,
                   vocab_text="", context_kind=CONTEXT_SOURCE,
                   request_instructions=None):
