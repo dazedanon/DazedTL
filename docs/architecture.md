@@ -37,8 +37,9 @@ The runtime was imported from `b91bede18fd2bbd5a9b99f1a866f061bc13865c1` with it
 Saved manual runs record the [engine version](../backend/dazedtl/engine/desktop/backend/manual.py) that prepared them and resume only on that version; plans from before explicit versions match by their recorded byte hash.
 Raise the version when a change would make a resumed run build requests or parse files differently.
 Their historical Python namespaces are internal to the compatibility boundary; the old UI and application server are not shipped.
-The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine module attributes.
+The compatibility layer extends engine behavior only through declared [extension points](../backend/dazedtl/engine/util/extensions.py) and engine settings, never by replacing engine functions.
 Every import alias shares a point's dispatcher, and reconfiguring a named layer replaces it in place.
+Mark an engine function as a point where DazedTL needs to extend it, rather than wrapping it from outside.
 The base translation rules in [system.md](../backend/dazedtl/engine/data/skills/system.md), the shared prompt templates, field instructions, base glossary and SFX reference live in the engine's [data](../backend/dazedtl/engine/data) directory.
 The base prompt bounds localization to supplied source text to preserve its register without inviting new scene content or assistant responses in game dialogue.
 Existing workspace `engine/shared-data` overrides retain precedence and native path validation.
@@ -447,7 +448,7 @@ Rows grow with feedback rather than fixing heights or clipping content.
 Staged preparation requires existing game JSON at preview and execution; missing Ace exports cannot count as completed formatting or authorize a new baseline.
 The engine's [JSON](../backend/dazedtl/engine/util/dazedformat.py) and [`plugins.js`](../backend/dazedtl/engine/util/project_preparation.py) preparation formatters write UTF-8 with LF on every platform, matching translated JSON and fitting output.
 Byte comparisons normalize already-formatted CRLF/CR files too, preventing whole-file line-ending diffs on Apply.
-Runtime activation installs these writers; frozen outputs and exact backup/restore bytes remain authoritative.
+Frozen outputs and exact backup/restore bytes remain authoritative.
 Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click; the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
@@ -629,7 +630,7 @@ The public preference schema contains language, model, and per-model request/pri
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
 Connection checks are explicit model-list requests, with bounded reads, no redirects, and no generated text.
 Provider presets declare their transport protocol independently of their identity.
-OpenRouter keeps the OpenAI-compatible Live request format and has a distinct [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py), installed before native consumers bind provider helpers.
+OpenRouter keeps the OpenAI-compatible Live request format and has a distinct [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py), layered onto the engine's Batch provider points.
 Both Guided workers and compiled plans use that adapter, preserving request semantics.
 The authenticated `/models/user` check retains a bounded, private [catalog](../backend/dazedtl/settings/openrouter.py); saving a model, host or active connection automatically resolves missing matching Batch endpoint capabilities and prices outside the application lock, then retains them within the same settings mutation.
 Model-option reads resolve draft selections without changing saved Batch eligibility.

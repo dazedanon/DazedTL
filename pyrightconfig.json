@@ -1,5 +1,5 @@
 {
-  // Checks DazedTL-owned Python; the bundled engine is resolved but not checked.
+  // Checks the app's Python; the bundled engine is resolved but not checked.
   "include": ["backend/dazedtl", "tests", "scripts"],
   "exclude": ["backend/dazedtl/engine", "**/__pycache__"],
   "extraPaths": ["backend", "backend/dazedtl/engine"],

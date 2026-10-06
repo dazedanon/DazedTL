@@ -1,4 +1,4 @@
-# Formats and lints DazedTL-owned Python. The bundled engine keeps its original bytes.
+# Formats and lints the app's Python. The bundled engine keeps its own style and line endings.
 target-version = "py314"
 extend-exclude = ["backend/dazedtl/engine"]
 force-exclude = true
