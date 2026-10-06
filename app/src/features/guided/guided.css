@@ -584,14 +584,16 @@
 .guided-workspace .guided-task-body {
   padding-block: var(--space-5);
 }
-.guided-task-workspace > .action-bar {
+.guided-task-workspace > .action-bar,
+.guided-task-footer > .action-bar {
   padding-block: var(--space-3);
 }
 @media (max-height: 720px) {
   .guided-task-nav {
     padding-top: 0;
   }
-  .guided-task-workspace > .action-bar {
+  .guided-task-workspace > .action-bar,
+  .guided-task-footer > .action-bar {
     padding-block: var(--space-2);
   }
 }
