@@ -675,10 +675,13 @@ pre {
   font-size: inherit;
   overflow-wrap: anywhere;
 }
+/* In running text the icon centres on the line instead of sitting on its
+   baseline; flex rows centre it themselves. */
 .help-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  vertical-align: middle;
   flex: 0 0 auto;
   padding: 0;
   min-height: 0;
