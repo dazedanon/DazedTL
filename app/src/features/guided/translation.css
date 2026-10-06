@@ -239,6 +239,7 @@
   align-items: center;
 }
 .file-browser-inline .file-browser-heading {
+  flex-shrink: 0;
   overflow: hidden;
   scrollbar-gutter: stable;
 }
