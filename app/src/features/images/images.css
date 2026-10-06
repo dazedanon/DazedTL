@@ -451,40 +451,9 @@ main > .image-manager {
 .image-index-progress progress {
   flex: 1;
 }
-.image-compare-modal,
-.image-apply-modal {
-  padding: 0;
-  width: min(1500px, calc(100vw - var(--space-7)));
-  max-height: calc(100dvh - var(--space-7));
-}
-.image-compare-modal[open],
-.image-apply-modal[open] {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.image-compare-modal {
-  height: min(950px, calc(100dvh - var(--space-7)));
-}
-.image-apply-modal {
-  width: min(850px, calc(100vw - var(--space-7)));
-}
-.image-modal-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--line);
-}
-.image-modal-heading h2 {
-  margin: 0;
-  font-size: 1.2em;
-}
-.image-modal-heading p {
-  margin: 0 0 var(--space-1);
-  font-size: var(--font-small);
-  color: var(--muted);
+.image-compare-modal.dialog--full {
+  width: min(1500px, calc(100vw - var(--space-6)));
+  height: min(950px, calc(100dvh - var(--space-6)));
 }
 .image-compare-toolbar {
   display: flex;
@@ -505,8 +474,7 @@ main > .image-manager {
   margin-right: auto;
   color: var(--accent);
 }
-.image-compare-body,
-.image-apply-body {
+.image-compare-body {
   min-height: 0;
   overflow: auto;
   padding: var(--space-3) var(--space-4);
@@ -579,10 +547,6 @@ main > .image-manager {
 }
 .image-revision-comment textarea {
   margin: 0;
-}
-.image-compare-modal > .action-bar,
-.image-apply-modal > .action-bar {
-  padding: var(--space-3) var(--space-4);
 }
 .image-apply-files,
 .image-apply-blocked {

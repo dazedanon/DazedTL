@@ -8,16 +8,9 @@
   flex-direction: column;
   overflow: hidden;
 }
-.native-editor-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--line);
-}
-.native-editor-heading h2 {
-  margin: 0;
+/* The editor's own panels use 16px insets; its header follows them. */
+.native-image-editor > .dialog-header {
+  padding-inline: var(--space-4);
 }
 .native-editor-toolbar {
   display: flex;
@@ -251,13 +244,6 @@
 }
 .native-editor-empty {
   padding: var(--space-4);
-}
-.native-editor-confirm {
-  width: min(36rem, calc(100vw - 2rem));
-  padding: var(--space-4);
-}
-.native-editor-confirm .action-bar {
-  margin: var(--space-3) calc(-1 * var(--space-4)) calc(-1 * var(--space-4));
 }
 .native-image-editor > .action-bar {
   flex: 0 0 auto;

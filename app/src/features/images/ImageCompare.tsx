@@ -3,6 +3,7 @@ import type { ImageAsset } from "../../api/contracts";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { Button } from "../../ui/Button";
+import { DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
@@ -60,19 +61,17 @@ export function ImageCompare({
   return (
     <Modal
       label={`Compare ${asset.filename}`}
+      size="full"
       className="image-compare-modal"
       dismissible={!busy}
       onDismiss={onDismiss}
     >
-      <header className="image-modal-heading">
-        <div>
-          <p>{asset.path}</p>
-          <h2>Compare images</h2>
-        </div>
-        <Button disabled={busy} onClick={onDismiss}>
-          Close
-        </Button>
-      </header>
+      <DialogHeader
+        title="Compare images"
+        description={asset.path}
+        onClose={onDismiss}
+        closeDisabled={busy}
+      />
       <div className="image-compare-toolbar">
         <span className="image-review-status">{imageStatus(asset)}</span>
         <label>

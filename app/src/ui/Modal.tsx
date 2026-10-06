@@ -7,6 +7,7 @@ export function Modal({
   dismissible = true,
   className = "",
   returnFocus,
+  size,
 }: {
   label: string;
   children: ReactNode;
@@ -14,6 +15,8 @@ export function Modal({
   dismissible?: boolean;
   className?: string;
   returnFocus?: HTMLElement | null;
+  /** Sized dialogs use the shared header, body and footer layout. */
+  size?: "sm" | "md" | "lg" | "full";
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   // The dialog opens once; closing returns focus to the latest requested target.
@@ -39,7 +42,7 @@ export function Modal({
   return (
     <dialog
       ref={dialog}
-      className={`modal ${className}`}
+      className={`modal${size ? ` dialog dialog--${size}` : ""} ${className}`}
       aria-label={label}
       onCancel={(event) => {
         event.preventDefault();

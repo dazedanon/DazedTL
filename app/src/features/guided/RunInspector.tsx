@@ -8,6 +8,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { JobStatus } from "../../ui/JobStatus";
@@ -35,7 +36,8 @@ export function RunInspector({
   job: Job | null;
   target?: RequestInspectionTarget;
   close: () => void;
-  history: () => void;
+  /** Opens Run history; omitted when the inspector sits on top of it. */
+  history?: () => void;
   returnFocus?: HTMLElement | null;
   actions?: ReactNode;
   reapply: (job: Job) => Promise<void>;
@@ -220,120 +222,125 @@ export function RunInspector({
     <>
       <Modal
         label="Request inspector"
-        className={
-          job?.process || target?.file ? "request-inspector-sheet" : ""
-        }
+        size={job?.process || target?.file ? "full" : "md"}
+        className="request-inspector-sheet"
         returnFocus={returnFocus}
         dismissible={!action.busy}
         onDismiss={close}
       >
-        <header className="request-inspector-heading">
-          <h2>
-            {job?.process
+        <DialogHeader
+          title={
+            job?.process
               ? "Inspect run"
               : target?.file
                 ? "Inspect file"
-                : "Inspect activity"}
-          </h2>
-          <div className="request-heading-actions">
-            <Button variant="quiet" disabled={action.busy} onClick={history}>
-              Run history
-            </Button>
-            <Button disabled={action.busy} onClick={close}>
-              Close
-            </Button>
-          </div>
-        </header>
-        {job?.process ? (
-          <ProcessPanel
-            job={job}
-            projectId={projectId}
-            initialRequest={target}
-            readPayload={(index) =>
-              api.guided.payload(projectId, job.id, index)
-            }
-            readNames={(offset) =>
-              api.guided.nameResults(projectId, job.id, offset)
-            }
-            actions={actions}
-            batchActions={job.mode === "batch" ? batchActions : undefined}
-          />
-        ) : target?.file ? (
-          <>
-            <ExpandableText
-              text={target.file}
-              label="Selected file"
-              appearance="inline"
-              limit={80}
+                : "Inspect activity"
+          }
+          actions={
+            history && (
+              <Button variant="quiet" disabled={action.busy} onClick={history}>
+                Run history
+              </Button>
+            )
+          }
+          onClose={close}
+          closeDisabled={action.busy}
+        />
+        <DialogBody className="inspector-body">
+          {job?.process ? (
+            <ProcessPanel
+              job={job}
+              projectId={projectId}
+              initialRequest={target}
+              readPayload={(index) =>
+                api.guided.payload(projectId, job.id, index)
+              }
+              readNames={(offset) =>
+                api.guided.nameResults(projectId, job.id, offset)
+              }
+              actions={actions}
+              batchActions={job.mode === "batch" ? batchActions : undefined}
             />
-            <p className="muted">
-              No saved request is linked to this file. Showing its current
-              contents.
-            </p>
-            <InspectedFile projectId={projectId} file={target.file} />
-          </>
-        ) : (
-          job && (
-            <div className="run-technical">
-              <section>
-                <JobStatus
-                  job={{
-                    label: job.label || "Saved activity",
-                    status: job.status,
-                    message: job.message,
-                  }}
-                />
-                <p className="muted">
-                  {job.created &&
-                    `${new Date(job.created).toLocaleString()} · `}
-                  <code>{job.id}</code>
-                </p>
-                {!!job.files?.length && (
-                  <dl className="run-detail-summary">
-                    <div>
-                      <dt>Files</dt>
-                      <dd>
-                        <ExpandableText
-                          text={job.files.join(", ")}
-                          label="Activity files"
-                          appearance="inline"
-                        />
-                      </dd>
-                    </div>
-                  </dl>
-                )}
-              </section>
-              {job.result && (
+          ) : target?.file ? (
+            <>
+              <ExpandableText
+                text={target.file}
+                label="Selected file"
+                appearance="inline"
+                limit={80}
+              />
+              <p className="muted">
+                No saved request is linked to this file. Showing its current
+                contents.
+              </p>
+              <InspectedFile projectId={projectId} file={target.file} />
+            </>
+          ) : (
+            job && (
+              <div className="run-technical">
                 <section>
-                  <h3>Saved result</h3>
-                  <ExpandableText
-                    text={JSON.stringify(job.result, null, 2)}
-                    label="Saved result"
+                  <JobStatus
+                    job={{
+                      label: job.label || "Saved activity",
+                      status: job.status,
+                      message: job.message,
+                    }}
                   />
+                  <p className="muted">
+                    {job.created &&
+                      `${new Date(job.created).toLocaleString()} · `}
+                    <code>{job.id}</code>
+                  </p>
+                  {!!job.files?.length && (
+                    <dl className="run-detail-summary">
+                      <div>
+                        <dt>Files</dt>
+                        <dd>
+                          <ExpandableText
+                            text={job.files.join(", ")}
+                            label="Activity files"
+                            appearance="inline"
+                          />
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
                 </section>
-              )}
-              <RunLog log={job.log} />
-            </div>
-          )
-        )}
-        <Message message={readError} />
-        {readError && (
-          <Button variant="quiet" pending={reading} onClick={inspection.retry}>
-            Retry reading run
-          </Button>
-        )}
+                {job.result && (
+                  <section>
+                    <h3>Saved result</h3>
+                    <ExpandableText
+                      text={JSON.stringify(job.result, null, 2)}
+                      label="Saved result"
+                    />
+                  </section>
+                )}
+                <RunLog log={job.log} />
+              </div>
+            )
+          )}
+          <Message message={readError} />
+          {readError && (
+            <Button
+              variant="quiet"
+              pending={reading}
+              onClick={inspection.retry}
+            >
+              Retry reading run
+            </Button>
+          )}
+        </DialogBody>
       </Modal>
       {cancellation && (
         <Modal
           label="Cancel provider Batch"
+          size="md"
           className="guided-sheet translation-review"
           dismissible={!action.busy}
           onDismiss={() => setCancellation(null)}
         >
-          <header className="guided-sheet-heading">
-            <h2>Cancel this Batch?</h2>
-          </header>
-          <div className="guided-sheet-body">
+          <DialogHeader title="Cancel this Batch?" />
+          <DialogBody>
             <p>
               {cancellation.model} · {cancellation.requests} requests ·{" "}
               {cancellation.provider}
@@ -353,7 +360,7 @@ export function RunInspector({
               collected automatically after cancellation finishes. Cancellation
               does not submit replacement work.
             </p>
-          </div>
+          </DialogBody>
           <ActionBar
             feedback={
               <Message

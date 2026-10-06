@@ -211,6 +211,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
           action.key,
         ) &&
           action.notice) ||
+          translationFlow.notice ||
           guidance}
       </small>
     </div>

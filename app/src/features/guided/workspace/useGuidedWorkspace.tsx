@@ -743,15 +743,8 @@ export function useGuidedWorkspace({
   const workingFileActions = () => (
     <>
       <ActionRow
-        label={
-          <>
-            <strong>Saved translations</strong>
-            <small>
-              Open the persistent translated folder to inspect or copy its JSON
-              files. Some files may contain partial progress.
-            </small>
-          </>
-        }
+        title="Translated folder"
+        description="Inspect or copy its JSON files. Some files may contain partial progress."
       >
         <ActionControl
           label="Open translated folder"

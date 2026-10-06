@@ -5,6 +5,7 @@ import { messageOf } from "../../api/errors";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { useRead } from "../../state/useRead";
 
@@ -70,17 +71,16 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
   return (
     <Modal
       label="Translated names and labels"
+      size="md"
       className="guided-sheet translation-review"
       onDismiss={close}
     >
-      <header className="guided-sheet-heading">
-        <h2>Translated names and labels</h2>
-      </header>
-      <div className="guided-sheet-body">
-        <p className="muted">
-          Saved in this run’s glossary for the file translation. These entries
-          let you review the wording.
-        </p>
+      <DialogHeader
+        title="Translated names and labels"
+        description="Saved in this run’s glossary for the file translation. These entries let you review the wording."
+        onClose={close}
+      />
+      <DialogBody>
         {names.pending ? (
           <p role="status">Reading saved translations…</p>
         ) : error ? (
@@ -108,7 +108,7 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
             </table>
           )
         )}
-      </div>
+      </DialogBody>
       <ActionBar
         feedback={
           page && page.total > 50 ? (
@@ -134,7 +134,6 @@ function NameResults({ read, close }: { read: Reader; close: () => void }) {
             </Button>
           </>
         )}
-        <Button onClick={close}>Close</Button>
       </ActionBar>
     </Modal>
   );

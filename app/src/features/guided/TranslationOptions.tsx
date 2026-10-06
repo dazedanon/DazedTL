@@ -48,7 +48,7 @@ export function TranslationOptions({
           }
         />
       </Section>
-      <Section title="Selected working files">
+      <Section title="Saved translations">
         <ActionList compact>{fileActions}</ActionList>
       </Section>
     </>

@@ -15,6 +15,7 @@ import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
 import { ExpandableText } from "../../ui/ExpandableText";
@@ -78,10 +79,13 @@ export function ImageTextEditor(props: ImageTextEditorProps) {
         className="native-image-editor"
         onDismiss={props.onClose}
       >
-        <header className="native-editor-heading">
-          <h2>Image Text Editor</h2>
-          <Button onClick={props.onClose}>Back to Image Manager</Button>
-        </header>
+        <DialogHeader
+          title="Image Text Editor"
+          description="Optional tool · working copies only"
+          actions={
+            <Button onClick={props.onClose}>Back to Image Manager</Button>
+          }
+        />
         <div className="native-editor-empty">
           <Message message={error} />
           <p role="status">
@@ -461,20 +465,20 @@ function Editor({
       }}
       dismissible={!busy}
     >
-      <header className="native-editor-heading">
-        <div>
-          <h2>Image Text Editor</h2>
-          <span className="muted">Optional tool · working copies only</span>
-        </div>
-        <Button
-          disabled={busy}
-          onClick={() => {
-            void close();
-          }}
-        >
-          Back to Image Manager
-        </Button>
-      </header>
+      <DialogHeader
+        title="Image Text Editor"
+        description="Optional tool · working copies only"
+        actions={
+          <Button
+            disabled={busy}
+            onClick={() => {
+              void close();
+            }}
+          >
+            Back to Image Manager
+          </Button>
+        }
+      />
       <div className="native-editor-toolbar">
         <label>
           Image
@@ -1243,14 +1247,14 @@ function Editor({
       {replaceOcr && (
         <Modal
           label="Replace OCR boxes"
+          size="sm"
           className="native-editor-confirm"
           onDismiss={() => setReplaceOcr(false)}
         >
-          <h2>Replace this image’s boxes?</h2>
-          <p>
-            Local OCR replaces its retained source text, translations and boxes.
-            Other images remain saved.
-          </p>
+          <DialogHeader
+            title="Replace this image’s boxes?"
+            description="Local OCR replaces its retained source text, translations and boxes. Other images remain saved."
+          />
           <ActionBar feedback={<Message message={action.error} />}>
             <Button disabled={busy} onClick={() => setReplaceOcr(false)}>
               Cancel
@@ -1269,6 +1273,7 @@ function Editor({
       {(preview || resumeReview) && (
         <Modal
           label="Review native image translation"
+          size="sm"
           className="native-editor-confirm"
           dismissible={!busy}
           onDismiss={() => {
@@ -1276,33 +1281,37 @@ function Editor({
             setResumeReview(false);
           }}
         >
-          <h2>
-            {resumeReview
-              ? "Resume saved image translation"
-              : "Translate confirmed image text"}
-          </h2>
-          <p>
-            {preview
-              ? `${preview.count} text regions · ${preview.assetIds.length} images · ${preview.mode === "batch" ? "Provider Batch" : "Live API"}`
-              : "Continue using this run’s frozen scope and settings."}
-          </p>
-          <p>
-            {preview?.configuration.model || job?.model} ·{" "}
-            {preview?.configuration.language ||
-              job?.imageConfiguration?.language}
-          </p>
-          {(preview?.configuration.endpoint ||
-            job?.imageConfiguration?.endpoint) && (
-            <p className="path">
-              {preview?.configuration.endpoint ||
-                job?.imageConfiguration?.endpoint}
+          <DialogHeader
+            title={
+              resumeReview
+                ? "Resume saved image translation"
+                : "Translate confirmed image text"
+            }
+            description={
+              preview
+                ? `${preview.count} text regions · ${preview.assetIds.length} images · ${preview.mode === "batch" ? "Provider Batch" : "Live API"}`
+                : "Continue using this run’s frozen scope and settings."
+            }
+          />
+          <DialogBody>
+            <p>
+              {preview?.configuration.model || job?.model} ·{" "}
+              {preview?.configuration.language ||
+                job?.imageConfiguration?.language}
             </p>
-          )}
-          <Costs value={preview?.estimate || job?.estimate || {}} />
-          <p>
-            Approval uses the saved provider and can incur charges. Applying
-            images remains a separate reviewed action.
-          </p>
+            {(preview?.configuration.endpoint ||
+              job?.imageConfiguration?.endpoint) && (
+              <p className="path">
+                {preview?.configuration.endpoint ||
+                  job?.imageConfiguration?.endpoint}
+              </p>
+            )}
+            <Costs value={preview?.estimate || job?.estimate || {}} />
+            <p>
+              Approval uses the saved provider and can incur charges. Applying
+              images remains a separate reviewed action.
+            </p>
+          </DialogBody>
           <ActionBar feedback={<Message message={action.error} />}>
             <Button
               disabled={busy}

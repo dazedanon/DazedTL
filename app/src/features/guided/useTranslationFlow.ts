@@ -114,6 +114,7 @@ export function useTranslationFlow(options: Options) {
     session: Session,
     task: () => Promise<void>,
     discardCanceled = true,
+    notice = "",
   ) {
     const pending = action.run(
       async () => {
@@ -126,7 +127,7 @@ export function useTranslationFlow(options: Options) {
           throw error;
         }
       },
-      "",
+      notice,
       "translation-flow",
     );
     void pending.then((result) => {
@@ -309,6 +310,7 @@ export function useTranslationFlow(options: Options) {
         } else await abandon(session);
       },
       false,
+      approved ? "" : "Estimate declined. Nothing was submitted.",
     );
   }
   function dismiss() {
@@ -316,6 +318,8 @@ export function useTranslationFlow(options: Options) {
   }
   return {
     state,
+    /** The last finished decision's result, shown beside Translate. */
+    notice: action.notice,
     active: !!state || action.busy,
     pending: action.busy || (!!state && flowLoading(state)),
     busy: action.busy || finished,

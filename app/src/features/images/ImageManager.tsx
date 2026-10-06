@@ -32,6 +32,7 @@ import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
 import { countSummary } from "../../ui/displayText";
 import { ActionBar } from "../../ui/ActionBar";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
 import {
@@ -1058,6 +1059,7 @@ function Manager({
       {folderDialog && (
         <Modal
           label="Choose loose image folder"
+          size="md"
           className="image-apply-modal"
           dismissible={!action.busy}
           onDismiss={() => {
@@ -1065,14 +1067,11 @@ function Manager({
             action.clear();
           }}
         >
-          <header className="image-modal-heading">
-            <h2>Choose loose image folder</h2>
-          </header>
-          <div className="image-apply-body">
-            <p>
-              Enter a folder relative to this game's root. Only loose PNGs are
-              supported; archives must be extracted separately.
-            </p>
+          <DialogHeader
+            title="Choose loose image folder"
+            description="Enter a folder relative to this game's root. Only loose PNGs are supported; archives must be extracted separately."
+          />
+          <DialogBody className="image-apply-body">
             <label>
               Image folder
               <input
@@ -1084,7 +1083,7 @@ function Manager({
               />
             </label>
             <p className="muted">Game root: {state.source}</p>
-          </div>
+          </DialogBody>
           <ActionBar feedback={<Message message={action.error} />}>
             <Button
               disabled={action.busy}

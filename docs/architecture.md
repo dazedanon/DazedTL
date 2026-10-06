@@ -434,6 +434,8 @@ Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx)
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Focus does not add outlines anywhere in the interface.
 ComboBox choice labels hide automatic text-selection highlighting while retaining select-to-replace search; typed queries and editable text keep normal selection behavior.
+Sized dialogs use [Modal](../app/src/ui/Modal.tsx)'s `size` with [DialogHeader and DialogBody](../app/src/ui/Dialog.tsx) and an ActionBar footer.
+Sheets and inspectors close with the header's one close button; decisions such as spending reviews, resyncs and Apply have no close button and end with explicit footer choices.
 Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.

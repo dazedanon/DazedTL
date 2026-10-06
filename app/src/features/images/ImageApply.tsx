@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ImagePreview } from "../../api/contracts";
 import { Button } from "../../ui/Button";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
@@ -38,18 +39,19 @@ export function ImageApply({
   return (
     <Modal
       label={restore ? "Restore image originals" : "Review image application"}
+      size="md"
       className="image-apply-modal"
       dismissible={!busy}
       onDismiss={onDismiss}
     >
-      <header className="image-modal-heading">
-        <h2>
-          {restore
+      <DialogHeader
+        title={
+          restore
             ? `Restore ${count} original ${images}`
-            : `Apply ${count} ${images} to the game`}
-        </h2>
-      </header>
-      <div className="image-apply-body">
+            : `Apply ${count} ${images} to the game`
+        }
+      />
+      <DialogBody className="image-apply-body">
         <p>
           <strong>
             {selected} selected · {count} included · {preview.blocked.length}{" "}
@@ -158,7 +160,7 @@ export function ImageApply({
             )}
           </section>
         )}
-      </div>
+      </DialogBody>
       <ActionBar feedback={<Message message={error} />}>
         <Button disabled={busy} onClick={onDismiss}>
           Cancel

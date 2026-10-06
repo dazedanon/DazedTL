@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import type { EventTextState } from "../../api/contracts";
 import {
@@ -67,37 +68,39 @@ export function EventTextPicker({
     return (
       <Modal
         label="Edit source selection"
+        size="md"
         className="guided-sheet"
         onDismiss={dismiss}
       >
-        <header className="guided-sheet-heading">
-          <h2>Selection needs recovery</h2>
-        </header>
-        <div className="guided-sheet-body">
+        <DialogHeader
+          title="Selection needs recovery"
+          onClose={dismiss}
+          closeDisabled={action.busy}
+        />
+        <DialogBody>
           <Message message={state.message} />
           <p>
             Your draft is retained. Close this picker and recover the source or
             installed handlers before reopening it.
           </p>
-        </div>
+        </DialogBody>
         <ActionBar feedback={<Message message={action.error} />}>
-          <Button onClick={dismiss} pending={action.busy}>
-            Close picker
-          </Button>
+          {null}
         </ActionBar>
       </Modal>
     );
   return (
     <Modal
       label="Edit source selection"
+      size="lg"
       className="guided-sheet event-text-picker"
       dismissible={!action.busy}
       onDismiss={dismiss}
     >
-      <header className="guided-sheet-heading">
-        <p className="muted">Other event text · {row.label}</p>
-        <h2>Edit selection</h2>
-      </header>
+      <DialogHeader
+        title="Edit selection"
+        description={`Other event text · ${row.label}`}
+      />
       <div className="event-text-picker-controls">
         <p>
           <strong>

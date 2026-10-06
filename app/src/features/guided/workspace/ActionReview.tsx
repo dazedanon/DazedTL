@@ -2,6 +2,7 @@ import type { Phase } from "../../../api/contracts";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { VirtualList } from "../../../ui/VirtualList";
 import { ReleaseReview } from "../Release";
@@ -54,22 +55,25 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
                 : "Replace game ZIP"
               : "Review translation action"
       }
+      size="md"
       className={`guided-sheet${paid ? " translation-review" : ""}${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`}
       dismissible={!action.busy}
       onDismiss={cancelPreview}
     >
-      <header className="guided-sheet-heading">
-        <h2>
-          {["release", "release_patch"].includes(preview.action)
+      <DialogHeader
+        title={
+          ["release", "release_patch"].includes(preview.action)
             ? inspectRelease
               ? "Archive contents"
               : preview.action === "release_patch"
                 ? "Review patch ZIP"
                 : "Replace game ZIP"
-            : preview.label}
-        </h2>
-      </header>
-      <div className="guided-sheet-body">
+            : preview.label
+        }
+        onClose={inspectRelease ? cancelPreview : undefined}
+        closeDisabled={action.busy}
+      />
+      <DialogBody>
         {["release", "release_patch"].includes(preview.action) && (
           <ReleaseReview
             preview={preview}
@@ -366,15 +370,13 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             ))}
           </>
         )}
-      </div>
+      </DialogBody>
       <ActionBar feedback={<Message message={action.error} />}>
-        <Button disabled={action.busy} onClick={cancelPreview}>
-          {inspectRelease
-            ? "Close"
-            : preview.action === "git_setup"
-              ? "Back"
-              : "Cancel"}
-        </Button>
+        {!inspectRelease && (
+          <Button disabled={action.busy} onClick={cancelPreview}>
+            {preview.action === "git_setup" ? "Back" : "Cancel"}
+          </Button>
+        )}
         {!inspectRelease && (
           <Button
             variant="primary"

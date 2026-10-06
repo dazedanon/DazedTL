@@ -3,6 +3,7 @@ import type { EngineValue, EventTextState } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { manualSources } from "./eventTextSelection";
 
@@ -33,18 +34,16 @@ export function EventTextReview({
   return (
     <Modal
       label="Review event text sources"
+      size="md"
       className="guided-sheet"
       dismissible={!busy}
       onDismiss={cancel}
     >
-      <header className="guided-sheet-heading">
-        <h2>Review source choices</h2>
-      </header>
-      <div className="guided-sheet-body">
-        <p>
-          Only these supported settings will be saved for translation. Reviewing
-          sources does not start a run.
-        </p>
+      <DialogHeader
+        title="Review source choices"
+        description="Only these supported settings will be saved for translation. Reviewing sources does not start a run."
+      />
+      <DialogBody>
         {review.values.AUTONAMEPOPUP101 === true && (
           <p>
             Saved AutoNamePopup handling also processes supported actor-name
@@ -112,7 +111,7 @@ export function EventTextReview({
             </label>
           </div>
         )}
-      </div>
+      </DialogBody>
       <ActionBar feedback={<Message message={error} />}>
         <Button disabled={busy} onClick={cancel}>
           Cancel

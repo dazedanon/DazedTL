@@ -2,6 +2,7 @@ import { LoaderCircle } from "lucide-react";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { TranslationReviewContent } from "./TranslationReview";
 import { flowLoading, type useTranslationFlow } from "./useTranslationFlow";
@@ -69,6 +70,7 @@ export function TranslationFlowDialog({
   return (
     <Modal
       label="Translate selected text"
+      size="md"
       className="guided-sheet translation-review translation-flow"
       dismissible={loading || !flow.busy}
       onDismiss={flow.cancel}
@@ -86,14 +88,13 @@ export function TranslationFlowDialog({
           approvalCurrent={approvalCurrent}
           executionEnabled={executionEnabled}
           error=""
-          close={flow.cancel}
           answer={flow.answer}
         />
       ) : (
         <>
-          <header className="guided-sheet-heading">
-            <h2>
-              {value.stage === "empty"
+          <DialogHeader
+            title={
+              value.stage === "empty"
                 ? "No new translation requests"
                 : value.stage === "error"
                   ? value.runId
@@ -101,11 +102,11 @@ export function TranslationFlowDialog({
                     : "Estimate could not finish"
                   : value.namesApproved
                     ? "Translation preparation"
-                    : "Translation estimate"}
-            </h2>
-          </header>
-          <div
-            className={`guided-sheet-body${loading ? " translation-flow-loading" : ""}`}
+                    : "Translation estimate"
+            }
+          />
+          <DialogBody
+            className={loading ? "translation-flow-loading" : undefined}
           >
             {loading ? (
               <div className="translation-flow-progress">
@@ -149,7 +150,7 @@ export function TranslationFlowDialog({
               />
             )}
             {!loading && nameFeedback}
-          </div>
+          </DialogBody>
           <ActionBar feedback={null}>
             <Button
               disabled={value.stage === "canceling" || (!loading && flow.busy)}

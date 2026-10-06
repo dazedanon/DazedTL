@@ -19,6 +19,7 @@ import { ActionBar } from "../../ui/ActionBar";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 
 const fileCount = (count: number, noun = "file") =>
@@ -526,15 +527,18 @@ export function PluginWorkspace({
       {inspecting && (
         <Modal
           label="Plugin text details"
+          size="lg"
           className="plugin-review-modal"
           onDismiss={() => setInspecting(false)}
           dismissible={!action.busy}
         >
-          <header>
-            <h2>{detail?.plugin || "Plugin text"}</h2>
-            <p className="plugin-path">{view.currentFile}</p>
-          </header>
-          <div className="plugin-review-body">
+          <DialogHeader
+            title={detail?.plugin || "Plugin text"}
+            description={view.currentFile}
+            onClose={() => setInspecting(false)}
+            closeDisabled={action.busy}
+          />
+          <DialogBody className="plugin-review-body">
             <Message
               message={
                 ![...actionKeys, "select", "select_files"].includes(action.key)
@@ -709,25 +713,19 @@ export function PluginWorkspace({
                 )}
               </>
             )}
-          </div>
-          <footer>
-            <Button onClick={() => setInspecting(false)} disabled={action.busy}>
-              Close
-            </Button>
-          </footer>
+          </DialogBody>
         </Modal>
       )}
       {manual && (
         <Modal
           label="Include latent plugin text"
+          size="md"
           className="plugin-review-modal"
           onDismiss={() => setManual(null)}
           dismissible={!action.busy}
         >
-          <header>
-            <h2>Include inactive or default-only text</h2>
-          </header>
-          <div className="plugin-review-body">
+          <DialogHeader title="Include inactive or default-only text" />
+          <DialogBody className="plugin-review-body">
             <p>
               These safe display locations are excluded by default. Your scope
               choice is retained with a reason.
@@ -746,8 +744,8 @@ export function PluginWorkspace({
                   : ""
               }
             />
-          </div>
-          <footer>
+          </DialogBody>
+          <ActionBar feedback={null}>
             <Button disabled={action.busy} onClick={() => setManual(null)}>
               Cancel
             </Button>
@@ -765,19 +763,21 @@ export function PluginWorkspace({
             >
               Include safe latent text
             </Button>
-          </footer>
+          </ActionBar>
         </Modal>
       )}
       {recovery && (
         <Modal
           label="Plugin recovery"
+          size="lg"
           className="plugin-review-modal"
           onDismiss={() => setRecovery(false)}
         >
-          <header>
-            <h2>Plugin Apply & recovery</h2>
-          </header>
-          <div className="plugin-review-body">
+          <DialogHeader
+            title="Plugin Apply & recovery"
+            onClose={() => setRecovery(false)}
+          />
+          <DialogBody className="plugin-review-body">
             {state.receipts
               .slice()
               .reverse()
@@ -808,10 +808,7 @@ export function PluginWorkspace({
                   />
                 </article>
               ))}
-          </div>
-          <footer>
-            <Button onClick={() => setRecovery(false)}>Close</Button>
-          </footer>
+          </DialogBody>
         </Modal>
       )}
       {preview && (
@@ -821,21 +818,16 @@ export function PluginWorkspace({
               ? "Apply plugin files"
               : "Restore plugin files"
           }
+          size="md"
           className="plugin-review-modal"
           dismissible={!action.busy}
           onDismiss={() => setPreview(null)}
         >
-          <header>
-            <h2>
-              {preview.mode === "apply" ? "Apply" : "Restore"}{" "}
-              {fileCount(preview.files.length, "plugin file")}
-            </h2>
-            <p className="muted">
-              {preview.files.length} included · {preview.blocked.length} blocked
-              / awaiting and excluded
-            </p>
-          </header>
-          <div className="plugin-review-body">
+          <DialogHeader
+            title={`${preview.mode === "apply" ? "Apply" : "Restore"} ${fileCount(preview.files.length, "plugin file")}`}
+            description={`${preview.files.length} included${preview.blocked.length ? ` · ${preview.blocked.length} blocked, awaiting or excluded` : ""}`}
+          />
+          <DialogBody className="plugin-review-body">
             <p>
               {preview.mode === "apply"
                 ? "Replace these game files with the checked translations. Each file is checked again first, and a backup is saved for recovery."
@@ -872,8 +864,8 @@ export function PluginWorkspace({
             <Message
               message={action.key === preview.mode ? action.error : ""}
             />
-          </div>
-          <footer>
+          </DialogBody>
+          <ActionBar feedback={null}>
             <Button disabled={action.busy} onClick={() => setPreview(null)}>
               Cancel
             </Button>
@@ -893,7 +885,7 @@ export function PluginWorkspace({
                 if (result.ok) setPreview(null);
               }}
             />
-          </footer>
+          </ActionBar>
         </Modal>
       )}
     </section>

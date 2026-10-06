@@ -1,34 +1,9 @@
-.request-inspector-sheet,
-.history-sheet {
-  width: min(1440px, calc(100vw - var(--space-6)));
-  height: min(920px, calc(100dvh - var(--space-6)));
-  max-height: calc(100dvh - var(--space-6));
-  padding: var(--space-4);
-}
-.request-inspector-sheet[open],
-.history-sheet[open] {
+/* Inspector and history bodies hand scrolling to their panels. */
+.dialog--full > :is(.inspector-body, .history-body) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
   gap: var(--space-3);
-}
-.request-inspector-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  align-items: center;
-  flex-shrink: 0;
-}
-.request-inspector-heading h2 {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.request-heading-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
 }
 .translation-process {
   display: flex;
@@ -261,10 +236,6 @@
 .run-technical > section > :last-child {
   margin-bottom: 0;
 }
-/* Saved activity has no sheet layout gap below its heading. */
-.request-inspector-heading + .run-technical {
-  margin-top: var(--space-4);
-}
 .run-detail-summary {
   display: grid;
   gap: var(--space-2);
@@ -289,13 +260,6 @@
   }
 }
 @media (max-width: 700px) {
-  .request-inspector-sheet,
-  .history-sheet {
-    width: calc(100vw - var(--space-3));
-    height: calc(100dvh - var(--space-3));
-    max-height: calc(100dvh - var(--space-3));
-    padding: var(--space-3);
-  }
   .request-workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(110px, 30%) minmax(180px, 1fr);
@@ -318,9 +282,8 @@
     gap: var(--space-2);
   }
 }
-.history-sheet {
+.history-sheet.dialog--full {
   width: min(1200px, calc(100vw - var(--space-6)));
-  height: min(920px, calc(100dvh - var(--space-6)));
 }
 .guided-history {
   display: flex;
@@ -847,37 +810,8 @@
   gap: var(--space-2);
   margin-top: var(--space-4);
 }
-.guided-sheet {
-  width: min(1040px, calc(100vw - var(--space-8)));
-  max-height: calc(100dvh - var(--space-8));
-  padding: 0;
-}
-.guided-sheet[open] {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .guided-sheet:has(.file-browser) {
   height: min(760px, calc(100dvh - var(--space-8)));
-}
-.guided-sheet-heading {
-  padding: var(--space-4) var(--space-5);
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--line);
-}
-.guided-sheet-heading h2 {
-  margin: 0;
-  font-size: 1.2em;
-}
-.guided-sheet-body {
-  padding: var(--space-4) var(--space-5);
-  overflow: auto;
-  overflow-wrap: anywhere;
-  min-height: 0;
-  flex: 1;
-}
-.guided-sheet > .action-bar {
-  padding: var(--space-3) var(--space-5);
 }
 .guided-sheet .actions {
   margin-top: 0;

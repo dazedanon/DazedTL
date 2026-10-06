@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { X } from "lucide-react";
 import type { Job, Preview } from "../../api/contracts";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { VirtualList } from "../../ui/VirtualList";
 import { PreparedRequestPreview } from "./PreparedRequestPreview";
@@ -107,7 +107,8 @@ type ReviewProps = {
   /** False when this launch cannot contact providers; review stays inspectable. */
   executionEnabled: boolean;
   error: string;
-  close: () => void;
+  /** Leaves a pending approval for later; absent when closing would discard it. */
+  later?: () => void;
   answer: (approved: boolean) => void;
 };
 export function TranslationReview(props: ReviewProps & { job: Job }) {
@@ -119,9 +120,10 @@ export function TranslationReview(props: ReviewProps & { job: Job }) {
           ? "Review Batch submission"
           : "Review names and labels"
       }
+      size="md"
       className="guided-sheet translation-review"
-      dismissible={!props.busy}
-      onDismiss={props.close}
+      dismissible={!props.busy && !!props.later}
+      onDismiss={() => props.later?.()}
     >
       <TranslationReviewContent {...props} />
     </Modal>
@@ -137,7 +139,7 @@ export function TranslationReviewContent({
   approvalCurrent,
   executionEnabled,
   error,
-  close,
+  later,
   answer,
 }: ReviewProps) {
   const [inspecting, setInspecting] = useState(false);
@@ -167,18 +169,8 @@ export function TranslationReviewContent({
       : "Review names and labels";
   return (
     <>
-      <header className="guided-sheet-heading translation-review-heading">
-        <h2>{title}</h2>
-        <Button
-          variant="quiet"
-          disabled={busy}
-          aria-label="Close review"
-          onClick={close}
-        >
-          <X size={18} aria-hidden="true" />
-        </Button>
-      </header>
-      <div className="guided-sheet-body translation-review-body">
+      <DialogHeader title={title} />
+      <DialogBody className="translation-review-body">
         <p className="translation-review-model">
           {job?.model || preview?.run?.model || "Saved model"}{" "}
           <span>
@@ -244,17 +236,28 @@ export function TranslationReviewContent({
             read={(offset) => api.guided.nameResults(projectId, job.id, offset)}
           />
         )}
-        <p className="translation-review-notice">
-          {!executionEnabled &&
-            "Provider execution is disabled for this launch, so this review is for inspection only. "}
-          {repeatSubmission
-            ? "Earlier work may include this text. Starting again may incur duplicate API charges. "
-            : "Submitting incurs API charges. "}
-          {(job?.temporary || preview) && "Decline discards this preparation. "}
-          Results may replace working translations; earlier approved runs stay
-          in History. Game files change only after Apply.
-        </p>
-      </div>
+        <ul className="translation-review-consequences">
+          {!executionEnabled && (
+            <li>
+              Provider execution is off for this launch, so this review is for
+              inspection only.
+            </li>
+          )}
+          <li>
+            {repeatSubmission
+              ? "Earlier work may include this text; starting again may charge for it twice."
+              : "Starting submits paid API requests."}
+          </li>
+          {(job?.temporary || preview) && (
+            <li>Decline discards this preparation.</li>
+          )}
+          <li>
+            Results may replace working translations; earlier approved runs stay
+            in History.
+          </li>
+          <li>Game files change only after Apply.</li>
+        </ul>
+      </DialogBody>
       <ActionBar feedback={<Message message={error} />}>
         {requestRun && (
           <Button
@@ -263,6 +266,11 @@ export function TranslationReviewContent({
             onClick={() => setInspecting(true)}
           >
             Preview request
+          </Button>
+        )}
+        {later && (
+          <Button variant="quiet" disabled={busy} onClick={later}>
+            Decide later
           </Button>
         )}
         <Button

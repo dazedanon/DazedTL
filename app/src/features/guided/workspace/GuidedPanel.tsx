@@ -8,6 +8,7 @@ import { Message } from "../../../ui/Feedback";
 import { useOwnedFeedback } from "../../../ui/FeedbackOwners";
 import { FieldRow } from "../../../ui/FieldRow";
 import { JobStatus } from "../../../ui/JobStatus";
+import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { Section } from "../../../ui/Section";
 import { Tabs } from "../../../ui/Tabs";
@@ -20,6 +21,16 @@ import { retainOtherScope } from "../selection";
 import { commentTextHelp, speakerOptions } from "../speakerOptions";
 import { fileCount, panelTitles, phaseLabels, speakers } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
+
+// Sheets with file lists or tables get the large size; the rest stay compact.
+const wideSheets = new Set<string>([
+  "files",
+  "versions",
+  "speaker-names",
+  "name-translation",
+  "options",
+  "exclusions",
+]);
 
 /** The open tool sheet: file choice, options, tools and recovery utilities. */
 export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
@@ -74,6 +85,10 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
   } = w;
   const owned = useOwnedFeedback(action.key);
   if (!panel) return null;
+  const title =
+    panel === "translation-context"
+      ? `${phaseLabels[phase]} options`
+      : panelTitles[panel];
   const savePanel = (label = "Save & close") => (
     <ActionControl
       label={label}
@@ -117,9 +132,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
       </>
     ) : (
       <>
-        <Button disabled={action.busy} onClick={() => setPanel(null)}>
-          Close
-        </Button>
         <div ref={setUtilityActions} className="action-bar-slot" />
         {panel === "speaker-names" && (
           <>
@@ -204,22 +216,17 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     );
   return (
     <Modal
-      label={
-        panel === "translation-context"
-          ? `${phaseLabels[phase]} options`
-          : panelTitles[panel]
-      }
+      label={title}
+      size={wideSheets.has(panel) ? "lg" : "md"}
       className={`guided-sheet${panel === "translation-context" ? " translation-options" : ["speakers", "speaker-names"].includes(panel) ? " context-sheet" : ""}`}
       dismissible={!action.busy}
       onDismiss={closePanel}
     >
-      <header className="guided-sheet-heading">
-        <h2>
-          {panel === "translation-context"
-            ? `${phaseLabels[phase]} options`
-            : panelTitles[panel]}
-        </h2>
-      </header>
+      <DialogHeader
+        title={title}
+        onClose={closePanel}
+        closeDisabled={action.busy}
+      />
       {panel === "files" ? (
         <FileSelection
           state={{ ...state, files: pickerFiles }}
@@ -235,7 +242,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           disabled={disabled}
         />
       ) : (
-        <div className="guided-sheet-body">
+        <DialogBody>
           {panel === "tasks" && (
             <div className="guided-all-tasks">
               {stages.map((item) => (
@@ -678,7 +685,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
               fileActions={workingFileActions()}
             />
           )}
-        </div>
+        </DialogBody>
       )}
       <ActionBar
         feedback={

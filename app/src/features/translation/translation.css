@@ -315,16 +315,6 @@
   margin: var(--space-2) 0 0;
   color: var(--muted);
 }
-.backup-kinds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.backup-kinds button[aria-pressed="true"] {
-  background: var(--color-navigation-selected);
-  color: var(--color-navigation-text);
-  border-color: var(--color-control-border);
-}
 @container (max-width: 30em) {
   .version-folder {
     flex-wrap: wrap;

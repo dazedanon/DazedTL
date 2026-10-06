@@ -313,9 +313,6 @@
 .translation-matched-context > h3 {
   margin: 0 0 var(--space-2);
 }
-.guided-sheet.translation-review {
-  width: min(740px, calc(100vw - var(--space-8)));
-}
 .guided-sheet.translation-review:has(.translation-review-body),
 .guided-sheet.translation-flow,
 .guided-sheet.prepared-request-preview {
@@ -323,10 +320,6 @@
 }
 .guided-sheet.prepared-request-preview {
   width: min(900px, calc(100vw - var(--space-8)));
-}
-.prepared-request-preview .guided-sheet-heading p {
-  margin: var(--space-1) 0 0;
-  font-size: var(--font-small);
 }
 .prepared-request-body {
   overflow: hidden;
@@ -402,19 +395,6 @@
 }
 .translation-flow-loading small {
   color: var(--muted);
-}
-.translation-review-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.translation-review-heading h2 {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.translation-review-heading > button {
-  flex-shrink: 0;
 }
 .translation-review-body {
   display: flex;
@@ -547,6 +527,15 @@
 }
 .translation-review-body > .translation-review-notice {
   margin: 0;
+  color: var(--muted);
+  font-size: var(--font-small);
+  line-height: 1.5;
+}
+.translation-review-consequences {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
   color: var(--muted);
   font-size: var(--font-small);
   line-height: 1.5;

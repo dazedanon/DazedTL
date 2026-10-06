@@ -3,6 +3,7 @@ import { ActionBar } from "../../../ui/ActionBar";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { ActivityHistory } from "../ActivityHistory";
 import { EventTextPicker } from "../EventTextPicker";
@@ -57,19 +58,19 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
       {history && (
         <Modal
           label="Run history"
+          size="full"
           className="history-sheet"
           onDismiss={() => setHistory(null)}
         >
-          <div className="request-inspector-heading">
-            <h2>Run history</h2>
-            <Button onClick={() => setHistory(null)}>Close</Button>
-          </div>
-          <ActivityHistory
-            state={state}
-            translation={translation}
-            inspect={inspect}
-            initialFilter={history}
-          />
+          <DialogHeader title="Run history" onClose={() => setHistory(null)} />
+          <DialogBody className="history-body">
+            <ActivityHistory
+              state={state}
+              translation={translation}
+              inspect={inspect}
+              initialFilter={history}
+            />
+          </DialogBody>
         </Modal>
       )}
       {(inspected || inspectionTarget?.file) && (
@@ -83,11 +84,15 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
             setInspected(null);
             setInspectionTarget(undefined);
           }}
-          history={() => {
-            setInspected(null);
-            setInspectionTarget(undefined);
-            setHistory(history || "all");
-          }}
+          history={
+            history
+              ? undefined
+              : () => {
+                  setInspected(null);
+                  setInspectionTarget(undefined);
+                  setHistory("all");
+                }
+          }
           disabled={disabled || !baseline}
           applied={(() => {
             const startedJob =
@@ -168,14 +173,13 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
       {comparisonReview && (
         <Modal
           label="Review comparison coverage"
+          size="md"
           className="guided-sheet"
           dismissible={!action.busy}
           onDismiss={() => setComparisonReview(false)}
         >
-          <header className="guided-sheet-heading">
-            <h2>Review matching comparisons</h2>
-          </header>
-          <div className="guided-sheet-body">
+          <DialogHeader title="Review matching comparisons" />
+          <DialogBody>
             <p>
               Mappings are keyed by literal text, not variable ID. The engine
               updates every matching quoted literal in these selected code-111
@@ -213,7 +217,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
               I checked every matched use, including internal references and
               logic, and accept these literal-based updates.
             </label>
-          </div>
+          </DialogBody>
           <ActionBar feedback={<Message message={action.error} />}>
             <Button
               disabled={action.busy}
@@ -277,7 +281,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
             (run) => run.approval?.token === submission.approval!.token,
           )}
           error={action.key.startsWith("run:answer:") ? action.error : ""}
-          close={() => setSubmission(null)}
+          later={() => setSubmission(null)}
           answer={(approved) =>
             action.run(
               async () => {
@@ -297,20 +301,27 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
       {resume && (
         <Modal
           label="Resume saved run"
+          size="sm"
           dismissible={!action.busy}
           onDismiss={() => setResume(null)}
         >
-          <h2>Resume the saved run?</h2>
-          <p>
-            {resume.model} · {fileCount(resume.files?.length || 0)} · saved run
-            settings
-          </p>
-          <p>
-            Continue its frozen files, context, and provider settings. Remaining
-            requests may incur charges.
-          </p>
-          <Message message={action.key === "run:resume" ? action.error : ""} />
-          <div className="actions">
+          <DialogHeader
+            title="Resume the saved run?"
+            description={`${resume.model} · ${fileCount(resume.files?.length || 0)} · saved run settings`}
+          />
+          <DialogBody>
+            <p>
+              Continue its frozen files, context, and provider settings.
+              Remaining requests may incur charges.
+            </p>
+          </DialogBody>
+          <ActionBar
+            feedback={
+              <Message
+                message={action.key === "run:resume" ? action.error : ""}
+              />
+            }
+          >
             <Button disabled={action.busy} onClick={() => setResume(null)}>
               Cancel
             </Button>
@@ -330,7 +341,7 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
             >
               Resume saved run
             </Button>
-          </div>
+          </ActionBar>
         </Modal>
       )}
     </>

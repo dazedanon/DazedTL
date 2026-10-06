@@ -9,6 +9,7 @@ import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
 import { Button } from "../../ui/Button";
+import { Tabs } from "../../ui/Tabs";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
 import { ActionControl } from "../../ui/ActionControl";
@@ -225,34 +226,24 @@ export function BackupsPanel({
           Choose the kind of files you need, then the saved copy. Recovery
           verifies its contents and never overwrites an existing folder.
         </p>
-        <div
-          className="backup-kinds"
-          role="group"
-          aria-label="Files to recover"
-        >
-          {(
-            [
-              ["source", "Game files"],
-              ["workspace", "Translation project files"],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              key={value}
-              aria-pressed={kind === value}
-              disabled={disabled}
-              onClick={() => {
-                setKind(value);
-                setIdentity(
-                  catalog?.snapshots.find((item) => item.kind === value)?.id ||
-                    "",
-                );
-                setDestination("");
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
+        <Tabs
+          id="backup-kinds"
+          label="Files to recover"
+          variant="secondary"
+          value={kind}
+          disabled={disabled}
+          onChange={(value) => {
+            setKind(value);
+            setIdentity(
+              catalog?.snapshots.find((item) => item.kind === value)?.id || "",
+            );
+            setDestination("");
+          }}
+          items={[
+            { id: "source", label: "Game files" },
+            { id: "workspace", label: "Translation project files" },
+          ]}
+        />
         <p className="muted">
           {kind === "source"
             ? "Each saved copy contains the game files as they were on that date."

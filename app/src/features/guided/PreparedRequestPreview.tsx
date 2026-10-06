@@ -4,6 +4,7 @@ import { messageOf } from "../../api/errors";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
+import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Tabs, TabPanel } from "../../ui/Tabs";
 import { ExpandableText } from "../../ui/ExpandableText";
@@ -47,18 +48,19 @@ export function PreparedRequestPreview({
   return (
     <Modal
       label="Preview request"
+      size="lg"
       className="guided-sheet translation-review prepared-request-preview"
       onDismiss={close}
     >
-      <header className="guided-sheet-heading">
-        <h2>Preview request</h2>
-        <p className="muted">
-          {estimate
+      <DialogHeader
+        title="Preview request"
+        description={
+          estimate
             ? "Local estimate preview. Final requests may reflect resolved speaker names."
-            : "Prepared Batch request, before submission."}
-        </p>
-      </header>
-      <div className="guided-sheet-body payload-inspector prepared-request-body">
+            : "Prepared Batch request, before submission."
+        }
+      />
+      <DialogBody className="payload-inspector prepared-request-body">
         <div className="prepared-request-toolbar">
           <Tabs
             id={tabId}
@@ -125,7 +127,7 @@ export function PreparedRequestPreview({
             </TabPanel>
           </div>
         ))}
-      </div>
+      </DialogBody>
       <ActionBar feedback={null}>
         <Button onClick={close}>Back to review</Button>
       </ActionBar>
