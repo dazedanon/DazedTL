@@ -139,7 +139,7 @@ export function namesView(w: GuidedWorkspace): TaskView {
             setPanel("speakers");
           }}
         >
-          Detection settings
+          Speaker detection
         </Button>
       ),
     },

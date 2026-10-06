@@ -1,5 +1,5 @@
 import type { EngineValue, GuidedState } from "../../api/contracts";
-import { FieldRow } from "../../ui/FieldRow";
+import { CheckField, FieldRow } from "../../ui/FieldRow";
 
 export function EngineOptions({
   state,
@@ -48,6 +48,21 @@ export function EngineOptions({
               </label>
             );
           const description = descriptions[field.key];
+          if (field.type === "boolean")
+            return (
+              <CheckField
+                key={field.key}
+                id={"guided-option-" + field.key}
+                label={description?.label || field.label}
+                help={description?.help}
+                checked={values[field.key] === true}
+                disabled={
+                  !!dependencies[field.key] &&
+                  values[dependencies[field.key]] !== true
+                }
+                onChange={(checked) => change(field.key, checked)}
+              />
+            );
           const control = (
             <FieldRow
               key={field.key}
@@ -57,20 +72,7 @@ export function EngineOptions({
               helpDisplay="popover"
             >
               {(props) =>
-                field.type === "boolean" ? (
-                  <input
-                    {...props}
-                    type="checkbox"
-                    checked={values[field.key] === true}
-                    disabled={
-                      !!dependencies[field.key] &&
-                      values[dependencies[field.key]] !== true
-                    }
-                    onChange={(event) =>
-                      change(field.key, event.target.checked)
-                    }
-                  />
-                ) : field.type === "choices" ? (
+                field.type === "choices" ? (
                   <div className="guided-choices">
                     {field.choices?.map((choice) => (
                       <label className="toggle" key={choice}>

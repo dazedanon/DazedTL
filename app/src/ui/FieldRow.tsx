@@ -55,6 +55,41 @@ export function FieldRow({
     </div>
   );
 }
+/** A checkbox before its label, so the two read as one choice. */
+export function CheckField({
+  id,
+  label,
+  help,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  help?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="check-field">
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-describedby={help ? `${id}-help` : undefined}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <label htmlFor={id}>{label}</label>
+      {help && (
+        <HelpPopover id={`${id}-help`} label={label}>
+          {help}
+        </HelpPopover>
+      )}
+    </div>
+  );
+}
 export function DetailRow({
   label,
   className = "",

@@ -30,7 +30,7 @@ The assistant identifies speaker formats, runs the local name scanner, then inve
 The scanner makes no API requests.
 **Add game folder** includes an earlier game as a read-only terminology reference in the next copied task.
 Re-copy the task after changing reference folders.
-**View names** opens the saved scan, and **Detection settings** holds speaker rules and overrides.
+**View names** opens the saved scan, and **Speaker detection** holds speaker rules and overrides.
 Optional API name translation is available from the name-scan panel.
 Edit the resulting files in **Guidance**.
 Measured character limits are saved automatically during investigation; **Layout** shows them and allows manual changes.

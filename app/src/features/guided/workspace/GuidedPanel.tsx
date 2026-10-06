@@ -4,9 +4,9 @@ import { ActionBar } from "../../../ui/ActionBar";
 import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
-import { Message } from "../../../ui/Feedback";
+import { Feedback, Message } from "../../../ui/Feedback";
 import { useOwnedFeedback } from "../../../ui/FeedbackOwners";
-import { FieldRow } from "../../../ui/FieldRow";
+import { CheckField, FieldRow } from "../../../ui/FieldRow";
 import { JobStatus } from "../../../ui/JobStatus";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
@@ -85,6 +85,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
   } = w;
   const owned = useOwnedFeedback(action.key);
   if (!panel) return null;
+  const findingsReady = ["ready", "applied"].includes(findings.status);
+  // Panels that edit the options draft say whether it is saved.
+  const draftPanel =
+    ["widths", "options", "translation-context"].includes(panel) ||
+    (panel === "speakers" && speakerTab === "settings");
   const title =
     panel === "translation-context"
       ? `${phaseLabels[phase]} options`
@@ -93,7 +98,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     <ActionControl
       label={label}
       variant="primary"
-      disabled={disabled}
+      disabled={disabled || (panel === "speakers" && !draft.dirty)}
       {...feedback("save-options", "Saving…")}
       onClick={() =>
         action.run(
@@ -135,19 +140,20 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
         <div ref={setUtilityActions} className="action-bar-slot" />
         {panel === "speaker-names" && (
           <>
-            <Button
-              disabled={disabled}
+            <ActionControl
+              label="API name translation"
+              disabled={disabled || !scan.names.length}
+              disabledReason={
+                findingsReady && !scan.names.length
+                  ? "No names to translate yet."
+                  : ""
+              }
               onClick={() => setPanel("name-translation")}
-            >
-              API name translation
-            </Button>
+            />
             <ActionControl
               label={scan.available ? "Scan again" : "Run local scan"}
-              disabled={
-                disabled ||
-                running ||
-                !["ready", "applied"].includes(findings.status)
-              }
+              disabled={disabled || running || !findingsReady}
+              disabledReason={findingsReady ? "" : findings.message}
               {...feedback("speaker-scan", "Starting local scan…")}
               pending={
                 (action.busy && action.key === "speaker-scan") ||
@@ -192,8 +198,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           "tools",
           "translation-context",
         ].includes(panel) &&
-          (panel !== "speakers" ||
-            (speakerTab === "settings" && draft.dirty)) && (
+          (panel !== "speakers" || speakerTab === "settings") && (
             <>
               {draft.dirty && (
                 <ActionControl
@@ -367,24 +372,14 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 ) : (
                   <>
                     <div className="context-detection-settings">
-                      <FieldRow
+                      <CheckField
                         id="guided-comment-text"
                         label="Comment text"
                         help={commentTextHelp}
-                        helpDisplay="popover"
-                      >
-                        {(props) => (
-                          <input
-                            {...props}
-                            type="checkbox"
-                            disabled={disabled}
-                            checked={values.phase1_comments}
-                            onChange={(event) =>
-                              edit("phase1_comments", event.target.checked)
-                            }
-                          />
-                        )}
-                      </FieldRow>
+                        disabled={disabled}
+                        checked={values.phase1_comments}
+                        onChange={(checked) => edit("phase1_comments", checked)}
+                      />
                       <EngineOptions
                         state={state}
                         values={values.engine_options}
@@ -434,9 +429,6 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                   Showing the saved scan. Scan again to collect names with the
                   current files and settings.
                 </p>
-              )}
-              {!["ready", "applied"].includes(findings.status) && (
-                <p className="muted">{findings.message}</p>
               )}
               {scan.job && ["ready", "running"].includes(scan.job.status) && (
                 <JobStatus
@@ -694,7 +686,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
       )}
       <ActionBar
         feedback={
-          <Message message={action.error && !owned ? action.error : ""} />
+          action.error && !owned ? (
+            <Message message={action.error} />
+          ) : (
+            draftPanel && <Feedback dirty={draft.dirty} />
+          )
         }
       >
         {panelActions}

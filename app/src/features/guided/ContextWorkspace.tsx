@@ -173,13 +173,13 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
       .toLocaleLowerCase()
       .includes(query.toLocaleLowerCase()),
   );
+  // Until a scan is saved there is nothing to browse; the scan control says why.
+  if (!scan.available)
+    return <p className="muted">{scan.issue || "No names collected yet."}</p>;
   return (
     <div className="context-name-results">
       <p className="muted">
-        {scan.available
-          ? `${scan.names.length} source nameplates · ${scan.files} event files`
-          : scan.issue ||
-            "Run the local scan after the speaker formats are saved."}
+        {`${scan.names.length} source nameplates · ${scan.files} event files`}
       </p>
       <Tabs
         id="speaker-results"

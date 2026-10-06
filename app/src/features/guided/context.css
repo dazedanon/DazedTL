@@ -144,11 +144,8 @@
 .guided-sheet.context-sheet {
   width: min(54rem, calc(100vw - var(--space-8)));
 }
-.context-detection-settings {
-  --field-label-width: 13em;
-}
 .context-detection-settings > .guided-engine-options {
-  margin-top: var(--field-row-gap);
+  margin: 0;
 }
 .guided-speaker-findings > .context-finding {
   margin: 0;
