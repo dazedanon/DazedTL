@@ -34,7 +34,7 @@
 }
 /* The link to phased work closes Progress like another section. */
 .lens-method .ui-section + .action-list {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   padding-top: var(--section-padding);
   margin-top: var(--section-gap);
 }
@@ -55,7 +55,7 @@
 }
 .lens-method summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .translation-options {
   display: flex;
@@ -87,7 +87,7 @@
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -96,11 +96,11 @@
   flex-direction: column;
   padding: 13px;
   gap: 6px;
-  background: var(--surface);
+  background: var(--color-surface);
 }
 .translation-phases span {
   font-size: var(--font-small);
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .translation-phases strong {
   font-size: var(--font-small);
@@ -108,7 +108,7 @@
   text-transform: capitalize;
 }
 .translation-phases [data-state="complete"] strong {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .translation-metrics {
   display: flex;
@@ -127,7 +127,7 @@
   gap: 5px;
 }
 .translation-facts dt {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .translation-facts dd {
@@ -136,7 +136,7 @@
 }
 .translation-run {
   padding: 20px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .translation-run:first-child {
   padding-top: 0;
@@ -144,8 +144,8 @@
 .translation-quote {
   padding: 15px 18px;
   margin: 15px 0;
-  border-left: 3px solid var(--accent);
-  background: var(--surface);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-surface);
 }
 .translation-quote p {
   margin: 7px 0;
@@ -164,26 +164,26 @@
   text-align: left;
   vertical-align: top;
   padding: 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 .translation-table small {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .translation-table p {
   margin: 7px 0 0;
 }
 .translation-line-context {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
   margin-top: 5px;
 }
 .translation-review-note {
   padding: 10px 12px;
   margin-top: 12px;
-  border-left: 2px solid var(--accent);
-  background: var(--surface);
+  border-left: 2px solid var(--color-accent);
+  background: var(--color-surface);
   font-size: var(--font-small);
 }
 .translation-json,
@@ -194,7 +194,7 @@
   overflow: auto;
   font-size: var(--font-small);
   padding: 16px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
 }
 .translation-path {
@@ -226,7 +226,7 @@
   margin-block: var(--space-4);
 }
 .version-current span {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .version-current strong {
   font-size: var(--font-page-title);
@@ -236,7 +236,7 @@
 .backup-panel > .ui-section {
   /* Span the panel so the divider lines up with the action rows above. */
   max-width: none;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   padding-top: var(--space-4);
   margin-top: var(--space-5);
 }
@@ -301,7 +301,7 @@
   gap: var(--space-2);
 }
 .version-counts dt {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .version-counts dd {
   margin: 0;
@@ -312,11 +312,11 @@
   flex-direction: column;
   max-height: min(20em, 45dvh);
   margin-block: var(--space-3);
-  border-block: 1px solid var(--line);
+  border-block: 1px solid var(--color-border);
 }
 .version-file {
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .version-file > div {
   display: flex;
@@ -330,7 +330,7 @@
 }
 .version-file p {
   margin: var(--space-2) 0 0;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 @container (max-width: 30em) {
   .version-folder {

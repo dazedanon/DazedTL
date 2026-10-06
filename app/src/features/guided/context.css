@@ -23,7 +23,7 @@
 }
 .context-section-heading > span,
 .context-section-heading h3 span {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
   font-weight: var(--weight-regular);
 }
@@ -31,7 +31,7 @@
   margin-left: var(--space-2);
 }
 .context-investigation .action-row {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   padding-top: var(--space-3);
 }
 .context-result-heading {
@@ -42,18 +42,18 @@
 }
 .context-result-heading > span:first-child {
   display: inline-flex;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .context-result-state {
   font-size: var(--font-small);
-  color: var(--muted);
+  color: var(--color-muted);
   font-weight: var(--weight-regular);
 }
 .context-result-state.saved {
   color: var(--color-success);
 }
 .context-result-state.working {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .context-result-state.failed {
   color: var(--color-error-text);
@@ -64,7 +64,7 @@
 }
 .context-observation-note,
 .context-references p {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
   line-height: 1.6;
 }
@@ -73,7 +73,7 @@
 }
 .context-references {
   padding-left: var(--space-6);
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--color-border);
 }
 .context-references .action-list + .action-list {
   margin-top: var(--space-3);
@@ -98,7 +98,7 @@
   align-items: center;
   gap: var(--space-3);
   margin-block: var(--space-3);
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .context-names-toolbar input {
@@ -116,11 +116,11 @@
   gap: var(--space-2);
   padding: var(--space-2);
   font-size: var(--font-control);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
   overflow-wrap: anywhere;
 }
 .context-name-row > span:first-child:not(:last-child) {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .context-detection-tabs {
   margin-bottom: var(--space-4);
@@ -132,7 +132,7 @@
   margin: var(--space-3) 0;
 }
 .context-layout-status {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .context-layout-actions {
@@ -149,7 +149,7 @@
 }
 .guided-speaker-findings > .context-finding {
   margin: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .context-finding:last-child {
   border-bottom: 0;
@@ -163,7 +163,7 @@
   list-style: none;
 }
 .context-finding > summary::before {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .context-finding-summary {
   display: grid;
@@ -185,14 +185,14 @@
   background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 .context-rule-state.disabled {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .badge.context-rule-manual {
   color: var(--color-warning);
   background: var(--color-warning-surface);
 }
 .context-finding-meta {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .context-finding-details {
@@ -223,7 +223,7 @@
 .context-measurement-sources {
   margin: 0;
   padding-block: var(--space-2) var(--space-3);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
 }
 .context-guidance-body {
   display: flex;
@@ -272,7 +272,7 @@
   .context-references {
     padding: var(--space-4) 0 0;
     border-left: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--color-border);
   }
   .context-layout .guided-widths {
     grid-template-columns: repeat(2, minmax(0, 10rem));

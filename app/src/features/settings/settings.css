@@ -9,7 +9,7 @@
   margin: 12px 0 0;
 }
 .settings-intro {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-control);
   margin: 0 0 20px;
 }
@@ -37,13 +37,13 @@
   gap: 9px;
   margin: 16px 0 0 173px;
   font-size: var(--font-small);
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .connection-keyless input {
   flex-shrink: 0;
 }
 .settings-advanced {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   padding-top: 18px;
   margin: 24px 0 0;
 }
@@ -56,7 +56,7 @@
 }
 .settings-note {
   font-size: var(--font-small);
-  color: var(--muted);
+  color: var(--color-muted);
   margin: 12px 0 16px;
   line-height: 1.6;
 }
@@ -85,20 +85,20 @@
 }
 .connection-address {
   overflow-wrap: anywhere;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .connection-status {
   display: flex;
   align-items: flex-start;
   gap: 10px;
   padding-top: 19px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
   font-size: var(--font-control);
 }
 .connection-status > svg {
   margin-top: 2px;
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .connection-status--good > svg {
   color: var(--color-success);
@@ -108,7 +108,7 @@
 }
 .connection-status p {
   margin: 5px 0;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
 }
 .connection-status small {
@@ -163,11 +163,11 @@
 }
 .effective-rates small {
   flex-basis: 100%;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .effective-rates p {
   margin: 0;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .model-defaults-error {
   display: flex;

@@ -18,7 +18,7 @@
   align-items: end;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
 }
 .native-editor-toolbar > label:first-child {
   min-width: 12rem;
@@ -67,7 +67,7 @@
   overflow-wrap: anywhere;
 }
 .native-editor-image-caption span {
-  color: var(--muted);
+  color: var(--color-muted);
   white-space: nowrap;
 }
 .native-editor-canvases {
@@ -89,14 +89,14 @@
 }
 .native-editor-canvases figcaption {
   padding: 0.25rem 0;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .native-editor-canvas-scroll {
   flex: 1;
   overflow: auto;
   min-height: 0;
   padding: 0.5rem;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-border);
   background-color: #e2e4e7;
   background-image:
     linear-gradient(45deg, #c8cbd1 25%, transparent 25%),
@@ -163,13 +163,13 @@
 .native-editor-details {
   overflow: auto;
   min-width: 0;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--color-border);
   padding: var(--space-3);
 }
 .native-editor-details section + section {
   margin-top: var(--space-4);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
 }
 .native-editor-details h3 {
   margin-top: 0;
@@ -273,6 +273,6 @@
   }
   .native-editor-details {
     border-left: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--color-border);
   }
 }

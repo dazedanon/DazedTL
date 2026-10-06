@@ -15,14 +15,14 @@
   font-size: var(--font-page-title);
 }
 .view-recovery p {
-  color: var(--muted);
+  color: var(--color-muted);
   line-height: 1.6;
   margin: 0 0 var(--space-5);
 }
 .topbar {
   height: var(--topbar-height);
   flex-shrink: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-border);
   background: var(--color-chrome);
   display: flex;
   align-items: center;
@@ -40,8 +40,8 @@
   width: 32px;
   height: 34px;
   border-radius: 8px;
-  background: var(--color-brand);
-  color: var(--color-brand-text);
+  background: var(--color-accent-strong);
+  color: var(--color-on-accent);
   display: grid;
   place-items: center;
   font-size: var(--font-control);
@@ -63,7 +63,7 @@
 }
 .connection {
   margin-left: auto;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: var(--font-small);
   display: flex;
   align-items: center;
@@ -76,7 +76,7 @@
   background: var(--color-success);
 }
 .connection i.disconnected {
-  background: var(--color-disconnected);
+  background: var(--color-error-text);
 }
 .app-body {
   display: flex;
@@ -88,7 +88,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--color-border);
   background: var(--color-chrome);
   padding: 22px 13px;
 }
@@ -104,21 +104,21 @@
   background: transparent;
   padding: 12px;
   font-size: var(--font-body);
-  color: var(--color-navigation);
+  color: var(--color-label);
 }
 .sidebar button[aria-current="page"] {
-  background: var(--color-navigation-selected);
-  color: var(--color-navigation-text);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
 }
 .sidebar-bottom {
   margin-top: auto;
   padding-top: 15px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-border);
 }
 .sidebar-feedback {
   margin: 0 12px 8px;
   font-size: var(--font-small);
-  color: var(--muted);
+  color: var(--color-muted);
 }
 /* Pages own their scrolling; main only frames them. Anything that is not a
    page (the app error banner, loading text, recovery panels) follows the
