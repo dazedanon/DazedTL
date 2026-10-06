@@ -248,6 +248,10 @@
   padding: 0;
   margin: var(--space-4) 0;
 }
+/* The form's grid gap spaces its fields, not the field rows' own margin. */
+.version-form > :is(.field-row, .check-field) + :is(.field-row, .check-field) {
+  margin-top: 0;
+}
 .version-form > label,
 .version-search {
   display: grid;

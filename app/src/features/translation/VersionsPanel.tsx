@@ -345,23 +345,18 @@ export function VersionsPanel({
                 </div>
               )}
             </FieldRow>
-            <label>
-              New game version
-              <input
-                value={nextVersion}
-                onChange={(event) => setNextVersion(event.target.value)}
-                placeholder="For example, 1.10"
-              />
-            </label>
+            <FieldRow id="update-version" label="New game version">
+              {(props) => (
+                <input
+                  {...props}
+                  value={nextVersion}
+                  onChange={(event) => setNextVersion(event.target.value)}
+                  placeholder="For example, 1.10"
+                />
+              )}
+            </FieldRow>
           </fieldset>
           <ActionSlot target={actionTarget}>
-            {control(
-              "stage_update",
-              "Prepare new release",
-              { official, version: nextVersion },
-              !official.trim() || !nextVersion.trim(),
-              true,
-            )}
             <Button
               variant="quiet"
               disabled={disabled}
@@ -372,6 +367,13 @@ export function VersionsPanel({
             >
               Cancel
             </Button>
+            {control(
+              "stage_update",
+              "Prepare new release",
+              { official, version: nextVersion },
+              !official.trim() || !nextVersion.trim(),
+              true,
+            )}
           </ActionSlot>
         </Section>
       ) : (
