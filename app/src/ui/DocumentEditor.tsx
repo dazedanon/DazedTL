@@ -10,6 +10,15 @@ const title = (name: string) =>
     quirks: "Translation quirks",
   })[name] || name.replace("custom:", "Skill: ");
 
+// The layout the engine reads from each guidance file, shown while it is empty.
+const formats: Record<string, string> = {
+  glossary:
+    "# Game Characters\nアリス (Alice) - Female. The heroine; polite, formal speech.\n\n# Terms\n魔導書 (Grimoire)",
+  quirks:
+    "- Battle log and system messages stay in the third person.\n- ゴンベエ's ござる endings read as archaic samurai speech.",
+  game: "世界観 (Theme / setting) - \n時代感 (Era / technology level) - \n文体方針 (Register policy) - \n固有名詞方針 (Naming policy) - ",
+};
+
 export function DocumentEditor({
   documents,
   drafts,
@@ -112,6 +121,7 @@ export function DocumentEditor({
             }
             rows={fill ? 4 : focused ? 9 : 16}
             spellCheck={false}
+            placeholder={formats[name]}
             value={document.text}
             onChange={(event) =>
               edit(name, event.target.value, document.revision)
