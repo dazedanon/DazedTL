@@ -245,8 +245,10 @@ export function TranslationReviewContent({
           )}
           <li>
             {repeatSubmission
-              ? "Earlier work may include this text; starting again may charge for it twice."
-              : "Starting submits paid API requests."}
+              ? `Earlier work may include this text; ${batch ? "submitting" : "starting"} again may charge for it twice.`
+              : batch
+                ? "Submitting sends paid API requests."
+                : "Starting submits paid API requests."}
           </li>
           {(job?.temporary || preview) && (
             <li>Decline discards this preparation.</li>

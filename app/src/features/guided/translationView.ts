@@ -401,8 +401,10 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   const noRequests =
     run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
   if (noRequests && !saved && !run.outputs?.[name]) return complete;
+  // A prepared run waiting for cost approval has not started work.
+  const awaiting = { ...idle, label: "Awaiting approval" };
   if (run.temporary) {
-    return activeWorker(run) ? { ...progress, pending: !run.approval } : idle;
+    return activeWorker(run) ? (run.approval ? awaiting : progress) : idle;
   }
   const rows = groupedRequests(
     run.process?.requests?.filter((row) => row.file === name) || [],
@@ -413,7 +415,7 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     run.process?.validationIssues?.some((issue) => issue.file === name);
   const working = activeWorker(run);
   if (!noRequests && (run.workerStatus ?? run.status) !== "complete") {
-    if (working && run.approval) return { ...progress, pending: false };
+    if (working && run.approval) return awaiting;
     const submitted = rows.filter((row) => row.state === "submitted");
     if (run.mode === "batch" && submitted.length) {
       // A retained submission protects against duplicate charges; it does not

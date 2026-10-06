@@ -332,7 +332,7 @@ export function PluginWorkspace({
         run(
           "plugin_task",
           {},
-          "Task copied. Paste it into your agent; saved progress appears here.",
+          "Task copied. Paste it into your assistant; saved progress appears here.",
         )
       }
     />
@@ -341,17 +341,17 @@ export function PluginWorkspace({
     <section className="plugin-workspace" aria-label="Plugin text workspace">
       <AssistantTask
         state={taskState}
-        help="Keep DazedTL open while your agent works. It continues through safe work automatically and asks only about unresolved choices."
+        help="Keep DazedTL open while your assistant works. It continues through safe work automatically and asks only about unresolved choices."
         description={
           taskState === "ready"
             ? counts.ready
               ? `${fileCount(counts.ready)} checked and ready to apply.`
               : `${fileCount(counts.applied)} applied to the game.`
             : taskState === "attention"
-              ? "Some investigation remains unresolved. Your agent can continue from the same task after resolving the reported issues."
+              ? "Some investigation remains unresolved. Your assistant can continue from the same task after resolving the reported issues."
               : taskState === "waiting"
-                ? "Results appear here after validation as your agent saves them."
-                : "Your agent investigates plugin text, translates confirmed display text and checks the results in one task."
+                ? "Results appear here after validation as your assistant saves them."
+                : "Your assistant investigates plugin text, translates confirmed display text and checks the results in one task."
         }
         results={[
           reportRow(

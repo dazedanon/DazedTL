@@ -82,6 +82,7 @@ export function historyOutcome(job: Job): HistoryOutcome {
           ? `${count(prepared, "request")} prepared`
           : "Approval required",
     };
+  const atProvider = job.mode === "batch" && !!job.phase?.startsWith("poll");
   if (activeRun(job))
     return {
       kind: "active",
@@ -90,10 +91,14 @@ export function historyOutcome(job: Job): HistoryOutcome {
           ? "Estimating"
           : job.phase === "poll_capacity"
             ? "Waiting for capacity"
-            : job.mode === "batch" && job.phase?.startsWith("poll")
+            : atProvider
               ? "At provider"
               : "In progress",
-      detail: evidence,
+      // Requests at the provider are submitted, not merely prepared.
+      detail:
+        atProvider && !output && !requestDetail && prepared != null
+          ? `${count(prepared, "request")} submitted`
+          : evidence,
     };
   if (needsSubmissionReview(job))
     return {
