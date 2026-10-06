@@ -693,22 +693,11 @@
 .guided-connection p {
   margin: 0;
 }
-.guided-mode {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.guided-mode button[aria-pressed="true"],
-.file-browser button[aria-pressed="true"] {
+.file-browser-toolbar button[aria-pressed="true"],
+.file-browser-search button[aria-pressed="true"] {
   background: var(--color-accent-subtle);
   color: var(--color-accent);
   border-color: var(--color-control-border);
-}
-/* A selected method stays recognizable after it becomes unavailable. */
-.guided-mode button[aria-pressed="true"]:disabled {
-  opacity: 1;
-  color: var(--color-muted);
-  border-style: dashed;
 }
 .guided-utilities {
   display: flex;
@@ -914,16 +903,13 @@
   min-width: 0;
 }
 .file-browser-groups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
   margin-top: var(--space-2);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--color-border);
 }
 .file-browser-groups button > span {
   color: var(--color-muted);
-  margin-left: var(--space-1);
+  margin-left: var(--space-2);
 }
 .file-browser-toolbar {
   display: flex;
@@ -1249,15 +1235,6 @@
 .event-text-picker-controls input {
   width: 100%;
   margin: var(--space-3) 0;
-}
-.event-text-picker-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.event-text-picker-filters [aria-pressed="true"] {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
 }
 .event-text-picker .event-text-picker-list {
   overflow: auto;

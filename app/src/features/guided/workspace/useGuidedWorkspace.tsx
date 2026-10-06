@@ -45,6 +45,7 @@ import {
   fileCount,
   jobTime,
 } from "./model";
+import { SegmentedControl } from "../../../ui/SegmentedControl";
 
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({
@@ -948,24 +949,18 @@ export function useGuidedWorkspace({
           Connection & model
         </Button>
       </div>
-      <div className="guided-mode" role="group" aria-label="Translation mode">
-        <Button
-          aria-pressed={mode === "translate"}
-          disabled={disabled}
-          onClick={() => edit("mode", "translate")}
-        >
-          Live API
-        </Button>
-        {state.provider.batchSupported && (
-          <Button
-            aria-pressed={mode === "batch"}
-            disabled={disabled}
-            onClick={() => edit("mode", "batch")}
-          >
-            Batch API
-          </Button>
-        )}
-      </div>
+      <SegmentedControl
+        label="Translation mode"
+        value={mode === "batch" ? "batch" : "translate"}
+        disabled={disabled}
+        onChange={(next) => edit("mode", next)}
+        options={[
+          { value: "translate", label: "Live API" },
+          ...(state.provider.batchSupported
+            ? [{ value: "batch" as const, label: "Batch API" }]
+            : []),
+        ]}
+      />
       {!state.provider.ready && (
         <p className="muted">Configure a connection before paid translation.</p>
       )}

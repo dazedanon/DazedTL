@@ -18,6 +18,7 @@ import {
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
 import { StatusIcon } from "../../ui/StatusIcon";
+import { SegmentedControl } from "../../ui/SegmentedControl";
 
 export function TranslateWorkspace({
   state,
@@ -95,32 +96,24 @@ export function TranslateWorkspace({
             {state.provider.model || "Choose a model"}
           </Button>
         </span>
-        <div
-          className="guided-mode"
-          role="group"
-          aria-label="Translation method"
-        >
-          <Button
-            disabled={disabled || locked || !state.provider.batchSupported}
-            title={
-              state.provider.batchSupported
+        <SegmentedControl
+          label="Translation method"
+          value={values.mode === "batch" ? "batch" : "translate"}
+          disabled={disabled || locked}
+          onChange={(mode) => change("mode", mode)}
+          options={[
+            {
+              value: "batch",
+              label: "Batch",
+              disabled: !state.provider.batchSupported,
+              title: state.provider.batchSupported
                 ? "Review Batch pricing before submitting"
                 : state.provider.batchReason ||
-                  "Unavailable for this connection"
-            }
-            aria-pressed={values.mode === "batch"}
-            onClick={() => change("mode", "batch")}
-          >
-            Batch
-          </Button>
-          <Button
-            disabled={disabled || locked}
-            aria-pressed={values.mode === "translate"}
-            onClick={() => change("mode", "translate")}
-          >
-            Live
-          </Button>
-        </div>
+                  "Unavailable for this connection",
+            },
+            { value: "translate", label: "Live" },
+          ]}
+        />
         <small className="translation-method-hint">
           {state.provider.batchSupported
             ? "Batch recommended · often 50% cheaper"

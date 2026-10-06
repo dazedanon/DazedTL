@@ -1120,3 +1120,40 @@ pre {
     animation: none;
   }
 }
+/* Segments share their borders, so the group reads as one choice. */
+.segmented-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.segmented-control > .ui-button {
+  border-radius: 0;
+}
+.segmented-control > .ui-button + .ui-button {
+  margin-inline-start: -1px;
+}
+.segmented-control > .ui-button:first-child {
+  border-start-start-radius: var(--control-radius);
+  border-end-start-radius: var(--control-radius);
+}
+.segmented-control > .ui-button:last-child {
+  border-start-end-radius: var(--control-radius);
+  border-end-end-radius: var(--control-radius);
+}
+.segmented-control > .ui-button:hover:not(:disabled),
+.segmented-control > .ui-button:focus-visible {
+  position: relative;
+}
+.segmented-control > .ui-button[aria-pressed="true"] {
+  position: relative;
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+/* A selected choice stays recognizable after it becomes unavailable. */
+.segmented-control > .ui-button[aria-pressed="true"]:disabled {
+  opacity: 1;
+  border-color: var(--color-control-border);
+  border-style: dashed;
+  color: var(--color-muted);
+}

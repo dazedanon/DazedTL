@@ -19,6 +19,7 @@ import {
   type FileGroup,
   type SelectionGesture,
 } from "./selection";
+import { SegmentedControl } from "../../ui/SegmentedControl";
 
 const groups = [
   ["all", "All files"],
@@ -195,26 +196,30 @@ export function FileSelection({
         </Button>
       </div>
       {!inline && (
-        <nav className="file-browser-groups" aria-label="File groups">
-          {groups.map(([value, label]) => (
-            <Button
-              key={value}
-              variant="quiet"
-              aria-pressed={group === value}
-              onClick={() => {
-                setGroup(value);
-                resetFilter();
-              }}
-            >
-              {label}{" "}
-              <span>
-                {value === "all"
-                  ? files.length
-                  : files.filter((file) => fileGroup(file) === value).length}
-              </span>
-            </Button>
-          ))}
-        </nav>
+        <div className="file-browser-groups">
+          <SegmentedControl
+            label="File groups"
+            value={group}
+            onChange={(value) => {
+              setGroup(value);
+              resetFilter();
+            }}
+            options={groups.map(([value, label]) => ({
+              value,
+              label: (
+                <>
+                  {label}
+                  <span>
+                    {value === "all"
+                      ? files.length
+                      : files.filter((file) => fileGroup(file) === value)
+                          .length}
+                  </span>
+                </>
+              ),
+            }))}
+          />
+        </div>
       )}
       <div className="file-browser-toolbar">
         <span>

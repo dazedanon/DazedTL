@@ -263,6 +263,10 @@
   min-height: 0;
   padding: var(--space-1);
 }
+.file-browser-inline .file-preview-control[aria-pressed="true"] {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
 .translation-file-status {
   display: flex;
   align-items: center;

@@ -444,6 +444,7 @@ The desktop window fits its display's work area in logical pixels.
 Every page centers one content column, `--content-width` in [tokens.css](../app/src/styles/tokens.css).
 Frame rows (page headers, stage strip, task tabs, scrolling bodies and footers) span the window and pad their content to that column; rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Windows 720px tall or shorter compact the top bar and footers; fill editors and file lists keep a minimum height, and the body scrolls instead of collapsing them.
+One choice among a few, such as Batch or Live and the file-group filters, uses [SegmentedControl](../app/src/ui/SegmentedControl.tsx), so it reads as one choice rather than separate actions.
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 Action lists that open from a button, such as the project switcher and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
 It retains typed values and keyboard selection without relying on the native datalist popup.

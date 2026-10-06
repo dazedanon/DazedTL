@@ -12,6 +12,7 @@ import {
   toggleChoice,
   type SourcePickerDraft,
 } from "./eventTextSelection";
+import { SegmentedControl } from "../../ui/SegmentedControl";
 
 export function EventTextPicker({
   projectId,
@@ -124,28 +125,20 @@ export function EventTextPicker({
           value={value.query}
           onChange={(event) => change({ query: event.target.value })}
         />
-        <div
-          className="event-text-picker-filters"
-          role="group"
-          aria-label="Filter source entries"
-        >
-          {(
-            [
-              ["recommended", "Recommended", recommended.length],
-              ["selected", "Selected", value.selected.length],
-              ["all", "All", row.choices.length],
-            ] as const
-          ).map(([filter, label, count]) => (
-            <Button
-              key={filter}
-              aria-pressed={value.filter === filter}
-              disabled={action.busy}
-              onClick={() => change({ filter })}
-            >
-              {label} ({count})
-            </Button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Filter source entries"
+          value={value.filter}
+          disabled={action.busy}
+          onChange={(filter) => change({ filter })}
+          options={[
+            {
+              value: "recommended",
+              label: `Recommended (${recommended.length})`,
+            },
+            { value: "selected", label: `Selected (${value.selected.length})` },
+            { value: "all", label: `All (${row.choices.length})` },
+          ]}
+        />
         {!!unsupported.length && (
           <div role="alert">
             <p>
