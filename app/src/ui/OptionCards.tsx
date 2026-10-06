@@ -25,7 +25,7 @@ export function OptionCards<T extends string>({
   options: readonly OptionCard<T>[];
   onChange: (value: T) => void;
   disabled?: boolean;
-  /** Focuses the chosen card, for a dialog that opens on this choice. */
+  /** Focuses the chosen card when its Modal opens on this choice. */
   autoFocus?: boolean;
   className?: string;
 }) {
@@ -39,7 +39,7 @@ export function OptionCards<T extends string>({
         <Button
           key={option.value}
           aria-pressed={value === option.value}
-          autoFocus={autoFocus && value === option.value}
+          data-autofocus={autoFocus && value === option.value ? "" : undefined}
           disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >

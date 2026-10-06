@@ -489,6 +489,7 @@ The model menu reads the connection's models only when opened and saves against 
 A long model list opens with a [MenuSearch](../app/src/ui/Menu.tsx) field focused, and Down moves into its matches; choosing a model saves it as the Settings default, which the feedback beside the menu says.
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Keyboard focus shows the shared `--focus-ring`; pointer focus adds no outline, and text fields mark focus with their border.
+A [Modal](../app/src/ui/Modal.tsx) opens with focus on its first control, or on a control marked `data-autofocus`, such as the chosen card; React's `autoFocus` runs before the dialog opens and is overridden.
 Shortcuts come from [useShortcut](../app/src/state/useShortcut.ts), scoped to the visible screen and the top dialog: the save key saves the open editor and Alt+Left/Right move between Guided tasks; nothing that spends, applies or packages gets a shortcut.
 ComboBox choice labels hide automatic text-selection highlighting while retaining select-to-replace search; typed queries and editable text keep normal selection behavior.
 Sized dialogs use [Modal](../app/src/ui/Modal.tsx)'s `size` with [DialogHeader and DialogBody](../app/src/ui/Dialog.tsx) and an ActionBar footer.

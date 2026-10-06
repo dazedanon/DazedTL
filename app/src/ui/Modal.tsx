@@ -25,6 +25,9 @@ export function Modal({
     const element = dialog.current!;
     const opener = document.activeElement;
     element.showModal();
+    // React focuses autoFocus children before the dialog opens, and showModal
+    // then moves focus to the first control; a marked control asks to start.
+    element.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => {
       element.close();
       const previous = focusTarget() || opener;
