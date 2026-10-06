@@ -88,15 +88,6 @@ export function TranslateWorkspace({
   return (
     <div className="translation-workspace">
       <div className="translation-toolbar" aria-label="Translation setup">
-        <span className="translation-model">
-          <span className="muted">Model</span>
-          <ModelMenu
-            model={state.provider.model}
-            connection={state.provider.connection}
-            disabled={locked}
-            manage={settings}
-          />
-        </span>
         <SegmentedControl
           label="Translation method"
           value={values.mode === "batch" ? "batch" : "translate"}
@@ -120,6 +111,17 @@ export function TranslateWorkspace({
             ? "Batch recommended · often 50% cheaper"
             : `Live · saves results as they arrive. ${state.provider.batchReason || "This connection does not support Batch."}`}
         </small>
+        {/* The model follows the method controls, so the note that a model
+            was saved grows into free space instead of moving them. */}
+        <span className="translation-model">
+          <span className="muted">Model</span>
+          <ModelMenu
+            model={state.provider.model}
+            connection={state.provider.connection}
+            disabled={locked}
+            manage={settings}
+          />
+        </span>
         <div className="translation-tools">
           <Button variant="quiet" onClick={history}>
             Run history

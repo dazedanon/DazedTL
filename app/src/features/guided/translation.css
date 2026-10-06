@@ -687,11 +687,18 @@
   }
 }
 .translation-model {
+  order: 1;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--color-border);
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
   min-width: 0;
   font-size: var(--font-control);
+}
+/* Its check icon has no text baseline, which would lift the note. */
+.translation-model > .feedback {
+  align-self: center;
 }
 .translation-model > .ui-button {
   overflow-wrap: anywhere;
