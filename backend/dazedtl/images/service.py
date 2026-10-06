@@ -52,6 +52,25 @@ def text(value, label, maximum=4000):
     return value
 
 
+# Stored report records also bind their report file, hash and counts, which
+# only result checks read.
+REPORT_KEYS = (
+    "status",
+    "lastReport",
+    "reportId",
+    "requestId",
+    "message",
+    "errors",
+    "scope",
+    "folders",
+    "copiedAt",
+)
+
+
+def report_view(value):
+    return {key: deepcopy(value[key]) for key in REPORT_KEYS if key in value}
+
+
 class ImageService:
     def __init__(self, projects, translation, settings, backend, *, adapter=None):
         self.projects, self.translation, self.settings, self.backend = (
@@ -189,8 +208,8 @@ class ImageService:
                 "folders": index.folders(),
                 "selection": deepcopy(value["selection"]),
                 "view": deepcopy(value["view"]),
-                "discovery": deepcopy(value["discovery"]),
-                "editing": deepcopy(value["editing"]),
+                "discovery": report_view(value["discovery"]),
+                "editing": report_view(value["editing"]),
                 "receipts": deepcopy(value["receipts"]),
                 "warnings": deepcopy(value["warnings"]),
                 **(
@@ -1598,18 +1617,21 @@ class ImageService:
         for old_token, old in list(self.previews.items()):
             if time.monotonic() - old["created"] > 900:
                 self.previews.pop(old_token, None)
+        # The review lists destinations; the full rows stay in the plan.
+        review = ("id", "path", "destination", "sourceHash", "candidateHash")
         preview = {
             "token": token,
             "action": action,
-            "assets": [self._public(row) for row in included],
+            "assets": [
+                {key: public.get(key, "") for key in review}
+                for public in (self._public(row) for row in included)
+            ],
             "blocked": blocked,
             "included": len(included),
             "count": len(included),
-            "selected": len(identities),
             "unchanged": unchanged,
             "backups": [row.get("runtimeBackup", "") for row in included],
             "expires": (datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
-            "message": "If any included image fails validation, this batch is not applied.",
         }
         return {"state": self.state(project_id), "preview": preview}
 

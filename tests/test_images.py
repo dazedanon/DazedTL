@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.api.contracts.validation import check_response
 from dazedtl.images import ImageService
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
@@ -327,7 +328,10 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(
             (self.game / ".dazedtl/images/img/A.png").read_bytes(), candidate
         )
-        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        reviewed = self.service.action(self.identity, "preview_apply")
+        # The review must match the contract the renderer validates.
+        check_response("images_action", reviewed)
+        preview = reviewed["preview"]
         self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
         self.assertEqual(
