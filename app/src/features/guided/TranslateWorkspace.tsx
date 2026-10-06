@@ -8,6 +8,7 @@ import type {
 import { Button } from "../../ui/Button";
 import { FileSelection } from "./FileSelection";
 import {
+  activeRun,
   filePreviewRun,
   fileRun,
   fileLines,
@@ -133,15 +134,20 @@ export function TranslateWorkspace({
         <section
           className="translation-files"
           aria-label="Translation files"
-          data-metrics={rows.some(
-            (row) =>
-              fileMetricRun(
-                state.runs,
-                phase,
-                row.name,
-                state.sourceStatus.retired,
-              )?.process?.fileMetrics?.[row.name],
-          )}
+          // A Live run records cost and time as files finish, so its
+          // columns appear when it starts rather than shifting mid-run.
+          data-metrics={
+            (activeRun(run) && run?.mode !== "batch") ||
+            rows.some(
+              (row) =>
+                fileMetricRun(
+                  state.runs,
+                  phase,
+                  row.name,
+                  state.sourceStatus.retired,
+                )?.process?.fileMetrics?.[row.name],
+            )
+          }
         >
           <FileSelection
             state={{ ...state, files: rows }}
@@ -193,14 +199,18 @@ export function TranslateWorkspace({
                     <span
                       className="translation-file-lines"
                       title={
-                        lines.total
-                          ? "Lines saved of the lines the latest run prepared"
-                          : "Line counts appear once a run prepares this file"
+                        lines.running
+                          ? "Lines saved so far; the total is known when the run ends"
+                          : lines.total
+                            ? "Lines saved of the lines the latest run prepared"
+                            : "Line counts appear once a run prepares this file"
                       }
                     >
-                      {lines.total
-                        ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`
-                        : "-"}
+                      {lines.running
+                        ? `${lines.done.toLocaleString()} so far`
+                        : lines.total
+                          ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`
+                          : "-"}
                     </span>
                     <span className={`translation-file-status ${status.tone}`}>
                       <StatusIcon

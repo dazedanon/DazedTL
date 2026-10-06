@@ -1978,4 +1978,11 @@ test("file line amounts count each source request once at its latest attempt", (
     { done: 40, total: 40 },
   );
   assert.deepEqual(lines(state([])), { done: 0, total: null });
+  // A running Live run prepares requests as it goes; its total is unknown
+  // until it ends, so no denominator grows under the reader.
+  assert.deepEqual(lines(state([{ ...run, status: "running" }])), {
+    done: 40,
+    total: null,
+    running: true,
+  });
 });

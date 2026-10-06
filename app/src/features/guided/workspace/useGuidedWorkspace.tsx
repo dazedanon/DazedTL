@@ -31,7 +31,8 @@ import {
   sourceErrors,
 } from "../eventTextSelection";
 import { guidanceNames, saveGuidanceSet } from "../guidanceReview";
-import { observedRun } from "../translationView";
+import { historyOutcome } from "../historyView";
+import { activeRun, observedRun } from "../translationView";
 import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
@@ -76,6 +77,36 @@ export function useGuidedWorkspace({
   };
   useOnChange(draft.value, retireError);
   useOnChange(form.value, retireError);
+  // A run started here that ends replaces an earlier run notice with its
+  // outcome, so the footer never keeps saying an estimate was declined after
+  // work finished. Older runs whose saved status is corrected after a restart
+  // are not announced.
+  const [opened] = useState(() => Date.now());
+  const runStates = state.runs
+    .filter((run) => !run.temporary && run.mode !== "estimate")
+    .map((run) => `${run.id}:${run.status}`)
+    .join(" ");
+  useOnChange(runStates, (_, before) => {
+    const earlier = new Map(
+      before
+        .split(" ")
+        .filter(Boolean)
+        .map((entry) => entry.split(":") as [string, string]),
+    );
+    const ended = state.runs.find(
+      (run) =>
+        ["ready", "running", "waiting"].includes(earlier.get(run.id) || "") &&
+        !activeRun(run) &&
+        Date.parse(run.created || "") >= opened,
+    );
+    if (ended && !action.busy) {
+      const outcome = historyOutcome(ended);
+      action.succeed(
+        `Run finished · ${outcome.detail || outcome.label}`,
+        "run:finished",
+      );
+    }
+  });
   const stages = stagesFor(state.engine);
   const position = initialPosition(state, translation);
   const stage = stages.find((item) => item.id === position.step)!;

@@ -78,8 +78,15 @@ export function phaseView(w: GuidedWorkspace): TaskView {
     activeRun(localEstimate) ||
     translationFlow.active ||
     !!pendingBatches.length;
-  const applyFiles = selectedNames.filter((name) =>
-    state.readiness.outputs.includes(name),
+  // A file a Live run is still translating has only partial output to apply.
+  const applyFiles = selectedNames.filter(
+    (name) =>
+      state.readiness.outputs.includes(name) &&
+      !(
+        activeRun(current) &&
+        current?.mode !== "batch" &&
+        current?.files?.includes(name)
+      ),
   );
   const noRemainingWork = estimateEmpty(quote);
 
@@ -214,9 +221,12 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         {applyFiles.length ? ` · ${applyFiles.length} saved` : ""}
       </strong>
       <small>
-        {(["translate:prepare", "run:answer:false", "run:stop"].includes(
-          action.key,
-        ) &&
+        {([
+          "translate:prepare",
+          "run:answer:false",
+          "run:stop",
+          "run:finished",
+        ].includes(action.key) &&
           action.notice) ||
           translationFlow.notice ||
           guidance}

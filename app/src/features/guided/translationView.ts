@@ -235,13 +235,15 @@ export function settledWithoutRequests(
  * A file's translated and total lines from the engine's own receipts: the
  * lines its latest run saved, out of the lines that run prepared. A saved
  * "nothing to translate" check closes the file at what is done. Estimates
- * carry no per-file lines, so without a run the amounts stay unknown.
+ * carry no per-file lines, so without a run the amounts stay unknown. A Live
+ * run prepares requests as it goes, so while it works only the saved lines
+ * are known; `running` marks that partial count.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
-): { done: number; total: number | null } {
+): { done: number; total: number | null; running?: boolean } {
   const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
   // One row per source request, at its latest attempt; duplicates never count.
   const rows =
@@ -257,6 +259,8 @@ export function fileLines(
   );
   if (settledWithoutRequests(state, phase, name, run))
     return { done, total: done };
+  if (run && run.mode !== "batch" && activeWorker(run))
+    return { done, total: null, running: true };
   return { done, total: rows.length ? sum(rows) : null };
 }
 /** Run-scoped tasks are also complete when every selected file needs nothing. */
