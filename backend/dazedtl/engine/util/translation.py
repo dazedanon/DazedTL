@@ -28,6 +28,7 @@ from retry import retry
 from util.paths import DATA_DIR, read_active_glossary
 from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
 from util import request_debug
+from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias
 
@@ -2213,6 +2214,7 @@ def _estimate_openai_cache_reads(prompt_token_sequences):
     return cached_tokens
 
 
+@extensions.point
 def estimateCostComparison(
     input_tokens,
     output_tokens,
@@ -2259,6 +2261,7 @@ def estimateCostComparison(
     }
 
 
+@extensions.point
 def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     """Print a cost estimate for the queued batch requests and return it.
 
@@ -2502,6 +2505,7 @@ def _estimate_openai_batch_input_tokens(params):
     return (tokens * 105 + 99) // 100 + 32
 
 
+@extensions.point
 def _openai_batch_token_limit():
     value = os.getenv("openaiBatchTokenLimit", str(OPENAI_BATCH_SEQUENTIAL_ENQUEUED_TOKEN_LIMIT))
     try:
@@ -3408,6 +3412,7 @@ _pricing_db_lock = threading.Lock()
 _pricing_fetch_warned: bool = False  # print fetch-failure warning at most once per session
 
 
+@extensions.point
 def _load_litellm_pricing() -> dict | None:
     """Return the LiteLLM pricing DB, using a 24-hour disk cache."""
     global _pricing_db, _pricing_db_fetched_at, _pricing_fetch_warned
@@ -4380,6 +4385,7 @@ def _is_official_openai_api(api_provider=None, api_url=None):
     return (urlparse(endpoint).hostname or "").lower() == "api.openai.com"
 
 
+@extensions.point
 def _translation_completion_limit(
     user,
     ceiling=MAX_TRANSLATION_OUTPUT_TOKENS,
@@ -4556,6 +4562,7 @@ def _provider_user_messages(user, history, context_kind,
     return messages
 
 
+@extensions.point
 def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
                        vocab_text="", context_kind=CONTEXT_SOURCE,
                        request_instructions=None, cache_ttl="5m"):
@@ -4597,6 +4604,7 @@ def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
     return ant_kwargs
 
 
+@extensions.point
 def buildOpenAIRequest(system, user, history, penalty, formatType, model,
                        numLines=None, vocab_text="", api_provider=None,
                        context_kind=CONTEXT_SOURCE,
@@ -5218,6 +5226,7 @@ def begin_file_cost_tracking(model=None):
     )
 
 
+@extensions.point
 def calculateCost(inputTokens, outputTokens, model):
     """
     Calculate the cost of translation based on token usage and model pricing.
@@ -5374,6 +5383,7 @@ def _retry_live_translation(func):
     return wrapped
 
 
+@extensions.point
 @_cache_reservation_scope()
 @_retry_live_translation
 def translateAI(text, history, config, filename=None, pbar=None, lock=None,

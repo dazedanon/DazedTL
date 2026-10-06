@@ -98,7 +98,11 @@ def resolve(cache, model, online):
             write_json(cache, cached)
         except httpx.HTTPError, ValueError, OSError:
             pass
-    translation._load_litellm_pricing = lambda: cached["prices"] if cached else None
+
+    # The catalog read above has its own limits; the engine must not fetch again.
+    translation._load_litellm_pricing.layer(
+        "frozen-prices", lambda _native: cached["prices"] if cached else None
+    )
     catalog_rate = translation._lookup_model_price(model)
     config = translation.getPricingConfig(model)
     valid_rates = all(

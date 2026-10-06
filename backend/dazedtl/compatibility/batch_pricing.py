@@ -2,22 +2,15 @@
 
 import math
 import re
-from functools import wraps
-from typing import Any, cast
+from typing import cast
 
 
 def configure(translation, enabled):
-    native = getattr(translation, "estimateBatchCost", None)
-    if native is None:
-        return
-    if getattr(native, "_dazedtl_cache_pricing", False) is True:
-        native = native.__wrapped__
     if not enabled:
-        translation.estimateBatchCost = native
+        translation.estimateBatchCost.remove("cache-pricing")
         return
 
-    @wraps(native)
-    def estimate(*args, **kwargs):
+    def estimate(native, *args, **kwargs):
         value = native(*args, **kwargs)
         if not isinstance(value, dict) or value.get("provider") != "openai":
             return value
@@ -80,5 +73,4 @@ def configure(translation, enabled):
             ),
         }
 
-    cast(Any, estimate)._dazedtl_cache_pricing = True
-    translation.estimateBatchCost = estimate
+    translation.estimateBatchCost.layer("cache-pricing", estimate)

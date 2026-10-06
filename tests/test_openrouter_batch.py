@@ -1,6 +1,5 @@
 """Inline transport, retained receipts, and absolute Batch prices without APIs."""
 
-import importlib.util
 import json
 import sys
 import unittest
@@ -16,6 +15,8 @@ from dazedtl.compatibility import openrouter_pricing
 from dazedtl.settings import openrouter
 from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.requests import quote
+
+from tests.engine import EXTENSIONS, engine_module, point
 
 MODEL = "author/model"
 POLICY = {
@@ -68,17 +69,8 @@ class OpenRouterBatchTests(unittest.TestCase):
         # Exercise the preserved serializer/normalizer without loading SDKs or
         # tokenizers in the unit-test process; the existing engine probe tests
         # real runtime installation in its already-budgeted isolated process.
-        engine = Path(__file__).resolve().parents[1] / "backend/dazedtl/engine/util"
-
-        def load(name):
-            path = engine / f"{name}.py"
-            spec = importlib.util.spec_from_file_location(f"fixture_{name}", path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            return module
-
         cls.package = ModuleType("util")
-        cls.package.extensions = load("extensions")
+        cls.package.extensions = EXTENSIONS
         with patch.dict(
             sys.modules,
             {
@@ -88,7 +80,9 @@ class OpenRouterBatchTests(unittest.TestCase):
                 "util.extensions": cls.package.extensions,
             },
         ):
-            cls.native = cls.package.batch_providers = load("batch_providers")
+            cls.native = cls.package.batch_providers = engine_module(
+                "util/batch_providers.py"
+            )
 
     def setUp(self):
         self.modules = patch.dict(
@@ -395,7 +389,7 @@ class OpenRouterBatchTests(unittest.TestCase):
             "batch_cost": 0.0011,
         }
         history = ModuleType("util.batch_history")
-        history._price_usage = self.package.extensions.point(lambda *_: 999)
+        history._price_usage = point(lambda *_: 999)
         local = SimpleNamespace(
             file_batch_regular=100,
             file_batch_output=20,
@@ -406,16 +400,16 @@ class OpenRouterBatchTests(unittest.TestCase):
         import threading
 
         translation = SimpleNamespace(
-            estimateCostComparison=lambda *_: native_value,
+            estimateCostComparison=point(lambda *_: native_value),
             _thread_local=local,
             getPricingConfig=lambda _: {"inputAPICost": 2, "outputAPICost": 8},
             cache_write_multiplier=lambda *_: 1,
             get_batch_phase=lambda: "consume",
             _global_accurate_cost_lock=threading.Lock(),
             _global_accurate_cost=0,
-            translateAI=lambda: None,
-            calculateCost=lambda *_: (
-                ((100 + 30 * 0.1 + 10) * 2 + 20 * 8) * 0.5 / 1_000_000
+            translateAI=point(lambda: None),
+            calculateCost=point(
+                lambda *_: ((100 + 30 * 0.1 + 10) * 2 + 20 * 8) * 0.5 / 1_000_000
             ),
         )
         with patch.dict(sys.modules, {"util.batch_history": history}):

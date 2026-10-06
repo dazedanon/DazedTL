@@ -142,12 +142,8 @@ def anthropic_download(native, client, batch_id, custom_ids):
 
 def install():
     """Mark refused Batch results so collection can retry or review them."""
-    from util import batch_history, batch_providers, extensions
+    from util import batch_history, batch_providers
 
-    extensions.layer(batch_providers._openai_result, "refusals", openai_result)
-    extensions.layer(
-        batch_history._result_entry_from_message, "refusals", anthropic_entry
-    )
-    extensions.layer(
-        batch_providers._download_anthropic, "refusals", anthropic_download
-    )
+    batch_providers._openai_result.layer("refusals", openai_result)
+    batch_history._result_entry_from_message.layer("refusals", anthropic_entry)
+    batch_providers._download_anthropic.layer("refusals", anthropic_download)

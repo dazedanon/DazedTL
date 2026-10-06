@@ -27,21 +27,21 @@ from .run_evidence import Evidence
 
 
 def configure_batch_allowance(translation, policy):
-    native = getattr(
-        translation._openai_batch_token_limit,
-        "_dazedtl_native",
-        translation._openai_batch_token_limit,
-    )
     allowance = batch_input_tokens((policy or {}).get("batchInputTokens"))
     if allowance is None:
-        translation._openai_batch_token_limit = native
+        translation._openai_batch_token_limit.remove("allowance")
     else:
+        translation._openai_batch_token_limit.layer(
+            "allowance", lambda _native: allowance
+        )
 
-        def limit():
-            return allowance
 
-        limit._dazedtl_native = native
-        translation._openai_batch_token_limit = limit
+def configure_prices(translation, prices):
+    """Frozen rates replace the catalog, including after its normal cache TTL."""
+    if prices is None:
+        translation._load_litellm_pricing.remove("frozen-prices")
+    else:
+        translation._load_litellm_pricing.layer("frozen-prices", lambda _native: prices)
 
 
 def configure_states(plan, root, policy):
@@ -67,9 +67,7 @@ def configure_states(plan, root, policy):
 def install(*, coordinator=False):
     from desktop.backend import manual_environment
 
-    native_prepare = manual_environment.prepare
-
-    def prepare(root):
+    def prepare(native_prepare, root):
         plan = json.loads((Path(root) / "plan.json").read_text(encoding="utf-8"))
         policy = plan.get("dazedtl_request_policy")
         grouping_root = root
@@ -123,6 +121,7 @@ def install(*, coordinator=False):
 
             openrouter_pricing.configure(translation, None)
             configure_batch_allowance(translation, None)
+            configure_prices(translation, None)
             batch_pricing.configure(translation, False)
             configure_builders(translation, None)
             translation.STRICT_STRUCTURED_OUTPUTS = False
@@ -183,9 +182,7 @@ def install(*, coordinator=False):
 
         openrouter_pricing.configure(translation, router_policy)
         configure_batch_allowance(translation, policy)
-
-        # Long-running batches must retain these rates after the normal cache TTL.
-        translation._load_litellm_pricing = lambda: prices
+        configure_prices(translation, prices)
         batch_pricing.configure(translation, True)
         translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         record = None
@@ -215,4 +212,4 @@ def install(*, coordinator=False):
         install_worker(grouping_root, {**plan, "dazedtl_request_policy": policy})
         return result
 
-    manual_environment.prepare = prepare
+    manual_environment.prepare.layer("request-policy", prepare)

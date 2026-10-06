@@ -5,10 +5,12 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from util import extensions
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@extensions.point
 def prepare(root):
     root = Path(root).resolve()
     plan = json.loads((root / "plan.json").read_text(encoding="utf-8"))

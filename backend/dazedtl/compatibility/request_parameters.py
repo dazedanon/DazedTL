@@ -1,8 +1,6 @@
 """Omit legacy generation overrides that the app's preferences do not expose."""
 
-from functools import wraps
 from inspect import signature
-from typing import Any, cast
 
 from dazedtl.settings.preferences import GENERATION_PARAMETERS, output_tokens
 from dazedtl.settings.providers import openrouter_host as validate_host
@@ -82,6 +80,9 @@ def completion_budget(params, allowance):
     return {**params, key: allowance}
 
 
+LAYER = "request-parameters"
+
+
 def configure_builders(
     translation,
     policy,
@@ -93,60 +94,48 @@ def configure_builders(
     batch=False,
     openrouter_batch=None,
 ):
-    output_tokens(max_output_tokens)
-    limit = getattr(translation, "_translation_completion_limit", None)
-    if limit is not None:
-        native_limit = getattr(limit, "_dazedtl_output_native", limit)
-        if max_output_tokens is None:
-            translation._translation_completion_limit = native_limit
-        else:
-            # Mistral also calls this helper after building its SDK payload.
-            # The policy belongs to one isolated worker, including file workers.
-            @wraps(native_limit)
-            def frozen_limit(*_args, **_kwargs):
-                return max_output_tokens
 
-            cast(Any, frozen_limit)._dazedtl_output_native = native_limit
-            translation._translation_completion_limit = frozen_limit
+    output_tokens(max_output_tokens)
+    if max_output_tokens is None:
+        translation._translation_completion_limit.remove(LAYER)
+    else:
+        # Mistral also calls this helper after building its SDK payload.
+        # The policy belongs to one isolated worker, including file workers.
+        translation._translation_completion_limit.layer(
+            LAYER, lambda _native, *_args, **_kwargs: max_output_tokens
+        )
     for name in ("buildOpenAIRequest", "buildClaudeRequest"):
         builder = getattr(translation, name)
-        if getattr(builder, "_dazedtl_provider_defaults", False):
-            builder = builder.__wrapped__
         if (
-            policy is not None
-            or openrouter_host
-            or max_output_tokens is not None
-            or structured_outputs
+            policy is None
+            and not openrouter_host
+            and max_output_tokens is None
+            and not structured_outputs
         ):
-            call_signature = signature(builder)
+            builder.remove(LAYER)
+            continue
+        call_signature = signature(builder)
 
-            @wraps(builder)
-            def defaulted(
-                *args, _builder=builder, _name=name, _signature=call_signature, **kwargs
-            ):
-                params = provider_defaults(_builder(*args, **kwargs), policy)
-                params = completion_budget(params, max_output_tokens)
-                if _name == "buildOpenAIRequest":
-                    if structured_outputs:
-                        arguments = _signature.bind(*args, **kwargs).arguments
-                        if (
-                            arguments.get("formatType") == "json"
-                            and arguments.get("numLines") is not None
-                        ):
-                            params = structured_output(
-                                params,
-                                translation.createTranslationSchema(
-                                    arguments["numLines"]
-                                ),
-                                live=not batch,
-                            )
-                    params = host_routing(params, openrouter_host)
-                    if structured_outputs and batch:
-                        params = batch_routing(params, openrouter_batch)
-                if record is not None:
-                    record(params)
-                return params
+        def defaulted(native, *args, _name=name, _signature=call_signature, **kwargs):
+            params = provider_defaults(native(*args, **kwargs), policy)
+            params = completion_budget(params, max_output_tokens)
+            if _name == "buildOpenAIRequest":
+                if structured_outputs:
+                    arguments = _signature.bind(*args, **kwargs).arguments
+                    if (
+                        arguments.get("formatType") == "json"
+                        and arguments.get("numLines") is not None
+                    ):
+                        params = structured_output(
+                            params,
+                            translation.createTranslationSchema(arguments["numLines"]),
+                            live=not batch,
+                        )
+                params = host_routing(params, openrouter_host)
+                if structured_outputs and batch:
+                    params = batch_routing(params, openrouter_batch)
+            if record is not None:
+                record(params)
+            return params
 
-            cast(Any, defaulted)._dazedtl_provider_defaults = True
-            builder = defaulted
-        setattr(translation, name, builder)
+        builder.layer(LAYER, defaulted)

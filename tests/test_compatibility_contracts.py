@@ -1,6 +1,5 @@
 """Focused contracts at the maintained-engine boundary, without importing a sibling checkout."""
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -34,18 +33,14 @@ from dazedtl.storage import write_json
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
+from tests.engine import engine_module, point
+
 
 class CompatibilityContracts(unittest.TestCase):
     def test_engine_extension_layers_reach_aliases_and_reconfigure_in_place(self):
         # Host wrappers used to reassign module attributes: aliases bound at
         # import missed them, and repeated configuration stacked duplicates.
-        path = (
-            Path(__file__).resolve().parents[1]
-            / "backend/dazedtl/engine/util/extensions.py"
-        )
-        spec = importlib.util.spec_from_file_location("fixture_extensions", path)
-        extensions = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(extensions)
+        extensions = engine_module("util/extensions.py")
 
         @extensions.point
         def native(value):
@@ -56,12 +51,12 @@ class CompatibilityContracts(unittest.TestCase):
         def tag(label):
             return lambda call, value: [*call(value), label]
 
-        extensions.layer(native, "inner", tag("inner"))
-        extensions.layer(native, "outer", tag("outer"))
-        extensions.layer(native, "inner", tag("again"))
+        native.layer("inner", tag("inner"))
+        native.layer("outer", tag("outer"))
+        native.layer("inner", tag("again"))
         self.assertEqual(alias(1), [1, "again", "outer"])
-        extensions.remove(native, "inner")
-        extensions.remove(native, "outer")
+        native.remove("inner")
+        native.remove("outer")
         self.assertEqual(alias(1), [1])
 
         class Task:
@@ -69,7 +64,7 @@ class CompatibilityContracts(unittest.TestCase):
             def run(self):
                 return "native"
 
-        extensions.layer(Task().run, "host", lambda call, task: "host " + call(task))
+        Task().run.layer("host", lambda call, task: "host " + call(task))
         self.assertEqual(Task().run(), "host native")
 
     def test_frozen_worker_defaults_preserve_payloads_and_legacy_recovery(self):
@@ -122,10 +117,15 @@ class CompatibilityContracts(unittest.TestCase):
                 "reasoning_effort": "none",
             }
 
-        translation.buildOpenAIRequest = translation.buildClaudeRequest = native
-        translation._translation_completion_limit = lambda *_args, **_kwargs: 8192
-        translation._openai_batch_token_limit = lambda: 600_000
-        native_allowance = translation._openai_batch_token_limit
+        translation.buildOpenAIRequest = point(native)
+        translation.buildClaudeRequest = point(native)
+        translation._translation_completion_limit = point(
+            lambda *_args, **_kwargs: 8192
+        )
+        translation._openai_batch_token_limit = point(lambda: 600_000)
+        translation._load_litellm_pricing = point(lambda: None)
+        for name in ("estimateCostComparison", "translateAI", "calculateCost"):
+            setattr(translation, name, point(Mock()))
         quote = {
             "model": "gpt-6.1-sol",
             "provider": "openai",
@@ -138,7 +138,7 @@ class CompatibilityContracts(unittest.TestCase):
             "batch_cached_cost": 0.0460658,
         }
         native_estimate = Mock(return_value=quote)
-        translation.estimateBatchCost = native_estimate
+        translation.estimateBatchCost = point(native_estimate)
 
         def pricing(model):
             rates = translation._load_litellm_pricing()[model]
@@ -149,7 +149,7 @@ class CompatibilityContracts(unittest.TestCase):
 
         translation.getPricingConfig = pricing
         native_prepare = Mock(return_value="prepared")
-        environment.prepare = native_prepare
+        environment.prepare = point(native_prepare)
         modules = {
             module.__name__: module
             for module in (desktop, backend, environment, util, translation)
@@ -313,7 +313,7 @@ class CompatibilityContracts(unittest.TestCase):
                     plan["dazedtl_request_policy"] = legacy
                 write_json(root / "plan.json", plan)
                 environment.prepare(root)
-                self.assertIs(translation._openai_batch_token_limit, native_allowance)
+                self.assertEqual(translation._openai_batch_token_limit(), 600_000)
                 self.assertEqual(
                     translation.buildOpenAIRequest("gpt-6.1-sol"), native("gpt-6.1-sol")
                 )
@@ -321,7 +321,7 @@ class CompatibilityContracts(unittest.TestCase):
                     translation._translation_completion_limit("short text"), 8192
                 )
                 if legacy is None:
-                    self.assertIs(translation.estimateBatchCost, native_estimate)
+                    self.assertIs(translation.estimateBatchCost(), quote)
             plan["dazedtl_request_policy"] = {
                 **policy,
                 "generationParameters": "unsupported-future-policy",

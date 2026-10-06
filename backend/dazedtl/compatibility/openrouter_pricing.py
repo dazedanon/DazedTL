@@ -1,8 +1,6 @@
 """Use frozen absolute Batch rates without changing native parser accounting."""
 
-import sys
-from functools import wraps
-from typing import Any, cast
+LAYER = "openrouter-pricing"
 
 
 def batch_cost(policy, regular, output, reads=0, writes=0):
@@ -17,48 +15,19 @@ def batch_cost(policy, regular, output, reads=0, writes=0):
 
 
 def configure(translation, policy):
-    # Repeated prepare calls must restore, not stack, the accounting adapter.
-    names = ("estimateCostComparison", "translateAI", "calculateCost")
-    originals = {}
-    for name in names:
-        function = getattr(translation, name, None)
-        if function is None:
-            continue
-        if getattr(function, "_dazedtl_openrouter_pricing", False):
-            function = function.__wrapped__
-        originals[name] = function
-        setattr(translation, name, function)
-
-    def parser_aliases():
-        # Parsers import helpers by value during native prepare. Update those
-        # exact aliases as well, so file totals cannot retain the old discount.
-        for name, module in tuple(sys.modules.items()):
-            if name.startswith("modules.") and module is not None:
-                for alias, source in (
-                    ("calculateCost", "calculateCost"),
-                    ("sharedtranslateAI", "translateAI"),
-                    ("translateAI", "translateAI"),
-                ):
-                    current = getattr(module, alias, None)
-                    if current is not None and (
-                        current is originals.get(source)
-                        or getattr(current, "_dazedtl_openrouter_pricing", False)
-                    ):
-                        setattr(module, alias, getattr(translation, source))
-
+    """Parsers share these extension points, so file totals use the same rates."""
+    points = (
+        translation.estimateCostComparison,
+        translation.translateAI,
+        translation.calculateCost,
+    )
     if policy is None:
-        parser_aliases()
+        for point in points:
+            point.remove(LAYER)
         return
 
-    def wrap(name, function):
-        if name not in originals:
-            return
-        decorated = wraps(originals[name])(function)
-        cast(Any, decorated)._dazedtl_openrouter_pricing = True
-        setattr(translation, name, decorated)
-
-    def comparison(*args, **kwargs):
-        value = originals["estimateCostComparison"](*args, **kwargs)
+    def comparison(native, *args, **kwargs):
+        value = native(*args, **kwargs)
         if (
             value.get("provider") == "openrouter"
             and value.get("model") == policy["model"]
@@ -91,9 +60,9 @@ def configure(translation, policy):
             / 1_000_000
         )
 
-    def translate(*args, **kwargs):
+    def translate(native, *args, **kwargs):
         before = counters()
-        value = originals["translateAI"](*args, **kwargs)
+        value = native(*args, **kwargs)
         if translation.get_batch_phase() == "consume":
             delta = tuple(after - old for after, old in zip(counters(), before))
             # Native translateAI charges the same token deltas at half of the
@@ -114,12 +83,12 @@ def configure(translation, policy):
                 translation._global_accurate_cost += correction
         return value
 
-    def calculate(input_tokens, output_tokens, model):
+    def calculate(native, input_tokens, output_tokens, model):
         values = counters()
         per_file = getattr(
             translation._thread_local, "file_cost_window_active", False
         ) or getattr(translation._thread_local, "file_cost_ready", False)
-        value = originals["calculateCost"](input_tokens, output_tokens, model)
+        value = native(input_tokens, output_tokens, model)
         if (
             model == policy["model"]
             and translation.get_batch_phase() == "consume"
@@ -128,14 +97,11 @@ def configure(translation, policy):
             value += batch_cost(policy, *values) - native_cost(model, values)
         return value
 
-    wrap("estimateCostComparison", comparison)
-    wrap("translateAI", translate)
-    wrap("calculateCost", calculate)
-    parser_aliases()
+    for point, layer in zip(points, (comparison, translate, calculate), strict=True):
+        point.layer(LAYER, layer)
+    from util import batch_history
 
-    from util import batch_history, extensions
-
-    extensions.layer(batch_history._price_usage, "openrouter", price_usage)
+    batch_history._price_usage.layer("openrouter", price_usage)
 
 
 def price_usage(native, usage, model, provider="anthropic"):

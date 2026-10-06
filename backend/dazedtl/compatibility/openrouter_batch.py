@@ -546,14 +546,13 @@ def operation(name):
 def install():
     """Adds OpenRouter as a Batch provider beside the engine's own providers."""
     from util import batch_providers as native
-    from util import extensions
 
-    extensions.layer(native.detect_batch_provider, "openrouter", detect)
-    extensions.layer(native.get_client, "openrouter", client)
-    extensions.layer(native.batch_limits, "openrouter", limits)
-    extensions.layer(native.batch_provider_label, "openrouter", label)
+    native.detect_batch_provider.layer("openrouter", detect)
+    native.get_client.layer("openrouter", client)
+    native.batch_limits.layer("openrouter", limits)
+    native.batch_provider_label.layer("openrouter", label)
     for name in ("submit_batch", "retrieve_batch", "download_results", "cancel_batch"):
-        extensions.layer(getattr(native, name), "openrouter", operation(name))
+        getattr(native, name).layer("openrouter", operation(name))
 
 
 def configure(policy, root):
