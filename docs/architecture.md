@@ -636,7 +636,7 @@ Changing the connection's host cannot redirect a resumed run.
 The public list is advisory and does not establish account-specific eligibility or pricing; [OpenRouter setup](user-guide.md#openrouter) describes the control.
 New OpenRouter runs freeze `openrouterStructuredOutputs` in both compiled configuration and Guided policy.
 The [request adapter](../backend/dazedtl/compatibility/request_parameters.py) supplies the existing source-ID or LineN schema with `strict: true`, including for DeepSeek routes.
-Live adds `provider.require_parameters`; the [structured-output adapter](../backend/dazedtl/compatibility/structured_outputs.py) disables native schema downgrades through checked in-memory edits while preserving engine signatures, error metadata and existing validation.
+Live adds `provider.require_parameters`; the engine's [`STRICT_STRUCTURED_OUTPUTS`](../backend/dazedtl/engine/util/translation.py) setting disables native schema downgrades while preserving error metadata and existing validation.
 Batch accepts only `provider.only`, so connection checks retain schema-capable endpoint tags and conservative rates across that set; the immutable Batch policy freezes both, and the transport rejects weaker schemas or changed endpoints before submission.
 Google batches split when schemas differ, before the existing submission journal.
 Saved policies without this setting retain their original parameters and fallback behavior.

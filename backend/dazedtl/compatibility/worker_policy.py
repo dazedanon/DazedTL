@@ -22,7 +22,6 @@ from . import (
     batch_pricing,
     choice_requests,
     state_requests,
-    structured_outputs,
 )
 from .request_parameters import configure_builders
 from .run_evidence import Evidence
@@ -127,7 +126,7 @@ def install(*, coordinator=False):
             configure_batch_allowance(translation, None)
             batch_pricing.configure(translation, False)
             configure_builders(translation, None)
-            structured_outputs.configure(translation, False)
+            translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_states(plan, grouping_root, None)
             checkpoint_reader()
             return result
@@ -189,7 +188,7 @@ def install(*, coordinator=False):
         # Long-running batches must retain these rates after the normal cache TTL.
         translation._load_litellm_pricing = lambda: prices
         batch_pricing.configure(translation, True)
-        structured_outputs.configure(translation, strict_router)
+        translation.STRICT_STRUCTURED_OUTPUTS = bool(strict_router)
         record = None
         if policy.get("generationParameters") and plan.get("mode") in {
             "estimate",

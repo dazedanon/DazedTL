@@ -277,20 +277,18 @@ try:
         # Exercise the real native fallback and the DeepSeek builder exception
         # in this existing offline process, including restoration for old runs.
         import httpx
-        from dazedtl.compatibility import structured_outputs
         from dazedtl.compatibility.request_parameters import configure_builders
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
         from openai import BadRequestError
         from util import translation
         from util.batch_providers import detect_batch_provider
 
-        original_call_code = translation.translateText.__code__
         with patch.dict(
             os.environ,
             {"API_PROVIDER": "openai", "api": "https://openrouter.ai/api/v1"},
         ):
             for _ in range(2):
-                structured_outputs.configure(translation, True)
+                translation.STRICT_STRUCTURED_OUTPUTS = True
                 configure_builders(
                     translation,
                     GENERATION_PARAMETERS,
@@ -357,9 +355,8 @@ try:
                             "Strict OpenRouter work accepted a schema downgrade."
                         )
                 assert send.call_count == 1
-            structured_outputs.configure(translation, False)
+            translation.STRICT_STRUCTURED_OUTPUTS = False
             configure_builders(translation, None)
-            assert translation.translateText.__code__ is original_call_code
             legacy = translation.buildOpenAIRequest(
                 "Translate.", "薬", [], 0, "json", "deepseek/fixture", numLines=1
             )
@@ -599,7 +596,7 @@ try:
             patch.object(batch_history, "_price_usage", batch_history._price_usage),
         ):
             openrouter_pricing.configure(translation, router_policy)
-            structured_outputs.configure(translation, True)
+            translation.STRICT_STRUCTURED_OUTPUTS = True
             batch_evidence = Evidence(router_root, "batch")
             batch_evidence.install(translation)
             retain_batch_evidence(translation, router_root, {"mode": "batch"})
@@ -684,7 +681,7 @@ try:
             translation.set_batch_phase(None)
             openrouter_pricing.configure(translation, None)
             configure_builders(translation, None)
-            structured_outputs.configure(translation, False)
+            translation.STRICT_STRUCTURED_OUTPUTS = False
             from dazedtl.compatibility.translation import TranslationProvider
 
             compiled_root = router_root / "compiled"

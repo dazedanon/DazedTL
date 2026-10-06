@@ -121,6 +121,9 @@ MAX_TRANSLATION_OUTPUT_TOKENS = 16384
 
 # Set to True to disable Claude prompt caching for baseline cost comparison.
 DISABLE_CACHE = False
+# Runs whose frozen policy requires strict structured outputs never fall back to
+# weaker JSON or text formats. Older runs keep the native fallbacks.
+STRICT_STRUCTURED_OUTPUTS = False
 
 # Thread-local per-file token breakdown; read by calculateCost() for Claude.
 _thread_local = threading.local()
@@ -2757,6 +2760,14 @@ def _submit_translation_batches_unlocked(file_set=None, cost_estimate=None):
         if requests and (
             len(requests) >= max_requests or size + request_size > max_bytes
             or (sequential_limit and input_tokens + token_costs[key] > sequential_limit)
+            # Google derives one schema per provider batch. Split before the
+            # journaled submission instead of submitting incompatible rows.
+            or (
+                STRICT_STRUCTURED_OUTPUTS
+                and provider == "openrouter"
+                and str(params.get("model", "")).startswith("google/")
+                and params.get("response_format") != requests[0]["params"].get("response_format")
+            )
         ):
             _submit()
             if sequential_limit:
@@ -4893,6 +4904,10 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     try:
         response = openai.chat.completions.create(**params)
     except APIStatusError as e:
+        # Strict structured runs keep the provider error for the evidence and
+        # retry guards instead of retrying with a weaker output format.
+        if STRICT_STRUCTURED_OUTPUTS and formatType == "json" and numLines is not None:
+            raise
         # Handle HTTP status errors (404, 500, etc.)
         if e.status_code == 404:
             raise Exception(f"API endpoint not found (404) - check your API_PROVIDER and base URL settings. Error: {e}")
@@ -4928,6 +4943,8 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
         # These should always be retried
         raise Exception(f"API connection/rate limit error - retrying... Error: {e}")
     except Exception as e:
+        if STRICT_STRUCTURED_OUTPUTS and formatType == "json" and numLines is not None:
+            raise
         # Check if it's a 404 error or other HTTP error that should be retried
         error_str = str(e).lower()
         if "404" in error_str or "not found" in error_str:
