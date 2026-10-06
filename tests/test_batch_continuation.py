@@ -16,6 +16,8 @@ from dazedtl.compatibility import batch_refusals
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, read_json
 
+from tests.engine import point
+
 
 class BatchContinuationTests(unittest.TestCase):
     def fixture(self, root, provider="openai"):
@@ -144,13 +146,12 @@ class BatchContinuationTests(unittest.TestCase):
             util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
             create = Mock(side_effect=[{"id": "first"}, {"id": "second"}])
-            create._dazedtl_native = create
-            providers.submit_batch = create
+            providers.submit_batch = point(create)
             providers.get_client = Mock(
                 return_value=SimpleNamespace(with_options=lambda **_: object())
             )
             task.TranslationTask = type(
-                "Task", (), {"_wait_batch_submit": Mock(return_value=False)}
+                "Task", (), {"_wait_batch_submit": point(Mock(return_value=False))}
             )
 
             def record_submit(batches, **fields):
@@ -240,8 +241,7 @@ class BatchContinuationTests(unittest.TestCase):
             util.translation, util.batch_providers = translation, providers
             translation._batch_submit_lock = nullcontext
             create = Mock(return_value={"id": "paid"})
-            create._dazedtl_native = create
-            providers.submit_batch = create
+            providers.submit_batch = point(create)
             providers.get_client = lambda _: SimpleNamespace(
                 with_options=lambda **_: object()
             )
@@ -261,8 +261,8 @@ class BatchContinuationTests(unittest.TestCase):
                 "Task",
                 (),
                 {
-                    "_wait_batch_submit": lambda *_: True,
-                    "_run_batch_poll_fetch": native_poll,
+                    "_wait_batch_submit": point(lambda *_: True),
+                    "_run_batch_poll_fetch": point(native_poll),
                 },
             )
             history.record_submit = lambda batches, **fields: write_json(

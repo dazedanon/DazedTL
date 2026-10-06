@@ -20,6 +20,8 @@ from dazedtl.storage import write_json
 from dazedtl.translation.batch_refusals import advance
 from dazedtl.translation.files import read_json
 
+from tests.engine import point
+
 
 class BatchWindowTests(unittest.TestCase):
     def fixture(self, base, name, costs, *, model="fixture", limit=10, target=5):
@@ -265,7 +267,11 @@ class BatchWindowTests(unittest.TestCase):
             task_type = type(
                 "Task",
                 (),
-                {"_run_batch_poll_fetch": lambda _: self.fail("Sequential poll used")},
+                {
+                    "_run_batch_poll_fetch": point(
+                        lambda _: self.fail("Sequential poll used")
+                    )
+                },
             )
             install_worker(
                 window.root,

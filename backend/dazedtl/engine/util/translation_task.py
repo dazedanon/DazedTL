@@ -21,6 +21,7 @@ from util.rpgmaker_files import mvmz_file_kind
 
 
 from util.signals import TaskSignal
+from util import extensions
 
 
 def _strip_ansi(text):
@@ -305,6 +306,7 @@ class TranslationTaskCore:
             "cold_cache": native_claude,
         }
 
+    @extensions.point
     def _wait_batch_submit(self, estimate):
         with self.mutex:
             self._batch_pending_estimate = estimate
@@ -335,6 +337,7 @@ class TranslationTaskCore:
                 self.emit_log(line)
         return result
 
+    @extensions.point
     def _run_batch_poll_fetch(self):
         """Submit, poll, and fetch; return False on provider terminal failure."""
         from util.translation import (
@@ -952,6 +955,7 @@ class TranslationTaskCore:
         self.emit_log("✅ Speaker translations saved to the game glossary.")
         return True
 
+    @extensions.point
     def _run_files(self, matching_files, estimate_only, batch_phase=None):
         """Process matching files; return last cost string or 'Fail'."""
         threads = int(os.getenv("fileThreads", "1"))

@@ -379,13 +379,9 @@ def install_worker(
     if urlsplit(plan.get("settings", {}).get("api", "")).hostname != "api.openai.com":
         return
     window = BatchWindow(root, plan, translation, providers, approve, recover, record)
-    native = getattr(
-        task_type._run_batch_poll_fetch,
-        "_dazedtl_native",
-        task_type._run_batch_poll_fetch,
-    )
 
-    def poll(task):
+    def poll(_native, task):
+        # Replaces native polling: the window submits more work as capacity frees.
         interval = int(os.getenv("batchPollInterval", "60") or 60)
         while not task.should_stop:
             state = saved(root, "batch_state.json")
@@ -423,5 +419,4 @@ def install_worker(
                 time.sleep(0.1)
         return None
 
-    poll._dazedtl_native = native
-    task_type._run_batch_poll_fetch = poll
+    task_type._run_batch_poll_fetch.layer("batch-window", poll)

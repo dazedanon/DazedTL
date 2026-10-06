@@ -4,9 +4,9 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from copy import deepcopy
-from functools import partial, wraps
+from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from dazedtl.storage import write_json
 from dazedtl.translation.batch_refusals import advance
@@ -170,6 +170,9 @@ def advance_guided(
     return {"ready": True, "batches": pending}
 
 
+LAYER = "refusals"
+
+
 def install_worker(root, plan):
     if (
         plan.get("mode") != "batch"
@@ -185,25 +188,13 @@ def install_worker(root, plan):
 
     from .batch_control import TranslationProvider
 
-    native_result = getattr(
-        translation.require_batch_result,
-        "_dazedtl_native",
-        translation.require_batch_result,
-    )
-
-    @wraps(native_result)
-    def result(*args, **kwargs):
-        value = native_result(*args, **kwargs)
+    def result(native, *args, **kwargs):
+        value = native(*args, **kwargs)
         return {**value, "text": ""} if refused(value) else value
 
-    cast(Any, result)._dazedtl_native = native_result
-    translation.require_batch_result = result
-    native = getattr(
-        TranslationTask._run_files, "_dazedtl_native", TranslationTask._run_files
-    )
+    translation.require_batch_result.layer(LAYER, result)
 
-    @wraps(native)
-    def files(task, matching_files, estimate_only, batch_phase=None):
+    def files(native, task, matching_files, estimate_only, batch_phase=None):
         if batch_phase == "consume":
             from contextlib import contextmanager
 
@@ -276,5 +267,4 @@ def install_worker(root, plan):
                 return "Stopped"
         return native(task, matching_files, estimate_only, batch_phase=batch_phase)
 
-    cast(Any, files)._dazedtl_native = native
-    cast(Any, TranslationTask)._run_files = files
+    TranslationTask._run_files.layer(LAYER, files)

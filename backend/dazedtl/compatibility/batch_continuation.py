@@ -3,9 +3,7 @@
 import json
 from contextlib import closing
 from copy import deepcopy
-from functools import wraps
 from pathlib import Path
-from typing import Any, cast
 
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
@@ -156,6 +154,9 @@ def prepare_continuation(root, job, plan, *, explicit=False):
     return approval
 
 
+LAYER = "continuation"
+
+
 def install_worker(root, plan):
     """Journal native creates without changing parsing, chunking or consume."""
     if plan.get("mode") != "batch" or plan.get("batch_link"):
@@ -166,7 +167,6 @@ def install_worker(root, plan):
     from util.translation_task import TranslationTask
 
     root = Path(root)
-    native = getattr(providers.submit_batch, "_dazedtl_native", providers.submit_batch)
     active_task = None
 
     def approved():
@@ -236,8 +236,7 @@ def install_worker(root, plan):
                 endpoint=state["endpoint"],
             )
 
-    @wraps(native)
-    def submit(provider, requests, **kwargs):
+    def submit(native, provider, requests, **kwargs):
         input_tokens = kwargs.pop("_dazedtl_input_tokens", None)
         # Clarifications already have their own durable submission journal.
         if not requests or not all(
@@ -309,40 +308,28 @@ def install_worker(root, plan):
         write_json(path, {"intent": intent})
         return result
 
-    cast(Any, submit)._dazedtl_native = native
-    providers.submit_batch = submit
-    native_wait = getattr(
-        TranslationTask._wait_batch_submit,
-        "_dazedtl_native",
-        TranslationTask._wait_batch_submit,
-    )
+    providers.submit_batch.layer(LAYER, submit)
 
-    @wraps(native_wait)
-    def wait(task, estimate):
+    def wait(native, task, estimate):
         if read_json(project_path(root, "job.json")).get(APPROVAL):
             approved()
             task._batch_pending_estimate = estimate
             return not task.should_stop
-        return native_wait(task, estimate)
+        return native(task, estimate)
 
-    cast(Any, wait)._dazedtl_native = native_wait
-    cast(Any, TranslationTask)._wait_batch_submit = wait
+    TranslationTask._wait_batch_submit.layer(LAYER, wait)
+
+    def poll(native, task):
+        # OpenRouter submissions check the polling task's stop request.
+        nonlocal active_task
+        active_task = task
+        try:
+            return native(task)
+        finally:
+            active_task = None
+
     if (plan.get("dazedtl_request_policy") or {}).get("openrouterBatch"):
-        native_poll = TranslationTask._run_batch_poll_fetch
-        if getattr(native_poll, "_dazedtl_openrouter_poll", False):
-            native_poll = native_poll.__wrapped__
-
-        @wraps(native_poll)
-        def poll(task):
-            nonlocal active_task
-            active_task = task
-            try:
-                return native_poll(task)
-            finally:
-                active_task = None
-
-        cast(Any, poll)._dazedtl_openrouter_poll = True
-        cast(Any, TranslationTask)._run_batch_poll_fetch = poll
+        TranslationTask._run_batch_poll_fetch.layer(LAYER, poll)
     # A crash after the returned job ID but before native checkpointing is
     # repaired from the journal; an unknown HTTP outcome remains protected.
     with translation._batch_submit_lock():
