@@ -196,7 +196,7 @@ function ProjectStatus({
       disabled={busy}
       onClick={() => openTask(progress.current.step, progress.current.task)}
     >
-      Continue: {progress.current.title}
+      Resume: {progress.current.title}
       <ArrowRight size={15} aria-hidden="true" />
     </Button>
   ) : (
