@@ -36,15 +36,13 @@
   font-size: var(--font-heading);
   font-weight: var(--weight-semibold);
 }
-.brand > span {
-  width: 24px;
-  height: 24px;
+/* The dazed cat on its teal tile, the same mark as the window icon. */
+.brand-mark {
+  width: 28px;
+  height: 28px;
   border-radius: var(--control-radius);
-  background: var(--color-accent-strong);
-  color: var(--color-on-accent);
-  display: grid;
-  place-items: center;
-  font-size: var(--font-control);
+  background: url("../assets/brand/mark.png") center / contain no-repeat;
+  box-shadow: var(--shadow-mark);
 }
 .current-project {
   font-size: var(--font-body);

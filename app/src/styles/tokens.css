@@ -69,6 +69,9 @@
   /* Elevation: popovers and menus float a little; dialogs sit well above. */
   --shadow-popover: 0 var(--space-1) var(--space-4) #0006;
   --shadow-dialog: 0 var(--space-5) 80px #0008;
+  /* The top bar's cat mark glows faintly in the accent. */
+  --shadow-mark: 0 var(--space-1) 14px
+    color-mix(in srgb, var(--color-accent) 25%, transparent);
   /* The bundled Inter (base.css) renders the same widths on every platform;
      the system fonts only supply scripts it does not cover, such as Japanese. */
   --font-family:

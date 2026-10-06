@@ -557,8 +557,17 @@ function NoProject({
       <PageHeader title="Project" />
       <ActionList>
         <ActionRow
-          title="No project open"
-          description={`Open a game to get started${recent.length ? ", or choose a recent project below." : "."}`}
+          label={
+            <span className="project-welcome">
+              <span className="project-welcome-cat" aria-hidden="true" />
+              <span>
+                <strong>No project open</strong>
+                <small>
+                  {`Open a game to get started${recent.length ? ", or choose a recent project below." : "."}`}
+                </small>
+              </span>
+            </span>
+          }
         >
           <Button variant="primary" disabled={busy} onClick={open}>
             <FolderOpen size={16} aria-hidden="true" />

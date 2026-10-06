@@ -102,6 +102,29 @@
   padding: 0;
   border: 0;
 }
+/* With no game open, the dazed cat leads the welcome row. It appears only
+   here, in the top bar and as the window icon. */
+.project-welcome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.project-welcome-cat {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  background: var(--color-accent);
+  mask: url("../../assets/brand/cat-outline.png") center / contain no-repeat;
+}
+.project-welcome strong {
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.project-welcome small {
+  display: block;
+  margin-top: var(--space-1);
+  line-height: 1.5;
+}
 .project-recents {
   margin-top: var(--space-6);
 }
