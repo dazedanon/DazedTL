@@ -5,6 +5,7 @@ import type {
   RunPayload,
   RunProcess,
 } from "../../api/contracts.ts";
+import type { StatusKind } from "../../ui/StatusIcon";
 
 export const activeRun = (run?: Job | null) =>
   !!run && ["ready", "running", "waiting"].includes(run.status);
@@ -338,25 +339,25 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   const idle = {
     label: "Not started",
     tone: "idle",
-    symbol: "·",
+    icon: "idle" as StatusKind,
     pending: false,
   };
   const complete = {
     label: "Complete",
     tone: "success",
-    symbol: "✓",
+    icon: "done" as StatusKind,
     pending: false,
   };
   const progress = {
     label: "In progress",
     tone: "active",
-    symbol: "◷",
+    icon: "active" as StatusKind,
     pending: true,
   };
   const incomplete = {
     label: "Incomplete",
     tone: "idle",
-    symbol: "◐",
+    icon: "partial" as StatusKind,
     pending: false,
   };
   if (settled) return complete;
@@ -435,7 +436,7 @@ export function fileStatus(name: string, run?: Job, settled = false) {
       ? { ...complete, label: "Applied" }
       : complete;
   if (run.outputs?.[name])
-    return { ...incomplete, tone: "warning", symbol: "!" };
+    return { ...incomplete, tone: "warning", icon: "warning" as StatusKind };
   if (partial || states.length) return incomplete;
   if (working && run.mode !== "batch") return progress;
   return idle;

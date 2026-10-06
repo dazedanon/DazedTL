@@ -275,8 +275,9 @@ pre {
   border-bottom-color: var(--color-accent);
 }
 .ui-tab-status {
-  margin-left: var(--space-2);
-  color: var(--color-success);
+  display: inline-flex;
+  margin-left: var(--space-1);
+  vertical-align: -0.15em;
 }
 .ui-tab-hint {
   margin-left: var(--space-1);
@@ -1090,4 +1091,32 @@ pre {
   border-left: 2px solid var(--color-warning);
   background: var(--color-warning-surface);
   border-radius: 0 var(--control-radius) var(--control-radius) 0;
+}
+.status-icon {
+  flex-shrink: 0;
+  vertical-align: -0.2em;
+}
+.status-icon--done {
+  color: var(--color-success);
+}
+.status-icon--active,
+.status-icon--partial {
+  color: var(--color-accent);
+}
+.status-icon--active {
+  animation: job-status-spin 1s linear infinite;
+}
+.status-icon--idle {
+  color: var(--color-muted);
+}
+.status-icon--warning {
+  color: var(--color-warning);
+}
+.status-icon--failed {
+  color: var(--color-error-text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-icon--active {
+    animation: none;
+  }
 }

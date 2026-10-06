@@ -1,5 +1,4 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Check, Circle, LoaderCircle } from "lucide-react";
 import type {
   GuidedState,
   ReferenceFolder,
@@ -9,6 +8,7 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 const counted = (label: string, count: number) =>
   count ? `${label} (${count.toLocaleString()})` : label;
@@ -49,18 +49,17 @@ export function ContextWorkspace({
               label={
                 <>
                   <span className="context-result-heading">
-                    <span aria-hidden="true">
-                      {row.status === "working" ? (
-                        <LoaderCircle
-                          size={16}
-                          className="job-status-spinner"
-                        />
-                      ) : row.saved ? (
-                        <Check size={16} />
-                      ) : (
-                        <Circle size={14} />
-                      )}
-                    </span>
+                    <StatusIcon
+                      status={
+                        row.status === "working"
+                          ? "active"
+                          : row.status === "failed"
+                            ? "failed"
+                            : row.saved
+                              ? "done"
+                              : "idle"
+                      }
+                    />
                     <strong>{row.title}</strong>
                     <span className={`context-result-state ${row.status}`}>
                       {

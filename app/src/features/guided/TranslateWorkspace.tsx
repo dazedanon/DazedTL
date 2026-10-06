@@ -1,5 +1,4 @@
 import { useMemo, type ReactNode } from "react";
-import { LoaderCircle } from "lucide-react";
 import type {
   GuidedOptions,
   GuidedState,
@@ -18,6 +17,7 @@ import {
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 export function TranslateWorkspace({
   state,
@@ -191,15 +191,10 @@ export function TranslateWorkspace({
                 return (
                   <>
                     <span className={`translation-file-status ${status.tone}`}>
-                      {status.pending ? (
-                        <LoaderCircle
-                          size={14}
-                          className="job-status-spinner"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <span aria-hidden="true">{status.symbol}</span>
-                      )}
+                      <StatusIcon
+                        status={status.pending ? "active" : status.icon}
+                        size={14}
+                      />
                       <span className="translation-status-text">
                         {status.label}
                       </span>

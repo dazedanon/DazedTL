@@ -12,6 +12,7 @@ import { Notice } from "../../ui/Notice";
 import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { JobStatus } from "../../ui/JobStatus";
 import { PageBody, PageLayout } from "../../ui/PageLayout";
+import { StatusIcon } from "../../ui/StatusIcon";
 import { Tabs } from "../../ui/Tabs";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
@@ -204,7 +205,7 @@ function Workspace(
                   id: item.id,
                   label: item.title,
                   status: completed.has(item.id) && (
-                    <span aria-label="Complete">✓</span>
+                    <StatusIcon status="done" label="Complete" size={14} />
                   ),
                 }))}
               />

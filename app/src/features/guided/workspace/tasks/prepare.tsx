@@ -1,5 +1,4 @@
 /** Prepare: preserve the original, extract Ace data, format files and save the baseline. */
-import { Check, LoaderCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
@@ -9,6 +8,7 @@ import { FieldRow } from "../../../../ui/FieldRow";
 import { JobStatus } from "../../../../ui/JobStatus";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
+import { StatusIcon } from "../../../../ui/StatusIcon";
 
 export function backupView(w: GuidedWorkspace): TaskView {
   const {
@@ -183,19 +183,15 @@ export function formatView(w: GuidedWorkspace): TaskView {
         <ol className="guided-preparation-list">
           {preparation.stages.map((item) => (
             <li key={item.action}>
-              <span
-                className={
-                  item.status === "complete" ? "guided-completed" : "muted"
+              <StatusIcon
+                status={
+                  item.status === "complete"
+                    ? "done"
+                    : item.status === "running"
+                      ? "active"
+                      : "idle"
                 }
-              >
-                {item.status === "complete" ? (
-                  <Check size={16} />
-                ) : item.status === "running" ? (
-                  <LoaderCircle size={16} className="job-status-spinner" />
-                ) : (
-                  "·"
-                )}
-              </span>
+              />
               <div>
                 <strong>{item.label}</strong>
                 {item.message && <small>{item.message}</small>}

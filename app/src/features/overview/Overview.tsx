@@ -7,6 +7,7 @@ import { Notice } from "../../ui/Notice";
 import { engineLabel } from "../../ui/displayText";
 import { ArrowRight, Folder, FolderOpen } from "lucide-react";
 import type { AppState, Screen } from "../../api/contracts";
+import { StatusIcon } from "../../ui/StatusIcon";
 
 const sentence = (value: string) =>
   value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
@@ -118,12 +119,11 @@ export default function Overview({
                         <li key={stage.id}>
                           {stage.short}
                           {stage.done === stage.total ? (
-                            <span
-                              className="guided-completed"
-                              aria-label="Tasks completed"
-                            >
-                              ✓
-                            </span>
+                            <StatusIcon
+                              status="done"
+                              label="Tasks completed"
+                              size={14}
+                            />
                           ) : stage.done ? (
                             <span className="overview-stage-count">
                               {stage.done}/{stage.total}

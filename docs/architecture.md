@@ -456,6 +456,7 @@ Reserve cards for content requiring a distinct container.
 Use the shared [JobStatus](../app/src/ui/JobStatus.tsx) for operation summaries, including Overview, so generic completion messages are handled consistently while useful detail remains visible.
 Keep failures beside their action or in the run/file inspector; do not aggregate historical errors into page-wide reminders or counters.
 Status colors always accompany text or icons.
+Status marks come from [StatusIcon](../app/src/ui/StatusIcon.tsx) (done, running, partly done, not started, warning, failed) rather than text characters, so they keep their shape in every font.
 Inline notes use [Notice](../app/src/ui/Notice.tsx): neutral notes, including empty states, read as plain secondary text, and warnings get the warning edge with their way forward beside them.
 Disclosures share the app's chevron marker and hold genuine advanced settings or long evidence, not status the task already needs.
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
@@ -480,7 +481,7 @@ Formatting, GameUpdate creation, initial source backup, and local estimation con
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
 Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts).
-The app sidebar stays global; every phase uses the same one-row stage strip, which drops stage numbers when narrow.
+The app sidebar stays global; every phase uses the same one-row stage strip, which compacts when narrow.
 The Translation screen has no header row: its project actions (Project tools, History, Game folder) sit in the top bar beside the project switcher through [TopbarSlot](../app/src/app/TopbarSlot.tsx).
 One task occupies the editing body and its action footer stays outside the scroll region.
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
@@ -489,7 +490,7 @@ Phase navigation restores the last available task saved for that project, fallin
 Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
 Plugin text and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
-The stage strip marks finished stages, shows a dot for stages with some completed tasks, and ends with All tasks, which marks completed and current tasks.
+The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done or the stage is current, and becomes a check when every task is done; it ends with All tasks, which marks completed and current tasks.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.

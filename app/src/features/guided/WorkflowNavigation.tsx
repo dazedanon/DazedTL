@@ -1,4 +1,5 @@
 import type { GuidedStep } from "../../api/contracts";
+import { Check } from "lucide-react";
 import { Button } from "../../ui/Button";
 import type { WorkflowStage } from "./workflow";
 
@@ -33,16 +34,22 @@ export function WorkflowNavigation({
             aria-current={stage.id === step ? "step" : undefined}
             onClick={() => move(stage.id, taskFor(stage))}
           >
-            <span className="guided-stage-number">{index + 1}</span>
+            {/* A stepper: the number becomes a check once every task is done. */}
+            <span
+              className="guided-stage-marker"
+              data-state={done ? "done" : started ? "started" : undefined}
+            >
+              {done ? (
+                <Check size={12} strokeWidth={3} aria-hidden="true" />
+              ) : (
+                index + 1
+              )}
+            </span>
             {stage.short}
-            {done ? (
-              <span className="guided-completed" aria-label="Tasks completed">
-                ✓
+            {(done || started) && (
+              <span className="sr-only">
+                {done ? "Tasks completed" : "In progress"}
               </span>
-            ) : (
-              started && (
-                <span className="guided-started" aria-label="In progress" />
-              )
             )}
           </Button>
         );

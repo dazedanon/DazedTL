@@ -21,6 +21,7 @@ import { retainOtherScope } from "../selection";
 import { commentTextHelp, speakerOptions } from "../speakerOptions";
 import { fileCount, panelTitles, phaseLabels, speakers } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
+import { StatusIcon } from "../../../ui/StatusIcon";
 
 // Sheets with file lists or tables get the large size; the rest stay compact.
 const wideSheets = new Set<string>([
@@ -261,12 +262,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                     >
                       {entry.title}
                       {completed.has(entry.id) && (
-                        <span
-                          className="guided-completed"
-                          aria-label="Complete"
-                        >
-                          ✓
-                        </span>
+                        <StatusIcon status="done" label="Complete" size={14} />
                       )}
                     </Button>
                   ))}
