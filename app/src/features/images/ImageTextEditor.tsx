@@ -140,6 +140,7 @@ function Editor({
     setState(next);
   };
   const draft = useDraft<ImageEditorSave[]>("image-editor:" + projectId, {
+    autosave: true,
     initial: { saved: editorDraft(initial) },
     report: action.report,
     persist: async (changes) => {

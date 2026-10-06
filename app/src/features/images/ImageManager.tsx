@@ -185,6 +185,7 @@ function Manager({
     setState(next);
   };
   const draft = useDraft<ImageDraft>("images:" + projectId, {
+    autosave: true,
     initial: { saved: imageDraft(initial) },
     report: action.report,
     persist: async (changes) => {

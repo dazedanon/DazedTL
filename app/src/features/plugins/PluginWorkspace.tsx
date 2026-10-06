@@ -89,6 +89,7 @@ export function PluginWorkspace({
   const [inspecting, setInspecting] = useState(false),
     [showFiles, setShowFiles] = useState(false);
   const draft = useDraft<PluginView>("plugins-view:" + projectId, {
+    autosave: true,
     initial: {
       saved: observed?.view || {
         mode: "scope",

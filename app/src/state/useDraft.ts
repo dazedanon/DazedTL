@@ -11,6 +11,8 @@ type Options<T> = {
   persist: (value: T) => Promise<unknown>;
   report: (error: unknown) => void;
   fingerprint?: (value: T) => string;
+  /** Writes save the value, so a successful write leaves the draft clean. */
+  autosave?: boolean;
   initial?: { saved: T; draft?: T };
 };
 
@@ -18,9 +20,13 @@ function createSession<T>({
   persist,
   report,
   fingerprint,
+  autosave,
   initial,
 }: Options<T>) {
-  const session = new DraftSession<T>(persist, report, fingerprint);
+  const session = new DraftSession<T>(persist, report, {
+    fingerprint,
+    autosave,
+  });
   if (initial) session.adopt(initial.saved, initial.draft);
   return session;
 }

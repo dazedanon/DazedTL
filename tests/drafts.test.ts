@@ -41,6 +41,33 @@ test("navigation waits for the latest draft, including edits during a pending wr
   await session.dispose();
 });
 
+test("autosaved writes become the clean baseline only once the latest edit is written", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const pending = Promise.withResolvers<void>();
+  const writes: [string, boolean][] = [];
+  const session: DraftSession<string> = new DraftSession<string>(
+    async (value) => {
+      writes.push([value, session.getSnapshot().dirty]);
+      if (writes.length === 1) await pending.promise;
+    },
+    unexpected,
+    { autosave: true },
+  );
+  session.adopt("saved");
+  session.edit("first edit");
+  const saving = session.flush();
+  await turn();
+  session.edit("latest edit");
+  pending.resolve();
+  await saving;
+  assert.deepEqual(writes, [
+    ["first edit", true],
+    ["latest edit", true],
+  ]);
+  assert.equal(session.getSnapshot().dirty, false);
+  await session.dispose();
+});
+
 test("edits during an explicit save survive with the new saved revision", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   type Value = { text: string; revision: string };

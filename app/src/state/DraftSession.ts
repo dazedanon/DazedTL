@@ -24,11 +24,17 @@ export class DraftSession<T> {
   private persist!: (value: T) => Promise<unknown>;
   private report!: (error: unknown) => void;
   private fingerprint!: (value: T) => string;
+  /** Each write saves the value instead of keeping a recovery draft beside it. */
+  private autosave: boolean;
   constructor(
     persist: (value: T) => Promise<unknown>,
     report: (error: unknown) => void,
-    fingerprint?: (value: T) => string,
+    {
+      fingerprint,
+      autosave = false,
+    }: { fingerprint?: (value: T) => string; autosave?: boolean } = {},
   ) {
+    this.autosave = autosave;
     this.configure(persist, report, fingerprint);
   }
   /** Keeps the owner's latest callbacks; drafts and pending writes are unchanged. */
@@ -96,6 +102,10 @@ export class DraftSession<T> {
       const value = this.state.value;
       await this.persist(value);
       this.persisted = ticket;
+      if (this.autosave) {
+        this.baseline = value;
+        this.publish();
+      }
     }
   }
   flush = () => {

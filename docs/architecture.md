@@ -599,6 +599,7 @@ Estimate startup, finalization and Live/Batch cost-review preparation have disti
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
+Autosaving editors, such as Image Manager, Plugin text and the image text editor, save every write instead, so a successful write becomes their clean baseline.
 Mutations changing snapshot-backed state, including recovery drafts, must keep the default `refresh` in their [method contract](../backend/dazedtl/api/contracts/methods.py), so remounted editors cannot recover an older draft from the cached snapshot.
 Guided engine options use the same draft session and retain the native revision check.
 Setup-form recovery lives alongside project records in the profile.
