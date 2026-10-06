@@ -1360,21 +1360,14 @@ pre {
   line-height: 1.5;
 }
 /* A file name shortened in the middle: the head gives way, the ending stays. */
+/* A right-to-left box puts the ellipsis at the start; a name that fits stays
+   left-aligned. */
 .file-name {
-  display: flex;
+  display: block;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-}
-/* A hidden head still shows its ellipsis. */
-.file-name-head {
-  min-width: 0;
-  overflow: hidden;
   text-overflow: ellipsis;
-}
-.file-name-head:not(:empty) {
-  min-width: 1.2em;
-}
-.file-name-tail {
-  flex-shrink: 0;
+  direction: rtl;
+  text-align: left;
 }
