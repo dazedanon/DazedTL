@@ -29,13 +29,19 @@
   display: grid;
   gap: 0.2rem;
 }
+/* Every control shares the button row; field labels sit above it. */
 .native-editor-toolbar label.toggle {
   display: flex;
-  align-self: center;
+  align-items: center;
+  min-height: var(--control-height);
+  margin: 0;
 }
 .native-editor-toolbar select {
   width: 100%;
   min-width: 0;
+  min-height: var(--control-height);
+  padding: var(--control-padding);
+  font-size: var(--font-control);
 }
 .native-editor-body {
   flex: 1;
@@ -188,9 +194,11 @@
   gap: 0.2rem;
   margin-bottom: var(--space-2);
 }
+/* Hosted in Guided, the editor keeps its own spacing for checkbox labels. */
 .native-editor-block-form label.toggle {
   display: flex;
   align-items: start;
+  margin: 0 0 var(--space-2);
 }
 .native-editor-block-form input:not([type="checkbox"]),
 .native-editor-block-form select,

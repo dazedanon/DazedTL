@@ -14,7 +14,7 @@ import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
-import { Message } from "../../ui/Feedback";
+import { Feedback, Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { JobStatus } from "../../ui/JobStatus";
@@ -981,9 +981,7 @@ function Editor({
               variant="quiet"
               onClick={() => setTranslationOpen(!translationOpen)}
             >
-              {translationOpen
-                ? "Hide native translation"
-                : "Native translation…"}
+              {translationOpen ? "Hide API translation" : "Translate with API…"}
             </Button>
             {translationOpen && (
               <>
@@ -1195,33 +1193,17 @@ function Editor({
       </div>
       <ActionBar
         feedback={
-          <>
+          action.error ? (
             <Message message={action.error} />
-            {action.notice && <span role="status">{action.notice}</span>}
-            {!action.error && !action.notice && (
-              <span role="status">
-                {draft.committing
-                  ? "Saving…"
-                  : "Text and boxes save automatically."}
-              </span>
-            )}
-          </>
+          ) : (
+            // Text and boxes save as they change; leaving flushes the rest.
+            <Feedback
+              pending={draft.dirty || draft.committing}
+              notice={action.notice || "Saved"}
+            />
+          )
         }
       >
-        <Button
-          disabled={busy}
-          onClick={() => {
-            void action.run(
-              async () => {
-                await draft.session.flush();
-              },
-              "Text and boxes saved.",
-              "save",
-            );
-          }}
-        >
-          Save text
-        </Button>
         <Button
           disabled={busy || !image}
           onClick={() => {
