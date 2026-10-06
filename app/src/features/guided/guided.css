@@ -719,6 +719,13 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3) var(--space-4);
 }
+/* Four short limits read as one row of compact fields. */
+.guided-widths {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+.guided-widths + .action-list {
+  margin-top: var(--space-5);
+}
 .guided-package-fields {
   margin: var(--space-4) 0 var(--space-5);
 }
@@ -738,6 +745,9 @@
 .guided-package-fields input {
   width: 100%;
   min-width: 0;
+}
+.guided-widths input {
+  max-width: var(--short-control-width);
 }
 .guided-backup-location,
 .guided-artifact {

@@ -11,7 +11,6 @@ import { CheckField, FieldRow } from "../../../ui/FieldRow";
 import { JobStatus } from "../../../ui/JobStatus";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
-import { Section } from "../../../ui/Section";
 import { Tabs } from "../../../ui/Tabs";
 import { SpeakerNames } from "../ContextWorkspace";
 import { EngineOptions } from "../EngineOptions";
@@ -69,6 +68,16 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
   const owned = useOwnedFeedback(action.key);
   if (!panel) return null;
   const findingsReady = ["ready", "applied"].includes(findings.status);
+  // The editor search reports [name, path] pairs.
+  const editorResult = operationJob("editors")?.result?.editors;
+  const foundEditors = Array.isArray(editorResult)
+    ? editorResult.filter(
+        (item): item is [string, string] =>
+          Array.isArray(item) &&
+          typeof item[0] === "string" &&
+          typeof item[1] === "string",
+      )
+    : undefined;
   // Name translation is optional paid work; its review shows files and cost.
   const nameTranslationBlocked: string | boolean = !scan.names.length
     ? findingsReady
@@ -356,7 +365,14 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           {panel === "widths" && (
             <>
               {widths}
-              {copyTask("wrap", "Copy width-measurement task")}
+              <ActionList>
+                <ActionRow
+                  title="Measure from the game"
+                  description="Your assistant measures the message windows and saves verified limits here."
+                >
+                  {copyTask("wrap", "Copy width-measurement task")}
+                </ActionRow>
+              </ActionList>
             </>
           )}
           {panel === "preparation" && (
@@ -386,16 +402,17 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 apply settings to use them in the game.
               </p>
               <fieldset disabled={disabled}>
-                <div className="guided-widths">
-                  {(
-                    [
-                      ["hotkey", "TL Inspector hotkey"],
-                      ["forgeHotkey", "Forge hotkey"],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <label key={key}>
-                      {label}
+                {(
+                  [
+                    ["hotkey", "TL Inspector hotkey"],
+                    ["forgeHotkey", "Forge hotkey"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <FieldRow key={key} id={`guided-tool-${key}`} label={label}>
+                    {(props) => (
                       <input
+                        {...props}
+                        className="short-control"
                         value={release.tools[key]}
                         onChange={(event) =>
                           editRelease("tools", {
@@ -404,9 +421,9 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                           })
                         }
                       />
-                    </label>
-                  ))}
-                </div>
+                    )}
+                  </FieldRow>
+                ))}
                 <FieldRow id="guided-tool-scale" label="Overlay scale">
                   {(props) => (
                     <select
@@ -477,22 +494,46 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                   )}
                 </FieldRow>
               </fieldset>
-              {task("editors", "Find installed editors")}
-              {operationJob("editors")?.result && (
-                <pre>
-                  {JSON.stringify(operationJob("editors")!.result, null, 2)}
-                </pre>
-              )}
-              <Section title="Installed plugins">
-                {task(
-                  "playtest_apply",
-                  "Apply settings to game",
-                  {},
-                  !baseline ||
-                    (!state.tools?.inspector.installed &&
-                      !state.tools?.forge.installed),
-                )}
-              </Section>
+              <ActionList>
+                <ActionRow
+                  title="Installed editors"
+                  description={
+                    foundEditors
+                      ? `${foundEditors.length} found on this computer.`
+                      : "Find code editors installed on this computer."
+                  }
+                >
+                  {task("editors", "Find installed editors")}
+                </ActionRow>
+                {foundEditors?.map(([name, path]) => (
+                  <ActionRow key={path} title={name} description={path}>
+                    <Button
+                      disabled={disabled || release.tools.editorCmd === path}
+                      onClick={() =>
+                        editRelease("tools", {
+                          ...release.tools,
+                          editorCmd: path,
+                        })
+                      }
+                    >
+                      {release.tools.editorCmd === path ? "In use" : "Use"}
+                    </Button>
+                  </ActionRow>
+                ))}
+                <ActionRow
+                  title="Installed plugins"
+                  description="Write these settings into the installed TL Inspector and Forge."
+                >
+                  {task(
+                    "playtest_apply",
+                    "Apply settings to game",
+                    {},
+                    !baseline ||
+                      (!state.tools?.inspector.installed &&
+                        !state.tools?.forge.installed),
+                  )}
+                </ActionRow>
+              </ActionList>
             </>
           )}
           {panel === "release-assets" && (

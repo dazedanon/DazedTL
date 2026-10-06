@@ -126,7 +126,11 @@ export default function ModelOptionsEditor({
               placeholder={
                 config.defaultOutputTokens == null
                   ? "Default"
-                  : `Default (${Math.min(config.defaultOutputTokens, resolved?.maxOutputTokens ?? config.defaultOutputTokens).toLocaleString()})`
+                  : // The help says blank uses the default; the field shows it.
+                    Math.min(
+                      config.defaultOutputTokens,
+                      resolved?.maxOutputTokens ?? config.defaultOutputTokens,
+                    ).toLocaleString()
               }
               value={value.maxOutputTokens ?? ""}
               onPaste={(event) => {
@@ -165,7 +169,7 @@ export default function ModelOptionsEditor({
                 placeholder={
                   config.defaultBatchInputTokens == null
                     ? "Default"
-                    : `Default (${config.defaultBatchInputTokens.toLocaleString()})`
+                    : config.defaultBatchInputTokens.toLocaleString()
                 }
                 value={value.batchInputTokens ?? ""}
                 onPaste={(event) => {

@@ -103,6 +103,8 @@
   --section-padding: var(--space-5);
   --field-row-gap: var(--space-3);
   --field-label-width: 155px;
+  /* Short values such as counts and widths keep a compact field. */
+  --short-control-width: 120px;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
   /* Every page centers one content column; frame rows span the window and

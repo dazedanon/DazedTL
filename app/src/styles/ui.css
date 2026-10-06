@@ -442,8 +442,9 @@ pre {
 .footer-slot {
   display: contents;
 }
-.field-control > .short-control {
-  width: 120px;
+/* Outranks the field input width above, which :not([type]) makes stronger. */
+.field-control > :is(input, select, div).short-control {
+  width: var(--short-control-width);
 }
 .field-control > small {
   display: block;
@@ -543,7 +544,7 @@ pre {
   }
 }
 @media (max-width: 1050px) {
-  .field-control > .short-control {
+  .field-control > :is(input, select, div).short-control {
     width: 105px;
     max-width: 100%;
   }
