@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.images import ImageService
 from dazedtl.projects.store import Projects
@@ -143,6 +144,8 @@ class ImageTests(unittest.TestCase):
         if identities is not None:
             self.choose(identities)
         result = self.service.action(self.identity, action, {"scope": "selected"})
+        # A copied task's reply must match the contract the renderer validates.
+        check_response("images_action", views.image_action(result))
         return read_json(Path(result["request"])), result
 
     def report(self, request, rows, complete=False):

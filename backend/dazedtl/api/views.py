@@ -208,6 +208,12 @@ def rewrap(value):
     }
 
 
+def image_action(value):
+    # A copied task also reports its request and report files, which the
+    # assistant reads from the task text.
+    return pick(value, ("state", "result", "text", "requestId", "preview", "message"))
+
+
 def preview(value):
     value = {**value, "rewrap": rewrap(value["rewrap"])} if "rewrap" in value else value
     return pick(

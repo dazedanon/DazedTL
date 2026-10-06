@@ -551,11 +551,15 @@ def routes(app):
             getattr(app.translation, name),
             lambda value, _params: value,
         )
-    for name in ("state", "list", "update", "action", "preview"):
+    for name in ("state", "list", "update", "preview"):
         methods["images_" + name] = (
             getattr(app.images, name),
             lambda value, _params: value,
         )
+    methods["images_action"] = (
+        app.images.action,
+        lambda value, _params: views.image_action(value),
+    )
     for name in ("state", "list", "detail", "update", "action"):
         methods["plugins_" + name] = (
             getattr(app.plugins, name),
