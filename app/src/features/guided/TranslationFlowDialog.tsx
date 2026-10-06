@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { CircleCheck, LoaderCircle } from "lucide-react";
 import { ActionBar } from "../../ui/ActionBar";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";
@@ -105,8 +105,14 @@ export function TranslationFlowDialog({
                     : "Translation estimate"
             }
           />
+          {/* The sheet keeps its size from start to finish, so a status or a
+              short result sits in its centre. */}
           <DialogBody
-            className={loading ? "translation-flow-loading" : undefined}
+            className={
+              loading || value.stage === "empty"
+                ? "translation-flow-centered"
+                : undefined
+            }
           >
             {loading ? (
               <div className="translation-flow-progress">
@@ -139,17 +145,27 @@ export function TranslationFlowDialog({
                 {nameFeedback}
               </div>
             ) : value.stage === "empty" ? (
-              <p>
-                {value.namesApproved
-                  ? "The name pass is finished. No file-text Batch requests are needed."
-                  : "All selected files were checked. No new API requests are needed."}
-              </p>
+              <div className="translation-flow-progress">
+                <div className="translation-flow-activity" role="status">
+                  <CircleCheck
+                    size={22}
+                    className="translation-flow-done"
+                    aria-hidden="true"
+                  />
+                  <p>
+                    {value.namesApproved
+                      ? "The name pass is finished. No file-text Batch requests are needed."
+                      : "All selected files were checked. No new API requests are needed."}
+                  </p>
+                </div>
+                {nameFeedback}
+              </div>
             ) : (
               <Message
                 message={value.error || "Try preparing a fresh estimate."}
               />
             )}
-            {!loading && nameFeedback}
+            {value.stage === "error" && nameFeedback}
           </DialogBody>
           <ActionBar feedback={null}>
             <Button

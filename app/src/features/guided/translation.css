@@ -390,9 +390,15 @@
     justify-content: space-between;
   }
 }
-.translation-flow-loading {
+.translation-flow-centered {
   display: grid;
   place-items: center;
+}
+.translation-flow-activity > p {
+  margin: 0;
+}
+.translation-flow-done {
+  color: var(--color-success);
 }
 .translation-flow-progress,
 .translation-flow-activity {
@@ -420,7 +426,7 @@
 .translation-flow-progress > .name-translation-feedback {
   justify-content: center;
 }
-.translation-flow-loading small {
+.translation-flow-centered small {
   color: var(--color-muted);
 }
 .translation-review-body {
