@@ -14,6 +14,7 @@ import { useApplication } from "../../../app/ApplicationProvider";
 import { flushDrafts } from "../../../state/leaveGuards";
 import { useAction } from "../../../state/useAction";
 import { useDraft } from "../../../state/useDraft";
+import { useOnChange } from "../../../state/useOnChange";
 import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
@@ -73,6 +74,12 @@ export function useGuidedWorkspace({
   });
   const values = draft.value.values,
     fields = form.value || state.form;
+  // An action error describes the inputs it ran with; editing them retires it.
+  const retireError = () => {
+    if (action.error) action.clear();
+  };
+  useOnChange(draft.value, retireError);
+  useOnChange(form.value, retireError);
   const stages = stagesFor(state.engine);
   const position = initialPosition(state, translation);
   const stage = stages.find((item) => item.id === position.step)!;
@@ -598,10 +605,12 @@ export function useGuidedWorkspace({
     name: string,
     label: string,
     options: Record<string, unknown> = {},
-    blocked = false,
+    /** True, or the reason shown beside the disabled control. */
+    blocked: boolean | string = false,
     variant: "default" | "primary" = "default",
     files?: string[],
   ) => {
+    const blockedReason = typeof blocked === "string" ? blocked : "";
     const recorded =
       name === "start"
         ? options.mode === "estimate"
@@ -639,7 +648,7 @@ export function useGuidedWorkspace({
         <ActionControl
           inline
           label={label}
-          disabled={disabled || blocked}
+          disabled={disabled || !!blocked}
           variant="quiet"
           {...feedback(name, active ? "Resyncing files…" : "Preparing resync…")}
           pending={(action.busy && action.key === name) || !!active}
@@ -667,7 +676,7 @@ export function useGuidedWorkspace({
           pending={
             !!active || (action.busy && action.key === actionKey(name, options))
           }
-          disabled={disabled || blocked}
+          disabled={disabled || !!blocked}
           onClick={() => review(name, options, files)}
         >
           {label}
@@ -682,7 +691,8 @@ export function useGuidedWorkspace({
     return (
       <ActionControl
         label={label}
-        disabled={disabled || blocked}
+        disabled={disabled || !!blocked}
+        disabledReason={blockedReason}
         variant={variant}
         {...feedback(
           actionKey(name, options),

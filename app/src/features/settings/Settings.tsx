@@ -13,6 +13,7 @@ import { FieldRow, DetailRow } from "../../ui/FieldRow";
 import { Tabs, TabPanel } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
+import { ActionControl } from "../../ui/ActionControl";
 import { Message } from "../../ui/Feedback";
 
 const sections = [
@@ -70,7 +71,7 @@ export default function Settings() {
           onChange={move}
         />
       </div>
-      {action.error && section === "api" && (
+      {action.error && action.key !== "check" && section === "api" && (
         <Message message={action.error} onDismiss={action.clear} />
       )}
       {!config ? (
@@ -224,17 +225,12 @@ export default function Settings() {
               </PageBody>
               <ActionBar
                 feedback={
-                  <div
-                    className={`feedback ${action.error ? "error" : ""}`}
-                    role="status"
-                  >
-                    {action.busy
-                      ? "Checking connection…"
-                      : running
-                        ? "Finish the current run before checking or changing connections."
-                        : !config.checksEnabled
-                          ? "Connection checks are unavailable in offline mode."
-                          : action.notice}
+                  <div className="feedback" role="status">
+                    {running
+                      ? "Finish the current run before checking or changing connections."
+                      : action.key === "check"
+                        ? ""
+                        : action.notice}
                   </div>
                 }
               >
@@ -258,8 +254,13 @@ export default function Settings() {
                 >
                   Edit
                 </Button>
-                <Button
+                <ActionControl
                   variant="primary"
+                  label={
+                    checked?.status === "not_checked"
+                      ? "Check connection"
+                      : "Check again"
+                  }
                   disabled={
                     !current ||
                     current.needsSetup ||
@@ -267,14 +268,25 @@ export default function Settings() {
                     running ||
                     !config.checksEnabled
                   }
-                  onClick={() =>
-                    action.run(() => draft.checkConnection(current!.id))
+                  disabledReason={
+                    !config.checksEnabled
+                      ? "Unavailable in offline mode."
+                      : current?.needsSetup
+                        ? "Finish setting up this connection first."
+                        : ""
                   }
-                >
-                  {checked?.status === "not_checked"
-                    ? "Check connection"
-                    : "Check again"}
-                </Button>
+                  pending={action.busy && action.key === "check"}
+                  pendingText="Checking connection…"
+                  error={action.key === "check" ? action.error : ""}
+                  notice={action.key === "check" ? action.notice : ""}
+                  onClick={() =>
+                    action.run(
+                      () => draft.checkConnection(current!.id),
+                      "",
+                      "check",
+                    )
+                  }
+                />
               </ActionBar>
             </>
           )}

@@ -334,9 +334,30 @@ pre {
   min-width: 0;
   max-width: 100%;
   justify-content: flex-end;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   flex-shrink: 1;
+}
+/* In bars, a control's result sits just left of its own button, so the
+   buttons keep their place and the bar its height while feedback changes. */
+.action-bar .action-control {
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+}
+.action-bar .action-control > .action-control-feedback {
+  max-width: min(30rem, 100%);
+  text-align: right;
+}
+.action-bar .action-control > .action-control-feedback:not(:empty) {
+  margin-top: 0;
+}
+.action-bar .action-control > .action-control-feedback:empty {
+  display: none;
+}
+.action-bar .action-control :is(.feedback, .job-status-heading) {
+  justify-content: flex-end;
 }
 .feedback {
   display: flex;
@@ -713,14 +734,11 @@ pre {
 .action-control--inline > .action-control-feedback:empty {
   display: none;
 }
-.action-result-icon--success {
-  color: var(--color-success);
-}
-.action-result-icon--error {
-  color: var(--color-error-text);
-}
-.primary .action-result-icon {
-  color: currentColor;
+.action-control-reason {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-small);
+  line-height: 1.5;
 }
 .actions:has(> .action-control) {
   align-items: flex-start;

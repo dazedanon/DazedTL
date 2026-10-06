@@ -1,10 +1,17 @@
 import { useEffect, useId, useRef, type ComponentProps } from "react";
-import { AlertCircle, Check } from "lucide-react";
 import { Button } from "./Button";
 import { Feedback } from "./Feedback";
 import { JobStatus } from "./JobStatus";
 import type { Job } from "../api/contracts";
 import { useFeedbackOwner } from "./FeedbackOwners";
+
+// Successes finished before this interface loaded belong to History, not
+// beside the control; failures stay until a newer attempt replaces them.
+const loadedAt = performance.timeOrigin;
+const earlierSuccess = (job: Pick<Job, "status" | "updated">) =>
+  job.status === "complete" &&
+  !!job.updated &&
+  Date.parse(job.updated) < loadedAt;
 
 export function ActionControl({
   label,
@@ -12,9 +19,10 @@ export function ActionControl({
   pendingText = "Working…",
   error = "",
   notice = "",
-  job,
   inline = false,
   feedbackKey,
+  disabledReason = "",
+  job: reported,
   ...button
 }: Omit<ComponentProps<typeof Button>, "children"> & {
   label: string;
@@ -24,8 +32,11 @@ export function ActionControl({
   error?: string;
   notice?: string;
   inline?: boolean;
-  job?: Pick<Job, "label" | "status" | "message">;
+  /** Shown beside the control while it is disabled for this reason. */
+  disabledReason?: string;
+  job?: Pick<Job, "label" | "status" | "message" | "updated">;
 }) {
+  const job = reported && !earlierSuccess(reported) ? reported : undefined;
   const active = job && ["ready", "running", "waiting"].includes(job.status);
   useFeedbackOwner(feedbackKey);
   const feedbackId = useId();
@@ -51,9 +62,25 @@ export function ActionControl({
       }
     }
   }, [failure, pending, active]);
-  const failed =
-    !!error || (!!job && ["failed", "interrupted"].includes(job.status));
-  const succeeded = !failed && (job?.status === "complete" || !!notice);
+  const result =
+    pending || (inline && active) ? (
+      !inline && <Feedback loading loadingText={pendingText} />
+    ) : error ? (
+      <Feedback error={error} />
+    ) : job ? (
+      <JobStatus
+        compact
+        job={{
+          label: job.label || label,
+          status: job.status,
+          message: job.message,
+        }}
+      />
+    ) : notice ? (
+      <Feedback notice={notice} />
+    ) : button.disabled && disabledReason ? (
+      <span className="action-control-reason">{disabledReason}</span>
+    ) : null;
   return (
     <div
       className={`action-control${inline ? " action-control--inline" : ""}`}
@@ -70,43 +97,12 @@ export function ActionControl({
           .filter(Boolean)
           .join(" ")}
       >
-        {!inline &&
-          !pending &&
-          !active &&
-          (failed ? (
-            <AlertCircle
-              size={14}
-              className="action-result-icon action-result-icon--error"
-              aria-hidden="true"
-            />
-          ) : succeeded ? (
-            <Check
-              size={14}
-              className="action-result-icon action-result-icon--success"
-              aria-hidden="true"
-            />
-          ) : null)}
         <span className="action-control-label">
           {inline && (pending || active) ? pendingText : label}
         </span>
       </Button>
       <div id={feedbackId} className="action-control-feedback" ref={feedback}>
-        {pending || (inline && active) ? (
-          !inline && <Feedback loading loadingText={pendingText} />
-        ) : error ? (
-          <Feedback error={error} />
-        ) : job ? (
-          <JobStatus
-            compact
-            job={{
-              label: job.label || label,
-              status: job.status,
-              message: job.message,
-            }}
-          />
-        ) : notice ? (
-          <Feedback notice={notice} />
-        ) : null}
+        {result}
       </div>
     </div>
   );

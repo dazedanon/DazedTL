@@ -161,7 +161,13 @@ export function applyView(w: GuidedWorkspace): TaskView {
     "export_selected",
     applied ? "Review Apply again" : "Review Apply",
     {},
-    !baseline || !outputFiles.length || !!changed.length,
+    !baseline
+      ? "Save a version baseline first."
+      : changed.length
+        ? "Resync the changed files first."
+        : !outputFiles.length
+          ? "No checked file has saved output yet."
+          : false,
     "primary",
     outputFiles,
   );

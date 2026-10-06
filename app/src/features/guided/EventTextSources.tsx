@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { EngineValue, EventTextState } from "../../api/contracts";
+import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
@@ -43,12 +44,16 @@ export function EventTextSources({
             </>
           }
         >
-          <Button
+          <ActionControl
+            label="Use recommendations"
             disabled={disabled || state.status !== "ready"}
+            disabledReason={
+              state.status !== "ready"
+                ? "Available once the investigation saves findings."
+                : ""
+            }
             onClick={recommendations}
-          >
-            Use recommendations
-          </Button>
+          />
         </ActionRow>
       </ActionList>
       {values.AUTONAMEPOPUP101 === true && (
