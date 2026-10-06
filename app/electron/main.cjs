@@ -13,6 +13,7 @@ const { Backend } = require("./backend.cjs");
 const { Diagnostics } = require("./diagnostics.cjs");
 const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
+const { copyText } = require("./clipboard.cjs");
 
 app.setName("DazedTLNext");
 if (process.env.DAZEDTL_NEXT_PROFILE)
@@ -148,7 +149,7 @@ app
     const recovery = rendererRecovery(window, {
       diagnostics,
       dialog,
-      clipboard,
+      clipboard: { writeText: (text) => copyText(clipboard, text) },
       closing: () => closing || quit,
       beforeReload: () => {
         ready = false;
@@ -210,12 +211,12 @@ app
         Buffer.byteLength(text, "utf8") > 2_000_000
       )
         throw new Error("Choose a bounded text artifact to copy.");
-      await clipboard.writeText(text);
+      copyText(clipboard, text);
     });
     ipcMain.handle("dazedtl:copy-diagnostics", async (event) => {
       trusted(event);
       try {
-        await clipboard.writeText(diagnostics.report());
+        copyText(clipboard, diagnostics.report());
       } catch (error) {
         diagnostics.failure("desktop.error", error, { operation: "native" });
         throw new Error("Diagnostics could not be copied. Try again.");

@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 import os from "node:os";
 import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
 import { Diagnostics } from "../app/electron/diagnostics.cjs";
+import { copyText } from "../app/electron/clipboard.cjs";
 import { rendererFailure } from "../app/src/app/rendererErrors.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -115,6 +116,17 @@ test("crash recovery can copy diagnostics, and stale dialog responses cannot rel
     await turn();
     assert.equal(f.events.includes("reload"), false);
   }
+});
+
+test("a copy counts only when the clipboard reads the text back", () => {
+  // Wayland can ignore a write from an unfocused window without an error,
+  // which used to report "Task copied" with the old clipboard left in place.
+  const clipboard = (stored: string) => ({
+    writeText() {},
+    readText: () => stored,
+  });
+  assert.throws(() => copyText(clipboard("earlier text"), "Task"));
+  assert.doesNotThrow(() => copyText(clipboard("a\r\nb"), "a\nb"));
 });
 
 test("renderer diagnostics retain useful code coordinates without messages, paths, or arbitrary rejection data", (t) => {

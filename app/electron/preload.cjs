@@ -1,17 +1,26 @@
 const { contextBridge, ipcRenderer } = require("electron");
+// Electron prefixes an error a handler throws with its channel name; only the
+// handler's own message is meant for the user.
+const invoke = (channel, ...args) =>
+  ipcRenderer.invoke(channel, ...args).catch((error) => {
+    throw new Error(
+      String(error?.message ?? error).replace(
+        /^Error invoking remote method '[^']*': (?:[A-Za-z]*Error: )?/,
+        "",
+      ),
+    );
+  });
 contextBridge.exposeInMainWorld("dazedtl", {
   call: (version, method, params = {}) =>
-    ipcRenderer.invoke("dazedtl:call", version, method, params),
-  ready: () => ipcRenderer.invoke("dazedtl:ready"),
-  copyText: (text) => ipcRenderer.invoke("dazedtl:copy-text", text),
-  copyDiagnostics: () => ipcRenderer.invoke("dazedtl:copy-diagnostics"),
-  reportRendererError: (failure) =>
-    ipcRenderer.invoke("dazedtl:renderer-error", failure),
-  reloadInterface: () => ipcRenderer.invoke("dazedtl:reload-interface"),
-  chooseFolder: () => ipcRenderer.invoke("dazedtl:choose-folder"),
-  chooseEditor: () => ipcRenderer.invoke("dazedtl:choose-editor"),
-  openFolder: (kind, target) =>
-    ipcRenderer.invoke("dazedtl:open-folder", kind, target),
+    invoke("dazedtl:call", version, method, params),
+  ready: () => invoke("dazedtl:ready"),
+  copyText: (text) => invoke("dazedtl:copy-text", text),
+  copyDiagnostics: () => invoke("dazedtl:copy-diagnostics"),
+  reportRendererError: (failure) => invoke("dazedtl:renderer-error", failure),
+  reloadInterface: () => invoke("dazedtl:reload-interface"),
+  chooseFolder: () => invoke("dazedtl:choose-folder"),
+  chooseEditor: () => invoke("dazedtl:choose-editor"),
+  openFolder: (kind, target) => invoke("dazedtl:open-folder", kind, target),
   onClose: (handler, cancelled) => {
     let activeToken = 0;
     const respond = async (token) => {
@@ -23,7 +32,7 @@ contextBridge.exposeInMainWorld("dazedtl", {
         error = value instanceof Error ? value.message : String(value);
       }
       try {
-        await ipcRenderer.invoke("dazedtl:close-ready", { token, error });
+        await invoke("dazedtl:close-ready", { token, error });
       } catch {
         // Without a reply, the main process shows its close-timeout choice.
       }
