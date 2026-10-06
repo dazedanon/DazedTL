@@ -640,16 +640,14 @@ export function toolsView(w: GuidedWorkspace): TaskView {
               </>
             }
           >
-            <div className="guided-tool-actions">
-              {task(
-                key + "_install",
-                state.tools?.[key].installed ? "Update" : "Install",
-                {},
-                !baseline,
-              )}
-              {state.tools?.[key].present &&
-                task(key + "_remove", "Remove", {}, !baseline)}
-            </div>
+            {task(
+              key + "_install",
+              state.tools?.[key].installed ? "Update" : "Install",
+              {},
+              !baseline,
+            )}
+            {state.tools?.[key].present &&
+              task(key + "_remove", "Remove", {}, !baseline)}
           </ActionRow>
         ))}
         <ActionRow
