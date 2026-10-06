@@ -14,16 +14,16 @@ type MissingManifestMethods = AssertNever<
 >;
 export type ProtocolCoverage = [MissingClientMethods, MissingManifestMethods];
 type Envelope =
-  | { version: number; ok: true; value: unknown }
+  | { version: string; ok: true; value: unknown }
   | {
-      version: number;
+      version: string;
       ok: false;
       error: { code: ErrorCode; message: string; details?: unknown };
     };
 declare global {
   interface Window {
     dazedtl: {
-      call(version: number, method: string, params: object): Promise<Envelope>;
+      call(version: string, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;
       reportRendererError(failure: RendererFailure): Promise<void>;

@@ -170,12 +170,6 @@ class ImageService:
             value = self._load(project_id)
             index = self._index(project_id)
             profile = self._profile(project_id, value)
-            counts = index.counts()
-            public = {
-                key: deepcopy(item)
-                for key, item in value.items()
-                if key not in {"requests", "pendingPublications"}
-            }
             job = deepcopy(self.jobs.get(project_id) or value.get("lastScan"))
             if job and job["status"] == "running" and project_id not in self.jobs:
                 job.update(
@@ -183,20 +177,30 @@ class ImageService:
                     message="The previous scan was interrupted. Refresh inventory to resume indexing.",
                 )
             return {
-                **public,
-                "revision": self._preferences_revision(value),
-                "observationRevision": digest(value),
-                "source": str(root),
+                "projectId": project_id,
                 "name": project["name"],
                 "engine": project["engine"],
                 "profile": profile,
-                "counts": counts,
-                **counts,
+                "source": str(root),
+                "revision": self._preferences_revision(value),
+                "observationRevision": digest(value),
+                "inventoryRevision": value["inventoryRevision"],
+                "counts": index.counts(),
                 "folders": index.folders(),
-                "job": job,
-                "discoveryScope": value["discovery"]["scope"],
-                "supported": profile["supported"],
+                "selection": deepcopy(value["selection"]),
+                "view": deepcopy(value["view"]),
+                "discovery": deepcopy(value["discovery"]),
+                "editing": deepcopy(value["editing"]),
+                "receipts": deepcopy(value["receipts"]),
+                "warnings": deepcopy(value["warnings"]),
+                **(
+                    {"lastAction": deepcopy(value["lastAction"])}
+                    if "lastAction" in value
+                    else {}
+                ),
                 "editableRoot": str(root / ".dazedtl/images"),
+                "supported": profile["supported"],
+                "job": job,
             }
 
     def list(

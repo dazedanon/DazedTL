@@ -13,7 +13,7 @@ import type {
   PluginPreview,
   PluginState,
   PluginView,
-} from "../../api/pluginContracts";
+} from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { useOnChange } from "../../state/useOnChange";

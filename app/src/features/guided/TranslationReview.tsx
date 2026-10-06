@@ -139,7 +139,8 @@ export function TranslationReviewContent({
   answer,
 }: ReviewProps) {
   const [inspecting, setInspecting] = useState(false);
-  const detail = job?.approval?.detail || preview?.estimate?.value;
+  const detail: Record<string, unknown> | undefined =
+    job?.approval?.detail || preview?.estimate?.value;
   if (!detail) return null;
   const batch = !preview && job?.approval?.kind === "batch",
     files = job?.files || preview?.paths || [];

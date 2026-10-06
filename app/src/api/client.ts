@@ -1,7 +1,7 @@
 import { request } from "./transport";
-import type { ImageEditorSave } from "./imageEditorContracts";
 import { imagesApi } from "./images";
 import type {
+  ImageEditorSave,
   Screen,
   Phase,
   GuidedOptions,

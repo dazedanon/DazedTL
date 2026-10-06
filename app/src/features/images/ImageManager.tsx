@@ -26,7 +26,7 @@ import type {
   ImageEntryMode,
   ImageManagerState,
   ImagePreview,
-} from "../../api/imageContracts";
+} from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";

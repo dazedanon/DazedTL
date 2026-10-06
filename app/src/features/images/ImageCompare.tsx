@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ImageAsset } from "../../api/imageContracts";
+import type { ImageAsset } from "../../api/contracts";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { Button } from "../../ui/Button";

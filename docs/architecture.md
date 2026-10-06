@@ -583,7 +583,7 @@ Estimate startup, finalization and Live/Batch cost-review preparation have disti
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
-Mutations changing snapshot-backed state, including recovery drafts, must declare `refresh: true` in the [protocol manifest](../backend/dazedtl/api/protocol.json), so remounted editors cannot recover an older draft from the cached snapshot.
+Mutations changing snapshot-backed state, including recovery drafts, must keep the default `refresh` in their [method contract](../backend/dazedtl/api/contracts/methods.py), so remounted editors cannot recover an older draft from the cached snapshot.
 Guided engine options use the same draft session and retain the native revision check.
 Setup-form recovery lives alongside project records in the profile.
 Opening Guided transfers any pending shared-context draft before linking the native workflow.
@@ -669,11 +669,17 @@ Existing plans without a policy retain their original behavior; provider cache a
 
 ## API changes
 
-Add renderer operations through [client.ts](../app/src/api/client.ts), with request/response types in [contracts.ts](../app/src/api/contracts.ts).
-Update the shared [protocol manifest](../backend/dazedtl/api/protocol.json), Python handler, and [public views](../backend/dazedtl/api/views.py) together; legacy records stay behind the view boundary.
-Bump the protocol version for incompatible contracts so stale clients are rejected before mutations execute.
-The manifest declares state-refresh and close-time permissions; permit close-time operations only when required to finish saving or reading.
-Envelope/version checks and TypeScript types do not validate arbitrary payloads; domain operations remain responsible for input validation and ownership checks.
+The [Python contracts](../backend/dazedtl/api/contracts) define every method's parameters, reply shape and flags once.
+Change a method there, in its handler and in [client.ts](../app/src/api/client.ts), then run `node scripts/contracts.mjs`.
+It generates the renderer's [contracts.ts](../app/src/api/contracts.ts) and the [protocol manifest](../backend/dazedtl/api/protocol.json) read by Electron and the project helper; the build fails while either is stale.
+The protocol version is a hash of the contracts, so any change rejects a stale renderer or helper before mutations execute.
+Replies pass through the [public views](../backend/dazedtl/api/views.py), keeping legacy records behind that boundary.
+Contracts are closed: declare what the renderer and helper may read, and drop what they should not.
+Only records the backend keeps for its own recovery, such as the Len's method lifecycle and compiled request context, stay open beyond their documented keys.
+The [contract test](../tests/test_api_contracts.py) checks every handler's parameters against its contract and validates replies from an offline journey.
+Launch with `DAZEDTL_CHECK_CONTRACTS=1` to validate every request and reply while developing; a mismatch fails the call.
+Methods refresh the workspace snapshot by default; permit close-time operations only when required to finish saving or reading.
+Contract checks are a development aid; domain operations remain responsible for input validation and ownership checks.
 
 ## Translation execution and the agent boundary
 

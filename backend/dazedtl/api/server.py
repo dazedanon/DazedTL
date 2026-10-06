@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from dazedtl.api.contracts.methods import METHODS
 from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
@@ -401,10 +402,8 @@ class Application:
         return self.settings.check_connection(revision, connection_id)
 
 
-def serve(args, diagnostics):
-    os.environ["PYTHON_DOTENV_DISABLED"] = "1"
-    app = Application(args.workspace, not args.offline)
-    diagnostics.workspace_ready(app.projects.data["version"])
+def routes(app):
+    """Each method's handler and the view that shapes its result."""
     methods = {
         "workspace_snapshot": (app.snapshot, lambda value, _params: value),
         **{
@@ -554,10 +553,20 @@ def serve(args, diagnostics):
             getattr(app.image_native, name),
             lambda value, _params: value,
         )
+    return methods
 
-    def dispatch(name, params):
-        if name not in methods:
-            raise ValueError("Unknown project operation.")
+
+def dispatcher(app, check=False):
+    """Run methods by name; check validates both sides against the contracts."""
+    methods = routes(app)
+    if set(methods) != set(METHODS):
+        raise RuntimeError("The application API does not match its contracts.")
+    checks = None
+    if check:
+        # Validation needs pydantic, which normal runs never load.
+        from dazedtl.api.contracts import validation as checks
+
+    def run(name, params):
         handler, present = methods[name]
         app.prepare_model_pricing(name, params)
         if name in {"connection_check", "openrouter_hosts", "settings_model_defaults"}:
@@ -572,8 +581,24 @@ def serve(args, diagnostics):
             app.resolve_batch_support(persist=True)
         return value
 
-    if set(methods) != set(PROTOCOL["methods"]):
-        raise RuntimeError("The application API does not match its protocol manifest.")
+    def dispatch(name, params):
+        if name not in methods:
+            raise ValueError("Unknown project operation.")
+        if checks:
+            checks.check_request(name, params)
+        value = run(name, params)
+        if checks:
+            checks.check_response(name, value)
+        return value
+
+    return dispatch
+
+
+def serve(args, diagnostics):
+    os.environ["PYTHON_DOTENV_DISABLED"] = "1"
+    app = Application(args.workspace, not args.offline)
+    diagnostics.workspace_ready(app.projects.data["version"])
+    dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
     local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
     try:
         for line in sys.stdin:
@@ -595,8 +620,7 @@ def serve(args, diagnostics):
                     print(json.dumps(response), file=RPC_OUTPUT, flush=True)
                     continue
                 name = request.get("method")
-                method = methods.get(name) if isinstance(name, str) else None
-                if not method:
+                if not isinstance(name, str) or name not in METHODS:
                     raise ValueError("Unknown application operation.")
                 params = request.get("params", {})
                 if not isinstance(params, dict):
@@ -610,7 +634,7 @@ def serve(args, diagnostics):
             except Exception as exc:  # noqa: BLE001
                 name = request.get("method")
                 operation = (
-                    name if isinstance(name, str) and name in methods else "native"
+                    name if isinstance(name, str) and name in METHODS else "native"
                 )
                 diagnostics.failure(exc, operation, request.get("id"))
                 response = {

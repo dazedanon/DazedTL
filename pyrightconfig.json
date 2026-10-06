@@ -12,7 +12,8 @@
       // Tests use monkeypatching and lightweight fakes, and index results
       // they have just asserted exist; other checks still apply.
       "root": "tests",
-      "extraPaths": ["backend", "backend/dazedtl/engine"],
+      // Discovery runs from the checkout root, so tests import as a package.
+      "extraPaths": [".", "backend", "backend/dazedtl/engine"],
       "reportAttributeAccessIssue": "none",
       "reportArgumentType": "none",
       "reportOptionalSubscript": "none",

@@ -62,7 +62,7 @@ export type RequestBatch = {
 /** Counts and file names cannot establish which provider batch owns a request. */
 export function requestBatches(
   process: RunProcess,
-  mode?: string,
+  mode?: string | null,
 ): RequestBatch[] {
   const rows =
     process.requests ||

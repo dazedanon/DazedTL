@@ -4,21 +4,22 @@ import sys
 import unittest
 from pathlib import Path
 
+from tests.probe import Probe
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 
 def load_tests(loader, tests, pattern):
-    # The engine probe starts in the background when its module is imported.
-    # Running its test last lets the rest of the suite overlap that work.
+    # Probes start in the background when their modules are imported. Running
+    # their tests last lets the rest of the suite overlap that work.
     modules = loader.discover(str(Path(__file__).parent), pattern or "test*.py")
-    return unittest.TestSuite(
-        sorted(
-            modules,
-            key=lambda module: any(
-                test.id().startswith("tests.test_engine_runtime.")
-                for test in _tests(module)
-            ),
-        )
+    return unittest.TestSuite(sorted(modules, key=_waits_for_probe))
+
+
+def _waits_for_probe(suite):
+    return any(
+        isinstance(getattr(sys.modules[type(test).__module__], "probe", None), Probe)
+        for test in _tests(suite)
     )
 
 

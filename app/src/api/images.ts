@@ -1,5 +1,5 @@
 import { request } from "./transport";
-import type { ImageDraft } from "./imageContracts";
+import type { ImageDraft } from "./contracts";
 import { readQueue } from "./readQueue";
 const metadataRead = readQueue(2);
 const pixelRead = readQueue(4);

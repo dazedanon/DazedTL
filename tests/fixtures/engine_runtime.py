@@ -88,6 +88,12 @@ try:
         result.get("log"),
     )
     assert result["estimate"]["input_tokens"] > 0
+    # The renderer inspects this finished estimate; its view must match the Job
+    # contract the renderer's types are generated from.
+    from dazedtl.api import views
+    from dazedtl.api.contracts.validation import check_response
+
+    check_response("guided_inspect", views.job(app.guided.run_view(job["id"])))
     assert (game / "Items.json").read_bytes() == original
     frozen = manual.folder(job["id"]) / "context/system.md"
     assert (

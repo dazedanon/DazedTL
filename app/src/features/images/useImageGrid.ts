@@ -6,7 +6,7 @@ import type {
   ImageList,
   ImagePixels,
   ImageView,
-} from "../../api/imageContracts";
+} from "../../api/contracts";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 8;

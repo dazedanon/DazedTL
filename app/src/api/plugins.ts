@@ -1,5 +1,5 @@
 import { request } from "./transport";
-import type { PluginView } from "./pluginContracts";
+import type { PluginView } from "./contracts";
 import { readQueue } from "./readQueue";
 const metadataRead = readQueue(2);
 export const pluginsApi = {

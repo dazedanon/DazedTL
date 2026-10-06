@@ -1,4 +1,4 @@
-import type { ImageManagerState } from "../../api/imageContracts";
+import type { ImageManagerState } from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { Message } from "../../ui/Feedback";

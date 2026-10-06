@@ -2,7 +2,7 @@ import type {
   ImageAsset,
   ImageDraft,
   ImageManagerState,
-} from "../../api/imageContracts";
+} from "../../api/contracts";
 
 export function imageDraft(state: ImageManagerState): ImageDraft {
   return {

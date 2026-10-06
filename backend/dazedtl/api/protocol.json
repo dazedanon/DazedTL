@@ -1,66 +1,49 @@
 {
-  "version": 19,
+  "version": "f7c1ae73b228f259",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
       "duringClose": true
     },
     "open_project": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "select_project": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "navigate": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "settings_get": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "settings_save": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "settings_draft": {
       "refresh": false,
       "duringClose": true
     },
     "settings_revert": {
-      "refresh": false
-    },
-    "guided_phase_select": {
-      "refresh": true
-    },
-    "guided_preview": {
-      "refresh": false
-    },
-    "guided_execute": {
-      "refresh": true
-    },
-    "guided_answer": {
-      "refresh": true
-    },
-    "guided_stop": {
-      "refresh": true
-    },
-    "guided_resume": {
-      "refresh": true
-    },
-    "guided_draft": {
-      "refresh": true,
-      "duringClose": true
-    },
-    "guided_save_document": {
-      "refresh": true
+      "refresh": false,
+      "duringClose": false
     },
     "connection_save": {
       "refresh": true,
       "duringClose": true
     },
     "connection_select": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "connection_check": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "settings_model_defaults": {
       "refresh": false,
@@ -70,206 +53,297 @@
       "refresh": false,
       "duringClose": false
     },
-    "translation_state": {
-      "refresh": false
+    "guided_phase_select": {
+      "refresh": true,
+      "duringClose": false
     },
-    "translation_save": {
-      "refresh": true
+    "guided_preview": {
+      "refresh": false,
+      "duringClose": false
     },
-    "translation_draft": {
+    "guided_execute": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_answer": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_stop": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_resume": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_draft": {
       "refresh": true,
       "duringClose": true
     },
-    "translation_documents": {
-      "refresh": false
-    },
-    "translation_save_document": {
-      "refresh": true
-    },
-    "translation_prepare": {
-      "refresh": true
-    },
-    "translation_compile": {
-      "refresh": true
-    },
-    "translation_run": {
-      "refresh": false
-    },
-    "translation_request": {
-      "refresh": false
-    },
-    "translation_backups": {
-      "refresh": false
-    },
-    "translation_start": {
-      "refresh": true
-    },
-    "translation_stop": {
-      "refresh": true
-    },
-    "translation_accept": {
-      "refresh": true
-    },
-    "translation_review": {
-      "refresh": true
-    },
-    "translation_progress": {
-      "refresh": true
-    },
-    "translation_operation": {
-      "refresh": true
-    },
-    "translation_attach_batch": {
-      "refresh": true
-    },
-    "translation_resolve_uncertain": {
-      "refresh": true
-    },
-    "translation_identify": {
-      "refresh": true
-    },
-    "translation_legacy": {
-      "refresh": true
+    "guided_save_document": {
+      "refresh": true,
+      "duringClose": false
     },
     "guided_position": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_options_draft": {
       "refresh": true,
       "duringClose": true
     },
     "guided_save_options": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_skill": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_apply_speakers": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "translation_speakers": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_inspect": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_payload": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_name_results": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_file_preview": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_discard_preparation": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_settle_empty_estimate": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_provider_details": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_batch_cancel_preview": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_batch_cancel": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_batch_collect": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_form": {
       "refresh": true,
       "duringClose": true
     },
     "guided_context_status": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_context_review": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_reference_add": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_reference_remove": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_event_text_request": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "guided_event_text_review": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_event_text_view": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "guided_event_text_picker": {
       "refresh": true,
       "duringClose": true
     },
     "guided_comparisons_review": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_output_folder": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_state": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_save": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_draft": {
+      "refresh": true,
+      "duringClose": true
+    },
+    "translation_documents": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_save_document": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_prepare": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_compile": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_run": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_request": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_backups": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_start": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_stop": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_accept": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_review": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_progress": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_operation": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_attach_batch": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_resolve_uncertain": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_identify": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_legacy": {
+      "refresh": true,
+      "duringClose": false
     },
     "images_state": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_list": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_preview": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_update": {
       "refresh": true,
       "duringClose": true
     },
     "images_action": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "images_editor_state": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_editor_save": {
       "refresh": true,
       "duringClose": true
     },
     "images_editor_action": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "images_editor_translation_state": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_editor_translation_preview": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "images_editor_translation_start": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "images_editor_translation_action": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "plugins_state": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "plugins_list": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "plugins_detail": {
-      "refresh": false
+      "refresh": false,
+      "duringClose": false
     },
     "plugins_update": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "plugins_action": {
-      "refresh": true
+      "refresh": true,
+      "duringClose": false
     },
     "plugins_continue": {
-      "refresh": true
-    },
-    "guided_output_folder": {
-      "refresh": false
+      "refresh": true,
+      "duringClose": false
     }
   }
 }

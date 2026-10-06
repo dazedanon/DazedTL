@@ -14,3 +14,6 @@ numpy>=2.0
 opencv-python-headless>=4.10
 pip>=24.0
 httpx>=0.28.1
+# API contract schema and its validation in tests and development.
+pydantic>=2.13
+typing-extensions>=4.15

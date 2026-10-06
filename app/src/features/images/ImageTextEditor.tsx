@@ -9,7 +9,7 @@ import type {
   ImageNativeTranslationState,
   ImageTextBlock,
   ImageTextStyle,
-} from "../../api/imageEditorContracts";
+} from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { Button } from "../../ui/Button";
@@ -28,6 +28,19 @@ export interface ImageTextEditorProps {
   onChanged?: () => void;
   observationKey?: unknown;
 }
+
+type BackgroundRepair = NonNullable<ImageTextStyle["background"]>;
+const backgroundRepairs: Record<BackgroundRepair, string> = {
+  keep: "Leave pixels",
+  transparent: "Clear text to transparent",
+  solid: "Solid colour",
+  vgradient: "Vertical gradient",
+  hgradient: "Horizontal gradient",
+  patch: "Clone clean strip",
+  inpaint: "Local OpenCV repair",
+};
+const isBackgroundRepair = (value: string): value is BackgroundRepair =>
+  Object.hasOwn(backgroundRepairs, value);
 
 const editorDraft = (state: ImageEditorState): ImageEditorSave[] =>
   state.images.map((image) => ({
@@ -903,24 +916,24 @@ function Editor({
                       aria-label="Image background repair"
                       value={block.style?.background || "keep"}
                       disabled={busy}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const background = event.target.value;
+                        if (!isBackgroundRepair(background)) return;
                         editStyle({
-                          background: event.target.value,
-                          ...(event.target.value === "solid"
+                          background,
+                          ...(background === "solid"
                             ? { fill: block.style?.fill || [0, 0, 0, 255] }
                             : {}),
-                        })
-                      }
+                        });
+                      }}
                     >
-                      <option value="keep">Leave pixels</option>
-                      <option value="transparent">
-                        Clear text to transparent
-                      </option>
-                      <option value="solid">Solid colour</option>
-                      <option value="vgradient">Vertical gradient</option>
-                      <option value="hgradient">Horizontal gradient</option>
-                      <option value="patch">Clone clean strip</option>
-                      <option value="inpaint">Local OpenCV repair</option>
+                      {Object.entries(backgroundRepairs).map(
+                        ([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ),
+                      )}
                     </select>
                   </label>
                   {block.style?.background === "solid" && (

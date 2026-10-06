@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ImagePreview } from "../../api/imageContracts";
+import type { ImagePreview } from "../../api/contracts";
 import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";

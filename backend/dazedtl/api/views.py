@@ -1,5 +1,7 @@
 """Public application views; legacy worker records never cross the UI boundary."""
 
+from dazedtl.api.contracts import ContractViolation
+
 
 def pick(value, names):
     return {name: value[name] for name in names if name in value}
@@ -208,6 +210,9 @@ def preview(value):
 
 
 def error(exc):
+    if isinstance(exc, ContractViolation):
+        # Only raised when development checks are on; show which field drifted.
+        return {"code": "internal", "message": str(exc)}
     if isinstance(exc, FileNotFoundError):
         return {"code": "not_found", "message": str(exc)}
     if isinstance(exc, ValueError):
