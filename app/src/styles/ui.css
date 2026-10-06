@@ -309,6 +309,13 @@ pre {
   padding-top: var(--space-6);
   margin-bottom: var(--space-5);
 }
+/* Short windows give editor pages their height back from the header. */
+@media (max-height: 720px) {
+  .page-layout--editor > .page-header {
+    padding-top: var(--space-4);
+    margin-bottom: var(--space-3);
+  }
+}
 .page-layout--editor > [role="tabpanel"] {
   display: flex;
   flex-direction: column;

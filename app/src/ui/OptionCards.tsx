@@ -17,6 +17,7 @@ export function OptionCards<T extends string>({
   options,
   onChange,
   disabled = false,
+  autoFocus = false,
   className = "",
 }: {
   label: string;
@@ -24,6 +25,8 @@ export function OptionCards<T extends string>({
   options: readonly OptionCard<T>[];
   onChange: (value: T) => void;
   disabled?: boolean;
+  /** Focuses the chosen card, for a dialog that opens on this choice. */
+  autoFocus?: boolean;
   className?: string;
 }) {
   return (
@@ -36,6 +39,7 @@ export function OptionCards<T extends string>({
         <Button
           key={option.value}
           aria-pressed={value === option.value}
+          autoFocus={autoFocus && value === option.value}
           disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >

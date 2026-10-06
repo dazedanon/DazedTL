@@ -18,7 +18,6 @@ import {
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
-import { engineLabel } from "../../ui/displayText";
 import { Section } from "../../ui/Section";
 import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
@@ -155,7 +154,6 @@ function Workspace({
     >
       <PageHeader
         title="Len's method"
-        description={project.name + " · " + engineLabel(state.engine)}
         actions={
           <div className="actions">
             <Button

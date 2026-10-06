@@ -55,6 +55,7 @@ export function MethodDialog({
         <OptionCards
           label="Translation method"
           value={method}
+          autoFocus
           disabled={busy}
           onChange={setMethod}
           options={[
