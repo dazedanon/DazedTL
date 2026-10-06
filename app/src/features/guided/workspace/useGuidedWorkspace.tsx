@@ -15,6 +15,7 @@ import { flushDrafts } from "../../../state/leaveGuards";
 import { useAction } from "../../../state/useAction";
 import { useDraft } from "../../../state/useDraft";
 import { useOnChange } from "../../../state/useOnChange";
+import { useRead } from "../../../state/useRead";
 import { shortcutKeys, shortcutLabel } from "../../../state/useShortcut";
 import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
@@ -266,6 +267,21 @@ export function useGuidedWorkspace({
   const releasePath =
     release.directory.replace(/[\\/]+$/, "") + "/" + release.name;
   const artifact = state.artifacts.find((item) => item.kind === release.kind);
+  // Release checks its destination while it is typed, so Build never learns of
+  // a rejected folder late; the name's own separator rule needs no read.
+  const nameError = /[\\/]/.test(release.name)
+    ? "Use a filename without folder separators. Choose the destination in Save in."
+    : "";
+  const destination = useRead(
+    taskId === "package" &&
+      !nameError &&
+      release.directory.trim() &&
+      release.name.trim()
+      ? `${project.id}\n${releasePath}`
+      : null,
+    () => api.guided.releaseDestination(project.id, releasePath),
+  );
+  const destinationError = nameError || destination.value?.error || "";
 
   const edit = <K extends keyof GuidedOptions>(
     key: K,
@@ -1167,6 +1183,8 @@ export function useGuidedWorkspace({
     release,
     releaseAction,
     releasePath,
+    destinationError,
+    destinationPending: destination.pending,
     artifact,
     edit,
     editForm,

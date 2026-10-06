@@ -449,6 +449,10 @@ def routes(app):
             app.guided.output_folder,
             lambda value, _params: value,
         ),
+        "guided_release_destination": (
+            app.guided.release_destination,
+            lambda value, _params: value,
+        ),
         "guided_payload": (app.guided.payload, lambda value, _params: value),
         "guided_name_results": (app.guided.name_results, lambda value, _params: value),
         "guided_file_preview": (app.guided.file_preview, lambda value, _params: value),

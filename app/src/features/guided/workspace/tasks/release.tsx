@@ -19,6 +19,8 @@ export function packageView(w: GuidedWorkspace): TaskView {
     release,
     releaseAction,
     releasePath,
+    destinationError,
+    destinationPending,
     artifact,
     editText,
     save,
@@ -32,6 +34,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
   content = (
     <ReleaseContent
       value={release}
+      destinationError={destinationError}
       disabled={disabled}
       artifact={artifact}
       unapplied={state.readiness.unapplied}
@@ -67,6 +70,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
             disabled ||
             !release.directory ||
             !release.name ||
+            !!destinationError ||
             !!state.readiness.unapplied.length
           }
           {...feedback("package:inspect", "Reading archive contents…")}
@@ -127,13 +131,22 @@ export function packageView(w: GuidedWorkspace): TaskView {
       ? "Build clean game ZIP"
       : "Review & build patch ZIP",
     { output: releasePath },
-    !baseline ||
-      !release.directory.trim() ||
-      !release.name.trim() ||
-      /[\\/]/.test(release.name) ||
-      !state.acePacking.current ||
-      !!state.readiness.unapplied.length,
+    destinationError
+      ? "Choose a destination the archive can be saved to."
+      : !baseline ||
+          !release.directory.trim() ||
+          !release.name.trim() ||
+          destinationPending ||
+          !state.acePacking.current ||
+          !!state.readiness.unapplied.length,
     "primary",
   );
-  return { content, primary };
+  // Building with nothing applied packages the original text; say so once,
+  // unless the destination must be fixed first.
+  const actionContext = !destinationError &&
+    !state.readiness.applied.length &&
+    !state.readiness.unapplied.length && (
+      <span>Nothing applied yet: the ZIP keeps the original text.</span>
+    );
+  return { content, primary, actionContext };
 }

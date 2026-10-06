@@ -183,6 +183,8 @@ export const api = {
   guided: {
     outputFolder: (project_id: string) =>
       request("guided_output_folder", { project_id }),
+    releaseDestination: (project_id: string, output: string) =>
+      request("guided_release_destination", { project_id, output }),
     eventTextRequest: (project_id: string) =>
       request("guided_event_text_request", { project_id }),
     eventTextReview: (

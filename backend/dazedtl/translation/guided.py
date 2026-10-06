@@ -84,6 +84,7 @@ class Guided:
         self.form = self.release.form
         self.form_value = self.release.form_value
         self.release_defaults = self.release.release_defaults
+        self.release_destination = self.release.release_destination
         self.validate_release_form = self.release.validate_release_form
         self.saved_form = self.release.saved_form
         self.release_artifacts = self.release.release_artifacts

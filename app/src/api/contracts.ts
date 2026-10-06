@@ -788,6 +788,11 @@ export type OutputFolder = {
   path: string;
 };
 
+/** Why a release ZIP cannot be written to the chosen path, or empty. */
+export type ReleaseDestination = {
+  error: string;
+};
+
 export type TranslationOptions = {
   mode: "agent" | "live" | "batch";
   instructions: string;
@@ -2105,6 +2110,11 @@ export type GuidedFormRequest = {
   value: GuidedForm;
 };
 
+export type GuidedReleaseDestinationRequest = {
+  project_id: string;
+  output: string;
+};
+
 export type GuidedSaveOptionsRequest = {
   project_id: string;
   revision: number;
@@ -2329,6 +2339,10 @@ export type RpcContract = {
     response: Saved;
   };
   guided_output_folder: { request: ProjectRequest; response: OutputFolder };
+  guided_release_destination: {
+    request: GuidedReleaseDestinationRequest;
+    response: ReleaseDestination;
+  };
   translation_state: { request: ProjectRequest; response: TranslationState };
   translation_save: {
     request: TranslationSaveRequest;

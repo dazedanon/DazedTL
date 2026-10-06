@@ -125,6 +125,22 @@ class GuidedRelease:
             },
         }
 
+    def release_destination(self, project_id, output):
+        """Reads whether a release ZIP may be written there, without writing."""
+        from .release import destination
+
+        project, _ = self.guided.record(project_id)
+        try:
+            destination(
+                project["source"],
+                self.guided.translation.workspace,
+                self.guided.backend.source,
+                output,
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"error": ""}
+
     @staticmethod
     def validate_release_form(value):
         if isinstance(value, dict) and isinstance(value.get("name"), str):

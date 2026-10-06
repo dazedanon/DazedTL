@@ -748,6 +748,10 @@
 .guided-package-fields {
   margin: var(--space-4) 0 var(--space-5);
 }
+.guided-package-error {
+  grid-column: 1 / -1;
+  margin-top: calc(-1 * var(--space-1));
+}
 .guided-widths label,
 .guided-package-fields label {
   display: flex;

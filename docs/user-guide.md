@@ -96,7 +96,8 @@ Apply and playtest an early scene before expanding the scope.
 
 **Release** builds a clean game ZIP or a local patch ZIP.
 A patch build saves a local checkpoint and workspace backup first; a clean game ZIP leaves the working game untouched.
-Destinations must be outside the game, the app workspace and the engine, and replacing an existing archive needs approval.
+Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
+With no translation applied yet, the footer notes that the ZIP keeps the original text.
 The app checks the package contents and finished archive before offering its folder; these checks do not mean the game passed QA.
 GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the app never publishes or pushes.
 

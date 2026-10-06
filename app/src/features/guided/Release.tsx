@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
-import { Message } from "../../ui/Feedback";
 import { Section } from "../../ui/Section";
 import { VirtualList } from "../../ui/VirtualList";
 
@@ -15,6 +14,7 @@ const size = (bytes: number) =>
 
 export function ReleaseContent({
   value,
+  destinationError,
   edit,
   disabled,
   chooseFolder,
@@ -27,6 +27,8 @@ export function ReleaseContent({
   apply,
 }: {
   value: Options;
+  /** Why the archive cannot be saved at the chosen name and folder. */
+  destinationError: string;
   edit: (change: Partial<Options>) => void;
   disabled: boolean;
   chooseFolder: () => void;
@@ -78,6 +80,10 @@ export function ReleaseContent({
             Archive name
             <input
               value={value.name}
+              aria-invalid={destinationError ? true : undefined}
+              aria-describedby={
+                destinationError ? "release-destination-error" : undefined
+              }
               onChange={(event) =>
                 edit({
                   name: event.target.value,
@@ -92,16 +98,26 @@ export function ReleaseContent({
               <input
                 aria-label="Save in"
                 value={value.directory}
+                aria-invalid={destinationError ? true : undefined}
+                aria-describedby={
+                  destinationError ? "release-destination-error" : undefined
+                }
                 onChange={(event) => edit({ directory: event.target.value })}
               />
               <Button onClick={chooseFolder}>Choose folder</Button>
             </div>
           </label>
+          {destinationError && (
+            <small
+              className="field-error guided-package-error"
+              id="release-destination-error"
+              role="alert"
+            >
+              {destinationError}
+            </small>
+          )}
         </div>
       </fieldset>
-      {/[\\/]/.test(value.name) && (
-        <Message message="Use a filename without folder separators. Choose the destination in Save in." />
-      )}
       {!!unapplied.length && (
         <Section title="Apply saved outputs before building">
           <ActionList>

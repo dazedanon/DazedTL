@@ -64,6 +64,11 @@ button:disabled {
 ):focus {
   border-color: var(--accent);
 }
+/* A field its error describes keeps the error color, focused or not. */
+:is(input, select, textarea)[aria-invalid="true"],
+:is(input, select, textarea)[aria-invalid="true"]:focus {
+  border-color: var(--color-error-text);
+}
 input,
 select,
 textarea {

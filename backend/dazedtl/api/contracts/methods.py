@@ -22,6 +22,7 @@ from dazedtl.api.contracts.guided import (
     OutputFolder,
     Preview,
     ReferenceFolder,
+    ReleaseDestination,
     SkillText,
     SpeakerScan,
 )
@@ -363,6 +364,11 @@ class GuidedFormRequest(TypedDict):
     value: GuidedForm
 
 
+class GuidedReleaseDestinationRequest(TypedDict):
+    project_id: str
+    output: str
+
+
 class GuidedSaveOptionsRequest(TypedDict):
     project_id: str
     revision: int
@@ -547,6 +553,9 @@ METHODS: dict[str, Method] = {
     ),
     "guided_comparisons_review": Method(GuidedComparisonsReviewRequest, Saved),
     "guided_output_folder": Method(ProjectRequest, OutputFolder, refresh=False),
+    "guided_release_destination": Method(
+        GuidedReleaseDestinationRequest, ReleaseDestination, refresh=False
+    ),
     # Len's method
     "translation_state": Method(ProjectRequest, TranslationState, refresh=False),
     "translation_save": Method(TranslationSaveRequest, ProjectOptions),

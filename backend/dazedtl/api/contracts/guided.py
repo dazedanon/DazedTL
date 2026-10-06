@@ -514,3 +514,9 @@ class SkillText(TypedDict):
 
 class OutputFolder(TypedDict):
     path: str
+
+
+class ReleaseDestination(TypedDict):
+    """Why a release ZIP cannot be written to the chosen path, or empty."""
+
+    error: str

@@ -479,6 +479,7 @@ The stage strip marks finished stages, shows a dot for stages with some complete
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
+Its destination fields are checked as they change through a read-only call to the same rule packaging enforces, so Build stays disabled with the reason instead of failing late.
 Explicitly declined speaker preflight is interpreted as canceled only with verified first-attempt, no-submission evidence and no saved outputs or queue artifacts.
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project ownership and recovery receipts.
