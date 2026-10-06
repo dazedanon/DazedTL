@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { historyOutcome } from "../app/src/features/guided/historyView.ts";
+import { textLocation } from "../app/src/features/guided/textLocation.ts";
 import type { GuidedState, Job, RunPayload } from "../app/src/api/contracts.ts";
 import {
   requestRows,
@@ -1985,4 +1986,21 @@ test("file line amounts count each source request once at its latest attempt", (
     total: null,
     running: true,
   });
+});
+
+test("text locations name the editor's event, page and command, counting from one", () => {
+  assert.equal(
+    textLocation("/events/1/pages/0/list/20/parameters/0"),
+    "Event 1 · page 1 · command 21",
+  );
+  assert.equal(
+    textLocation("/7/pages/2/list/0/parameters/0"),
+    "Troop 7 · page 3 · command 1",
+  );
+  assert.equal(
+    textLocation("/106/list/4/parameters/1"),
+    "Common event 106 · command 5",
+  );
+  assert.equal(textLocation("/3/description"), "Entry 3 · description");
+  assert.equal(textLocation("/terms/messages/x"), "terms › messages › x");
 });

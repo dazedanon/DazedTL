@@ -1,4 +1,5 @@
 import type { Phase } from "../../../api/contracts";
+import { textLocation } from "../textLocation";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
@@ -360,7 +361,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             {preview.rewrap.previews.map((row, index) => (
               <details key={index}>
                 <summary>
-                  {row.file_name} · {row.locator}
+                  {row.file_name} · {textLocation(row.locator)}
                 </summary>
                 <strong>Before</strong>
                 <pre>{row.before}</pre>

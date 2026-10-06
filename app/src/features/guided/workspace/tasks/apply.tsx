@@ -1,5 +1,6 @@
 /** Apply & Fitting: publish outputs, fit text, optional QA and game tools. */
 import type { ReactNode } from "react";
+import { textLocation } from "../../textLocation";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
@@ -326,7 +327,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           {fitting.previews.map((row, index) => (
             <details key={index}>
               <summary>
-                {row.file_name} · {row.locator}
+                {row.file_name} · {textLocation(row.locator)}
                 {row.overflow && fields.text.protect_rows
                   ? ` · Skipped: ${row.rows} rows exceed the protected limit`
                   : ""}
@@ -345,7 +346,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     scanCurrent && eligible > 0
       ? task(
           "rewrap_apply",
-          "Review fitting Apply",
+          "Review & apply fitting",
           layoutOptions,
           !baseline || !layoutFiles.length,
           "primary",

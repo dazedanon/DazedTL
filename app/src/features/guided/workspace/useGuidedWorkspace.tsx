@@ -738,14 +738,15 @@ export function useGuidedWorkspace({
     // build from this visit also confirms beside its button.
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
-    // A tool row's own status says whether the tool is installed, and the
-    // editor search lists what it found.
+    // A tool row's own status says whether the tool is installed, the
+    // editor search lists what it found, and a fitting scan states its result.
     const toolChange = [
       "inspector_install",
       "inspector_remove",
       "forge_install",
       "forge_remove",
       "editors",
+      "rewrap_preview",
     ].includes(name);
     const display =
       current?.status === "complete" &&

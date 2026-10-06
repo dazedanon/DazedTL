@@ -99,6 +99,11 @@ summary::before {
 details[open] > summary::before {
   transform: rotate(90deg);
 }
+/* The gap below a summary separates it from its content, so a closed
+   disclosure ends at its summary. */
+details:not([open]) > summary {
+  margin-bottom: 0;
+}
 @media (prefers-reduced-motion: reduce) {
   summary::before {
     transition: none;
