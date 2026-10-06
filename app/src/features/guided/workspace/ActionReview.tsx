@@ -410,7 +410,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
                         ? "Reload files"
                         : ["release", "release_patch"].includes(preview.action)
                           ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP`
-                          : "Run this action"}
+                          : preview.label || "Run this action"}
           </Button>
         )}
       </ActionBar>

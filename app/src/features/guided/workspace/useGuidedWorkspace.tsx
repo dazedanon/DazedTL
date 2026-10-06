@@ -738,10 +738,18 @@ export function useGuidedWorkspace({
     // build from this visit also confirms beside its button.
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
+    // A tool row's own status says whether the tool is installed.
+    const toolChange = [
+      "inspector_install",
+      "inspector_remove",
+      "forge_install",
+      "forge_remove",
+    ].includes(name);
     const display =
       current?.status === "complete" &&
       (publicationReview ||
         releaseBuild ||
+        toolChange ||
         (qaOperation && (!qa.current || current.result?.task !== qa.task)))
         ? undefined
         : current;

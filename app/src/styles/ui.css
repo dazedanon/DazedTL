@@ -961,11 +961,13 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
+/* Buttons share a top edge; one control's feedback hangs below it without
+   moving its neighbours. */
 .action-row-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
   min-width: 0;
   max-width: min(100%, var(--action-column-width));
