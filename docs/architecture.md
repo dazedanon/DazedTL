@@ -439,7 +439,8 @@ The palette pairs teal-tinted neutrals with a cyan-green accent, so the app read
 Color has three accent roles: accent for interactive text, focus and the edge or underline that marks what is current, accent strong under white text for the one primary button, and accent subtle for selected surfaces (the current sidebar entry, a selected row).
 The current sidebar entry adds an accent bar on its start edge; the selected tab and the current stage keep the text color over an accent underline, and the current stage's number fills with the accent.
 A panel whose first row names it and its state, such as the assistant task and the active connection, gives that row the shared `panel-header` tint.
-The dazed cat is the app's mark, drawn from the original icon: its teal tile in the top bar and as the window icon, and its accent outline leading the Project page's welcome row when no game is open; it appears nowhere else, so it stays distinctive.
+The dazed cat is the app's mark, drawn from the original icon: its teal tile as the window icon, and its accent outline in the top bar and leading the Project page's welcome row when no game is open.
+Inside the app the cat is always the outline, so the top bar does not repeat the tile that title bars show beside it; it appears nowhere else, so it stays distinctive.
 Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 Image canvases keep their own `--color-canvas-*` checks and `--color-mark-*` box marks, because they are drawn over game images rather than the app's surfaces.
 Every literal size, weight, color, spacing step and radius lives in [tokens.css](../app/src/styles/tokens.css); [styles.mjs](../scripts/styles.mjs), part of the build checks, rejects literals in any other stylesheet, so a new value starts as a named token.

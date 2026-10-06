@@ -40,13 +40,13 @@
 .brand-accent {
   color: var(--color-accent);
 }
-/* The dazed cat on its teal tile, the same mark as the window icon. */
+/* The dazed cat's head as an accent outline; the window icon, shown beside
+   it by many title bars, keeps the filled teal tile. */
 .brand-mark {
-  width: 28px;
+  width: 31px;
   height: 28px;
-  border-radius: var(--control-radius);
-  background: url("../assets/brand/mark.png") center / contain no-repeat;
-  box-shadow: var(--shadow-mark);
+  background: var(--color-accent);
+  mask: url("../assets/brand/cat-head-outline.png") center / contain no-repeat;
 }
 .current-project {
   font-size: var(--font-body);
