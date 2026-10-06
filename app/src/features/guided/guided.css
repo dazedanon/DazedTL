@@ -706,21 +706,8 @@
   margin-top: var(--space-4);
 }
 .guided-scope-summary {
-  display: grid;
-  gap: var(--space-3);
+  --summary-label-width: 9rem;
   margin: var(--space-5) 0;
-}
-.guided-scope-summary > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-}
-.guided-scope-summary dt {
-  color: var(--muted);
-}
-.guided-scope-summary dd {
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 .guided-preparation-list {
   list-style: none;

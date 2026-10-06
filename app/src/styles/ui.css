@@ -350,6 +350,10 @@ pre {
 .field-row + .check-field {
   margin-top: var(--field-row-gap);
 }
+/* Fields lead into the actions they configure with the same gap as a section. */
+:is(.field-row, .check-field) + .action-list {
+  margin-top: var(--space-5);
+}
 .check-field {
   display: flex;
   align-items: center;
@@ -521,7 +525,7 @@ pre {
 }
 .summary-row {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
+  grid-template-columns: var(--summary-label-width, 100px) minmax(0, 1fr);
   align-items: center;
   gap: 16px;
   min-height: 28px;
@@ -539,7 +543,9 @@ pre {
 }
 @media (max-width: 1050px) {
   .summary-row {
-    grid-template-columns: 80px minmax(0, 1fr);
+    grid-template-columns:
+      calc(var(--summary-label-width, 100px) * 0.8)
+      minmax(0, 1fr);
     gap: 12px;
   }
 }

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
+import { DetailRow, FieldRow } from "../../../../ui/FieldRow";
 import { Notice } from "../../../../ui/Notice";
 import { displayText } from "../../../../ui/displayText";
 import { fileCount, publicationLabels } from "../model";
@@ -24,30 +25,17 @@ export function applyView(w: GuidedWorkspace): TaskView {
   content = (
     <>
       {fileSummary()}
-      <dl className="guided-scope-summary">
-        <div>
-          <dt>Saved outputs</dt>
-          <dd>
-            {outputFiles.length
-              ? `${fileCount(outputFiles.length)} available`
-              : "No selected outputs available"}
-          </dd>
-        </div>
-        <div>
-          <dt>Applied to game</dt>
-          <dd>
-            {!outputFiles.length
-              ? "No outputs ready to apply"
-              : applied
-                ? state.readiness.runtime_edited.some((name) =>
-                    outputFiles.includes(name),
-                  )
-                  ? "Previously applied"
-                  : "Previously applied"
-                : "Ready for application review"}
-          </dd>
-        </div>
-      </dl>
+      {/* With nothing saved, Review Apply's reason says so once. */}
+      {!!outputFiles.length && (
+        <dl className="guided-scope-summary">
+          <DetailRow label="Saved outputs">
+            {fileCount(outputFiles.length)} available
+          </DetailRow>
+          <DetailRow label="Applied to game">
+            {applied ? "Previously applied" : "Ready for application review"}
+          </DetailRow>
+        </dl>
+      )}
       <p className="muted">
         Only checked files with saved output are included. Apply fully
         overwrites those game files; it does not merge changes or track
@@ -395,28 +383,30 @@ export function qaView(w: GuidedWorkspace): TaskView {
   let content: ReactNode, primary: ReactNode, secondary: ReactNode;
   content = (
     <>
-      <label>
-        QA focus
-        <select
-          value={fields.text.focus}
-          disabled={disabled}
-          onChange={(event) => {
-            editText("focus", event.target.value);
-            editText("findings", []);
-          }}
-        >
-          {[
-            ["release", "Full game text"],
-            ["database", "Database"],
-            ["dialogue", "Dialogue"],
-            ["risky-codes", "Risky event codes"],
-          ].map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <FieldRow id="qa-focus" label="QA focus">
+        {(props) => (
+          <select
+            {...props}
+            value={fields.text.focus}
+            disabled={disabled}
+            onChange={(event) => {
+              editText("focus", event.target.value);
+              editText("findings", []);
+            }}
+          >
+            {[
+              ["release", "Full game text"],
+              ["database", "Database"],
+              ["dialogue", "Dialogue"],
+              ["risky-codes", "Risky event codes"],
+            ].map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        )}
+      </FieldRow>
       <ActionList>
         <ActionRow
           title="QA task"
