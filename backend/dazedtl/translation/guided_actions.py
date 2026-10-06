@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -78,9 +79,65 @@ SHARED_ACTIONS = {
 MANIFEST = ".dazedtl/guided/runtime-manifest.json"
 
 
+READY_ACTIONS = {
+    "start",
+    "export_selected",
+    "rewrap_apply",
+    "qa_apply",
+    "runtime_restore",
+    "ace_pack",
+    "qa_prepare",
+    "playtest_install",
+    "checkpoint",
+    "guided_review",
+    "guided_package",
+} | TOOL_ACTIONS
+PUBLICATION_ACTIONS = {"rewrap_apply", "qa_apply", "runtime_restore"}
+
+
+@dataclass
+class PreviewContext:
+    """The checked request every action family prepares its review from."""
+
+    project_id: str
+    action: str
+    project: dict[str, Any]
+    native: dict[str, Any]
+    value: dict[str, Any]
+    options: dict[str, Any]
+    files: list[str] | None
+    run_output: dict[str, Any] | None
+    release_status: dict[str, Any] | None
+
+
+@dataclass
+class ActionPlan:
+    """What a reviewed run or lifecycle operation will do once confirmed."""
+
+    label: str
+    paths: list[str]
+    options: dict[str, Any]
+    expected: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+    run_inputs: dict[str, Any] | None = None
+    quote: dict[str, Any] | None = None
+
+
 class GuidedActions:
     def __init__(self, guided: Guided):
         self.guided = guided
+
+    def require_ready(self, project_id, native, action, changed):
+        """Translation readiness and unchanged sources for publishing actions."""
+        if action in READY_ACTIONS:
+            self.guided.translation.ready(project_id)
+        if (
+            action in PUBLICATION_ACTIONS
+            and self.guided.inputs(native).status(
+                sorted(self.guided.supported_files(native))
+            )["changed"]
+        ):
+            raise ValueError(changed)
 
     @staticmethod
     def pending_run(value):
@@ -155,6 +212,17 @@ class GuidedActions:
     def preview(
         self, project_id, action, files=None, options: dict[str, Any] | None = None
     ):
+        context = self.preview_context(project_id, action, files, options)
+        if action == "start":
+            plan = self.plan_run(context)
+        elif action in SHARED_ACTIONS:
+            plan = self.plan_lifecycle(context)
+        else:
+            return self.preview_native(context)
+        return self.confirm(context, plan)
+
+    def preview_context(self, project_id, action, files, options):
+        """Checks every action shares before its family prepares a review."""
         if action != "start":
             self.guided.idle(
                 isolated_workers=action in {"export_selected", "refresh_sources"}
@@ -175,33 +243,12 @@ class GuidedActions:
         value = self.guided.backend.workflows.state(native["id"])
         if action != "backup_source":
             self.guided.source_preserved(project_id)
-        if (
-            action
-            in {
-                "start",
-                "export_selected",
-                "rewrap_apply",
-                "qa_apply",
-                "runtime_restore",
-                "ace_pack",
-                "qa_prepare",
-                "playtest_install",
-                "checkpoint",
-                "guided_review",
-                "guided_package",
-            }
-            | TOOL_ACTIONS
-        ):
-            self.guided.translation.ready(project_id)
-        if (
-            action in {"rewrap_apply", "qa_apply", "runtime_restore"}
-            and self.guided.inputs(native).status(
-                sorted(self.guided.supported_files(native))
-            )["changed"]
-        ):
-            raise ValueError(
-                "Original sources changed. Review source changes before replacing runtime text."
-            )
+        self.require_ready(
+            project_id,
+            native,
+            action,
+            "Original sources changed. Review source changes before replacing runtime text.",
+        )
         if action.startswith("ace_") and (
             native["engine"] != "ACE" or not self.guided.backend.ace_available()
         ):
@@ -216,321 +263,359 @@ class GuidedActions:
             raise ValueError("TL Inspector and Forge support RPG Maker MV/MZ games.")
         if action in {"release", "release_patch"}:
             release_status = self.guided.release_ready(project_id, native, value)
+        else:
+            release_status = None
         if action == "git_setup":
             self.guided.require_preparation(project_id, native)
             if type(options.get("untranslated")) is not bool:
                 raise ValueError(
                     "Choose whether this game is untranslated or already contains translations."
                 )
+        return PreviewContext(
+            project_id,
+            action,
+            project,
+            native,
+            value,
+            options,
+            files,
+            run_output,
+            release_status,
+        )
+
+    def plan_run(self, context):
+        """A translation, estimate or speaker run for the selected phase."""
+        project_id, project = context.project_id, context.project
+        native = context.native
+        value, options = context.value, context.options
+        if (
+            set(options) - {"mode", "preparation_mode"}
+            or options.get("mode") not in {"batch", "translate", "estimate", "speakers"}
+            or "preparation_mode" in options
+            and (
+                options["mode"] != "estimate"
+                or options["preparation_mode"] not in {"batch", "translate"}
+            )
+        ):
+            raise ValueError(
+                "Choose Batch, Live API, a cost estimate, or speaker collection."
+            )
+        mode = options["mode"]
+        if (
+            options.get("preparation_mode")
+            and options["preparation_mode"]
+            != self.guided.preferences(native)["values"]["mode"]
+        ):
+            raise ValueError(
+                "Save the intended translation mode before preparing its estimate."
+            )
+        phase = "speakers" if mode == "speakers" else project["phase"]
+        if phase == "speakers" and mode != "speakers":
+            raise ValueError("Choose a translation phase first.")
+        if phase == "advanced":
+            settings = native["engine_options"]
+            if not any(settings.get(key) is True for key in ADVANCED_CODES):
+                raise ValueError(
+                    "Audit advanced text and enable only confirmed player-visible sources, or skip this phase."
+                )
+            if (
+                settings.get("CODE122") is True
+                and not settings.get("CODE122_VAR_RANGES", "").strip()
+            ):
+                raise ValueError(
+                    "Enter the variable IDs confirmed by the audit before translating variables (122)."
+                )
+        paths = [
+            name
+            for name in self.guided.backend.phase_files(native, phase)
+            if name in native["selected"]
+        ]
+        if not paths:
+            raise ValueError("Select game files belonging to this phase first.")
+        if self.guided.inputs(native).status(
+            sorted(self.guided.supported_files(native))
+        )["changed"]:
+            raise ValueError(
+                "The original source changed. Review source changes and refresh the working copies before preparing a new run."
+            )
+        if value["project"].get("collection_error"):
+            raise ValueError(value["project"]["collection_error"])
+        options["phase"] = phase
+        if phase == "variables":
+            comparisons = self.guided.runs.comparisons(native)
+            if not comparisons["matches"]:
+                raise ValueError(
+                    "Translate the relevant audited assignments first. No saved mappings match the selected comparisons. "
+                    + comparisons["message"]
+                )
+            if comparisons["status"] != "ready":
+                raise ValueError(
+                    "Review every matched literal and its variable uses before updating comparisons."
+                )
+        if phase == "advanced":
+            self.guided.event_text.require(project_id, native)
+        run_inputs = None
+        quote = None
+        if mode != "speakers":
+            target_mode = (
+                self.guided.preferences(native)["values"]["mode"]
+                if mode == "estimate"
+                else mode
+            )
+            matched, run_inputs = self.guided.runs.quote(
+                project_id, native, phase, target_mode
+            )
+            if mode != "estimate":
+                if not matched["current"]:
+                    raise ValueError(
+                        "Calculate a current estimate for this phase, selection, and settings before reviewing translation."
+                    )
+                quote = {
+                    "jobId": matched["job"]["id"],
+                    "fingerprint": run_inputs["fingerprint"],
+                    "value": matched["job"]["estimate"],
+                    "model": matched["job"].get("model", ""),
+                    "connection": (self.guided.settings.connection_summary() or {}).get(
+                        "name", ""
+                    ),
+                }
+                try:
+                    quote["repeatSubmission"] = bool(
+                        self.submission_overlap(native, quote)
+                    )
+                except OSError, ValueError, KeyError:
+                    # Unreadable historical evidence cannot veto a separately
+                    # approved run either; keep the repeat-charge notice.
+                    quote["repeatSubmission"] = True
+        label = {
+            "batch": "Prepare Batch translation",
+            "translate": "Start Live API translation",
+            "estimate": "Estimate selected phase",
+            "speakers": "Collect speaker names",
+        }[mode]
+        return ActionPlan(label, paths, options, run_inputs=run_inputs, quote=quote)
+
+    def plan_lifecycle(self, context):
+        """Backups, version baselines, resync and release lifecycle operations."""
+        project_id, action = context.project_id, context.action
+        project = context.project
+        native, files = context.native, context.files
+        options: dict[str, Any] = context.options
+        release_status = context.release_status
+        paths, expected, manifest = [], None, None
+        label = SHARED_ACTIONS[action]
+        allowed = (
+            {"version", "original", "untranslated"}
+            if action == "git_setup"
+            else {"reviewed", "playtested"}
+            if action == "guided_review"
+            else {"output"}
+            if action == "release_patch"
+            else set()
+        )
+        if set(options) - allowed:
+            raise ValueError("Unknown guided action option.")
+        if action == "backup_source":
+            saved = lifecycle(self.guided.translation.workspace, project_id).get(
+                "source_backup"
+            )
+            if (
+                saved
+                and backups.record_status(project["source"], saved, kind="source")[
+                    "available"
+                ]
+            ):
+                raise ValueError(
+                    "The original is already preserved. Use workspace backups for later milestones."
+                )
+        if action == "refresh_sources":
+            if (
+                not isinstance(files, list)
+                or not files
+                or any(not isinstance(name, str) for name in files)
+                or len(set(files)) != len(files)
+                or set(files) - self.guided.supported_files(native)
+            ):
+                raise ValueError("Select supported files to refresh.")
+            paths = files
+            options = {
+                "sources": self.guided.inputs(native).sources(
+                    paths, self.guided.inputs(native).record()["inputs"], fresh=True
+                )
+            }
+        if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
+            paths = self.guided.release_paths(project_id, project["source"], action)
+            manifest = self.guided.patch_manifest(project_id, paths, action)
+            expected = evidence(project["source"], [*paths, *manifest["inputs"]])
+        if action == "release_patch":
+            from .release import destination, git_identity, output_hash
+
+            output = destination(
+                project["source"],
+                self.guided.translation.workspace,
+                self.guided.backend.source,
+                options.get("output"),
+            )
+            options = {
+                "output": str(output),
+                "output_hash": output_hash(output),
+                "source_inputs_sha256": digest(self.guided.inputs(native).record()),
+                "git": git_identity(release_status),
+            }
+        if action == "guided_review" and (
+            options.get("reviewed") is not True or options.get("playtested") is not True
+        ):
+            raise ValueError(
+                "Review the translated scope and playtest it before recording release readiness."
+            )
+        if action == "guided_review":
+            options["source_inputs_sha256"] = digest(
+                self.guided.inputs(native).record()
+            )
+        if action == "guided_package":
+            self.verify_review(project_id, native)
+        return ActionPlan(label, paths, options, expected=expected, manifest=manifest)
+
+    def preview_native(self, context):
+        """Engine workflow actions, reviewed by the engine's own plan and token."""
+        project_id, action = context.project_id, context.action
+        project = context.project
+        native, value, files = context.native, context.value, context.files
+        run_output = context.run_output
+        options: dict[str, Any] = context.options
         paths = []
-        expected = None
-        manifest = None
-        if action == "start":
-            if (
-                set(options) - {"mode", "preparation_mode"}
-                or options.get("mode")
-                not in {"batch", "translate", "estimate", "speakers"}
-                or "preparation_mode" in options
-                and (
-                    options["mode"] != "estimate"
-                    or options["preparation_mode"] not in {"batch", "translate"}
-                )
+        if action == "import":
+            if not isinstance(files, list) or any(
+                not isinstance(name, str)
+                or name not in self.guided.supported_files(native)
+                for name in files
             ):
                 raise ValueError(
-                    "Choose Batch, Live API, a cost estimate, or speaker collection."
+                    "Select supported RPG Maker files from this project's list."
                 )
-            mode = options["mode"]
-            if (
-                options.get("preparation_mode")
-                and options["preparation_mode"]
-                != self.guided.preferences(native)["values"]["mode"]
-            ):
-                raise ValueError(
-                    "Save the intended translation mode before preparing its estimate."
-                )
-            phase = "speakers" if mode == "speakers" else project["phase"]
-            if phase == "speakers" and mode != "speakers":
-                raise ValueError("Choose a translation phase first.")
-            if phase == "advanced":
-                settings = native["engine_options"]
-                if not any(settings.get(key) is True for key in ADVANCED_CODES):
-                    raise ValueError(
-                        "Audit advanced text and enable only confirmed player-visible sources, or skip this phase."
-                    )
-                if (
-                    settings.get("CODE122") is True
-                    and not settings.get("CODE122_VAR_RANGES", "").strip()
-                ):
-                    raise ValueError(
-                        "Enter the variable IDs confirmed by the audit before translating variables (122)."
-                    )
-            paths = [
-                name
-                for name in self.guided.backend.phase_files(native, phase)
-                if name in native["selected"]
-            ]
-            if not paths:
-                raise ValueError("Select game files belonging to this phase first.")
-            if self.guided.inputs(native).status(
-                sorted(self.guided.supported_files(native))
-            )["changed"]:
-                raise ValueError(
-                    "The original source changed. Review source changes and refresh the working copies before preparing a new run."
-                )
+            options = {"files": files or []}
+        elif action == "export_selected" and run_output:
+            paths = files
+            options = {"files": paths, "run_id": run_output["run_id"]}
+        elif action == "export_selected":
             if value["project"].get("collection_error"):
                 raise ValueError(value["project"]["collection_error"])
-            options["phase"] = phase
-            if phase == "variables":
-                comparisons = self.guided.runs.comparisons(native)
-                if not comparisons["matches"]:
-                    raise ValueError(
-                        "Translate the relevant audited assignments first. No saved mappings match the selected comparisons. "
-                        + comparisons["message"]
-                    )
-                if comparisons["status"] != "ready":
-                    raise ValueError(
-                        "Review every matched literal and its variable uses before updating comparisons."
-                    )
-            if phase == "advanced":
-                self.guided.event_text.require(project_id, native)
-            run_inputs = None
-            quote = None
-            if mode != "speakers":
-                target_mode = (
-                    self.guided.preferences(native)["values"]["mode"]
-                    if mode == "estimate"
-                    else mode
+            requested = native["selected"] if files is None else files
+            if (
+                not isinstance(requested, list)
+                or any(not isinstance(name, str) for name in requested)
+                or len(set(requested)) != len(requested)
+                or set(requested) - set(native["selected"])
+            ):
+                raise ValueError("Choose saved outputs within the selected scope.")
+            paths = [
+                name
+                for name in requested
+                if self.guided.inputs(native).path("translated", name).is_file()
+            ]
+            if files is not None and paths != files:
+                raise ValueError(
+                    "The selected run outputs are no longer available. Review current outputs."
                 )
-                matched, run_inputs = self.guided.runs.quote(
-                    project_id, native, phase, target_mode
+            if not paths:
+                raise ValueError(
+                    "No saved translation output is available for these files yet."
                 )
-                if mode != "estimate":
-                    if not matched["current"]:
-                        raise ValueError(
-                            "Calculate a current estimate for this phase, selection, and settings before reviewing translation."
-                        )
-                    quote = {
-                        "jobId": matched["job"]["id"],
-                        "fingerprint": run_inputs["fingerprint"],
-                        "value": matched["job"]["estimate"],
-                        "model": matched["job"].get("model", ""),
-                        "connection": (
-                            self.guided.settings.connection_summary() or {}
-                        ).get("name", ""),
-                    }
-                    try:
-                        quote["repeatSubmission"] = bool(
-                            self.submission_overlap(native, quote)
-                        )
-                    except OSError, ValueError, KeyError:
-                        # Unreadable historical evidence cannot veto a separately
-                        # approved run either; keep the repeat-charge notice.
-                        quote["repeatSubmission"] = True
-            label = {
-                "batch": "Prepare Batch translation",
-                "translate": "Start Live API translation",
-                "estimate": "Estimate selected phase",
-                "speakers": "Collect speaker names",
-            }[mode]
-        elif action in SHARED_ACTIONS:
-            label = SHARED_ACTIONS[action]
-            allowed = (
-                {"version", "original", "untranslated"}
-                if action == "git_setup"
-                else {"reviewed", "playtested"}
-                if action == "guided_review"
-                else {"output"}
-                if action == "release_patch"
-                else set()
-            )
-            if set(options) - allowed:
-                raise ValueError("Unknown guided action option.")
-            if action == "backup_source":
-                saved = lifecycle(self.guided.translation.workspace, project_id).get(
-                    "source_backup"
-                )
-                if (
-                    saved
-                    and backups.record_status(project["source"], saved, kind="source")[
-                        "available"
-                    ]
-                ):
-                    raise ValueError(
-                        "The original is already preserved. Use workspace backups for later milestones."
-                    )
-            if action == "refresh_sources":
-                if (
-                    not isinstance(files, list)
-                    or not files
-                    or any(not isinstance(name, str) for name in files)
-                    or len(set(files)) != len(files)
-                    or set(files) - self.guided.supported_files(native)
-                ):
-                    raise ValueError("Select supported files to refresh.")
-                paths = files
-                options = {
-                    "sources": self.guided.inputs(native).sources(
-                        paths, self.guided.inputs(native).record()["inputs"], fresh=True
-                    )
-                }
-            if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
-                paths = self.guided.release_paths(project_id, project["source"], action)
-                manifest = self.guided.patch_manifest(project_id, paths, action)
-                expected = evidence(project["source"], [*paths, *manifest["inputs"]])
-            if action == "release_patch":
-                from .release import destination, git_identity, output_hash
+            options = {"files": paths}
+        if action == "release":
+            from .release import destination
 
-                output = destination(
+            if set(options) != {"output"}:
+                raise ValueError("Choose the release destination.")
+            options["output"] = str(
+                destination(
                     project["source"],
                     self.guided.translation.workspace,
                     self.guided.backend.source,
-                    options.get("output"),
+                    options["output"],
                 )
-                options = {
-                    "output": str(output),
-                    "output_hash": output_hash(output),
-                    "source_inputs_sha256": digest(self.guided.inputs(native).record()),
-                    "git": git_identity(release_status),
-                }
-            if action == "guided_review" and (
-                options.get("reviewed") is not True
-                or options.get("playtested") is not True
+            )
+        result = (
+            self.guided.backend.guided_text_preview(native["id"], action, options)
+            if action in {"runtime_restore", "qa_apply"}
+            else self.guided.backend.guided_export_preview(
+                native["id"], paths, run_output=run_output
+            )
+            if run_output
+            else self.guided.backend.guided_export_preview(native["id"], paths)
+            if action == "export_selected"
+            else self.guided.backend.guided_preparation_preview(
+                native["id"], action, options
+            )
+            if action == "prepare_game"
+            else self.guided.backend.workflows.preview(native["id"], action, options)
+        )
+        token = result["token"]
+        if action in TOOL_ACTIONS:
+            configured = self.guided.saved_form(project_id)["release"]["tools"]
+            if (
+                not configured["hotkey"].strip()
+                or not configured["forgeHotkey"].strip()
             ):
-                raise ValueError(
-                    "Review the translated scope and playtest it before recording release readiness."
-                )
-            if action == "guided_review":
-                options["source_inputs_sha256"] = digest(
-                    self.guided.inputs(native).record()
-                )
-            if action == "guided_package":
-                self.verify_review(project_id, native)
-        else:
-            if action == "import":
-                if not isinstance(files, list) or any(
-                    not isinstance(name, str)
-                    or name not in self.guided.supported_files(native)
-                    for name in files
-                ):
-                    raise ValueError(
-                        "Select supported RPG Maker files from this project's list."
-                    )
-                options = {"files": files or []}
-            elif action == "export_selected" and run_output:
-                paths = files
-                options = {"files": paths, "run_id": run_output["run_id"]}
-            elif action == "export_selected":
-                if value["project"].get("collection_error"):
-                    raise ValueError(value["project"]["collection_error"])
-                requested = native["selected"] if files is None else files
-                if (
-                    not isinstance(requested, list)
-                    or any(not isinstance(name, str) for name in requested)
-                    or len(set(requested)) != len(requested)
-                    or set(requested) - set(native["selected"])
-                ):
-                    raise ValueError("Choose saved outputs within the selected scope.")
-                paths = [
-                    name
-                    for name in requested
-                    if self.guided.inputs(native).path("translated", name).is_file()
-                ]
-                if files is not None and paths != files:
-                    raise ValueError(
-                        "The selected run outputs are no longer available. Review current outputs."
-                    )
-                if not paths:
-                    raise ValueError(
-                        "No saved translation output is available for these files yet."
-                    )
-                options = {"files": paths}
-            if action == "release":
-                from .release import destination
-
-                if set(options) != {"output"}:
-                    raise ValueError("Choose the release destination.")
-                options["output"] = str(
-                    destination(
-                        project["source"],
-                        self.guided.translation.workspace,
-                        self.guided.backend.source,
-                        options["output"],
-                    )
-                )
-            result = (
-                self.guided.backend.guided_text_preview(native["id"], action, options)
-                if action in {"runtime_restore", "qa_apply"}
-                else self.guided.backend.guided_export_preview(
-                    native["id"], paths, run_output=run_output
-                )
-                if run_output
-                else self.guided.backend.guided_export_preview(native["id"], paths)
-                if action == "export_selected"
-                else self.guided.backend.guided_preparation_preview(
-                    native["id"], action, options
-                )
-                if action == "prepare_game"
-                else self.guided.backend.workflows.preview(
-                    native["id"], action, options
-                )
+                raise ValueError("Choose hotkeys for the playtest tools.")
+            self.guided.backend.guided_configure_tools(token, configured)
+        if action == "release":
+            result.update(self.guided.backend.guided_release_preview(token))
+        if action == "rewrap_apply":
+            result["rewrap"] = self.guided.backend.guided_rewrap_review(
+                native["id"], token
             )
-            token = result["token"]
-            if action in TOOL_ACTIONS:
-                configured = self.guided.saved_form(project_id)["release"]["tools"]
-                if (
-                    not configured["hotkey"].strip()
-                    or not configured["forgeHotkey"].strip()
-                ):
-                    raise ValueError("Choose hotkeys for the playtest tools.")
-                self.guided.backend.guided_configure_tools(token, configured)
-            if action == "release":
-                result.update(self.guided.backend.guided_release_preview(token))
-            if action == "rewrap_apply":
-                result["rewrap"] = self.guided.backend.guided_rewrap_review(
-                    native["id"], token
-                )
-            if action in {"export_selected", "rewrap_apply"}:
-                result.update(self.guided.backend.guided_text_publication(token))
-            reviewed_paths = (
-                paths or result.get("paths") or result["options"].get("files", [])
-            )
-            self.guided.confirmations = {
-                token: {
-                    "project_id": project_id,
-                    "action": action,
-                    "native": True,
-                    "paths": list(reviewed_paths),
-                    "revision": native["revision"],
-                    "phase": project["phase"],
-                    "settings_revision": self.guided.settings.describe()["revision"],
-                }
-            }
-            # Routine preparation uses the same one-use plan and execution checks,
-            # without asking the user to confirm the button they just clicked.
-            return {
-                **result,
+        if action in {"export_selected", "rewrap_apply"}:
+            result.update(self.guided.backend.guided_text_publication(token))
+        reviewed_paths = (
+            paths or result.get("paths") or result["options"].get("files", [])
+        )
+        self.guided.confirmations = {
+            token: {
+                "project_id": project_id,
                 "action": action,
-                "paths": reviewed_paths,
-                "confirmation": (
-                    bool(result.get("overwrite"))
-                    if action == "release"
-                    else result["confirmation"]
-                    and action
-                    not in {
-                        "prepare_game",
-                        "format_data",
-                        "format_plugins",
-                        "gameupdate",
-                        "qa_prepare",
-                        "playtest_install",
-                        "playtest_apply",
-                        "inspector_install",
-                        "forge_install",
-                        "reference_build",
-                        "reference_remove",
-                    }
-                ),
+                "native": True,
+                "paths": list(reviewed_paths),
+                "revision": native["revision"],
+                "phase": project["phase"],
+                "settings_revision": self.guided.settings.describe()["revision"],
             }
+        }
+        # Routine preparation uses the same one-use plan and execution checks,
+        # without asking the user to confirm the button they just clicked.
+        return {
+            **result,
+            "action": action,
+            "paths": reviewed_paths,
+            "confirmation": (
+                bool(result.get("overwrite"))
+                if action == "release"
+                else result["confirmation"]
+                and action
+                not in {
+                    "prepare_game",
+                    "format_data",
+                    "format_plugins",
+                    "gameupdate",
+                    "qa_prepare",
+                    "playtest_install",
+                    "playtest_apply",
+                    "inspector_install",
+                    "forge_install",
+                    "reference_build",
+                    "reference_remove",
+                }
+            ),
+        }
+
+    def confirm(self, context, plan):
+        """Freezes a reviewed plan behind a one-use token."""
+        project_id, action = context.project_id, context.action
+        project = context.project
+        native, release_status = context.native, context.release_status
+        label, paths, options = plan.label, plan.paths, plan.options
+        expected, manifest = plan.expected, plan.manifest
+        run_inputs, quote = plan.run_inputs, plan.quote
         token = uuid.uuid4().hex
         self.guided.confirmations = {
             token: {
@@ -629,37 +714,18 @@ class GuidedActions:
             )
         if action != "backup_source":
             self.guided.source_preserved(project_id)
-        if (
-            action
-            in {
-                "start",
-                "export_selected",
-                "rewrap_apply",
-                "qa_apply",
-                "runtime_restore",
-                "ace_pack",
-                "qa_prepare",
-                "playtest_install",
-                "checkpoint",
-                "guided_review",
-                "guided_package",
-            }
-            | TOOL_ACTIONS
-        ):
-            self.guided.translation.ready(project_id)
-        if (
-            action in {"rewrap_apply", "qa_apply", "runtime_restore"}
-            and self.guided.inputs(native).status(
-                sorted(self.guided.supported_files(native))
-            )["changed"]
-        ):
-            raise ValueError(
-                "Original sources changed after review. Review current sources first."
-            )
+        self.require_ready(
+            project_id,
+            native,
+            action,
+            "Original sources changed after review. Review current sources first.",
+        )
         if action in {"release", "release_patch"}:
             release_status = self.guided.release_ready(
                 project_id, native, self.guided.backend.workflows.state(native["id"])
             )
+        else:
+            release_status = None
         if confirmed.get("native"):
             if (
                 confirmed["revision"] != native["revision"]
@@ -704,37 +770,47 @@ class GuidedActions:
                     "Version tracking changed. Review the current patch scope again."
                 )
         if action == "start":
-            if confirmed["run_inputs"]:
-                current = self.guided.runs.inputs(
-                    project_id,
-                    native,
-                    options["phase"],
-                    confirmed["run_inputs"]["mode"],
-                )
-                if current["fingerprint"] != confirmed["run_inputs"]["fingerprint"]:
-                    raise ValueError(
-                        "The estimate inputs changed. Refresh the estimate and review this run again."
-                    )
-                if options["mode"] != "estimate":
-                    matched, _ = self.guided.runs.quote(
-                        project_id, native, options["phase"], options["mode"]
-                    )
-                    if (
-                        not matched["current"]
-                        or matched["job"]["id"] != confirmed["estimate"]["jobId"]
-                    ):
-                        raise ValueError(
-                            "The matching estimate changed. Review a new preview."
-                        )
-            return self._start(
+            return self.execute_run(project_id, native, confirmed)
+        return self.execute_lifecycle(project_id, project, native, confirmed, options)
+
+    def execute_run(self, project_id, native, confirmed):
+        """Rechecks a run's estimate binding before starting it."""
+        options = confirmed["options"]
+        if confirmed["run_inputs"]:
+            current = self.guided.runs.inputs(
                 project_id,
-                options["mode"],
+                native,
                 options["phase"],
-                confirmed["paths"],
-                confirmed["run_inputs"],
-                confirmed["estimate"],
-                options.get("preparation_mode"),
+                confirmed["run_inputs"]["mode"],
             )
+            if current["fingerprint"] != confirmed["run_inputs"]["fingerprint"]:
+                raise ValueError(
+                    "The estimate inputs changed. Refresh the estimate and review this run again."
+                )
+            if options["mode"] != "estimate":
+                matched, _ = self.guided.runs.quote(
+                    project_id, native, options["phase"], options["mode"]
+                )
+                if (
+                    not matched["current"]
+                    or matched["job"]["id"] != confirmed["estimate"]["jobId"]
+                ):
+                    raise ValueError(
+                        "The matching estimate changed. Review a new preview."
+                    )
+        return self._start(
+            project_id,
+            options["mode"],
+            options["phase"],
+            confirmed["paths"],
+            confirmed["run_inputs"],
+            confirmed["estimate"],
+            options.get("preparation_mode"),
+        )
+
+    def execute_lifecycle(self, project_id, project, native, confirmed, options):
+        """Runs a reviewed lifecycle operation after rechecking its scope."""
+        action = confirmed["action"]
         if action == "refresh_sources":
             return self.guided.backend.guided_refresh(
                 native, confirmed["paths"], options["sources"]
