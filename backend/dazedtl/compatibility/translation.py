@@ -397,26 +397,6 @@ class TranslationEngine:
                 result[relative] = fields[2]
         return result
 
-    def terminology_files(self, source):
-        """Read-only scope for reviewing literal terms, not translation coverage."""
-        from util.project_preparation import rpgmaker_layout
-
-        from dazedtl.translation.files import project_path
-
-        root = Path(source).resolve()
-        layout = rpgmaker_layout(root)
-        if not layout:
-            raise ValueError(
-                "Terminology scanning currently supports RPG Maker MV/MZ and prepared Ace JSON."
-            )
-        data = layout["data_path"]
-        project_path(root, data.relative_to(root).as_posix(), exists=False)
-        return sorted(
-            path.relative_to(root).as_posix()
-            for path in data.glob("*.json")
-            if path.is_file()
-        )
-
     def verify_bindings(self, source, bindings):
         if self.source_bindings(source, list(bindings)) != bindings:
             raise ValueError(
