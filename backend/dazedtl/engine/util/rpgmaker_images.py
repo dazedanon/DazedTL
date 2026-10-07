@@ -441,9 +441,24 @@ def add_patch_exceptions(
             if ignore_path.exists()
             else ""
         )
-        marker = existing.find(GAME_IMAGE_PATCH_GITIGNORE_COMMENT)
-        before = existing if marker < 0 else existing[:marker]
-        section = "" if marker < 0 else existing[marker:]
+        # The section runs from its comment to the next managed block; a
+        # checkpoint places its patch block after it.
+        lines = existing.splitlines(keepends=True)
+        start = next(
+            (index for index, line in enumerate(lines)
+             if line.rstrip("\r\n") == GAME_IMAGE_PATCH_GITIGNORE_COMMENT),
+            None,
+        )
+        if start is None:
+            before, section = existing, ""
+        else:
+            end = next(
+                (index for index in range(start + 1, len(lines))
+                 if lines[index].startswith("# BEGIN ")),
+                len(lines),
+            )
+            section = "".join(lines[start:end])
+            before = "".join(lines[:start]).rstrip("\r\n") + "\n\n" + "".join(lines[end:])
         # The section is rebuilt from every file it lists, so a later image
         # can never land after a rule that hides it.
         files = {
@@ -472,9 +487,12 @@ def add_patch_exceptions(
             + "\n".join(dict.fromkeys(rules))
             + "\n"
         )
-        if section.strip() == rebuilt.strip():
+        # Written last, so its rules follow any `/*` that would hide them.
+        if section.strip() == rebuilt.strip() and existing.rstrip().endswith(
+            rebuilt.strip()
+        ):
             continue
-        before = before.rstrip("\r\n")
+        before = before.strip("\r\n")
         text = (before + "\n\n" if before else "") + rebuilt
         if ignore_path == root / ".gitignore":
             text = normalize_game_tool_gitignore_text(

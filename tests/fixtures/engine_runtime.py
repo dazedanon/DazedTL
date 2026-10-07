@@ -127,6 +127,31 @@ try:
             "img/faces/arina.png",
             "img/pictures/menu/save.png",
         ], listed
+        # A checkpoint then places its patch block, with the only `/*`, after
+        # the image section; the next image must keep that block whole.
+        (repo / "Game.exe").write_bytes(b"exe")
+        allowed = "!/img/\n/img/*\n!/img/faces/\n/img/faces/*\n!/img/faces/arina.png\n"
+        allowed += "!/img/pictures/\n/img/pictures/*\n!/img/pictures/menu/\n"
+        allowed += "/img/pictures/menu/*\n!/img/pictures/menu/save.png\n"
+        (repo / ".gitignore").write_text(
+            "# DazedTL selected image patches\n" + allowed + "\n"
+            "# BEGIN DazedTL Len patch files\n/*\n!/.gitignore\n"
+            + allowed
+            + "# END DazedTL Len patch files\n"
+        )
+        add_patch_exceptions(repo, [repo / "img/pictures/menu/load.png"])
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "-uall"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        assert sorted(listed[1::2]) == [
+            ".gitignore",
+            "img/faces/arina.png",
+            "img/pictures/menu/load.png",
+            "img/pictures/menu/save.png",
+        ], listed
         assert runtime_data_file(PROMPT_PATH).is_relative_to(
             root / "backend/dazedtl/engine/data"
         )
