@@ -606,6 +606,15 @@ class PluginTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not decode"):
             list(leaves('{"Text": "日本語"'))
 
+    def test_copying_a_current_plugin_task_again_keeps_its_request(self):
+        # A second copy must not orphan the saved report of an unchanged task.
+        first = self.service.action(self.identity, "plugin_task")["requestId"]
+        again = self.service.action(self.identity, "plugin_task")["requestId"]
+        self.assertEqual(again, first)
+        self.write("www/js/plugins/PluginA.js", "drawText('変更');")
+        changed = self.service.action(self.identity, "plugin_task")["requestId"]
+        self.assertNotEqual(changed, first)
+
     def test_explicit_loaded_json_needs_new_investigation_then_exact_leaf_checks(self):
         task = self.service.action(self.identity, "plugin_task")
         request, report = self.investigation(task, refresh=False)

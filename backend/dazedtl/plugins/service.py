@@ -883,12 +883,30 @@ class PluginService:
             value = self.load(project_id)
             if action in {"investigate", "plugin_task"}:
                 self.scan(project_id, value)
-                result = self.request(
-                    project_id,
-                    value,
-                    "investigation",
-                    automatic=action == "plugin_task",
-                )
+                current = value["requests"].get("investigation")
+                # Copying the task again while its investigation is still current
+                # hands out the same request, so an assistant extends its saved
+                # report instead of a new request discarding accepted findings.
+                if (
+                    action == "plugin_task"
+                    and current
+                    and current.get("automatic")
+                    and value.get("activeRequest") == current["requestId"]
+                    and self.request_current(project_id, value, current)
+                ):
+                    result = {
+                        "text": current["instructions"],
+                        "request": current["path"],
+                        "requestId": current["requestId"],
+                        "stage": "investigation",
+                    }
+                else:
+                    result = self.request(
+                        project_id,
+                        value,
+                        "investigation",
+                        automatic=action == "plugin_task",
+                    )
             elif action in {"refresh_findings", "refresh_results"}:
                 result = self.refresh(
                     project_id,
@@ -1328,6 +1346,30 @@ class PluginService:
                 "Original Japanese lookup evidence changed or is missing. Investigate again."
             )
         return current
+
+    def request_current(self, project_id, value, request):
+        """Whether an investigation request still matches the scanned sources and guidance."""
+        try:
+            self.verify_request(project_id, request)
+        except OSError, ValueError:
+            return False
+        _, root = self.record(project_id)
+        shape = lambda rows: [
+            (
+                row["path"],
+                row["sourceHash"],
+                [item["id"] for item in row["occurrences"]],
+            )
+            for row in rows
+        ]
+        return (
+            request["binding"] == value["binding"]
+            and request["guidance"] == self.guidance(root)
+            and request["originals"] == value["originals"]
+            and request["layout"] == value["layout"]
+            and shape(request["files"])
+            == shape([{"path": path, **row} for path, row in value["files"].items()])
+        )
 
     def verify_request(self, project_id, request):
         authority = read_json(

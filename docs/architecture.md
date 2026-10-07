@@ -391,6 +391,7 @@ Confirmed active display text is included automatically while manual occurrence 
 Missing or uncertain findings cannot inherit safety from a previous report; inactive/default-only text stays excluded unless chosen.
 The helper cannot preview or publish runtime files, and only app-issued automatic tasks can continue.
 Repeated continuation of the immediately preceding request returns its existing successor; stale tasks cannot replace newer work.
+Copying the task again while its investigation request still matches the scanned sources, guidance and originals returns that same request, so a saved partial report is extended rather than orphaned.
 Agent questions concern unresolved choices; runtime replacement retains its exact-file review.
 File details and Apply/restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
 Filtering preserves occurrence overrides, and bounded renderer reads share the application observer and serialized drafts.
