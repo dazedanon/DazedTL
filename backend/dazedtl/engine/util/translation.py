@@ -224,6 +224,13 @@ def isMistralAPI():
 # opus-4-7, opus-4-8, opus-4-10+ and fable, but NOT opus-4-6 or Sonnet/Haiku.
 _NO_SAMPLING_RE = re.compile(r"opus-4-(?:[7-9]\b|[1-9]\d)|fable", re.I)
 
+# Claude models that think when a request omits ``thinking``: Opus and Sonnet 5
+# and up, Fable and Mythos. Opus 5.5 and Fable cannot turn it off. Thinking
+# bills as output that an estimate cannot predict.
+_DEFAULT_THINKING_RE = re.compile(
+    r"claude-(?:(?:opus|sonnet)-(?:[5-9]|[1-9]\d)\b|fable|mythos)", re.I
+)
+
 # Tracks which distinct batch sizes have already been cache-written during this estimate run.
 # Each unique numLines value maps to a distinct output_config schema → one write per size.
 # Persisted under a cross-process lock so concurrent GUI subprocesses share state.
@@ -2270,7 +2277,8 @@ def estimateCostComparison(
         "basis": "no_cache",
         "unestimated_thinking_tokens": (
             provider == "gemini" and normalized_model.startswith("gemini-3")
-        ),
+        )
+        or bool(_DEFAULT_THINKING_RE.search(normalized_model)),
     }
 
 
