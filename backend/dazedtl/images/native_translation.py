@@ -50,9 +50,7 @@ class ImageNativeTranslation:
             work / "image_text.json",
         )
         if not binding_path.is_file() or not exchange_path.is_file():
-            raise ValueError(
-                "Export confirmed image text to prepare the native translator."
-            )
+            raise ValueError("Export confirmed text first.")
         binding = read_json(binding_path, limit=8_000_000)
         payload = read_json(exchange_path, limit=8_000_000)
         if binding.get("projectId") != project_id or payload != binding.get("payload"):

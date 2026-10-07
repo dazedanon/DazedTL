@@ -14,6 +14,8 @@ import type {
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { ActionControl } from "../../ui/ActionControl";
+import { ActionList, ActionRow } from "../../ui/ActionList";
+import { useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback, Message } from "../../ui/Feedback";
@@ -156,6 +158,7 @@ function Editor({
   const [translationOpen, setTranslationOpen] = useState(false);
   const detailsPanel = useRef<HTMLElement>(null);
   const action = useAction();
+  const owned = useOwnedFeedback(action.key);
   const adopt = (next: ImageEditorState) => {
     stateRef.current = next;
     setState(next);
@@ -488,6 +491,26 @@ function Editor({
   }
   const job =
     nativeState?.jobs.find((run) => run.id === selectedRun) || nativeState?.job;
+  const confirmedImages = edits.filter(
+    (image) => image.status === "confirmed",
+  ).length;
+  const runWaiting = "Wait for the current image run to finish.";
+  const translateBlocked = !nativeState?.quoteCurrent
+    ? nativeState?.quote
+      ? "Estimate again after these changes."
+      : "Estimate first."
+    : !nativeState.providerEnabled
+      ? "Provider execution is off for this launch."
+      : nativeState.activeId
+        ? runWaiting
+        : "";
+  const stepFeedback = (key: string, pendingText: string) => ({
+    feedbackKey: key,
+    pending: action.busy && action.key === key,
+    pendingText,
+    error: action.key === key ? action.error : "",
+    notice: action.key === key ? action.notice : "",
+  });
   return (
     <Modal
       label="Image Text Editor"
@@ -1035,65 +1058,78 @@ function Editor({
             </Button>
             {translationOpen && (
               <>
-                <p>
-                  Export confirmed text, estimate, then review paid work using
-                  the saved provider.
-                </p>
-                <Button
-                  disabled={busy}
-                  onClick={() => {
-                    void operate("export", {}, true);
-                  }}
-                >
-                  Export confirmed text
-                </Button>
-                <Message message={nativeState?.error || ""} />
-                {nativeState?.current && (
-                  <p className="muted">
-                    {nativeState.current.count} text regions ·{" "}
-                    {nativeState.current.configuration.model}
-                  </p>
-                )}
-                <div className="actions">
-                  <Button
-                    disabled={
-                      busy || !nativeState?.current || !!nativeState.activeId
+                {/* Each step says why it waits, beside its own button; the
+                    saved state's error is why no export is current. */}
+                <ActionList compact>
+                  <ActionRow
+                    title="Export text"
+                    description={
+                      nativeState?.current
+                        ? `${nativeState.current.count} text regions · ${nativeState.current.configuration.model}`
+                        : "Confirmed source text from the open images."
                     }
-                    onClick={() => {
-                      void prepareTranslation("estimate");
-                    }}
                   >
-                    Estimate
-                  </Button>
-                  <Button
-                    disabled={
-                      busy ||
-                      !nativeState?.quoteCurrent ||
-                      !nativeState.providerEnabled ||
-                      !!nativeState.activeId
-                    }
-                    onClick={() => {
-                      void prepareTranslation("translate");
-                    }}
-                  >
-                    Review live translation
-                  </Button>
-                  {nativeState?.batchSupported && (
-                    <Button
-                      disabled={
-                        busy ||
-                        !nativeState.quoteCurrent ||
-                        !nativeState.providerEnabled ||
-                        !!nativeState.activeId
+                    <ActionControl
+                      label="Export confirmed text"
+                      disabled={busy || !confirmedImages}
+                      disabledReason={
+                        confirmedImages
+                          ? ""
+                          : "Confirm the source text and boxes first."
                       }
+                      {...stepFeedback("export", "Exporting…")}
                       onClick={() => {
-                        void prepareTranslation("batch");
+                        void operate("export", {}, true);
                       }}
-                    >
-                      Review Batch
-                    </Button>
-                  )}
-                </div>
+                    />
+                  </ActionRow>
+                  <ActionRow
+                    title="Estimate"
+                    description="A local estimate; nothing is sent."
+                  >
+                    <ActionControl
+                      label="Estimate"
+                      disabled={
+                        busy || !nativeState?.current || !!nativeState.activeId
+                      }
+                      disabledReason={
+                        !nativeState?.current
+                          ? nativeState?.error || "Export confirmed text first."
+                          : nativeState.activeId
+                            ? runWaiting
+                            : ""
+                      }
+                      {...stepFeedback("native:estimate", "Estimating…")}
+                      onClick={() => {
+                        void prepareTranslation("estimate");
+                      }}
+                    />
+                  </ActionRow>
+                  <ActionRow
+                    title="Translate"
+                    description="Review its cost before paid work starts."
+                  >
+                    <ActionControl
+                      label="Review live translation"
+                      disabled={busy || !!translateBlocked}
+                      disabledReason={translateBlocked}
+                      {...stepFeedback("native:translate", "Preparing review…")}
+                      onClick={() => {
+                        void prepareTranslation("translate");
+                      }}
+                    />
+                    {nativeState?.batchSupported && (
+                      <ActionControl
+                        label="Review Batch"
+                        disabled={busy || !!translateBlocked}
+                        {...stepFeedback("native:batch", "Preparing review…")}
+                        onClick={() => {
+                          void prepareTranslation("batch");
+                        }}
+                      />
+                    )}
+                  </ActionRow>
+                </ActionList>
                 {nativeState?.quote?.estimate && (
                   <Costs value={nativeState.quote.estimate} />
                 )}
@@ -1224,17 +1260,20 @@ function Editor({
                       Resume saved run
                     </Button>
                   ) : null}
-                  <Button
-                    disabled={busy}
-                    onClick={() => {
-                      void action.run(
-                        refreshNative,
-                        "Saved native run refreshed.",
-                      );
-                    }}
-                  >
-                    Refresh saved run
-                  </Button>
+                  {/* Only an existing run has a saved state to read again. */}
+                  {!!nativeState?.jobs.length && (
+                    <Button
+                      disabled={busy}
+                      onClick={() => {
+                        void action.run(
+                          refreshNative,
+                          "Saved native run refreshed.",
+                        );
+                      }}
+                    >
+                      Refresh saved run
+                    </Button>
+                  )}
                 </div>
               </>
             )}
@@ -1243,13 +1282,13 @@ function Editor({
       </div>
       <ActionBar
         feedback={
-          action.error ? (
+          action.error && !owned ? (
             <Message message={action.error} />
           ) : (
             // Text and boxes save as they change; leaving flushes the rest.
             <Feedback
               pending={draft.dirty || draft.committing}
-              notice={action.notice || "Saved"}
+              notice={(!owned && action.notice) || "Saved"}
             />
           )
         }
