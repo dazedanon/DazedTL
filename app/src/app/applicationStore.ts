@@ -10,6 +10,10 @@ export interface ApplicationSource {
   snapshot: () => Promise<WorkspaceSnapshot>;
   onMutation: (handler: (phase: "begin" | "end") => void) => () => void;
   onStopped: (handler: (message: string) => void) => () => void;
+  /** Calls the handler when the window regains focus. */
+  onFocus?: (handler: () => void) => () => void;
+  /** Rechecks files the user may have edited outside the app. */
+  recheck?: (projectId: string) => Promise<unknown>;
   navigationStorage?: NavigationStorage;
 }
 
@@ -40,6 +44,8 @@ export class ApplicationStore {
   private started = false;
   private unwatch: (() => void) | undefined;
   private unstopped: (() => void) | undefined;
+  private unfocus: (() => void) | undefined;
+  private rechecking = false;
   getSnapshot = () => this.value;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -96,6 +102,7 @@ export class ApplicationStore {
       clearTimeout(this.timer);
       this.publish({ ...this.value, error: message, stopped: true });
     });
+    this.unfocus = this.source.onFocus?.(this.recheck);
     void this.refresh();
   }
   stop() {
@@ -104,9 +111,37 @@ export class ApplicationStore {
     clearTimeout(this.timer);
     this.unwatch?.();
     this.unstopped?.();
+    this.unfocus?.();
     for (const resume of this.idleWaiters) resume();
     this.idleWaiters.clear();
   }
+  /**
+   * Returning to the window rechecks outside edits, such as an image saved in
+   * another editor, then observes them; as a mutation, the recheck schedules
+   * that observation itself. A failed recheck still observes, so the snapshot
+   * reports what it can.
+   */
+  recheck = () => {
+    const project = this.observed?.application.project;
+    if (
+      !this.started ||
+      this.value.stopped ||
+      this.rechecking ||
+      !project?.available
+    )
+      return;
+    if (!this.source.recheck) {
+      void this.refresh();
+      return;
+    }
+    this.rechecking = true;
+    void this.source
+      .recheck(project.id)
+      .catch(() => this.refresh())
+      .finally(() => {
+        this.rechecking = false;
+      });
+  };
   refresh = (): Promise<void> => {
     if (!this.started || this.value.stopped) return Promise.resolve();
     clearTimeout(this.timer);

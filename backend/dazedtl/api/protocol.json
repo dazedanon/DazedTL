@@ -1,9 +1,13 @@
 {
-  "version": "145cf730450dc230",
+  "version": "39fb13a6c936755b",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
       "duringClose": true
+    },
+    "workspace_recheck": {
+      "refresh": true,
+      "duringClose": false
     },
     "open_project": {
       "refresh": true,

@@ -19,6 +19,18 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
         snapshot: api.snapshot,
         onMutation,
         onStopped: (handler) => window.dazedtl.onStopped(handler),
+        onFocus: (handler) => {
+          const visible = () => {
+            if (document.visibilityState === "visible") handler();
+          };
+          window.addEventListener("focus", handler);
+          document.addEventListener("visibilitychange", visible);
+          return () => {
+            window.removeEventListener("focus", handler);
+            document.removeEventListener("visibilitychange", visible);
+          };
+        },
+        recheck: api.recheck,
         navigationStorage: {
           getItem: (key) => window.localStorage.getItem(key),
           setItem: (key, value) => window.localStorage.setItem(key, value),

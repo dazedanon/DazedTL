@@ -315,6 +315,12 @@ class NoParams(TypedDict):
     pass
 
 
+class Rechecked(TypedDict):
+    """How many working files were checked again for outside edits."""
+
+    checked: int
+
+
 class OpenProjectRequest(TypedDict):
     source: str
 
@@ -508,6 +514,8 @@ METHODS: dict[str, Method] = {
     "workspace_snapshot": Method(
         NoParams, WorkspaceSnapshot, refresh=False, during_close=True
     ),
+    # Rechecks outside edits when the window regains focus.
+    "workspace_recheck": Method(ProjectRequest, Rechecked),
     "open_project": Method(OpenProjectRequest, AppState),
     "select_project": Method(ProjectRequest, AppState),
     "navigate": Method(NavigateRequest, AppState),

@@ -596,6 +596,33 @@ class ImageService:
             if changed:
                 self._touch(project_id)
 
+    def recheck(self, project_id):
+        """Reinspects the images being worked on, which an outside editor can
+        change: working copies, the selection and applied images.
+
+        Runs when the window regains focus. Unchanged files keep their cached
+        hashes, and other images wait for the next scan. A running scan or
+        image operation sees its own files, so it is left alone.
+        """
+        with self.lock:
+            self.record(project_id)
+            value = self._load(project_id)
+            if (
+                project_id in self.mutating
+                or self.jobs.get(project_id, {}).get("status") == "running"
+                or not value["inventoryRevision"]
+            ):
+                return 0
+            selected = set(value["selection"])
+            identities = [
+                row["id"]
+                for row in self._index(project_id).rows()
+                if row.get("hasEditable") or row.get("applied") or row["id"] in selected
+            ]
+            if identities:
+                self.refresh_assets(project_id, identities)
+            return len(identities)
+
     def _touch(self, project_id):
         value = self._load(project_id)
         value["indexRevision"] = value.get("indexRevision", 0) + 1

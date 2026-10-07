@@ -680,6 +680,7 @@ Views that show their own replies before the next observation, such as Plugin fi
 They start from the observed state when the snapshot already has it, so revisiting them reads only what is missing.
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
+Returning to the window rechecks outside edits through `workspace_recheck`, which reinspects the images being worked on (working copies, the selection and applied images) against their cached file signatures; as a mutation it is followed by a fresh observation, so every feature sees the result without its own refresh.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.
 Do not add whole-game parsing or full request-history reconstruction to a polling snapshot.

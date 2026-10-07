@@ -2068,6 +2068,11 @@ export type TranslationAttachBatchRequest = {
 
 export type NoParams = Record<string, never>;
 
+/** How many working files were checked again for outside edits. */
+export type Rechecked = {
+  checked: number;
+};
+
 export type OpenProjectRequest = {
   source: string;
 };
@@ -2257,6 +2262,7 @@ export type PreferencesRequest = {
 
 export type RpcContract = {
   workspace_snapshot: { request: NoParams; response: WorkspaceSnapshot };
+  workspace_recheck: { request: ProjectRequest; response: Rechecked };
   open_project: { request: OpenProjectRequest; response: AppState };
   select_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };

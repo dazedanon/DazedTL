@@ -93,6 +93,7 @@ Images is the Image Manager, the same one Assistant-led shows in its **Images** 
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
 The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
+An edited copy saved in another image editor is checked again when you return to DazedTL.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
 

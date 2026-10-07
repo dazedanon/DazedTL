@@ -168,6 +168,7 @@ export const api = {
   },
 
   snapshot: () => request("workspace_snapshot", {}),
+  recheck: (project_id: string) => request("workspace_recheck", { project_id }),
   open: (source: string) => request("open_project", { source }),
   select: (project_id: string) => request("select_project", { project_id }),
   navigate: (screen: Screen) => request("navigate", { screen }),

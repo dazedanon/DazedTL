@@ -271,6 +271,13 @@ class Application:
             "pluginsError": plugin_error,
         }
 
+    def recheck(self, project_id):
+        """Rechecks files the user may have edited outside the app."""
+        project = self.state()["project"]
+        if not project or project["id"] != project_id or not project["available"]:
+            return {"checked": 0}
+        return {"checked": self.images.recheck(project_id)}
+
     def open_project(self, source):
         root = Path(source).expanduser().resolve(strict=True)
         if not root.is_dir() or root == root.parent:
@@ -431,6 +438,7 @@ def routes(app):
     """Each method's handler and the view that shapes its result."""
     methods = {
         "workspace_snapshot": (app.snapshot, lambda value, _params: value),
+        "workspace_recheck": (app.recheck, lambda value, _params: value),
         **{
             name: (getattr(app, name), lambda value, _params: views.application(value))
             for name in ("open_project", "select_project", "navigate", "project_method")

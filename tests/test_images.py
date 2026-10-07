@@ -301,6 +301,11 @@ class ImageTests(unittest.TestCase):
         self.assertFalse(item["userReviewed"])
         preview = self.service.action(self.identity, "preview_apply")["preview"]
         write_bytes(self.game / ".dazedtl/images/img/A.png", png((9, 8, 7, 100)))
+        # Returning to the window notices an edit made in another editor.
+        self.assertEqual(self.service.recheck(self.identity), 1)
+        self.assertEqual(
+            self.service.list(self.identity)["items"][0]["state"], "needs_review"
+        )
         with self.assertRaisesRegex(ValueError, "changed after review"):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
         self.assertEqual(self.adapter.calls, [])
