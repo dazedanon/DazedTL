@@ -1,4 +1,5 @@
 import type { Phase } from "../../../api/contracts";
+import { TextDiff } from "../../../ui/TextDiff";
 import { textLocation } from "../textLocation";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
@@ -229,7 +230,14 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
                     Changes
                     {row.truncated ? " (first 16,000 characters)" : ""}
                   </strong>
-                  <pre>{row.diff || "The game file already matches."}</pre>
+                  {row.diff ? (
+                    <TextDiff
+                      diff={row.diff}
+                      label={`Changes to ${row.path}`}
+                    />
+                  ) : (
+                    <p>The game file already matches.</p>
+                  )}
                   <details>
                     <summary>Full file text</summary>
                     <strong>Current (first 16,000 characters)</strong>

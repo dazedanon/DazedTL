@@ -1108,15 +1108,65 @@
 .text-qa-results {
   margin-top: var(--space-5);
 }
-.text-fit-results details,
-.text-qa-results details,
-.text-qa-correction {
+.text-qa-results-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.text-qa-results-heading h3 {
+  margin: 0 auto 0 0;
+}
+.text-qa-findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--panel-radius);
+  background: var(--color-surface);
+}
+/* The checkbox sits on the change's first line; details hang under it. */
+.text-qa-findings > li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3) var(--space-4);
+}
+.text-qa-findings > li + li {
+  border-top: 1px solid var(--color-border);
+}
+.text-qa-findings > li > input {
+  margin: var(--space-half) 0 0;
+}
+.text-qa-findings label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--font-body);
+}
+.text-qa-findings small {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  overflow-wrap: anywhere;
+}
+.text-qa-change {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.text-qa-change > span:first-child {
+  color: var(--color-muted);
+  text-decoration: line-through;
+}
+.text-fit-results details {
   margin: 0;
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
 }
-.text-fit-results pre,
-.text-qa-results pre {
+.text-fit-results pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
@@ -1131,6 +1181,9 @@
 .text-publication strong {
   display: block;
   margin-top: var(--space-3);
+}
+.text-publication strong {
+  margin-bottom: var(--space-2);
 }
 
 /* Sources are divided from each other, not from the dialog header. */
