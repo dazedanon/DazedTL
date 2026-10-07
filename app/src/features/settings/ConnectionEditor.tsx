@@ -173,67 +173,8 @@ export default function ConnectionEditor({
                 }
               />
             )}
-            {!value.keyless && (
-              <FieldRow
-                id="connection-secret"
-                label="API key"
-                help={
-                  keepKey
-                    ? "Leave blank to keep the saved key."
-                    : "Use the API key from your provider account."
-                }
-              >
-                {(control) => (
-                  <div className="connection-secret">
-                    <input
-                      {...control}
-                      type={revealed ? "text" : "password"}
-                      value={value.secret}
-                      required={!keepKey}
-                      disabled={value.reuse_secret}
-                      maxLength={16000}
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder={keepKey ? "Saved key" : "Paste API key"}
-                      onChange={(event) =>
-                        setValue({ ...value, secret: event.target.value })
-                      }
-                    />
-                    <Button
-                      variant="quiet"
-                      disabled={value.reuse_secret}
-                      aria-label={
-                        revealed
-                          ? "Hide entered API key"
-                          : "Show entered API key"
-                      }
-                      onClick={() => setRevealed(!revealed)}
-                    >
-                      {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </Button>
-                  </div>
-                )}
-              </FieldRow>
-            )}
-            {connection?.has_secret &&
-              value.provider &&
-              !sameRoute &&
-              !value.keyless && (
-                <label className="connection-keyless">
-                  <input
-                    type="checkbox"
-                    checked={value.reuse_secret}
-                    onChange={(event) =>
-                      setValue({
-                        ...value,
-                        reuse_secret: event.target.checked,
-                        secret: "",
-                      })
-                    }
-                  />
-                  Use the saved key with this provider or server
-                </label>
-              )}
+            {/* A custom server comes first, so its no-key choice sits just
+                before the key field it hides. */}
             {custom && (
               <>
                 <FieldRow
@@ -300,6 +241,67 @@ export default function ConnectionEditor({
                 </label>
               </>
             )}
+            {!value.keyless && (
+              <FieldRow
+                id="connection-secret"
+                label="API key"
+                help={
+                  keepKey
+                    ? "Leave blank to keep the saved key."
+                    : "Use the API key from your provider account."
+                }
+              >
+                {(control) => (
+                  <div className="connection-secret">
+                    <input
+                      {...control}
+                      type={revealed ? "text" : "password"}
+                      value={value.secret}
+                      required={!keepKey}
+                      disabled={value.reuse_secret}
+                      maxLength={16000}
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder={keepKey ? "Saved key" : "Paste API key"}
+                      onChange={(event) =>
+                        setValue({ ...value, secret: event.target.value })
+                      }
+                    />
+                    <Button
+                      variant="quiet"
+                      disabled={value.reuse_secret}
+                      aria-label={
+                        revealed
+                          ? "Hide entered API key"
+                          : "Show entered API key"
+                      }
+                      onClick={() => setRevealed(!revealed)}
+                    >
+                      {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </Button>
+                  </div>
+                )}
+              </FieldRow>
+            )}
+            {connection?.has_secret &&
+              value.provider &&
+              !sameRoute &&
+              !value.keyless && (
+                <label className="connection-keyless">
+                  <input
+                    type="checkbox"
+                    checked={value.reuse_secret}
+                    onChange={(event) =>
+                      setValue({
+                        ...value,
+                        reuse_secret: event.target.checked,
+                        secret: "",
+                      })
+                    }
+                  />
+                  Use the saved key with this provider or server
+                </label>
+              )}
             <details className="settings-advanced">
               <summary>Advanced connection settings</summary>
               <FieldRow
