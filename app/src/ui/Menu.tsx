@@ -12,6 +12,16 @@ import { Button } from "./Button";
 
 const MenuClose = createContext<() => void>(() => {});
 
+/** Centers the current item, such as the chosen model, in a long open list. */
+const revealCurrent = (popup: HTMLElement | null) => {
+  const item = popup?.querySelector<HTMLElement>(
+    "[role=menuitem][aria-current]",
+  );
+  if (popup && item)
+    popup.scrollTop =
+      item.offsetTop - (popup.clientHeight - item.offsetHeight) / 2;
+};
+
 /**
  * A button that opens a list of actions in the top layer. The list closes on
  * a choice, Escape or a click elsewhere, and arrow keys move between items.
@@ -116,7 +126,14 @@ export function Menu({
           }
           onOpen?.();
           position();
-          (search() || items()[0])?.focus();
+          revealCurrent(list.current);
+          // onOpen may reset a filter, which renders after this event.
+          requestAnimationFrame(() => revealCurrent(list.current));
+          (
+            search() ||
+            items().find((item) => item.hasAttribute("aria-current")) ||
+            items()[0]
+          )?.focus({ preventScroll: true });
         }}
       >
         {children}
@@ -136,10 +153,16 @@ export function MenuItem({
   current?: boolean;
 }) {
   const close = useContext(MenuClose);
+  const node = useRef<HTMLButtonElement>(null);
+  // Items that load after the list opens, such as models, reveal themselves.
+  useLayoutEffect(() => {
+    if (current) revealCurrent(node.current?.closest(":popover-open") ?? null);
+  }, [current]);
   return (
     <button
       type="button"
       {...button}
+      ref={node}
       role="menuitem"
       aria-current={current || undefined}
       className={`menu-item ${button.className || ""}`}
