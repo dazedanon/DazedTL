@@ -89,6 +89,14 @@ const results = input.files.map(({ path, source, kind }) => {
           ["==", "===", "!=", "!=="].includes(parent.operator)) ||
         parent?.type === "TaggedTemplateExpression" ||
         expressions.some((text) => /[\u3040-\u30ff\u3400-\u9fff]/.test(text));
+      // Code that matches text against this literal, such as the parser tag in
+      // line.startsWith("ア:"), needs that text to keep the same characters.
+      const matcher =
+        parent?.type === "CallExpression" &&
+        parent.arguments[0] === node &&
+        parent.callee.type === "MemberExpression" &&
+        !parent.callee.computed &&
+        ["startsWith", "indexOf"].includes(parent.callee.property.name);
       const chain = [];
       let cursor = node;
       for (const p of [...parents].reverse()) {
@@ -105,6 +113,7 @@ const results = input.files.map(({ path, source, kind }) => {
         raw: source.slice(node.start, node.end),
         expressions,
         protected: !!protectedNode,
+        matcher,
         kind: template && expressions.length ? "template" : "literal",
         line: node.loc.start.line,
         column: node.loc.start.column + 1,
@@ -135,6 +144,7 @@ const results = input.files.map(({ path, source, kind }) => {
         raw: match[1],
         expressions: [],
         protected: false,
+        matcher: false,
         kind: "default",
         line: source.slice(0, start).split("\n").length,
         column: 1,

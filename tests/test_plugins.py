@@ -578,6 +578,49 @@ class PluginTests(unittest.TestCase):
         self.assertNotIn("所持金", context["keys"])
         self.assertNotIn("大きい", context["keys"])
 
+    def test_only_a_leading_tag_the_code_matches_may_stay_japanese(self):
+        original = (
+            'if (s.startsWith("ア:")) say(s.slice(2));\nplay(["ア:むね", "地:風"]);\n'
+        )
+        candidate = original.replace("むね", "Chest")
+        parsed = Documents().parse(
+            [
+                {"path": "a.js", "source": original, "kind": "source"},
+                {"path": "b.js", "source": candidate, "kind": "source"},
+                {
+                    "path": "c.js",
+                    "source": candidate.replace("風", "Wind"),
+                    "kind": "source",
+                },
+            ]
+        )
+        tagged, plain = [
+            row
+            for row in occurrences("a.js", original.encode(), parsed["a.js"])
+            if row["value"] != "ア:"
+        ]
+        targets = {tagged["id"]: "ア:Chest"}
+        self.assertTrue(
+            validate(
+                original.encode(),
+                candidate.encode(),
+                parsed["a.js"],
+                parsed["b.js"],
+                [tagged],
+                targets,
+            )
+        )
+        # No code reads 地:, so it is untranslated text rather than a tag.
+        with self.assertRaisesRegex(ValueError, "still contains Japanese"):
+            validate(
+                original.encode(),
+                candidate.replace("風", "Wind").encode(),
+                parsed["a.js"],
+                parsed["c.js"],
+                [tagged, plain],
+                {**targets, plain["id"]: "地:Wind"},
+            )
+
     def test_missing_originals_and_dynamic_configuration_never_authorize_edits(self):
         lifecycle_path(self.profile, self.identity).unlink()
         # Without the original Japanese, lookup values cannot be protected.

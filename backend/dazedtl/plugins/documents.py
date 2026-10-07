@@ -215,6 +215,7 @@ def json_document(path, source):
                         "path": logical,
                         "kind": "literal",
                         "protected": False,
+                        "matcher": False,
                         "expressions": [],
                         "line": source[:start].count("\n") + 1,
                     }
@@ -263,6 +264,16 @@ def occurrences(path, raw, parsed):
     return rows
 
 
+def untagged(source, target, tags):
+    """The target without a leading tag the plugin's code matches, such as
+    "ア:" in line.startsWith("ア:"), when source and target both keep it."""
+    lead = source[: len(source) - len(source.lstrip())]
+    for tag in tags:
+        if source.startswith(lead + tag) and target.startswith(lead + tag):
+            return target[len(lead + tag) :]
+    return target
+
+
 def validate(raw, candidate, original, current, approved, targets):
     if current["issues"]:
         raise ValueError("Syntax check failed: " + current["issues"][0])
@@ -271,6 +282,19 @@ def validate(raw, candidate, original, current, approved, targets):
         raise ValueError(
             "Literal inventory changed; unrelated code or new literals are not allowed."
         )
+    changed = {row["token"] for row in approved if row["id"] in targets}
+    # Japanese tags that unchanged code in this file still matches; longest first.
+    tags = sorted(
+        {
+            literal["value"]
+            for index, literal in enumerate(left)
+            if literal.get("matcher")
+            and index not in changed
+            and JAPANESE.search(literal["value"])
+        },
+        key=len,
+        reverse=True,
+    )
     by_token = {}
     for row in approved:
         if row["id"] not in targets:
@@ -284,7 +308,7 @@ def validate(raw, candidate, original, current, approved, targets):
             raise ValueError(
                 "Control codes, interpolation or placeholders changed: " + row["id"]
             )
-        if JAPANESE.search(target):
+        if JAPANESE.search(untagged(row["value"], target, tags)):
             raise ValueError(
                 "Approved occurrence still contains Japanese; revise it or explicitly retain/exclude it."
             )

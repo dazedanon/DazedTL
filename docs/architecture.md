@@ -385,6 +385,7 @@ The assistant decides which plugin text players see; the user does not review fi
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
 Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
+A translated line may keep only a leading Japanese tag that unchanged code in its file matches with `startsWith` or `indexOf`, such as a script parser's `ア:` speaker tag; any other Japanese left in a target fails the check.
 Dynamic configuration, malformed data, unreadable sources and unsupported Ace publication remain explicit blockers.
 A parameter value that looks like JSON but does not decode, such as a script, stays one leaf the app protects and does not block the rest of its file; saved scans are redone once when these scanning rules change.
 The user can keep an unreadable file unchanged so the required task can finish; the choice lapses when the file fails for a different reason, and a listed plugin whose file is gone has nothing to translate.

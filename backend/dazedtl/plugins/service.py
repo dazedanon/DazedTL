@@ -1253,7 +1253,7 @@ class PluginService:
                 + " and "
                 + sources[-1]
                 + ". Fit the space where the plugin draws the text.\n"
-                "Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes. "
+                'Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes; keep a leading tag that the file\'s code matches with startsWith or indexOf, such as ア: in line.startsWith("ア:"), exactly as written. '
                 "Report every translated occurrence with its exact decoded target.\n"
                 "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
                 "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
