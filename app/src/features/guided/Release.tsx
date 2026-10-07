@@ -329,7 +329,7 @@ export function ReleaseReview({
       {!!preview.package?.generated?.length && (
         <details>
           <summary>Archive additions and repository metadata</summary>
-          <ul>
+          <ul className="guided-preview-paths">
             {preview.package.generated.map((name) => (
               <li className="guided-preview-path" key={name}>
                 {name}

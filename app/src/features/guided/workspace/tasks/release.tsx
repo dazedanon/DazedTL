@@ -68,12 +68,15 @@ export function packageView(w: GuidedWorkspace): TaskView {
       inspect={
         <ActionControl
           label="View files & exclusions"
+          // A patch lists packed Ace data, so it waits for packing, which
+          // the Native Ace data section above already asks for.
           disabled={
             disabled ||
             !release.directory ||
             !release.name ||
             !!destinationError ||
-            !!state.readiness.unapplied.length
+            !!state.readiness.unapplied.length ||
+            (release.kind === "patch" && !state.acePacking.current)
           }
           {...feedback("package:inspect", "Reading archive contents…")}
           onClick={() =>
