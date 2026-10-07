@@ -12,7 +12,7 @@ import { PageBody, PageHeader, PageLayout } from "../../ui/PageLayout";
 import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
-import { engineLabel } from "../../ui/displayText";
+import { engineLabel, sentence } from "../../ui/displayText";
 import { ActivityHistory } from "../guided/ActivityHistory";
 import type { GuidedProgress, projectAmounts } from "../guided/progress";
 import { RunInspector } from "../guided/RunInspector";
@@ -25,9 +25,6 @@ import { methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
 type Amounts = ReturnType<typeof projectAmounts>;
-
-const sentence = (value: string) =>
-  value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
 
 /**
  * The game's own page: where it stands, its history, game updates and

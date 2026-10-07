@@ -7,6 +7,11 @@ export function displayText(value: unknown, fallback = "") {
       : fallback;
 }
 
+/** A status code as a phrase: "in_progress" reads "In progress". */
+export function sentence(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
+}
+
 const engines: Record<string, string> = {
   MVMZ: "RPG Maker MV / MZ",
   ACE: "RPG Maker VX Ace",

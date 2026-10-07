@@ -385,9 +385,15 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 >
                   {task(
                     item.id,
-                    item.id === "gameupdate"
-                      ? "Recreate GameUpdate files"
-                      : "Rerun " + item.title.toLowerCase(),
+                    // Only a stage that already ran is run again.
+                    !state.preparation.stages.some(
+                      (stage) =>
+                        stage.action === item.id && stage.status === "complete",
+                    )
+                      ? item.title
+                      : item.id === "gameupdate"
+                        ? "Recreate GameUpdate files"
+                        : "Rerun " + item.title.toLowerCase(),
                     {},
                     !preserved,
                   )}

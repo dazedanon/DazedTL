@@ -1,8 +1,7 @@
 import { Check, LoaderCircle } from "lucide-react";
 import type { TranslationJob } from "../api/contracts";
 
-const sentence = (value: string) =>
-  value.charAt(0).toUpperCase() + value.slice(1);
+import { sentence } from "./displayText";
 
 export function JobStatus({
   job,

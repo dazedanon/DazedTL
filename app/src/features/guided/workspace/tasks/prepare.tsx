@@ -11,6 +11,7 @@ import { JobStatus } from "../../../../ui/JobStatus";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { StatusIcon } from "../../../../ui/StatusIcon";
+import { sentence } from "../../../../ui/displayText";
 
 export function backupView(w: GuidedWorkspace): TaskView {
   const {
@@ -196,13 +197,16 @@ export function formatView(w: GuidedWorkspace): TaskView {
                       }
                     />
                     <strong>{item.label}</strong>
-                    {item.status !== "complete" && (
-                      <span className="status-heading-state">
-                        {item.status === "pending"
-                          ? "Waiting"
-                          : item.status.replaceAll("_", " ")}
-                      </span>
-                    )}
+                    {/* A stage not yet started needs no word until a run
+                        queues it; its icon already shows it is not done. */}
+                    {item.status !== "complete" &&
+                      (item.status !== "pending" || preparationPending) && (
+                        <span className="status-heading-state">
+                          {item.status === "pending"
+                            ? "Waiting"
+                            : sentence(item.status)}
+                        </span>
+                      )}
                   </span>
                   {item.message && <small>{item.message}</small>}
                 </>
@@ -231,7 +235,8 @@ export function formatView(w: GuidedWorkspace): TaskView {
           )}
         </Notice>
       )}
-      {localOperation && (
+      {/* The stage rows already show a running preparation stage by stage. */}
+      {localOperation && baseline && !preparationComplete && (
         <JobStatus
           compact
           job={{

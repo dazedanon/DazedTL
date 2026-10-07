@@ -32,6 +32,7 @@ import { useMemo, useState } from "react";
 import { Button } from "../../ui/Button";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { HelpPopover } from "../../ui/HelpPopover";
+import { sentence } from "../../ui/displayText";
 
 export function operationSummary(job: Job): string {
   const result = job.result;
@@ -108,8 +109,6 @@ const outcomeIcons = {
   empty: CircleSlash,
   finished: CircleHelp,
 };
-const sentence = (value: string) =>
-  value.charAt(0).toUpperCase() + value.slice(1);
 function Outcome({ value }: { value: HistoryOutcome }) {
   const Icon = outcomeIcons[value.kind];
   return (

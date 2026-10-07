@@ -758,18 +758,26 @@ export function useGuidedWorkspace({
     // build from this visit also confirms beside its button.
     const releaseBuild = ["release", "release_patch"].includes(name);
     const builtHere = releaseBuild && finishedHere;
+    // Prepare's stage rows record each preparation tool's outcome.
+    const preparationTool = [
+      "format_data",
+      "format_plugins",
+      "gameupdate",
+    ].includes(name);
     // A tool row's own status says whether the tool is installed, the
     // editor search lists what it found, and fitting and QA rows state the
     // result of their scan or preparation.
-    const toolChange = [
-      "inspector_install",
-      "inspector_remove",
-      "forge_install",
-      "forge_remove",
-      "editors",
-      "rewrap_preview",
-      "qa_prepare",
-    ].includes(name);
+    const toolChange =
+      preparationTool ||
+      [
+        "inspector_install",
+        "inspector_remove",
+        "forge_install",
+        "forge_remove",
+        "editors",
+        "rewrap_preview",
+        "qa_prepare",
+      ].includes(name);
     // An update leaves the row's status as it was, so a tool change from
     // this visit still confirms beside its button.
     const toolDoneHere =
@@ -831,8 +839,8 @@ export function useGuidedWorkspace({
           {label}
         </Button>
       );
-    // Prepare reports its operations in the footer status; a build reports
-    // its progress beside its own button.
+    // Prepare reports its operations in the task's stage rows; a build
+    // reports its progress beside its own button.
     if (localOperation?.action === name && !releaseBuild)
       return (
         <Button variant={variant} pending disabled>
@@ -870,7 +878,14 @@ export function useGuidedWorkspace({
                 ? {
                     notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
                   }
-                : {})}
+                : preparationTool && finishedHere
+                  ? {
+                      notice:
+                        name === "gameupdate"
+                          ? "GameUpdate files created."
+                          : "Formatted.",
+                    }
+                  : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }
