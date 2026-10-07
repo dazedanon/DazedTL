@@ -602,18 +602,20 @@ function Editor({
           {image && current ? (
             <>
               {/* The Image menu above names the file. */}
+              {/* The drawing hint shares the caption row, so starting to
+                  draw never moves the image under the pointer. */}
               <div className="native-editor-image-caption">
                 <span>
                   {image.width} × {image.height} · {current.blocks.length}{" "}
                   {current.blocks.length === 1 ? "box" : "boxes"}
                 </span>
+                {drawing && (
+                  <strong role="status">
+                    Drag a box around source text on the original image.
+                  </strong>
+                )}
               </div>
               <Message message={pixels.error || image.error} />
-              {drawing && (
-                <p role="status">
-                  Drag a box around source text on the original image.
-                </p>
-              )}
               <div
                 ref={canvasArea}
                 className={`native-editor-canvases ${comparison ? "native-editor-compare" : ""}`}

@@ -65,6 +65,10 @@
   color: var(--color-muted);
   white-space: nowrap;
 }
+.native-editor-image-caption strong {
+  color: var(--color-accent);
+  font-weight: var(--weight-regular);
+}
 .native-editor-canvases {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
