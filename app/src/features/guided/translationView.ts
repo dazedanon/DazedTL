@@ -481,7 +481,7 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   if (states.includes("failed"))
     return fileState(
       "not_started",
-      "The last run failed before saving any lines; Translate sends it again.",
+      "Its requests failed without returning any lines; Translate sends them again.",
     );
   return idle;
 }
