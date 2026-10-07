@@ -3,6 +3,7 @@
 import json
 import logging
 import sys
+import sysconfig
 import traceback
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
@@ -13,6 +14,8 @@ class Diagnostics:
     def __init__(self, directory, root, legacy):
         self.roots = (
             ("python", Path(sys.prefix)),
+            # A virtual environment's prefix holds packages but not the stdlib.
+            ("python", Path(sysconfig.get_path("stdlib"))),
             ("app", Path(root)),
             ("engine", Path(legacy)),
         )
