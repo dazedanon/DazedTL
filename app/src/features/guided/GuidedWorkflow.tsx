@@ -81,8 +81,6 @@ function Workspace(
     changed,
     activeOperation,
     localOperation,
-    backupPending,
-    preparationPending,
     stopOperation,
     translationFlow,
     disabled,
@@ -136,16 +134,12 @@ function Workspace(
               : []),
           ]
         : null;
-  // The footer reports only this task's own state; Prepare's operations are
-  // the one stage-wide status, while they run.
+  // The footer reports only this task's own state; a running backup or
+  // preparation already shows its progress and pending button in the task.
   const status =
-    position.step === "prepare" && backupPending
-      ? "Backup in progress"
-      : position.step === "prepare" && preparationPending
-        ? "Preparation in progress"
-        : position.step !== "context" && draft.dirty
-          ? "Option changes apply to the next run"
-          : "";
+    position.step !== "context" && draft.dirty
+      ? "Option changes apply to the next run"
+      : "";
   // Plugin text and Images bring their own action bar for the shared footer.
   const hostedFooter = taskId === "plugins" || taskId === "images";
   return (
@@ -301,18 +295,7 @@ function Workspace(
               feedback={
                 <div className="guided-footer-context">
                   {back()}
-                  {actionContext ||
-                    (status && (
-                      <span
-                        className={
-                          backupPending || preparationPending
-                            ? "guided-prepare-feedback"
-                            : undefined
-                        }
-                      >
-                        {status}
-                      </span>
-                    ))}
+                  {actionContext || (status && <span>{status}</span>)}
                 </div>
               }
             >

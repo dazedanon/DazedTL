@@ -159,7 +159,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             source_game=action == "backup_source",
             stopped=stopped,
             progress=lambda count, path: progress(
-                "Backed up " + str(count) + " files · " + path
+                f"Backed up {count:,} files · {path}"
             ),
         )
         state["source_backup" if action == "backup_source" else "workspace_backup"] = (
@@ -403,7 +403,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             source_game=True,
             stopped=stopped,
             progress=lambda count, path: progress(
-                "Preserved " + str(count) + " new-original files · " + path
+                f"Preserved {count:,} new-original files · {path}"
             ),
         )
         staged = (
@@ -440,7 +440,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             target,
             stopped=stopped,
             progress=lambda count, name: progress(
-                "Verified " + str(count) + " restored files · " + name
+                f"Verified {count:,} restored files · {name}"
             ),
         )
     elif action.startswith("version_"):

@@ -408,7 +408,12 @@ class Jobs:
             )
         stop = self.store.folder(identity) / "stop.json"
         stop.unlink(missing_ok=True)
-        job.update(status="running", message="Starting from saved checkpoints.")
+        job.update(
+            status="running",
+            message="Starting…"
+            if job["status"] == "ready"
+            else "Resuming from saved checkpoints.",
+        )
         self.store.save(job)
         environment = {
             key: value
