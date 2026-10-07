@@ -18,6 +18,7 @@ import {
   type FileGroup,
 } from "./selection";
 import {
+  focusItem,
   selectItem,
   selectionGesture,
   type Modifiers,
@@ -67,6 +68,8 @@ export function FileSelection({
   const [notice, setNotice] = useState("");
   const [focusName, setFocusName] = useState<string | null>(null);
   const anchor = useRef<string | null>(null);
+  // Whether focus moves for a key, which draws its ring, or for a click.
+  const keyed = useRef(false);
   const search = useRef<HTMLInputElement>(null);
   const files = useMemo(() => sortFiles(state.files), [state.files]);
   const selection = useMemo(() => new Set(selected), [selected]);
@@ -111,9 +114,8 @@ export function FileSelection({
     setNotice(message);
   };
   const focus = useCallback((row: HTMLElement) => {
-    row
-      .querySelector<HTMLInputElement>("input")
-      ?.focus({ preventScroll: true });
+    const input = row.querySelector<HTMLInputElement>("input");
+    if (input) focusItem(input, keyed.current ? "key" : "pointer");
     setFocusName(null);
   }, []);
   const choose = (name: string, event: Modifiers, checkbox = false) => {
@@ -144,6 +146,7 @@ export function FileSelection({
     anchor.current = null;
   };
   const keyDown = (event: KeyboardEvent, index: number) => {
+    keyed.current = true;
     const additive = event.ctrlKey || event.metaKey;
     if (additive && event.key.toLowerCase() === "a") {
       event.preventDefault();
@@ -310,7 +313,10 @@ export function FileSelection({
             onMouseDown={(event) => {
               if (event.shiftKey) event.preventDefault();
             }}
-            onClick={(event) => choose(file.name, event)}
+            onClick={(event) => {
+              keyed.current = false;
+              choose(file.name, event);
+            }}
             onKeyDown={(event) => keyDown(event, index)}
           >
             <input
@@ -319,9 +325,10 @@ export function FileSelection({
               disabled={disabled}
               checked={selection.has(file.name)}
               onClick={(event) => event.stopPropagation()}
-              onChange={(event) =>
-                choose(file.name, event.nativeEvent as MouseEvent, true)
-              }
+              onChange={(event) => {
+                keyed.current = false;
+                choose(file.name, event.nativeEvent as MouseEvent, true);
+              }}
             />
             <span
               className="file-browser-name"
