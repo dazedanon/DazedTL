@@ -48,6 +48,9 @@ main > .image-manager {
 .image-manager-loading > .banner {
   margin: var(--space-4) 0;
 }
+.image-manager-loading > .ui-button {
+  align-self: flex-start;
+}
 .image-profile-issue {
   display: flex;
   flex-wrap: wrap;
@@ -368,12 +371,16 @@ main > .image-manager {
   flex-wrap: wrap;
   gap: var(--space-3);
   min-width: 0;
+}
+/* The selection notes beside Back read as secondary text; Back itself stays
+   a footer control like every other task's. */
+.image-footer-context > span {
   font-size: var(--font-small);
   color: var(--color-muted);
 }
 .image-footer-context .link-button {
   padding: 0;
-  font-size: inherit;
+  font-size: var(--font-small);
 }
 .image-action-feedback {
   padding: var(--space-2) var(--space-4);
