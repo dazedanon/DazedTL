@@ -11,7 +11,7 @@ A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ac
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks.
 **Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
-Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files counts as done once every plugin file can be read and its player text is translated with nothing waiting to apply, and Release while its last ZIP is up to date.
+Optional tasks say **Optional** until they are done, and they never hold up the next step; Release counts as done while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
@@ -66,7 +66,7 @@ Measured line widths are saved automatically when the assistant reports them; **
 
 ### Translate
 
-Translate has four tasks, **Database files**, **Maps & events**, **Other event text** and **Images**, and the optional **Plugin files** task.
+Translate has five tasks: **Database files**, **Maps & events**, **Other event text**, **Plugin files** and **Images**.
 All supported files start selected.
 Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
 The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
@@ -91,6 +91,7 @@ Translate audited assignments first, then review and update comparisons from the
 **Plugin files** is one assistant task: the assistant checks every plugin for text players see and translates it with the glossary, guidance, the game's translated text and any reference games.
 It keeps going through every plugin file on its own, and the task panel shows how many files are checked and translated.
 You don't review plugin files or strings; **Review & apply** shows what goes into the game.
+The task is done once every plugin's player text is translated with nothing waiting to apply.
 Copying the task again continues where the assistant stopped, and once everything is done it has the assistant recheck its decisions, for example after you find untranslated plugin text in the game.
 A plugin that changes after the assistant finished reads **Outdated** until you copy the task again.
 A plugin file the app can't read, such as one not saved as UTF-8, stays unchanged and keeps the task **Blocked** until you fix it or choose **Keep unchanged**.

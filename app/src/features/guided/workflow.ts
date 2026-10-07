@@ -80,7 +80,6 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "plugins",
-        optional: true,
         title: "Plugin files",
         description:
           "Inspect player-visible text in plugin files and retain any excluded scope.",
