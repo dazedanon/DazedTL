@@ -211,12 +211,11 @@ class PublicationTests(unittest.TestCase):
         import sys
         from types import ModuleType
 
-        from pydantic import TypeAdapter
-
         from dazedtl.api.contracts.guided import QaState
         from dazedtl.api.contracts.validation import _close_contracts
         from dazedtl.compatibility import text
         from dazedtl.translation.files import digest
+        from pydantic import TypeAdapter
 
         task_dir = self.folder / "text-qa/database/task"
         for name in (

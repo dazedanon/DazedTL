@@ -9,7 +9,6 @@ from dazedtl.storage import write_json
 from dazedtl.translation import publication
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 
-
 # The QaFinding contract: what a saved finding shows in the app.
 FINDING_FIELDS = (
     "id",
