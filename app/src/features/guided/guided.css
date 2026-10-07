@@ -1289,12 +1289,19 @@
 }
 .release-exclusions {
   display: grid;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
 }
+/* Each row is one list item: the path and its reason above one divider. */
 .release-exclusions p {
   display: grid;
   gap: var(--space-1);
+  max-width: none;
+  margin: 0;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.release-exclusions .guided-preview-path {
+  padding: 0;
+  border-bottom: 0;
 }
 
 .file-browser-heading > span {
