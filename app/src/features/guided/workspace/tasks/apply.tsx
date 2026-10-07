@@ -462,7 +462,15 @@ export function qaView(w: GuidedWorkspace): TaskView {
                 ? "waiting"
                 : "idle"
         }
-        description={qa.message}
+        description={
+          // Before any result exists, "saved results match" has nothing to
+          // describe; say what happens next instead.
+          qa.current && qaTask && !qa.findings.length && !qaStarted
+            ? qaCopied
+              ? "Results appear here as your assistant saves them."
+              : "Copy the prepared task to your assistant."
+            : qa.message
+        }
         help="Discovery describes the saved reports. It does not certify the current game as QA passed."
         results={[
           {
