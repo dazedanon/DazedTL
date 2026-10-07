@@ -19,13 +19,13 @@ export function ImageViewer({
   projectId,
   asset,
   queue,
-  tileSize,
+  thumbnailSize,
   onCompare,
 }: {
   projectId: string;
   asset: ImageAsset | null;
   queue: ThumbnailQueue;
-  tileSize: number;
+  thumbnailSize: number;
   onCompare: (asset: ImageAsset) => void;
 }) {
   return (
@@ -36,7 +36,7 @@ export function ImageViewer({
           projectId={projectId}
           asset={asset}
           queue={queue}
-          tileSize={tileSize}
+          thumbnailSize={thumbnailSize}
           onCompare={() => onCompare(asset)}
         />
       ) : (
@@ -53,18 +53,18 @@ function Viewer({
   projectId,
   asset,
   queue,
-  tileSize,
+  thumbnailSize,
   onCompare,
 }: {
   projectId: string;
   asset: ImageAsset;
   queue: ThumbnailQueue;
-  tileSize: number;
+  thumbnailSize: number;
   onCompare: () => void;
 }) {
   // The tile's thumbnail, usually already loaded, stands in until the full
   // image arrives.
-  const thumbnail = useThumbnail(queue, asset, tileSize);
+  const thumbnail = useThumbnail(queue, asset, thumbnailSize);
   const variant = asset.candidateHash ? "candidate" : "source";
   const largest = Math.max(asset.width || 0, asset.height || 0);
   const full = useRead(

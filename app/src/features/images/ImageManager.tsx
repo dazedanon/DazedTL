@@ -439,6 +439,10 @@ function Manager({
     Math.floor((dimensions.width - 16) / (value.view.tileSize + 8)),
   );
   const rowHeight = Math.round(value.view.tileSize * 0.68) + 32;
+  // Thumbnails match the screen's pixel density, with room for columns that
+  // stretch past the chosen size; steps of 16 keep cached sizes shared.
+  const thumbnailSize =
+    Math.ceil((value.view.tileSize * devicePixelRatio * 1.25) / 16) * 16;
   const [total, setTotal] = useState(state.counts.indexed);
   const range = virtualRows(
     total,
@@ -1229,7 +1233,7 @@ function Manager({
           projectId={projectId}
           asset={viewedAsset}
           queue={queue}
-          tileSize={value.view.tileSize}
+          thumbnailSize={thumbnailSize}
           onCompare={openCompare}
         />
       </div>
@@ -1349,7 +1353,7 @@ function Manager({
                     <Tile
                       asset={asset}
                       selected={selection.has(asset.id)}
-                      size={value.view.tileSize}
+                      size={thumbnailSize}
                       queue={queue}
                       onPick={(event, checkbox) => pick(index, event, checkbox)}
                       onKeyDown={(event) => tileKeyDown(event, index)}

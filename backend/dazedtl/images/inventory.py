@@ -42,8 +42,10 @@ def png_metadata(value):
 
 
 def png_preview(value, size):
-    """Metadata and, given a size, a copy scaled to fit it, from one decode.
+    """Metadata, bytes and media type of a preview, from one decode.
 
+    Without a size the preview is the PNG itself. A scaled copy is WebP,
+    about as small at the screen's pixel density as a PNG at half of it.
     A preview only shows the image; indexing and application verify it with
     png_metadata, so a preview skips that separate pass.
     """
@@ -55,11 +57,11 @@ def png_preview(value, size):
             image.load()
             metadata = describe_png(image)
             if not size:
-                return metadata, value
+                return metadata, value, "image/png"
             image.thumbnail((size, size))
             stream = BytesIO()
-            image.convert("RGBA").save(stream, format="PNG")
-            return metadata, stream.getvalue()
+            image.convert("RGBA").save(stream, format="WEBP", quality=90, method=2)
+            return metadata, stream.getvalue(), "image/webp"
 
 
 def describe_png(image):
@@ -252,7 +254,7 @@ class Index:
 
 
 class PreviewCache:
-    """Recent previews as (metadata, bytes), shared by concurrent readers."""
+    """Recent previews as (metadata, bytes, media type), shared by threads."""
 
     def __init__(self, budget=24_000_000):
         self.values = OrderedDict()

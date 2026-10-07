@@ -2050,9 +2050,9 @@ class ImageService:
         if cached is None:
             cached = png_preview(raw, size)
             self.cache.put(cache_key, cached)
-        metadata, pixels = cached
+        metadata, pixels, media = cached
         return {
-            "url": "data:image/png;base64," + base64.b64encode(pixels).decode("ascii"),
+            "url": f"data:{media};base64," + base64.b64encode(pixels).decode("ascii"),
             "sha256": fingerprint,
             **metadata,
         }
