@@ -10,7 +10,11 @@ from urllib.parse import urlsplit
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
 from dazedtl.translation.files import digest, project_path
 
-from .batch_continuation import JOURNAL, validate_submission_records
+from .batch_continuation import (
+    JOURNAL,
+    refused_create,
+    validate_submission_records,
+)
 from .batch_control import TERMINAL
 from .process_view import queue, saved
 
@@ -145,7 +149,7 @@ def active_tokens(root, identity, count, allowance):
                     return allowance  # Unknown paid work never becomes free capacity.
                 estimate = sum(count(requests[key]["params"]) for key in keys)
             used += estimate
-        if journal_matches and not receipt:
+        if journal_matches and not receipt and not refused_create(journal):
             estimate = journal.get("estimated_input_tokens")
             if type(estimate) is not int or estimate < 0:
                 return allowance

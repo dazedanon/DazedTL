@@ -218,9 +218,11 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                   ? applyFiles.length
                     ? "Earlier Batches are available in Run history. You can apply saved output."
                     : "Earlier Batches are available in Run history. Translate starts a new estimate."
-                  : noRemainingWork
-                    ? "Checked these files: no new API requests are needed."
-                    : "Translate prepares an estimate for your approval.";
+                  : current?.status === "failed"
+                    ? "The last run failed; Run history shows why. Translate starts a new estimate."
+                    : noRemainingWork
+                      ? "Checked these files: no new API requests are needed."
+                      : "Translate prepares an estimate for your approval.";
   actionContext = (
     <div className="translation-action-scope">
       <strong>

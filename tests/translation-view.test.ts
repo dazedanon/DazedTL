@@ -425,6 +425,16 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     fileStatus("Map001.json", partial).detail,
     fileStatus("Map001.json", rejected).detail,
   );
+  // Requests a run never sent, such as a refused Batch, leave the file untouched.
+  const unsent = {
+    ...partial,
+    status: "failed",
+    process: {
+      ...partial.process,
+      requests: [{ ...partial.process.requests[0], state: "queued" }],
+    },
+  };
+  assert.equal(fileStatus("Map001.json", unsent).state, "not_started");
   // Legacy dismissal flags no longer hide the latest attempt.
   assert.equal(
     phaseRun(

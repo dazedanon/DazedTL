@@ -213,6 +213,68 @@ class BatchContinuationTests(unittest.TestCase):
                     continuation.install_worker(root, plan)
                 self.assertEqual(create.call_count, 2)
 
+    def test_refused_creates_release_their_requests_while_ambiguous_failures_stay_uncertain(
+        self,
+    ):
+        # A provider refusal (such as OpenRouter's HTTP 402) created no Batch,
+        # so its requests may be sent again; a server error may have created one.
+        from dazedtl.compatibility.request_scope import requests as request_states
+
+        def failure(status):
+            error = RuntimeError(f"HTTP {status}")
+            error.status_code = status
+            return error
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            job, plan, requests, _state = self.fixture(root)
+            util, translation, providers, task, history = [
+                ModuleType(name)
+                for name in (
+                    "util",
+                    "util.translation",
+                    "util.batch_providers",
+                    "util.translation_task",
+                    "util.batch_history",
+                )
+            ]
+            util.translation, util.batch_providers = translation, providers
+            translation._batch_submit_lock = nullcontext
+            create = Mock(side_effect=[failure(402), failure(500)])
+            providers.submit_batch = point(create)
+            providers.get_client = Mock(
+                return_value=SimpleNamespace(with_options=lambda **_: object())
+            )
+            task.TranslationTask = type(
+                "Task", (), {"_wait_batch_submit": point(Mock(return_value=False))}
+            )
+            history.record_submit = Mock()
+            modules = {
+                module.__name__: module
+                for module in (util, translation, providers, task, history)
+            }
+            request = {
+                "custom_id": "req-000000",
+                "params": requests["one"]["params"],
+            }
+
+            def first():
+                return next(request_states(root, job))["state"]
+
+            with patch.dict(sys.modules, modules):
+                continuation.install_worker(root, plan)
+                with self.assertRaisesRegex(RuntimeError, "402"):
+                    providers.submit_batch("openai", [request])
+                self.assertEqual(first(), "queued")
+                continuation.validate_submission_records(root)
+                continuation.install_worker(root, plan)
+                with self.assertRaisesRegex(RuntimeError, "500"):
+                    providers.submit_batch("openai", [request])
+                self.assertEqual(create.call_count, 2)
+                self.assertEqual(first(), "uncertain")
+                with self.assertRaisesRegex(ValueError, "uncertain"):
+                    continuation.install_worker(root, plan)
+
     def test_openrouter_stops_later_creates_after_control_pipe_closes_but_recovers_returned_id(
         self,
     ):

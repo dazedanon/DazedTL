@@ -12,6 +12,17 @@ from .process_view import ledger, queue, saved
 
 APPROVAL = "dazedtl_batch_approval"
 JOURNAL = "dazedtl-batch-submission.json"
+# HTTP statuses where the provider refused the create request itself, so no
+# Batch exists. Timeouts, conflicts, server errors and lost responses can
+# follow a successful create and stay uncertain.
+REFUSED = frozenset({400, 401, 402, 403, 404, 413, 422, 429})
+
+
+def refused_create(intent):
+    """A journaled create the provider definitively refused."""
+    return (
+        bool(intent) and not intent.get("receipt") and intent.get("refused") in REFUSED
+    )
 
 
 class BatchContinuationError(ValueError):
@@ -101,6 +112,8 @@ def validate_submission_records(root):
     }
     recorded = {row["id"]: row.get("custom_ids") or {} for row in history}
     intent = saved(root, JOURNAL).get("intent")
+    if refused_create(intent):
+        intent = None
     if intent and not intent.get("receipt"):
         raise BatchContinuationError(
             "A Batch submission has an uncertain provider outcome. It cannot be sent again automatically."
@@ -180,7 +193,7 @@ def install_worker(root, plan):
 
     def recover_receipt():
         intent = saved(root, JOURNAL).get("intent")
-        if not intent:
+        if not intent or refused_create(intent):
             return
         value = approved()
         if intent.get("approval") != value or not intent.get("receipt"):
@@ -290,7 +303,14 @@ def install_worker(root, plan):
         write_json(path, {"intent": intent})
         client = kwargs.get("client") or providers.get_client(provider)
         kwargs["client"] = client.with_options(max_retries=0)
-        result = native(provider, requests, **kwargs)
+        try:
+            result = native(provider, requests, **kwargs)
+        except Exception as error:
+            status = getattr(error, "status_code", None)
+            if type(status) is int and status in REFUSED:
+                intent["refused"] = status
+                write_json(path, {"intent": intent})
+            raise
         state = saved(root, "batch_state.json")
         info = {
             **result,

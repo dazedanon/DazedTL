@@ -468,7 +468,9 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     return run.appliedOutputs?.includes(name) ? fileState("applied") : complete;
   if (run.outputs?.[name])
     return fileState("blocked", "The saved output is missing or changed.");
-  if (partial || states.length) return incomplete;
+  // Requests still in the local queue were never sent, so a run that ended
+  // before sending them left the file untouched.
+  if (partial || states.some((state) => state !== "queued")) return incomplete;
   if (working && run.mode !== "batch") return progress;
   return idle;
 }

@@ -148,11 +148,15 @@ def requests(root, job):
         for manifest in state.get("batches", []):
             for key in manifest.get("custom_ids", {}).values():
                 outcomes.setdefault(key, "uncertain")
+        from .batch_continuation import JOURNAL, refused_create
+
         unknown_submission = (
             state.get("status") in {"submission_uncertain", "submitting", "corrupt"}
             or job.get("dazedtl_submission_intent")
             and state.get("status")
             not in {"partially_submitted", "submitted", "fetched"}
+            # A create the provider refused left nothing to duplicate.
+            and not refused_create(saved(root, JOURNAL).get("intent"))
         )
         complete = consumed_files(root)
         from .batch_validation import outcomes as validation_outcomes
