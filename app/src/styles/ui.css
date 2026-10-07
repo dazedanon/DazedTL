@@ -490,6 +490,11 @@ pre {
 .field-control > select {
   width: min(100%, 24rem);
 }
+/* A field's label sets its spacing; the base textarea margins would push the
+   control below the label and its help text away from it. */
+.field-control > textarea {
+  margin: 0;
+}
 .field-control > input[type="checkbox"] {
   margin: var(--space-2) 0 0;
 }
