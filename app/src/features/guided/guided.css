@@ -1140,6 +1140,10 @@
 .text-qa-findings > li > input {
   margin: var(--space-half) 0 0;
 }
+/* Applied findings are a record; without a choice they need no column. */
+.text-qa-findings > li[data-applied] {
+  grid-template-columns: minmax(0, 1fr);
+}
 .text-qa-findings label {
   display: grid;
   gap: var(--space-1);

@@ -402,6 +402,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
+    state,
     action,
     baseline,
     qaTask,
@@ -421,6 +422,14 @@ export function qaView(w: GuidedWorkspace): TaskView {
   // The app prepares the task and its mechanical inventory itself; the
   // assistant has the task once it is copied or its screening has begun.
   const qaCopied = action.key === "copy:qa" && !!action.notice;
+  // Applying corrections changes the text this task checked, which makes it
+  // stale; that is the expected result of its own apply, not a problem.
+  const latest = state.readiness.publications[0];
+  const qaApplied =
+    !qa.current &&
+    !!qa.findings.length &&
+    latest?.kind === "qa_apply" &&
+    latest.state === "complete";
   // A finding can be chosen once its assistant prepared a correction for it.
   const operations = new Map<string, typeof qa.corrections>();
   for (const change of qa.corrections)
@@ -468,22 +477,26 @@ export function qaView(w: GuidedWorkspace): TaskView {
       </FieldRow>
       <AssistantTask
         state={
-          !qa.current && qaStatus.stage
-            ? "attention"
-            : qa.findings.length
-              ? "ready"
-              : qaCopied || qaStarted
-                ? "waiting"
-                : "idle"
+          qaApplied
+            ? "applied"
+            : !qa.current && qaStatus.stage
+              ? "attention"
+              : qa.findings.length
+                ? "ready"
+                : qaCopied || qaStarted
+                  ? "waiting"
+                  : "idle"
         }
         description={
           // Before any result exists, "saved results match" has nothing to
           // describe; say what happens next instead.
-          qa.current && qaTask && !qa.findings.length && !qaStarted
-            ? qaCopied
-              ? "Results appear here as your assistant saves them."
-              : "Copy the prepared task to your assistant."
-            : qa.message
+          qaApplied
+            ? "Chosen corrections are applied. Restore them from Apply, or prepare QA again to check the current text."
+            : qa.current && qaTask && !qa.findings.length && !qaStarted
+              ? qaCopied
+                ? "Results appear here as your assistant saves them."
+                : "Copy the prepared task to your assistant."
+              : qa.message
         }
         help="Discovery describes the saved reports. It does not certify the current game as QA passed."
         results={[
@@ -564,7 +577,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
               prepared correction, the choice to apply it. */}
           <div className="text-qa-results-heading">
             <h3>Findings</h3>
-            {!!choosable.length && (
+            {!!choosable.length && !qaApplied && (
               <>
                 <span className="muted">
                   {chosenFindings.length} of {choosable.length} chosen
@@ -597,8 +610,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
               const after = row.correction || changes[0]?.replacement;
               const files = [...new Set(changes.map((change) => change.file))];
               return (
-                <li key={row.id}>
+                <li key={row.id} data-applied={qaApplied || undefined}>
                   <input
+                    hidden={qaApplied}
                     type="checkbox"
                     id={`qa-${row.id}`}
                     aria-label={`Apply ${row.id}`}
@@ -648,7 +662,14 @@ export function qaView(w: GuidedWorkspace): TaskView {
   );
   // The footer walks QA forward: prepare a task, copy it, then review the
   // corrections chosen from its findings.
-  const review = qa.findings.length ? (
+  const review = qaApplied ? (
+    task(
+      "qa_prepare",
+      "Prepare QA again",
+      { focus: fields.text.focus },
+      !baseline,
+    )
+  ) : qa.findings.length ? (
     task(
       "qa_apply",
       "Review chosen corrections",
