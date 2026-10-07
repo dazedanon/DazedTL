@@ -4,6 +4,7 @@ import type {
   AssistantTaskRecord,
   GuidedState,
   ImageManagerState,
+  PluginState,
 } from "../app/src/api/contracts.ts";
 import {
   assistantTasks,
@@ -99,6 +100,52 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     assistantTasks(qa("new")).map((task) => task.state),
     ["waiting"],
   );
+
+  // A finished plugin task reads Outdated once a plugin changes, and Blocked
+  // while a file cannot be read; its panel shares this state.
+  const plugins = (
+    counts: Partial<PluginState["counts"]>,
+    unreadable: string[] = [],
+  ) => ({
+    records: [
+      {
+        kind: "plugins",
+        requestId: "request",
+        copiedAt: "2026-10-07T10:00:00.000+00:00",
+        resultAt: null,
+        dismissed: false,
+      } as AssistantTaskRecord,
+    ],
+    plugins: {
+      scanned: true,
+      awaiting: false,
+      unreadable: unreadable.map((path) => ({ path, issue: "Not UTF-8." })),
+      counts: {
+        files: 1,
+        investigated: 1,
+        textFiles: 0,
+        selected: 0,
+        translated: 0,
+        ready: 0,
+        applied: 0,
+        ...counts,
+      },
+    } as unknown as PluginState,
+  });
+  assert.deepEqual(
+    assistantTasks(plugins({ files: 2 })).map((task) => [
+      task.state,
+      task.detail,
+    ]),
+    [["outdated", "1 plugin file changed since your assistant finished"]],
+  );
+  assert.deepEqual(
+    assistantTasks(plugins({}, ["js/plugins/Old.js"])).map(
+      (task) => task.state,
+    ),
+    ["blocked"],
+  );
+  assert.deepEqual(assistantTasks(plugins({})), []);
 
   // An image task copied before records existed still lists while it waits.
   const images = {

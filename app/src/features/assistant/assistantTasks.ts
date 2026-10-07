@@ -10,7 +10,7 @@ import type {
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
-import { pluginFilesLeft } from "../plugins/pluginTask.ts";
+import { pluginFilesLeft, pluginTaskState } from "../plugins/pluginTask.ts";
 
 /** A copied assistant task that still needs the user or the assistant. */
 export interface AssistantTaskView {
@@ -137,7 +137,21 @@ function standing(
           : "",
       );
     }
-    return copied ? { state: "finished" } : { state: "idle" };
+    if (!copied) return { state: "idle" };
+    const files = (count: number) =>
+      `${count.toLocaleString()} ${count === 1 ? "plugin file" : "plugin files"}`;
+    const state = pluginTaskState(plugins, { waiting: false, copied });
+    if (state === "outdated")
+      return {
+        state,
+        detail: `${files(pluginFilesLeft(plugins))} changed since your assistant finished`,
+      };
+    if (state === "blocked")
+      return {
+        state,
+        detail: `${files(plugins.unreadable.length)} could not be read`,
+      };
+    return { state: "finished" };
   }
   if (kind === "image_discovery" || kind === "image_editing") {
     if (!images) return { state: "idle" };
@@ -239,6 +253,7 @@ export function assistantWaiting(
   return {
     waiting: task?.state === "waiting",
     dismissed: !!record?.dismissed,
+    copied: !!record && !record.dismissed,
     since: task?.since || "",
     saved: savedSinceCopy(record),
   };
@@ -248,6 +263,8 @@ export function assistantWaiting(
 export interface Handoff {
   waiting: boolean;
   dismissed: boolean;
+  /** Copied in this project, and not dismissed since. */
+  copied: boolean;
   since: string;
   saved: boolean;
 }
@@ -256,6 +273,7 @@ export interface Handoff {
 export const noHandoff: Handoff = {
   waiting: false,
   dismissed: false,
+  copied: false,
   since: "",
   saved: false,
 };

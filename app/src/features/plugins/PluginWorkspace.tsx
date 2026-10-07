@@ -10,7 +10,7 @@ import type {
 } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
 import { useObserved } from "../../state/useObserved";
-import { sinceLabel } from "../assistant/assistantTasks";
+import { type Handoff, sinceLabel } from "../assistant/assistantTasks";
 import { useHandoff } from "../assistant/useAssistantTasks";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
@@ -29,7 +29,7 @@ import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
 import { PluginApplyContent } from "./PluginApplyContent";
-import { pluginFilesLeft } from "./pluginTask";
+import { pluginFilesLeft, pluginTaskState } from "./pluginTask";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -61,21 +61,17 @@ const controlled = (key: string) =>
   ].includes(key) || key.startsWith("preview_restore:");
 
 /** Where the assistant's task stands and each result it returns. */
-function pluginTask(state: PluginState, waiting: boolean) {
+function pluginTask(state: PluginState, handoff: Handoff) {
   const { counts } = state;
+  const { waiting } = handoff;
   const left = pluginFilesLeft(state);
   const investigating = !state.scanned || counts.investigated < counts.files;
-  const taskState: AssistantTaskState = waiting
-    ? "waiting"
-    : counts.ready
-      ? "ready"
-      : investigating || left
-        ? "not_started"
-        : counts.applied
-          ? "applied"
-          : "done";
-  // Work left with no request out: the assistant stopped, or a game file
-  // changed after it finished.
+  const taskState: AssistantTaskState = pluginTaskState(state, handoff);
+  // A result redone because the game changed reads Outdated, not new.
+  const idle: DisplayState =
+    taskState === "outdated" ? "outdated" : "not_started";
+  // Work left with no request out, beside files ready to apply or in
+  // progress adopted from another project.
   const unfinished =
     left > 0 && (counts.investigated > 0 || counts.translated > 0)
       ? ` ${fileCount(left)} still ${left === 1 ? "needs" : "need"} your assistant; copy the task again to continue.`
@@ -85,21 +81,26 @@ function pluginTask(state: PluginState, waiting: boolean) {
       ? "Results appear here as your assistant saves them. It continues through every plugin file on its own."
       : taskState === "ready"
         ? `${fileCount(counts.ready)} translated and checked, ready to apply.${unfinished}`
-        : taskState === "applied"
-          ? `${fileCount(counts.applied)} applied to the game.`
-          : taskState === "done"
-            ? counts.textFiles
-              ? "Plugin text is checked; nothing needed changing."
-              : counts.files
-                ? "No plugin shows its Japanese text to players."
-                : "No plugin holds Japanese text."
-            : unfinished.trim() ||
-              "Your assistant finds the text plugins show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.";
+        : taskState === "outdated"
+          ? `${fileCount(left)} changed since your assistant finished. Copy the task again to update ${left === 1 ? "it" : "them"}.`
+          : taskState === "blocked"
+            ? "Every readable plugin file is done."
+            : taskState === "applied"
+              ? `${fileCount(counts.applied)} applied to the game.`
+              : taskState === "done"
+                ? counts.textFiles
+                  ? "Plugin text is checked; nothing needed changing."
+                  : counts.files
+                    ? "No plugin shows its Japanese text to players."
+                    : "No plugin holds Japanese text."
+                : unfinished.trim() ||
+                  "Your assistant finds the text plugins show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.";
   const findings: DisplayState = !investigating
     ? "done"
     : waiting
       ? "waiting"
-      : "not_started";
+      : idle;
+  // Before any text is found there is no translation to be out of date.
   const translation: DisplayState = !counts.textFiles
     ? investigating
       ? "not_started"
@@ -107,7 +108,7 @@ function pluginTask(state: PluginState, waiting: boolean) {
     : counts.translated < counts.textFiles
       ? waiting && !investigating
         ? "waiting"
-        : "not_started"
+        : idle
       : counts.ready
         ? "ready"
         : counts.applied
@@ -337,9 +338,11 @@ export function PluginWorkspace({
       </section>
     );
   const counts = state.counts;
-  const task = pluginTask(state, handoff.waiting);
+  const task = pluginTask(state, handoff);
   const copied = feedback("plugin_task");
-  const finished = ["done", "applied"].includes(task.taskState);
+  // Nothing is left for the assistant; an unreadable file needs a fix
+  // outside the app.
+  const finished = ["done", "applied", "blocked"].includes(task.taskState);
   return (
     <section className="plugin-workspace" aria-label="Plugin files workspace">
       <AssistantTask

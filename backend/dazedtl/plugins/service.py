@@ -375,7 +375,10 @@ class PluginService:
             raise ValueError(
                 "A plugin file changed during reading. Refresh when its writer finishes."
             )
-        raw.decode("utf-8")
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Plugin files must be UTF-8 text.") from exc
         return raw
 
     def inventory(self, project_id):
@@ -804,6 +807,10 @@ class PluginService:
                 expected = row.get("applied", {}).get("afterHash") or row["sourceHash"]
                 if fingerprint(row["path"]) != expected:
                     row["stale"] = True
+                    # A file the last scan could not read reads now; the
+                    # assistant has to look at it.
+                    if not row["sourceHash"]:
+                        row["issue"] = ""
                 if not row.get("prepared"):
                     continue
                 prepared = row["prepared"]
@@ -857,11 +864,13 @@ class PluginService:
             self.observe(project_id, value)
             project, _ = self.record(project_id)
             # Files with nothing for the assistant to decide stay out of the
-            # counts, so they read as the assistant's progress.
+            # counts, so they read as the assistant's progress; a changed file
+            # counts until a scan says what it holds now.
             statuses = Counter(
                 self.row_status(value, row)
                 for row in value["files"].values()
                 if row.get("issue")
+                or row.get("stale")
                 or row.get("loaderLiterals")
                 or not all(item["protected"] for item in row["occurrences"])
             )

@@ -621,6 +621,28 @@ class PluginTests(unittest.TestCase):
         )
         self.assertIn("recheck", recheck["instructions"])
 
+    def test_a_plugin_file_that_reads_again_goes_back_to_the_assistant(self):
+        # A fixed file must not stay reported as unreadable, nor drop out of
+        # the counts as if it held no text.
+        source = "drawText('隠れた文字');\r\n"
+        write_bytes(self.game / "www/js/plugins/PluginB.js", source.encode("shift_jis"))
+        self.translated()
+        state = self.service.state(self.identity)
+        self.assertEqual(
+            state["unreadable"],
+            [
+                {
+                    "path": "www/js/plugins/PluginB.js",
+                    "issue": "Plugin files must be UTF-8 text.",
+                }
+            ],
+        )
+        self.assertEqual(state["counts"]["investigated"], state["counts"]["files"])
+        self.write("www/js/plugins/PluginB.js", source)
+        state = self.service.state(self.identity)
+        self.assertEqual(state["unreadable"], [])
+        self.assertLess(state["counts"]["investigated"], state["counts"]["files"])
+
     def test_explicit_loaded_json_needs_new_investigation_then_exact_leaf_checks(self):
         task = self.service.action(self.identity, "plugin_task")
         request, report, _ = self.investigation(task, advance=False)
