@@ -113,7 +113,7 @@ export default function ModelOptionsEditor({
         <FieldRow
           id="output-token-allowance"
           label="Output token allowance"
-          help="Maximum generated tokens per request, including reasoning. Lower model or host limits take precedence. Blank uses the default. Applies to new runs."
+          help="Maximum generated tokens per request, including reasoning. Lower model or host limits take precedence. Blank uses the default. Used by new runs."
         >
           {(control) => (
             <input
@@ -156,7 +156,7 @@ export default function ModelOptionsEditor({
           <FieldRow
             id="batch-input-tokens"
             label="Batch token allowance"
-            help="Total estimated input tokens across active Guided Batches on this connection and model. Available capacity is filled automatically. Leave headroom for other jobs sharing the account. Applies to new runs."
+            help="Total estimated input tokens across active Guided Batches on this connection and model. Available capacity is filled automatically. Leave headroom for other jobs sharing the account. Used by new runs."
           >
             {(control) => (
               <input
@@ -285,7 +285,7 @@ export default function ModelOptionsEditor({
         )}
         <p className="settings-note">
           {openrouter
-            ? "Live rates apply to names and labels translated before a Batch. Actual charges depend on the serving host and account settings."
+            ? "Live rates are charged for names and labels translated before a Batch. Actual charges depend on the serving host and account settings."
             : "Base rates before cache and batch adjustments. Custom servers may charge different rates."}
         </p>
       </Section>

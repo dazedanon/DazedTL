@@ -193,9 +193,8 @@ export function BackupsPanel({
         <Section title="Need an earlier copy?">
           <p>
             Choose a saved backup and recover it into a new folder. Your current
-            game stays in place. Preparation and patch checkpoints also save
-            backups, and earlier full-copy backups from the app workspace are
-            included.
+            game stays in place. Setup and patch builds also save backups, and
+            earlier full-copy backups from the app workspace are included.
           </p>
           <ActionSlot target={actionTarget}>
             <Button

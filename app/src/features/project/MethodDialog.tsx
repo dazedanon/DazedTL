@@ -9,7 +9,7 @@ import { OptionCards } from "../../ui/OptionCards";
 
 export const methodLabels: Record<TranslationMethod, string> = {
   guided: "Guided steps",
-  len: "Len's method",
+  len: "Assistant-led",
 };
 export const guidedEngines = ["MVMZ", "ACE"];
 
@@ -73,7 +73,7 @@ export function MethodDialog({
               title: methodLabels.len,
               badge: recommended === "len" ? "Recommended" : undefined,
               description:
-                "Your coding assistant translates through the app from one starting prompt. Any engine.",
+                "Your coding assistant translates through the app from one starting prompt, using Len's game-translation skills. Any engine.",
             },
           ]}
         />

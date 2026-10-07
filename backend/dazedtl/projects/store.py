@@ -155,7 +155,7 @@ class Projects:
     def choose_method(self, project_id, method):
         """Record the method chosen for a game; the other method's work stays."""
         if method not in {"guided", "len"}:
-            raise ValueError("Choose Guided steps or Len's method.")
+            raise ValueError("Choose Guided steps or Assistant-led.")
         data = deepcopy(self.data)
         self._get(data, project_id)["method"] = method
         self._commit(data)

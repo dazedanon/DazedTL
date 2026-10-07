@@ -1,12 +1,12 @@
 # DazedTL
 
 DazedTL is a desktop app for translating games with its bundled translation engine.
-RPG Maker MV/MZ and Ace games use a guided seven-stage workflow, and Len's method lets a coding assistant translate any game through the running app.
+RPG Maker MV/MZ and Ace games use a guided seven-stage workflow, and Assistant-led, built on Len's game-translation skills, lets a coding assistant translate any game through the running app.
 The [user guide](docs/user-guide.md) covers both workflows.
 
 ## Current limitations
 
-- WOLF's guided workflow is deferred; other engines are supported only through Len's method.
+- WOLF's guided workflow is deferred; other engines are supported only through Assistant-led.
 - Ace's bundled native converters run only on Windows.
 - Real provider billing and native game playtesting still need validation.
 - Application distribution is pending, so DazedTL runs from a checkout.

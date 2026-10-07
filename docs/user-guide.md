@@ -6,19 +6,19 @@ For setup and current limitations, see the [README](../README.md).
 ## Open a game
 
 Choose **Open a game** on the Project page and select the game folder.
-A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Len's method](#lens-method) for any game.
+A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Assistant-led](#assistant-led) for any game.
 **Translation** in the sidebar then opens that method.
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks; **Start** or **Resume** opens Translation where you left off, or **Continue** opens the next task when the one you left is finished.
-The optional stages never hold up the next step: Plugin text and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
+The optional stages never hold up the next step: Plugin files and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
 ## Translation workflow
 
-Translation follows seven stages: **Prepare → Context → Translate → Plugin text → Images → Apply & Fitting → Release**.
+Translation follows seven stages: **Prepare → Context → Translate → Plugin files → Images → Apply & Check → Release**.
 Each stage opens one focused task, and you can move between tasks without finishing them.
-Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Layout and Settings.
+Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Line widths and Settings.
 Navigation never starts paid work.
 
 ### Prepare
@@ -32,7 +32,7 @@ Replacing a missing backup still asks for your approval first.
 
 ### Context
 
-In **Investigation**, use **Copy investigation task** and paste it into your coding assistant.
+In **Names & glossary**, use **Copy names & glossary task** and paste it into your coding assistant.
 The assistant identifies speaker formats, runs the local name scanner, then investigates the glossary, characters, voice and game context.
 The scanner makes no API requests.
 **Add game folder** includes an earlier game as a read-only terminology reference in the next copied task.
@@ -40,11 +40,11 @@ Re-copy the task after changing reference folders.
 **View names** opens the saved scan, and **Speaker detection** holds speaker rules and overrides.
 Optional **Translate names with API…** in the name scan opens the paid review directly, using the project's Batch or Live choice.
 Edit the resulting files in **Guidance**.
-Measured character limits are saved automatically during investigation; **Layout** shows them and allows manual changes.
+Measured line widths are saved automatically when the assistant reports them; **Line widths** shows them and allows manual changes.
 
 ### Translate
 
-Translate has three tasks: **Database files**, **Maps & events** and **Event / plugin codes**.
+Translate has three tasks: **Database files**, **Maps & events** and **Other event text**.
 All supported files start selected.
 Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
 The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
@@ -61,7 +61,7 @@ An approved, unchanged Batch queue continues after reopening the app or a droppe
 Cancellation and newer overlapping approvals stop automatic continuation.
 Files with active or unresolved Batch work are locked against source reloads.
 
-**Event / plugin codes** investigates variables, plugin commands, scripts and labels before translation.
+**Other event text** investigates variables, plugin commands, scripts and labels before translation.
 Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns, or skip the task if none are needed.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
 
@@ -88,27 +88,27 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 
 ### Images
 
-Images is the Image Manager, the same one Len's method shows in its **Images** tab.
+Images is the Image Manager, the same one Assistant-led shows in its **Images** tab.
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
 The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
 
-### Apply & Fitting
+### Apply & Check
 
 Apply overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
 You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
-Rewrap needs a completed scan with the same files and settings.
-Translated plugin command text (357) loses its line breaks, so Fitting offers **Include 357** when that source is enabled but outside its event codes.
+**Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.
+Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event codes.
 Optional QA and game tools stay here, and **Tools** installs or updates TL Inspector and Forge for MV/MZ.
 Apply and playtest an early scene before expanding the scope.
 
 ### Release
 
 **Release** builds a clean game ZIP or a local patch ZIP.
-A patch build saves a local checkpoint and workspace backup first; a clean game ZIP leaves the working game untouched.
+A patch build saves a translation version and a project backup first; a clean game ZIP leaves the working game untouched.
 Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
 With no translation applied yet, the footer notes that the ZIP keeps the original text.
 The last saved ZIP shows **Up to date** until the game's runtime files change or another image is applied; build again to include later changes.
@@ -121,16 +121,16 @@ GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the
 Ace adds archive extraction, Sinflower RV2JSON conversion and native repacking around the same stages.
 Release verifies saved packing evidence against the current JSON and native files.
 
-## Len's method
+## Assistant-led
 
-Len's method runs translation through a coding assistant using the bundled engine skills, with Agent, Live API and API Batch execution.
+Assistant-led runs translation through a coding assistant using Len's game-translation skills bundled with the engine, with Agent, Live API and API Batch execution.
 Select a translation mode, set the image scope and project instructions, then copy the starting prompt into a coding assistant with access to the game and engine checkout.
 Keep DazedTL open: the prompt's project helper uses the running app to save state and control jobs.
 The same prompt resumes saved work.
 DazedTL shows the assistant's saved reports; it does not host or keep the assistant running.
 
 The helper preserves the selected source, sets up the original and translation Git branches, records the game version and prepares shared guidance before compiling requests.
-For engines other than RPG Maker, extraction, fitting, native reconstruction and runtime QA remain the assistant's work through the bundled skills and tools.
+For engines other than RPG Maker, extraction, line fitting, native reconstruction and runtime QA remain the assistant's work through the bundled skills and tools.
 Guided steps work on the same game keeps its recovery path when you switch the method back.
 Resume an unfinished API run before starting another phase or estimate so its provider work stays attached.
 
@@ -140,7 +140,7 @@ Each line shows its text type and known or unknown speaker; source ambiguities a
 Check those notes against the source before marking the request source-checked; a correction makes that review pending again.
 Pausing a Batch run stops local polling, and **Cancel provider batch** requests cancellation while keeping completed results.
 An uncertain submission is never retried automatically; reconcile its provider job or review the uncertain Live request before preparing another quote.
-Len's manual checkpoint and patch controls are under **Advanced setup & patch tools**.
+Manual version and patch controls are under **Advanced setup & patch tools**.
 
 ## Game updates
 
@@ -156,6 +156,7 @@ Keep the selected game available throughout the work.
 
 ## Backups and recovery
 
+DazedTL keeps two kinds of history: **Backups** are copies of the game or project files you can restore, and **Versions** are the Git history of the original game and the translation, used to merge game updates.
 Working records and guidance stay in the game's `.dazedtl` folder, which is kept out of Git and release packages.
 Git tracks the runtime patch and matching originals.
 Backups live in `.dazedtl/backups/v2`, where unchanged files are stored once.
@@ -179,13 +180,13 @@ python scripts/backups.py --game "/path/to/game" restore --id SNAPSHOT_ID --dest
 ```
 
 Add `--legacy-backups "/path/to/old/workspace/backups/PROJECT_ID"` before the command to include older full-copy backups.
-Do not edit the store's objects or remove snapshot files manually; several restore points can share the same content.
+Do not edit the store's objects or remove snapshot files manually; several backups can share the same content.
 
 ## API setup
 
 In Settings, choose a provider, paste its API key and save the connection.
 **Check connection** requests the provider's model list without generating text.
-Choose the connection's model under Preferences, or from the **Model** menu on Translate and in Len's method, which lists the active connection's checked models.
+Choose the connection's model under Preferences, or from the **Model** menu on Translate and in Assistant-led, which lists the active connection's checked models.
 **Remove…** deletes the connection and its saved key, and another saved connection becomes active.
 Unfinished runs that used it can no longer resume or collect their Batches, so the confirmation counts them and asks you to remove it anyway.
 

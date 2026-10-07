@@ -38,8 +38,9 @@ export const workflow: WorkflowStage[] = [
     tasks: [
       {
         id: "names",
-        title: "Investigation",
-        description: "Find speaker names and prepare reusable guidance.",
+        title: "Names & glossary",
+        description:
+          "Find speaker names and prepare the glossary and game context.",
       },
       {
         id: "guidance",
@@ -48,8 +49,9 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "speakers",
-        title: "Layout",
-        description: "Set character limits for dialogue and interface text.",
+        title: "Line widths",
+        description:
+          "Set how many characters fit on a line of dialogue and interface text.",
       },
     ],
   },
@@ -70,7 +72,7 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "other-event-text",
-        title: "Event / plugin codes",
+        title: "Other event text",
         description:
           "Investigate specific text sources, review their coverage, then translate.",
       },
@@ -78,12 +80,12 @@ export const workflow: WorkflowStage[] = [
   },
   {
     id: "plugins",
-    title: "Plugin text",
-    short: "Plugin text",
+    title: "Plugin files",
+    short: "Plugin files",
     tasks: [
       {
         id: "plugins",
-        title: "Plugin text",
+        title: "Plugin files",
         description:
           "Inspect player-visible text in plugin files and retain any excluded scope.",
       },
@@ -104,14 +106,14 @@ export const workflow: WorkflowStage[] = [
   },
   {
     id: "apply",
-    title: "Apply & Fitting",
-    short: "Apply & Fitting",
+    title: "Apply & Check",
+    short: "Apply & Check",
     tasks: [
       {
         id: "apply",
-        title: "Apply & Fitting",
+        title: "Apply & Check",
         description:
-          "Apply a selected scope, then inspect its text fitting. QA and game tools are optional.",
+          "Apply a selected scope, then check its line widths. QA and game tools are optional.",
       },
     ],
   },

@@ -37,7 +37,7 @@ export function investigationResults(
             ? "waiting"
             : "idle",
       detail: formatsSaved
-        ? `${findings.rules.length} optional formats investigated${findings.status === "applied" ? " · settings applied" : ""}.`
+        ? `${findings.rules.length} optional formats investigated${findings.status === "applied" ? " · in use" : ""}.`
         : findings.status === "invalid"
           ? findings.message
           : "The assistant identifies name tags, faces and speaker patterns.",

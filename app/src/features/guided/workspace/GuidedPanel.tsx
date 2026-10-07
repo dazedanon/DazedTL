@@ -345,7 +345,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                       </div>
                       {!!findings.overrides.length && (
                         <ActionControl
-                          label="Use investigation recommendations"
+                          label="Use recommended rules"
                           disabled={
                             disabled ||
                             draft.dirty ||
@@ -353,13 +353,13 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                             !["ready", "applied"].includes(findings.status)
                           }
                           pending={speakerAction.busy}
-                          pendingText="Applying rules…"
+                          pendingText="Saving rules…"
                           error={speakerAction.error}
                           notice={speakerAction.notice}
                           onClick={() =>
                             speakerAction.run(
                               () => draft.applySpeakers(true),
-                              "Investigation recommendations restored.",
+                              "Recommended rules restored.",
                               "apply",
                             )
                           }

@@ -58,7 +58,7 @@ export default function Translation({
   if (!state || state.projectId !== project.id)
     return (
       <PageLayout>
-        <PageHeader title="Len's method" />
+        <PageHeader title="Assistant-led" />
         <Message
           message={
             application.snapshot?.translationError ||
@@ -151,10 +151,10 @@ function Workspace({
     <PageLayout
       variant="editor"
       className="lens-method"
-      aria-label="Len's method workspace"
+      aria-label="Assistant-led workspace"
     >
       <PageHeader
-        title="Len's method"
+        title="Assistant-led"
         actions={
           // The workspace folder exists once the assistant sets it up.
           state.initialized && (
@@ -177,7 +177,7 @@ function Workspace({
       <div className="frame-row">
         <Tabs
           id="translation"
-          label="Len's method sections"
+          label="Assistant-led sections"
           items={tabs}
           value={view}
           disabled={action.busy}
@@ -323,9 +323,9 @@ function Workspace({
                 description={
                   progress?.blocker ||
                   progress?.next_action ||
-                  "Your assistant sets up source backups, version baselines and shared guidance, then translates; its saved reports appear here."
+                  "Your assistant backs up the game, saves its version and prepares shared guidance, then translates; its saved reports appear here."
                 }
-                help="These are saved checkpoints. An assistant's last report does not show that its session is still running, and text completion does not establish runtime QA completion."
+                help="These are saved reports. An assistant's last report does not show that its session is still running, and text completion does not establish runtime QA completion."
               >
                 <div className="translation-phases">
                   {Object.entries(labels).map(([key, label]) => {
@@ -401,15 +401,15 @@ function Workspace({
                         )
                       }
                     >
-                      Pause at checkpoint
+                      Pause at the next safe point
                     </Button>
                   )}
                 </Section>
               )}
-              <Section title="Preparation checkpoints">
+              <Section title="Setup">
                 <dl className="translation-facts">
                   <div>
-                    <dt>Source backup</dt>
+                    <dt>Original backup</dt>
                     <dd>
                       {state.lifecycle.source_backup?.available === false
                         ? "Unavailable"
@@ -419,15 +419,15 @@ function Workspace({
                     </dd>
                   </div>
                   <div>
-                    <dt>Original / translation branches</dt>
-                    <dd>{state.git?.configured ? "Established" : "Pending"}</dd>
+                    <dt>Version history</dt>
+                    <dd>{state.git?.configured ? "Set up" : "Pending"}</dd>
                   </div>
                   <div>
-                    <dt>Source game version</dt>
+                    <dt>Game version</dt>
                     <dd>{state.git?.original_version || "Not recorded"}</dd>
                   </div>
                   <div>
-                    <dt>Translation checkpoint</dt>
+                    <dt>Translation version</dt>
                     <dd>{state.git?.translation_commit ? "Saved" : "None"}</dd>
                   </div>
                 </dl>

@@ -230,7 +230,7 @@ class PluginService:
                 "Ace scripts require a Ruby parser and native packing integration. Existing extracted scripts remain untouched; use the preserved Ruby assistant workflow separately."
             )
         if project["engine"] != "MVMZ":
-            raise ValueError("Plugin text supports RPG Maker MV/MZ.")
+            raise ValueError("Plugin files support RPG Maker MV/MZ.")
         matches = [
             prefix
             for prefix in ("www/", "")
@@ -1084,7 +1084,7 @@ class PluginService:
             "requestId": identity,
         }
         common = (
-            "This is one explicitly scoped DazedTL Plugin text task. Copying it did not start an assistant.\n"
+            "This is one explicitly scoped DazedTL Plugin files task. Copying it did not start an assistant.\n"
             "Read the request JSON: "
             + str(request_path)
             + "\nSave a structured report at: "

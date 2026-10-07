@@ -340,8 +340,8 @@ export function ReleaseReview({
       <p className="muted">{preview.package?.updater}</p>
       {patch && (
         <p className="muted">
-          Build also saves the reviewed scope as a local checkpoint. No
-          publication.
+          Build also saves the reviewed scope as a translation version and backs
+          up the project first. No publication.
         </p>
       )}
     </div>

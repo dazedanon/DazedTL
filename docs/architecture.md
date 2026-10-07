@@ -64,7 +64,7 @@ Cost dialogs focus on price, selected scope and approval; an optional Preview re
 Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews its collected requests.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
-Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Event / plugin codes.
+Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
 Database and map task completion aggregates verified per-file progress across their full file groups, independent of checkbox selection.
 The current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
 Event-code and comparison completion retain their reviewed scope checks.
@@ -376,7 +376,7 @@ Legacy Guided review receipts remain readable for existing records.
 
 ## Plugins and images
 
-Guided Plugin text and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
+Guided Plugin files and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
 The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated.
@@ -424,6 +424,8 @@ Import revalidates the exported source scope and copies targets only; rendering 
 Strive for [Nielsen's ten usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) when designing and reviewing this tool.
 Make current state and the next useful action visible; use translation tasks and familiar language; offer clear exits and recovery; keep shared controls consistent; prevent scope and spending mistakes; make prerequisites visible instead of requiring memory; support both guided and experienced use; prioritize relevant actions; give errors a practical recovery path; and put concise help beside the task that needs it.
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
+Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits that the line width check enforces.
+Assistant-led is the UI name of the method built on Len's game-translation skills, and code and records keep the `len` identifier.
 
 ### Visual design
 
@@ -465,7 +467,7 @@ Each game has one translation method, chosen in [MethodDialog](../app/src/featur
 The one Translation entry opens that method's workspace.
 The Project page's Status, History, Game updates and Backups tabs serve both methods.
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
-Optional stages complete from the same snapshot: Plugin text and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
+Optional stages complete from the same snapshot: Plugin files and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
@@ -477,7 +479,7 @@ A menu is a short list of choices that closes when you pick one.
 New pages start from one of three templates: the task page (stepper, task tabs, TaskHeader, the task's panels, its work area, footer), the project page (header, tabs, a body and footer per tab) and the decision dialog (the decision as its title, what will happen, explicit footer choices).
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
 A dialog whose tabs hold panels of different heights stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size.
-Settings, the Project page and [Len's method](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Len's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
+Settings, the Project page and [Assistant-led](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Assistant-led's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
 A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
@@ -536,9 +538,9 @@ One task occupies the editing body and its action footer stays outside the scrol
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
 Guidance review and layout settings follow before the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
-Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Event / plugin codes steps and the Apply & Fitting views) use secondary tabs below them.
+Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Other event text steps and the Apply & Check views) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
-Plugin text and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
+Plugin files and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
 The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done, fills with the accent while the stage is current, and becomes a check when every task is done; the Project page's Status holds the full checklist.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
@@ -549,14 +551,14 @@ Explicitly declined speaker preflight is interpreted as canceled only with verif
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project ownership and recovery receipts.
 Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
-Context uses compact Investigation, Guidance and Layout tasks.
-Investigation shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan.
-The shared observer updates saved results and guidance without a separate refresh action, and so do Event / plugin codes findings and Text QA findings; Image Manager keeps explicit refreshes because importing a saved image report validates it first.
+Context uses compact Names & glossary, Guidance and Line widths tasks.
+Names & glossary shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan.
+The shared observer updates saved results and guidance without a separate refresh action, and so do Other event text findings and Text QA findings; Image Manager keeps explicit refreshes because importing a saved image report validates it first.
 Reference game folders are retained per project by [reference_folders.py](../backend/dazedtl/translation/reference_folders.py) and included as read-only source material in the copied investigation prompt.
 Adding a folder only registers its path; it does not parse, convert or index the game.
 Missing references remain listed so they can be removed or replaced.
 Earlier native reference imports and their translation matching remain intact.
-Translate task 3, Event / plugin codes, retains investigation, source review, translation and comparison views within one task.
+Translate task 3, Other event text, retains investigation, source review, translation and comparison views within one task.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
 Findings stage recommendations; applying supported settings and reviewing their actual coverage remain explicit user actions.
 Mixed or uncertain recommendations stay off; manual overrides require a reason and material-risk confirmation retained with each frozen run.
@@ -610,14 +612,14 @@ Backup history is grouped by game versus project files and appears only after th
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
-Every task that hands work to an assistant (Context investigation and layout, Event / plugin codes, Plugin text, Images, Text QA and Len's method) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (not copied, waiting, results ready, applied or needs attention), what comes back, and a row per expected result.
+Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (not copied, waiting, results ready, applied or needs attention), what comes back, and a row per expected result.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
 Release plans bind the profile's working-source index and original blobs; refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
-Apply and Fitting share one Guided workspace with retained file choices and fitting settings.
+Apply and the line width check share one Guided workspace with retained file choices and check settings.
 The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.
 The compatibility worker reuses the engine fitter on disposable copies, then preflights and publishes the whole batch with verified backups and rollback attempts.
 Interrupted publication retains exact authorized before/after hashes for another reviewed restore; conflicting newer runtime edits are retained.
@@ -668,7 +670,7 @@ Retain usable page data across revisits where its ownership and invalidation rul
 Automatic refreshes yield to the next operation in a chained action, so saving a draft and then navigating does not insert a discarded project read between them.
 Use `application.settle` for `useAction` completion that needs updated observed state: it waits only when an API mutation invalidated that state.
 Reserve `application.refresh` for an intentional re-read, such as an explicit reload control.
-Views that show their own replies before the next observation, such as Plugin text and Image Manager, use [`useObserved`](../app/src/state/useObserved.ts): a newer snapshot replaces a reply during render but waits while unsaved edits or actions build on the current revision.
+Views that show their own replies before the next observation, such as Plugin files and Image Manager, use [`useObserved`](../app/src/state/useObserved.ts): a newer snapshot replaces a reply during render but waits while unsaved edits or actions build on the current revision.
 They start from the observed state when the snapshot already has it, so revisiting them reads only what is missing.
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
@@ -689,7 +691,7 @@ Estimate startup, finalization and Live/Batch cost-review preparation have disti
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
-Autosaving editors, such as Image Manager, Plugin text and the image text editor, save every write instead, so a successful write becomes their clean baseline.
+Autosaving editors, such as Image Manager, Plugin files and the image text editor, save every write instead, so a successful write becomes their clean baseline.
 Mutations changing snapshot-backed state, including recovery drafts, must keep the default `refresh` in their [method contract](../backend/dazedtl/api/contracts/methods.py), so remounted editors cannot recover an older draft from the cached snapshot.
 Guided engine options use the same draft session and retain the native revision check.
 Setup-form recovery lives alongside project records in the profile.
@@ -783,7 +785,7 @@ It generates the renderer's [contracts.ts](../app/src/api/contracts.ts) and the 
 The protocol version is a hash of the contracts, so any change rejects a stale renderer or helper before mutations execute.
 Replies pass through the [public views](../backend/dazedtl/api/views.py), keeping legacy records behind that boundary.
 Contracts are closed: declare what the renderer and helper may read, and drop what they should not.
-Only records the backend keeps for its own recovery, such as the Len's method lifecycle and compiled request context, stay open beyond their documented keys.
+Only records the backend keeps for its own recovery, such as the Assistant-led lifecycle and compiled request context, stay open beyond their documented keys.
 The [contract test](../tests/test_api_contracts.py) checks every handler's parameters against its contract and validates replies from an offline journey.
 Launch with `DAZEDTL_CHECK_CONTRACTS=1` to validate every request and reply while developing; a mismatch fails the call.
 Methods refresh the workspace snapshot by default; permit close-time operations only when required to finish saving or reading.

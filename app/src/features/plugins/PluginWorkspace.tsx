@@ -353,7 +353,7 @@ export function PluginWorkspace({
     />
   );
   return (
-    <section className="plugin-workspace" aria-label="Plugin text workspace">
+    <section className="plugin-workspace" aria-label="Plugin files workspace">
       <AssistantTask
         state={taskState}
         help="Keep DazedTL open while your assistant works. It continues through safe work automatically and asks only about unresolved choices."

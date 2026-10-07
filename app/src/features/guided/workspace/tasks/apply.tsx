@@ -1,4 +1,4 @@
-/** Apply & Fitting: publish outputs, fit text, optional QA and game tools. */
+/** Apply & Check: publish outputs, check line widths, optional QA and game tools. */
 import type { ReactNode } from "react";
 import { textLocation } from "../../textLocation";
 import { ActionControl } from "../../../../ui/ActionControl";
@@ -148,7 +148,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
     applied ? "Review & apply again" : "Review & apply",
     {},
     !baseline
-      ? "Save a version baseline first."
+      ? "Set up the game first."
       : changed.length
         ? "Reload the changed files from the game first."
         : !outputFiles.length
@@ -227,8 +227,8 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           label={
             <>
               <strong>
-                Saved widths{" "}
-                <HelpPopover label="Saved widths">
+                Line widths{" "}
+                <HelpPopover label="Line widths">
                   Widths count characters. They do not measure rendered fonts,
                   substitutions or window height.
                 </HelpPopover>
@@ -242,14 +242,14 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           }
         >
           <Button disabled={disabled} onClick={() => setPanel("widths")}>
-            Edit widths
+            Edit line widths
           </Button>
         </ActionRow>
         <ActionRow
           label={
             <CheckField
               id="fitting-only-overflow"
-              label="Only rewrap text over its width limit"
+              label="Only rewrap lines wider than their limit"
               checked={fields.only_overflow}
               disabled={disabled}
               onChange={(checked) => editForm("only_overflow", checked)}
@@ -259,7 +259,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
         {fileRow(layoutFiles)}
       </ActionList>
       <details>
-        <summary>Fitting coverage and row protection</summary>
+        <summary>Checked text and row protection</summary>
         <fieldset disabled={disabled} className="text-fitting-settings">
           <legend>Included text areas</legend>
           {(
@@ -295,7 +295,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           </label>
           <small>
             Supported: 122, 324, 325, 357, 401, 405. Choices (102), custom
-            windows and arbitrary plugin text are outside this fitter.
+            windows and arbitrary plugin text are outside this check.
           </small>
           <label className="toggle">
             <input
@@ -323,7 +323,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
       </details>
       {fitting && (
         <section className="text-fit-results">
-          <h3>Saved fitting scan</h3>
+          <h3>Last check</h3>
           <ActionList>
             <ActionRow
               label={
@@ -332,7 +332,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
                     ? `${eligible} ${eligible === 1 ? "change" : "changes"} to review`
                     : fitting.overflow_skipped
                       ? "No changes to apply"
-                      : "No text needs fitting at these widths."}
+                      : "No line is wider than these widths."}
                   {!!fitting.overflow_skipped &&
                     ` · ${fitting.overflow_skipped} protected ${fitting.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
                 </span>
@@ -343,7 +343,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
               {eligible > 0 &&
                 task(
                   "rewrap_preview",
-                  "Scan again",
+                  "Check again",
                   layoutOptions,
                   !baseline || !layoutFiles.length,
                 )}
@@ -371,14 +371,14 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     scanCurrent && eligible > 0
       ? task(
           "rewrap_apply",
-          "Review & apply fitting",
+          "Review & apply rewraps",
           layoutOptions,
           !baseline || !layoutFiles.length,
           "primary",
         )
       : task(
           "rewrap_preview",
-          "Scan text fitting",
+          "Check line widths",
           layoutOptions,
           !baseline || !layoutFiles.length || !fields.text.categories.length,
           scanCurrent ? "default" : "primary",
@@ -390,12 +390,12 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     next: releaseButton(scanCurrent && eligible === 0 ? "primary" : "quiet"),
     // Fitting reads the game's current text, so it needs applied output.
     actionContext: !state.readiness.applied.length && (
-      <span>Apply translations first; fitting scans the game’s text.</span>
+      <span>Apply translations first; the check reads the game’s text.</span>
     ),
     heading: {
-      title: "Text fitting",
+      title: "Line width check",
       description:
-        "Rewrap applied text that exceeds the saved character limits.",
+        "Rewrap applied text that is wider than the saved line widths.",
     },
   };
 }

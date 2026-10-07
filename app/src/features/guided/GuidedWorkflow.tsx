@@ -118,7 +118,7 @@ function Workspace(
     taskId === "apply"
       ? [
           { id: "apply", label: "Apply" },
-          { id: "fitting", label: "Fitting" },
+          { id: "fitting", label: "Line width check" },
           { id: "qa", label: <>Text QA{optional}</> },
           ...(state.engine === "MVMZ"
             ? [{ id: "tools", label: <>Tools{optional}</> }]
@@ -138,9 +138,9 @@ function Workspace(
   // preparation already shows its progress and pending button in the task.
   const status =
     position.step !== "context" && draft.dirty
-      ? "Option changes apply to the next run"
+      ? "Option changes take effect on the next run"
       : "";
-  // Plugin text and Images bring their own action bar for the shared footer.
+  // Plugin files and Images bring their own action bar for the shared footer.
   const hostedFooter = taskId === "plugins" || taskId === "images";
   return (
     <PageLayout

@@ -93,7 +93,7 @@ export function VersionTools({
             )}
           {control(
             "git_setup",
-            "Establish version tracking",
+            "Save game version",
             { version, manifest, untranslated, original },
             !preserved ||
               !version.trim() ||
@@ -113,7 +113,7 @@ export function VersionTools({
         <div className="actions">
           {control(
             "checkpoint",
-            "Save translation checkpoint",
+            "Save translation version",
             { manifest },
             !state.git?.configured,
           )}

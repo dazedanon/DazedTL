@@ -110,7 +110,7 @@ export function EventTextPicker({
           </strong>
         </p>
         <details>
-          <summary>Built-in handlers also apply · View coverage</summary>
+          <summary>Built-in handlers are also used · View coverage</summary>
           <p>{row.coverage}</p>
           <p>
             {row.builtins.join(", ") ||

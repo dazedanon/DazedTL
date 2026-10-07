@@ -869,7 +869,7 @@ export function useGuidedWorkspace({
         {...(appliedHere
           ? { notice: "Saved translations applied." }
           : fittedHere
-            ? { notice: "Text fitting applied. Restore it from Apply." }
+            ? { notice: "Rewrapped lines applied. Restore them from Apply." }
             : toolDoneHere
               ? {
                   // Short, so the row's buttons stay side by side.
@@ -958,7 +958,7 @@ export function useGuidedWorkspace({
             );
           },
           name === "setup"
-            ? "Investigation task copied. Paste it into your assistant."
+            ? "Task copied. Paste it into your assistant."
             : "Task copied. Return to its saved results when your assistant finishes.",
           "copy:" + name,
         )
@@ -1291,11 +1291,11 @@ export function useGuidedWorkspace({
       {current.logicalPhase === "database"
         ? "Continue to maps & events"
         : current.logicalPhase === "dialogue"
-          ? "Continue to event / plugin codes"
+          ? "Continue to other event text"
           : current.logicalPhase === "advanced" &&
               state.comparisons.status !== "not_needed"
             ? "Review comparisons"
-            : "Continue to plugin text"}
+            : "Continue to plugin files"}
     </Button>
   );
   const completed = completedTasks(state, translation, {
@@ -1308,12 +1308,12 @@ export function useGuidedWorkspace({
     <ActionControl
       label={
         draft.dirty || state.optionsDraft
-          ? "Save edits & apply findings"
-          : "Apply investigated rules"
+          ? "Save edits & use findings"
+          : "Use investigated rules"
       }
       disabled={disabled}
       pending={speakerAction.busy}
-      pendingText="Applying rules…"
+      pendingText="Saving rules…"
       error={speakerAction.error}
       notice={speakerAction.notice}
       onClick={() =>

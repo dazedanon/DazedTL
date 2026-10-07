@@ -143,7 +143,7 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
                 >
                   {job.stop_requested
                     ? "Pause requested"
-                    : "Pause at checkpoint"}
+                    : "Pause at the next safe point"}
                 </Button>
               )}
               {job.mode === "batch" &&

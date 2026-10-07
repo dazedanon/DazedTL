@@ -30,7 +30,7 @@ export const phaseLabels: Record<Phase, string> = {
   database: "Database files",
   dialogue: "Maps & events",
   variables: "Update comparisons",
-  advanced: "Event / plugin codes",
+  advanced: "Other event text",
   speakers: "Optional name translation",
 };
 export const actionKey = (
@@ -50,7 +50,7 @@ export const fileCount = (count: number) =>
   `${count} ${count === 1 ? "file" : "files"}`;
 export const pathKey = (name: string) => name;
 export const publicationLabels: Record<string, string> = {
-  rewrap_apply: "Text fitting",
+  rewrap_apply: "Rewrapped lines",
   qa_apply: "QA corrections",
   runtime_restore: "Text restore",
   export_selected: "Translations",
@@ -80,7 +80,7 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   files: "Choose files for this pass",
   speakers: "Speaker detection",
   "speaker-names": "Speaker names",
-  widths: "Character limits",
+  widths: "Line widths",
   "translation-context": "Translation options",
   tools: "Configure game tools",
   preparation: "Preparation tools",

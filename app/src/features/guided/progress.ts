@@ -17,7 +17,7 @@ import { initialPosition, stagesFor } from "./workflow.ts";
 
 type Values = GuidedState["preferences"]["values"];
 
-/** The observed Plugin text and Images work, which Guided state leaves out. */
+/** The observed Plugin files and Images work, which Guided state leaves out. */
 export type OptionalWork = {
   plugins?: PluginState | null;
   images?: ImageManagerState | null;
@@ -97,7 +97,7 @@ export function completedTasks(
   ]);
 }
 
-// Required tasks; optional work such as Plugin text, Images and Release can be
+// Required tasks; optional work such as Plugin files, Images and Release can be
 // done but never blocks "next".
 const tracked = new Set([
   "setup",

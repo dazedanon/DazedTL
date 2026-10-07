@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-/** Context: speaker investigation, translation guidance and text layout. */
+/** Context: names and glossary, translation guidance and line widths. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
@@ -120,7 +120,7 @@ export function namesView(w: GuidedWorkspace): TaskView {
     content,
     action: copyTask(
       "setup",
-      "Copy investigation task",
+      "Copy names & glossary task",
       done ? "default" : "primary",
     ),
     next: advance(
@@ -129,9 +129,8 @@ export function namesView(w: GuidedWorkspace): TaskView {
       done ? "primary" : "quiet",
     ),
     heading: {
-      title: "Speakers & game context",
       description:
-        "Copy the task into your assistant to investigate this game.",
+        "Copy the task into your assistant to find speaker names and write the glossary and game context.",
       actions: (
         <Button
           variant="quiet"
@@ -248,12 +247,12 @@ export function layoutView(w: GuidedWorkspace): TaskView {
             </p>
           )}
         <Section
-          title="Character limits"
+          title="Characters per line"
           hint={
             widthsDirty
               ? "Unsaved edits"
               : discovery.layoutApplication === "applied"
-                ? "Set by investigation"
+                ? "Measured"
                 : discovery.layoutStatus === "saved"
                   ? "Saved"
                   : "Using defaults"
@@ -265,13 +264,13 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           state={discovery.layout ? "ready" : "idle"}
           description={
             discovery.layout
-              ? "The measured limits are saved above. Remeasure only if the game's windows or fonts change."
-              : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current limits and continue."
+              ? "The measured widths are saved above. Remeasure only if the game's windows or fonts change."
+              : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
           }
           results={[
             {
               id: "layout",
-              title: "Measured limits",
+              title: "Measured widths",
               status: discovery.layout ? "done" : "idle",
               state: discovery.layout ? "Saved" : "Not measured",
               detail:
@@ -303,7 +302,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           "layout",
         );
       },
-      "Layout saved.",
+      "Line widths saved.",
       "save-options",
     );
   const pending = widthsDirty || !!discovery.layoutMessage;
@@ -311,14 +310,14 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     <ActionControl
       label={
         discovery.layoutMessage && !widthsDirty
-          ? "Retry measured layout"
-          : "Save layout"
+          ? "Retry measured widths"
+          : "Save line widths"
       }
       variant={pending ? "primary" : "default"}
-      title={`Save layout (${shortcutLabel.save})`}
+      title={`Save line widths (${shortcutLabel.save})`}
       aria-keyshortcuts={shortcutKeys.save}
       disabled={disabled}
-      {...feedback("save-options", "Saving layout…")}
+      {...feedback("save-options", "Saving line widths…")}
       onClick={saveLayout}
     />
   );
@@ -326,11 +325,6 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     content,
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
-    heading: {
-      title: "Text layout",
-      description:
-        "Character limits for the game’s dialogue and interface text.",
-    },
     save: disabled ? undefined : saveLayout,
   };
 }

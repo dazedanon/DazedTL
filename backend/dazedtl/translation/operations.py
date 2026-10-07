@@ -283,7 +283,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             raise ValueError(
                 "The release destination changed. Review the output again."
             )
-        progress("Saving the package scope and workspace restore point.")
+        progress("Saving the translation version and a project backup.")
         checkpoint(payload["manifest"], "translation: prepare release patch")
         package_git = git_identity(engine.git_status(source, options))
         if package_git["translation_commit"] != state["checkpoint"]["commit"]:
@@ -294,7 +294,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         verify_evidence(source, payload["evidence"])
         if stopped():
             raise InterruptedError(
-                "Release stopped. Its local checkpoint and backup were retained."
+                "Release stopped. Its translation version and backup were kept."
             )
         output.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -377,7 +377,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             proof = verify(source, full=True)
             if state["checkpoint"]["manifest"] not in proof["files"]:
                 raise ValueError(
-                    "Record QA for the current checkpoint scope before packaging with Len's method."
+                    "Record QA for the current checkpoint scope before packaging with Assistant-led."
                 )
         manifest = read_json(project_path(source, state["checkpoint"]["manifest"]))
         result = engine.package(
@@ -406,7 +406,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             source_game=True,
             stopped=stopped,
             progress=lambda count, path: progress(
-                f"Preserved {count:,} new-original files · {path}"
+                f"Backed up {count:,} new-original files · {path}"
             ),
         )
         staged = (
@@ -493,7 +493,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
 
 def require_source_backup(source, state):
     if not state.get("source_backup"):
-        raise ValueError("Preserve a recoverable source backup before translation.")
+        raise ValueError("Back up the original game before translation.")
     record = state["source_backup"]
     path = backups.lookup(source, Path(record["path"]).parent, record["id"])
     saved = backups.verify(path, source=source, full=False)

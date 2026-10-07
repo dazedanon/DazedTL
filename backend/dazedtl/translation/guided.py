@@ -168,7 +168,7 @@ class Guided:
         layout = self.backend.describe(project["source"])
         if layout["engine"] not in {"MVMZ", "ACE"}:
             raise ValueError(
-                "Guided translation supports RPG Maker MV/MZ and VX Ace. Use Len's method for other engines."
+                "Guided translation supports RPG Maker MV/MZ and VX Ace. Use Assistant-led for other engines."
             )
         self.settings.prepare_engine()
         pending = self.translation.drafts(project_id)["documents"]

@@ -223,7 +223,7 @@ function ProjectStatus({
               description={
                 !project.available
                   ? project.detail
-                  : "Guided steps walk through each stage with estimates; Len's method hands the whole game to your coding assistant."
+                  : "Guided steps walk through each stage with estimates; Assistant-led hands the whole game to your coding assistant."
               }
             />
           </ActionList>

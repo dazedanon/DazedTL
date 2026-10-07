@@ -198,7 +198,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   const guidance = !selectedNames.length
     ? "Select files to translate."
     : !baseline
-      ? "Complete Prepare before translating."
+      ? "Set up the game before translating."
       : preparing
         ? "Checking the selected files · please wait"
         : current?.approval

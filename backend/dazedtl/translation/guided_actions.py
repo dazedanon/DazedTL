@@ -68,9 +68,9 @@ TOOL_ACTIONS = {
     "forge_remove",
 }
 SHARED_ACTIONS = {
-    "backup_source": "Preserve original game",
-    "git_setup": "Review version baseline",
-    "checkpoint": "Save reviewed patch in Git",
+    "backup_source": "Back up original game",
+    "git_setup": "Save game version",
+    "checkpoint": "Save translation version",
     "guided_review": "Record playtest review",
     "guided_package": "Build local patch ZIP",
     "release_patch": "Build local patch ZIP",

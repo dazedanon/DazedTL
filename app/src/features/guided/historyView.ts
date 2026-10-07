@@ -24,7 +24,7 @@ const count = (value: number, noun: string) =>
 export const historyPhaseLabels: Record<string, string> = {
   database: "Database",
   dialogue: "Maps & events",
-  advanced: "Event / plugin codes",
+  advanced: "Other event text",
   variables: "Comparisons",
   speakers: "Speakers",
 };

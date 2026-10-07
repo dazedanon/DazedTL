@@ -1,4 +1,4 @@
-"""Plugin text review and application."""
+"""Plugin files review and application."""
 
 from typing import Literal, NotRequired, TypedDict
 

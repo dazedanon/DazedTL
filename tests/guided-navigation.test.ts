@@ -225,7 +225,7 @@ test("the Project page continues past a finished one-way step but keeps a later 
     step: "context",
     task: "names",
     stage: "Context",
-    title: "Investigation",
+    title: "Names & glossary",
     advanced: true,
   });
   // Apply counts as done once outputs are applied, with earlier work open.

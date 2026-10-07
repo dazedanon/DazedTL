@@ -1,4 +1,4 @@
-/** Plugin text, hosted in the Guided workspace. */
+/** Plugin files, hosted in the Guided workspace. */
 import type { ReactNode } from "react";
 import { flushDrafts } from "../../../../state/leaveGuards";
 import { PluginWorkspace } from "../../../plugins/PluginWorkspace";

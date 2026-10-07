@@ -22,14 +22,14 @@ from .results import Results
 
 OPERATIONS = {
     "backup_source": ("Back up original game", set()),
-    "backup_workspace": ("Back up translation workspace", set()),
+    "backup_workspace": ("Back up project files", set()),
     "restore_backup": (
         "Restore backup into a new folder",
         {"backup_id", "destination"},
     ),
     "rpgmaker_prepare": ("Prepare RPG Maker files", {"data_path"}),
     "git_setup": (
-        "Establish version baselines",
+        "Save game version",
         {"version", "original", "untranslated", "manifest"},
     ),
     "write_rpgmaker": (
@@ -40,7 +40,7 @@ OPERATIONS = {
         "Rebase source metadata to the current original",
         {"source", "translated", "output", "backup_id", "expected_original_commit"},
     ),
-    "checkpoint": ("Checkpoint reviewed runtime patch", {"manifest", "message"}),
+    "checkpoint": ("Save translation version", {"manifest", "message"}),
     "package": ("Package local translation patch", set()),
     "stage_update": (
         "Stage a new original for engine preparation",
