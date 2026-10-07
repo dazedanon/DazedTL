@@ -356,7 +356,8 @@ function Editor({
           setSelectedRun("");
         } else setPreview(next);
       },
-      mode === "estimate" ? "Local estimate started." : "",
+      // A finished estimate reports in its row; a running one shows its run.
+      "",
       "native:" + mode,
     );
   }
@@ -505,19 +506,24 @@ function Editor({
   const runWaiting = "Wait for the current image run to finish.";
   // Until the saved run state arrives, no step can say what it waits for.
   const checking = "Checking saved image work…";
+  const quoted = nativeState?.quoteCurrent ? nativeState.quote?.estimate : null;
+  const nothingToTranslate =
+    !!quoted && Number(quoted.requests ?? quoted.request_count ?? 1) === 0;
   const translateBlocked = !nativeState
     ? checking
     : !nativeState.current
       ? "Export confirmed text first."
-      : !nativeState.quoteCurrent
-        ? nativeState?.quote
-          ? "Estimate again after these changes."
-          : "Estimate first."
-        : !nativeState.providerEnabled
-          ? "Provider execution is off for this launch."
-          : nativeState.activeId
-            ? runWaiting
-            : "";
+      : nothingToTranslate
+        ? "Every exported region already has a translation."
+        : !nativeState.quoteCurrent
+          ? nativeState?.quote
+            ? "Estimate again after these changes."
+            : "Estimate first."
+          : !nativeState.providerEnabled
+            ? "Provider execution is off for this launch."
+            : nativeState.activeId
+              ? runWaiting
+              : "";
   const stepFeedback = (key: string, pendingText: string) => ({
     feedbackKey: key,
     pending: action.busy && action.key === key,
@@ -1463,6 +1469,7 @@ const money = (value: unknown) => "$" + Number(value).toFixed(5);
 /** One line for a finished estimate: requests and the Live and Batch prices. */
 function estimateSummary(value: Record<string, unknown>) {
   const requests = Number(value.requests ?? value.request_count ?? 0);
+  if (!requests) return "No new requests are needed.";
   return [
     `${requests.toLocaleString()} ${requests === 1 ? "request" : "requests"}`,
     typeof value.live_cost === "number" && `Live ${money(value.live_cost)}`,
