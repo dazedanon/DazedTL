@@ -319,7 +319,9 @@ function RequestProcess({
               <small>{key}</small>
               <ProtectedText text={text} />
             </td>
-            <td>{translated[key]}</td>
+            <td>
+              <ProtectedText text={translated[key]} />
+            </td>
           </tr>
         ))}
       </tbody>

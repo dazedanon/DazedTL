@@ -1430,14 +1430,14 @@
   font-size: var(--font-small);
   color: var(--color-muted);
 }
-/* A protected control code in request text: its presence, not its
-   internal placeholder name. */
+/* The placeholder sent in place of a control code. */
 .protected-code {
   display: inline-block;
   padding: 0 var(--space-1);
   border-radius: var(--control-radius);
   background: var(--color-badge);
   color: var(--color-muted);
+  font-family: ui-monospace, monospace;
   font-size: var(--font-small);
   line-height: 1.5;
   vertical-align: 0.1em;

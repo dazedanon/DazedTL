@@ -1,17 +1,17 @@
 import type { RunPayload } from "../../api/contracts";
 import { RequestContext } from "./RequestContext";
 
-/** Request text as sent; a protected control code reads as a code mark, not
-    its internal placeholder name. */
+/** Request text as sent; each placeholder that stood in for a control code is
+    marked so its position can be checked. */
 export function ProtectedText({ text }: { text: string }) {
   return text.split(/(__PROTECTED_\d+__)/).map((part, index) =>
     index % 2 ? (
       <span
         key={index}
         className="protected-code"
-        title="A control code, protected while translating"
+        title="Sent in place of a control code, which is restored after translating"
       >
-        code
+        {part}
       </span>
     ) : (
       part
