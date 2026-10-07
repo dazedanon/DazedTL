@@ -88,7 +88,8 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
 };
 /** A review the Project page asks the Translation workspace to open. */
 export type GuidedIntent =
-  | { kind: "checkpoint" }
+  // A checkpoint asked for from a Project tab returns there once saved.
+  | { kind: "checkpoint"; returnTo?: "versions" }
   | { kind: "reapply"; runId: string }
   | { kind: "resume"; runId: string };
 /** Project tools live on the Project page; tasks link to their tab. */

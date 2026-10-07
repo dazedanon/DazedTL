@@ -512,7 +512,9 @@ function ProjectVersions({
           onBackups={onBackups}
           onPrepare={guided ? () => openTask("prepare", "baseline") : undefined}
           onCheckpoint={
-            guided ? () => openGuided({ kind: "checkpoint" }) : undefined
+            guided
+              ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })
+              : undefined
           }
           actionTarget={target}
         />

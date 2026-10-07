@@ -552,6 +552,14 @@ export function useGuidedWorkspace({
       recorded.push(acknowledged);
     return recorded.sort((a, b) => jobTime(b) - jobTime(a))[0];
   };
+  // The Project tab that asked for a checkpoint, to return to afterwards.
+  const checkpointReturn = useRef<"versions" | null>(null);
+  const leaveCheckpoint = (action: string) => {
+    const tab = checkpointReturn.current;
+    if (action !== "checkpoint" || !tab) return;
+    checkpointReturn.current = null;
+    openProject(tab);
+  };
   const execute = async (value: Preview) => {
     setAttemptedPreview(value.token);
     const result = await api.execute(project.id, value.token);
@@ -560,6 +568,7 @@ export function useGuidedWorkspace({
       [actionKey(value.action, value.options)]: result,
     }));
     setPreview(null);
+    leaveCheckpoint(value.action);
     if (value.action === "git_setup") setBaselineRun(result.id);
     if (value.action === "start") {
       if (value.options.mode !== "estimate")
@@ -618,6 +627,8 @@ export function useGuidedWorkspace({
   };
   // A review the Project page asked for opens once, over the saved task.
   const openIntent = useEffectEvent((request: GuidedIntent) => {
+    if (request.kind === "checkpoint")
+      checkpointReturn.current = request.returnTo ?? null;
     const opened =
       request.kind === "checkpoint"
         ? review("checkpoint")
@@ -663,6 +674,7 @@ export function useGuidedWorkspace({
         )
           await api.guided.discardPreparation(project.id, estimate);
         setPreview(null);
+        if (preview) leaveCheckpoint(preview.action);
       },
       "",
       "review:cancel",
