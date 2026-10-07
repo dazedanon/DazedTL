@@ -325,8 +325,14 @@ main > .image-manager {
 .image-tile-status:empty {
   display: none;
 }
-.image-status-blocked {
+.image-tile-status[data-tone="warning"] {
   color: var(--color-warning);
+}
+.image-tile-status[data-tone="accent"] {
+  color: var(--color-accent);
+}
+.image-tile-status[data-tone="muted"] {
+  color: var(--color-muted);
 }
 .image-tile-name {
   font-size: var(--font-small);

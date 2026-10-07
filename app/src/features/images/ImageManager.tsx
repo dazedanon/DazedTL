@@ -14,7 +14,6 @@ import {
   Circle,
   CircleMinus,
   Image as ImageIcon,
-  LockKeyhole,
   MoreHorizontal,
   Pencil,
   Search,
@@ -123,6 +122,17 @@ function Tile({
   const blocked =
     !!asset.sourceIssue ||
     ["blocked", "conflict", "error", "missing_source"].includes(asset.state);
+  const done =
+    asset.aiReviewed || asset.userReviewed || asset.state === "applied";
+  // Success colours only finished work; untouched images stay muted.
+  const tone =
+    blocked || asset.classification === "uncertain"
+      ? "warning"
+      : done
+        ? "done"
+        : asset.classification === "recommended" || asset.editable
+          ? "accent"
+          : "muted";
   return (
     <article
       className="image-tile"
@@ -141,7 +151,9 @@ function Tile({
         type="button"
         className="image-tile-preview"
         aria-label={`Compare ${asset.filename}`}
-        title={`${asset.path}\n${imageStatus(asset)}`}
+        // Encryption is supported throughout; it is noted, not marked, since a
+        // game encrypts all of its images or none.
+        title={`${asset.path}\n${imageStatus(asset)}${asset.encrypted ? " · Encrypted" : ""}`}
         onClick={onCompare}
       >
         {pixels ? (
@@ -155,19 +167,16 @@ function Tile({
           <ImageIcon size={24} aria-hidden="true" />
         )}
         <span
-          className={`image-tile-status ${blocked || asset.classification === "uncertain" ? "image-status-blocked" : ""}`}
+          className="image-tile-status"
+          data-tone={tone}
           aria-label={imageStatus(asset)}
         >
-          {blocked || asset.classification === "uncertain" ? (
+          {tone === "warning" ? (
             <TriangleAlert size={14} />
-          ) : asset.aiReviewed ||
-            asset.userReviewed ||
-            asset.state === "applied" ? (
+          ) : done ? (
             <CheckCircle2 size={14} />
           ) : asset.classification === "recommended" ? (
             <Sparkles size={13} />
-          ) : asset.encrypted ? (
-            <LockKeyhole size={13} />
           ) : asset.editable ? (
             <Pencil size={13} />
           ) : ["no_text", "already_english", "excluded"].includes(
@@ -631,6 +640,7 @@ function Manager({
           !value.selection.length ||
           (!prepareFirst && draft.dirty)
         }
+        disabledReason={value.selection.length ? "" : "Select images first."}
         {...step(
           prepareFirst ? "prepare" : "edit_task",
           prepareFirst ? "Making editable…" : "Copying task…",
@@ -650,6 +660,11 @@ function Manager({
         label={`Review & apply${selectedReady ? ` (${selectedReady.toLocaleString()})` : ""}`}
         variant={primaryAction === "preview_apply" ? "primary" : "default"}
         disabled={action.busy || jobRunning || !selectedReady}
+        disabledReason={
+          value.selection.length && !selectedReady
+            ? "No selected image is ready."
+            : ""
+        }
         {...step("preview_apply", "Preparing review…")}
       />
       {host.next(allApplied ? "primary" : "quiet")}
