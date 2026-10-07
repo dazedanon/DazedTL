@@ -132,13 +132,17 @@ export function packageView(w: GuidedWorkspace): TaskView {
             <>
               {writing.waiting ? (
                 <StatusHeading state="waiting" title="Player walkthrough" />
+              ) : writing.saved ? (
+                <StatusHeading state="done" title="Player walkthrough" />
               ) : (
                 <strong>Player walkthrough</strong>
               )}
               <small>
                 {writing.waiting
                   ? `Expecting WALKTHROUGH.html in the game folder · ${sinceLabel(writing.since)}`
-                  : "Optional. Your coding assistant writes a portable walkthrough for players."}
+                  : writing.saved
+                    ? "Saved as WALKTHROUGH.html in the game folder."
+                    : "Optional. Your coding assistant writes a portable walkthrough for players."}
               </small>
             </>
           }

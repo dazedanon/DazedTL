@@ -4,6 +4,7 @@ import {
   type AssistantSources,
   assistantTasks,
   assistantWaiting,
+  noHandoff,
 } from "./assistantTasks";
 
 /** The current project's copied tasks and the feature states they read. */
@@ -30,7 +31,5 @@ export function useAssistantTasks() {
 /** Whether one task waits on the assistant, for its feature's own panel. */
 export function useHandoff(kind: AssistantTaskKind) {
   const sources = useAssistantSources();
-  return sources
-    ? assistantWaiting(kind, sources)
-    : { waiting: false, dismissed: false, since: "" };
+  return sources ? assistantWaiting(kind, sources) : noHandoff;
 }

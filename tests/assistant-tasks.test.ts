@@ -29,10 +29,10 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     assistantTasks(earlier).map((task) => [task.kind, task.state, task.since]),
     [["walkthrough", "waiting", "2026-10-07T10:00:00.000+00:00"]],
   );
-  assert.deepEqual(
-    assistantTasks(walkthrough("2026-10-07T10:30:00.000+00:00")),
-    [],
-  );
+  const later = walkthrough("2026-10-07T10:30:00.000+00:00");
+  assert.deepEqual(assistantTasks(later), []);
+  assert.equal(assistantWaiting("walkthrough", later).saved, true);
+  assert.equal(assistantWaiting("walkthrough", earlier).saved, false);
   // Dismissing leaves the list and its feature's own panel stops waiting.
   const dismissed = walkthrough(null, true);
   assert.deepEqual(assistantTasks(dismissed), []);

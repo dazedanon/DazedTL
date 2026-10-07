@@ -40,7 +40,7 @@ import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks, reviewTasks } from "../progress";
 import { applyOrder, type PendingPartId, pendingParts } from "../pending";
 import { usePendingChanges } from "./usePendingChanges";
-import { assistantWaiting } from "../../assistant/assistantTasks";
+import { assistantWaiting, noHandoff } from "../../assistant/assistantTasks";
 import { useAssistantSources } from "../../assistant/useAssistantTasks";
 import { initialPosition, stagesFor } from "../workflow";
 
@@ -970,9 +970,7 @@ export function useGuidedWorkspace({
   // Whether a copied task waits on the assistant, from the shared list.
   const assistantSources = useAssistantSources();
   const handoff = (kind: AssistantTaskKind) =>
-    assistantSources
-      ? assistantWaiting(kind, assistantSources)
-      : { waiting: false, dismissed: false, since: "" };
+    assistantSources ? assistantWaiting(kind, assistantSources) : noHandoff;
   const copyTask = (
     name: string,
     label: string,

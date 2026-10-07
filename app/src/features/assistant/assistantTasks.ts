@@ -70,6 +70,11 @@ export interface AssistantSources {
 
 const waiting = (detail = ""): Standing => ({ state: "waiting", detail });
 
+/** A file the latest copy expects is on disk, saved after that copy. */
+const savedSinceCopy = (record?: AssistantTaskRecord) =>
+  !!record?.resultAt &&
+  Date.parse(record.resultAt) >= Date.parse(record.copiedAt);
+
 /**
  * Each kind from its feature's own saved state. `back` says whether a result
  * the copied task expects was saved since the copy; a task without a record
@@ -80,9 +85,7 @@ function standing(
   record: AssistantTaskRecord | undefined,
   { guided, images, plugins }: AssistantSources,
 ): Standing {
-  const back =
-    !!record?.resultAt &&
-    Date.parse(record.resultAt) >= Date.parse(record.copiedAt);
+  const back = savedSinceCopy(record);
   const copied = !!record;
   if (kind === "names") {
     if (!guided) return { state: "idle" };
@@ -230,15 +233,32 @@ export function assistantTasks(sources: AssistantSources): AssistantTaskView[] {
 export function assistantWaiting(
   kind: AssistantTaskKind,
   sources: AssistantSources,
-): { waiting: boolean; dismissed: boolean; since: string } {
+): Handoff {
   const record = sources.records.find((row) => row.kind === kind);
   const task = assistantTasks(sources).find((row) => row.kind === kind);
   return {
     waiting: task?.state === "waiting",
     dismissed: !!record?.dismissed,
     since: task?.since || "",
+    saved: savedSinceCopy(record),
   };
 }
+
+/** A copied task's standing for its feature's own panel. */
+export interface Handoff {
+  waiting: boolean;
+  dismissed: boolean;
+  since: string;
+  saved: boolean;
+}
+
+/** Before the snapshot arrives, nothing is copied. */
+export const noHandoff: Handoff = {
+  waiting: false,
+  dismissed: false,
+  since: "",
+  saved: false,
+};
 
 /** A feature panel's state with the shared list's waiting applied. */
 export function withHandoff<T extends string>(
