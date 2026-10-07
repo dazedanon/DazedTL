@@ -33,22 +33,29 @@ export function StatusMark({
 
 /**
  * A list row's title led by its state's mark, with the state's word after
- * it; the row's description lines up with the title.
+ * it; the row's description lines up with the title. A row whose state the
+ * app cannot observe keeps the mark's space blank, so titles still align.
  */
 export function StatusHeading({
   state,
   title,
   pending = false,
 }: {
-  state: DisplayState;
+  state?: DisplayState;
   title: ReactNode;
   pending?: boolean;
 }) {
   return (
     <span className="status-heading" data-state={state}>
-      <StatusIcon status={pending ? "active" : displayMarks[state]} />
+      {state ? (
+        <StatusIcon status={pending ? "active" : displayMarks[state]} />
+      ) : (
+        <span className="status-heading-blank" aria-hidden="true" />
+      )}
       <strong>{title}</strong>
-      <span className="status-heading-state">{displayLabels[state]}</span>
+      {state && (
+        <span className="status-heading-state">{displayLabels[state]}</span>
+      )}
     </span>
   );
 }

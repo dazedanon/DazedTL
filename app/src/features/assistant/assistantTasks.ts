@@ -172,7 +172,10 @@ function standing(
         detail: `${qa.findings.length.toLocaleString()} ${qa.findings.length === 1 ? "finding" : "findings"} to review`,
       };
     if (qa.status.stage === "complete") return { state: "finished" };
-    return waiting();
+    // Preparing again makes a new task; only a copy of that one waits on it.
+    return record.requestId === qa.task.split(/[\\/]/).pop()
+      ? waiting()
+      : { state: "idle" };
   }
   // The walkthrough is finished once its page is saved.
   return copied && !back ? waiting() : { state: copied ? "finished" : "idle" };

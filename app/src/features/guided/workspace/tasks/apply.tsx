@@ -5,11 +5,14 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { CheckField, FieldRow } from "../../../../ui/FieldRow";
-import { displayText, sentence } from "../../../../ui/displayText";
+import { sentence } from "../../../../ui/displayText";
 import { publicationLabels, publicationTitle } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
-import { AssistantTask } from "../../../../ui/AssistantTask";
+import {
+  AssistantTask,
+  type AssistantTaskState,
+} from "../../../../ui/AssistantTask";
 import { HelpPopover } from "../../../../ui/HelpPopover";
 import { Notice } from "../../../../ui/Notice";
 import { StatusHeading } from "../../../../ui/StatusMark";
@@ -538,6 +541,19 @@ export function qaView(w: GuidedWorkspace): TaskView {
     const counts = qaStatus[key] as Record<string, number> | undefined;
     return !!(counts?.accepted || counts?.checked);
   });
+  // A finished run with no findings is done; the assistant has nothing left.
+  const qaState: AssistantTaskState = qaApplied
+    ? "applied"
+    : // The text this task checked changed since.
+      !qa.current && qaStatus.stage
+      ? "outdated"
+      : qa.findings.length
+        ? "needs_review"
+        : qaStatus.stage === "complete"
+          ? "done"
+          : qaCopied || qaStarted
+            ? "waiting"
+            : "not_started";
   let content: ReactNode;
   content = (
     <>
@@ -566,18 +582,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         )}
       </FieldRow>
       <AssistantTask
-        state={
-          qaApplied
-            ? "applied"
-            : // The text this task checked changed since.
-              !qa.current && qaStatus.stage
-              ? "outdated"
-              : qa.findings.length
-                ? "needs_review"
-                : qaCopied || qaStarted
-                  ? "waiting"
-                  : "not_started"
-        }
+        state={qaState}
         progress={
           qaCopied && !qa.findings.length
             ? sinceLabel(screening.since)
@@ -586,28 +591,22 @@ export function qaView(w: GuidedWorkspace): TaskView {
         description={
           // Before any result exists, "saved results match" has nothing to
           // describe; say what happens next instead.
-          qaApplied
+          qaState === "applied"
             ? "Chosen corrections are applied. Restore them from Pending changes, or prepare QA again to check the current text."
-            : qa.current && qaTask && !qa.findings.length && !qaStarted
-              ? qaCopied
+            : qaState === "done"
+              ? "Your assistant saved no findings for the current text."
+              : qaState === "waiting"
                 ? "Results appear here as your assistant saves them."
-                : "Copy the prepared task to your assistant."
-              : qa.message
+                : qaState === "not_started" && qaTask
+                  ? "Copy the prepared task to your assistant."
+                  : qa.message
         }
         help="Discovery describes the saved reports. It does not certify the current game as QA passed."
         results={[
           {
             id: "qa",
             title: "QA findings",
-            state: qaApplied
-              ? "applied"
-              : qa.findings.length
-                ? qa.current
-                  ? "needs_review"
-                  : "outdated"
-                : qaStatus.stage
-                  ? "waiting"
-                  : "not_started",
+            state: qaState,
             detail: (
               <>
                 {!!qa.findings.length &&
@@ -633,8 +632,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
                           : "";
                       })
                       .filter(Boolean)
-                      .join(" · ") ||
-                    `Saved stage: ${displayText(qaStatus.stage).replaceAll("_", " ")}`
+                      .join(" · ") || "No translated text to check."
                   : "Prepare or resume QA for the current runtime text."}
                 {qaJob && (
                   <>
@@ -659,7 +657,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
           {
             id: "investigation",
             title: "Running jokes and terms",
-            state: "not_started",
+            // It saves nothing the app can check, so it shows no state.
             detail:
               "Optional. An investigation of recurring jokes, callbacks and terminology.",
             action: copyTask("investigation", "Copy investigation task"),
@@ -758,7 +756,8 @@ export function qaView(w: GuidedWorkspace): TaskView {
   );
   // The footer walks QA forward: prepare a task, copy it, then review the
   // corrections chosen from its findings. Findings checked against text that
-  // has changed since lead back to preparing again.
+  // has changed since lead back to preparing again, and a finished run with
+  // no findings hands the lead to Continue.
   const review =
     qaApplied || (qa.findings.length && !qa.current)
       ? task(
@@ -779,24 +778,30 @@ export function qaView(w: GuidedWorkspace): TaskView {
                   : "No finding has a prepared correction yet."
                 : false,
           })
-        : qaTask
-          ? copyTask(
-              "qa",
-              "Copy QA task",
-              "primary",
-              "QA task copied. Paste it into your coding assistant.",
-            )
-          : task(
-              "qa_prepare",
-              "Prepare text QA task",
-              { focus: fields.text.focus },
-              !baseline,
-              "primary",
-            );
+        : qaState === "done"
+          ? undefined
+          : qaTask
+            ? copyTask(
+                "qa",
+                "Copy QA task",
+                "primary",
+                "QA task copied. Paste it into your coding assistant.",
+              )
+            : task(
+                "qa_prepare",
+                "Prepare text QA task",
+                { focus: fields.text.focus },
+                !baseline,
+                "primary",
+              );
   return {
     content,
     action: review,
-    next: advance(undefined, undefined, "quiet"),
+    next: advance(
+      undefined,
+      undefined,
+      qaState === "done" ? "primary" : "quiet",
+    ),
     heading: {
       title: "Text QA",
       description:

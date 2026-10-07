@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   AssistantTaskRecord,
+  GuidedState,
   ImageManagerState,
 } from "../app/src/api/contracts.ts";
 import {
@@ -62,6 +63,40 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   };
   assert.deepEqual(
     assistantTasks(recopied).map((task) => task.state),
+    ["waiting"],
+  );
+
+  // Preparing QA again makes a new task; a copy of the earlier one does not
+  // wait on it.
+  const qa = (requestId: string) => ({
+    records: [
+      {
+        kind: "qa",
+        requestId,
+        copiedAt: "2026-10-07T10:00:00.000+00:00",
+        resultAt: null,
+        dismissed: false,
+      } as AssistantTaskRecord,
+    ],
+    guided: {
+      speakerSetup: {},
+      speakerScan: {},
+      contextSetup: { documents: {} },
+      eventText: { status: "missing" },
+      readiness: {
+        qa: {
+          task: "/qa/release/new",
+          current: true,
+          findings: [],
+          status: { stage: "screen" },
+        },
+        publications: [],
+      },
+    } as unknown as GuidedState,
+  });
+  assert.deepEqual(assistantTasks(qa("old")), []);
+  assert.deepEqual(
+    assistantTasks(qa("new")).map((task) => task.state),
     ["waiting"],
   );
 

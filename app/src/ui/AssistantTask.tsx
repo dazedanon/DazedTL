@@ -24,8 +24,11 @@ export type AssistantTaskState = Extract<
 export interface AssistantResult {
   id: string;
   title: string;
-  /** Where the result stands, in the shared words; its detail says more. */
-  state: DisplayState;
+  /**
+   * Where the result stands, in the shared words; its detail says more. A
+   * result nothing reports back on has no state.
+   */
+  state?: DisplayState;
   detail?: ReactNode;
   action?: ReactNode;
 }
