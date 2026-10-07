@@ -5,11 +5,12 @@ import { type DisplayState, assistantDisplay } from "./displayStatus";
 import { StatusHeading, StatusMark } from "./StatusMark";
 
 /**
- * Where a copied task stands: never copied, copied and awaited, back,
- * applied, based on inputs that changed since, or needing attention.
+ * Where a copied task stands: never copied, copied and awaited, back for
+ * review, applied, saved without writing into the game, based on inputs that
+ * changed since, or needing attention.
  */
 export type AssistantTaskState =
-  "idle" | "waiting" | "ready" | "applied" | "outdated" | "attention";
+  "idle" | "waiting" | "ready" | "applied" | "done" | "outdated" | "attention";
 
 export interface AssistantResult {
   id: string;

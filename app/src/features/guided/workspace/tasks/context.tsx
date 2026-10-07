@@ -4,7 +4,11 @@ import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
-import { AssistantTask } from "../../../../ui/AssistantTask";
+import {
+  AssistantTask,
+  type AssistantTaskState,
+} from "../../../../ui/AssistantTask";
+import { assistantDisplay } from "../../../../ui/displayStatus";
 import { Message } from "../../../../ui/Feedback";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
@@ -231,6 +235,16 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     handoff,
   } = w;
   const measuring = handoff("line_widths");
+  // Measured widths save themselves, so a measurement that came back is done,
+  // never waiting for a review; one that could not be saved is blocked.
+  const taskState: AssistantTaskState = discovery.layoutMessage
+    ? "attention"
+    : measuring.waiting
+      ? "waiting"
+      : discovery.layout
+        ? "done"
+        : "idle";
+  const remeasure = "Remeasure only if the game's windows or fonts change.";
   let content: ReactNode;
   content = (
     <>
@@ -242,13 +256,6 @@ export function layoutView(w: GuidedWorkspace): TaskView {
               : discovery.layoutMessage || ""
           }
         />
-        {discovery.layoutApplication === "pending" &&
-          !discovery.layoutMessage && (
-            <p className="muted">
-              Measured values will be saved automatically after current work or
-              option edits finish.
-            </p>
-          )}
         <Section
           title="Characters per line"
           hint={
@@ -264,26 +271,26 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           {widths}
         </Section>
         <AssistantTask
-          state={
-            measuring.waiting ? "waiting" : discovery.layout ? "ready" : "idle"
-          }
+          state={taskState}
           progress={sinceLabel(measuring.since)}
           description={
-            measuring.waiting
-              ? "Measured widths are saved automatically when your assistant reports them."
-              : discovery.layout
-                ? "The measured widths are saved above. Remeasure only if the game's windows or fonts change."
-                : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
+            taskState === "attention"
+              ? "Retry measured widths to save them, or keep the current widths and continue."
+              : taskState === "waiting"
+                ? "Measured widths are saved automatically when your assistant reports them."
+                : taskState === "done"
+                  ? discovery.layoutApplication === "pending"
+                    ? "Measured widths are saved automatically after current work or option edits finish."
+                    : discovery.layoutApplication === "manual"
+                      ? `Your edited widths are kept. ${remeasure}`
+                      : `The measured widths are saved above. ${remeasure}`
+                  : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
           }
           results={[
             {
               id: "layout",
               title: "Measured widths",
-              state: measuring.waiting
-                ? "waiting"
-                : discovery.layout
-                  ? "done"
-                  : "not_started",
+              state: assistantDisplay[taskState],
               detail:
                 "Dialogue, portrait, list and note widths from the game's own layout.",
               action: copyTask(
