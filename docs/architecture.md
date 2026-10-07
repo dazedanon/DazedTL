@@ -639,8 +639,8 @@ Backup history is grouped by game versus project files and appears only after th
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
-Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (Not started, Waiting, Needs review, Applied, Done, Outdated or Blocked), what comes back, and a row per expected result.
-A result that saves itself without touching the game, such as measured line widths, reads Done once back rather than Needs review, since nothing waits for the user.
+Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands, in the shared display states, what comes back, and a row per expected result.
+The panel reads Needs review only while a result waits for the user's decision; a result that saved itself reads Done, or Applied once in the game, and one waiting only to go into the game reads Ready to apply.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.

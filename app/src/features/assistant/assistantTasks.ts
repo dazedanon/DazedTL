@@ -245,11 +245,11 @@ export function assistantWaiting(
 
 /** A feature panel's state with the shared list's waiting applied. */
 export function withHandoff<T extends string>(
-  state: T | "idle" | "waiting",
+  state: T | "not_started" | "waiting",
   handoff: { waiting: boolean; dismissed: boolean },
-): T | "idle" | "waiting" {
-  if (handoff.dismissed && state === "waiting") return "idle";
-  if (handoff.waiting && state === "idle") return "waiting";
+): T | "not_started" | "waiting" {
+  if (handoff.dismissed && state === "waiting") return "not_started";
+  if (handoff.waiting && state === "not_started") return "waiting";
   return state;
 }
 

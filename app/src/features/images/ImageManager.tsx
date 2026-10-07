@@ -580,13 +580,20 @@ function Manager({
     </Button>
   );
   // Refreshing reads a saved assistant report, so it leads only while one is due.
+  // A saved report needs review only while edited images wait for a check.
   const assistantState = reportError
-    ? "attention"
+    ? "blocked"
     : awaitingResults || awaitingFindings
       ? "waiting"
-      : lastReport
-        ? "ready"
-        : "idle";
+      : !lastReport
+        ? "not_started"
+        : counts.needsReview
+          ? "needs_review"
+          : counts.ready
+            ? "ready"
+            : counts.applied
+              ? "applied"
+              : "done";
   // The selected batch moves through these steps; each reports beside itself.
   const stepKey =
     ["prepare", "edit_task", "preview_apply"].includes(action.key) ||
@@ -812,7 +819,7 @@ function Manager({
         description={
           assistantState === "waiting"
             ? "Results appear on the images as your assistant saves them."
-            : assistantState === "attention"
+            : assistantState === "blocked"
               ? reportError
               : lastReport
                 ? `Last saved report ${new Date(lastReport).toLocaleString()}.`

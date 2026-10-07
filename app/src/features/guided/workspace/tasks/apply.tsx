@@ -573,10 +573,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
               !qa.current && qaStatus.stage
               ? "outdated"
               : qa.findings.length
-                ? "ready"
+                ? "needs_review"
                 : qaCopied || qaStarted
                   ? "waiting"
-                  : "idle"
+                  : "not_started"
         }
         progress={
           qaCopied && !qa.findings.length

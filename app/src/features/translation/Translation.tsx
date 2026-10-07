@@ -325,14 +325,14 @@ function Workspace({
               <AssistantTask
                 state={
                   progress?.blocker
-                    ? "attention"
+                    ? "blocked"
                     : progress?.updated_at
                       ? Object.values(progress.phases).every((phase) =>
                           ["complete", "out_of_scope"].includes(phase),
                         )
-                        ? "ready"
+                        ? "done"
                         : "waiting"
-                      : "idle"
+                      : "not_started"
                 }
                 progress={
                   progress?.updated_at

@@ -36,9 +36,9 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   const dismissed = walkthrough(null, true);
   assert.deepEqual(assistantTasks(dismissed), []);
   const handoff = assistantWaiting("walkthrough", dismissed);
-  assert.equal(withHandoff("waiting", handoff), "idle");
+  assert.equal(withHandoff("waiting", handoff), "not_started");
   assert.equal(
-    withHandoff("idle", assistantWaiting("walkthrough", earlier)),
+    withHandoff("not_started", assistantWaiting("walkthrough", earlier)),
     "waiting",
   );
 

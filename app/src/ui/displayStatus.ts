@@ -1,4 +1,3 @@
-import type { AssistantTaskState } from "./AssistantTask";
 import type { StatusKind } from "./StatusIcon";
 
 /**
@@ -105,14 +104,3 @@ export function pluginDisplay(status: string, issue = ""): DisplayState {
       return "not_started";
   }
 }
-
-/** The shared assistant task panel. */
-export const assistantDisplay: Record<AssistantTaskState, DisplayState> = {
-  idle: "not_started",
-  waiting: "waiting",
-  ready: "needs_review",
-  applied: "applied",
-  done: "done",
-  outdated: "outdated",
-  attention: "blocked",
-};

@@ -1,16 +1,25 @@
 import { useId, type ReactNode } from "react";
 import { ActionRow } from "./ActionList";
 import { HelpPopover } from "./HelpPopover";
-import { type DisplayState, assistantDisplay } from "./displayStatus";
+import type { DisplayState } from "./displayStatus";
 import { StatusHeading, StatusMark } from "./StatusMark";
 
 /**
- * Where a copied task stands: never copied, copied and awaited, back for
- * review, applied, saved without writing into the game, based on inputs that
- * changed since, or needing attention.
+ * Where a copied task stands, in the shared words. Needs review means a
+ * result waits for the user's decision; a result that saved itself is Done
+ * or Applied, and one waiting only to go into the game is Ready to apply.
  */
-export type AssistantTaskState =
-  "idle" | "waiting" | "ready" | "applied" | "done" | "outdated" | "attention";
+export type AssistantTaskState = Extract<
+  DisplayState,
+  | "not_started"
+  | "waiting"
+  | "needs_review"
+  | "ready"
+  | "applied"
+  | "done"
+  | "outdated"
+  | "blocked"
+>;
 
 export interface AssistantResult {
   id: string;
@@ -56,7 +65,7 @@ export function AssistantTask({
           <h3 id={heading}>Assistant task</h3>
           {help && <HelpPopover label="Assistant task">{help}</HelpPopover>}
           <span className="assistant-task-state">
-            <StatusMark state={assistantDisplay[state]} />
+            <StatusMark state={state} />
             {progress && <span>{progress}</span>}
           </span>
         </div>

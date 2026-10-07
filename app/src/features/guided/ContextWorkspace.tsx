@@ -37,27 +37,33 @@ export function ContextWorkspace({
     ["failed", "unavailable"].includes(row.status),
   );
   const handoff = useHandoff("names");
+  // Saved results complete the task; reading them over is advice, not a
+  // review the app waits for.
   const taskState = withHandoff(
     saved === results.length
-      ? "ready"
+      ? "done"
       : problem
-        ? "attention"
+        ? "blocked"
         : // Results saved earlier are not a task in progress; a copy is.
           handoff.waiting ||
             results.some((row) => ["waiting", "working"].includes(row.status))
           ? "waiting"
-          : "idle",
+          : "not_started",
     handoff,
   );
   return (
     <div className="context-columns">
       <AssistantTask
         state={taskState}
-        progress={`${saved} of ${results.length} saved`}
+        progress={
+          saved && saved < results.length
+            ? `${saved} of ${results.length} saved`
+            : undefined
+        }
         description={
-          taskState === "ready"
-            ? "Review the guidance before translating."
-            : taskState === "attention"
+          taskState === "done"
+            ? "Look over the guidance before translating."
+            : taskState === "blocked"
               ? problem!.detail
               : taskState === "waiting"
                 ? "Results appear here as your assistant saves them."

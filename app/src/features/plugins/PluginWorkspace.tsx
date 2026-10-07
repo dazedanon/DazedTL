@@ -390,17 +390,19 @@ export function PluginWorkspace({
       state.findings.status === "awaiting_report") ||
       (state.activeRequest === state.requestPaths.translation &&
         state.editing.status === "awaiting_report"));
+  // Unresolved findings wait for a decision, as their rows and the shared
+  // task list say.
   const taskState = counts.ready
     ? "ready"
     : counts.applied
       ? "applied"
-      : state.findings.status === "partial" ||
-          state.findings.errors.length ||
-          state.editing.errors.length
-        ? "attention"
-        : awaiting
-          ? "waiting"
-          : "idle";
+      : awaiting
+        ? "waiting"
+        : state.findings.status === "partial" ||
+            state.findings.errors.length ||
+            state.editing.errors.length
+          ? "needs_review"
+          : "not_started";
   const reportRow = (
     id: string,
     title: string,
@@ -452,7 +454,7 @@ export function PluginWorkspace({
             ? `${fileCount(counts.ready)} checked and ready to apply.`
             : taskState === "applied"
               ? `${fileCount(counts.applied)} applied to the game.`
-              : taskState === "attention"
+              : taskState === "needs_review"
                 ? "Some investigation remains unresolved. Your assistant can continue from the same task after resolving the reported issues."
                 : taskState === "waiting"
                   ? "Results appear here after validation as your assistant saves them."

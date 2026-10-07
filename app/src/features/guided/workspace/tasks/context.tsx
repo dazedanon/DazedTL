@@ -8,7 +8,6 @@ import {
   AssistantTask,
   type AssistantTaskState,
 } from "../../../../ui/AssistantTask";
-import { assistantDisplay } from "../../../../ui/displayStatus";
 import { Message } from "../../../../ui/Feedback";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
@@ -238,12 +237,12 @@ export function layoutView(w: GuidedWorkspace): TaskView {
   // Measured widths save themselves, so a measurement that came back is done,
   // never waiting for a review; one that could not be saved is blocked.
   const taskState: AssistantTaskState = discovery.layoutMessage
-    ? "attention"
+    ? "blocked"
     : measuring.waiting
       ? "waiting"
       : discovery.layout
         ? "done"
-        : "idle";
+        : "not_started";
   const remeasure = "Remeasure only if the game's windows or fonts change.";
   let content: ReactNode;
   content = (
@@ -274,7 +273,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           state={taskState}
           progress={sinceLabel(measuring.since)}
           description={
-            taskState === "attention"
+            taskState === "blocked"
               ? "Retry measured widths to save them, or keep the current widths and continue."
               : taskState === "waiting"
                 ? "Measured widths are saved automatically when your assistant reports them."
@@ -290,7 +289,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
             {
               id: "layout",
               title: "Measured widths",
-              state: assistantDisplay[taskState],
+              state: taskState,
               detail:
                 "Dialogue, portrait, list and note widths from the game's own layout.",
               action: copyTask(
