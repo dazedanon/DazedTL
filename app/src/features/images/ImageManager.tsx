@@ -508,10 +508,29 @@ function Manager({
       <MenuItem
         disabled={!value.selection.length}
         onSelect={() => {
-          void action.run(async () => {
-            await draft.session.flush();
-            onOpenEditor(draft.session.getSnapshot().value!.selection);
-          });
+          void action.run(
+            async () => {
+              await draft.session.flush();
+              // The editor works on editable copies; images still to be made
+              // editable stay selected for Make editable.
+              const editable: string[] = [];
+              for (let offset = 0, total = 1; offset < total; offset += 500) {
+                const page = await imagesApi.list(projectId, {
+                  selected_only: true,
+                  offset,
+                  limit: 500,
+                });
+                total = page.total;
+                for (const item of page.items)
+                  if (item.editable) editable.push(item.id);
+              }
+              if (!editable.length)
+                throw new Error("Make the selected images editable first.");
+              onOpenEditor(editable);
+            },
+            "",
+            "edit_text",
+          );
         }}
       >
         Edit text…
