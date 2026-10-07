@@ -348,11 +348,7 @@ export function PluginWorkspace({
           : ""
       }
       onClick={() =>
-        run(
-          "plugin_task",
-          {},
-          "Task copied. Paste it into your assistant; saved progress appears here.",
-        )
+        run("plugin_task", {}, "Task copied. Paste it into your assistant.")
       }
     />
   );
