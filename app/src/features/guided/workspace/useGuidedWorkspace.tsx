@@ -1375,8 +1375,11 @@ export function useGuidedWorkspace({
           );
         }
         if (latestObserved.current.step === null) {
+          // A version saved before this run is not news.
           setSetupNotice(
-            `Version ${fields.version.trim()} saved. Setup complete.`,
+            tried.has("git_setup")
+              ? `Version ${fields.version.trim()} saved. Setup complete.`
+              : "Setup complete.",
           );
           if (latestObserved.current.taskId === "setup")
             await navigate("context", "names");
