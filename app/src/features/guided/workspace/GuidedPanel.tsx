@@ -122,7 +122,30 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     />
   );
   const panelActions =
-    panel === "files" ? (
+    // Saving the asset list is this dialog's one decision, in its footer.
+    panel === "release-assets" ? (
+      <ActionControl
+        label="Save runtime assets"
+        variant="primary"
+        disabled={disabled}
+        {...feedback("release-assets:save", "Saving…")}
+        onClick={() =>
+          action.run(
+            async () => {
+              const names = release.assets
+                .map((name) => name.trim())
+                .filter(Boolean);
+              editRelease("assets", [...new Set(names)]);
+              await flushDrafts();
+              await save();
+              setPanel(null);
+            },
+            "Runtime assets retained.",
+            "release-assets:save",
+          )
+        }
+      />
+    ) : panel === "files" ? (
       <>
         <Button disabled={action.busy} onClick={closePanel}>
           Cancel
@@ -552,43 +575,24 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 Add other player images or fonts by exact game-relative path,
                 one per line.
               </p>
-              <label>
-                Image and font paths
-                <textarea
-                  rows={7}
-                  value={release.assets.join("\n")}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    editRelease("assets", event.target.value.split("\n"))
-                  }
-                />
-              </label>
-              <p className="muted">
-                Use img/ or fonts/, including www/ layouts. Private files,
-                missing files and symbolic links are rejected. Build reviews the
-                exact current bytes.
-              </p>
-              <ActionControl
-                label="Save runtime assets"
-                variant="primary"
-                disabled={disabled}
-                {...feedback("release-assets:save", "Saving…")}
-                onClick={() =>
-                  action.run(
-                    async () => {
-                      const names = release.assets
-                        .map((name) => name.trim())
-                        .filter(Boolean);
-                      editRelease("assets", [...new Set(names)]);
-                      await flushDrafts();
-                      await save();
-                      setPanel(null);
-                    },
-                    "Runtime assets retained.",
-                    "release-assets:save",
-                  )
-                }
-              />
+              <FieldRow
+                id="release-assets"
+                label="Image and font paths"
+                help="Use img/ or fonts/, including www/ layouts. Private files, missing files and symbolic links are rejected. Build reviews the exact current bytes."
+                wide
+              >
+                {(props) => (
+                  <textarea
+                    {...props}
+                    rows={7}
+                    value={release.assets.join("\n")}
+                    disabled={disabled}
+                    onChange={(event) =>
+                      editRelease("assets", event.target.value.split("\n"))
+                    }
+                  />
+                )}
+              </FieldRow>
             </>
           )}
 
