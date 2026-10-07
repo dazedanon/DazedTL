@@ -862,7 +862,7 @@ A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.
 Ace preparation runs in Python on every platform: `util/ace` ports RV2JSON 1.2.1 and RPGMakerDecrypter's archive reading instead of shipping their Windows executables.
-The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games, finding data files in any case and keeping Change Vehicle BGM audio as objects.
+The port writes RV2JSON's JSON and Ruby 3.4's Marshal bytes so games and existing `ace_json` exports read the same; it departs only where RV2JSON broke games or hid text: it finds data files in any case, keeps Change Vehicle BGM audio as objects and adds the equipment type names to `System.json` as `equipTypes`.
 [The Ace fixture](../tests/fixtures/ace/regenerate.py) records RV2JSON's own output for synthetic editor-shaped data, so conversion tests need neither Ruby nor real games.
 Ace Release requires a packing receipt bound to every current JSON input and its corresponding native output; fitting, QA or native edits invalidate it.
 Guided checkpoint manifests derive translation-only additions from the registered original and saved source inventory, retaining previously tracked runtime assets when switching workflows.

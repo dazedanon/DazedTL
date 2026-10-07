@@ -46,6 +46,13 @@
     "物理",
     "炎"
   ],
+  "equipTypes": [
+    "武器",
+    "盾",
+    "頭",
+    "身体",
+    "装飾品"
+  ],
   "gameTitle": "テストゲーム",
   "gameoverMe": {
     "name": "Gameover1",

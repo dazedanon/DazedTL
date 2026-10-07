@@ -6,8 +6,8 @@ tones, large integers, unusual floats and String hash keys stored apart.
 Ruby 3.4 loads and dumps it to check that the port writes the same bytes,
 and RV2JSON 1.2.1 then writes the expected JSON (ace_json) and packs the
 translated JSON (translated, over ace_json) into the expected data (packed).
-RV2JSON runs from a copy with the port's Change Vehicle BGM fix, so packing
-keeps that command's BGM object.
+RV2JSON runs from a copy with the port's changes: packing keeps a Change
+Vehicle BGM command's BGM object, and System.json carries equipTypes.
 
     python tests/fixtures/ace/regenerate.py RUBY RV2JSON_CHECKOUT
 
@@ -863,6 +863,7 @@ def translate(source: Path, target: Path) -> None:
         "魔法": "Magic",
         "最大HP": "Max HP",
         "武器": "Weapon",
+        "盾": "Shield",
         "コマンド0": "Fight",
         "レベル": "Level",
         "p '別の移動'": "p 'another move'",
@@ -895,8 +896,9 @@ def translate(source: Path, target: Path) -> None:
 
 
 def patched_rv2json(checkout: Path, target: Path) -> str:
-    """A copy of RV2JSON that runs on case-sensitive file systems and keeps a
-    Change Vehicle BGM command's BGM, as the port does."""
+    """A copy of RV2JSON that runs on case-sensitive file systems and has the
+    port's changes: Change Vehicle BGM keeps its BGM, and System.json carries
+    the equipment type names as equipTypes."""
     shutil.copytree(checkout, target, ignore=shutil.ignore_patterns(".git"))
     rpg = target / "rgssV3/rpg"
     if not (rpg / "mapinfoMV.rb").exists():
@@ -910,6 +912,19 @@ def patched_rv2json(checkout: Path, target: Path) -> str:
     if fixed.count("when 132, 140") != 1:
         raise RuntimeError("RV2JSON's Change Battle BGM case was not found.")
     commands.write_text(fixed, encoding="utf-8")
+    system = rpg / "system.rb"
+    code = system.read_text(encoding="utf-8")
+    fixed = code.replace(
+        '\t\t\t"elements" => @elements,\n',
+        '\t\t\t"elements" => @elements,\n\t\t\t"equipTypes" => @terms.etypes,\n',
+    ).replace(
+        '\t\t@terms.updateFromJson(json["terms"]) if json["terms"]\n',
+        '\t\t@terms.updateFromJson(json["terms"]) if json["terms"]\n'
+        '\t\t@terms.etypes = json["equipTypes"] if json["equipTypes"]\n',
+    )
+    if fixed.count("equipTypes") != 3:
+        raise RuntimeError("RV2JSON's System JSON was not where expected.")
+    system.write_text(fixed, encoding="utf-8")
     return str(target / "RV2JSON.rb")
 
 

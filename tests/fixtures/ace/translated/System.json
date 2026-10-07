@@ -14,7 +14,7 @@
   },
   "armorTypes": [
     "",
-    "盾"
+    "Shield"
   ],
   "battleBgm": {
     "name": "Battle1",
@@ -45,6 +45,13 @@
     "",
     "Physical",
     "炎"
+  ],
+  "equipTypes": [
+    "Weapon",
+    "Shield",
+    "頭",
+    "身体",
+    "装飾品"
   ],
   "gameTitle": "Test Game",
   "gameoverMe": {

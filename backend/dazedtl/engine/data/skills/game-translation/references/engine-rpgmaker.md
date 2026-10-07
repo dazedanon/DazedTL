@@ -1621,7 +1621,7 @@ Key each captured group as `{filename}:{event-N,page-M}:call-K` with items at `.
 RV2JSON (built into DazedTL as `util/ace/rv2json.py`, which writes the same JSON and bytes; run `python -m util.ace.rv2json -c -d <game>/Data -j <game>/ace_json` from `DAZEDTL_ROOT`) converts `Data\` to JSON and back, and it is genuinely useful for READING - a JSON tree greps and diffs, a Marshal blob does not. It is not safe to write back:
 
 * `-c` then `-u` with **zero edits** returns **28 of 231 files changed** on a real game (`Enemies.rvdata2` 35,587 -> 32,337 bytes). Its round trip is not byte-exact, so no patch built on it can prove it changed only what it meant to.
-* it **silently drops `System.terms.etypes`**. The five equip-slot labels that `Vocab.etype` reads and two windows draw are absent from its JSON, so extracting from JSON misses them and they ship untranslated (writing the JSON back leaves them as they were).
+* it **silently drops `System.terms.etypes`**. The five equip-slot labels that `Vocab.etype` reads and two windows draw are absent from its JSON, so extracting from JSON misses them and they ship untranslated (writing the JSON back leaves them as they were). DazedTL's built-in port adds them to `System.json` as `equipTypes` and packs them back.
 
 `acetl/rvmarshal.py` is a Ruby Marshal 4.8 reader/writer, ~450 lines, that round-trips **231/231 shipped files byte for byte**. Take it as-is. It also gets you save files for free, which is the other half of an Ace patch.
 

@@ -5,9 +5,11 @@ that writes the same ``ace_json`` folder: each data file as pretty-printed
 JSON with RV2JSON's keys and order, and each script as an ``.rb`` file.
 Updating merges edited JSON back with RV2JSON's rules and writes the data as
 Ruby 3.4's Marshal would, so a game reads exactly what RV2JSON would give it.
-Two differences keep games working where RV2JSON did not: data files are
-found without regard to case, as on Windows, and a Change Vehicle BGM
-command keeps its BGM object instead of becoming a Hash the game cannot play.
+A few differences keep games working where RV2JSON did not: data files are
+found without regard to case, as on Windows, a Change Vehicle BGM command
+keeps its BGM object instead of becoming a Hash the game cannot play, and
+System.json carries the equipment type names as ``equipTypes`` so they can
+be translated.
 
 Usage mirrors RV2JSON: ``python -m util.ace.rv2json -c -d Data -j ace_json``
 creates the JSON and ``-u`` updates the data from it.
@@ -385,6 +387,13 @@ def _system(obj: RObject) -> Pairs:
     if not isinstance(tone, RUserDef):
         raise ConversionError("The system window tone is missing.")
     out.append(("windowTone", to_tree(tone_values(tone))))
+    # RV2JSON leaves out the equipment type names; MV's key for them lets
+    # the translation engine translate them like the other type lists.
+    terms = obj.get("@terms")
+    etypes = terms.get("@etypes") if isinstance(terms, RObject) else None
+    out.insert(
+        [key for key, _ in out].index("elements") + 1, ("equipTypes", to_tree(etypes))
+    )
     return out
 
 
@@ -1287,6 +1296,9 @@ class _Updater:
         self.assign(obj, "@start_y", j.get("startY"))
         if _truthy(j.get("terms")):
             self.update(obj.get("@terms"), j["terms"])
+        terms = obj.get("@terms")
+        if isinstance(terms, RObject):
+            self.assign(terms, "@etypes", j.get("equipTypes"))
         self.assign_text(obj, "@battleback1_name", j.get("battleback1Name"))
         self.assign_text(obj, "@battleback2_name", j.get("battleback2Name"))
         self.assign_text(obj, "@battler_name", j.get("battlerName"))
