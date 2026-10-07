@@ -511,10 +511,12 @@ pre {
 /* A percentage cap would be ignored while the bar sizes its controls, letting
    a long result claim a whole row; a fixed cap that can shrink keeps it beside
    its button. */
+/* The block sits against its button; its lines start at the status icon, so
+   wrapped text never leaves a gap after the icon. */
 .action-bar .action-control > .action-control-feedback {
   max-width: 30rem;
   min-width: 0;
-  text-align: right;
+  text-align: left;
 }
 .action-bar .action-control > .action-control-feedback:not(:empty) {
   margin-top: 0;
