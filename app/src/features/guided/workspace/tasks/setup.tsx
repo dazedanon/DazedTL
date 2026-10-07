@@ -132,7 +132,10 @@ export function setupView(w: GuidedWorkspace): TaskView {
     running && !setupRunning
       ? "Wait for the current operation to finish."
       : preserved && aceNeedsExport
-        ? "Convert the Ace data to JSON first."
+        ? // Without the native converter, only an existing export continues.
+          state.aceAvailable
+          ? "Convert the Ace data to JSON first."
+          : "Needs an ace_json export on this system."
         : gitConfigured
           ? ""
           : !fields.version.trim()
