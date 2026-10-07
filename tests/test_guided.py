@@ -14,9 +14,42 @@ from dazedtl.storage import write_json
 from dazedtl.translation import context_setup, event_text, preparation, speaker_setup
 from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
-from dazedtl.translation.guided import Guided
+from dazedtl.translation.guided import Guided, retained_position
 from dazedtl.translation.guided_inputs import GuidedInputs
 from dazedtl.translation.operations import lifecycle_path
+
+
+class RetainedPositionTests(unittest.TestCase):
+    def test_positions_from_earlier_stage_layouts_open_the_task_holding_their_work(
+        self,
+    ):
+        value = retained_position(
+            {
+                "step": "apply",
+                "task": "qa",
+                "positions": {
+                    "prepare": "baseline",
+                    "translate": "dialogue",
+                    "plugins": "plugins",
+                    "apply": "tools",
+                    "review": "package",
+                },
+            }
+        )
+        self.assertEqual((value["step"], value["task"]), ("check", "qa"))
+        # The translate stage keeps its own task over one moved in from Plugin text.
+        self.assertEqual(
+            value["positions"],
+            {
+                "setup": "setup",
+                "translate": "dialogue",
+                "check": "apply",
+                "release": "package",
+            },
+        )
+        value = retained_position({"step": "images", "task": "image-manager"})
+        self.assertEqual((value["step"], value["task"]), ("translate", "images"))
+        self.assertNotIn("step", retained_position({"positions": {}}))
 
 
 class GuidedTests(unittest.TestCase):

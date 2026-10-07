@@ -82,7 +82,7 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   "speaker-names": "Speaker names",
   widths: "Line widths",
   "translation-context": "Translation options",
-  tools: "Configure game tools",
+  tools: "Playtest tools",
   preparation: "Preparation tools",
   "release-assets": "Additional runtime assets",
 };

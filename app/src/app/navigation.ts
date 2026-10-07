@@ -11,21 +11,63 @@ export interface NavigationStorage {
 
 type GuidedLocation = Pick<GuidedState, "step" | "task" | "contextDocument"> & {
   eventView: GuidedState["eventText"]["view"];
-  textView: GuidedState["form"]["text"]["view"];
 };
 export type NavigationChange = Partial<GuidedLocation>;
 type Preferences = NavigationChange & { positions?: GuidedState["positions"] };
-const steps = new Set([
-  "prepare",
-  "context",
-  "translate",
-  "plugins",
-  "images",
-  "advanced",
-  "apply",
-  "layout",
-  "review",
-]);
+const steps = new Set(["setup", "context", "translate", "check", "release"]);
+// Stages that earlier versions saved, and the stage that holds their work now.
+const legacySteps: Record<string, GuidedState["step"]> = {
+  prepare: "setup",
+  advanced: "translate",
+  plugins: "translate",
+  images: "translate",
+  apply: "check",
+  layout: "check",
+  review: "release",
+};
+const legacyTasks: Record<string, string> = {
+  backup: "setup",
+  extract: "setup",
+  format: "setup",
+  baseline: "setup",
+  "image-text": "images",
+  "image-manager": "images",
+  playtest: "apply",
+  tools: "apply",
+};
+/**
+ * Preferences saved by earlier stage layouts, in the current stages. Apply &
+ * Fitting kept its view separately; its Check task replaces it.
+ */
+function migrate(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const { textView, ...saved } = value as Record<string, unknown>;
+  const view = ["fitting", "qa"].includes(String(textView))
+    ? String(textView)
+    : "apply";
+  const task = (step: unknown, name: unknown) =>
+    step === "apply" && name === "apply"
+      ? view
+      : typeof name === "string"
+        ? legacyTasks[name] || name
+        : name;
+  const result: Record<string, unknown> = { ...saved };
+  if (typeof saved.step === "string" && saved.step in legacySteps) {
+    result.step = legacySteps[saved.step];
+    result.task = task(saved.step, saved.task);
+  }
+  if (saved.positions && typeof saved.positions === "object") {
+    const positions: Record<string, unknown> = {};
+    for (const [step, name] of Object.entries(saved.positions)) {
+      const current = legacySteps[step] || step;
+      // A stage's own saved task wins over one moved in from a retired stage.
+      if (step === current || !(current in positions))
+        positions[current] = task(step, name);
+    }
+    result.positions = positions;
+  }
+  return result;
+}
 const task = (value: unknown) =>
   value === null ||
   (typeof value === "string" && /^[a-z][a-z0-9-]{0,59}$/.test(value));
@@ -35,14 +77,9 @@ function valid(value: unknown): value is Preferences {
   const p = value as Preferences;
   return (
     Object.keys(p).every((key) =>
-      [
-        "step",
-        "task",
-        "positions",
-        "contextDocument",
-        "eventView",
-        "textView",
-      ].includes(key),
+      ["step", "task", "positions", "contextDocument", "eventView"].includes(
+        key,
+      ),
     ) &&
     (p.step === undefined || steps.has(p.step)) &&
     (p.task === undefined || task(p.task)) &&
@@ -53,8 +90,6 @@ function valid(value: unknown): value is Preferences {
       ["audit", "sources", "advanced-run", "variables"].includes(
         p.eventView,
       )) &&
-    (p.textView === undefined ||
-      ["apply", "fitting", "qa", "tools"].includes(p.textView)) &&
     (p.positions === undefined ||
       (!!p.positions &&
         typeof p.positions === "object" &&
@@ -87,8 +122,8 @@ export class Navigation {
       this.preferences = {};
       if (owner) {
         try {
-          const saved: unknown = JSON.parse(
-            this.storage?.getItem(this.key(owner)) || "null",
+          const saved = migrate(
+            JSON.parse(this.storage?.getItem(this.key(owner)) || "null"),
           );
           if (valid(saved)) this.preferences = saved;
         } catch {
@@ -100,7 +135,7 @@ export class Navigation {
       return snapshot;
     let guided = snapshot.guided;
     if (guided && guided.projectId === owner) {
-      const { positions, eventView, textView, contextDocument, ...location } =
+      const { positions, eventView, contextDocument, ...location } =
         this.preferences;
       guided = {
         ...guided,
@@ -115,9 +150,6 @@ export class Navigation {
         eventText: eventView
           ? { ...guided.eventText, view: eventView }
           : guided.eventText,
-        form: textView
-          ? { ...guided.form, text: { ...guided.form.text, view: textView } }
-          : guided.form,
       };
     }
     return {

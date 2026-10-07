@@ -29,17 +29,7 @@ class FileTextPreview(TypedDict):
     nextOffset: int | None
 
 
-type GuidedStep = Literal[
-    "prepare",
-    "context",
-    "translate",
-    "plugins",
-    "images",
-    "advanced",
-    "apply",
-    "layout",
-    "review",
-]
+type GuidedStep = Literal["setup", "context", "translate", "check", "release"]
 
 
 class LayoutWidths(TypedDict):

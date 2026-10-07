@@ -282,22 +282,22 @@ function ProjectStatus({
                       <span
                         className="guided-stage-marker"
                         data-state={
-                          stage.done === stage.total
+                          stage.complete
                             ? "done"
-                            : stage.done
+                            : stage.tasks.some((task) => task.done)
                               ? "started"
                               : undefined
                         }
                         aria-hidden="true"
                       >
-                        {stage.done === stage.total ? (
+                        {stage.complete ? (
                           <Check size={12} strokeWidth={3} />
                         ) : (
                           index + 1
                         )}
                       </span>
                       {stage.short}
-                      {/* A one-task stage's mark already says it all. */}
+                      {/* With one required task, the mark already says it all. */}
                       {stage.total > 1 && (
                         <span className="project-stage-count">
                           {stage.done}/{stage.total}
@@ -536,7 +536,7 @@ function ProjectVersions({
           project={project}
           state={translation}
           onBackups={onBackups}
-          onPrepare={guided ? () => openTask("prepare", "setup") : undefined}
+          onPrepare={guided ? () => openTask("setup", "setup") : undefined}
           onCheckpoint={
             guided
               ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })

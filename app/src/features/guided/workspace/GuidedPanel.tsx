@@ -13,6 +13,7 @@ import { JobStatus } from "../../../ui/JobStatus";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { StackedTabPanels, Tabs } from "../../../ui/Tabs";
+import { StatusIcon } from "../../../ui/StatusIcon";
 import { SpeakerNames } from "../ContextWorkspace";
 import { EngineOptions } from "../EngineOptions";
 import { FileSelection } from "../FileSelection";
@@ -429,9 +430,50 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
           )}
           {panel === "tools" && (
             <>
+              <ActionList>
+                {(
+                  [
+                    [
+                      "inspector",
+                      "TL Inspector",
+                      "Shows a line's source and context in the game.",
+                    ],
+                    ["forge", "Forge", "Edits text with an in-game overlay."],
+                  ] as const
+                ).map(([key, label, description]) => (
+                  <ActionRow
+                    key={key}
+                    label={
+                      <>
+                        <span className="status-heading">
+                          <StatusIcon
+                            status={
+                              state.tools?.[key].installed ? "done" : "idle"
+                            }
+                          />
+                          <strong>{label}</strong>
+                          <span className="status-heading-state">
+                            {state.tools?.[key].message || "Status unavailable"}
+                          </span>
+                        </span>
+                        <small>{description}</small>
+                      </>
+                    }
+                  >
+                    {task(
+                      key + "_install",
+                      state.tools?.[key].installed ? "Update" : "Install",
+                      {},
+                      !baseline,
+                    )}
+                    {state.tools?.[key].present &&
+                      task(key + "_remove", "Remove", {}, !baseline)}
+                  </ActionRow>
+                ))}
+              </ActionList>
               <p className="muted">
-                Settings are saved with this project. Install/update a plugin or
-                apply settings to use them in the game.
+                Settings are saved with this project; apply them to the
+                installed tools to use them in the game.
               </p>
               <fieldset disabled={disabled}>
                 {(

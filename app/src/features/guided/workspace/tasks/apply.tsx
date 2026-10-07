@@ -1,4 +1,4 @@
-/** Apply & Check: publish outputs, check line widths, optional QA and game tools. */
+/** Check: apply outputs, check line widths and optional text QA. */
 import type { ReactNode } from "react";
 import { textLocation } from "../../textLocation";
 import { ActionControl } from "../../../../ui/ActionControl";
@@ -21,7 +21,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
     outputFiles,
     applied,
     task,
-    releaseButton,
+    advance,
     fileSummary,
   } = w;
   let content: ReactNode;
@@ -160,7 +160,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
   return {
     content,
     action: review,
-    next: releaseButton(applied ? "primary" : "quiet"),
+    next: advance(undefined, undefined, applied ? "primary" : "quiet"),
     heading: {
       title: "Apply translations",
       description: "Overwrite the checked game files with their saved output.",
@@ -183,7 +183,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     layoutOptions,
     fitting,
     fittingSettingsSaved,
-    releaseButton,
+    advance,
     fileRow,
     fields,
   } = w;
@@ -387,7 +387,11 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     content,
     action: run,
     // A current scan that found nothing to fit completes the task.
-    next: releaseButton(scanCurrent && eligible === 0 ? "primary" : "quiet"),
+    next: advance(
+      undefined,
+      undefined,
+      scanCurrent && eligible === 0 ? "primary" : "quiet",
+    ),
     // Fitting reads the game's current text, so it needs applied output.
     actionContext: !state.readiness.applied.length && (
       <span>Apply translations first; the check reads the game’s text.</span>
@@ -416,7 +420,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     task,
     copyTask,
     inspect,
-    releaseButton,
+    advance,
     fields,
   } = w;
   // The app prepares the task and its mechanical inventory itself; the
@@ -715,99 +719,11 @@ export function qaView(w: GuidedWorkspace): TaskView {
   return {
     content,
     action: review,
-    next: releaseButton(),
+    next: advance(undefined, undefined, "quiet"),
     heading: {
       title: "Text QA",
       description:
         "Optional. Prepare a QA task, copy it to your assistant, then review its saved findings.",
-    },
-  };
-}
-
-export function toolsView(w: GuidedWorkspace): TaskView {
-  const {
-    state,
-    setPanel,
-    baseline,
-    release,
-    disabled,
-    task,
-    copyTask,
-    advance,
-  } = w;
-  let content: ReactNode;
-  content = (
-    <>
-      <ActionList>
-        {(
-          [
-            ["inspector", "TL Inspector", "Open source context from the game."],
-            ["forge", "Forge", "Edit text with the in-game overlay."],
-          ] as const
-        ).map(([key, label, description]) => (
-          <ActionRow
-            key={key}
-            label={
-              <>
-                <strong>
-                  {label}{" "}
-                  <span
-                    className={
-                      state.tools?.[key].installed
-                        ? "guided-completed"
-                        : "muted"
-                    }
-                  >
-                    · {state.tools?.[key].message || "Status unavailable"}
-                  </span>
-                </strong>
-                <small>{description}</small>
-              </>
-            }
-          >
-            {task(
-              key + "_install",
-              state.tools?.[key].installed ? "Update" : "Install",
-              {},
-              !baseline,
-            )}
-            {state.tools?.[key].present &&
-              task(key + "_remove", "Remove", {}, !baseline)}
-          </ActionRow>
-        ))}
-        <ActionRow
-          label={
-            <>
-              <strong>Tool settings</strong>
-              <small>
-                Saved: Inspector {release.tools.hotkey} · Forge{" "}
-                {release.tools.forgeHotkey} · scale{" "}
-                {release.tools.uiScale === "auto"
-                  ? "Auto"
-                  : Number(release.tools.uiScale) * 100 + "%"}
-              </small>
-            </>
-          }
-        >
-          <Button disabled={disabled} onClick={() => setPanel("tools")}>
-            Configure tools
-          </Button>
-        </ActionRow>
-        <ActionRow
-          title="Player walkthrough"
-          description="Create a portable walkthrough with your coding assistant."
-        >
-          {copyTask("walkthrough", "Copy walkthrough task")}
-        </ActionRow>
-      </ActionList>
-    </>
-  );
-  return {
-    content,
-    next: advance(),
-    heading: {
-      title: "Game tools",
-      description: "Optional in-game tools for checking and editing text.",
     },
   };
 }

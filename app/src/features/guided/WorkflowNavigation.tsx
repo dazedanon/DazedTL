@@ -1,7 +1,7 @@
 import type { GuidedStep } from "../../api/contracts";
 import { Check } from "lucide-react";
 import { Button } from "../../ui/Button";
-import type { WorkflowStage } from "./workflow";
+import { stageDone, type WorkflowStage } from "./workflow";
 
 export function WorkflowNavigation({
   stages,
@@ -21,7 +21,7 @@ export function WorkflowNavigation({
   return (
     <nav className="guided-phase-nav frame-row" aria-label="Translation stages">
       {stages.map((stage, index) => {
-        const done = stage.tasks.every((item) => completed.has(item.id));
+        const done = stageDone(stage, completed);
         const started =
           !done && stage.tasks.some((item) => completed.has(item.id));
         return (

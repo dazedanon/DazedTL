@@ -3,6 +3,7 @@ import { FolderOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
+import { ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { ReleaseContent } from "../../Release";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
@@ -24,13 +25,13 @@ export function packageView(w: GuidedWorkspace): TaskView {
     destinationError,
     destinationPending,
     artifact,
-    editText,
     save,
     disabled,
     navigate,
     feedback,
     task,
     chooseFolder,
+    copyTask,
     localOperation,
     stopOperation,
   } = w;
@@ -48,14 +49,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
           disabled={disabled}
           {...feedback("release:apply", "Opening Apply…")}
           onClick={() =>
-            action.run(
-              async () => {
-                editText("view", "apply");
-                await navigate("apply", "apply");
-              },
-              "",
-              "release:apply",
-            )
+            action.run(() => navigate("check", "apply"), "", "release:apply")
           }
         />
       }
@@ -127,6 +121,14 @@ export function packageView(w: GuidedWorkspace): TaskView {
             )}
           </>
         ) : undefined
+      }
+      extras={
+        <ActionRow
+          title="Player walkthrough"
+          description="Optional. Your coding assistant writes a portable walkthrough for players."
+        >
+          {copyTask("walkthrough", "Copy walkthrough task")}
+        </ActionRow>
       }
     />
   );

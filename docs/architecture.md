@@ -376,7 +376,7 @@ Legacy Guided review receipts remain readable for existing records.
 
 ## Plugins and images
 
-Guided Plugin files and Images are separate stages; older combined task positions retain their owning stage without rewriting saved run records.
+Guided Plugin files and Images are optional Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
 The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated.
@@ -537,17 +537,20 @@ Frozen outputs and exact backup/restore bytes remain authoritative.
 Formatting, GameUpdate creation, initial source backup, the version baseline and local estimation consume a preview immediately after the user's click; the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
-Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts).
+Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts), grouped into five stages: Set up, Context, Translate, Check and Release.
+A stage holds the tasks that share its purpose, so no stage exists only to host one optional workspace.
+Saved positions use the stage ids `setup`, `context`, `translate`, `check` and `release`; the backend's [retained_position](../backend/dazedtl/translation/guided.py) and the [navigation preferences](../app/src/app/navigation.ts) map the seven-stage ids and retired tasks to the task that holds their work, and Apply & Fitting's last view becomes its Check task.
+Required and optional tasks are marked in workflow.ts; optional work never holds up the next step.
 The app sidebar stays global; every phase uses the same one-row stage strip, which compacts when narrow.
 The Translation screen has no header row; the top bar holds only the project switcher and app status.
 One task occupies the editing body and its action footer stays outside the scroll region.
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
 Guidance review and layout settings follow before the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
-Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label; views inside one task (Other event text steps and the Apply & Check views) use secondary tabs below them.
+Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label and optional tasks marked until done; views inside one task (the Other event text steps) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
 Plugin files and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
-The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done, fills with the accent while the stage is current, and becomes a check when every task is done; the Project page's Status holds the full checklist.
+The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done, fills with the accent while the stage is current, and becomes a check when its required tasks are done (or every task, for a stage of optional tasks such as Release); the Project page's Status holds the full checklist.
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
@@ -603,7 +606,7 @@ A failed automatic save is held for an explicit retry rather than repeated by po
 Defaults remain identified separately, and remeasurement is optional.
 Saved findings describe the investigated source; translating runtime files does not erase that record.
 New projects also clear inherited optional speaker rules.
-Prepare is one setup task: its form takes the version and the explicit untranslated/original-source choice, retained in the Guided form, and one action runs the untouched backup, file preparation and version baseline in sequence.
+Set up is one task: its form takes the version and the explicit untranslated/original-source choice, retained in the Guided form, and one action runs the untouched backup, file preparation and version baseline in sequence.
 The [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) runs each step through its own preview and execution and waits for the observed operation and an idle backend before the next, so every step keeps its checks and receipts; a replacement backup keeps its review and the sequence continues once it is approved.
 A failed, stopped or declined step ends the sequence with its reason beside the action; the next click resumes from the first step that is not done, and projects set up before this keep their saved backup and baseline.
 The preparation worker records each completed stage against the current prepared files, stops on failure or cancellation, and resumes remaining stages without repeating current completed work.
@@ -625,7 +628,9 @@ Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
 Release plans bind the profile's working-source index and original blobs; refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
-Apply and the line width check share one Guided workspace with retained file choices and check settings.
+Check's Apply, Line width check and Text QA tasks share retained file choices and check settings.
+TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested; it reuses the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
+The player walkthrough task sits with Release, since it produces player documentation.
 The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.
 The compatibility worker reuses the engine fitter on disposable copies, then preflights and publishes the whole batch with verified backups and rollback attempts.
 Interrupted publication retains exact authorized before/after hashes for another reviewed restore; conflicting newer runtime edits are retained.
@@ -664,7 +669,7 @@ The application provider supplies its API and browser event subscriptions; the o
 The shared [navigation state](../app/src/app/navigation.ts) owns the visible screen and per-project workflow views independently of backend observations.
 Existing screens switch from already observed data after draft leave guards finish; a background read cannot move the user back.
 The shell starts at the Project page on launch or project selection.
-Workflow tasks, document tabs, event-code views and fitting views are small browser-profile preferences, written before the view changes; older backend positions supply the fallback until local preferences exist.
+Workflow tasks, document tabs and event-code views are small browser-profile preferences, written before the view changes; older backend positions supply the fallback until local preferences exist.
 These preferences contain no game text, drafts or execution authority.
 The first entry into an uninitialized Guided workspace still links it through the backend.
 Task Options panels configure the task in place; they must not act as navigation menus to other phases.

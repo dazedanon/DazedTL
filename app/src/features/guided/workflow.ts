@@ -9,6 +9,8 @@ export interface WorkflowTask {
   id: string;
   title: string;
   description: string;
+  /** Optional work can be done but never holds up the next step. */
+  optional?: boolean;
   engine?: "ACE" | "MVMZ";
 }
 export interface WorkflowStage {
@@ -19,9 +21,9 @@ export interface WorkflowStage {
 }
 export const workflow: WorkflowStage[] = [
   {
-    id: "prepare",
-    title: "Prepare",
-    short: "Prepare",
+    id: "setup",
+    title: "Set up",
+    short: "Set up",
     tasks: [
       {
         id: "setup",
@@ -72,32 +74,21 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "other-event-text",
+        optional: true,
         title: "Other event text",
         description:
           "Investigate specific text sources, review their coverage, then translate.",
       },
-    ],
-  },
-  {
-    id: "plugins",
-    title: "Plugin files",
-    short: "Plugin files",
-    tasks: [
       {
         id: "plugins",
+        optional: true,
         title: "Plugin files",
         description:
           "Inspect player-visible text in plugin files and retain any excluded scope.",
       },
-    ],
-  },
-  {
-    id: "images",
-    title: "Images",
-    short: "Images",
-    tasks: [
       {
         id: "images",
+        optional: true,
         title: "Images",
         description:
           "Find relevant images, edit selected copies, and apply reviewed results.",
@@ -105,25 +96,40 @@ export const workflow: WorkflowStage[] = [
     ],
   },
   {
-    id: "apply",
-    title: "Apply & Check",
-    short: "Apply & Check",
+    id: "check",
+    title: "Check",
+    short: "Check",
     tasks: [
       {
         id: "apply",
-        title: "Apply & Check",
+        title: "Apply",
         description:
-          "Apply a selected scope, then check its line widths. QA and game tools are optional.",
+          "Overwrite the checked game files with their saved output.",
+      },
+      {
+        id: "fitting",
+        optional: true,
+        title: "Line width check",
+        description:
+          "Rewrap applied text that is wider than the saved line widths.",
+      },
+      {
+        id: "qa",
+        optional: true,
+        title: "Text QA",
+        description:
+          "Prepare a QA task, copy it to your assistant, then review its saved findings.",
       },
     ],
   },
   {
-    id: "review",
+    id: "release",
     title: "Release",
     short: "Release",
     tasks: [
       {
         id: "package",
+        optional: true,
         title: "Build release ZIP",
         description:
           "Create a clean game or patch archive outside the working game folder.",
@@ -131,6 +137,20 @@ export const workflow: WorkflowStage[] = [
     ],
   },
 ];
+
+/**
+ * A stage is done once its required tasks are; a stage of optional tasks
+ * only, such as Release, once all of them are.
+ */
+export function stageDone(
+  stage: WorkflowStage,
+  completed: ReadonlySet<string>,
+) {
+  const required = stage.tasks.filter((task) => !task.optional);
+  return (required.length ? required : stage.tasks).every((task) =>
+    completed.has(task.id),
+  );
+}
 
 export function stagesFor(engine: GuidedState["engine"]) {
   return workflow.map((stage) => ({
@@ -184,23 +204,17 @@ function translationTask(state: GuidedState, savedRun = false) {
       ? "other-event-text"
       : "database";
 }
+/**
+ * The task Translation opens on. Saved positions arrive in the current stage
+ * ids (the backend and the navigation preferences migrate older layouts);
+ * older task names inside a stage still open the task that holds their work.
+ */
 export function initialPosition(
   state: GuidedState,
   translation: TranslationState,
-) {
+): { step: GuidedStep; task: string } {
   const stages = stagesFor(state.engine);
-  if (["fitting", "playtest", "qa", "tools"].includes(state.task || ""))
-    return { step: "apply" as const, task: "apply" };
-  if (state.task === "plugins")
-    return { step: "plugins" as const, task: "plugins" };
-  if (["images", "image-text", "image-manager"].includes(state.task || ""))
-    return { step: "images" as const, task: "images" };
-  const step =
-    state.step === "layout"
-      ? "apply"
-      : state.step === "advanced"
-        ? "translate"
-        : state.step;
+  const step = state.step;
   if (state.task === "run")
     return {
       step: runStage(state),
@@ -208,18 +222,12 @@ export function initialPosition(
         state.run?.mode === "speakers" ? "run" : translationTask(state, true),
     };
   if (
-    ["audit", "sources", "advanced-run", "variables"].includes(
-      state.task || "",
-    ) ||
-    state.step === "advanced"
+    ["audit", "sources", "advanced-run", "variables"].includes(state.task || "")
   )
-    return { step: "translate" as const, task: "other-event-text" };
-  if (
-    state.step === "translate" &&
-    ["scope", "main-text"].includes(state.task || "")
-  )
-    return { step: "translate" as const, task: mainTextTask(state) };
-  const saved = stages.find((stage) => stage.id === step)!;
+    return { step: "translate", task: "other-event-text" };
+  if (step === "translate" && ["scope", "main-text"].includes(state.task || ""))
+    return { step: "translate", task: mainTextTask(state) };
+  const saved = stages.find((stage) => stage.id === step);
   if (step === "context" && state.task === "glossary")
     return { step, task: "guidance" };
   if (step === "context" && state.task === "setup")
@@ -229,14 +237,16 @@ export function initialPosition(
   const preserved =
     translation.lifecycle.source_backup &&
     translation.lifecycle.source_backup.available !== false;
-  if (!preserved) return { step: "prepare" as const, task: "setup" };
+  if (!preserved) return { step: "setup", task: "setup" };
   if (unfinishedRun(state))
     return {
       step: runStage(state),
       task:
         state.run?.mode === "speakers" ? "run" : translationTask(state, true),
     };
-  if (step === "prepare" && translation.git?.configured)
-    return { step: "context" as const, task: "names" };
-  return { step, task: saved?.tasks[0].id || "setup" };
+  if (!saved || (step === "setup" && translation.git?.configured))
+    return translation.git?.configured
+      ? { step: "context", task: "names" }
+      : { step: "setup", task: "setup" };
+  return { step, task: saved.tasks[0].id };
 }

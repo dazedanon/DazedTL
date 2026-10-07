@@ -308,15 +308,7 @@ export type FileTextPreview = {
 };
 
 export type GuidedStep =
-  | "prepare"
-  | "context"
-  | "translate"
-  | "plugins"
-  | "images"
-  | "advanced"
-  | "apply"
-  | "layout"
-  | "review";
+  "setup" | "context" | "translate" | "check" | "release";
 
 export type LayoutWidths = {
   width: number;

@@ -17,12 +17,14 @@ The app prepares working copies of the selected files automatically, and reopeni
 
 ## Translation workflow
 
-Translation follows seven stages: **Prepare → Context → Translate → Plugin files → Images → Apply & Check → Release**.
+Translation follows five stages: **Set up → Context → Translate → Check → Release**.
 Each stage opens one focused task, and you can move between tasks without finishing them.
+Optional tasks say so on their tab.
+Existing projects reopen on the task that now holds their work.
 Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Line widths and Settings.
 Navigation never starts paid work.
 
-### Prepare
+### Set up
 
 **Set up this game** asks for the game version and whether the game already contains translations.
 Its one button backs up the original, prepares the game files (data, `plugins.js` and GameUpdate files) and saves the version, showing each step's progress.
@@ -45,7 +47,7 @@ Measured line widths are saved automatically when the assistant reports them; **
 
 ### Translate
 
-Translate has three tasks: **Database files**, **Maps & events** and **Other event text**.
+Translate has three tasks for game text, **Database files**, **Maps & events** and **Other event text**, and the optional **Plugin files** and **Images** tasks.
 All supported files start selected.
 Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
 The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
@@ -89,7 +91,7 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 
 ### Images
 
-Images is the Image Manager, the same one Assistant-led shows in its **Images** tab.
+The Images task in Translate is the Image Manager, the same one Assistant-led shows in its **Images** tab.
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
 The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
@@ -97,19 +99,21 @@ An edited copy saved in another image editor is checked again when you return to
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
 
-### Apply & Check
+### Check
 
+Check has three tasks: **Apply**, **Line width check** and the optional **Text QA**.
 Apply overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
 You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
 **Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.
 Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event codes.
-Optional QA and game tools stay here, and **Tools** installs or updates TL Inspector and Forge for MV/MZ.
+**Playtest tools** in the task header installs or updates TL Inspector and Forge for MV/MZ and holds their settings.
 Apply and playtest an early scene before expanding the scope.
 
 ### Release
 
 **Release** builds a clean game ZIP or a local patch ZIP.
+**Player walkthrough** copies an optional task for your assistant to write a walkthrough for players.
 A patch build saves a translation version and a project backup first; a clean game ZIP leaves the working game untouched.
 Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
 With no translation applied yet, the footer notes that the ZIP keeps the original text.

@@ -17,29 +17,52 @@ from .guided_release import GuidedRelease
 from .guided_runs import GuidedRuns
 from .operations import lifecycle, require_source_backup
 
-STEPS = {
-    "prepare",
-    "context",
-    "translate",
-    "plugins",
-    "images",
-    "advanced",
-    "apply",
-    "layout",
-    "review",
-}
+STEPS = {"setup", "context", "translate", "check", "release"}
 PHASES = {"database", "dialogue", "variables", "advanced", "speakers"}
+# Stages that earlier versions saved, and the stage that holds their work now.
+LEGACY_STEPS = {
+    "prepare": "setup",
+    "advanced": "translate",
+    "plugins": "translate",
+    "images": "translate",
+    "apply": "check",
+    "layout": "check",
+    "review": "release",
+}
+# Tasks that earlier versions saved inside a stage that no longer has them.
+LEGACY_TASKS = {
+    "backup": "setup",
+    "extract": "setup",
+    "format": "setup",
+    "baseline": "setup",
+    "image-text": "images",
+    "image-manager": "images",
+    "playtest": "apply",
+    "tools": "apply",
+}
 
 
 def retained_position(value):
-    """Keep older plugin/image locations when their formerly combined phase splits."""
+    """Opens positions saved by earlier stage layouts on the task that holds
+    their work now, without rewriting the saved file."""
     value = dict(value)
-    if value.get("task") == "plugins":
-        value["step"] = "plugins"
-    elif value.get("task") in {"images", "image-text", "image-manager"}:
-        value.update(step="images", task="images")
-    elif value.get("task") in {"fitting", "playtest", "qa"}:
-        value.update(step="apply", task="apply")
+    if "task" in value:
+        value["task"] = LEGACY_TASKS.get(value["task"], value["task"])
+    if "step" in value:
+        value["step"] = LEGACY_STEPS.get(value["step"], value["step"])
+    if value.get("task") in {"plugins", "images"}:
+        value["step"] = "translate"
+    elif value.get("task") in {"apply", "fitting", "qa"}:
+        value["step"] = "check"
+    saved = value.get("positions")
+    positions = {}
+    for old, task in saved.items() if isinstance(saved, dict) else ():
+        current = LEGACY_STEPS.get(old, old)
+        task = LEGACY_TASKS.get(task, task)
+        # A stage's own saved task wins over one moved in from a retired stage.
+        if current in STEPS and (old == current or current not in positions):
+            positions[current] = task
+    value["positions"] = positions
     return value
 
 
@@ -585,7 +608,7 @@ class Guided:
             **value,
             **self.runs.snapshot(project_id, native, source_status, run_view=run_view),
             "manual_job": run_view(current_run["id"]) if current_run else None,
-            "step": saved_position.get("step", "prepare"),
+            "step": saved_position.get("step", "setup"),
             "task": saved_position.get("task"),
             "positions": saved_position.get("positions", {})
             if isinstance(saved_position.get("positions", {}), dict)

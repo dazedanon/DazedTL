@@ -27,6 +27,7 @@ export function ReleaseContent({
   artifact,
   open,
   packing,
+  extras,
   unapplied,
   apply,
 }: {
@@ -41,6 +42,8 @@ export function ReleaseContent({
   artifact?: ReleaseArtifact;
   open: ReactNode;
   packing?: ReactNode;
+  /** Further rows for the archive list, such as optional player documents. */
+  extras?: ReactNode;
   unapplied: string[];
   apply: ReactNode;
 }) {
@@ -198,6 +201,7 @@ export function ReleaseContent({
             </Button>
           </ActionRow>
         )}
+        {extras}
       </ActionList>
       {artifact && (
         <section className="guided-artifact" aria-label="Last saved archive">

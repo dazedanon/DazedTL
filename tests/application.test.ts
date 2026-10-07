@@ -192,7 +192,6 @@ test("navigation completes during an outstanding observation without losing newe
     step: "translate",
     task: "dialogue",
     eventView: "sources",
-    textView: "fitting",
     contextDocument: "game",
   });
   let settled = false;
@@ -229,7 +228,6 @@ test("navigation completes during an outstanding observation without losing newe
   assert.equal(value.guided?.task, "dialogue");
   assert.equal(value.guided?.contextDocument, "game");
   assert.equal(value.guided?.eventText.view, "sources");
-  assert.equal(value.guided?.form.text.view, "fitting");
   assert.deepEqual(status(), before);
 });
 
@@ -252,7 +250,7 @@ test("workflow views persist per project and storage failures leave the previous
   store.navigateGuided("one", { step: "translate", task: "dialogue" });
   fail = true;
   assert.throws(
-    () => store.navigateGuided("one", { step: "apply", task: "apply" }),
+    () => store.navigateGuided("one", { step: "check", task: "apply" }),
     /Storage unavailable/,
   );
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
@@ -276,6 +274,29 @@ test("workflow views persist per project and storage failures leave the previous
     translate: "dialogue",
   });
   assert.ok([...records.values()].every((raw) => !raw.includes('"documents"')));
+  // Views saved by the seven-stage layout reopen on the task holding their
+  // work: Apply & Fitting's last view becomes its Check task.
+  records.set(
+    "dazedtl:guided-navigation:v1:legacy",
+    JSON.stringify({
+      step: "apply",
+      task: "apply",
+      textView: "fitting",
+      positions: { prepare: "baseline", images: "images", apply: "apply" },
+    }),
+  );
+  const legacy = setup(async () => projectSnapshot("legacy"), storage).store;
+  t.after(() => legacy.stop());
+  legacy.start();
+  await legacy.refresh();
+  const migrated = legacy.getSnapshot().snapshot?.guided;
+  assert.deepEqual([migrated?.step, migrated?.task], ["check", "fitting"]);
+  assert.deepEqual(migrated?.positions, {
+    context: "guidance",
+    setup: "setup",
+    translate: "images",
+    check: "fitting",
+  });
 });
 
 test("a late successful read cannot hide a backend disconnection", async (t) => {

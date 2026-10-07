@@ -126,11 +126,7 @@ export function useGuidedWorkspace({
   const selectedTask = stage.tasks.find((item) => item.id === position.task);
   const taskId = selectedTask?.id || "run";
   const taskView =
-    taskId === "other-event-text"
-      ? state.eventText.view
-      : taskId === "apply"
-        ? state.form.text.view
-        : taskId;
+    taskId === "other-event-text" ? state.eventText.view : taskId;
   const taskIndex = stage.tasks.findIndex((item) => item.id === taskId);
   const showTaskTabs = stage.tasks.length > 1;
   const taskTabsId = `${stage.id}-tasks`;
@@ -512,7 +508,10 @@ export function useGuidedWorkspace({
         {label ||
           "Continue to " +
             (stage.tasks.includes(target)
-              ? target.title.toLowerCase()
+              ? // Mid-sentence, capitalized words lower but QA stays QA.
+                target.title.replace(/\b([A-Z])(?=[a-z])/g, (letter) =>
+                  letter.toLowerCase(),
+                )
               : stages.find((item) => item.tasks.includes(target))!.short)}
       </Button>
     );
@@ -1040,24 +1039,6 @@ export function useGuidedWorkspace({
         JSON.stringify(fields.text[key as keyof GuidedForm["text"]]) ===
         JSON.stringify(state.form.text[key as keyof GuidedForm["text"]]),
     );
-  const textView = (view: GuidedForm["text"]["view"]) =>
-    action.run(
-      async () => {
-        await flushDrafts();
-        application.navigateGuided(project.id, { textView: view });
-      },
-      "",
-      "text:view",
-    );
-  const releaseButton = (variant: "primary" | "quiet" = "quiet") => (
-    <Button
-      variant={variant}
-      disabled={action.busy || form.committing}
-      onClick={() => stepTask("package")}
-    >
-      Continue to Release
-    </Button>
-  );
   const widths = (
     <fieldset disabled={disabled} className="guided-widths">
       {(
@@ -1468,8 +1449,6 @@ export function useGuidedWorkspace({
     layoutOptions,
     fitting,
     fittingSettingsSaved,
-    textView,
-    releaseButton,
     widths,
     fileSummary,
     fileRow,

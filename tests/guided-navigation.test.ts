@@ -15,14 +15,14 @@ import {
 } from "../app/src/features/guided/workflow.ts";
 import { guidedProgress } from "../app/src/features/guided/progress.ts";
 
-test("saved runs choose their owning task instead of obsolete Prepare or native progress labels", () => {
+test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
     lifecycle: { source_backup: { available: true } },
     git: { configured: true },
   } as TranslationState;
   const state = {
     engine: "MVMZ",
-    step: "prepare",
+    step: "setup",
     task: null,
     phase: "advanced",
     run: { mode: "batch", phase: "batch_approval", status: "waiting" },
@@ -74,7 +74,7 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
     task: "dialogue",
   });
   for (const task of ["audit", "sources", "advanced-run", "variables"]) {
-    state.step = "advanced";
+    state.step = "translate";
     state.task = task;
     assert.deepEqual(initialPosition(state, translation), {
       step: "translate",
@@ -85,7 +85,7 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
     stagesFor("MVMZ")
       .find((stage) => stage.id === "translate")!
       .tasks.map((task) => task.id),
-    ["database", "dialogue", "other-event-text"],
+    ["database", "dialogue", "other-event-text", "plugins", "images"],
   );
   assert.deepEqual(
     stagesFor("ACE")
@@ -93,34 +93,28 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
       .tasks.map((task) => task.id),
     ["package"],
   );
-  state.step = "apply";
-  state.task = "plugins";
-  assert.deepEqual(initialPosition(state, translation), {
-    step: "plugins",
-    task: "plugins",
-  });
-  state.task = "image-manager";
-  assert.deepEqual(initialPosition(state, translation), {
-    step: "images",
-    task: "images",
-  });
-  state.step = "images";
-  state.task = "images";
-  assert.deepEqual(initialPosition(state, translation), {
-    step: "images",
-    task: "images",
-  });
-  for (const task of ["fitting", "playtest", "qa", "tools"]) {
+  // Five stages: Plugin files and Images are optional Translate tasks, and
+  // Check holds Apply, the line width check and Text QA.
+  assert.deepEqual(
+    stagesFor("MVMZ").map((stage) => stage.id),
+    ["setup", "context", "translate", "check", "release"],
+  );
+  for (const task of ["plugins", "images"]) {
+    state.step = "translate";
     state.task = task;
     assert.deepEqual(initialPosition(state, translation), {
-      step: "apply",
-      task: "apply",
+      step: "translate",
+      task,
     });
   }
-  assert.equal(
-    stagesFor("MVMZ").findIndex((stage) => stage.id === "images"),
-    stagesFor("MVMZ").findIndex((stage) => stage.id === "plugins") + 1,
-  );
+  for (const task of ["apply", "fitting", "qa"]) {
+    state.step = "check";
+    state.task = task;
+    assert.deepEqual(initialPosition(state, translation), {
+      step: "check",
+      task,
+    });
+  }
   for (const status of [
     "failed",
     "stopped",
@@ -140,13 +134,13 @@ test("saved runs choose their owning task instead of obsolete Prepare or native 
 test("phase navigation restores an available task and falls back for removed or differently owned tasks", () => {
   const state = {
     engine: "MVMZ",
-    positions: { context: "speakers", prepare: "extract", translate: "run" },
+    positions: { context: "speakers", setup: "extract", translate: "run" },
     run: { mode: "translate" },
   } as GuidedState;
   const stages = stagesFor(state.engine);
   const context = stages.find((stage) => stage.id === "context")!;
   assert.equal(taskForStage(state, context), "speakers");
-  // Positions saved before setup became one task open it.
+  // A task setup no longer has opens setup's one task.
   assert.equal(taskForStage(state, stages[0]), "setup");
   assert.equal(
     taskForStage(
@@ -178,7 +172,7 @@ test("phase navigation restores an available task and falls back for removed or 
   state.task = "no-longer-available";
   assert.deepEqual(
     initialPosition(state, { lifecycle: {}, git: {} } as TranslationState),
-    { step: "prepare", task: "setup" },
+    { step: "setup", task: "setup" },
   );
   assert.deepEqual(
     initialPosition(state, {
@@ -196,22 +190,23 @@ test("the Project page continues with the next step and keeps a later saved posi
   const state = {
     projectId: "game",
     engine: "MVMZ",
-    step: "prepare",
+    step: "setup",
     task: "backup",
     preferences: { values: { selected: [] } },
     files: [],
     runs: [],
     phaseRuns: {},
-    readiness: { outputs: [], applied: [] },
+    readiness: { outputs: [], applied: [], layout_scan: null },
     comparisons: { status: "not_needed" },
     contextSetup: { documents: {}, layoutStatus: "missing" },
     speakerSetup: {},
     speakerScan: {},
     preparation: { complete: false },
     artifacts: [],
+    operations: [],
   } as unknown as GuidedState;
-  // An unfinished setup is the next step, even from an older Prepare
-  // position, and needs no separate way back.
+  // An unfinished setup is the next step, even from a task it no longer
+  // has, and needs no separate way back.
   let progress = guidedProgress(state, translation);
   assert.equal(progress.next?.task, "setup");
   assert.equal(progress.last, null);
@@ -222,13 +217,13 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.equal(progress.next?.task, "names");
   assert.equal(progress.last, null);
   // Apply counts as done once outputs are applied, with earlier work open.
-  state.step = "apply";
+  state.step = "check";
   state.task = "apply";
   state.preferences.values.selected = ["Map001.json"];
   state.readiness.outputs = state.readiness.applied = ["Map001.json"];
   progress = guidedProgress(state, translation);
   assert.ok(
-    progress.stages.some((stage) => stage.id === "apply" && stage.done),
+    progress.stages.some((stage) => stage.id === "check" && stage.complete),
   );
   // A later saved position stays reachable beside the next step.
   assert.equal(progress.next?.task, "names");
@@ -241,10 +236,10 @@ test("the Project page continues with the next step and keeps a later saved posi
     counts: { applied: 1, ready: 0, needsReview: 1, blocked: 0 },
   } as unknown as ImageManagerState;
   const finished = () =>
-    guidedProgress(state, translation, { images })
-      .stages.filter((stage) => stage.done === stage.total)
-      .map((stage) => stage.id);
-  assert.deepEqual(finished(), ["prepare", "apply", "review"]);
+    guidedProgress(state, translation, { images }).stages.flatMap((stage) =>
+      stage.tasks.filter((task) => task.done).map((task) => task.id),
+    );
+  assert.deepEqual(finished(), ["setup", "apply", "package"]);
   images.counts.needsReview = 0;
-  assert.deepEqual(finished(), ["prepare", "images", "apply", "review"]);
+  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
 });

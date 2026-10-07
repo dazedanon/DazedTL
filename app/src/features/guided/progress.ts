@@ -13,7 +13,7 @@ import {
   selectionSettled,
   translationTaskComplete,
 } from "./translationView.ts";
-import { initialPosition, stagesFor } from "./workflow.ts";
+import { initialPosition, stageDone, stagesFor } from "./workflow.ts";
 
 type Values = GuidedState["preferences"]["values"];
 
@@ -79,9 +79,6 @@ export function completedTasks(
     ...(investigationResults(state).every((row) => row.saved) ? ["names"] : []),
     ...(guidanceAvailability(discovery.documents).complete ? ["guidance"] : []),
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
-    ...(state.tools?.inspector.installed && state.tools.forge.installed
-      ? ["tools"]
-      : []),
     ...(pluginCounts?.applied && !pluginCounts.ready && !pluginCounts.blocked
       ? ["plugins"]
       : []),
@@ -94,26 +91,28 @@ export function completedTasks(
     ...(state.artifacts.some((artifact) => artifact.current)
       ? ["package"]
       : []),
+    ...(lineWidthsChecked(state) ? ["fitting"] : []),
   ]);
 }
 
-// Required tasks; optional work such as Plugin files, Images and Release can be
-// done but never blocks "next".
-const tracked = new Set([
-  "setup",
-  "names",
-  "guidance",
-  "speakers",
-  "database",
-  "dialogue",
-  "apply",
-]);
+/** The current line width check found nothing left to rewrap. */
+function lineWidthsChecked(state: GuidedState) {
+  const scan = state.operations.find(
+    (item) => item.id === state.readiness.layout_scan,
+  )?.result as
+    { changes_found?: number; overflow_skipped?: number } | undefined;
+  return (
+    !!scan && (scan.changes_found ?? 0) - (scan.overflow_skipped ?? 0) <= 0
+  );
+}
 
 export type GuidedProgress = {
   stages: {
     id: GuidedStep;
     short: string;
     title: string;
+    complete: boolean;
+    /** Required tasks done, of the stage's required tasks. */
     done: number;
     total: number;
     tasks: { id: string; title: string; done: boolean; optional: boolean }[];
@@ -149,9 +148,7 @@ export function guidedProgress(
   const order = stages.flatMap((stage) =>
     stage.tasks.map((task) => ({ stage, task })),
   );
-  const next = order.find(
-    ({ task }) => tracked.has(task.id) && !done.has(task.id),
-  );
+  const next = order.find(({ task }) => !task.optional && !done.has(task.id));
   const position = initialPosition(state, translation);
   const index = (task: string) =>
     order.findIndex((item) => item.task.id === task);
@@ -174,13 +171,15 @@ export function guidedProgress(
       id: stage.id,
       short: stage.short,
       title: stage.title,
-      done: stage.tasks.filter((task) => done.has(task.id)).length,
-      total: stage.tasks.length,
+      complete: stageDone(stage, done),
+      done: stage.tasks.filter((task) => !task.optional && done.has(task.id))
+        .length,
+      total: stage.tasks.filter((task) => !task.optional).length,
       tasks: stage.tasks.map((task) => ({
         id: task.id,
         title: task.title,
         done: done.has(task.id),
-        optional: !tracked.has(task.id),
+        optional: !!task.optional,
       })),
     })),
     next: next

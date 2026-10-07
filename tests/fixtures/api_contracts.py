@@ -83,7 +83,8 @@ try:
         {"revision": settings["revision"], "connection_id": connection},
     )
     call("guided_phase_select", {"project_id": project_id, "phase": "database"})
-    call("guided_position", {"project_id": project_id, "step": "prepare"})
+    call("guided_position", {"project_id": project_id, "step": "setup"})
+    call("workspace_recheck", {"project_id": project_id})
     call("guided_form", {"project_id": project_id, "value": guided["form"]})
     call(
         "guided_options_draft",

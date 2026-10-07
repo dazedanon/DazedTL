@@ -90,7 +90,7 @@ function Workspace(
     previous,
     next,
     task,
-    textView,
+    setPanel,
     completed,
   } = w;
   const owned = useOwnedFeedback(action.key);
@@ -113,27 +113,17 @@ function Workspace(
   useShortcut(taskKey("back"), step(previous()), frame);
   useShortcut(taskKey("next"), step(next()), frame);
   // Views inside one task share the secondary tabs below the task tabs.
-  const optional = <span className="ui-tab-hint">optional</span>;
   const viewTabs =
-    taskId === "apply"
+    taskId === "other-event-text"
       ? [
-          { id: "apply", label: "Apply" },
-          { id: "fitting", label: "Line width check" },
-          { id: "qa", label: <>Text QA{optional}</> },
-          ...(state.engine === "MVMZ"
-            ? [{ id: "tools", label: <>Tools{optional}</> }]
+          { id: "audit", label: "Investigate" },
+          { id: "sources", label: "Source choices" },
+          { id: "advanced-run", label: "Translate" },
+          ...(state.comparisons.status !== "not_needed"
+            ? [{ id: "variables", label: "Update comparisons" }]
             : []),
         ]
-      : taskId === "other-event-text"
-        ? [
-            { id: "audit", label: "Investigate" },
-            { id: "sources", label: "Source choices" },
-            { id: "advanced-run", label: "Translate" },
-            ...(state.comparisons.status !== "not_needed"
-              ? [{ id: "variables", label: "Update comparisons" }]
-              : []),
-          ]
-        : null;
+      : null;
   // The footer reports only this task's own state; a running backup or
   // preparation already shows its progress and pending button in the task.
   const status =
@@ -142,6 +132,7 @@ function Workspace(
       : "";
   // Plugin files and Images bring their own action bar for the shared footer.
   const hostedFooter = taskId === "plugins" || taskId === "images";
+  const textTranslation = position.step === "translate" && !hostedFooter;
   return (
     <PageLayout
       ref={frame}
@@ -173,7 +164,15 @@ function Workspace(
                 onChange={stepTask}
                 items={stage.tasks.map((item) => ({
                   id: item.id,
-                  label: item.title,
+                  label:
+                    item.optional && !completed.has(item.id) ? (
+                      <>
+                        {item.title}
+                        <span className="ui-tab-hint">optional</span>
+                      </>
+                    ) : (
+                      item.title
+                    ),
                   status: completed.has(item.id) && (
                     <StatusIcon status="done" label="Complete" size={14} />
                   ),
@@ -219,7 +218,7 @@ function Workspace(
                 ? `${taskTabsId}-tab-${taskId}`
                 : undefined
             }
-            className={`guided-task-body${position.step === "translate" ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "images" ? " image-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}
+            className={`guided-task-body${textTranslation ? " translation-task-body" : position.step === "context" ? " context-task-body" : ""}${taskId === "plugins" ? " plugin-task-body" : taskId === "images" ? " image-task-body" : taskId === "guidance" ? " context-guidance-body" : ""}`}
           >
             {viewTabs && (
               <Tabs
@@ -228,11 +227,7 @@ function Workspace(
                 variant="secondary"
                 value={taskView}
                 disabled={disabled}
-                onChange={(view) =>
-                  taskId === "apply"
-                    ? textView(view as Parameters<typeof textView>[0])
-                    : stepTask(view)
-                }
+                onChange={stepTask}
                 items={viewTabs}
               />
             )}
@@ -244,7 +239,21 @@ function Workspace(
                 phaseLabels[runPhase(state)] + " run"
               }
               description={heading?.description ?? selectedTask?.description}
-              actions={heading?.actions}
+              actions={
+                <>
+                  {heading?.actions}
+                  {/* Playtesting checks the applied text in the game. */}
+                  {position.step === "check" && state.engine === "MVMZ" && (
+                    <Button
+                      variant="quiet"
+                      disabled={disabled}
+                      onClick={() => setPanel("tools")}
+                    >
+                      Playtest tools
+                    </Button>
+                  )}
+                </>
+              }
             />
             <Message
               message={
@@ -260,9 +269,8 @@ function Workspace(
             />
             <Message message={state.collectionError} />
             {changed.length > 0 &&
-              ["translate", "advanced", "apply", "review"].includes(
-                position.step,
-              ) && (
+              ["translate", "check", "release"].includes(position.step) &&
+              !hostedFooter && (
                 <Notice tone="warning">
                   <span>
                     {fileCount(changed.length)} changed in the game. Reload them
