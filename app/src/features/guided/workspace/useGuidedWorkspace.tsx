@@ -47,6 +47,7 @@ import { initialPosition, stagesFor } from "../workflow";
 /** The operations setting up a game runs, in order. */
 export const setupSteps = [
   "backup_source",
+  "ace_extract",
   "prepare_game",
   "git_setup",
 ] as const;
@@ -1143,10 +1144,10 @@ export function useGuidedWorkspace({
   // own action, so navigation and Stop stay available while it runs.
   const setupAction = useAction({ after: application.settle });
   const gitConfigured = !!translation.git?.configured;
-  const setupStep: SetupStep | "ace" | null = !preserved
+  const setupStep: SetupStep | null = !preserved
     ? "backup_source"
     : aceNeedsExport
-      ? "ace"
+      ? "ace_extract"
       : !(preparationComplete || gitConfigured)
         ? "prepare_game"
         : !gitConfigured
@@ -1165,7 +1166,9 @@ export function useGuidedWorkspace({
   // Preparation's stage rows reset when the game files change, retiring an
   // older failure that no longer applies.
   const stoppedJob =
-    setupStep === "backup_source" || setupStep === "git_setup"
+    setupStep === "backup_source" ||
+    setupStep === "ace_extract" ||
+    setupStep === "git_setup"
       ? setupJobs[setupStep]
       : undefined;
   const setupFailure =
@@ -1335,7 +1338,7 @@ export function useGuidedWorkspace({
         let job: Job | undefined;
         for (;;) {
           const { step, failure, finished } = latestObserved.current;
-          if (!step || step === "ace") break;
+          if (!step) break;
           if (tried.has(step))
             throw new Error(
               failure ||

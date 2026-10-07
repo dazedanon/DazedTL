@@ -1,0 +1,58 @@
+[
+  null,
+  {
+    "id": 1,
+    "members": [
+      {
+        "enemyId": 1,
+        "x": 272,
+        "y": 288,
+        "hidden": false
+      }
+    ],
+    "name": "Slime*2",
+    "pages": [
+      {
+        "conditions": {
+          "actorHp": 50,
+          "actorId": 1,
+          "actorValid": false,
+          "enemyHp": 50,
+          "enemyIndex": 0,
+          "enemyValid": false,
+          "switchId": 1,
+          "switchValid": false,
+          "turnA": 0,
+          "turnB": 0,
+          "turnEnding": false,
+          "turnValid": false
+        },
+        "list": [
+          {
+            "code": 101,
+            "indent": 0,
+            "parameters": [
+              "",
+              0,
+              0,
+              2
+            ]
+          },
+          {
+            "code": 401,
+            "indent": 0,
+            "parameters": [
+              "A slime appears!"
+            ]
+          },
+          {
+            "code": 0,
+            "indent": 0,
+            "parameters": []
+          }
+        ],
+        "span": 0
+      }
+    ]
+  }
+]

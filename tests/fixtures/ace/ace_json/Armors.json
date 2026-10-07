@@ -1,0 +1,30 @@
+[
+  null,
+  {
+    "id": 1,
+    "atypeId": 5,
+    "description": "",
+    "etypeId": 1,
+    "traits": [
+      {
+        "code": 22,
+        "dataId": 1,
+        "value": 0.0
+      }
+    ],
+    "iconIndex": 160,
+    "name": "レザーシールド",
+    "note": "",
+    "params": [
+      0,
+      0,
+      0,
+      5,
+      0,
+      0,
+      0,
+      0
+    ],
+    "price": 80
+  }
+]

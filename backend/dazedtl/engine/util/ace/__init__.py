@@ -1,3 +1,2 @@
-"""RPG Maker Ace helper binaries (seeded from offline bundle, not committed to git)."""
-
-__all__ = ["ace_tool_path", "build_decrypter_command", "ensure_ace_tools"]
+"""RPG Maker VX Ace preparation, built in: RGSS archive extraction and
+RV2JSON-compatible conversion between Data and ace_json, in plain Python."""

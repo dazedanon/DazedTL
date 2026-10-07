@@ -278,12 +278,8 @@ class GuidedActions:
             action,
             "Original sources changed. Review source changes before replacing runtime text.",
         )
-        if action.startswith("ace_") and (
-            native["engine"] != "ACE" or not self.guided.backend.ace_available()
-        ):
-            raise ValueError(
-                "Ace preparation requires a supported Windows environment and the bundled Ace tools."
-            )
+        if action.startswith("ace_") and native["engine"] != "ACE":
+            raise ValueError("Ace preparation applies to RPG Maker VX Ace games.")
         if action in {"prepare_game", "format_data"}:
             preparation.require_data(native)
         if action == "format_plugins" and native["engine"] == "ACE":
@@ -624,6 +620,8 @@ class GuidedActions:
                 and action
                 not in {
                     "prepare_game",
+                    "ace_decrypt",
+                    "ace_extract",
                     "format_data",
                     "format_plugins",
                     "gameupdate",

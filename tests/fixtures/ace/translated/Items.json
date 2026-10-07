@@ -1,0 +1,42 @@
+[
+  null,
+  {
+    "id": 1,
+    "animationId": 1,
+    "consumable": true,
+    "damage": {
+      "critical": false,
+      "elementId": 0,
+      "formula": "0",
+      "type": 0,
+      "variance": 20
+    },
+    "description": "Restores 500 HP.",
+    "effects": [
+      {
+        "code": 11,
+        "dataId": 0,
+        "value1": 0.0,
+        "value2": 500.0
+      },
+      {
+        "code": 21,
+        "dataId": 2,
+        "value1": 0.5,
+        "value2": 0.0
+      }
+    ],
+    "hitType": 0,
+    "iconIndex": 192,
+    "itypeId": 1,
+    "name": "Potion",
+    "note": "",
+    "occasion": 0,
+    "price": 50,
+    "repeats": 1,
+    "scope": 7,
+    "speed": 0,
+    "successRate": 100,
+    "tpGain": 0
+  }
+]

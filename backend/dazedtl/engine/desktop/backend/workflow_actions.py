@@ -6,9 +6,9 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import uuid
 
+from util.ace import rgssad
 from util.paths import PROJECT_ROOT
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest
@@ -85,7 +85,7 @@ def describe_game(source):
     from util.project_scanner import list_data_files
     files = list_data_files(data, "MVMZ") if data.is_dir() else []
     rows = [{**item, "path": str(regular(root, item["path"]))} for item in files]
-    encrypted = [str(regular(root, path)) for path in root.glob("Game.rgss*")]
+    encrypted = [str(regular(root, path)) for path in rgssad.archives(root)]
     return {"source": str(root), "engine": layout["engine"], "data": str(data),
             "plugins": str(layout["plugins_js"] or ""), "encrypted": encrypted, "files": rows}
 
@@ -211,21 +211,10 @@ def run_action(plan, log):
         return setup_git(LenProject(root), original_game=Path(options["original"]) if options.get("original") else None,
                          version=options.get("version"), current_is_untranslated=options.get("untranslated") is True)
     if action.startswith("ace_"):
-        from util.ace.update_tools import ensure_ace_tools, build_decrypter_command, ace_tool_path
+        from util.ace import actions as ace_actions
         if project["engine"] != "ACE":
             raise ValueError("This action requires an Ace game.")
-        if not ensure_ace_tools(log_fn=log):
-            raise ValueError("Ace tools are not installed. See the activity log.")
-        command = build_decrypter_command(root) if action == "ace_decrypt" else [str(ace_tool_path("RV2JSON.exe")), "-c" if action == "ace_extract" else "-u"]
-        with subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace") as child:
-            try:
-                for line in child.stdout:
-                    log(line.rstrip())
-                if child.wait():
-                    raise ValueError("The Ace tool failed. See the activity log.")
-            except BaseException:
-                child.terminate()
-                raise
+        ace_actions.run(root, action, log)
         return {"completed": action}
     if action in {"export_selected", "export_all"}:
         from util.project_scanner import export_to_game

@@ -1,9 +1,6 @@
 """Engine-owned guided capabilities, kept behind the migration boundary."""
 
-import os
 import re
-import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -468,99 +465,30 @@ def runtime_files(source):
     return names
 
 
-def ace_available():
-    return os.name == "nt"
-
-
 def run_ace(plan, log):
-    """Use bundled tools from a profile cache, never install into engine source."""
+    """Ace preparation with the built-in converter; packing checks its outputs."""
     from desktop.backend.workflow_actions import validate_plan
-    from util.paths import PROJECT_ROOT
+    from util.ace import actions
 
     validate_plan(plan)
-    if not ace_available():
-        raise ValueError(
-            "Native Ace conversion is available on Windows. Use an explicitly supported Windows environment to pack and verify this game."
-        )
     action = plan["action"]
     root = Path(plan["project"]["source"])
     from dazedtl.translation.files import evidence
-    from dazedtl.translation.release import packing_inputs
+    from dazedtl.translation.release import packing_inputs, unpacked
 
     inputs = packing_inputs(plan["project"]) if action == "ace_pack" else None
-    outputs = (
-        [(Path("Data") / (Path(name).stem + ".rvdata2")).as_posix() for name in inputs]
-        if inputs
-        else []
-    )
-    before = {
-        name: (root / name).stat().st_mtime_ns
-        for name in outputs
-        if (root / name).is_file()
-    }
-    name = "RPGMakerDecrypter-cli.exe" if action == "ace_decrypt" else "RV2JSON.exe"
-    source = PROJECT_ROOT / "util/ace/offline" / name
-    if not source.is_file():
-        source = PROJECT_ROOT / "util/ace" / name
-    if not source.is_file():
-        raise ValueError("The engine's bundled Ace tool is missing: " + name)
-    destination = Path(plan["folder"]).parents[1] / "tools/ace" / name
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, destination)
-    environment = dict(os.environ)
-    arguments = [str(destination)]
-    if action == "ace_decrypt":
-        archives = sorted(root.glob("Game.rgss*"))
-        if not archives:
-            raise ValueError("No Game.rgss archive needs extraction.")
-        archive = str(archives[0])
-        arguments.append(archive)
-    else:
-        arguments.append("-c" if action == "ace_extract" else "-u")
-    log("Running " + name)
-    errors = []
-    with subprocess.Popen(
-        arguments,
-        cwd=root,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=environment,
-    ) as child:
-        assert child.stdout is not None  # Opened with stdout=PIPE.
-        try:
-            for line in child.stdout:
-                message = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", line).strip()
-                # RV2JSON uses these prefixes even when returning exit code 0.
-                if re.match(r"^(?:Error|ERROR):", message):
-                    errors.append(message)
-                if message:
-                    log(message)
-            if child.wait() or errors:
-                raise ValueError(
-                    errors[0]
-                    if errors
-                    else "Ace conversion failed. Review the activity log before retrying."
-                )
-        except BaseException:
-            child.terminate()
-            raise
+    written = actions.run(root, action, log)
     if action == "ace_pack":
         if inputs != packing_inputs(plan["project"]):
             raise ValueError(
                 "Ace JSON changed during packing. No current packing receipt was saved."
             )
-        for name in outputs:
-            path = project_path(root, name)
-            if path.read_bytes()[
-                :2
-            ] != b"\x04\x08" or path.stat().st_mtime_ns == before.get(name):
-                raise ValueError(
-                    "Ace packing did not produce fresh native data: " + name
-                )
+        outputs = sorted(path.relative_to(root).as_posix() for path in written)
+        missing = unpacked(inputs, outputs)
+        if missing:
+            raise ValueError(
+                "Ace packing found no native data for: " + ", ".join(missing)
+            )
         receipt = {
             "source": str(root),
             "inputs": inputs,

@@ -114,7 +114,6 @@ def guided(value, project_id):
         "dataPath": native["data"],
         "encrypted": native["encrypted"],
         "hasPlugins": bool(native["plugins"]),
-        "aceAvailable": value["ace_available"],
         "acePacking": value["ace_packing"],
         "step": value["step"],
         "task": value["task"],

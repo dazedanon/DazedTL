@@ -374,7 +374,6 @@ class GuidedState(TypedDict):
     dataPath: str
     encrypted: list[str]
     hasPlugins: bool
-    aceAvailable: bool
     step: GuidedStep
     task: str | None
     positions: dict[GuidedStep, str | None]

@@ -1,0 +1,201 @@
+{
+  "airship": {
+    "bgm": {
+      "name": "Airship",
+      "pan": null,
+      "pitch": 100,
+      "volume": 100
+    },
+    "characterIndex": 3,
+    "characterName": "Vehicle",
+    "startMapId": 0,
+    "startX": 0,
+    "startY": 0
+  },
+  "armorTypes": [
+    "",
+    "盾"
+  ],
+  "battleBgm": {
+    "name": "Battle1",
+    "pan": null,
+    "pitch": 100,
+    "volume": 100
+  },
+  "battleback1Name": "Grassland",
+  "battleback2Name": "Grassland",
+  "battlerHue": 0,
+  "battlerName": "Slime",
+  "boat": {
+    "bgm": {
+      "name": "Boat",
+      "pan": null,
+      "pitch": 100,
+      "volume": 100
+    },
+    "characterIndex": 0,
+    "characterName": "Vehicle",
+    "startMapId": 0,
+    "startX": 0,
+    "startY": 0
+  },
+  "currencyUnit": "G",
+  "editMapId": 1,
+  "elements": [
+    "",
+    "Physical",
+    "炎"
+  ],
+  "gameTitle": "Test Game",
+  "gameoverMe": {
+    "name": "Gameover1",
+    "pan": null,
+    "pitch": 100,
+    "volume": 100
+  },
+  "optDisplayTp": true,
+  "optDrawTitle": true,
+  "optExtraExp": false,
+  "optFloorDeath": false,
+  "optFollowers": true,
+  "optSlipDeath": false,
+  "optTransparent": false,
+  "partyMembers": [
+    1
+  ],
+  "ship": {
+    "bgm": {
+      "name": "Ship",
+      "pan": null,
+      "pitch": 100,
+      "volume": 100
+    },
+    "characterIndex": 1,
+    "characterName": "Vehicle",
+    "startMapId": 0,
+    "startX": 0,
+    "startY": 0
+  },
+  "skillTypes": [
+    "",
+    "Magic"
+  ],
+  "sounds": [
+    {
+      "name": "Cursor1",
+      "pan": null,
+      "pitch": 100,
+      "volume": 80
+    },
+    {
+      "name": "Decision1",
+      "pan": null,
+      "pitch": 100,
+      "volume": 80
+    },
+    {
+      "name": "Cancel2",
+      "pan": null,
+      "pitch": 100,
+      "volume": 80
+    }
+  ],
+  "startMapId": 1,
+  "startX": 3,
+  "startY": 5,
+  "switches": [
+    "",
+    "Opening seen"
+  ],
+  "terms": {
+    "basic": [
+      "Level",
+      "Lv",
+      "HP",
+      "HP",
+      "MP",
+      "MP",
+      "TP",
+      "TP"
+    ],
+    "commands": [
+      "Fight",
+      "コマンド1",
+      "コマンド2",
+      "コマンド3",
+      "コマンド4",
+      "コマンド5",
+      "コマンド6",
+      "コマンド7",
+      "コマンド8",
+      "コマンド9",
+      "コマンド10",
+      "コマンド11",
+      "コマンド12",
+      "コマンド13",
+      "コマンド14",
+      "コマンド15",
+      "コマンド16",
+      "コマンド17",
+      "コマンド18",
+      "コマンド19",
+      "コマンド20",
+      "コマンド21",
+      "コマンド22"
+    ],
+    "params": [
+      "Max HP",
+      "最大MP",
+      "攻撃力",
+      "防御力",
+      "魔法力",
+      "魔法防御",
+      "敏捷性",
+      "運"
+    ],
+    "messages": null
+  },
+  "testBattlers": [
+    {
+      "actorId": 1,
+      "equips": [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "level": 1
+    }
+  ],
+  "testTroopId": 1,
+  "title1Name": "Book",
+  "title2Name": "",
+  "titleBgm": {
+    "name": "Theme1",
+    "pan": null,
+    "pitch": 100,
+    "volume": 100
+  },
+  "variables": [
+    "",
+    "Money"
+  ],
+  "versionId": 3000000000,
+  "victoryMe": {
+    "name": "Victory1",
+    "pan": null,
+    "pitch": 100,
+    "volume": 100
+  },
+  "weaponTypes": [
+    "",
+    "剣"
+  ],
+  "windowTone": [
+    17,
+    -300,
+    0,
+    0
+  ]
+}

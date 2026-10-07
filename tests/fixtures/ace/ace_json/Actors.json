@@ -1,0 +1,58 @@
+[
+  null,
+  {
+    "id": 1,
+    "characterIndex": 0,
+    "characterName": "Actor1",
+    "classId": 1,
+    "equips": [
+      1,
+      1,
+      0,
+      0,
+      0
+    ],
+    "faceIndex": 0,
+    "faceName": "Actor1",
+    "traits": [
+      {
+        "code": 23,
+        "dataId": 0,
+        "value": 1.0
+      },
+      {
+        "code": 22,
+        "dataId": 0,
+        "value": 0.95
+      }
+    ],
+    "initialLevel": 1,
+    "maxLevel": 99,
+    "name": "アリス",
+    "nickname": "見習い剣士",
+    "note": "<tag: 値>",
+    "profile": "村の見習い剣士。\n二行目の説明。"
+  },
+  {
+    "id": 2,
+    "characterIndex": 1,
+    "characterName": "Actor1",
+    "classId": 1,
+    "equips": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "faceIndex": 1,
+    "faceName": "Actor1",
+    "traits": [],
+    "initialLevel": 5,
+    "maxLevel": 50,
+    "name": "Bob",
+    "nickname": "",
+    "note": "",
+    "profile": ""
+  }
+]

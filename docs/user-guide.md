@@ -139,7 +139,9 @@ GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the
 
 ### RPG Maker Ace
 
-Ace adds archive extraction, Sinflower RV2JSON conversion and native repacking around the same stages.
+Ace adds archive extraction, JSON conversion and native repacking around the same stages, built in on every platform.
+Set up's **Convert Ace data** step extracts an encrypted `Game.rgss3a` and converts `Data` to `ace_json`, the same JSON Sinflower's RV2JSON writes.
+**Review native Ace packing** in Release writes the translated JSON back into `Data`; the original stays in Set up's backup.
 Release verifies saved packing evidence against the current JSON and native files.
 
 ## Assistant-led

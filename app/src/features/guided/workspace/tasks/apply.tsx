@@ -221,7 +221,7 @@ export function applyView(w: GuidedWorkspace): TaskView {
             "ace_pack",
             "Review native Ace packing",
             {},
-            !baseline || !state.aceAvailable || !state.files.length,
+            !baseline || !state.files.length,
           )}
         </>
       )}

@@ -1,0 +1,48 @@
+[
+  null,
+  {
+    "id": 1,
+    "animation1Hue": 0,
+    "animation1Name": "Attack1",
+    "animation2Hue": 0,
+    "animation2Name": "",
+    "frames": [
+      {
+        "xsize": 1,
+        "ysize": 8,
+        "zsize": 1,
+        "data": [
+          0,
+          160,
+          192,
+          100,
+          0,
+          0,
+          255,
+          1
+        ]
+      }
+    ],
+    "name": "Slash",
+    "position": 1,
+    "timings": [
+      {
+        "flashColor": [
+          255.0,
+          255.0,
+          255.0,
+          153.0
+        ],
+        "flashDuration": 5,
+        "flashScope": 1,
+        "frame": 0,
+        "se": {
+          "name": "Slash1",
+          "pan": null,
+          "pitch": 100,
+          "volume": 80
+        }
+      }
+    ]
+  }
+]

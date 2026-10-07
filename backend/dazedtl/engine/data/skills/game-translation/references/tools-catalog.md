@@ -79,7 +79,7 @@ first and go to the source for detail.
 | `modules/rpgmakermvmz.py` (6381) | The authority on MV/MZ per-event-code behaviour: `HEADER_MAPPINGS_357` plugin table, `PATTERNS_355655` script regexes, speaker cascades, `FACENAME101_MAP`, the `_original` sidecar | `engine-rpgmaker.md` |
 | `modules/rpgmakerplugin.py` (1137) | `js/plugins.js` parameter extraction and structural write-back | `engine-rpgmaker.md` |
 | `util/rpgmaker_qa.py` (3145) | Post-translation QA engine, the full check list | `engine-rpgmaker.md` |
-| `util/ace/offline/` (binaries not bundled, see `tools/THIRD-PARTY.md`) | `RV2JSON.exe` (`-c` rvdata2→JSON, `-u` back) and `RPGMakerDecrypter-cli.exe` (`.rgss3a`) | `engine-rpgmaker.md` (VX Ace) |
+| `util/ace/rv2json.py` (1713) + `util/ace/rgssad.py` (153) | Built-in ports of RV2JSON (`python -m util.ace.rv2json -c -d <game>/Data -j <game>/ace_json` from `DAZEDTL_ROOT`, `-u` back) and RPGMakerDecrypter's archive extraction (`rgssad.extract`, `.rgssad`/`.rgss2a`/`.rgss3a`) | `engine-rpgmaker.md` (VX Ace) |
 | `util/translation.py` (6058) | The LLM driver: prompt build, chunking, retry classification, resume | `llm-pipeline.md` |
 | `util/batch_history.py` (1086) | Batch bookkeeping and resume state | `llm-pipeline.md` |
 | `util/evaluation.py` (4127) + `gui/evaluation_tab.py` (3428) | LLM-as-judge quality scoring: rubric, sampling, blinding, Borda ranking | `quality-evaluation.md` |

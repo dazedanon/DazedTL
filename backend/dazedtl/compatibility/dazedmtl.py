@@ -494,12 +494,6 @@ class ExistingBackend:
             }
         )
 
-    @staticmethod
-    def ace_available():
-        from .guided import ace_available
-
-        return ace_available()
-
     def close(self):
         self.operations.close()
         self.manual.close()

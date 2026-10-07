@@ -1,0 +1,33 @@
+[
+  null,
+  {
+    "id": 1,
+    "autoRemovalTiming": 0,
+    "chanceByDamage": 100,
+    "iconIndex": 2,
+    "maxTurns": 1,
+    "message1": "は毒にかかった！",
+    "message2": "は毒にかかった！",
+    "message3": "",
+    "message4": "の毒が消えた！",
+    "minTurns": 1,
+    "motion": null,
+    "overlay": null,
+    "name": "毒",
+    "note": "",
+    "priority": 50,
+    "removeAtBattleEnd": false,
+    "removeByDamage": false,
+    "removeByRestriction": false,
+    "removeByWalking": false,
+    "restriction": 0,
+    "stepsToRemove": 100,
+    "traits": [
+      {
+        "code": 22,
+        "dataId": 7,
+        "value": -0.1
+      }
+    ]
+  }
+]

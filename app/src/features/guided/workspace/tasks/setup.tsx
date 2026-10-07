@@ -69,7 +69,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
     chooseFolder,
     fields,
     advance,
-    task,
   } = w;
   const done = preserved && gitConfigured;
   const setupRunning = setupAction.busy || setupWorking;
@@ -106,6 +105,16 @@ export function setupView(w: GuidedWorkspace): TaskView {
       "A copy you can restore, kept inside this game’s folder."
     );
 
+  const ace = stepStatus("ace_extract", !aceNeedsExport);
+  const aceDetail =
+    ace === "working"
+      ? setupJobs.ace_extract!.message || "Converting…"
+      : ace === "not_started"
+        ? state.encrypted.length
+          ? "Extracts the encrypted archive and converts the data to JSON."
+          : "Converts the native data to JSON."
+        : undefined;
+
   const prepared = preparationComplete || gitConfigured;
   const runningStage = preparation.stages.find(
     (stage) => stage.status === "running",
@@ -131,20 +140,15 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const blocked =
     running && !setupRunning
       ? "Wait for the current operation to finish."
-      : preserved && aceNeedsExport
-        ? // Without the native converter, only an existing export continues.
-          state.aceAvailable
-          ? "Convert the Ace data to JSON first."
-          : "Needs an ace_json export on this system."
-        : gitConfigured
-          ? ""
-          : !fields.version.trim()
-            ? "Enter the game version."
-            : fields.untranslated === null
-              ? "Choose whether the game already contains translations."
-              : !fields.untranslated && !fields.original.trim()
-                ? "Choose the matching original folder."
-                : "";
+      : gitConfigured
+        ? ""
+        : !fields.version.trim()
+          ? "Enter the game version."
+          : fields.untranslated === null
+            ? "Choose whether the game already contains translations."
+            : !fields.untranslated && !fields.original.trim()
+              ? "Choose the matching original folder."
+              : "";
   const content = (
     <>
       {!gitConfigured && (
@@ -213,35 +217,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
           detail={backupDetail}
         />
         {state.engine === "ACE" && (
-          <StepRow
-            status={aceNeedsExport ? "not_started" : "done"}
-            title="Convert Ace data"
-            detail={
-              aceNeedsExport
-                ? state.aceAvailable
-                  ? `${state.encrypted.length ? "Extract the encrypted archive, then convert" : "Convert"} the native data to JSON after the backup.`
-                  : "Native conversion needs a supported Windows environment. Existing ace_json exports can be used."
-                : undefined
-            }
-          >
-            {aceNeedsExport && (
-              <>
-                {!!state.encrypted.length &&
-                  task(
-                    "ace_decrypt",
-                    "Extract archive",
-                    {},
-                    !preserved || !state.aceAvailable,
-                  )}
-                {task(
-                  "ace_extract",
-                  "Convert to JSON",
-                  {},
-                  !preserved || !state.aceAvailable,
-                )}
-              </>
-            )}
-          </StepRow>
+          <StepRow status={ace} title="Convert Ace data" detail={aceDetail} />
         )}
         <StepRow
           status={prepare}

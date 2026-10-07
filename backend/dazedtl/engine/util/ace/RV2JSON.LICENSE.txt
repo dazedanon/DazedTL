@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2016 Mikko Uuksulainen
+Copyright (c) 2026 Sinflower
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20,6 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Source: https://github.com/uuksu/RPGMakerDecrypter
-Bundled binary revision: tag v3.0.4,
-commit 465c88c304cac0b1516a3fbfb0b2a87fb0517736.
+Source: https://github.com/Sinflower/RV2JSON
+rv2json.py ports RV2JSON 1.2.1 (commit 35db081809af3989e1c13d04d9be0dce0e074bf9)
+to Python and writes the same JSON and data.

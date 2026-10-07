@@ -728,103 +728,46 @@ def parse(codeList, i, headerString, jaString):
                     runtime_files(game), ["data/Items.json", "img/title.png"]
                 )
 
-    def test_ace_reported_error_is_failure_even_with_zero_exit_and_tools_use_profile_cache(
-        self,
-    ):
+    def test_ace_packing_saves_a_receipt_only_when_every_export_was_packed(self):
+        from dazedtl.translation.release import packing_state
+
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
-            tool = root / "engine/util/ace/offline/RV2JSON.exe"
-            tool.parent.mkdir(parents=True)
-            tool.write_bytes(b"fixture executable, never launched")
-            folder = root / "profile/workflows/project"
+            game, folder = root / "game", root / "profile/workflows/project"
             folder.mkdir(parents=True)
-            paths = ModuleType("util.paths")
-            paths.PROJECT_ROOT = root / "engine"
-            actions = ModuleType("desktop.backend.workflow_actions")
-            actions.validate_plan = lambda _plan: None
-            child = Mock(stdout=["\x1b[?25lERROR: Could not load scripts\x1b[?25h\n"])
-            child.wait.return_value = 0
-            process = Mock()
-            process.__enter__ = Mock(return_value=child)
-            process.__exit__ = Mock(return_value=False)
-            with (
-                patch.dict(
-                    sys.modules,
-                    {"util.paths": paths, "desktop.backend.workflow_actions": actions},
-                ),
-                patch("dazedtl.compatibility.guided.ace_available", return_value=True),
-                patch(
-                    "dazedtl.compatibility.guided.subprocess.Popen",
-                    return_value=process,
-                ) as launch,
-            ):
-                with self.assertRaisesRegex(ValueError, "Could not load scripts"):
-                    run_ace(
-                        {
-                            "action": "ace_extract",
-                            "folder": str(folder),
-                            "project": {"source": str(root / "game")},
-                        },
-                        lambda _line: None,
-                    )
-                child.stdout = [
-                    "error: XDG_RUNTIME_DIR is invalid or not set\n",
-                    "Dumping of 0 scripts done\n",
-                ]
-                self.assertEqual(
-                    run_ace(
-                        {
-                            "action": "ace_extract",
-                            "folder": str(folder),
-                            "project": {"source": str(root / "game")},
-                        },
-                        lambda _line: None,
-                    ),
-                    {"completed": "ace_extract"},
-                )
-            self.assertEqual(
-                (root / "profile/tools/ace/RV2JSON.exe").read_bytes(), tool.read_bytes()
-            )
-            self.assertEqual(launch.call_args.kwargs["stdin"], subprocess.DEVNULL)
-            self.assertEqual(
-                launch.call_args.args[0][0], str(root / "profile/tools/ace/RV2JSON.exe")
-            )
-            from dazedtl.translation.release import packing_state
-
-            write_json(
-                root / "game/ace_json/Items.json", [{"name": "generated translation"}]
-            )
+            for name in ("CommonEvents", "Items"):
+                write_json(game / f"ace_json/{name}.json", [None, {"name": name}])
             native = {
-                "source": str(root / "game"),
-                "data": str(root / "game/ace_json"),
+                "source": str(game),
+                "data": str(game / "ace_json"),
                 "engine": "ACE",
             }
-            packed = {"action": "ace_pack", "folder": str(folder), "project": native}
-            with (
-                patch.dict(
-                    sys.modules,
-                    {"util.paths": paths, "desktop.backend.workflow_actions": actions},
-                ),
-                patch("dazedtl.compatibility.guided.ace_available", return_value=True),
-                patch(
-                    "dazedtl.compatibility.guided.subprocess.Popen",
-                    return_value=process,
-                ) as conversion,
+            plan = {"action": "ace_pack", "folder": str(folder), "project": native}
+            packed = []
+
+            def pack(_root, _action, _log):
+                for name in packed:
+                    path = game / "Data" / name
+                    path.parent.mkdir(exist_ok=True)
+                    path.write_bytes(b"\x04\x08generated " + name.encode())
+                return [game / "Data" / name for name in packed]
+
+            converter = ModuleType("util.ace")
+            converter.actions = SimpleNamespace(run=pack)
+            workflow = ModuleType("desktop.backend.workflow_actions")
+            workflow.validate_plan = lambda _plan: None
+            with patch.dict(
+                sys.modules,
+                {"util.ace": converter, "desktop.backend.workflow_actions": workflow},
             ):
-                child.stdout = []
-                with self.assertRaises(ValueError):
-                    run_ace(packed, lambda _: None)
+                # The game names its common events file in another case.
+                packed[:] = ["Commonevents.rvdata2", "Scripts.rvdata2"]
+                with self.assertRaisesRegex(ValueError, "ace_json/Items.json"):
+                    run_ace(plan, lambda _line: None)
                 self.assertFalse(packing_state(native, folder)["current"])
-
-                def generated_conversion(*_args, **_kwargs):
-                    output = root / "game/Data/Items.rvdata2"
-                    output.parent.mkdir(parents=True, exist_ok=True)
-                    output.write_bytes(bytes([4, 8]) + b"generated conversion fixture")
-                    return process
-
-                conversion.side_effect = generated_conversion
+                packed.append("Items.rvdata2")
                 self.assertEqual(
-                    run_ace(packed, lambda _: None), {"completed": "ace_pack"}
+                    run_ace(plan, lambda _line: None), {"completed": "ace_pack"}
                 )
                 self.assertTrue(packing_state(native, folder)["current"])
 

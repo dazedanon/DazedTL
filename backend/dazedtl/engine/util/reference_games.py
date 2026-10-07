@@ -13,12 +13,12 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
 import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from util.ace import rgssad, rv2json
 from util.paths import GAME_METADATA_RELATIVE, ensure_game_tool_gitignore
 from util.project_scanner import (
     detect_wolf_layout,
@@ -293,7 +293,7 @@ def inspect_reference_game(game_or_data: str | Path) -> dict[str, Any]:
             "data": data.resolve(),
             "fingerprint": _paths_fingerprint(root, files),
         }
-    archives = sorted(root.glob("Game.rgss*"))
+    archives = rgssad.archives(root)
     if archives:
         return {
             "root": root,
@@ -322,27 +322,6 @@ def _copy_json(source: Path, destination: Path) -> None:
         raise ValueError(f"No normalized JSON files were produced from {source}")
 
 
-def _run_checked(command: list[str], cwd: Path, label: str, log_fn: Callable[[str], None]) -> None:
-    log_fn(f"{label}: preparing {cwd.name} …")
-    try:
-        result = subprocess.run(
-            command,
-            cwd=str(cwd),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            errors="replace",
-            check=False,
-        )
-    except OSError as exc:
-        raise RuntimeError(f"{label} could not start: {exc}") from exc
-    if result.stdout.strip():
-        for line in result.stdout.rstrip().splitlines():
-            log_fn(f"  {line}")
-    if result.returncode != 0:
-        raise RuntimeError(f"{label} failed with exit code {result.returncode}")
-
-
 def _find_ace_binary_root(staging: Path) -> Path:
     candidates = [staging]
     candidates.extend(path.parent for path in staging.rglob("Data") if path.is_dir())
@@ -354,34 +333,20 @@ def _find_ace_binary_root(staging: Path) -> Path:
 
 
 def _materialize_ace(info: dict[str, Any], destination: Path, log_fn: Callable[[str], None]) -> None:
-    from util.ace.update_tools import (
-        ace_tool_path,
-        build_decrypter_command,
-        ensure_ace_tools,
-    )
-
-    if not ensure_ace_tools(log_fn=log_fn):
-        raise RuntimeError("The bundled RPG Maker Ace preparation tools are unavailable")
     with tempfile.TemporaryDirectory(prefix="dazedtl-reference-ace-") as temporary:
         staging = Path(temporary)
         source_data = info.get("data")
         if source_data is not None:
             shutil.copytree(Path(source_data), staging / "Data")
         else:
-            archives = sorted(Path(info["root"]).glob("Game.rgss*"))
+            archives = rgssad.archives(Path(info["root"]))
             if not archives:
                 raise RuntimeError("Encrypted Ace reference has no Game.rgss archive")
-            for archive in archives:
-                shutil.copy2(archive, staging / archive.name)
-            _run_checked(build_decrypter_command(staging), staging, "RPG Maker decrypter", log_fn)
+            rgssad.extract(archives[0], staging, log=log_fn)
         conversion_root = _find_ace_binary_root(staging)
-        rv2json = ace_tool_path("RV2JSON.exe")
-        _run_checked([str(rv2json), "-c"], conversion_root, "RV2JSON", log_fn)
-        candidates = [conversion_root / "ace_json", conversion_root / "JSON"]
-        candidates.extend(path for path in conversion_root.iterdir() if path.is_dir() and _has_json(path))
-        produced = next((path for path in candidates if _has_json(path)), None)
-        if produced is None:
-            raise RuntimeError("RV2JSON completed but produced no JSON data folder")
+        produced = rv2json.create(conversion_root, log=log_fn)
+        if not _has_json(produced):
+            raise RuntimeError("Ace conversion produced no JSON data")
         _copy_json(produced, destination)
 
 

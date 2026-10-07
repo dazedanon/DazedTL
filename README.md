@@ -7,7 +7,6 @@ The [user guide](docs/user-guide.md) covers both workflows.
 ## Current limitations
 
 - WOLF's guided workflow is deferred; other engines are supported only through Assistant-led.
-- Ace's bundled native converters run only on Windows.
 - Real provider billing and native game playtesting still need validation.
 - Application distribution is pending, so DazedTL runs from a checkout.
 

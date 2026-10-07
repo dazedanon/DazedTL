@@ -1,0 +1,561 @@
+[
+  null,
+  {
+    "id": 1,
+    "list": [
+      {
+        "code": 101,
+        "indent": 0,
+        "parameters": [
+          "Actor1",
+          0,
+          0,
+          2
+        ]
+      },
+      {
+        "code": 401,
+        "indent": 0,
+        "parameters": [
+          "\\C[2]アリス\\C[0]：「ようこそ、\"旅人\"さん。」"
+        ]
+      },
+      {
+        "code": 401,
+        "indent": 0,
+        "parameters": [
+          "タブ\tと制御\u0001文字、\\\\と/と 、🐱"
+        ]
+      },
+      {
+        "code": 102,
+        "indent": 0,
+        "parameters": [
+          [
+            "はい",
+            "いいえ"
+          ],
+          2
+        ]
+      },
+      {
+        "code": 402,
+        "indent": 0,
+        "parameters": [
+          0,
+          "はい"
+        ]
+      },
+      {
+        "code": 401,
+        "indent": 1,
+        "parameters": [
+          "はいを選んだ。"
+        ]
+      },
+      {
+        "code": 0,
+        "indent": 1,
+        "parameters": []
+      },
+      {
+        "code": 402,
+        "indent": 0,
+        "parameters": [
+          1,
+          "いいえ"
+        ]
+      },
+      {
+        "code": 0,
+        "indent": 1,
+        "parameters": []
+      },
+      {
+        "code": 404,
+        "indent": 0,
+        "parameters": []
+      },
+      {
+        "code": 103,
+        "indent": 0,
+        "parameters": [
+          1,
+          2
+        ]
+      },
+      {
+        "code": 105,
+        "indent": 0,
+        "parameters": [
+          2,
+          false
+        ]
+      },
+      {
+        "code": 405,
+        "indent": 0,
+        "parameters": [
+          "スクロールする文章"
+        ]
+      },
+      {
+        "code": 108,
+        "indent": 0,
+        "parameters": [
+          "コメント"
+        ]
+      },
+      {
+        "code": 408,
+        "indent": 0,
+        "parameters": [
+          "コメントの続き"
+        ]
+      },
+      {
+        "code": 111,
+        "indent": 0,
+        "parameters": [
+          12,
+          "$game_party.gold > 100"
+        ]
+      },
+      {
+        "code": 122,
+        "indent": 1,
+        "parameters": [
+          1,
+          1,
+          0,
+          0,
+          2147483648
+        ]
+      },
+      {
+        "code": 122,
+        "indent": 1,
+        "parameters": [
+          2,
+          2,
+          0,
+          0,
+          -1073741825
+        ]
+      },
+      {
+        "code": 122,
+        "indent": 1,
+        "parameters": [
+          3,
+          3,
+          0,
+          0,
+          1073741823
+        ]
+      },
+      {
+        "code": 0,
+        "indent": 1,
+        "parameters": []
+      },
+      {
+        "code": 412,
+        "indent": 0,
+        "parameters": []
+      },
+      {
+        "code": 355,
+        "indent": 0,
+        "parameters": [
+          "p 'スクリプト'"
+        ]
+      },
+      {
+        "code": 655,
+        "indent": 0,
+        "parameters": [
+          "p 2"
+        ]
+      },
+      {
+        "code": 320,
+        "indent": 0,
+        "parameters": [
+          1,
+          "新しい名前"
+        ]
+      },
+      {
+        "code": 324,
+        "indent": 0,
+        "parameters": [
+          1,
+          "新しい二つ名"
+        ]
+      },
+      {
+        "code": 325,
+        "indent": 0,
+        "parameters": [
+          1,
+          "新しいプロフィール"
+        ]
+      },
+      {
+        "code": 117,
+        "indent": 0,
+        "parameters": [
+          2
+        ]
+      },
+      {
+        "code": 250,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Chime2",
+            "pan": null,
+            "pitch": 100,
+            "volume": 90
+          }
+        ]
+      },
+      {
+        "code": 999,
+        "indent": 0,
+        "parameters": [
+          5.0e-324,
+          5.0e-324,
+          -0.0,
+          1.0e+16,
+          1.0e+15,
+          100.0,
+          1.0e-05,
+          123456789012345.67,
+          0.1
+        ]
+      },
+      {
+        "code": 0,
+        "indent": 0,
+        "parameters": []
+      }
+    ],
+    "name": "会話",
+    "switchId": 1,
+    "trigger": 0
+  },
+  {
+    "id": 2,
+    "list": [
+      {
+        "code": 132,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Battle2",
+            "pan": null,
+            "pitch": 100,
+            "volume": 100
+          }
+        ]
+      },
+      {
+        "code": 133,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Victory2",
+            "pan": null,
+            "pitch": 100,
+            "volume": 100
+          }
+        ]
+      },
+      {
+        "code": 140,
+        "indent": 0,
+        "parameters": [
+          0,
+          {
+            "name": "Ship",
+            "pan": null,
+            "pitch": 100,
+            "volume": 100
+          }
+        ]
+      },
+      {
+        "code": 140,
+        "indent": 0,
+        "parameters": [
+          2,
+          {
+            "name": "Airship",
+            "pan": null,
+            "pitch": 100,
+            "volume": 100
+          }
+        ]
+      },
+      {
+        "code": 138,
+        "indent": 0,
+        "parameters": [
+          {
+            "red": 255.0,
+            "green": -255,
+            "blue": 0.5,
+            "gray": 0
+          }
+        ]
+      },
+      {
+        "code": 223,
+        "indent": 0,
+        "parameters": [
+          {
+            "red": 68.0,
+            "green": -68.0,
+            "blue": 0.0,
+            "gray": 255.0
+          },
+          60,
+          true
+        ]
+      },
+      {
+        "code": 224,
+        "indent": 0,
+        "parameters": [
+          {
+            "red": 255.0,
+            "green": 255.0,
+            "blue": 255.0,
+            "alpha": 170.0
+          },
+          8,
+          true
+        ]
+      },
+      {
+        "code": 234,
+        "indent": 0,
+        "parameters": [
+          1,
+          {
+            "red": 0.0,
+            "green": 0.0,
+            "blue": 0.0,
+            "gray": 0
+          },
+          30,
+          false
+        ]
+      },
+      {
+        "code": 236,
+        "indent": 0,
+        "parameters": [
+          "rain",
+          5,
+          60,
+          true
+        ]
+      },
+      {
+        "code": 241,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Town2",
+            "pan": null,
+            "pitch": 100,
+            "volume": 90
+          }
+        ]
+      },
+      {
+        "code": 245,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Wind",
+            "pan": null,
+            "pitch": 100,
+            "volume": 80
+          }
+        ]
+      },
+      {
+        "code": 249,
+        "indent": 0,
+        "parameters": [
+          {
+            "name": "Inn",
+            "pan": null,
+            "pitch": 100,
+            "volume": 100
+          }
+        ]
+      },
+      {
+        "code": 205,
+        "indent": 0,
+        "parameters": [
+          -1,
+          {
+            "list": [
+              {
+                "code": 1,
+                "parameters": []
+              },
+              {
+                "code": 45,
+                "parameters": [
+                  "$game_variables[1] += 1"
+                ]
+              },
+              {
+                "code": 44,
+                "parameters": [
+                  {
+                    "name": "Jump1",
+                    "pan": null,
+                    "pitch": 100,
+                    "volume": 80
+                  }
+                ]
+              },
+              {
+                "code": 41,
+                "parameters": [
+                  "People1",
+                  2
+                ]
+              },
+              {
+                "code": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": false,
+            "skippable": true,
+            "wait": true
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 1,
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 45,
+            "parameters": [
+              "$game_variables[1] += 1"
+            ]
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 44,
+            "parameters": [
+              {
+                "name": "Jump1",
+                "pan": null,
+                "pitch": 100,
+                "volume": 80
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 41,
+            "parameters": [
+              "People1",
+              2
+            ]
+          }
+        ]
+      },
+      {
+        "code": 205,
+        "indent": 0,
+        "parameters": [
+          -1,
+          {
+            "list": [
+              {
+                "code": 4,
+                "parameters": []
+              },
+              {
+                "code": 45,
+                "parameters": [
+                  "p '別の移動'"
+                ]
+              },
+              {
+                "code": 0,
+                "parameters": []
+              }
+            ],
+            "repeat": false,
+            "skippable": true,
+            "wait": true
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 4,
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "code": 505,
+        "indent": 0,
+        "parameters": [
+          {
+            "code": 45,
+            "parameters": [
+              "p '別の移動'"
+            ]
+          }
+        ]
+      },
+      {
+        "code": 0,
+        "indent": 0,
+        "parameters": []
+      }
+    ],
+    "name": "演出",
+    "switchId": 1,
+    "trigger": 0
+  }
+]

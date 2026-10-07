@@ -41,8 +41,6 @@ build output are excluded; see the skill's `README.md` before adapting a referen
 | repak | `C++/Unreal/repak/repak.exe` | https://github.com/trumank/repak |
 | UAssetGUI | `C++/Unreal/UAssetGUI/UAssetGUI.exe` | https://github.com/atenfyr/UAssetGUI |
 | FModel | `C++/FModel/FModel.exe` | https://github.com/4sval/FModel |
-| RV2JSON (rvdata2 to JSON and back) | `DAZEDTL_ROOT/util/ace/offline/RV2JSON.exe` | ships in the DazedTL repository under `util/ace/offline/`: https://git.dazedtl.dev/dazed/DazedTL |
-| RPGMakerDecrypter CLI (`.rgssad`, `.rgss2a`, `.rgss3a`) | `DAZEDTL_ROOT/util/ace/offline/RPGMakerDecrypter-cli.exe` | https://github.com/uuksu/RPGMakerDecrypter |
 | Unity and BepInEx reference assemblies for VBV (`UnityEngine*.dll`, `Unity.TextMeshPro.dll`, `BepInEx.dll`, `0Harmony.dll`) | `Game Translation/Unity BepInEx Text Layout Plugin/VBV/References/` | copy from the target game's `*_Data/Managed/` and your BepInEx `core/` folder |
 | WolfDawn `wolf` CLI | `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` | build from https://gitgud.io/zero64801/wolfdawn at the tag in `PROVENANCE.md` next to it |
 | Ghidra | anywhere on PATH | https://github.com/NationalSecurityAgency/ghidra |

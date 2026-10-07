@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 
+from util.ace import rgssad
 from util.paths import PROJECT_ROOT
 
 GAMEUPDATE_COPY_SKIP_NAMES = frozenset({"previous_patch_sha.txt"})
@@ -86,7 +87,7 @@ def rpgmaker_layout(game_root: str | Path) -> dict | None:
             if (data / "System.json").is_file() and plugins.is_file():
                 return {"engine": "MVMZ", "data_path": data, "plugins_js": plugins}
     native = root / "Data"
-    if (native.is_dir() and any(native.glob("*.rvdata2"))) or any(root.glob("Game.rgss*")):
+    if (native.is_dir() and any(native.glob("*.rvdata2"))) or rgssad.archives(root):
         return {"engine": "ACE", "data_path": root / "ace_json", "plugins_js": None}
     return None
 

@@ -1,0 +1,55 @@
+[
+  null,
+  {
+    "id": 1,
+    "actions": [
+      {
+        "conditionParam1": 0,
+        "conditionParam2": 0,
+        "conditionType": 0,
+        "rating": 5,
+        "skillId": 1
+      }
+    ],
+    "battlerHue": 0,
+    "battlerName": "Slime",
+    "dropItems": [
+      {
+        "kind": 1,
+        "dataId": 1,
+        "denominator": 2
+      },
+      {
+        "kind": 0,
+        "dataId": 0,
+        "denominator": 1
+      },
+      {
+        "kind": 0,
+        "dataId": 0,
+        "denominator": 1
+      }
+    ],
+    "exp": 5,
+    "traits": [
+      {
+        "code": 22,
+        "dataId": 0,
+        "value": 0.95
+      }
+    ],
+    "gold": 10,
+    "name": "スライム",
+    "note": "",
+    "params": [
+      250,
+      0,
+      15,
+      10,
+      10,
+      10,
+      10,
+      10
+    ]
+  }
+]

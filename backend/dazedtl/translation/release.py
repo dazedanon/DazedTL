@@ -8,7 +8,7 @@ import sqlite3
 import zipfile
 from contextlib import closing
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .files import evidence, project_path, read_json
 
@@ -236,19 +236,24 @@ def packing_inputs(native):
     return evidence(root, paths)
 
 
+def unpacked(inputs, outputs):
+    """JSON exports without a packed native file of the same name; the game
+    and the converter match data file names without regard to case."""
+    packed = {PurePosixPath(name).stem.casefold() for name in outputs}
+    return [
+        name for name in inputs if PurePosixPath(name).stem.casefold() not in packed
+    ]
+
+
 def packing_state(native, folder):
     if native["engine"] != "ACE":
         return {"required": False, "current": True, "message": ""}
     try:
         receipt = read_json(Path(folder) / "ace-packing.json")
         inputs = packing_inputs(native)
-        expected = {
-            (Path("Data") / (Path(name).stem + ".rvdata2")).as_posix()
-            for name in inputs
-        }
         current = (
             receipt.get("source") == native["source"]
-            and set(receipt["outputs"]) == expected
+            and not unpacked(inputs, receipt["outputs"])
             and receipt.get("inputs") == inputs
             and receipt.get("outputs")
             == evidence(native["source"], list(receipt["outputs"]))

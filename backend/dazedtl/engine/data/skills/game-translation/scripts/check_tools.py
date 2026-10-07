@@ -51,8 +51,6 @@ THIRD_PARTY = [
     ("repak", "C++/Unreal/repak/repak.exe"),
     ("UAssetGUI", "C++/Unreal/UAssetGUI/UAssetGUI.exe"),
     ("FModel", "C++/FModel/FModel.exe"),
-    ("RV2JSON", "DAZEDTL_ROOT/util/ace/offline/RV2JSON.exe"),
-    ("RPGMakerDecrypter CLI", "DAZEDTL_ROOT/util/ace/offline/RPGMakerDecrypter-cli.exe"),
     ("VBV reference DLLs", "Game Translation/Unity BepInEx Text Layout Plugin/VBV/References/UnityEngine.dll"),
     ("WolfDawn wolf CLI", "DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe"),
 ]
@@ -71,7 +69,8 @@ def main() -> int:
     for rel in missing:
         print(f"  MISSING  tools/{rel}")
     shared = {rel: DAZEDTL_ROOT / rel for rel in (
-        "util/len_translation.py", "util/len_git.py", "util/skills/system.py", "scripts/len_translation.py")}
+        "util/len_translation.py", "util/len_git.py", "util/skills/system.py", "scripts/len_translation.py",
+        "util/ace/rv2json.py", "util/ace/rgssad.py")}
     shared["../data/skills/project_setup.md"] = DAZEDTL_ROOT.parent / "data/skills/project_setup.md"
     missing_shared = [rel for rel, path in shared.items() if not path.is_file()]
     print(f"shared     : {len(shared) - len(missing_shared)}/{len(shared)} present")

@@ -646,7 +646,6 @@ export type GuidedState = {
   dataPath: string;
   encrypted: string[];
   hasPlugins: boolean;
-  aceAvailable: boolean;
   step: GuidedStep;
   task: string | null;
   positions: Partial<Record<GuidedStep, string | null>>;

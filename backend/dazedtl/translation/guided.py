@@ -631,7 +631,6 @@ class Guided:
             "artifacts": self.release_artifacts(
                 project_id, value["jobs"], native["source"]
             ),
-            "ace_available": self.backend.ace_available(),
             "ace_packing": self.ace_packing(native),
             "documents": documents,
             "phase": project["phase"],

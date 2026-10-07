@@ -112,16 +112,13 @@ export function packageView(w: GuidedWorkspace): TaskView {
         state.engine === "ACE" ? (
           <>
             <p className="muted">{state.acePacking.message}</p>
-            {!state.aceAvailable && !state.acePacking.current && (
-              <p>Native packing requires a supported Windows environment.</p>
-            )}
             {task(
               "ace_pack",
               state.acePacking.current
                 ? "Review native packing again"
                 : "Review native Ace packing",
               {},
-              !baseline || !state.aceAvailable || !state.files.length,
+              !baseline || !state.files.length,
             )}
           </>
         ) : undefined
