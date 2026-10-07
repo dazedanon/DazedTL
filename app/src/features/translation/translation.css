@@ -1,26 +1,21 @@
-.lens-method fieldset {
+/* The options form's own fields; features this page hosts, such as Image
+   Manager, keep their label layouts. */
+.lens-options {
   border: 0;
   padding: 0;
   margin: 0;
   min-width: 0;
 }
-.lens-method label {
+.lens-options label {
   display: block;
   margin: var(--space-4) 0;
 }
-.lens-method label > input:not([type="checkbox"]),
-.lens-method label > select,
-.lens-method label > textarea {
+.lens-options label > input:not([type="checkbox"]),
+.lens-options label > select,
+.lens-options label > textarea {
   display: block;
   width: 100%;
   margin-top: var(--space-2);
-}
-.lens-method label > .actions {
-  margin-top: var(--space-2);
-}
-.lens-method label > .actions > input {
-  flex: 1;
-  min-width: 180px;
 }
 .lens-method > .banner {
   flex-shrink: 0;
@@ -39,7 +34,7 @@
   flex-shrink: 0;
   margin-top: 0;
 }
-.lens-method label > textarea {
+.lens-options label > textarea {
   resize: vertical;
 }
 .lens-method details {
@@ -66,7 +61,7 @@
   min-width: 0;
   margin: 0;
 }
-.lens-method .translation-check {
+.lens-options .translation-check {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -337,6 +332,6 @@
   margin-top: var(--space-3);
 }
 /* A choice is as wide as its options need; instructions stay wide. */
-.lens-method label > select {
+.lens-options label > select {
   max-width: 24rem;
 }

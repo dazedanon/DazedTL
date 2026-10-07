@@ -234,7 +234,7 @@ function Workspace({
                   </>
                 }
               >
-                <fieldset disabled={disabled}>
+                <fieldset className="lens-options" disabled={disabled}>
                   <label>
                     Translation mode
                     <select
