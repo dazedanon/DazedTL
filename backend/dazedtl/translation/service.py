@@ -21,7 +21,7 @@ from .requests import plan_input, quote
 from .results import Results
 
 OPERATIONS = {
-    "backup_source": ("Preserve source game", set()),
+    "backup_source": ("Back up original game", set()),
     "backup_workspace": ("Back up translation workspace", set()),
     "restore_backup": (
         "Restore backup into a new folder",
