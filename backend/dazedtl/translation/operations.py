@@ -475,6 +475,11 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         elif operation == "abort":
             state.pop("incoming_source", None)
             state.pop("incoming_version", None)
+    elif action == "discard_release":
+        # A staged release the user decided against stops offering its review;
+        # its preserved backup stays in Backups.
+        state["discarded_release"] = arguments["stage"]
+        result = {"stage": arguments["stage"]}
     else:
         raise ValueError("Unknown project operation.")
     write_json(lifecycle_path(workspace, job["project_id"]), state)

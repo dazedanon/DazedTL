@@ -54,6 +54,7 @@ OPERATIONS = {
     "version_continue": ("Continue resolved official update", set()),
     "version_abort": ("Abort official update", set()),
     "version_handoff": ("Prepare post-update translation prompt", set()),
+    "discard_release": ("Discard a staged official release", {"stage"}),
 }
 
 GUIDED_OPERATIONS = {
@@ -761,6 +762,7 @@ Additional project instructions:
             "stage_update": {"official", "version"},
             "version_preview": {"official", "version"},
             "version_apply": {"preview_id"},
+            "discard_release": {"stage"},
             "release_patch": {"plan", "sha256"},
         }.get(action, set())
         if any(

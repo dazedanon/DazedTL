@@ -999,6 +999,7 @@ export type Lifecycle = {
   incoming_source?: BackupRecord;
   incoming_version?: string;
   version_update?: VersionUpdate;
+  discarded_release?: string;
   [key: string]: unknown;
 };
 

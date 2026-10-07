@@ -216,6 +216,7 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
     incoming_source: NotRequired[BackupRecord]
     incoming_version: NotRequired[str]
     version_update: NotRequired[VersionUpdate]
+    discarded_release: NotRequired[str]
 
 
 class ConnectionSummary(TypedDict):

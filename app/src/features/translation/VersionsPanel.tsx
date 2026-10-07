@@ -45,7 +45,11 @@ export function VersionsPanel({
   const [dismissedAttempt, setDismissedAttempt] = useState<
     string | undefined
   >();
-  const session = versionSession(state.jobs, state.git);
+  const session = versionSession(
+    state.jobs,
+    state.git,
+    state.lifecycle.discarded_release,
+  );
   const disabled =
     action.busy || state.active || !!application.snapshot?.application.running;
   const pending = !!state.git?.pending_operations.length;
@@ -265,6 +269,18 @@ export function VersionsPanel({
           </p>
           <VersionChanges value={preview.result!} />
           <ActionSlot target={actionTarget}>
+            {session.stage && (
+              <Button
+                variant="quiet"
+                disabled={disabled}
+                pending={action.busy && action.key === "discard_release"}
+                onClick={() =>
+                  operation("discard_release", { stage: session.stage!.id })
+                }
+              >
+                Discard release
+              </Button>
+            )}
             <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
               Choose a different release
             </Button>
@@ -302,6 +318,18 @@ export function VersionsPanel({
             </p>
           )}
           <ActionSlot target={actionTarget}>
+            {session.stage && (
+              <Button
+                variant="quiet"
+                disabled={disabled}
+                pending={action.busy && action.key === "discard_release"}
+                onClick={() =>
+                  operation("discard_release", { stage: session.stage!.id })
+                }
+              >
+                Discard release
+              </Button>
+            )}
             <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
               Choose a different release
             </Button>

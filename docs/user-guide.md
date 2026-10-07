@@ -138,6 +138,7 @@ Len's manual checkpoint and patch controls are under **Advanced setup & patch to
 
 For a new official release, the Project page's **Game updates** stages a separate copy for comparison.
 Finish any engine-specific preparation of that copy, preview the changes, then apply the update.
+**Discard release** drops a staged release you decide against; its preserved copy stays in **Backups**.
 Each step appears under **History → Other activity**, where **Inspect** shows its saved result and log.
 **Backups & recovery** on that tab opens the **Backups** tab.
 Ordinary MV/MZ writes keep the existing Japanese in `_original`.

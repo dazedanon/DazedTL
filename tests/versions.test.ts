@@ -47,6 +47,10 @@ test("a new or failed release attempt cannot offer an older comparison for appli
     translation_commit: "translated",
   });
   assert.equal(versionSession([preview, stage], git).preview?.id, preview.id);
+  // A discarded release no longer offers its review.
+  const discarded = versionSession([preview, stage], git, stage.id);
+  assert.equal(discarded.preview, undefined);
+  assert.equal(discarded.stage, undefined);
   for (const status of ["running", "failed", "complete"]) {
     const newer = job(
       "stage-2",

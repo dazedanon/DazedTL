@@ -34,12 +34,19 @@ export function updateCounts(value: Record<string, unknown>) {
 export function versionSession(
   jobs: TranslationJob[],
   git: TranslationState["git"],
+  /** The staged release the user discarded, which no longer opens a review. */
+  discarded?: string,
 ) {
   const history = jobs.filter(
     (job) => job.kind === "operation" && versionActions.has(job.action || ""),
   );
   const stageIndex = history.findIndex((job) => job.action === "stage_update");
-  const current = stageIndex < 0 ? history : history.slice(0, stageIndex + 1);
+  const current =
+    stageIndex >= 0 && history[stageIndex].id === discarded
+      ? []
+      : stageIndex < 0
+        ? history
+        : history.slice(0, stageIndex + 1);
   const stage = current.find((job) => job.action === "stage_update");
   const candidate = current.find((job) => job.action === "version_preview");
   const mutation = current.find((job) =>
