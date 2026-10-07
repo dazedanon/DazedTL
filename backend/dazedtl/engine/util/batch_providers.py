@@ -556,6 +556,17 @@ def _download_anthropic(client, batch_id: str, custom_ids: dict):
     return results, errors, totals
 
 
+def create_anthropic_message(client, params: dict):
+    """Send one live Anthropic request and return the complete message.
+
+    The SDK refuses a non-streaming request whose ``max_tokens`` could run past
+    ten minutes (above about 21k), which the default output allowance exceeds.
+    Streaming has no such limit and returns the same message.
+    """
+    with client.messages.stream(**dict(params)) as stream:
+        return stream.get_final_message()
+
+
 def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
     """Execute one evaluator request immediately and normalize text/usage.
 
@@ -564,7 +575,7 @@ def execute_live_request(provider: str, params: dict, *, client=None) -> dict:
     """
     client = client or get_client(provider)
     if provider == PROVIDER_ANTHROPIC:
-        message = client.messages.create(**dict(params))
+        message = create_anthropic_message(client, params)
         usage = message.usage
         inp = int(getattr(usage, "input_tokens", 0) or 0)
         out = int(getattr(usage, "output_tokens", 0) or 0)

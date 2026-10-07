@@ -4892,9 +4892,11 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             request_instructions=request_instructions,
         )
 
+        from util.batch_providers import create_anthropic_message
+
         ant_client = anthropic.Anthropic(api_key=openai.api_key)
         try:
-            ant_resp = ant_client.messages.create(**ant_kwargs)
+            ant_resp = create_anthropic_message(ant_client, ant_kwargs)
         except Exception as e:
             raise Exception(f"Anthropic API error: {e}")
 

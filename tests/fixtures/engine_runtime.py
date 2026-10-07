@@ -568,12 +568,115 @@ try:
             assert params[field] == 32768 and "薬" in json.dumps(
                 params, ensure_ascii=False
             ), params
-        assert (
-            translation.buildClaudeRequest(
-                "Translate.", "薬", [], "json", "claude-sonnet-5.5"
-            )["max_tokens"]
-            == 32768
+        # The real SDK refuses a non-streaming request this large before sending
+        # it, which stopped native Anthropic Live runs and Batch collection
+        # (names translate live). Guided Live must still see a streamed refusal.
+        import anthropic
+        import httpx2
+        from dazedtl.compatibility.translation import TranslationProvider
+
+        claude_stops = ["end_turn", "refusal"]
+
+        def claude_stream(req):
+            body = json.loads(req.content)
+            assert body["stream"] and body["max_tokens"] == 32768, body
+            events = (
+                {
+                    "type": "message_start",
+                    "message": {
+                        "id": "msg_fixture",
+                        "type": "message",
+                        "role": "assistant",
+                        "model": body["model"],
+                        "content": [],
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "usage": {"input_tokens": 7, "output_tokens": 0},
+                    },
+                },
+                {
+                    "type": "content_block_start",
+                    "index": 0,
+                    "content_block": {"type": "text", "text": ""},
+                },
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": '{"Line1": "Potion"}'},
+                },
+                {"type": "content_block_stop", "index": 0},
+                {
+                    "type": "message_delta",
+                    "delta": {
+                        "stop_reason": claude_stops.pop(0),
+                        "stop_sequence": None,
+                    },
+                    "usage": {"output_tokens": 3},
+                },
+                {"type": "message_stop"},
+            )
+            return httpx2.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                content="".join(
+                    f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+                    for event in events
+                ),
+            )
+
+        native_anthropic = anthropic.Anthropic
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "API_PROVIDER": "anthropic",
+                    "key": "fixture-key",
+                    "api": "https://api.anthropic.com",
+                },
+            ),
+            # translateText configures the shared OpenAI module for every provider.
+            patch.multiple(
+                translation.openai,
+                base_url=translation.openai.base_url,
+                api_key=translation.openai.api_key,
+            ),
+            patch.object(
+                anthropic,
+                "Anthropic",
+                side_effect=lambda **kwargs: native_anthropic(
+                    **kwargs,
+                    http_client=httpx2.Client(
+                        transport=httpx2.MockTransport(claude_stream)
+                    ),
+                ),
+            ),
+        ):
+            response = translation.translateText(
+                "Translate.", "薬", [], 0, "json", "claude-opus-5-5", 1
+            )
+            provider = TranslationProvider(
+                {
+                    "protocol": "anthropic",
+                    "mode": "translate",
+                    "endpoint": "https://api.anthropic.com",
+                },
+                "fixture-key",
+            )
+            try:
+                guided = provider.live(
+                    translation.buildClaudeRequest(
+                        "Translate.", "薬", [], "json", "claude-opus-5-5", 1
+                    )
+                )
+            finally:
+                provider.client.close()
+        assert response.choices[0].message.content == '{"Line1": "Potion"}'
+        assert (response.usage.prompt_tokens, response.usage.completion_tokens) == (
+            7,
+            3,
         )
+        assert guided["text"] == '{"Line1": "Potion"}' and guided["refusal"], guided
+        assert not claude_stops
         configure_builders(translation, None)
         # Real native collect -> submit -> fetch -> consume must reach the
         # installed inline adapter, including aliases already bound by history.

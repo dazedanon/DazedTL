@@ -815,11 +815,22 @@ class TranslationProvider:
 
             return call
 
+        def capture_stream(stream):
+            @contextmanager
+            def call(**kwargs):
+                with stream(**kwargs) as events:
+                    yield events
+                    responses.append(events.get_final_message())
+
+            return call
+
         # The native normalizer drops refusal metadata. Observe the response
         # without changing SDK state or making an additional request.
         client = (
             SimpleNamespace(
-                messages=SimpleNamespace(create=capture(self.client.messages.create))
+                messages=SimpleNamespace(
+                    stream=capture_stream(self.client.messages.stream)
+                )
             )
             if self.provider == "anthropic"
             else SimpleNamespace(
