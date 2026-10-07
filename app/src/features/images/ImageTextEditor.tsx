@@ -16,6 +16,7 @@ import { useDraft } from "../../state/useDraft";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { useOwnedFeedback } from "../../ui/FeedbackOwners";
+import { sentence } from "../../ui/displayText";
 import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback, Message } from "../../ui/Feedback";
@@ -489,21 +490,32 @@ function Editor({
       ),
     };
   }
+  // Estimates report in their row; the picker lists translation runs.
+  const runs = (nativeState?.jobs || []).filter(
+    (run) => run.mode !== "estimate",
+  );
   const job =
-    nativeState?.jobs.find((run) => run.id === selectedRun) || nativeState?.job;
+    nativeState?.jobs.find((run) => run.id === selectedRun) ||
+    (nativeState?.activeId
+      ? nativeState.job
+      : runs.find((run) => run.id === nativeState?.job?.id) || runs[0]);
   const confirmedImages = edits.filter(
     (image) => image.status === "confirmed",
   ).length;
   const runWaiting = "Wait for the current image run to finish.";
-  const translateBlocked = !nativeState?.quoteCurrent
-    ? nativeState?.quote
-      ? "Estimate again after these changes."
-      : "Estimate first."
-    : !nativeState.providerEnabled
-      ? "Provider execution is off for this launch."
-      : nativeState.activeId
-        ? runWaiting
-        : "";
+  // Until the saved run state arrives, no step can say what it waits for.
+  const checking = "Checking saved image work…";
+  const translateBlocked = !nativeState
+    ? checking
+    : !nativeState.quoteCurrent
+      ? nativeState?.quote
+        ? "Estimate again after these changes."
+        : "Estimate first."
+      : !nativeState.providerEnabled
+        ? "Provider execution is off for this launch."
+        : nativeState.activeId
+          ? runWaiting
+          : "";
   const stepFeedback = (key: string, pendingText: string) => ({
     feedbackKey: key,
     pending: action.busy && action.key === key,
@@ -1051,7 +1063,7 @@ function Editor({
           )}
           <section className="native-editor-native-translation">
             <Button
-              variant="quiet"
+              variant="link"
               onClick={() => setTranslationOpen(!translationOpen)}
             >
               {translationOpen ? "Hide API translation" : "Translate with API…"}
@@ -1065,7 +1077,7 @@ function Editor({
                     title="Export text"
                     description={
                       nativeState?.current
-                        ? `${nativeState.current.count} text regions · ${nativeState.current.configuration.model}`
+                        ? `${nativeState.current.count} text ${nativeState.current.count === 1 ? "region" : "regions"} exported`
                         : "Confirmed source text from the open images."
                     }
                   >
@@ -1085,7 +1097,13 @@ function Editor({
                   </ActionRow>
                   <ActionRow
                     title="Estimate"
-                    description="A local estimate; nothing is sent."
+                    description={
+                      nativeState?.quoteCurrent && nativeState.quote?.estimate
+                        ? estimateSummary(nativeState.quote.estimate)
+                        : nativeState?.quote
+                          ? "Estimate again after text, scope, guidance or settings changes."
+                          : "A local estimate; nothing is sent."
+                    }
                   >
                     <ActionControl
                       label="Estimate"
@@ -1093,11 +1111,14 @@ function Editor({
                         busy || !nativeState?.current || !!nativeState.activeId
                       }
                       disabledReason={
-                        !nativeState?.current
-                          ? nativeState?.error || "Export confirmed text first."
-                          : nativeState.activeId
-                            ? runWaiting
-                            : ""
+                        !nativeState
+                          ? checking
+                          : !nativeState.current
+                            ? nativeState.error ||
+                              "Export confirmed text first."
+                            : nativeState.activeId
+                              ? runWaiting
+                              : ""
                       }
                       {...stepFeedback("native:estimate", "Estimating…")}
                       onClick={() => {
@@ -1130,16 +1151,7 @@ function Editor({
                     )}
                   </ActionRow>
                 </ActionList>
-                {nativeState?.quote?.estimate && (
-                  <Costs value={nativeState.quote.estimate} />
-                )}
-                {nativeState?.quote && !nativeState.quoteCurrent && (
-                  <p className="muted">
-                    Estimate needs refreshing after text, scope, guidance or
-                    settings changes.
-                  </p>
-                )}
-                {!!nativeState?.jobs.length && (
+                {!!runs.length && (
                   <label>
                     Saved image run
                     <select
@@ -1147,92 +1159,97 @@ function Editor({
                       value={job?.id || ""}
                       onChange={(event) => setSelectedRun(event.target.value)}
                     >
-                      {nativeState.jobs.map((run) => (
+                      {runs.map((run) => (
                         <option key={run.id} value={run.id}>
-                          {run.mode} · {run.model} · {run.status}
+                          {run.mode === "batch" ? "Batch" : "Live"} ·{" "}
+                          {run.model} · {sentence(run.status)}
                         </option>
                       ))}
                     </select>
                   </label>
                 )}
-                {job && (
-                  <>
-                    <JobStatus
-                      job={{
-                        label:
-                          job.mode === "estimate"
-                            ? "Image text estimate"
-                            : "Image text translation",
-                        status: job.status,
-                        message: job.message,
-                      }}
-                    />
-                    {["failed", "interrupted"].includes(job.status) &&
-                      !!job.log?.length && (
-                        <ExpandableText
-                          text={job.log.join("\n")}
-                          label="Run log"
-                          tail
+                {/* A finished estimate reports through its row above. */}
+                {job &&
+                  !(
+                    job.mode === "estimate" && nativeState?.activeId !== job.id
+                  ) && (
+                    <>
+                      <JobStatus
+                        job={{
+                          label:
+                            job.mode === "estimate"
+                              ? "Image text estimate"
+                              : "Image text translation",
+                          status: job.status,
+                          message: job.message,
+                        }}
+                      />
+                      {["failed", "interrupted"].includes(job.status) &&
+                        !!job.log?.length && (
+                          <ExpandableText
+                            text={job.log.join("\n")}
+                            label="Run log"
+                            tail
+                          />
+                        )}
+                      {nativeState?.activeId === job.id && job.progress && (
+                        <progress
+                          value={job.progress.current}
+                          max={job.progress.total || 1}
                         />
                       )}
-                    {nativeState?.activeId === job.id && job.progress && (
-                      <progress
-                        value={job.progress.current}
-                        max={job.progress.total || 1}
-                      />
-                    )}
-                    {job.approval && (
-                      <div className="native-editor-approval">
-                        <strong>Review provider Batch submission</strong>
-                        <Costs value={job.approval.detail} />
-                        <Button
-                          disabled={busy}
-                          onClick={() => {
-                            void nativeAction("answer", {
-                              token: job.approval!.token,
-                              approved: true,
-                            });
-                          }}
-                        >
-                          Submit Batch
-                        </Button>
-                        <Button
-                          disabled={busy}
-                          onClick={() => {
-                            void nativeAction("answer", {
-                              token: job.approval!.token,
-                              approved: false,
-                            });
-                          }}
-                        >
-                          Decline
-                        </Button>
-                      </div>
-                    )}
-                    {job.status === "complete" && job.mode !== "estimate" && (
-                      <div className="actions">
-                        <Button
-                          disabled={busy}
-                          onClick={() => {
-                            void nativeAction("import");
-                          }}
-                        >
-                          {job.imported
-                            ? "Import targets again"
-                            : "Import translated targets"}
-                        </Button>
-                        <Button
-                          disabled={busy}
-                          onClick={() => {
-                            void nativeAction("export");
-                          }}
-                        >
-                          Save output copy
-                        </Button>
-                      </div>
-                    )}
-                  </>
-                )}
+                      {job.approval && (
+                        <div className="native-editor-approval">
+                          <strong>Review provider Batch submission</strong>
+                          <Costs value={job.approval.detail} />
+                          <Button
+                            disabled={busy}
+                            onClick={() => {
+                              void nativeAction("answer", {
+                                token: job.approval!.token,
+                                approved: true,
+                              });
+                            }}
+                          >
+                            Submit Batch
+                          </Button>
+                          <Button
+                            disabled={busy}
+                            onClick={() => {
+                              void nativeAction("answer", {
+                                token: job.approval!.token,
+                                approved: false,
+                              });
+                            }}
+                          >
+                            Decline
+                          </Button>
+                        </div>
+                      )}
+                      {job.status === "complete" && job.mode !== "estimate" && (
+                        <div className="actions">
+                          <Button
+                            disabled={busy}
+                            onClick={() => {
+                              void nativeAction("import");
+                            }}
+                          >
+                            {job.imported
+                              ? "Import targets again"
+                              : "Import translated targets"}
+                          </Button>
+                          <Button
+                            disabled={busy}
+                            onClick={() => {
+                              void nativeAction("export");
+                            }}
+                          >
+                            Save output copy
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 <div className="actions">
                   {job && nativeState?.activeId === job.id ? (
                     <Button
@@ -1261,7 +1278,7 @@ function Editor({
                     </Button>
                   ) : null}
                   {/* Only an existing run has a saved state to read again. */}
-                  {!!nativeState?.jobs.length && (
+                  {!!runs.length && (
                     <Button
                       disabled={busy}
                       onClick={() => {
@@ -1439,7 +1456,21 @@ function Editor({
   );
 }
 
+const money = (value: unknown) => "$" + Number(value).toFixed(5);
+/** One line for a finished estimate: requests and the Live and Batch prices. */
+function estimateSummary(value: Record<string, unknown>) {
+  const requests = Number(value.requests ?? value.request_count ?? 0);
+  return [
+    `${requests.toLocaleString()} ${requests === 1 ? "request" : "requests"}`,
+    typeof value.live_cost === "number" && `Live ${money(value.live_cost)}`,
+    typeof value.batch_cost === "number" && `Batch ${money(value.batch_cost)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 function Costs({ value }: { value: Record<string, unknown> }) {
+  // Cache variants only matter when they differ from each other.
+  const sameBatch = value.batch_cached_cost === value.batch_nocache_cost;
   return (
     <dl className="native-editor-costs">
       {[
@@ -1452,13 +1483,20 @@ function Costs({ value }: { value: Record<string, unknown> }) {
         ["batch_cached_cost", "Batch with cache"],
         ["batch_nocache_cost", "Batch without cache"],
       ]
-        .filter(([key]) => typeof value[key] === "number")
+        .filter(
+          ([key]) =>
+            typeof value[key] === "number" &&
+            !(
+              sameBatch &&
+              ["batch_cached_cost", "batch_nocache_cost"].includes(key)
+            ),
+        )
         .map(([key, label]) => (
           <div key={key}>
             <dt>{label}</dt>
             <dd>
               {key.includes("cost")
-                ? "$" + Number(value[key]).toFixed(5)
+                ? money(value[key])
                 : Number(value[key]).toLocaleString()}
             </dd>
           </div>
