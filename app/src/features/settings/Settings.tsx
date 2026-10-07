@@ -118,7 +118,9 @@ export default function Settings({
                 await draft.saveConnection(input);
                 action.succeed("Connection saved.");
               }}
-              cancel={() => setEditor(null)}
+              cancel={
+                config.connections.length ? () => setEditor(null) : undefined
+              }
             />
           ) : (
             <>

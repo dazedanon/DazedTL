@@ -33,7 +33,8 @@ export default function ConnectionEditor({
   running: boolean;
   checksEnabled: boolean;
   save: (input: ConnectionInput) => Promise<unknown>;
-  cancel: () => void;
+  /** Returns to the saved connections; absent when there are none. */
+  cancel?: () => void;
 }) {
   const initial = {
     provider: connection ? connection.provider || "" : "openai",
@@ -111,7 +112,7 @@ export default function ConnectionEditor({
       });
       unsaved.current = false;
       setValue((current) => ({ ...current, secret: "" }));
-      cancel();
+      cancel?.();
     });
     pending.current = task;
     await task;
@@ -122,7 +123,7 @@ export default function ConnectionEditor({
     setValue(initial);
     action.clear();
     setRevealed(false);
-    cancel();
+    cancel?.();
   }
   const disabled = action.busy || running;
   return (
@@ -367,7 +368,8 @@ export default function ConnectionEditor({
           </div>
         }
       >
-        <Button disabled={action.busy} onClick={discard}>
+        {/* Without a saved connection, Cancel only discards changes. */}
+        <Button disabled={action.busy || (!cancel && !dirty)} onClick={discard}>
           Cancel
         </Button>
         <Button
