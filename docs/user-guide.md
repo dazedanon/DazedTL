@@ -16,7 +16,7 @@ Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
 A project belongs to the game folder's location, so a moved or copied game, a new profile or a reinstall opens the folder as a new project.
-Plugin files and Images then show the work another project saved there and change nothing until you choose.
+Plugin files and Images then show the work another project saved there and change nothing until you choose; until then the Project page and their tabs mark them **Needs review**.
 **Use saved progress** keeps findings, choices, working and edited copies, reviews and applied files.
 Tasks copied in the other project are not accepted, so copy the task again to continue; plugin translations that are not applied yet are checked again by that task.
 Applied images stay restorable, and so do applied plugin files whose saved backups still match; an Apply or Restore that was interrupted can only be finished in the project it belongs to.

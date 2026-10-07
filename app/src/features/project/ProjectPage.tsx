@@ -13,6 +13,7 @@ import { PathText } from "../../ui/PathText";
 import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
+import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { engineLabel, sentence } from "../../ui/displayText";
 import { AssistantTaskList } from "../assistant/AssistantTaskList";
 import { useAssistantTasks } from "../assistant/useAssistantTasks";
@@ -323,7 +324,13 @@ function ProjectStatus({
                     <ul>
                       {stage.tasks.map((task) => (
                         <li key={task.id}>
-                          {task.done || !task.optional ? (
+                          {task.review ? (
+                            <StatusIcon
+                              status={displayMarks.needs_review}
+                              label={displayLabels.needs_review}
+                              size={14}
+                            />
+                          ) : task.done || !task.optional ? (
                             <StatusIcon
                               status={task.done ? "done" : "idle"}
                               label={task.done ? "Complete" : "Not done"}
@@ -344,11 +351,13 @@ function ProjectStatus({
                             >
                               {task.title}
                             </Button>
-                            {task.optional && !task.done && (
+                            {(task.review || (task.optional && !task.done)) && (
                               <>
                                 {" "}
                                 <span className="project-task-optional">
-                                  Optional
+                                  {task.review
+                                    ? displayLabels.needs_review
+                                    : "Optional"}
                                 </span>
                               </>
                             )}

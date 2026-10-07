@@ -12,6 +12,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { PageBody, PageLayout } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { Tabs } from "../../ui/Tabs";
+import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { runPhase, taskForStage } from "./workflow";
@@ -93,6 +94,7 @@ function Workspace(
     task,
     setPanel,
     completed,
+    needsReview,
   } = w;
   const owned = useOwnedFeedback(action.key);
   const {
@@ -166,7 +168,9 @@ function Workspace(
                 items={stage.tasks.map((item) => ({
                   id: item.id,
                   label:
-                    item.optional && !completed.has(item.id) ? (
+                    item.optional &&
+                    !completed.has(item.id) &&
+                    !needsReview.has(item.id) ? (
                       <>
                         {item.title}
                         <span className="ui-tab-hint">optional</span>
@@ -174,8 +178,17 @@ function Workspace(
                     ) : (
                       item.title
                     ),
-                  status: completed.has(item.id) && (
-                    <StatusIcon status="done" label="Complete" size={14} />
+                  // A choice still waiting shows before an earlier completion.
+                  status: needsReview.has(item.id) ? (
+                    <StatusIcon
+                      status={displayMarks.needs_review}
+                      label={displayLabels.needs_review}
+                      size={14}
+                    />
+                  ) : (
+                    completed.has(item.id) && (
+                      <StatusIcon status="done" label="Complete" size={14} />
+                    )
                   ),
                 }))}
               />

@@ -37,7 +37,7 @@ import { activeRun, observedRun } from "../translationView";
 import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
-import { completedTasks } from "../progress";
+import { completedTasks, reviewTasks } from "../progress";
 import { applyOrder, type PendingPartId, pendingParts } from "../pending";
 import { usePendingChanges } from "./usePendingChanges";
 import { assistantWaiting } from "../../assistant/assistantTasks";
@@ -1433,6 +1433,10 @@ export function useGuidedWorkspace({
     plugins: application.snapshot?.plugins,
     images: application.snapshot?.images,
   });
+  const needsReview = reviewTasks({
+    pluginsForeign: application.snapshot?.pluginsForeign,
+    imagesForeign: application.snapshot?.imagesForeign,
+  });
   const applySpeakerControl = findings.status === "ready" && (
     <ActionControl
       label={
@@ -1623,6 +1627,7 @@ export function useGuidedWorkspace({
     applyRun,
     nextRun,
     completed,
+    needsReview,
     applySpeakerControl,
     fields,
   };

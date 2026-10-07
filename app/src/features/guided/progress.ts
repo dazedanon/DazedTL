@@ -1,7 +1,9 @@
 import type {
   GuidedState,
   GuidedStep,
+  ImageForeignWork,
   ImageManagerState,
+  PluginForeignWork,
   PluginState,
   TranslationState,
 } from "../../api/contracts";
@@ -21,7 +23,18 @@ type Values = GuidedState["preferences"]["values"];
 export type OptionalWork = {
   plugins?: PluginState | null;
   images?: ImageManagerState | null;
+  /** Work another project saved in the game folder, waiting for a choice. */
+  pluginsForeign?: PluginForeignWork;
+  imagesForeign?: ImageForeignWork;
 };
+
+/** Tasks that need the user's choice before their work can continue. */
+export function reviewTasks({ pluginsForeign, imagesForeign }: OptionalWork) {
+  return new Set<string>([
+    ...(pluginsForeign ? ["plugins"] : []),
+    ...(imagesForeign ? ["images"] : []),
+  ]);
+}
 
 /**
  * Tasks whose saved evidence shows them done. `values` lets the open
@@ -115,7 +128,14 @@ export type GuidedProgress = {
     /** Required tasks done, of the stage's required tasks. */
     done: number;
     total: number;
-    tasks: { id: string; title: string; done: boolean; optional: boolean }[];
+    tasks: {
+      id: string;
+      title: string;
+      done: boolean;
+      optional: boolean;
+      /** Waiting for the user's choice, such as work another project saved. */
+      review: boolean;
+    }[];
   }[];
   /** The first unfinished required task, in workflow order. */
   next: {
@@ -145,6 +165,7 @@ export function guidedProgress(
 ): GuidedProgress {
   const stages = stagesFor(state.engine);
   const done = completedTasks(state, translation, optional);
+  const review = reviewTasks(optional);
   const order = stages.flatMap((stage) =>
     stage.tasks.map((task) => ({ stage, task })),
   );
@@ -180,6 +201,7 @@ export function guidedProgress(
         title: task.title,
         done: done.has(task.id),
         optional: !!task.optional,
+        review: review.has(task.id),
       })),
     })),
     next: next

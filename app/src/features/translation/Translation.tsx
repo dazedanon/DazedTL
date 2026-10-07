@@ -31,6 +31,8 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { StatusMark } from "../../ui/StatusMark";
+import { StatusIcon } from "../../ui/StatusIcon";
+import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { HelpPopover } from "../../ui/HelpPopover";
 
 export type TranslationView = "progress" | "context" | "images";
@@ -104,7 +106,18 @@ function Workspace({
   const tabs: Tab<View>[] = [
     { id: "progress", label: "Progress" },
     { id: "context", label: "Context" },
-    { id: "images", label: "Images" },
+    {
+      id: "images",
+      label: "Images",
+      // Image work another project saved here waits for a choice.
+      status: application.snapshot?.imagesForeign && (
+        <StatusIcon
+          status={displayMarks.needs_review}
+          label={displayLabels.needs_review}
+          size={14}
+        />
+      ),
+    },
   ];
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(

@@ -480,6 +480,7 @@ The Project page's Status, History, Game updates and Backups tabs serve both met
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity.
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
+Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
 Optional stages complete from the same snapshot: Plugin files and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.

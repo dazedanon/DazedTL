@@ -160,6 +160,8 @@ export default function App() {
       ? guidedProgress(guidedState, translationState, {
           plugins: application.snapshot?.plugins,
           images: application.snapshot?.images,
+          pluginsForeign: application.snapshot?.pluginsForeign,
+          imagesForeign: application.snapshot?.imagesForeign,
         })
       : null;
   const amounts = progress && guidedState ? projectAmounts(guidedState) : null;
