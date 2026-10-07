@@ -3,15 +3,15 @@ import type {
   GuidedStep,
   TranslationState,
 } from "../../api/contracts";
-import { investigationResults } from "./contextView";
-import { guidanceAvailability } from "./guidanceReview";
+import { investigationResults } from "./contextView.ts";
+import { guidanceAvailability } from "./guidanceReview.ts";
 import {
   completeForSelection,
   fileLines,
   selectionSettled,
   translationTaskComplete,
-} from "./translationView";
-import { initialPosition, stagesFor } from "./workflow";
+} from "./translationView.ts";
+import { initialPosition, stagesFor } from "./workflow.ts";
 
 type Values = GuidedState["preferences"]["values"];
 
@@ -100,8 +100,17 @@ export type GuidedProgress = {
     title: string;
     description: string;
   } | null;
-  /** Where the workspace reopens. */
-  current: { step: GuidedStep; task: string; stage: string; title: string };
+  /**
+   * Where the Project page returns: the saved position, or the next task when
+   * the saved one is finished and the next lies ahead of it (`advanced`).
+   */
+  current: {
+    step: GuidedStep;
+    task: string;
+    stage: string;
+    title: string;
+    advanced: boolean;
+  };
 };
 
 /** Where a Guided project stands, from saved state only. */
@@ -111,9 +120,12 @@ export function guidedProgress(
 ): GuidedProgress {
   const stages = stagesFor(state.engine);
   const done = completedTasks(state, translation);
-  const next = stages
-    .flatMap((stage) => stage.tasks.map((task) => ({ stage, task })))
-    .find(({ task }) => tracked.has(task.id) && !done.has(task.id));
+  const order = stages.flatMap((stage) =>
+    stage.tasks.map((task) => ({ stage, task })),
+  );
+  const next = order.find(
+    ({ task }) => tracked.has(task.id) && !done.has(task.id),
+  );
   return {
     stages: stages.map((stage) => ({
       id: stage.id,
@@ -138,12 +150,29 @@ export function guidedProgress(
       : null,
     current: (() => {
       const position = initialPosition(state, translation);
+      // A finished one-way step, such as the backup, has nothing to resume;
+      // a later saved position, such as Apply while Translate is open, stays.
+      const index = (task: string) =>
+        order.findIndex((item) => item.task.id === task);
+      if (
+        next &&
+        done.has(position.task) &&
+        index(next.task.id) > index(position.task)
+      )
+        return {
+          step: next.stage.id,
+          task: next.task.id,
+          stage: next.stage.short,
+          title: next.task.title,
+          advanced: true,
+        };
       const stage = stages.find((item) => item.id === position.step);
       const task = stage?.tasks.find((item) => item.id === position.task);
       return {
         ...position,
         stage: stage?.short || "",
         title: task?.title || stage?.short || "",
+        advanced: false,
       };
     })(),
   };

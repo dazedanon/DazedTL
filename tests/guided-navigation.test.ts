@@ -12,6 +12,7 @@ import {
   taskForStage,
   unfinishedRun,
 } from "../app/src/features/guided/workflow.ts";
+import { guidedProgress } from "../app/src/features/guided/progress.ts";
 
 test("saved runs choose their owning task instead of obsolete Prepare or native progress labels", () => {
   const translation = {
@@ -183,4 +184,43 @@ test("phase navigation restores an available task and falls back for removed or 
     } as TranslationState),
     { step: "context", task: "names" },
   );
+});
+
+test("the Project page continues past a finished one-way step but keeps a later saved position", () => {
+  const translation = {
+    lifecycle: { source_backup: { available: true } },
+    git: { configured: false },
+  } as TranslationState;
+  const state = {
+    engine: "MVMZ",
+    step: "prepare",
+    task: "backup",
+    preferences: { values: { selected: [] } },
+    files: [],
+    runs: [],
+    phaseRuns: {},
+    readiness: { outputs: [], applied: [] },
+    comparisons: { status: "not_needed" },
+    contextSetup: { documents: {}, layoutStatus: "missing" },
+    speakerSetup: {},
+    speakerScan: {},
+    preparation: { complete: false },
+  } as unknown as GuidedState;
+  assert.deepEqual(guidedProgress(state, translation).current, {
+    step: "prepare",
+    task: "format",
+    stage: "Prepare",
+    title: "Prepare game files",
+    advanced: true,
+  });
+  // Apply counts as done once outputs are applied, with earlier work open.
+  state.step = "apply";
+  state.task = "apply";
+  state.preferences.values.selected = ["Map001.json"];
+  state.readiness.outputs = state.readiness.applied = ["Map001.json"];
+  const progress = guidedProgress(state, translation);
+  assert.ok(
+    progress.stages.some((stage) => stage.id === "apply" && stage.done),
+  );
+  assert.equal(progress.current.task, "apply");
 });
