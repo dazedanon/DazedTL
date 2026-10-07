@@ -330,7 +330,9 @@ export function fittingView(w: GuidedWorkspace): TaskView {
                 <span>
                   {eligible
                     ? `${eligible} ${eligible === 1 ? "change" : "changes"} to review`
-                    : "No text needs fitting at these widths."}
+                    : fitting.overflow_skipped
+                      ? "No changes to apply"
+                      : "No text needs fitting at these widths."}
                   {!!fitting.overflow_skipped &&
                     ` · ${fitting.overflow_skipped} protected ${fitting.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
                 </span>

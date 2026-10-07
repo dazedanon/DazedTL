@@ -35,6 +35,9 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
   if (!preview) return null;
   const paid =
     preview?.action === "start" && preview.options.mode !== "estimate";
+  const applying = preview?.rewrap
+    ? preview.rewrap.changes_found - preview.rewrap.overflow_skipped
+    : 0;
   const reviewEstimateCurrent =
     !paid ||
     preview?.options.mode === "speakers" ||
@@ -350,23 +353,28 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
         )}
         {preview.rewrap && (
           <>
+            {/* Protected overflows are found but not written, so the review
+                counts and lists only the changes this apply makes. */}
             <p>
-              {preview.rewrap.changes_found}{" "}
-              {preview.rewrap.changes_found === 1 ? "change" : "changes"}
+              {applying} {applying === 1 ? "change" : "changes"}
               {!!preview.rewrap.overflow_skipped &&
                 ` · ${preview.rewrap.overflow_skipped} protected ${preview.rewrap.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
             </p>
-            {preview.rewrap.previews.map((row, index) => (
-              <details key={index}>
-                <summary>
-                  {row.file_name} · {textLocation(row.locator)}
-                </summary>
-                <strong>Before</strong>
-                <pre>{row.before}</pre>
-                <strong>After</strong>
-                <pre>{row.after}</pre>
-              </details>
-            ))}
+            {preview.rewrap.previews
+              .filter(
+                (row) => !(row.overflow && preview.rewrap!.overflow_skipped),
+              )
+              .map((row, index) => (
+                <details key={index}>
+                  <summary>
+                    {row.file_name} · {textLocation(row.locator)}
+                  </summary>
+                  <strong>Before</strong>
+                  <pre>{row.before}</pre>
+                  <strong>After</strong>
+                  <pre>{row.after}</pre>
+                </details>
+              ))}
           </>
         )}
       </DialogBody>
