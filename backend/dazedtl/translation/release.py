@@ -99,6 +99,9 @@ def exclusion(relative, *, directory=False):
         return "Private or tool-generated file"
     if name.endswith(_TEMP_SUFFIXES):
         return "Save, log, backup or temporary file"
+    if lowered[:2] == ["data", "backups"]:
+        # Earlier Ace packing kept RV2JSON's copies of the original data here.
+        return "Original data kept by Ace packing"
     if len(parts) == 1 and (
         directory and name in _WORK_DIRS or not directory and name in _WORK_FILES
     ):

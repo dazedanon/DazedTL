@@ -58,6 +58,7 @@ class ReleaseTests(unittest.TestCase):
                 "cache/scan.json",
                 "AGENTS.md",
                 ".dazedtl/backups/current.json",
+                "Data/backups/Actors.rvdata2",
                 "gameupdate/previous_patch_sha.txt",
             }
             for name in included | private | {"gameupdate/patch-config.txt"}:
