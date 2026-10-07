@@ -912,7 +912,8 @@ def render_entry(
     overlay = Image.new("RGBA", (array.shape[1], array.shape[0]), (0, 0, 0, 0))
     for block, layout, style, erased in planned:
         paste(overlay, layout, style, block.vertical)
-        message = f"{len(layout.fitted.lines)} line(s) at {layout.fitted.size}pt"
+        count = len(layout.fitted.lines)
+        message = f"{count} {'line' if count == 1 else 'lines'} at {layout.fitted.size}pt"
         if layout.note:
             message += f" - {layout.note}"
         if erased.tight and not layout.tight:
