@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { PathInput } from "../../../ui/PathInput";
 import { api } from "../../../api/client";
 import { flushDrafts } from "../../../state/leaveGuards";
@@ -66,6 +67,8 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     review,
   } = w;
   const owned = useOwnedFeedback(action.key);
+  // Only a scan started from this dialog confirms its result here.
+  const [scanStarted, setScanStarted] = useState("");
   if (!panel) return null;
   const findingsReady = ["ready", "applied"].includes(findings.status);
   // The editor search reports [name, path] pairs.
@@ -169,7 +172,9 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 (!!scan.job && ["ready", "running"].includes(scan.job.status))
               }
               notice={
-                scan.job?.status === "complete" && scan.available
+                scan.job?.status === "complete" &&
+                scan.available &&
+                scan.job.id === scanStarted
                   ? `${scan.names.length} names saved.`
                   : ""
               }
@@ -190,12 +195,8 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                   "",
                   "speaker-scan",
                 );
-                if (
-                  result.ok &&
-                  result.value.available &&
-                  result.value.job?.status === "complete"
-                )
-                  action.succeed("Names saved.", "speaker-scan");
+                if (result.ok && result.value.job)
+                  setScanStarted(result.value.job.id);
               }}
             />
           </>

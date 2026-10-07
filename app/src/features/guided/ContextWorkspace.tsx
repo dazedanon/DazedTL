@@ -172,9 +172,7 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
     return <p className="muted">{scan.issue || "No names collected yet."}</p>;
   return (
     <div className="context-name-results">
-      <p className="muted">
-        {`${scan.names.length} source nameplates · ${scan.files} event files`}
-      </p>
+      <p className="muted">{`${scan.files} event files scanned`}</p>
       <Tabs
         id="speaker-results"
         label="Speaker result types"
@@ -203,7 +201,8 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <span>{matching.length} shown</span>
+        {/* The tab already counts every result; count only a filtered view. */}
+        {query && <span>{matching.length} shown</span>}
       </div>
       <div
         className="context-names-list"
