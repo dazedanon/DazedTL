@@ -300,7 +300,7 @@ Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift range
 A separate Inspect icon does not change scope; the open file is marked independently of selection.
 File status follows that file's request receipts and verified output independently of checkbox selection or the current attempt.
 The file list uses the shared display states.
-Untouched files show Not started; verified passes with no new requests show Ready to apply.
+Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail; verified passes with no new requests show Ready to apply.
 Preparation, queueing, provider work, cancellation, collection and saving show Working; a pending cost approval shows Needs review without a spinner.
 Needs review also covers partial, rejected or unsaved results and never establishes completion.
 Ready to apply requires verified full output or explicit evidence that no requests were needed; Applied requires verified saved output matching the game.

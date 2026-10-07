@@ -436,6 +436,23 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     },
   };
   assert.equal(fileStatus("Map001.json", unsent).state, "not_started");
+  // A failed request returned no lines to review, unlike a rejected reply.
+  const failedRow = { ...partial.process.requests[0], state: "failed" };
+  const failed = {
+    ...unsent,
+    process: { ...partial.process, requests: [failedRow] },
+  };
+  assert.equal(fileStatus("Map001.json", failed).state, "not_started");
+  assert.equal(
+    fileStatus("Map001.json", {
+      ...failed,
+      process: {
+        ...partial.process,
+        requests: [failedRow, { ...failedRow, index: 1, state: "rejected" }],
+      },
+    }).state,
+    "needs_review",
+  );
   // Legacy dismissal flags no longer hide the latest attempt.
   assert.equal(
     phaseRun(
@@ -944,7 +961,7 @@ test("new attempts supersede historical warnings without releasing submission pr
     phaseRun([{ ...next, keptForHistory: true }, old], "database")?.id,
     next.id,
   );
-  assert.equal(fileStatus("Items.json", old).label, "Needs review");
+  assert.equal(fileStatus("Items.json", old).label, "Not started");
   assert.equal(needsSubmissionReview(old), false);
   assert.equal(canResumeRun(old), false);
   assert.equal(
@@ -1615,7 +1632,7 @@ test("file status follows active and automatically monitored Batch work before r
       "working",
       "ready",
       "needs_review",
-      "needs_review",
+      "not_started",
       "working",
       "ready",
       "not_started",
