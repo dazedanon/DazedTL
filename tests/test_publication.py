@@ -203,3 +203,84 @@ class PublicationTests(unittest.TestCase):
         write_json(self.folder / "source-inputs.json", {"changed": True})
         with self.assertRaisesRegex(ValueError, "source bindings changed"):
             p.publish(self.folder, self.root, plan)
+
+    def test_saved_qa_findings_reach_the_app_as_contract_findings(self):
+        # Engine findings also carry cluster, family, severity and target
+        # fields; passing them through broke the workspace snapshot contract.
+        import json
+        import sys
+        from types import ModuleType
+
+        from pydantic import TypeAdapter
+
+        from dazedtl.api.contracts.guided import QaState
+        from dazedtl.api.contracts.validation import _close_contracts
+        from dazedtl.compatibility import text
+        from dazedtl.translation.files import digest
+
+        task_dir = self.folder / "text-qa/database/task"
+        for name in (
+            "task.json",
+            "inventory.json",
+            "context.json",
+            "screen-index.json",
+        ):
+            write_json(task_dir / name, {})
+        task = {"game_root": str(self.root), "data_root": str(self.root / "data")}
+        engine = ModuleType("util.rpgmaker_qa")
+        engine._load_task = lambda path: (Path(path), task, {"stage": "complete"})
+        engine.FINDINGS_SCHEMA = "findings"
+        engine._sha256 = lambda value: "task"
+        engine._canonical_bytes = lambda value: b""
+        engine.status = lambda root: {}
+        write_json(
+            task_dir / "findings.json",
+            {
+                "schema": "findings",
+                "task_sha256": "task",
+                "findings": [
+                    {
+                        "id": "QA-0001",
+                        "category": "terminology",
+                        "cluster_id": "MapInfos.json#/1/name@a",
+                        "correction": "Arjilee Plateau",
+                        "current": "Arjilee Highlands",
+                        "evidence": "Other maps use Plateau.",
+                        "family_key": "term:アージリー高原",
+                        "severity": "medium",
+                        "source": "アージリー高原",
+                        "target_identities": ["MapInfos.json#/1/name@a"],
+                    }
+                ],
+            },
+        )
+        plan = {
+            "folder": str(self.folder),
+            "options": {"focus": "database"},
+            "project_id": "project",
+            "project": {"source": str(self.root), "data": str(self.root / "data")},
+            "guard": {},
+        }
+        write_json(
+            self.folder / "text-qa-database.json",
+            {
+                "task": str(task_dir),
+                "binding": text.binding(plan),
+                "immutable": {
+                    name: digest((task_dir / name).read_bytes())
+                    for name in (
+                        "task.json",
+                        "inventory.json",
+                        "context.json",
+                        "screen-index.json",
+                    )
+                },
+            },
+        )
+        package = ModuleType("util")
+        package.rpgmaker_qa = engine
+        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+            state = text.qa_state(plan)
+        _close_contracts()
+        TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
+        self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")

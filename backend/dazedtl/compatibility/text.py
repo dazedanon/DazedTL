@@ -10,6 +10,22 @@ from dazedtl.translation import publication
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 
 
+# The QaFinding contract: what a saved finding shows in the app.
+FINDING_FIELDS = (
+    "id",
+    "source",
+    "live",
+    "current",
+    "correction",
+    "reason",
+    "evidence",
+    "note",
+    "category",
+    "classification",
+    "identity",
+)
+
+
 def binding(plan):
     guard = {
         key: value
@@ -72,9 +88,15 @@ def qa_state(plan):
         or document.get("task_sha256") != qa._sha256(qa._canonical_bytes(task))
     ):
         raise ValueError("Saved findings belong to another QA task.")
-    findings = document.get("findings", []) + [
-        {**row, "classification": "Uncertain - excluded from corrections"}
-        for row in document.get("uncertain_playtests", [])
+    # Engine findings also carry cluster, family, severity and target
+    # identities for correction maps; the app shows only the review fields.
+    findings = [
+        {key: row[key] for key in FINDING_FIELDS if key in row}
+        for row in document.get("findings", [])
+        + [
+            {**row, "classification": "Uncertain - excluded from corrections"}
+            for row in document.get("uncertain_playtests", [])
+        ]
     ]
     corrections = []
     path = root / "correction-map.json"
