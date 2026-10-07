@@ -58,7 +58,14 @@ export function Message({
   if (!message) return null;
   return (
     <div className="banner" role="alert">
-      <span>{message}</span>
+      {/* A long failure, such as a contract report, stays an excerpt that
+          expands in its own scrolling space instead of covering the page. */}
+      <ExpandableText
+        text={message}
+        label="Error details"
+        appearance="inline"
+        limit={320}
+      />
       {onDismiss && (
         <Button variant="quiet" aria-label="Dismiss error" onClick={onDismiss}>
           <X size={16} />

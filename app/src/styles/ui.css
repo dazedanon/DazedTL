@@ -593,9 +593,14 @@ pre {
 }
 /* An expanded result scrolls in its own space instead of growing its bar or
    row past the page. */
-.feedback > .expandable-text {
+.feedback > .expandable-text,
+.banner > .expandable-text {
   max-height: 12rem;
   overflow-y: auto;
+}
+.banner > .expandable-text {
+  flex: 1;
+  min-width: 0;
 }
 .unsaved-dot {
   width: 6px;
