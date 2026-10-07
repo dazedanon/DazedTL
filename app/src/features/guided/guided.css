@@ -1133,11 +1133,20 @@
   margin-top: var(--space-3);
 }
 
+/* Sources are divided from each other, not from the dialog header. */
 .event-text-source {
-  border-top: 1px solid var(--color-border);
   padding: var(--space-4) 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.event-text-source:not(:first-child) {
+  border-top: 1px solid var(--color-border);
+}
+.event-text-source:first-child {
+  padding-top: 0;
+}
+.event-text-source:last-child {
+  padding-bottom: 0;
 }
 .event-text-source h3,
 .event-text-source .toggle {
