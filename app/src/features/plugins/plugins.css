@@ -15,128 +15,14 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
-}
-.plugin-prerequisite {
   color: var(--color-warning);
   line-height: 1.5;
 }
 .plugin-prerequisite svg {
   flex-shrink: 0;
 }
-.plugin-files {
-  min-width: 0;
-}
-.plugin-files-heading,
-.plugin-filters,
-.plugin-table-count {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.plugin-files-heading {
-  justify-content: space-between;
-  font-size: var(--font-small);
-}
-.plugin-filters {
-  margin: var(--space-4) 0;
-}
-.plugin-search {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1 1 15em;
-  min-width: 0;
-}
-.plugin-search input {
-  width: 100%;
-  min-width: 0;
-}
-.plugin-filters select {
-  max-width: 100%;
-}
-.plugin-selected-filter {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-}
-.plugin-table-scroll {
-  overflow: auto;
-}
-.plugin-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--font-small);
-  table-layout: fixed;
-}
-.plugin-table th {
-  text-align: left;
-  color: var(--color-muted);
-  font-weight: var(--weight-medium);
-}
-.plugin-table th:first-child {
-  width: 52%;
-}
-.plugin-table th,
-.plugin-table td {
-  padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--color-border);
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-.plugin-table th:first-child,
-.plugin-table td:first-child {
-  padding-left: 0;
-}
-.plugin-file {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: var(--space-2);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  width: 100%;
-  color: var(--color-accent);
-}
-.plugin-file svg {
-  flex-shrink: 0;
-  margin-top: var(--space-1);
-}
-.plugin-file span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.plugin-file small,
-.plugin-status small,
-.plugin-table td > small {
-  display: block;
-  color: var(--color-muted);
-  margin-top: var(--space-1);
-}
-.plugin-status {
-  font-size: var(--font-small);
-}
 .plugin-success {
   color: var(--color-success);
-}
-.plugin-table td > .plugin-warning {
-  color: var(--color-warning);
-}
-.plugin-table-count {
-  color: var(--color-muted);
-  font-size: var(--font-small);
-  margin-top: var(--space-3);
-}
-.plugin-table-count > span:first-child {
-  flex: 1;
-}
-.plugin-empty {
-  color: var(--color-muted);
-  padding: var(--space-4) 0;
 }
 .plugin-footer-context {
   display: flex;
@@ -145,85 +31,12 @@
   gap: var(--space-3);
   min-width: 0;
 }
-.plugin-footer-summary {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--font-small);
-  color: var(--color-muted);
-}
 .plugin-review-body p {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.plugin-review-body textarea {
-  min-height: 8em;
-}
 .plugin-review-body details {
   margin: var(--space-3) 0;
-}
-.plugin-detail-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-.plugin-occurrence {
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.plugin-occurrence-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-.plugin-occurrence-heading label {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-}
-.plugin-occurrence-heading .muted {
-  font-size: var(--font-small);
-}
-.plugin-path {
-  font-size: var(--font-small);
-  color: var(--color-muted);
-  overflow-wrap: anywhere;
-}
-.plugin-checks {
-  display: grid;
-  gap: var(--space-2);
-}
-.plugin-checks > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-3);
-}
-.plugin-checks dd {
-  margin: 0;
-}
-.plugin-diff {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-.plugin-diff small {
-  color: var(--color-muted);
-}
-.plugin-diff pre {
-  background: var(--color-inset);
-  padding: var(--space-2);
-  font-size: var(--font-small);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: var(--space-2) 0 0;
-  max-height: 18em;
-  overflow: auto;
 }
 .plugin-review-table {
   overflow: auto;
@@ -253,9 +66,4 @@
 .plugin-receipt-problem {
   display: block;
   color: var(--color-error-text);
-}
-@media (max-width: 700px) {
-  .plugin-table th:first-child {
-    width: 44%;
-  }
 }

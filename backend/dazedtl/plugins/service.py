@@ -7,6 +7,7 @@ import shlex
 import sys
 import threading
 import uuid
+from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,7 +15,7 @@ from pathlib import Path
 from dazedtl import foreign_work
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation import backups
+from dazedtl.translation import backups, reference_folders
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.operations import (
     lifecycle,
@@ -25,34 +26,11 @@ from dazedtl.translation.operations import (
 from .documents import Documents, decode, occurrences, validate
 
 WORK = ".dazedtl/plugin-work"
-DISPOSITIONS = {
-    "visible",
-    "latent",
-    "protected",
-    "editor_only",
-    "non_visible",
-    "unresolved",
-}
-VIEW = {
-    "mode": "scope",
-    "query": "",
-    "filter": "all",
-    "selectedOnly": False,
-    "currentFile": "",
-    "offset": 0,
-}
-FILTERS = {
-    "all",
-    "ready",
-    "selected",
-    "needs_revision",
-    "latent",
-    "unresolved",
-    "stale",
-    "applied",
-    "not_investigated",
-    "not_needed",
-}
+# What the assistant can settle for one occurrence. Reports saved before every
+# occurrence needed a decision may still say "unresolved"; that text stays
+# with the assistant.
+DECIDED = {"visible", "latent", "protected", "editor_only", "non_visible"}
+DISPOSITIONS = DECIDED | {"unresolved"}
 DATABASE_JSON = {
     "Actors.json",
     "Classes.json",
@@ -85,8 +63,16 @@ def pick(value, keys):
     return {key: value[key] for key in keys if key in value}
 
 
-def report_view(value):
-    return pick(value, ("status", "errors", "accepted", "reported", "expected"))
+def undecided(item):
+    """Text only the assistant can settle; the app protects lookup keys itself."""
+    return (
+        not item["protected"]
+        and item.get("finding", {}).get("disposition") not in DECIDED
+    )
+
+
+def no_context(_project_id):
+    return {"translated": "", "references": []}
 
 
 # Stored reviews and receipts also keep the working copies and frozen bytes that
@@ -155,9 +141,14 @@ def safe_name(name):
 
 
 class PluginService:
-    def __init__(self, projects, translation, backend, *, documents=None):
+    def __init__(
+        self, projects, translation, backend, *, documents=None, context=no_context
+    ):
         self.projects, self.translation, self.backend = projects, translation, backend
         self.documents = documents or Documents()
+        # Where the game's established English lives beyond its guidance files:
+        # the translated text folder and the reference games.
+        self.context = context
         self.lock = threading.RLock()
         self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
 
@@ -183,8 +174,6 @@ class PluginService:
                 "projectId": project_id,
                 "files": {},
                 "selection": [],
-                "manual": {},
-                "view": dict(VIEW),
                 "requests": {},
                 "findings": {"status": "idle", "errors": []},
                 "editing": {"status": "idle", "errors": []},
@@ -208,8 +197,10 @@ class PluginService:
                     "Plugin work in this game folder was saved by another project or app version. Its files were kept; choose how to continue in Plugin files.",
                     self.foreign_summary(project_id, path, value, signature),
                 )
-        if value["view"]["filter"] not in FILTERS:
-            value["view"].update(filter="all", offset=0)
+        # The file table and manual text choices are gone; text is chosen from
+        # the assistant's findings alone.
+        value.pop("view", None)
+        value.pop("manual", None)
         self.cache[project_id] = (signature, deepcopy(value))
         return value
 
@@ -372,11 +363,6 @@ class PluginService:
                 "state": self.state(project_id),
                 "message": "Earlier plugin work moved to " + archived + ".",
             }
-
-    @staticmethod
-    def revision(value):
-        # View drafts must survive the external agent updating findings and scope.
-        return digest(value["view"])
 
     def source(self, root, path):
         target = project_path(root, path)
@@ -692,6 +678,14 @@ class PluginService:
                 row["stale"] = bool(prior)
                 if prior.get("prepared"):
                     row["archivedPrepared"] = prior["prepared"]
+            # A file with no unprotected Japanese text and no JSON it loads
+            # leaves the assistant nothing to decide.
+            if (
+                not row["issue"]
+                and not row["loaderLiterals"]
+                and all(item["protected"] for item in row["occurrences"])
+            ):
+                row.update(examined=True, stale=False)
             rows[path] = row
         value.update(
             files=rows,
@@ -715,96 +709,74 @@ class PluginService:
             and item.get("finding", {}).get("safe") is True
         }
 
-    def recommended_selection(self, value):
-        eligible = self.eligible(value)
-        selected = {
+    def chosen_text(self, value):
+        """Active display text the assistant found safe to change; inactive and
+        default-only text never reaches players."""
+        return sorted(
             identity
-            for identity, item in eligible.items()
+            for identity, item in self.eligible(value).items()
             if not item["latent"] and item["finding"]["disposition"] == "visible"
-        }
-        for identity, choice in value["manual"].items():
-            if choice["selected"] and identity in eligible:
-                selected.add(identity)
-            if not choice["selected"]:
-                selected.discard(identity)
-        return sorted(selected)
+        )
 
-    def public_row(self, value, row):
-        selected = set(value["selection"])
-        items = row["occurrences"]
-        visible = [
-            item
-            for item in items
-            if item.get("finding", {}).get("disposition") == "visible"
-            and not item["latent"]
-        ]
-        latent = [item for item in items if item["latent"]]
-        count = sum(item["id"] in selected for item in items)
-        result = row.get("result", {})
-        status = result.get("status") or (
-            "working_copy"
-            if row.get("prepared")
-            else "selected"
-            if count
-            else "not_investigated"
-        )
-        if (
-            row.get("applied")
-            and result.get("status") == "ready"
-            and result.get("candidateHash") == row["applied"].get("afterHash")
-        ):
-            status = "applied"
-        if row.get("examined") and not count and not result:
-            status = (
-                "latent"
-                if latent and not visible
-                else "not_needed"
-                if not visible
-                else "available"
-            )
-        uncertain = sum(
-            not item["protected"]
-            and (
-                not item.get("finding")
-                or item["finding"]["disposition"] == "unresolved"
-                or item["finding"]["disposition"] in {"visible", "latent"}
-                and not item["finding"]["safe"]
-            )
-            for item in items
-        )
-        if uncertain and not count and not result and not row.get("stale"):
-            status = "unresolved"
-        if row.get("stale"):
-            status = "stale"
+    @staticmethod
+    def row_status(value, row):
+        """Where one file stands: unreadable, investigate, translate, ready,
+        applied, translated (checked with nothing to change) or none (no
+        player text)."""
         if row.get("issue"):
-            status = "unresolved"
-        return {
-            key: row.get(key)
-            for key in ("path", "plugin", "enabled", "kind", "sourceHash", "issue")
-        } | {
-            "selected": count,
-            "visible": len(visible),
-            "latent": len(latent),
-            "occurrences": len(items),
-            "status": status,
-            "uncertain": uncertain,
-            "recommended": sum(
-                not item["protected"]
-                and not item["latent"]
-                and item.get("finding", {}).get("disposition") == "visible"
-                and item.get("finding", {}).get("safe") is True
-                and not row.get("stale")
-                and not row.get("issue")
-                for item in items
-            ),
-            "manual": sum(item["id"] in value["manual"] for item in items),
-            "changed": len(result.get("targets", {})),
-            "reason": result.get("reason", "") or row.get("issue", ""),
-            "candidateHash": result.get("candidateHash", ""),
-            "working": row.get("prepared", {}).get("candidate", ""),
-            "ready": status == "ready",
-            "applied": bool(row.get("applied")) and not row.get("stale"),
+            return "unreadable"
+        if (
+            row.get("stale")
+            or not row.get("examined")
+            or any(undecided(item) for item in row["occurrences"])
+        ):
+            return "investigate"
+        selected = set(value["selection"])
+        ids = sorted(
+            item["id"] for item in row["occurrences"] if item["id"] in selected
+        )
+        result = row.get("result", {})
+        checked = result.get("selection") == ids and result.get("status") in {
+            "ready",
+            "unchanged",
         }
+        if (
+            checked
+            and row.get("applied")
+            and result.get("candidateHash") == row["applied"]["afterHash"]
+        ):
+            return "applied"
+        if not ids:
+            return "none"
+        if not checked:
+            return "translate"
+        return "ready" if result["status"] == "ready" else "translated"
+
+    def investigation_scope(self, value, *, recheck=False):
+        """Each readable file with text the assistant has not settled, asking
+        only about that text; a recheck asks about every decision again."""
+        scope = []
+        for path, row in value["files"].items():
+            if row.get("issue"):
+                continue
+            asked = [
+                item
+                for item in row["occurrences"]
+                if not item["protected"] and (recheck or undecided(item))
+            ]
+            if asked or self.row_status(value, row) == "investigate":
+                scope.append((path, asked))
+        return scope
+
+    def translation_scope(self, value):
+        """Files with chosen text whose checked translation is missing or out
+        of date, with that text."""
+        selected = set(value["selection"])
+        return [
+            (path, [item for item in row["occurrences"] if item["id"] in selected])
+            for path, row in value["files"].items()
+            if self.row_status(value, row) == "translate"
+        ]
 
     def observe(self, project_id, value):
         """Bounded observations invalidate displayed checks without rewriting assistant work."""
@@ -846,7 +818,7 @@ class PluginService:
                     row["result"] = {
                         **result,
                         "status": "needs_revision",
-                        "reason": "Working copy changed; refresh results to check its current bytes.",
+                        "reason": "The working copy changed after its check; the plugin task checks it again.",
                         "checks": {},
                     }
                 ids = sorted(
@@ -858,32 +830,23 @@ class PluginService:
                     row["result"] = {
                         **result,
                         "status": "needs_revision",
-                        "reason": "Text selection changed; copy a new translation task and refresh its results.",
+                        "reason": "The text to translate changed; the plugin task translates it again.",
                         "checks": {},
                     }
-                current = value["requests"].get("translation")
-                if result and result.get("requestId") != (current or {}).get(
-                    "requestId"
+                # Work taken over from another project was checked there; what
+                # the game already holds stays applied.
+                if (
+                    result.get("carried")
+                    and result.get("status") == "ready"
+                    and result.get("candidateHash")
+                    != row.get("applied", {}).get("afterHash")
                 ):
-                    # Work taken over from another project was checked there;
-                    # what the game already holds stays applied.
-                    if result.get("carried") and not current:
-                        if result.get("candidateHash") != row.get("applied", {}).get(
-                            "afterHash"
-                        ):
-                            row["result"] = {
-                                **result,
-                                "status": "needs_revision",
-                                "reason": "Checked by the project that saved this work. Copy the plugin task so your assistant checks it here; the working copy is kept.",
-                                "checks": {},
-                            }
-                    else:
-                        row["result"] = {
-                            **result,
-                            "status": "needs_revision",
-                            "reason": "Saved results belong to an earlier task; refresh the current task report. Existing working copies are retained.",
-                            "checks": {},
-                        }
+                    row["result"] = {
+                        **result,
+                        "status": "needs_revision",
+                        "reason": "Checked by the project that saved this work. Copy the plugin task so your assistant checks it here; the working copy is kept.",
+                        "checks": {},
+                    }
             except (OSError, ValueError) as exc:
                 row["issue"] = str(exc)
 
@@ -892,57 +855,65 @@ class PluginService:
             value = self.load(project_id)
             self.recover(project_id, value)
             self.observe(project_id, value)
-            project, root = self.record(project_id)
-            rows = [self.public_row(value, row) for row in value["files"].values()]
-            counts = {
-                "files": len(rows),
-                "selectedFiles": sum(row["selected"] > 0 for row in rows),
-                "selected": len(value["selection"]),
-                "recommended": sum(row["recommended"] for row in rows),
-                "ready": sum(row["selected"] > 0 and row["ready"] for row in rows),
-                "blocked": sum(
-                    row["selected"] > 0
-                    and not row["ready"]
-                    and row["status"] != "applied"
-                    for row in rows
+            project, _ = self.record(project_id)
+            # Files with nothing for the assistant to decide stay out of the
+            # counts, so they read as the assistant's progress.
+            statuses = Counter(
+                self.row_status(value, row)
+                for row in value["files"].values()
+                if row.get("issue")
+                or row.get("loaderLiterals")
+                or not all(item["protected"] for item in row["occurrences"])
+            )
+            translated = (
+                statuses["ready"] + statuses["applied"] + statuses["translated"]
+            )
+            active = next(
+                (
+                    request
+                    for request in value["requests"].values()
+                    if request["requestId"] == value.get("activeRequest")
                 ),
-                "applied": sum(row["applied"] for row in rows),
-                "latent": sum(row["latent"] for row in rows),
-            }
-            counts["selectedNotPrepared"] = sum(
-                row["selected"] > 0 and not row["working"] for row in rows
+                None,
+            )
+            report = (
+                value["findings" if active["kind"] == "investigation" else "editing"]
+                if active
+                else {}
             )
             return {
                 "projectId": project_id,
-                "revision": self.revision(value),
-                "observationRevision": digest(value),
                 "supported": project["engine"] == "MVMZ",
                 "limitation": "Ace Ruby scripts need parser and native packing support; this workspace cannot publish them."
                 if project["engine"] == "ACE"
                 else "",
-                "layout": value["layout"],
-                "source": str(root),
-                "view": value["view"],
-                "counts": counts,
-                # The stored report also binds its request, which stays here.
-                "findings": report_view(value["findings"]),
-                "editing": report_view(value["editing"]),
+                # Whether the game's plugins were read; counts start then.
+                "scanned": bool(value["binding"]),
+                "counts": {
+                    "files": statuses.total() - statuses["unreadable"],
+                    "investigated": statuses.total()
+                    - statuses["investigate"]
+                    - statuses["unreadable"],
+                    "textFiles": translated + statuses["translate"],
+                    "selected": len(value["selection"]),
+                    "translated": translated,
+                    "ready": statuses["ready"],
+                    "applied": statuses["applied"],
+                },
+                "unreadable": [
+                    {"path": path, "issue": row["issue"]}
+                    for path, row in value["files"].items()
+                    if row.get("issue")
+                ],
                 "originalIssue": self.original_issue(project_id, value),
-                "originalBackup": value["originals"].get("backupId", ""),
                 "receipts": [
                     receipt_view(row, value["files"]) for row in value["receipts"][-12:]
                 ],
-                "activeRequest": next(
-                    (
-                        request["path"]
-                        for request in value["requests"].values()
-                        if request["requestId"] == value.get("activeRequest")
-                    ),
-                    "",
-                ),
-                "requestPaths": {
-                    key: request["path"] for key, request in value["requests"].items()
-                },
+                # The helper reads the active request's saved instructions here.
+                "activeRequest": active["path"] if active else "",
+                "awaiting": bool(active)
+                and report.get("status") == "awaiting_report"
+                and report.get("requestId") == active["requestId"],
             }
 
     def original_issue(self, project_id, value):
@@ -959,233 +930,14 @@ class PluginService:
             return "The original backup is available now. Copy the plugin task again so its investigation can check the original text."
         return issue
 
-    def list(
-        self,
-        project_id,
-        query="",
-        filter="all",
-        selected_only=False,
-        offset=0,
-        limit=100,
-    ):
-        bounded(query, "Search", 500)
-        bounded(filter, "Filter", 30)
-        if filter not in FILTERS:
-            filter = "all"
-        if (
-            type(offset) is not int
-            or offset < 0
-            or type(limit) is not int
-            or not 1 <= limit <= 200
-        ):
-            raise ValueError("Choose a bounded plugin table range.")
-        with self.lock:
-            value = self.load(project_id)
-            self.observe(project_id, value)
-            rows = [self.public_row(value, row) for row in value["files"].values()]
-            rows = [
-                row
-                for row in rows
-                if query.casefold() in (row["path"] + " " + row["plugin"]).casefold()
-                and (filter == "all" or row["status"] == filter)
-                and (not selected_only or row["selected"])
-            ]
-            rows.sort(key=lambda row: row["path"])
-            return {
-                "items": rows[offset : offset + limit],
-                "total": len(rows),
-                "selectedMatched": sum(row["selected"] > 0 for row in rows),
-                "offset": offset,
-                "limit": limit,
-            }
-
-    def detail(self, project_id, file):
-        with self.lock:
-            value = self.load(project_id)
-            self.observe(project_id, value)
-            if file not in value["files"]:
-                raise ValueError("Choose an inventoried plugin file.")
-            row = value["files"][file]
-            _, root = self.record(project_id)
-            result = row.get("result", {})
-            prepared = row.get("prepared", {})
-            before = (
-                self.source(root, prepared["original"]).decode()
-                if prepared
-                else self.source(root, file).decode()
-            )
-            after = (
-                self.source(root, prepared["candidate"]).decode()
-                if prepared
-                else before
-            )
-            # Bounded source excerpts. Full files remain on disk for the scoped assistant.
-            evidence = []
-            lines, later = before.splitlines(), after.splitlines()
-            for item in row["occurrences"][:500]:
-                line = max(0, item["line"] - 1)
-                evidence.append(
-                    {
-                        **item,
-                        "selected": item["id"] in value["selection"],
-                        "manual": value["manual"].get(item["id"]),
-                        "before": "\n".join(lines[max(0, line - 2) : line + 3])[:4000],
-                        "after": "\n".join(later[max(0, line - 2) : line + 3])[:4000],
-                        "target": result.get("targets", {}).get(item["id"], ""),
-                    }
-                )
-            return {
-                **self.public_row(value, row),
-                "items": evidence,
-                "total": len(row["occurrences"]),
-                "checks": result.get("checks", {}),
-                "resultEvidence": result.get("evidence", ""),
-                "rendered": "Pending playtest",
-                "original": prepared.get("original", ""),
-                "originalHash": prepared.get("originalHash", ""),
-            }
-
-    def update(self, project_id, revision, changes):
-        with self.lock:
-            value = self.load(project_id)
-            if self.revision(value) != revision:
-                raise ValueError("Plugin choices changed. Reload before saving.")
-            if not isinstance(changes, dict) or set(changes) - {"view"}:
-                raise ValueError("Unknown plugin preference.")
-            view = changes.get("view", {})
-            if not isinstance(view, dict) or set(view) - set(VIEW):
-                raise ValueError("Unknown plugin view.")
-            for key, item in view.items():
-                if key == "selectedOnly":
-                    if type(item) is not bool:
-                        raise ValueError("Invalid selection filter.")
-                elif key == "offset":
-                    if type(item) is not int or not 0 <= item <= 1_000_000:
-                        raise ValueError("Invalid table position.")
-                else:
-                    bounded(item, "Plugin view", 2000)
-            if view.get("mode", value["view"]["mode"]) not in {"scope", "working"}:
-                raise ValueError("Choose scope or working copies.")
-            if view.get("filter", value["view"]["filter"]) not in FILTERS:
-                view = {**view, "filter": "all", "offset": 0}
-            value["view"].update(view)
-            self.save(project_id, value)
-            return self.state(project_id)
-
     def action(self, project_id, action, options=None):
         options = options or {}
         if not isinstance(options, dict):
             raise ValueError("Plugin action options must be an object.")
         with self.lock:
             value = self.load(project_id)
-            if action in {"investigate", "plugin_task"}:
-                self.scan(project_id, value)
-                current = value["requests"].get("investigation")
-                # Copying the task again while its investigation is still current
-                # hands out the same request, so an assistant extends its saved
-                # report instead of a new request discarding accepted findings.
-                if (
-                    action == "plugin_task"
-                    and current
-                    and current.get("automatic")
-                    and value.get("activeRequest") == current["requestId"]
-                    and self.request_current(project_id, value, current)
-                ):
-                    result = {
-                        "text": current["instructions"],
-                        "request": current["path"],
-                        "requestId": current["requestId"],
-                        "stage": "investigation",
-                    }
-                else:
-                    result = self.request(
-                        project_id,
-                        value,
-                        "investigation",
-                        automatic=action == "plugin_task",
-                    )
-            elif action in {"refresh_findings", "refresh_results"}:
-                result = self.refresh(
-                    project_id,
-                    value,
-                    "investigation" if action == "refresh_findings" else "translation",
-                )
-            elif action in {"recommended", "select", "select_files", "clear"}:
-                eligible = self.eligible(value)
-                selected = set(value["selection"])
-                if action == "recommended":
-                    selected = set(self.recommended_selection(value))
-                elif action == "clear":
-                    for identity in selected:
-                        value["manual"][identity] = {
-                            "selected": False,
-                            "reason": "Selection cleared by you",
-                        }
-                    selected = set()
-                else:
-                    identities = options.get("ids", [])
-                    if action == "select_files":
-                        paths = options.get("paths", [])
-                        if (
-                            not isinstance(paths, list)
-                            or not paths
-                            or set(paths) - set(value["files"])
-                        ):
-                            raise ValueError("Choose exact inventoried file paths.")
-                        identities = [
-                            item["id"]
-                            for path in paths
-                            for item in value["files"][path]["occurrences"]
-                            if options.get("selected") is False
-                            or item["id"] in eligible
-                            and (
-                                not item["latent"]
-                                or options.get("includeLatent") is True
-                            )
-                        ]
-                    if not isinstance(identities, list) or len(set(identities)) != len(
-                        identities
-                    ):
-                        raise ValueError("Choose exact unique occurrence IDs.")
-                    wanted = options.get("selected")
-                    if type(wanted) is not bool:
-                        raise ValueError("Choose include or exclude.")
-                    known = {
-                        item["id"]
-                        for row in value["files"].values()
-                        for item in row["occurrences"]
-                    }
-                    if (
-                        set(identities) - known
-                        or wanted
-                        and set(identities) - set(eligible)
-                    ):
-                        raise ValueError(
-                            "Unresolved or protected text needs new investigation evidence before inclusion."
-                        )
-                    reason = bounded(options.get("reason", ""), "Manual choice reason")
-                    if (
-                        wanted
-                        and any(eligible[identity]["latent"] for identity in identities)
-                        and not reason.strip()
-                    ):
-                        raise ValueError(
-                            "Give a reason before including disabled/default-only text."
-                        )
-                    for identity in identities:
-                        value["manual"][identity] = {
-                            "selected": wanted,
-                            "reason": reason
-                            or ("Included by you" if wanted else "Excluded by you"),
-                        }
-                        selected.add(identity) if wanted else selected.discard(identity)
-                value["selection"] = sorted(selected)
-                result = {"selected": len(selected)}
-            elif action == "prepare":
-                result = self.prepare(project_id, value)
-            elif action == "translation_task":
-                self.prepare(project_id, value)
-                result = self.request(project_id, value, "translation")
+            if action == "plugin_task":
+                result = self.copy_task(project_id, value)
             elif action in {"preview_apply", "preview_restore"}:
                 return {
                     "preview": preview_view(
@@ -1200,19 +952,68 @@ class PluginService:
             elif action in {"apply", "restore"}:
                 return self.publish(project_id, value, action, options)
             else:
-                raise ValueError("Choose a supported Plugin workspace action.")
-            if action in {"investigate", "plugin_task", "translation_task"}:
-                # What the copied task expects back, for the assistant task list.
-                result = {
-                    **result,
-                    "handoff": {
-                        "kind": "plugins",
-                        "requestId": result["requestId"],
-                        "expects": [value["requests"][result["stage"]]["report"]],
-                    },
-                }
+                raise ValueError("Choose a supported Plugin files action.")
             self.save(project_id, value)
             return {**result, "state": self.state(project_id)}
+
+    def copy_task(self, project_id, value):
+        """The request a copied task starts from: whatever is left, or a recheck
+        of every decision once nothing is."""
+        self.scan(project_id, value)
+        self.observe(project_id, value)
+        active = next(
+            (
+                request
+                for request in value["requests"].values()
+                if request["requestId"] == value.get("activeRequest")
+            ),
+            None,
+        )
+        result = self.advance(project_id, value, active)
+        if not result:
+            scope = self.investigation_scope(value, recheck=True)
+            if not scope:
+                # The scan is the whole answer: nothing is handed out.
+                return {"message": "No plugin holds Japanese text to translate."}
+            result = self.request(
+                project_id, value, "investigation", scope, recheck=True
+            )
+        # What the copied task expects back, for the assistant task list.
+        return {
+            **result,
+            "handoff": {
+                "kind": "plugins",
+                "requestId": result["requestId"],
+                "expects": [value["requests"][result["stage"]]["report"]],
+            },
+        }
+
+    def advance(self, project_id, value, current=None):
+        """The next request: text still to investigate first, then files to
+        translate. A request whose scope has not changed is handed out again,
+        so its saved report is extended rather than orphaned."""
+        kind, scope = "investigation", self.investigation_scope(value)
+        if not scope:
+            kind, scope = "translation", self.translation_scope(value)
+            if not scope:
+                return None
+            self.prepare(project_id, value)
+        if current and self.same_scope(project_id, value, current, kind, scope):
+            key = "findings" if kind == "investigation" else "editing"
+            value[key] = {**value[key], "status": "awaiting_report"}
+            return {
+                "text": current["instructions"],
+                "request": current["path"],
+                "requestId": current["requestId"],
+                "stage": kind,
+            }
+        return self.request(
+            project_id,
+            value,
+            kind,
+            scope,
+            previous=current["requestId"] if current else "",
+        )
 
     def guidance(self, root):
         paths = [
@@ -1231,84 +1032,94 @@ class PluginService:
             if (root / path).is_file()
         }
 
-    def request(self, project_id, value, kind, *, automatic=False, previous=""):
+    def request(self, project_id, value, kind, scope, *, previous="", recheck=False):
+        """A request-bound stage of the copied task for exactly `scope`: the
+        files and occurrences it asks about, with the game's established
+        English as context."""
         _, root = self.record(project_id)
+        if not value["originals"]:
+            raise ValueError(
+                value.get("originalIssue")
+                or "Plugin text needs the original game backup to protect lookup values."
+            )
         identity = uuid.uuid4().hex
         request_path = self.path(project_id, "requests/" + identity + ".json")
         report_path = self.path(project_id, "reports/" + identity + ".json")
         files = []
-        selected = set(value["selection"])
-        for path, row in value["files"].items():
-            items = [
-                item
-                for item in row["occurrences"]
-                if kind == "investigation" or item["id"] in selected
-            ]
-            if kind == "translation" and not items:
-                continue
+        for path, items in scope:
+            row = value["files"][path]
             if kind == "translation" and not row.get("prepared"):
-                raise ValueError(
-                    "Make working copies for every selected file before copying the translation task."
-                )
+                raise ValueError("A file to translate has no working copy: " + path)
             files.append(
                 {
                     "path": path,
+                    "plugin": row["plugin"],
                     "sourceHash": row["sourceHash"],
                     "kind": row["kind"],
                     "enabled": row["enabled"],
-                    "issue": row.get("issue", ""),
                     "occurrences": items,
-                    "loaderLiterals": row.get("loaderLiterals", []),
+                    "loaderLiterals": row.get("loaderLiterals", [])
+                    if kind == "investigation"
+                    else [],
+                    # Why an earlier translation of this file was not accepted.
+                    "failedCheck": row.get("result", {}).get("reason", "")
+                    if kind == "translation"
+                    else "",
                     **row.get("prepared", {}),
                 }
             )
-        if kind == "translation" and not files:
-            raise ValueError("Choose investigated display text before translation.")
-        if kind == "translation":
-            self.current_sources(project_id, value, files)
-            self.current_originals(project_id, value)
-        request = {
-            "version": 1,
-            "kind": kind,
-            "projectId": project_id,
-            "requestId": identity,
-            "binding": value["binding"],
-            "guidance": self.guidance(root),
-            "originals": value["originals"],
-            "layout": value["layout"],
-            "files": files,
-            "selection": value["selection"],
-            "manual": value["manual"],
-            "report": str(report_path),
-            "path": str(request_path),
-        }
+        # Translation follows prepare(), which checked the originals.
+        self.current_sources(project_id, value, files)
+        context = self.context(project_id)
+        game_data = root / value["layout"].removesuffix("js/plugins.js") / "data"
+        # Requests never alias mutable findings, choices or results.
         request = deepcopy(
-            request
-        )  # Requests never alias mutable findings, scope choices or results.
-        value["findings" if kind == "investigation" else "editing"] = {
-            "status": "awaiting_report",
-            "errors": [],
-            "requestId": identity,
-        }
-        common = (
-            "This is one explicitly scoped DazedTL Plugin files task. Copying it did not start an assistant.\n"
-            "Read the request JSON: "
-            + str(request_path)
-            + "\nSave a structured report at: "
-            + str(report_path)
-            + "\n"
-            "Bind version, kind, projectId, requestId and binding exactly. Use only requested file/occurrence IDs and SHA-256 hashes. "
-            "Read request-bound glossary/context. Event plugin commands belong to Other event text; do not edit event/database JSON or images. "
-            "Never run plugin/game code, providers or translation APIs.\n"
-        )
-        if kind == "investigation":
-            schema = {
+            {
                 "version": 1,
                 "kind": kind,
                 "projectId": project_id,
                 "requestId": identity,
                 "binding": value["binding"],
-                "complete": False,
+                "guidance": self.guidance(root),
+                "translatedText": context["translated"],
+                "gameData": str(game_data),
+                "references": context["references"],
+                # The app guards the original lookup keys itself; the request
+                # binds only which original it checked against.
+                "originals": pick(value["originals"], ("backupId", "binding")),
+                "layout": value["layout"],
+                "files": files,
+                "report": str(report_path),
+                "path": str(request_path),
+                "automatic": True,
+                "previousRequestId": previous,
+            }
+        )
+        value["findings" if kind == "investigation" else "editing"] = {
+            "status": "awaiting_report",
+            "errors": [],
+            "requestId": identity,
+        }
+        identity_fields = {
+            "version": 1,
+            "kind": kind,
+            "projectId": project_id,
+            "requestId": identity,
+            "binding": value["binding"],
+            "complete": False,
+        }
+        text = (
+            "Translate the text this game's plugins show to players. This is one DazedTL Plugin files task; copying it did not start an assistant. Keep DazedTL open.\n"
+            "Work through it in this conversation: after each report, the helper below checks it and returns the next request, until every plugin file is investigated and its player text translated. "
+            "Do not ask the user to copy another prompt or approve routine steps; ask only about choices the evidence cannot settle, after finishing the independent work.\n\n"
+            "Read the request JSON: " + str(request_path) + "\n"
+            "Save a structured report at: " + str(report_path) + "\n"
+            "Bind version, kind, projectId, requestId and binding exactly, and use only the requested files, occurrence IDs and SHA-256 hashes. "
+            "Never run plugin or game code, providers or translation APIs. Event plugin commands belong to Other event text; do not edit event or database JSON or images.\n\n"
+        )
+        if kind == "investigation":
+            schema = {
+                **identity_fields,
                 "files": [
                     {
                         "path": "exact requested path",
@@ -1317,11 +1128,11 @@ class PluginService:
                         "evidence": "complete source and recursive-parameter coverage",
                         "occurrences": [
                             {
-                                "id": "request occurrence ID",
-                                "disposition": "visible|latent|protected|editor_only|non_visible|unresolved",
+                                "id": "requested occurrence ID",
+                                "disposition": "visible|latent|protected|editor_only|non_visible",
                                 "safe": True,
-                                "evidence": "runtime display usage and readback checks",
-                                "reason": "why visible and safe",
+                                "evidence": "where the plugin uses it, with readback checks",
+                                "reason": "why players see it, or why they do not",
                             }
                         ],
                     }
@@ -1335,98 +1146,108 @@ class PluginService:
                     }
                 ],
             }
-            text = (
-                common
-                + ("FIRST, INVESTIGATE. " if automatic else "INVESTIGATION ONLY. ")
-                + "During investigation, do not edit runtime files, working copies, settings or source backups. Audit every configured enabled/disabled plugin and every listed source. "
-            )
-            text += "Recursively decode every parameter layer, count repeated leaf occurrences, inspect executable strings/templates, defaults/fallbacks and usages; ordinary comments/editor metadata stay excluded. "
-            text += "Every supplied occurrence needs a disposition. Missing/ambiguous sources remain unresolved. Disabled/default-only display text is latent. "
-            text += "Protect exact lookup keys from pristine original note-tag names, 356/357 arguments, parameters and database names; both drawn and compared remains protected. "
-            text += "No whole-file substring matching. The app rechecks original hashes and deterministic key guards. If originals are missing, report discovery only and leave safety unresolved. "
             text += (
-                "Additional JSON may be proposed only with an exact existing loader-path literal from the request. Its own text needs a subsequent bound investigation before selection.\nReport schema:\n"
-                + json.dumps(schema, ensure_ascii=False, indent=2)
+                "INVESTIGATE. Decide whether players see each listed occurrence. Do not edit runtime files, working copies, settings or source backups in this stage.\n"
+                "Read each listed source and its configuration in js/plugins.js. Recursively decode every parameter layer and follow each string to where the plugin uses it: drawing, messages, menus and help text, but also comparisons, lookups, keys and file names. "
+                "Check defaults and fallbacks; comments and editor metadata are not player text.\n"
+                "Dispositions: visible (an enabled plugin shows it to players), latent (display text players never see because its plugin is disabled or it is only a default), protected (compared, looked up, or used as a key or file name), editor_only, non_visible. "
+                "Set safe to true only when changing the text cannot change behavior. The app already protects original database names, notetag names and plugin command arguments, so those occurrences are not listed.\n"
+                "Give every listed occurrence a disposition, evidence and a reason. A file is done once its entry has examined true, file-level evidence and every listed occurrence decided. "
+                "You may report some files, run the helper and continue with the request it returns for the rest.\n"
+                "A plugin that loads its own JSON through an exact path literal listed in loaderLiterals can add that file under dependencies; a later request lists its text.\n"
+                + (
+                    "This is a recheck: each occurrence lists its earlier finding. Keep or correct each one, starting with anything the user reports as untranslated or broken in the game. Files left out of the report keep their findings; a file you report must decide all of its listed occurrences again.\n"
+                    if recheck
+                    else "A finding listed with an occurrence was left undecided earlier; settle it now.\n"
+                    if any("finding" in item for _, items in scope for item in items)
+                    else ""
+                )
             )
-            text += "\nConfirmed active display text is included automatically when the app checks this report; do not ask the user to approve safe items or inspect each string. Ask focused questions only for ambiguous meaning, visibility or behavioral safety after completing all independent investigation. Leave uncertain items unresolved and explain the evidence needed. Disabled/default-only text stays excluded unless the user chooses it."
         else:
             schema = {
-                "version": 1,
-                "kind": kind,
-                "projectId": project_id,
-                "requestId": identity,
-                "binding": value["binding"],
-                "complete": False,
+                **identity_fields,
                 "files": [
                     {
-                        "path": "exact scope path",
+                        "path": "exact requested path",
                         "sourceHash": "request hash",
                         "candidateHash": "working copy SHA-256",
                         "evidence": "Japanese/English meaning and layout review performed",
                         "targets": {
-                            "approved occurrence ID": "exact decoded English target"
+                            "requested occurrence ID": "exact decoded English target"
                         },
                     }
                 ],
             }
-            text = (
-                common
-                + "TRANSLATE THE SCOPED WORKING COPIES ONLY. The app has included confirmed safe display text and retained user overrides. Proceed without asking for approval of these routine translations; ask only about ambiguity you cannot resolve and leave those occurrences unchanged. Runtime files and frozen originals are read-only. No new files, unrelated module edits, or scope expansion. "
-            )
-            text += "Change only listed literal spans/decoded parameter paths. Preserve quote style, parameter keys/order/types/serialization depth, identifiers, lookup values, interpolation and control codes. "
-            text += "Translate connected text with the saved guidance; revise failed/partial results in these same copies. Report every translated occurrence and exact decoded target. "
-            text += "The app rejects any bytes outside approved spans, unapproved decoded leaves and stale hashes; syntax alone does not verify meaning. Apply is a separate user review. "
-            text += (
-                "Do not claim rendered fit/playtest without testing it.\nReport schema:\n"
-                + json.dumps(schema, ensure_ascii=False, indent=2)
-            )
-        if automatic:
-            helper = Path(__file__).resolve().parents[3] / "scripts/project.py"
-            arguments = [
-                sys.executable,
-                "-B",
-                str(helper),
-                "--workspace",
-                str(self.translation.workspace),
-                "--project",
-                project_id,
-                "plugins",
+            sources = [
+                "the glossary and guidance files in the request",
+                *(
+                    [
+                        "the Translate stage's English output in "
+                        + context["translated"]
+                        + " (its Japanese sources are in the files folder beside it)"
+                    ]
+                    if context["translated"]
+                    else []
+                ),
+                "text already applied to the game in " + str(game_data),
+                *(["the reference games below"] if context["references"] else []),
             ]
-
-            def command(arguments):
-                return (
-                    "& "
-                    + " ".join(
-                        "'" + item.replace("'", "''") + "'" for item in arguments
-                    )
-                    if os.name == "nt"
-                    else shlex.join(arguments)
-                )
-
-            resume = command(arguments)
-            advance = command([*arguments, "--continue-request", identity])
-            text = (
-                "Complete plugin investigation and translation in this same agent task. Keep DazedTL open. "
-                "Continue automatically through confirmed safe work; do not ask the user to copy a second prompt or approve routine steps. "
-                "Ask focused questions only for unresolved choices, and complete independent work first.\n\n"
-                + text
-                + "\n\nAfter saving this stage's report, run:\n"
-                + advance
-                + "\nThe helper validates the report and returns the next request with its instructions, or the final checked state. "
-                "Read and carry out those instructions in this same conversation. Additional plugin-loaded JSON is investigated before translation. "
-                "Working copies are prepared automatically. On failed translation checks, repair the same copies and report, then run this command again. "
-                "Runtime Apply remains in the app; this helper cannot approve or publish game files.\n"
-                "If loopback access is sandboxed, use your normal permission flow and retry this read-only status command first:\n"
-                + resume
-                + "\nA lost response may follow a completed action. Read the activeRequest path from that status and follow its saved instructions; "
-                "do not restart investigation or blindly retry a mutation. Never expose the local connection token. "
-                "If permitted access still fails, save work and report the connection blocker.\n"
+            text += (
+                "TRANSLATE. Translate the listed occurrences in each file's working copy (candidate); runtime files and frozen originals (original) are read-only. "
+                "Their paths are relative to the game folder " + str(root) + ".\n"
+                "Keep names and terms consistent with the game's established English: "
+                + ", ".join(sources[:-1])
+                + " and "
+                + sources[-1]
+                + ". Fit the space where the plugin draws the text.\n"
+                "Change only the listed literal spans or decoded parameter paths. Preserve quote style, parameter keys, ordering, types and serialization depth, identifiers, interpolation and control codes. "
+                "Report every translated occurrence with its exact decoded target.\n"
+                "The app rejects bytes outside the listed spans, unlisted decoded leaves and stale hashes, and syntax alone does not verify meaning. "
+                "When a check fails, the helper returns a request for the files still needing work, with each failedCheck: repair the same working copies and report them under that request. "
+                "Applying to the game is a separate review in the app; do not claim rendered fit without testing it.\n"
             )
-            request.update(
-                automatic=True, previousRequestId=previous, instructions=text
+        text += reference_folders.instructions(context["references"])
+        text += (
+            "\nReport schema:\n"
+            + json.dumps(schema, ensure_ascii=False, indent=2)
+            + "\n"
+        )
+        helper = Path(__file__).resolve().parents[3] / "scripts/project.py"
+        arguments = [
+            sys.executable,
+            "-B",
+            str(helper),
+            "--workspace",
+            str(self.translation.workspace),
+            "--project",
+            project_id,
+            "plugins",
+        ]
+
+        def command(arguments):
+            return (
+                "& "
+                + " ".join("'" + item.replace("'", "''") + "'" for item in arguments)
+                if os.name == "nt"
+                else shlex.join(arguments)
             )
-        value["activeRequest"] = identity if automatic else ""
+
+        text += (
+            "\nAfter saving the report, run:\n"
+            + command([*arguments, "--continue-request", identity])
+            + "\nIt checks the report and returns the next request with its instructions, or the final state. "
+            "Working copies are prepared automatically, and runtime Apply stays in the app: this helper cannot approve or publish game files.\n"
+            "If loopback access is sandboxed, use your normal permission flow and retry this read-only status command first:\n"
+            + command(arguments)
+            + "\nA lost response may follow a completed action. Read the activeRequest path from that status and follow its saved instructions; "
+            "do not restart the task or blindly retry a step. Never expose the local connection token. "
+            "If permitted access still fails, save your work and report the connection blocker.\n"
+        )
+        request["instructions"] = text
+        value["activeRequest"] = identity
         write_json(request_path, request)
+        # The assistant saves its report there.
+        report_path.parent.mkdir(parents=True, exist_ok=True)
         value["requests"][kind] = request
         write_json(
             Path(self.translation.workspace)
@@ -1479,52 +1300,48 @@ class PluginService:
             self.translation.idle(project_id)
             self.translation.clean_drafts(project_id)
             self.refresh(project_id, value, request["kind"])
+            problems = (
+                value["editing"]["errors"] if request["kind"] == "translation" else []
+            )
             # Retain accepted findings even if later preparation cannot finish.
             self.save(project_id, value)
-            result = {}
-            if request["kind"] == "investigation":
-                asked = {row["path"] for row in request["files"]}
-                if set(value["files"]) - asked:
-                    self.scan(project_id, value)
-                    result = self.request(
-                        project_id,
-                        value,
-                        "investigation",
-                        automatic=True,
-                        previous=request_id,
-                    )
-                elif value["selection"]:
-                    self.prepare(project_id, value, switch_view=False)
-                    result = self.request(
-                        project_id,
-                        value,
-                        "translation",
-                        automatic=True,
-                        previous=request_id,
-                    )
+            # Changed sources and newly found JSON need their text listed first.
+            if any(row.get("stale") for row in value["files"].values()):
+                self.scan(project_id, value)
+            self.observe(project_id, value)
+            result = self.advance(project_id, value, request)
             self.save(project_id, value)
-            state = self.state(project_id)
-            if not result:
-                incomplete = (
-                    state["counts"]["blocked"]
-                    or value["findings"]["status"] == "partial"
-                    or any(
-                        row["uncertain"]
-                        or row["issue"]
-                        or row["status"] in {"stale", "needs_revision", "partial"}
-                        for row in (
-                            self.public_row(value, row)
-                            for row in value["files"].values()
-                        )
-                    )
+            if result:
+                left = (
+                    self.investigation_scope(value)
+                    if result["stage"] == "investigation"
+                    else self.translation_scope(value)
                 )
+                result["message"] = (
+                    f"{len(left)} {'file' if len(left) == 1 else 'files'} left to "
+                    + (
+                        "investigate"
+                        if result["stage"] == "investigation"
+                        else "translate"
+                    )
+                    + "."
+                    + (" Failed checks: " + "; ".join(problems) if problems else "")
+                )
+            else:
+                unreadable = [
+                    path for path, row in value["files"].items() if row.get("issue")
+                ]
                 result = {
-                    "stage": "partial" if incomplete else "complete",
-                    "message": "Saved work checked. Resolve reported uncertainty or failed checks; runtime Apply remains in the app."
-                    if incomplete
-                    else "Plugin work checked. Review and apply available translations in the app.",
+                    "stage": "complete",
+                    "message": "Every plugin file is investigated and its player text translated. Applying to the game is reviewed in the app."
+                    + (
+                        " These files could not be read and were left unchanged: "
+                        + ", ".join(unreadable)
+                        if unreadable
+                        else ""
+                    ),
                 }
-            return {**result, "state": state}
+            return {**result, "state": self.state(project_id)}
 
     def current_sources(self, project_id, value, rows):
         _, root = self.record(project_id)
@@ -1554,8 +1371,9 @@ class PluginService:
             )
         return current
 
-    def request_current(self, project_id, value, request):
-        """Whether an investigation request still matches the scanned sources and guidance."""
+    def same_scope(self, project_id, value, request, kind, scope):
+        """Whether a request still asks exactly about `scope`, against the
+        scanned sources, guidance and originals."""
         try:
             self.verify_request(project_id, request)
         except OSError, ValueError:
@@ -1570,13 +1388,38 @@ class PluginService:
             for row in rows
         ]
         return (
-            request["binding"] == value["binding"]
+            request["kind"] == kind
+            and request["binding"] == value["binding"]
             and request["guidance"] == self.guidance(root)
-            and request["originals"] == value["originals"]
+            and request["originals"]
+            == pick(value["originals"], ("backupId", "binding"))
             and request["layout"] == value["layout"]
             and shape(request["files"])
-            == shape([{"path": path, **row} for path, row in value["files"].items()])
+            == shape(
+                {
+                    "path": path,
+                    "sourceHash": value["files"][path]["sourceHash"],
+                    "occurrences": items,
+                }
+                for path, items in scope
+            )
         )
+
+    def saved_request(self, project_id, request_id):
+        """A translation request this project issued, as the profile recorded it."""
+        if not isinstance(request_id, str) or not re.fullmatch(
+            r"[0-9a-f]{32}", request_id
+        ):
+            raise ValueError(
+                "Saved results need the translation task that asked for them."
+            )
+        request = read_json(self.path(project_id, "requests/" + request_id + ".json"))
+        self.verify_request(project_id, request)
+        if request.get("kind") != "translation":
+            raise ValueError(
+                "Saved results need the translation task that asked for them."
+            )
+        return request
 
     def verify_request(self, project_id, request):
         authority = read_json(
@@ -1694,12 +1537,6 @@ class PluginService:
         errors = []
         # Work on a copy so malformed reports never partially mutate trusted findings.
         updated = deepcopy(value)
-        if kind == "investigation":
-            # A partial replacement report cannot inherit safety from an earlier report.
-            for path in allowed:
-                updated["files"][path]["examined"] = False
-                for item in updated["files"][path]["occurrences"]:
-                    item.pop("finding", None)
         for answer in rows:
             path = answer["path"]
             asked = allowed[path]
@@ -1709,13 +1546,18 @@ class PluginService:
             if kind == "investigation":
                 answers = answer.get("occurrences", [])
                 known = {item["id"]: item for item in row["occurrences"]}
+                questions = {item["id"] for item in asked["occurrences"]} & set(known)
                 if not isinstance(answers, list) or len(
                     {item.get("id") for item in answers if isinstance(item, dict)}
                 ) != len(answers):
                     raise ValueError("Occurrence findings must be unique entries.")
+                # A report covering a file settles exactly what it answers; the
+                # rest of its asked text cannot keep an earlier finding.
+                for identity in questions:
+                    known[identity].pop("finding", None)
                 for item in answers:
                     if (
-                        item.get("id") not in known
+                        item.get("id") not in questions
                         or item.get("disposition") not in DISPOSITIONS
                         or type(item.get("safe")) is not bool
                     ):
@@ -1740,16 +1582,11 @@ class PluginService:
                     if not updated["originals"]:
                         finding["safe"] = False
                     target["finding"] = finding
-                row["examined"] = (
-                    answer.get("examined") is True
-                    and len(answers) == len(known)
-                    and bool(answer.get("evidence"))
-                    and not row.get("issue")
+                row["examined"] = answer.get("examined") is True and bool(
+                    bounded(answer.get("evidence", ""), "File evidence").strip()
                 )
                 row["stale"] = False
-                if not row["examined"]:
-                    errors.append(path + ": incomplete coverage")
-                else:
+                if self.row_status(updated, row) != "investigate":
                     accepted += 1
             else:
                 prepared = row.get("prepared")
@@ -1823,7 +1660,7 @@ class PluginService:
                     "selection": sorted(ids),
                     "saved": now(),
                 }
-                if status == "ready":
+                if status in {"ready", "unchanged"}:
                     accepted += 1
                 else:
                     errors.append(path + ": " + reason)
@@ -1898,14 +1735,16 @@ class PluginService:
                         "stale": True,
                     },
                 )
-                errors.append(actual + ": needs its own request-bound investigation")
         key = "findings" if kind == "investigation" else "editing"
         completed = (
             len(rows) == len(allowed)
             and not errors
             and (
                 kind != "investigation"
-                or all(updated["files"][path].get("examined") for path in allowed)
+                or all(
+                    self.row_status(updated, row) != "investigate"
+                    for row in updated["files"].values()
+                )
             )
         )
         updated[key] = {
@@ -1918,7 +1757,7 @@ class PluginService:
             "requestId": request["requestId"],
         }
         if kind == "investigation":
-            updated["selection"] = self.recommended_selection(updated)
+            updated["selection"] = self.chosen_text(updated)
         value.clear()
         value.update(updated)
         return {
@@ -1927,7 +1766,8 @@ class PluginService:
             "errors": errors,
         }
 
-    def prepare(self, project_id, value, *, switch_view=True):
+    def prepare(self, project_id, value):
+        """Editable copies of every file with chosen text; runtime files stay unchanged."""
         self.translation.idle(project_id)
         self.translation.clean_drafts(project_id)
         eligible = self.eligible(value)
@@ -1944,7 +1784,6 @@ class PluginService:
             if any(item["id"] in selected for item in row["occurrences"])
         ]
         self.current_sources(project_id, value, rows)
-        completed = 0
         for row in rows:
             self.runtime_allowlist(project_id, value, row)
             if row.get("prepared"):
@@ -1971,13 +1810,6 @@ class PluginService:
                 "copyRoot": WORK + "/copies/" + identity,
                 "prepared": now(),
             }
-            completed += 1
-        if switch_view:
-            value["view"]["mode"] = "working"
-        return {
-            "completed": completed,
-            "message": "Working copies prepared; runtime files are unchanged.",
-        }
 
     def checked_rows(self, project_id, value, mode, options):
         _, root = self.record(project_id)
@@ -2076,16 +1908,8 @@ class PluginService:
                         raise ValueError("Working copy changed; refresh its checks.")
                     candidate = prepared["candidate"]
                     original_hash = prepared["originalHash"]
-                    request = value["requests"].get("translation")
-                    if (
-                        not request
-                        or request["requestId"] != result["requestId"]
-                        or self.guidance(root) != request["guidance"]
-                    ):
-                        raise ValueError(
-                            "The translation request or saved guidance changed; review a new task."
-                        )
-                    self.verify_request(project_id, request)
+                    # Each result answers the request that asked for it.
+                    request = self.saved_request(project_id, result["requestId"])
                     asked = next(
                         (item for item in request["files"] if item["path"] == path),
                         None,

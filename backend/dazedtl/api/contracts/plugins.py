@@ -1,71 +1,8 @@
-"""Plugin files review and application."""
+"""Plugin files: the assistant's task and reviewed application."""
 
 from typing import Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.common import ForeignWork
-
-
-class PluginFinding(TypedDict):
-    disposition: str
-    safe: bool
-    evidence: str
-    reason: str
-
-
-class PluginManualChoice(TypedDict):
-    selected: bool
-    reason: str
-
-
-class PluginOccurrence(TypedDict):
-    id: str
-    file: str
-    value: str
-    line: int
-    logical: list[str | int]
-    kind: str
-    protected: bool
-    latent: bool
-    enabled: bool
-    plugin: str
-    finding: NotRequired[PluginFinding]
-    selected: bool
-    manual: NotRequired[PluginManualChoice]
-    before: str
-    after: str
-    target: str
-
-
-class PluginRow(TypedDict):
-    path: str
-    plugin: str
-    enabled: bool | None
-    kind: str
-    sourceHash: str
-    issue: str
-    selected: int
-    visible: int
-    latent: int
-    occurrences: int
-    recommended: int
-    manual: int
-    uncertain: int
-    status: str
-    changed: int
-    reason: str
-    candidateHash: str
-    working: str
-    ready: bool
-    applied: bool
-
-
-class PluginView(TypedDict):
-    mode: Literal["scope", "working"]
-    query: str
-    filter: str
-    selectedOnly: bool
-    currentFile: str
-    offset: int
 
 
 class PluginFileReview(TypedDict):
@@ -108,65 +45,43 @@ class PluginReceipt(TypedDict):
 
 
 class PluginCounts(TypedDict):
+    # Readable files with text for the assistant to check, and those it has
+    # settled.
     files: int
-    selectedFiles: int
-    selectedNotPrepared: int
+    investigated: int
+    # Files with text players see, and those whose translation is checked.
+    textFiles: int
+    translated: int
+    # Text locations chosen for translation.
     selected: int
-    recommended: int
     ready: int
-    blocked: int
     applied: int
-    latent: int
 
 
-class PluginReport(TypedDict):
-    status: str
-    errors: list[str]
-    accepted: NotRequired[int]
-    reported: NotRequired[int]
-    expected: NotRequired[int]
+class PluginUnreadable(TypedDict):
+    path: str
+    issue: str
 
 
 class PluginState(TypedDict):
     projectId: str
-    revision: str
-    observationRevision: str
     supported: bool
     limitation: str
-    layout: str
-    source: str
-    view: PluginView
+    # Whether the game's plugins were read; counts start then.
+    scanned: bool
     counts: PluginCounts
-    findings: PluginReport
-    editing: PluginReport
+    unreadable: list[PluginUnreadable]
     originalIssue: str
-    originalBackup: str
     receipts: list[PluginReceipt]
-    requestPaths: dict[str, str]
+    # The copied task's current request, for the assistant's helper.
     activeRequest: str
+    # Whether that request still waits for the assistant's report.
+    awaiting: bool
 
 
 class PluginForeignWork(ForeignWork):
     investigated: int
     translated: int
-
-
-class PluginList(TypedDict):
-    items: list[PluginRow]
-    total: int
-    selectedMatched: int
-    offset: int
-    limit: int
-
-
-class PluginDetail(PluginRow):
-    items: list[PluginOccurrence]
-    total: int
-    checks: dict[str, bool]
-    resultEvidence: str
-    rendered: str
-    original: str
-    originalHash: str
 
 
 class PluginActionResult(TypedDict):

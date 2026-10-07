@@ -1644,69 +1644,6 @@ export type ImageNativeTranslationActionResult = {
   result: ImageNativeOutcome;
 };
 
-export type PluginFinding = {
-  disposition: string;
-  safe: boolean;
-  evidence: string;
-  reason: string;
-};
-
-export type PluginManualChoice = {
-  selected: boolean;
-  reason: string;
-};
-
-export type PluginOccurrence = {
-  id: string;
-  file: string;
-  value: string;
-  line: number;
-  logical: (string | number)[];
-  kind: string;
-  protected: boolean;
-  latent: boolean;
-  enabled: boolean;
-  plugin: string;
-  finding?: PluginFinding;
-  selected: boolean;
-  manual?: PluginManualChoice;
-  before: string;
-  after: string;
-  target: string;
-};
-
-export type PluginRow = {
-  path: string;
-  plugin: string;
-  enabled: boolean | null;
-  kind: string;
-  sourceHash: string;
-  issue: string;
-  selected: number;
-  visible: number;
-  latent: number;
-  occurrences: number;
-  recommended: number;
-  manual: number;
-  uncertain: number;
-  status: string;
-  changed: number;
-  reason: string;
-  candidateHash: string;
-  working: string;
-  ready: boolean;
-  applied: boolean;
-};
-
-export type PluginView = {
-  mode: "scope" | "working";
-  query: string;
-  filter: string;
-  selectedOnly: boolean;
-  currentFile: string;
-  offset: number;
-};
-
 export type PluginFileReview = {
   path: string;
   destination: string;
@@ -1747,64 +1684,35 @@ export type PluginReceipt = {
 
 export type PluginCounts = {
   files: number;
-  selectedFiles: number;
-  selectedNotPrepared: number;
+  investigated: number;
+  textFiles: number;
+  translated: number;
   selected: number;
-  recommended: number;
   ready: number;
-  blocked: number;
   applied: number;
-  latent: number;
 };
 
-export type PluginReport = {
-  status: string;
-  errors: string[];
-  accepted?: number;
-  reported?: number;
-  expected?: number;
+export type PluginUnreadable = {
+  path: string;
+  issue: string;
 };
 
 export type PluginState = {
   projectId: string;
-  revision: string;
-  observationRevision: string;
   supported: boolean;
   limitation: string;
-  layout: string;
-  source: string;
-  view: PluginView;
+  scanned: boolean;
   counts: PluginCounts;
-  findings: PluginReport;
-  editing: PluginReport;
+  unreadable: PluginUnreadable[];
   originalIssue: string;
-  originalBackup: string;
   receipts: PluginReceipt[];
-  requestPaths: Record<string, string>;
   activeRequest: string;
+  awaiting: boolean;
 };
 
 export type PluginForeignWork = ForeignWork & {
   investigated: number;
   translated: number;
-};
-
-export type PluginList = {
-  items: PluginRow[];
-  total: number;
-  selectedMatched: number;
-  offset: number;
-  limit: number;
-};
-
-export type PluginDetail = PluginRow & {
-  items: PluginOccurrence[];
-  total: number;
-  checks: Record<string, boolean>;
-  resultEvidence: string;
-  rendered: string;
-  original: string;
-  originalHash: string;
 };
 
 export type PluginActionResult = {
@@ -1898,39 +1806,6 @@ export type AssistantTaskRequest = {
 
 export type AssistantTaskDismissed = {
   kind: AssistantTaskKind;
-};
-
-export type PluginsListRequest = {
-  project_id: string;
-  query?: string;
-  filter?: string;
-  selected_only?: boolean;
-  offset?: number;
-  limit?: number;
-};
-
-export type PluginsDetailRequest = {
-  project_id: string;
-  file: string;
-};
-
-export type PluginViewChanges = {
-  mode?: "scope" | "working";
-  query?: string;
-  filter?: string;
-  selectedOnly?: boolean;
-  currentFile?: string;
-  offset?: number;
-};
-
-export type PluginChanges = {
-  view: PluginViewChanges;
-};
-
-export type PluginsUpdateRequest = {
-  project_id: string;
-  revision: string;
-  changes: PluginChanges;
 };
 
 export type ActionRequest = {
@@ -2532,9 +2407,6 @@ export type RpcContract = {
     response: ImageNativeTranslationActionResult;
   };
   plugins_state: { request: ProjectRequest; response: PluginState };
-  plugins_list: { request: PluginsListRequest; response: PluginList };
-  plugins_detail: { request: PluginsDetailRequest; response: PluginDetail };
-  plugins_update: { request: PluginsUpdateRequest; response: PluginState };
   plugins_action: { request: ActionRequest; response: PluginActionResult };
   plugins_continue: {
     request: PluginsContinueRequest;

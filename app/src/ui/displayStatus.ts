@@ -77,30 +77,3 @@ export function imageDisplay(asset: {
     return "skipped";
   return asset.classification === "uncertain" ? "needs_review" : "not_started";
 }
-
-/** A Plugin files row; a row with an issue cannot continue until it is fixed. */
-export function pluginDisplay(status: string, issue = ""): DisplayState {
-  if (issue) return "blocked";
-  switch (status) {
-    case "working_copy":
-    case "awaiting_report":
-      return "waiting";
-    case "current":
-    case "partial":
-    case "needs_revision":
-    case "unresolved":
-      return "needs_review";
-    case "ready":
-      return "ready";
-    case "applied":
-      return "applied";
-    case "stale":
-      return "outdated";
-    case "latent":
-    case "not_needed":
-    case "unchanged":
-      return "skipped";
-    default:
-      return "not_started";
-  }
-}

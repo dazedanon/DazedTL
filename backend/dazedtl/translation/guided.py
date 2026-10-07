@@ -122,6 +122,7 @@ class Guided:
         self.event_text_view = self.context.event_text_view
         self.event_text_picker = self.context.event_text_picker
         self.comparisons_review = self.context.comparisons_review
+        self.assistant_context = self.context.assistant_context
         self.reference_add = self.context.reference_add
         self.reference_remove = self.context.reference_remove
         self.context_status = self.context.context_status

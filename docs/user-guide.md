@@ -11,7 +11,7 @@ A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ac
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks.
 **Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
-Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files counts as done once its applied work has nothing left waiting, and Release while its last ZIP is up to date.
+Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files counts as done once every plugin's player text is translated with nothing waiting to apply, and Release while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
@@ -87,6 +87,11 @@ Files with active or unresolved Batch work are locked against source reloads.
 Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns.
 When the findings leave nothing to enable, **Confirm nothing to translate** in **Source choices** finishes the task.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
+
+**Plugin files** is one assistant task: the assistant checks every plugin for text players see and translates it with the glossary, guidance, the game's translated text and any reference games.
+It keeps going through every plugin file on its own, and the task panel shows how many files are checked and translated.
+You don't review plugin files or strings; **Review & apply** shows what goes into the game.
+Copying the task again continues where the assistant stopped, and once everything is done it has the assistant recheck its decisions, for example after you find untranslated plugin text in the game.
 
 **Options** holds task settings and opens the translated folder.
 **Reload from game…** beside the file list replaces the checked working files with the current game files.

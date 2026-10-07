@@ -137,7 +137,6 @@ try:
         "images_editor_state",
         "images_editor_translation_state",
         "plugins_state",
-        "plugins_list",
     ):
         call(method, {"project_id": project_id})
     call("workspace_snapshot", {})

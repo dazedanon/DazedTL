@@ -1,5 +1,5 @@
 {
-  "version": "9d0b12e76c5726a9",
+  "version": "d0a4cff51d6944c0",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -355,18 +355,6 @@
     },
     "plugins_state": {
       "refresh": false,
-      "duringClose": false
-    },
-    "plugins_list": {
-      "refresh": false,
-      "duringClose": false
-    },
-    "plugins_detail": {
-      "refresh": false,
-      "duringClose": false
-    },
-    "plugins_update": {
-      "refresh": true,
       "duringClose": false
     },
     "plugins_action": {

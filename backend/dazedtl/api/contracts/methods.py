@@ -42,8 +42,6 @@ from dazedtl.api.contracts.images import (
 )
 from dazedtl.api.contracts.plugins import (
     PluginActionResult,
-    PluginDetail,
-    PluginList,
     PluginState,
 )
 from dazedtl.api.contracts.runs import (
@@ -105,39 +103,6 @@ class AssistantTaskRequest(TypedDict):
 
 class AssistantTaskDismissed(TypedDict):
     kind: AssistantTaskKind
-
-
-class PluginsListRequest(TypedDict):
-    project_id: str
-    query: NotRequired[str]
-    filter: NotRequired[str]
-    selected_only: NotRequired[bool]
-    offset: NotRequired[int]
-    limit: NotRequired[int]
-
-
-class PluginsDetailRequest(TypedDict):
-    project_id: str
-    file: str
-
-
-class PluginViewChanges(TypedDict):
-    mode: NotRequired[Literal["scope", "working"]]
-    query: NotRequired[str]
-    filter: NotRequired[str]
-    selectedOnly: NotRequired[bool]
-    currentFile: NotRequired[str]
-    offset: NotRequired[int]
-
-
-class PluginChanges(TypedDict):
-    view: PluginViewChanges
-
-
-class PluginsUpdateRequest(TypedDict):
-    project_id: str
-    revision: str
-    changes: PluginChanges
 
 
 class ActionRequest(TypedDict):
@@ -660,9 +625,6 @@ METHODS: dict[str, Method] = {
     ),
     # Plugins
     "plugins_state": Method(ProjectRequest, PluginState, refresh=False),
-    "plugins_list": Method(PluginsListRequest, PluginList, refresh=False),
-    "plugins_detail": Method(PluginsDetailRequest, PluginDetail, refresh=False),
-    "plugins_update": Method(PluginsUpdateRequest, PluginState),
     "plugins_action": Method(ActionRequest, PluginActionResult),
     "plugins_continue": Method(PluginsContinueRequest, PluginActionResult),
     "plugins_adopt": Method(ForeignWorkRequest, PluginActionResult),

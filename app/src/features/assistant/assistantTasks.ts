@@ -10,6 +10,7 @@ import type {
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
+import { pluginFilesLeft } from "../plugins/pluginTask.ts";
 
 /** A copied assistant task that still needs the user or the assistant. */
 export interface AssistantTaskView {
@@ -123,20 +124,16 @@ function standing(
   }
   if (kind === "plugins") {
     if (!plugins) return { state: "idle" };
-    const awaiting =
-      (plugins.activeRequest === plugins.requestPaths.investigation &&
-        plugins.findings.status === "awaiting_report") ||
-      (plugins.activeRequest === plugins.requestPaths.translation &&
-        plugins.editing.status === "awaiting_report");
-    if (awaiting) return waiting();
-    const problem =
-      plugins.findings.errors[0] || plugins.editing.errors[0] || "";
-    if (plugins.findings.status === "partial" || problem)
-      return {
-        state: "needs_review",
-        detail: problem || "Some investigation remains unresolved.",
-      };
-    if (copied && !back) return waiting();
+    // The copied task waits while a request it handed out has no report;
+    // it continues on its own until every plugin file is done.
+    if (plugins.awaiting) {
+      const left = pluginFilesLeft(plugins);
+      return waiting(
+        left
+          ? `${left.toLocaleString()} ${left === 1 ? "file" : "files"} left`
+          : "",
+      );
+    }
     return copied ? { state: "finished" } : { state: "idle" };
   }
   if (kind === "image_discovery" || kind === "image_editing") {

@@ -10,6 +10,7 @@ import type {
 import { investigationResults } from "./contextView.ts";
 import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
+import { pluginsComplete } from "../plugins/pluginTask.ts";
 import {
   completeForSelection,
   fileLines,
@@ -74,12 +75,14 @@ export function completedTasks(
     );
   };
   const discovery = state.contextSetup;
-  // Plugin files and Images are done once their work reaches the game with
-  // nothing left waiting, and Release while a saved ZIP still matches the game.
-  // A complete image discovery that left nothing recommended or uncertain
-  // also closes Images: the game has no image text to translate.
-  const pluginCounts =
-    plugins && plugins.projectId === state.projectId ? plugins.counts : null;
+  // Plugin files is done once every plugin's player text is translated with
+  // nothing waiting to go into the game, and Images once its work reaches the
+  // game with nothing left waiting. Release is done while a saved ZIP still
+  // matches the game. A complete image discovery that left nothing
+  // recommended or uncertain also closes Images: the game has no image text
+  // to translate.
+  const ownPlugins =
+    plugins && plugins.projectId === state.projectId ? plugins : null;
   const ownImages =
     images && images.projectId === state.projectId ? images : null;
   const imageCounts = ownImages?.counts;
@@ -101,9 +104,7 @@ export function completedTasks(
     ...(investigationResults(state).every((row) => row.saved) ? ["names"] : []),
     ...(guidanceAvailability(discovery.documents).complete ? ["guidance"] : []),
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
-    ...(pluginCounts?.applied && !pluginCounts.ready && !pluginCounts.blocked
-      ? ["plugins"]
-      : []),
+    ...(ownPlugins && pluginsComplete(ownPlugins) ? ["plugins"] : []),
     ...(imageCounts &&
     (imageCounts.applied || noImageText) &&
     !imageCounts.ready &&

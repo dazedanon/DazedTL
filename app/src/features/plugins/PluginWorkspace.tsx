@@ -1,36 +1,35 @@
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
-import { FileCode2, Search, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { pluginsApi } from "../../api/plugins";
 import type {
   PluginForeignWork,
-  PluginList,
   PluginPreview,
   PluginReceipt,
   PluginState,
-  PluginView,
 } from "../../api/contracts";
 import { useAction } from "../../state/useAction";
-import { useDraft } from "../../state/useDraft";
 import { useObserved } from "../../state/useObserved";
 import { sinceLabel } from "../assistant/assistantTasks";
 import { useHandoff } from "../assistant/useAssistantTasks";
-import { useOnChange } from "../../state/useOnChange";
-import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionSlot } from "../../ui/ActionSlot";
-import { AssistantTask } from "../../ui/AssistantTask";
+import {
+  AssistantTask,
+  type AssistantResult,
+  type AssistantTaskState,
+} from "../../ui/AssistantTask";
+import type { DisplayState } from "../../ui/displayStatus";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
-import { displayLabels, pluginDisplay } from "../../ui/displayStatus";
-import { StatusMark } from "../../ui/StatusMark";
 import { PluginApplyContent } from "./PluginApplyContent";
+import { pluginFilesLeft } from "./pluginTask";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -49,45 +48,107 @@ const receiptTitle = ({ mode, status, files }: PluginReceipt) => {
           ? `${action} interrupted · needs review`
           : `${done} ${count}`;
 };
+const fileName = (path: string) => path.split("/").pop() || path;
+/** Actions whose own control shows their result. */
+const controlled = (key: string) =>
+  [
+    "plugin_task",
+    "preview_apply",
+    "apply",
+    "restore",
+    "adopt",
+    "start_over",
+  ].includes(key) || key.startsWith("preview_restore:");
 
-export const pluginStatus = (status: string) =>
-  ({
-    not_investigated: "Not investigated",
-    awaiting_report: "Awaiting saved report",
-    current: "Current findings",
-    partial: "Partial results",
-    selected: "Included",
-    working_copy: "Working copy",
-    needs_revision: "Needs revision",
-    not_needed: "Not needed",
-    ready: "Ready",
-    stale: "Stale source",
-    unresolved: "Needs investigation",
-    applied: "Applied to game",
-    latent: "Inactive / default text",
-    available: "Available",
-    unchanged: "No changes",
-  })[status] || status;
-/** A plugin file's shared state, with its own status when that says more. */
-function PluginState({ status, issue }: { status: string; issue?: string }) {
-  const state = pluginDisplay(status, issue);
-  const reason = pluginStatus(status);
-  return (
-    <>
-      <StatusMark state={state} />
-      {reason !== displayLabels[state] && <small>{reason}</small>}
-    </>
-  );
+/** Where the assistant's task stands and each result it returns. */
+function pluginTask(state: PluginState, waiting: boolean) {
+  const { counts } = state;
+  const left = pluginFilesLeft(state);
+  const investigating = !state.scanned || counts.investigated < counts.files;
+  const taskState: AssistantTaskState = waiting
+    ? "waiting"
+    : counts.ready
+      ? "ready"
+      : investigating || left
+        ? "not_started"
+        : counts.applied
+          ? "applied"
+          : "done";
+  // Work left with no request out: the assistant stopped, or a game file
+  // changed after it finished.
+  const unfinished =
+    left > 0 && (counts.investigated > 0 || counts.translated > 0)
+      ? ` ${fileCount(left)} still ${left === 1 ? "needs" : "need"} your assistant; copy the task again to continue.`
+      : "";
+  const description =
+    taskState === "waiting"
+      ? "Results appear here as your assistant saves them. It continues through every plugin file on its own."
+      : taskState === "ready"
+        ? `${fileCount(counts.ready)} translated and checked, ready to apply.${unfinished}`
+        : taskState === "applied"
+          ? `${fileCount(counts.applied)} applied to the game.`
+          : taskState === "done"
+            ? counts.textFiles
+              ? "Plugin text is checked; nothing needed changing."
+              : counts.files
+                ? "No plugin shows its Japanese text to players."
+                : "No plugin holds Japanese text."
+            : unfinished.trim() ||
+              "Your assistant finds the text plugins show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.";
+  const findings: DisplayState = !investigating
+    ? "done"
+    : waiting
+      ? "waiting"
+      : "not_started";
+  const translation: DisplayState = !counts.textFiles
+    ? investigating
+      ? "not_started"
+      : "skipped"
+    : counts.translated < counts.textFiles
+      ? waiting && !investigating
+        ? "waiting"
+        : "not_started"
+      : counts.ready
+        ? "ready"
+        : counts.applied
+          ? "applied"
+          : "done";
+  const results: AssistantResult[] = [
+    {
+      id: "findings",
+      title: "Text players see",
+      state: findings,
+      detail: !state.scanned
+        ? "Which plugin text players see."
+        : investigating
+          ? `${counts.investigated} of ${fileCount(counts.files)} checked`
+          : counts.textFiles
+            ? `Found in ${fileCount(counts.textFiles)}`
+            : "None found",
+    },
+    {
+      id: "translation",
+      title: "Translated plugin text",
+      state: translation,
+      // Files with text are still being found while the assistant investigates.
+      detail:
+        investigating && !counts.translated
+          ? "Translations for that text."
+          : counts.textFiles
+            ? `${counts.translated} of ${fileCount(counts.textFiles)} translated`
+            : "Nothing to translate",
+    },
+  ];
+  const unreadable = state.unreadable.length;
+  if (unreadable)
+    results.push({
+      id: "unreadable",
+      title: unreadable === 1 ? "Unreadable file" : "Unreadable files",
+      state: "blocked",
+      detail: `${selectionNames(state.unreadable.map((row) => fileName(row.path)))} ${unreadable === 1 ? "stays" : "stay"} unchanged: ${state.unreadable[0].issue}`,
+    });
+  return { taskState, description, results };
 }
-const checks: Record<string, string> = {
-  boundaries: "Approved text locations only",
-  protectedLookups: "Original lookup values protected",
-  structure: "Keys, ordering, types and serialization",
-  syntax: "JavaScript / JSON syntax",
-  decodedTargets: "Decoded targets match saved results",
-  controlTokens: "Interpolation and control codes",
-  residual: "Approved scope residual check",
-};
 
 export function PluginWorkspace({
   projectId,
@@ -96,7 +157,7 @@ export function PluginWorkspace({
   foreign,
   footerTarget,
   backControl,
-  continueControl,
+  next,
   beforeAction,
   applyControl,
   disabled = false,
@@ -108,7 +169,8 @@ export function PluginWorkspace({
   foreign?: PluginForeignWork;
   footerTarget: HTMLElement | null;
   backControl?: ReactNode;
-  continueControl: ReactNode;
+  /** The host's Continue control; it leads once the task's work is done. */
+  next: (variant: "primary" | "quiet") => ReactNode;
   beforeAction: () => Promise<unknown>;
   /** Replaces Review & apply with the host's own review. */
   applyControl?: ReactNode;
@@ -117,60 +179,23 @@ export function PluginWorkspace({
   const application = useApplication();
   const action = useAction({ after: application.settle });
   const [copiedRequest, setCopiedRequest] = useState("");
-  const [list, setList] = useState<PluginList | null>(null);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
-  const [manual, setManual] = useState<{
-      paths: string[];
-      ids?: string[];
-    } | null>(null),
-    [reason, setReason] = useState("");
   const [recovery, setRecovery] = useState(false);
   const handoff = useHandoff("plugins");
-  const [inspecting, setInspecting] = useState(false),
-    [showFiles, setShowFiles] = useState(false);
-  const draft = useDraft<PluginView>("plugins-view:" + projectId, {
-    autosave: true,
-    initial: {
-      saved: observed?.view || {
-        mode: "scope",
-        query: "",
-        filter: "all",
-        selectedOnly: false,
-        currentFile: "",
-        offset: 0,
-      },
-    },
-    report: action.report,
-    persist: async (view) => {
-      const current = plugins.latest();
-      if (!current) throw Error("Plugin state is loading.");
-      plugins.set(await pluginsApi.update(projectId, current.revision, view));
-    },
-  });
   const own = observed?.projectId === projectId ? observed : null;
-  const plugins = useObserved(own, own, {
-    hold: draft.dirty || draft.committing || action.busy,
-    onAdopt: (next, previous) => {
-      if (next.revision !== previous?.revision) draft.session.adopt(next.view);
-    },
-  });
+  const plugins = useObserved(own, own, { hold: action.busy });
   const state = plugins.value;
-  const view = draft.value || state?.view;
   // The choice made for saved work stays settled until the snapshot shows it.
   const [settled, setSettled] = useState("");
   const foreignWork =
     foreign && foreign.binding !== settled ? foreign : undefined;
-  const report = useEffectEvent((error: unknown, key = "") =>
-    action.report(error, key),
-  );
+  const report = useEffectEvent((error: unknown) => action.report(error));
   const loadInitial = useEffectEvent((alive: () => boolean) => {
     if (state || foreignWork) return;
     void pluginsApi
       .state(projectId)
-      .then((next) => {
-        if (!alive()) return;
-        plugins.set(next);
-        draft.session.adopt(next.view);
+      .then((value) => {
+        if (alive()) plugins.set(value);
       })
       .catch((error: unknown) => report(error));
   });
@@ -181,56 +206,7 @@ export function PluginWorkspace({
       alive = false;
     };
   }, [projectId]);
-  const files = useRead(
-    state && view
-      ? JSON.stringify([
-          projectId,
-          state.observationRevision,
-          view.query,
-          view.filter,
-          view.selectedOnly,
-          view.offset,
-        ])
-      : null,
-    (signal) =>
-      pluginsApi.list(
-        projectId,
-        {
-          query: view!.query,
-          filter: view!.filter,
-          selected_only: view!.selectedOnly,
-          offset: view!.offset,
-          limit: 100,
-        },
-        () => !signal.aborted,
-      ),
-  );
-  // The current page stays visible while the next one loads.
-  useOnChange(files.value, (value) => {
-    if (value) setList(value);
-  });
-  const loading = files.pending;
-  useEffect(() => {
-    if (files.error !== undefined) report(files.error, "list");
-  }, [files.error]);
-  const selected = useRead(
-    view?.currentFile
-      ? JSON.stringify([
-          projectId,
-          view.currentFile,
-          state?.observationRevision,
-        ])
-      : null,
-    (signal) =>
-      pluginsApi.detail(projectId, view!.currentFile, () => !signal.aborted),
-  );
-  const detail = selected.value ?? null;
-  useEffect(() => {
-    if (selected.error !== undefined) report(selected.error, "detail");
-  }, [selected.error]);
-  const edit = (patch: Partial<PluginView>) =>
-    draft.session.edit((current) => ({ ...current, ...patch }));
-  const busy = disabled || action.busy || draft.committing;
+  const busy = disabled || action.busy;
   const run = async (
     name: string,
     options: Record<string, unknown> = {},
@@ -240,22 +216,28 @@ export function PluginWorkspace({
     action.run(
       async () => {
         await beforeAction();
-        let reply: Awaited<ReturnType<typeof pluginsApi.action>> = {};
-        await draft.session.commit(async (current) => {
-          reply = await pluginsApi.action(projectId, name, options);
-          if (reply.state) plugins.set(reply.state);
-          if (reply.text) {
-            await window.dazedtl.copyText(reply.text);
-            setCopiedRequest(reply.state?.activeRequest || "");
-          }
-          if (reply.preview) setPreview(reply.preview);
-          return { saved: reply.state?.view || current };
-        });
+        const reply = await pluginsApi.action(projectId, name, options);
+        if (reply.state) plugins.set(reply.state);
+        if (reply.text) await window.dazedtl.copyText(reply.text);
+        if (name === "plugin_task")
+          setCopiedRequest(reply.text ? reply.state?.activeRequest || "" : "");
+        if (reply.preview) setPreview(reply.preview);
         return reply;
       },
       notice,
       actionKey,
     );
+  // A reply with nothing to hand out says why instead.
+  const copyTask = async () => {
+    const result = await run("plugin_task");
+    if (result.ok)
+      action.succeed(
+        result.value.text
+          ? "Task copied. Paste it into your assistant."
+          : result.value.message || "",
+        "plugin_task",
+      );
+  };
   const feedback = (key: string) => ({
     pending: action.busy && action.key === key,
     error: action.key === key ? action.error : "",
@@ -270,10 +252,7 @@ export function PluginWorkspace({
         const reply = await (choice === "adopt"
           ? pluginsApi.adopt(projectId, work.binding)
           : pluginsApi.startOver(projectId, work.binding));
-        if (reply.state) {
-          plugins.set(reply.state);
-          draft.session.adopt(reply.state.view);
-        }
+        if (reply.state) plugins.set(reply.state);
         setSettled(work.binding);
         return reply;
       },
@@ -281,22 +260,6 @@ export function PluginWorkspace({
       choice,
     );
     if (result.ok) action.succeed(result.value.message || "", choice);
-  };
-  const chooseFile = async (
-    path: string,
-    selected: boolean,
-    latentOnly: boolean,
-  ) => {
-    if (selected && latentOnly) {
-      setReason("");
-      setManual({ paths: [path] });
-      return;
-    }
-    await run(
-      "select_files",
-      { paths: [path], selected },
-      selected ? "File scope retained." : "File excluded.",
-    );
   };
   // Every state keeps the host's footer, so it never appears or vanishes.
   const footer = (summary: ReactNode, actions: ReactNode) => (
@@ -324,7 +287,7 @@ export function PluginWorkspace({
             [foreignWork.translated, "translated"],
             [foreignWork.applied, "applied"],
           ]}
-          kept={["findings", "text choices", "working copies"]}
+          kept={["findings", "working copies"]}
           noun="files"
           next="Copy the plugin task again before applying more: tasks copied in the other project aren't accepted here."
           left={
@@ -350,15 +313,15 @@ export function PluginWorkspace({
             />
           }
         />
-        {footer(null, continueControl)}
+        {footer(null, next("quiet"))}
       </section>
     );
   }
-  if (!state || !view)
+  if (!state)
     return (
       <>
         <Message message={error || "Loading saved plugin work…"} />
-        {footer(null, continueControl)}
+        {footer(null, next("quiet"))}
       </>
     );
   if (!state.supported)
@@ -370,116 +333,26 @@ export function PluginWorkspace({
           workflow. This guarded workspace does not claim Ruby publication
           support.
         </p>
-        {footer(null, continueControl)}
+        {footer(null, next("primary"))}
       </section>
     );
   const counts = state.counts;
-  const selectedHidden = Math.max(
-    0,
-    counts.selectedFiles - (list?.selectedMatched || 0),
-  );
-  const actionKeys = ["plugin_task", "preview_apply", "apply", "restore"];
-  const inspect = (path: string) => {
-    edit({ currentFile: path });
-    setInspecting(true);
-  };
-  // A dismissed task no longer waits for its reports.
-  const awaiting =
-    !handoff.dismissed &&
-    ((state.activeRequest === state.requestPaths.investigation &&
-      state.findings.status === "awaiting_report") ||
-      (state.activeRequest === state.requestPaths.translation &&
-        state.editing.status === "awaiting_report"));
-  // Unresolved findings wait for a decision, as their rows and the shared
-  // task list say.
-  const taskState = counts.ready
-    ? "ready"
-    : counts.applied
-      ? "applied"
-      : awaiting
-        ? "waiting"
-        : state.findings.status === "partial" ||
-            state.findings.errors.length ||
-            state.editing.errors.length
-          ? "needs_review"
-          : "not_started";
-  const reportRow = (
-    id: string,
-    title: string,
-    report: typeof state.findings,
-    idle: string,
-  ) => ({
-    id,
-    title,
-    state:
-      report.status === "current"
-        ? ("done" as const)
-        : report.status === "partial"
-          ? ("needs_review" as const)
-          : report.status === "awaiting_report" && !handoff.dismissed
-            ? ("waiting" as const)
-            : ("not_started" as const),
-    detail:
-      report.errors[0] ||
-      (report.expected
-        ? `${report.accepted ?? 0} of ${report.expected} files accepted.`
-        : idle),
-  });
-  const copyControl = (
-    <ActionControl
-      label="Copy plugin task"
-      variant={counts.ready ? "default" : "primary"}
-      disabled={busy}
-      {...feedback("plugin_task")}
-      notice={
-        state.activeRequest === copiedRequest
-          ? feedback("plugin_task").notice
-          : ""
-      }
-      onClick={() =>
-        run("plugin_task", {}, "Task copied. Paste it into your assistant.")
-      }
-    />
-  );
+  const task = pluginTask(state, handoff.waiting);
+  const copied = feedback("plugin_task");
+  const finished = ["done", "applied"].includes(task.taskState);
   return (
     <section className="plugin-workspace" aria-label="Plugin files workspace">
       <AssistantTask
-        state={taskState}
+        state={task.taskState}
         progress={
-          taskState === "waiting" ? sinceLabel(handoff.since) : undefined
+          task.taskState === "waiting" ? sinceLabel(handoff.since) : undefined
         }
-        help="Keep DazedTL open while your assistant works. It continues through safe work automatically and asks only about unresolved choices."
-        description={
-          taskState === "ready"
-            ? `${fileCount(counts.ready)} checked and ready to apply.`
-            : taskState === "applied"
-              ? `${fileCount(counts.applied)} applied to the game.`
-              : taskState === "needs_review"
-                ? "Some investigation remains unresolved. Your assistant can continue from the same task after resolving the reported issues."
-                : taskState === "waiting"
-                  ? "Results appear here after validation as your assistant saves them."
-                  : "Your assistant investigates plugin text, translates confirmed display text and checks the results in one task."
-        }
-        results={[
-          reportRow(
-            "findings",
-            "Plugin findings",
-            state.findings,
-            "Which plugin parameters carry display text.",
-          ),
-          reportRow(
-            "editing",
-            "Translated plugin text",
-            state.editing,
-            "Translations for the confirmed display text.",
-          ),
-        ]}
+        help="Keep DazedTL open while your assistant works. It investigates every plugin file, translates the text players see and asks only about choices it can't settle. Copying the task again once it is done has your assistant recheck its decisions, for example after you find untranslated plugin text in the game."
+        description={task.description}
+        results={task.results}
       />
       <Message
-        message={
-          error ||
-          (!actionKeys.includes(action.key) && !inspecting ? action.error : "")
-        }
+        message={error || (controlled(action.key) ? "" : action.error)}
       />
       {state.originalIssue && (
         <div className="plugin-prerequisite">
@@ -487,179 +360,32 @@ export function PluginWorkspace({
           <span>{state.originalIssue}</span>
         </div>
       )}
-      {!!counts.files && (
-        <section className="plugin-files" aria-label="Plugin files">
-          <div className="plugin-files-heading">
-            <Button
-              variant="quiet"
-              aria-expanded={showFiles}
-              aria-controls="plugin-file-list"
-              onClick={() => setShowFiles(!showFiles)}
-            >
-              {showFiles ? "Hide files" : "Show files & text"}
-            </Button>
-            <span className="muted">
-              {counts.files} files found
-              {counts.latent
-                ? ` · ${counts.latent} inactive / default locations`
-                : ""}
-            </span>
-          </div>
-          {showFiles && (
-            <div id="plugin-file-list">
-              <div className="plugin-filters">
-                <label className="plugin-search">
-                  <Search size={15} />
-                  <input
-                    aria-label="Search plugins"
-                    placeholder="Search plugin or file…"
-                    value={view.query}
-                    onChange={(event) =>
-                      edit({ query: event.target.value, offset: 0 })
-                    }
-                  />
-                </label>
-                <select
-                  aria-label="Plugin status"
-                  value={view.filter}
-                  onChange={(event) =>
-                    edit({ filter: event.target.value, offset: 0 })
-                  }
-                >
-                  {[
-                    "all",
-                    "ready",
-                    "selected",
-                    "needs_revision",
-                    "latent",
-                    "unresolved",
-                    "stale",
-                    "applied",
-                    "not_investigated",
-                    "not_needed",
-                  ].map((status) => (
-                    <option key={status} value={status}>
-                      {status === "all" ? "All files" : pluginStatus(status)}
-                    </option>
-                  ))}
-                </select>
-                <label className="plugin-selected-filter">
-                  <input
-                    type="checkbox"
-                    checked={view.selectedOnly}
-                    onChange={(event) =>
-                      edit({ selectedOnly: event.target.checked, offset: 0 })
-                    }
-                  />
-                  Included only
-                </label>
-              </div>
-              <div className="plugin-table-scroll" aria-busy={loading}>
-                <table className="plugin-table">
-                  <thead>
-                    <tr>
-                      <th>Plugin / file</th>
-                      <th>Text</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list?.items.map((row) => (
-                      <tr key={row.path}>
-                        <td>
-                          <button
-                            className="plugin-file"
-                            onClick={() => inspect(row.path)}
-                          >
-                            <FileCode2 size={14} />
-                            <span>
-                              {row.plugin}
-                              <small>{row.path}</small>
-                            </span>
-                          </button>
-                        </td>
-                        <td>
-                          {row.selected
-                            ? `${row.selected} included`
-                            : "None included"}
-                          {row.uncertain > 0 && (
-                            <small className="plugin-warning">
-                              {row.uncertain} uncertain
-                            </small>
-                          )}
-                        </td>
-                        <td className="plugin-status">
-                          <PluginState status={row.status} issue={row.issue} />
-                          {row.manual > 0 && <small>Adjusted by you</small>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!list?.items.length && (
-                  <p className="plugin-empty">
-                    {loading
-                      ? "Loading files…"
-                      : "No files match these filters."}
-                  </p>
-                )}
-              </div>
-              <div className="plugin-table-count">
-                <span>
-                  {list?.total.toLocaleString() || 0} matching files
-                  {selectedHidden
-                    ? ` · ${selectedHidden} included files hidden`
-                    : ""}
-                </span>
-                {(view.offset > 0 || (list?.total || 0) > 100) && (
-                  <>
-                    <Button
-                      disabled={!view.offset}
-                      onClick={() =>
-                        edit({ offset: Math.max(0, view.offset - 100) })
-                      }
-                    >
-                      Previous
-                    </Button>
-                    <span>
-                      {Math.floor(view.offset / 100) + 1} /{" "}
-                      {Math.ceil((list?.total || 0) / 100)}
-                    </span>
-                    <Button
-                      disabled={view.offset + 100 >= (list?.total || 0)}
-                      onClick={() => edit({ offset: view.offset + 100 })}
-                    >
-                      Next
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
       {footer(
-        <div className="plugin-footer-summary">
-          {/* The task panel owns ready and applied status; this is the scope. */}
-          <span>
-            {counts.selected
-              ? `${counts.selected} text ${counts.selected === 1 ? "location" : "locations"} in ${fileCount(counts.selectedFiles)} included`
-              : "No plugin text included"}
-          </span>
-          {["apply", "restore", "adopt", "start_over"].includes(action.key) &&
-            action.notice && (
-              <span role="status" className="plugin-success">
-                {action.notice}
-              </span>
-            )}
-        </div>,
+        ["apply", "restore", "adopt", "start_over"].includes(action.key) &&
+          action.notice && (
+            <span role="status" className="plugin-success">
+              {action.notice}
+            </span>
+          ),
         <>
           {!!state.receipts.length && (
             <Button disabled={busy} onClick={() => setRecovery(true)}>
               Recovery
             </Button>
           )}
-          {copyControl}
+          <ActionControl
+            label="Copy plugin task"
+            variant={counts.ready || finished ? "default" : "primary"}
+            disabled={busy}
+            {...copied}
+            // The copied notice lasts until the assistant moves to a newer request.
+            notice={
+              !copiedRequest || state.activeRequest === copiedRequest
+                ? copied.notice
+                : ""
+            }
+            onClick={copyTask}
+          />
           {counts.ready > 0 &&
             (applyControl ?? (
               <ActionControl
@@ -670,248 +396,8 @@ export function PluginWorkspace({
                 onClick={() => run("preview_apply")}
               />
             ))}
-          {continueControl}
+          {next(finished ? "primary" : "quiet")}
         </>,
-      )}
-      {inspecting && (
-        <Modal
-          label="Plugin text details"
-          size="lg"
-          className="plugin-review-modal"
-          onDismiss={() => setInspecting(false)}
-          dismissible={!action.busy}
-        >
-          <DialogHeader
-            title={detail?.plugin || "Plugin text"}
-            description={view.currentFile}
-            onClose={() => setInspecting(false)}
-            closeDisabled={action.busy}
-          />
-          <DialogBody className="plugin-review-body">
-            <Message
-              message={
-                ![...actionKeys, "select", "select_files"].includes(action.key)
-                  ? action.error
-                  : ""
-              }
-            />
-            {!detail ? (
-              action.key === "detail" && action.error ? null : (
-                <p role="status">Loading text and findings…</p>
-              )
-            ) : (
-              <>
-                <div className="plugin-detail-status">
-                  <span className="plugin-status">
-                    <PluginState status={detail.status} issue={detail.issue} />
-                  </span>
-                  <ActionControl
-                    label={
-                      detail.selected
-                        ? "Exclude file"
-                        : detail.recommended
-                          ? "Include confirmed text"
-                          : "Include inactive text"
-                    }
-                    variant="quiet"
-                    disabled={
-                      busy ||
-                      (!detail.selected &&
-                        !detail.recommended &&
-                        !detail.latent)
-                    }
-                    {...feedback("select_files")}
-                    onClick={() =>
-                      chooseFile(
-                        detail.path,
-                        !detail.selected,
-                        !detail.recommended && !!detail.latent,
-                      )
-                    }
-                  />
-                </div>
-                {detail.reason && <Message message={detail.reason} />}
-                {detail.resultEvidence && <p>{detail.resultEvidence}</p>}
-                <Message
-                  message={action.key === "select" ? action.error : ""}
-                />
-                {action.key === "select" && action.notice && (
-                  <p role="status" className="plugin-success">
-                    {action.notice}
-                  </p>
-                )}
-                {detail.items.map((item) => (
-                  <article className="plugin-occurrence" key={item.id}>
-                    <div className="plugin-occurrence-heading">
-                      <label>
-                        <input
-                          aria-label={`Include occurrence ${item.id}`}
-                          type="checkbox"
-                          checked={item.selected}
-                          disabled={
-                            busy ||
-                            item.protected ||
-                            !item.finding?.safe ||
-                            !["visible", "latent"].includes(
-                              item.finding.disposition,
-                            )
-                          }
-                          onChange={(event) => {
-                            if (event.target.checked && item.latent) {
-                              setReason("");
-                              setManual({ paths: [], ids: [item.id] });
-                            } else
-                              void run(
-                                "select",
-                                {
-                                  ids: [item.id],
-                                  selected: event.target.checked,
-                                },
-                                "Text choice retained.",
-                              );
-                          }}
-                        />
-                        <strong>
-                          {item.protected
-                            ? "Protected"
-                            : !item.finding ||
-                                item.finding.disposition === "unresolved" ||
-                                (["visible", "latent"].includes(
-                                  item.finding.disposition,
-                                ) &&
-                                  !item.finding.safe)
-                              ? "Needs investigation"
-                              : item.latent
-                                ? "Inactive / default text"
-                                : item.finding.disposition === "visible"
-                                  ? "Display text"
-                                  : "Not player-visible"}
-                        </strong>
-                      </label>
-                      <span className="muted">Line {item.line}</span>
-                    </div>
-                    <p>
-                      <span lang="ja">{item.value}</span>
-                      {item.target && (
-                        <>
-                          {" "}
-                          → <span>{item.target}</span>
-                        </>
-                      )}
-                    </p>
-                    {item.finding && <p>{item.finding.reason}</p>}
-                    <details>
-                      <summary>
-                        Evidence{item.target ? " & changes" : ""}
-                      </summary>
-                      {item.finding && (
-                        <p className="muted">{item.finding.evidence}</p>
-                      )}
-                      <small className="plugin-path">
-                        {item.id}
-                        {item.logical.length
-                          ? ` · ${JSON.stringify(item.logical)}`
-                          : ""}
-                      </small>
-                      {detail.working && (
-                        <div className="plugin-diff">
-                          <div>
-                            <small>Original</small>
-                            <pre>{item.before}</pre>
-                          </div>
-                          <div>
-                            <small>Translation</small>
-                            <pre>{item.after}</pre>
-                          </div>
-                        </div>
-                      )}
-                    </details>
-                  </article>
-                ))}
-                {detail.total > detail.items.length && (
-                  <p className="muted">
-                    Showing {detail.items.length} of {detail.total} text
-                    locations. The translation task includes every eligible
-                    included location.
-                  </p>
-                )}
-                {detail.working && (
-                  <details>
-                    <summary>Validation checks</summary>
-                    <dl className="plugin-checks">
-                      {Object.entries(checks).map(([key, label]) => (
-                        <div key={key}>
-                          <dt>{label}</dt>
-                          <dd
-                            className={
-                              detail.checks[key] ? "plugin-success" : "muted"
-                            }
-                          >
-                            {detail.checks[key] ? "Passed" : "Pending"}
-                          </dd>
-                        </div>
-                      ))}
-                      <div>
-                        <dt>In-game appearance</dt>
-                        <dd>Not verified</dd>
-                      </div>
-                    </dl>
-                  </details>
-                )}
-              </>
-            )}
-          </DialogBody>
-        </Modal>
-      )}
-      {manual && (
-        <Modal
-          label="Include latent plugin text"
-          size="md"
-          className="plugin-review-modal"
-          onDismiss={() => setManual(null)}
-          dismissible={!action.busy}
-        >
-          <DialogHeader title="Include inactive or default-only text" />
-          <DialogBody className="plugin-review-body">
-            <p>
-              These safe display locations are excluded by default. Your scope
-              choice is retained with a reason.
-            </p>
-            <label>
-              Reason
-              <textarea
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </label>
-            <Message
-              message={
-                action.key === "select" || action.key === "select_files"
-                  ? action.error
-                  : ""
-              }
-            />
-          </DialogBody>
-          <ActionBar feedback={null}>
-            <Button disabled={action.busy} onClick={() => setManual(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={action.busy || !reason.trim()}
-              onClick={async () => {
-                const result = await run(
-                  manual.ids ? "select" : "select_files",
-                  { ...manual, selected: true, includeLatent: true, reason },
-                  "Manual scope retained.",
-                );
-                if (result.ok) setManual(null);
-              }}
-            >
-              Include safe latent text
-            </Button>
-          </ActionBar>
-        </Modal>
       )}
       {recovery && (
         <Modal
@@ -947,10 +433,8 @@ export function PluginWorkspace({
                           {[
                             new Date(receipt.saved).toLocaleString(),
                             selectionNames(
-                              receipt.files.map(
-                                (file) =>
-                                  file.destination.split("/").pop() ||
-                                  file.destination,
+                              receipt.files.map((file) =>
+                                fileName(file.destination),
                               ),
                             ),
                           ]

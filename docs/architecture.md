@@ -380,25 +380,26 @@ Legacy Guided review receipts remain readable for existing records.
 ## Plugins and images
 
 Guided Plugin files (optional) and Images are Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
-The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
+The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, working copies and reviewed publication for MV/MZ root and `www` layouts.
+The assistant decides which plugin text players see; the user does not review files or individual strings, and reviews only what Apply writes into the game.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
-Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated.
-Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected; saved assistant usage evidence does not establish in-game fit.
-Dynamic configuration, malformed data, uncertain occurrences and unsupported Ace publication remain explicit blockers.
+Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
+Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
+Dynamic configuration, malformed data, unreadable sources and unsupported Ace publication remain explicit blockers.
 Only independently investigated static plugin-loaded JSON dependencies enter this scope; ordinary event and database files retain their existing text phase.
 The clipboard task edits owned working copies, while runtime Apply stays behind an app-only, one-use exact-file preview.
 Request hashes and publication journals retain authority in the app profile, with candidate freezing, verified backups, failure rollback, restart reconciliation and another review for restore.
-One copied plugin task continues from investigation through translation and validation using the [project helper](translation-contract.md#project-helper).
-Its request-bound continuation accepts saved reports, investigates newly discovered JSON, and prepares missing working copies without a second user handoff.
-Confirmed active display text is included automatically while manual occurrence overrides survive.
-Missing or uncertain findings cannot inherit safety from a previous report; inactive/default-only text stays excluded unless chosen.
+One copied plugin task covers every plugin file, from investigation through translation and validation, using the [project helper](translation-contract.md#project-helper).
+Each request asks only about what is left: undecided text in files not yet settled, then the chosen text of files without a checked translation, with the reason a file's last translation failed.
+A report settles exactly what it answers, so the assistant can report part of a request and continue with the remainder; an undecided occurrence cannot inherit an earlier finding's safety.
+Confirmed active display text is chosen automatically; inactive and default-only text stays excluded.
+Translation requests carry the game's established English: guidance files, the Translate stage's output, the game's applied data and the reference games.
+Each result stays bound to the request that asked for it, and publication checks the file against that request.
 The helper cannot preview or publish runtime files, and only app-issued automatic tasks can continue.
 Repeated continuation of the immediately preceding request returns its existing successor; stale tasks cannot replace newer work.
-Copying the task again while its investigation request still matches the scanned sources, guidance and originals returns that same request, so a saved partial report is extended rather than orphaned.
-Agent questions concern unresolved choices; runtime replacement retains its exact-file review.
-File details and Apply/restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
-Filtering preserves occurrence overrides, and bounded renderer reads share the application observer and serialized drafts.
-Plugin view revisions are independent of agent-updated scope, so incoming reports do not invalidate pending view edits.
+Copying the task again while work is left returns the open request when its scope still matches the scanned sources, guidance and originals, so a saved partial report is extended rather than orphaned.
+Once nothing is left, a copy asks the assistant to recheck every decision with its earlier findings, for text the user found untranslated in the game.
+Apply and restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
 
 The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
 Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
@@ -485,7 +486,7 @@ Status shows where a Guided project stands from the observed snapshot through [g
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
-Plugin files and Images complete from the same snapshot once applied work leaves nothing selected or edited waiting, Images also once a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; the optional ones never block the next required task.
+Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply, Images once applied work leaves nothing selected or edited waiting, or a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; the optional ones never block the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
@@ -741,7 +742,7 @@ Estimate startup, finalization and Live/Batch cost-review preparation have disti
 Backend disconnection invalidates pending reads so a late response cannot restore an obsolete connected state.
 `useAction` guards duplicate submissions, while `useDraft` serializes recovery writes and explicit saves.
 Recovery drafts remain dirty until committed; leave guards flush them before navigation and close.
-Autosaving editors, such as Image Manager, Plugin files and the image text editor, save every write instead, so a successful write becomes their clean baseline.
+Autosaving editors, such as Image Manager and the image text editor, save every write instead, so a successful write becomes their clean baseline.
 Mutations changing snapshot-backed state, including recovery drafts, must keep the default `refresh` in their [method contract](../backend/dazedtl/api/contracts/methods.py), so remounted editors cannot recover an older draft from the cached snapshot.
 Guided engine options use the same draft session and retain the native revision check.
 Setup-form recovery lives alongside project records in the profile.

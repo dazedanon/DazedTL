@@ -27,7 +27,7 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       backControl={back()}
       beforeAction={flushDrafts}
       disabled={disabled}
-      continueControl={advance(undefined, undefined, "quiet")}
+      next={(variant) => advance(undefined, undefined, variant)}
       // Applying goes through the same review as Check's pending changes.
       applyControl={reviewPending({ only: "plugins", label: "Review & apply" })}
     />
@@ -35,7 +35,7 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
   return {
     content,
     heading: {
-      description: "Translate the display text inside plugin settings.",
+      description: "Translate the text plugins show to players.",
     },
   };
 }

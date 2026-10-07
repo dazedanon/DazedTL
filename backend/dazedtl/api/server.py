@@ -58,7 +58,12 @@ class Application:
         self.images = ImageService(
             self.projects, self.translation, self.settings, self.backend
         )
-        self.plugins = PluginService(self.projects, self.translation, self.backend)
+        self.plugins = PluginService(
+            self.projects,
+            self.translation,
+            self.backend,
+            context=self.guided.assistant_context,
+        )
         self.assistant_tasks = AssistantTasks(self.workspace)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
@@ -656,11 +661,7 @@ def routes(app):
             lambda value, _params: value,
         )
     methods["plugins_action"] = (app.plugins_action, lambda value, _params: value)
-    for name in ("state", "list", "detail", "update"):
-        methods["plugins_" + name] = (
-            getattr(app.plugins, name),
-            lambda value, _params: value,
-        )
+    methods["plugins_state"] = (app.plugins.state, lambda value, _params: value)
     methods["plugins_continue"] = (
         app.plugins.continue_task,
         lambda value, _params: value,

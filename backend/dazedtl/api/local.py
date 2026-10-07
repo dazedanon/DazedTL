@@ -19,8 +19,6 @@ AGENT_METHODS = frozenset(
         "images_list",
         "images_preview",
         "plugins_state",
-        "plugins_list",
-        "plugins_detail",
         "plugins_continue",
         "guided_context_status",
         "guided_event_text_request",

@@ -222,6 +222,25 @@ class GuidedContext:
         )
         return {"saved": True}
 
+    def assistant_context(self, project_id):
+        """The game's established English beyond its guidance files, for tasks
+        that translate text outside Translate runs: the Translate stage's
+        output folder, once it exists, and the chosen reference games."""
+        _, native = self.guided.record(project_id)
+        folder = project_path(
+            self.guided.backend.workflows.folder(native["id"]),
+            "translated",
+            exists=False,
+        )
+        return {
+            "translated": str(folder)
+            if folder.is_dir() and any(folder.glob("*.json"))
+            else "",
+            "references": reference_folders.records(
+                self.guided.path(project_id, "reference-folders")
+            ),
+        }
+
     def reference_add(self, project_id, folder):
         self.guided.record(project_id)
         return reference_folders.add(

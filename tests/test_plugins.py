@@ -35,6 +35,8 @@ class FixtureDocuments:
 
 
 class PluginTests(unittest.TestCase):
+    identity_keys = ("version", "kind", "projectId", "requestId", "binding")
+
     @classmethod
     def setUpClass(cls):
         cls.documents = FixtureDocuments()
@@ -111,44 +113,42 @@ class PluginTests(unittest.TestCase):
     def write(self, path, value):
         write_bytes(self.game / path, value.encode())
 
-    def investigation(self, task=None, *, refresh=True):
-        result = task or self.service.action(self.identity, "investigate")
-        request = read_json(result["request"])
+    def investigation(self, task=None, *, advance=True, only=None):
+        """Answers a copied task's investigation for every file, or `only`
+        those, and continues the task unless told not to."""
+        task = task or self.service.action(self.identity, "plugin_task")
+        request = read_json(task["request"])
         rows = []
         for asked in request["files"]:
+            if only is not None and asked["path"] not in only:
+                continue
             rows.append(
                 {
                     "path": asked["path"],
                     "sourceHash": asked["sourceHash"],
-                    "examined": not asked["issue"],
+                    "examined": True,
                     "evidence": "Complete recursive/source fixture audit",
                     "occurrences": [
                         {
                             "id": item["id"],
-                            "disposition": "protected"
-                            if item["protected"]
-                            else "latent"
-                            if item["latent"]
-                            else "visible",
-                            "safe": not item["protected"],
+                            "disposition": "latent" if item["latent"] else "visible",
+                            "safe": True,
                             "evidence": "Fixture drawText consumer checked; keys remain read-only",
-                            "reason": "Player-visible static label"
-                            if not item["protected"]
-                            else "Original Japanese item lookup",
+                            "reason": "Player-visible static label",
                         }
                         for item in asked["occurrences"]
                     ],
                 }
             )
-        report = {
-            key: request[key]
-            for key in ("version", "kind", "projectId", "requestId", "binding")
-        }
+        report = {key: request[key] for key in self.identity_keys}
         report.update(files=rows, complete=True, dependencies=[])
         write_json(request["report"], report)
-        if refresh:
-            self.service.action(self.identity, "refresh_findings")
-        return request, report
+        result = (
+            self.service.continue_task(self.identity, request["requestId"])
+            if advance
+            else None
+        )
+        return request, report, result
 
     def candidate(self, path, targets):
         value = self.service.load(self.identity)
@@ -184,12 +184,14 @@ class PluginTests(unittest.TestCase):
         write_bytes(self.game / prepared["candidate"], raw)
         return raw
 
-    def translated(self):
-        self.investigation()
-        result = self.service.action(self.identity, "translation_task")
-        request = read_json(result["request"])
+    def translate(self, task, only=None):
+        """Translates a translation request's files, or `only` those, into
+        their working copies and saves the report."""
+        request = read_json(task["request"])
         rows = []
         for asked in request["files"]:
+            if only is not None and asked["path"] not in only:
+                continue
             targets = {
                 item["id"]: item["value"]
                 .replace("開始", "Start")
@@ -208,14 +210,22 @@ class PluginTests(unittest.TestCase):
                     "evidence": "Synthetic Japanese/English review; runtime playtest not performed",
                 }
             )
-        report = {
-            key: request[key]
-            for key in ("version", "kind", "projectId", "requestId", "binding")
-        }
+        report = {key: request[key] for key in self.identity_keys}
         report.update(files=rows, complete=True)
         write_json(request["report"], report)
-        self.service.action(self.identity, "refresh_results")
         return request, report
+
+    def translated(self):
+        _request, _report, task = self.investigation()
+        self.assertEqual(task["stage"], "translation")
+        request, report = self.translate(task)
+        done = self.service.continue_task(self.identity, request["requestId"])
+        self.assertEqual(done["stage"], "complete")
+        return request, report
+
+    def status(self, path):
+        value = self.service.load(self.identity)
+        return self.service.row_status(value, value["files"][path])
 
     def test_recursive_parameters_pristine_keys_and_retained_hidden_scope(self):
         # Already translated runtime DB must not erase original lookup guards.
@@ -223,16 +233,23 @@ class PluginTests(unittest.TestCase):
             self.game / "www/data/Items.json",
             [None, {"id": 1, "name": "Herb", "note": "<所持金消費:1>"}],
         )
-        request, _ = self.investigation()
+        self.write("www/js/plugins/Keys.js", "lookup('薬草');\r\n")
+        before = (self.game / "www/js/plugins.js").read_bytes()
+        request, _report, _task = self.investigation()
         value = self.service.load(self.identity)
         item = next(
             item
-            for row in value["files"].values()
-            for item in row["occurrences"]
+            for item in value["files"]["www/js/plugins/PluginA.js"]["occurrences"]
             if item["value"] == "薬草"
         )
         self.assertTrue(item["protected"])
-        self.assertFalse(item["finding"]["safe"])
+        asked = {item["id"] for row in request["files"] for item in row["occurrences"]}
+        self.assertNotIn(item["id"], asked)
+        # A file holding only protected text leaves the assistant nothing to decide.
+        self.assertNotIn(
+            "www/js/plugins/Keys.js", [row["path"] for row in request["files"]]
+        )
+        self.assertEqual(self.status("www/js/plugins/Keys.js"), "none")
         labels = [
             item
             for item in value["files"]["www/js/plugins.js"]["occurrences"]
@@ -240,95 +257,70 @@ class PluginTests(unittest.TestCase):
         ]
         self.assertEqual(len(labels), 2)
         self.assertTrue(all(item["finding"]["safe"] for item in labels))
-        selected = self.service.state(self.identity)["counts"]["selected"]
-        self.assertEqual(
-            selected, 4
-        )  # Confirmed active leaves are included without a recommendation click.
-        self.assertFalse(any(row.get("prepared") for row in value["files"].values()))
-        state = self.service.state(self.identity)
-        self.service.update(
-            self.identity,
-            state["revision"],
-            {"view": {"query": "PluginB", "currentFile": "www/js/plugins/PluginA.js"}},
-        )
-        self.assertEqual(
-            self.service.list(self.identity, query="PluginB")["selectedMatched"], 0
-        )
+        # Confirmed active leaves are included without anyone choosing them;
+        # the disabled plugin's text is not.
+        self.assertEqual(self.service.state(self.identity)["counts"]["selected"], 4)
+        self.assertEqual((self.game / "www/js/plugins.js").read_bytes(), before)
         restarted = PluginService(
             self.projects,
             self.translation,
             self.backend,
             documents=self.service.documents,
         )
-        self.assertEqual(restarted.state(self.identity)["counts"]["selected"], selected)
-        self.assertEqual(restarted.state(self.identity)["view"]["query"], "PluginB")
+        self.assertEqual(restarted.state(self.identity)["counts"]["selected"], 4)
         self.assertNotIn(
             "www/data/Map001.json", [row["path"] for row in request["files"]]
         )
 
-    def test_automatic_scope_retains_exclusions_and_drops_missing_or_uncertain_evidence(
-        self,
-    ):
-        request, report = self.investigation()
-        selected = self.service.load(self.identity)["selection"]
-        excluded = selected[0]
-        self.service.action(
-            self.identity, "select", {"ids": [excluded], "selected": False}
-        )
-        self.service.action(self.identity, "refresh_findings")
-        self.assertNotIn(excluded, self.service.load(self.identity)["selection"])
-        row = next(
-            row for row in report["files"] if row["path"].endswith("/PluginA.js")
-        )
+    def test_undecided_text_stays_with_the_assistant_until_settled(self):
+        request, report, _ = self.investigation(advance=False)
+        answers = {row["path"]: row for row in report["files"]}
         uncertain = next(
             item
-            for item in row["occurrences"]
-            if item["id"] in selected and item["id"] != excluded
+            for item in answers["www/js/plugins/PluginA.js"]["occurrences"]
+            if item["disposition"] == "visible"
         )
         uncertain.update(
             disposition="unresolved", safe=False, reason="Display use is ambiguous"
         )
-        omitted = next(
-            item
-            for item in report["files"][0]["occurrences"]
-            if item["id"] in selected and item["id"] != excluded
-        )
-        report["files"][0]["occurrences"].remove(omitted)
+        omitted = answers["www/js/plugins.js"]["occurrences"].pop(0)
         write_json(request["report"], report)
-        self.service.action(self.identity, "refresh_findings")
-        value = self.service.load(self.identity)
-        self.assertTrue(
-            {excluded, uncertain["id"], omitted["id"]}.isdisjoint(value["selection"])
-        )
-        listed = self.service.list(self.identity)
-        # Real rows and a bound request must match what the renderer validates.
-        check_response("plugins_list", listed)
-        check_response("plugins_state", self.service.state(self.identity))
-        uncertain_files = [row for row in listed["items"] if row["uncertain"]]
+        followup = self.service.continue_task(self.identity, request["requestId"])
+        # Accepted findings stay; only the undecided text is asked again.
+        self.assertEqual(followup["stage"], "investigation")
         self.assertEqual(
-            {row["path"] for row in uncertain_files},
-            {"www/js/plugins.js", "www/js/plugins/PluginA.js"},
+            {
+                (row["path"], item["id"])
+                for row in read_json(followup["request"])["files"]
+                for item in row["occurrences"]
+            },
+            {
+                ("www/js/plugins/PluginA.js", uncertain["id"]),
+                ("www/js/plugins.js", omitted["id"]),
+            },
         )
-        # Retired saved filters must not hide the inventory or alter text scope.
-        value["view"].update(filter="retired_filter", offset=100)
-        self.service.save(self.identity, value)
+        selection = self.service.load(self.identity)["selection"]
+        self.assertTrue({uncertain["id"], omitted["id"]}.isdisjoint(selection))
+        self.assertEqual(len(selection), 2)
         state = self.service.state(self.identity)
-        self.assertEqual(state["view"]["filter"], "all")
-        self.assertEqual(state["view"]["offset"], 0)
+        # Real rows and a bound request must match what the renderer validates.
+        check_response("plugins_state", state)
+        self.assertTrue(state["awaiting"])
+        self.assertEqual(state["counts"]["investigated"], state["counts"]["files"] - 2)
+        # Copying the task again hands out the same open request.
         self.assertEqual(
-            self.service.load(self.identity)["selection"], value["selection"]
+            self.service.action(self.identity, "plugin_task")["requestId"],
+            followup["requestId"],
         )
-        self.assertEqual(
-            self.service.list(self.identity, filter="retired_filter")["total"],
-            state["counts"]["files"],
-        )
-        before = {path: (self.game / path).read_bytes() for path in value["files"]}
-        task = self.service.action(self.identity, "translation_task")
-        self.assertEqual(
-            self.service.state(self.identity)["counts"]["selectedNotPrepared"], 0
-        )
+        runtime = {
+            path: (self.game / path).read_bytes()
+            for path in self.service.load(self.identity)["files"]
+        }
+        _, _, task = self.investigation(followup)
+        self.assertEqual(task["stage"], "translation")
+        self.assertEqual(len(self.service.load(self.identity)["selection"]), 4)
         self.assertTrue(
-            all((self.game / path).read_bytes() == raw for path, raw in before.items())
+            all((self.game / path).read_bytes() == raw for path, raw in runtime.items())
         )
         self.assertTrue(
             all(
@@ -339,7 +331,7 @@ class PluginTests(unittest.TestCase):
         # A retained path must not advertise a deleted copy as available to the agent.
         (self.game / read_json(task["request"])["files"][0]["candidate"]).unlink()
         with self.assertRaisesRegex(ValueError, "missing files"):
-            self.service.action(self.identity, "translation_task")
+            self.service.action(self.identity, "plugin_task")
 
     def test_foreign_duplicate_traversal_and_stale_reports_are_atomic(self):
         # MZ plugin subfolders are valid names; traversal and empty parts are not.
@@ -347,10 +339,10 @@ class PluginTests(unittest.TestCase):
         for name in ("../Plugin", "Author/../Plugin", "Author//Plugin", "./Plugin"):
             with self.assertRaises(ValueError):
                 safe_name(name)
-        request, report = self.investigation()
-        prior = deepcopy(self.service.load(self.identity))
         with self.assertRaisesRegex(ValueError, "Copy a plugin task"):
-            self.service.continue_task(self.identity, request["requestId"])
+            self.service.continue_task(self.identity, "0" * 32)
+        request, report, _ = self.investigation(advance=False)
+        prior = deepcopy(self.service.load(self.identity))
         for mutate in (
             lambda r: r.update(projectId="foreign"),
             lambda r: r["files"].append(deepcopy(r["files"][0])),
@@ -360,20 +352,20 @@ class PluginTests(unittest.TestCase):
             mutate(invalid)
             write_json(request["report"], invalid)
             with self.assertRaises(ValueError):
-                self.service.action(self.identity, "refresh_findings")
+                self.service.continue_task(self.identity, request["requestId"])
             self.assertEqual(self.service.load(self.identity), prior)
         changed = deepcopy(prior)
         changed["requests"]["investigation"]["binding"] = "forged"
         self.service.save(self.identity, changed)
         write_json(request["path"], changed["requests"]["investigation"])
         with self.assertRaisesRegex(ValueError, "scoped request changed"):
-            self.service.action(self.identity, "refresh_findings")
+            self.service.continue_task(self.identity, request["requestId"])
         self.service.save(self.identity, prior)
         write_json(request["path"], request)
         write_json(request["report"], report)
         self.write("www/js/plugins/PluginA.js", "drawText('変更');")
         with self.assertRaisesRegex(ValueError, "Source changed"):
-            self.service.action(self.identity, "refresh_findings")
+            self.service.continue_task(self.identity, request["requestId"])
 
     def test_unrelated_code_interpolation_controls_and_extra_files_are_rejected(self):
         request, report = self.translated()
@@ -384,6 +376,7 @@ class PluginTests(unittest.TestCase):
             / self.service.load(self.identity)["files"][path]["prepared"]["candidate"]
         )
         good = candidate.read_bytes()
+        current = request
         for raw in (
             good + b"\nmalicious();",
             good.replace(b"actor.name", b"actor.secret"),
@@ -391,11 +384,19 @@ class PluginTests(unittest.TestCase):
         ):
             write_bytes(candidate, raw)
             row["candidateHash"] = digest(raw)
-            write_json(request["report"], report)
-            self.service.action(self.identity, "refresh_results")
-            detail = self.service.detail(self.identity, path)
-            self.assertEqual(detail["status"], "needs_revision")
-            self.assertFalse(detail["checks"])
+            report = {key: current[key] for key in self.identity_keys}
+            report.update(files=[row])
+            write_json(current["report"], report)
+            # A failed check hands the file back for repair, with the reason.
+            again = self.service.continue_task(self.identity, current["requestId"])
+            self.assertIn("Failed checks", again["message"])
+            current = read_json(again["request"])
+            [asked] = current["files"]
+            self.assertEqual(asked["path"], path)
+            self.assertTrue(asked["failedCheck"])
+            result = self.service.load(self.identity)["files"][path]["result"]
+            self.assertEqual(result["status"], "needs_revision")
+            self.assertFalse(result["checks"])
         forged = self.service.load(self.identity)
         forged["files"][path]["result"]["status"] = "ready"
         self.service.save(self.identity, forged)
@@ -405,25 +406,37 @@ class PluginTests(unittest.TestCase):
         write_bytes(candidate, good)
         row["candidateHash"] = digest(good)
         report["files"].append({"path": "www/js/plugins/New.js", "sourceHash": "x"})
-        write_json(request["report"], report)
+        write_json(current["report"], report)
         with self.assertRaisesRegex(ValueError, "out-of-scope"):
-            self.service.action(self.identity, "refresh_results")
+            self.service.continue_task(self.identity, current["requestId"])
 
     def test_apply_cancel_stale_preview_one_use_restore_and_rollback(self):
         # Keep the real, uncached parser boundary through investigation,
         # translation, Apply and restore, alongside the direct parser checks.
         self.service.documents = Documents()
-        request, _report = self.translated()
-        before = {
-            row["path"]: (self.game / row["path"]).read_bytes()
-            for row in request["files"]
-        }
+        _, _, task = self.investigation()
+        first = read_json(task["request"])
+        paths = [row["path"] for row in first["files"]]
+        # Files translated under an earlier request stay publishable while a
+        # later request asks only for the rest.
+        self.translate(task, only=paths[:1])
+        rest = self.service.continue_task(self.identity, first["requestId"])
+        self.assertNotEqual(rest["requestId"], first["requestId"])
+        self.assertEqual(
+            [row["path"] for row in read_json(rest["request"])["files"]], paths[1:]
+        )
+        request, _report = self.translate(rest)
+        self.assertEqual(
+            self.service.continue_task(self.identity, request["requestId"])["stage"],
+            "complete",
+        )
+        before = {path: (self.game / path).read_bytes() for path in paths}
         self.assertEqual(self.service.state(self.identity)["counts"]["ready"], 2)
         canceled = self.service.action(self.identity, "preview_apply")["preview"]
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
-        path = request["files"][0]["path"]
+        path = paths[0]
         candidate = (
             self.game
             / self.service.load(self.identity)["files"][path]["prepared"]["candidate"]
@@ -459,6 +472,7 @@ class PluginTests(unittest.TestCase):
         check_response("plugins_action", {"preview": preview})
         check_response("plugins_action", result)
         self.assertTrue(result["receipt"]["restorable"])
+        self.assertEqual(result["state"]["counts"]["applied"], 2)
         with self.assertRaisesRegex(ValueError, "already used"):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
         saved = self.service.load(self.identity)
@@ -479,74 +493,48 @@ class PluginTests(unittest.TestCase):
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
         )
-        # A restored application no longer offers another restore.
-        receipts = self.service.state(self.identity)["receipts"]
-        self.assertFalse(any(receipt["restorable"] for receipt in receipts))
-        copies = {
-            path: deepcopy(row["prepared"])
-            for path, row in self.service.load(self.identity)["files"].items()
-            if row.get("prepared")
-        }
-        self.service.action(self.identity, "translation_task")
-        self.assertEqual(self.service.state(self.identity)["counts"]["ready"], 0)
+        # A restored application no longer offers another restore, and its
+        # checked translations wait to be applied again.
+        state = self.service.state(self.identity)
+        self.assertFalse(any(receipt["restorable"] for receipt in state["receipts"]))
+        self.assertEqual(state["counts"]["ready"], 2)
         self.assertEqual(
-            copies,
-            {
-                path: row["prepared"]
-                for path, row in self.service.load(self.identity)["files"].items()
-                if row.get("prepared")
-            },
-        )
-        self.service.action(self.identity, "clear")
-        self.assertEqual(self.service.state(self.identity)["counts"]["ready"], 0)
-        self.assertEqual(
-            self.service.action(self.identity, "preview_apply")["preview"]["files"], []
+            len(
+                self.service.action(self.identity, "preview_apply")["preview"]["files"]
+            ),
+            2,
         )
 
-    def test_partial_results_and_manual_latent_exclusions_survive_redo(self):
-        request, report = self.translated()
+    def test_partial_results_are_handed_back_until_complete(self):
+        _, _, task = self.investigation()
+        request, report = self.translate(task)
         answer = report["files"][0]
         answer["targets"].pop(next(iter(answer["targets"])))
         # A changed value omitted from the report is not accepted as a partial result.
         write_json(request["report"], report)
-        self.service.action(self.identity, "refresh_results")
+        again = self.service.continue_task(self.identity, request["requestId"])
+        self.assertIn("Failed checks", again["message"])
         self.assertEqual(
-            self.service.detail(self.identity, answer["path"])["status"],
-            "needs_revision",
+            [row["path"] for row in read_json(again["request"])["files"]],
+            [answer["path"]],
         )
-        value = self.service.load(self.identity)
-        latent = next(
-            item
-            for row in value["files"].values()
+        self.assertEqual(self.status(answer["path"]), "translate")
+        self.assertEqual(self.service.state(self.identity)["counts"]["translated"], 1)
+        # Inactive and default-only text never joins the translation.
+        latent = {
+            item["id"]
+            for row in self.service.load(self.identity)["files"].values()
             for item in row["occurrences"]
-            if item["latent"] and item.get("finding", {}).get("safe")
-        )
-        with self.assertRaisesRegex(ValueError, "reason"):
-            self.service.action(
-                self.identity, "select", {"ids": [latent["id"]], "selected": True}
+            if item["latent"]
+        }
+        self.assertTrue(latent)
+        self.assertTrue(
+            latent.isdisjoint(
+                item["id"]
+                for row in read_json(request["path"])["files"]
+                for item in row["occurrences"]
             )
-        self.service.action(
-            self.identity,
-            "select",
-            {
-                "ids": [latent["id"]],
-                "selected": True,
-                "reason": "Translate this optional default",
-            },
         )
-        self.service.action(self.identity, "recommended")
-        self.assertIn(latent["id"], self.service.load(self.identity)["selection"])
-        self.service.action(
-            self.identity,
-            "select",
-            {
-                "ids": [latent["id"]],
-                "selected": False,
-                "reason": "Keep Japanese variant",
-            },
-        )
-        self.service.action(self.identity, "recommended")
-        self.assertNotIn(latent["id"], self.service.load(self.identity)["selection"])
 
     def test_literal_byte_offsets_escaped_tokens_and_same_prefix_lookup(self):
         original = (
@@ -589,14 +577,13 @@ class PluginTests(unittest.TestCase):
 
     def test_missing_originals_and_dynamic_configuration_never_authorize_edits(self):
         lifecycle_path(self.profile, self.identity).unlink()
-        _request, _report = self.investigation()
-        self.service.action(self.identity, "recommended")
+        # Without the original Japanese, lookup values cannot be protected.
+        with self.assertRaisesRegex(ValueError, "Back up the original"):
+            self.service.action(self.identity, "plugin_task")
         self.assertEqual(self.service.state(self.identity)["counts"]["selected"], 0)
-        with self.assertRaises(ValueError):
-            self.service.action(self.identity, "prepare")
         self.write("www/js/plugins.js", "var $plugins = dangerous();")
         with self.assertRaisesRegex(ValueError, "static literal"):
-            self.service.action(self.identity, "investigate")
+            self.service.action(self.identity, "plugin_task")
         malformed = Documents().parse(
             [{"path": "bad.json", "source": '{"Text": "日本語"', "kind": "json"}]
         )["bad.json"]
@@ -612,13 +599,28 @@ class PluginTests(unittest.TestCase):
         first = self.service.action(self.identity, "plugin_task")["requestId"]
         again = self.service.action(self.identity, "plugin_task")["requestId"]
         self.assertEqual(again, first)
-        self.write("www/js/plugins/PluginA.js", "drawText('変更');")
+        self.write("www/js/plugins/PluginA.js", "drawText('残り');")
         changed = self.service.action(self.identity, "plugin_task")["requestId"]
         self.assertNotEqual(changed, first)
+        # Once nothing is left, a copy asks the assistant to recheck every
+        # decision, listing its earlier findings.
+        self.translated()
+        recheck = read_json(
+            self.service.action(self.identity, "plugin_task")["request"]
+        )
+        self.assertEqual(recheck["kind"], "investigation")
+        self.assertTrue(
+            all(
+                "finding" in item
+                for row in recheck["files"]
+                for item in row["occurrences"]
+            )
+        )
+        self.assertIn("recheck", recheck["instructions"])
 
     def test_explicit_loaded_json_needs_new_investigation_then_exact_leaf_checks(self):
         task = self.service.action(self.identity, "plugin_task")
-        request, report = self.investigation(task, refresh=False)
+        request, report, _ = self.investigation(task, advance=False)
         loader = next(
             row for row in request["files"] if row["path"].endswith("/PluginA.js")
         )
@@ -636,9 +638,9 @@ class PluginTests(unittest.TestCase):
         write_json(request["report"], report)
         followup = self.service.continue_task(self.identity, request["requestId"])
         self.assertEqual(followup["stage"], "investigation")
-        self.assertIn(
-            "www/data/PluginN.json",
+        self.assertEqual(
             [row["path"] for row in read_json(followup["request"])["files"]],
+            ["www/data/PluginN.json"],
         )
         # A lost reply returns the existing successor, without creating another request.
         self.assertEqual(
@@ -647,18 +649,13 @@ class PluginTests(unittest.TestCase):
             ],
             followup["requestId"],
         )
-        self.investigation(followup, refresh=False)
-        view_revision = self.service.state(self.identity)["revision"]
-        result = self.service.continue_task(self.identity, followup["requestId"])
+        _, _, result = self.investigation(followup)
         self.assertEqual(result["stage"], "translation")
-        # Incoming agent scope must not invalidate a pending search/view edit.
-        self.service.update(
-            self.identity, view_revision, {"view": {"query": "PluginN"}}
-        )
-        self.assertEqual(self.service.state(self.identity)["view"]["query"], "PluginN")
         path = "www/data/PluginN.json"
         row = self.service.load(self.identity)["files"][path]
         request = read_json(result["request"])
+        others = [item["path"] for item in request["files"] if item["path"] != path]
+        _, report = self.translate(result, only=others)
         asked = next(item for item in request["files"] if item["path"] == path)
         targets = {item["id"]: "Archive" for item in asked["occurrences"]}
         candidate = self.candidate(path, targets)
@@ -669,32 +666,32 @@ class PluginTests(unittest.TestCase):
             "targets": targets,
             "evidence": "Synthetic fixture display field",
         }
-        report = {
-            key: request[key]
-            for key in ("version", "kind", "projectId", "requestId", "binding")
-        }
-        report.update(files=[answer])
+        report["files"].append(answer)
         write_json(request["report"], report)
-        self.service.continue_task(self.identity, request["requestId"])
-        self.assertEqual(self.service.detail(self.identity, path)["status"], "ready")
+        done = self.service.continue_task(self.identity, request["requestId"])
+        self.assertEqual(done["stage"], "complete")
+        self.assertEqual(self.status(path), "ready")
         self.assertEqual(self.service.state(self.identity)["counts"]["applied"], 0)
         altered = candidate.replace(b'"id"', b'"renamed"')
         write_bytes(self.game / row["prepared"]["candidate"], altered)
         answer["candidateHash"] = digest(altered)
         write_json(request["report"], report)
-        self.service.action(self.identity, "refresh_results")
-        self.assertEqual(
-            self.service.detail(self.identity, path)["status"], "needs_revision"
+        current = read_json(
+            self.service.continue_task(self.identity, request["requestId"])["request"]
         )
+        self.assertEqual([item["path"] for item in current["files"]], [path])
+        self.assertEqual(self.status(path), "translate")
         write_bytes(self.game / row["prepared"]["candidate"], candidate)
         answer["candidateHash"] = digest(candidate)
-        write_json(request["report"], report)
+        report = {key: current[key] for key in self.identity_keys}
+        report.update(files=[answer])
+        write_json(current["report"], report)
         write_bytes(self.game / row["prepared"]["copyRoot"] / "New.js", b"malicious();")
         with self.assertRaisesRegex(ValueError, "New or missing"):
-            self.service.action(self.identity, "refresh_results")
-        self.service.action(self.identity, "plugin_task")
+            self.service.continue_task(self.identity, current["requestId"])
+        # Only the request before the active one counts as a lost reply.
         with self.assertRaisesRegex(ValueError, "replaced"):
-            self.service.continue_task(self.identity, request["requestId"])
+            self.service.continue_task(self.identity, followup["requestId"])
 
     def test_another_projects_work_is_taken_over_on_request_or_set_aside(self):
         # A copied game, a new profile or a reinstall opens this folder as a
@@ -736,8 +733,8 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(reply["state"]["counts"]["applied"], 2)
         # The earlier project and its copied task no longer act on this work.
         foreign(self.identity, self.service)
-        with self.assertRaisesRegex(ValueError, "Copy the scoped task"):
-            service.action(identity, "refresh_results")
+        with self.assertRaisesRegex(ValueError, "Copy a plugin task"):
+            service.continue_task(identity, request["requestId"])
         # A verified application stays restorable through its own review.
         restore = service.action(identity, "preview_restore", {"receipt": receipt})
         service.action(identity, "restore", {"token": restore["preview"]["token"]})
