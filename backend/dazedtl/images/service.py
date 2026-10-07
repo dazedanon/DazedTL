@@ -10,7 +10,6 @@ import uuid
 from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
 
 from dazedtl import foreign_work
@@ -20,7 +19,14 @@ from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.operations import lifecycle, require_source_backup
 
-from .inventory import Index, PreviewCache, inspect_row, png_metadata, sha_file
+from .inventory import (
+    Index,
+    PreviewCache,
+    inspect_row,
+    png_metadata,
+    png_preview,
+    sha_file,
+)
 
 WORK = ".dazedtl/image_manager/guided"
 CLASSIFICATIONS = {
@@ -2006,51 +2012,47 @@ class ImageService:
             raise ValueError(
                 "Choose an original/candidate preview and valid thumbnail size."
             )
+        # Only the inventory lookup holds the lock, so previews run beside each
+        # other and beside other requests; each reads and hashes its own bytes.
         with self.lock:
             self._ids(project_id, [asset_id])
             root, index = self.record(project_id)[1], self._index(project_id)
             row = index.get(asset_id)
-            if variant == "candidate":
-                path = project_path(root, row["editable"])
-                if path.stat().st_size > 128_000_000:
-                    raise ValueError(
-                        "Editable image exceeds the supported 128 MB size limit."
-                    )
-                raw = path.read_bytes()
-            elif variant == "original" and row.get("frozen"):
-                path = project_path(root, row["frozen"])
-                if path.stat().st_size > 128_000_000:
-                    raise ValueError(
-                        "Original image exceeds the supported 128 MB size limit."
-                    )
-                raw = path.read_bytes()
-                if digest(raw) != row.get("originalPngHash"):
-                    raise ValueError(
-                        "The preserved original changed. Recover it before comparison."
-                    )
-            else:
-                raw = self.adapter.source_bytes(
-                    root, row, self.adapter.key(root, self._profile(project_id))
+            frozen = variant == "original" and row.get("frozen")
+            key = (
+                None
+                if variant == "candidate" or frozen
+                else self.adapter.key(root, self._profile(project_id))
+            )
+        if variant == "candidate":
+            path = project_path(root, row["editable"])
+            if path.stat().st_size > 128_000_000:
+                raise ValueError(
+                    "Editable image exceeds the supported 128 MB size limit."
                 )
-            metadata = png_metadata(raw)
-            fingerprint = digest(raw)
-            cache_key = (project_id, asset_id, variant, fingerprint, size)
-            cached = self.cache.get(cache_key)
-            if cached is None:
-                if size:
-                    from PIL import Image
-
-                    with Image.open(BytesIO(raw)) as image:
-                        image.thumbnail((size, size))
-                        image = image.convert("RGBA")
-                        stream = BytesIO()
-                        image.save(stream, format="PNG")
-                        raw = stream.getvalue()
-                cached = raw
-                self.cache.put(cache_key, cached)
-            return {
-                "url": "data:image/png;base64,"
-                + base64.b64encode(cached).decode("ascii"),
-                "sha256": fingerprint,
-                **metadata,
-            }
+            raw = path.read_bytes()
+        elif frozen:
+            path = project_path(root, row["frozen"])
+            if path.stat().st_size > 128_000_000:
+                raise ValueError(
+                    "Original image exceeds the supported 128 MB size limit."
+                )
+            raw = path.read_bytes()
+            if digest(raw) != row.get("originalPngHash"):
+                raise ValueError(
+                    "The preserved original changed. Recover it before comparison."
+                )
+        else:
+            raw = self.adapter.source_bytes(root, row, key)
+        fingerprint = digest(raw)
+        cache_key = (project_id, asset_id, variant, fingerprint, size)
+        cached = self.cache.get(cache_key)
+        if cached is None:
+            cached = png_preview(raw, size)
+            self.cache.put(cache_key, cached)
+        metadata, pixels = cached
+        return {
+            "url": "data:image/png;base64," + base64.b64encode(pixels).decode("ascii"),
+            "sha256": fingerprint,
+            **metadata,
+        }

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+import threading
 import warnings
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -37,33 +38,58 @@ def png_metadata(value):
         with Image.open(BytesIO(value)) as checked:
             checked.verify()
         with Image.open(BytesIO(value)) as image:
-            if image.format != "PNG":
-                raise ValueError("Expected a PNG image.")
-            alpha = (
-                image.convert("RGBA").getchannel("A")
-                if "A" in image.getbands() or "transparency" in image.info
-                else None
-            )
-            # A single channel's extrema are its (minimum, maximum) values.
-            alpha_range = (
-                list(cast(tuple[int, int], alpha.getextrema()))
-                if alpha is not None
-                else [255, 255]
-            )
-            result = {
-                "width": image.width,
-                "height": image.height,
-                "mode": image.mode,
-                "transparency": alpha_range[0] < 255,
-                "alphaRange": alpha_range,
-                "alphaChannel": "A" in image.getbands() or "transparency" in image.info,
-                "frames": getattr(image, "n_frames", 1),
-            }
-            if result["frames"] != 1:
-                raise ValueError(
-                    "Animated PNGs require a separate workflow and cannot be patched here."
-                )
-        return result
+            return describe_png(image)
+
+
+def png_preview(value, size):
+    """Metadata and, given a size, a copy scaled to fit it, from one decode.
+
+    A preview only shows the image; indexing and application verify it with
+    png_metadata, so a preview skips that separate pass.
+    """
+    from PIL import Image
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(BytesIO(value)) as image:
+            image.load()
+            metadata = describe_png(image)
+            if not size:
+                return metadata, value
+            image.thumbnail((size, size))
+            stream = BytesIO()
+            image.convert("RGBA").save(stream, format="PNG")
+            return metadata, stream.getvalue()
+
+
+def describe_png(image):
+    if image.format != "PNG":
+        raise ValueError("Expected a PNG image.")
+    alpha = (
+        (image if image.mode == "RGBA" else image.convert("RGBA")).getchannel("A")
+        if "A" in image.getbands() or "transparency" in image.info
+        else None
+    )
+    # A single channel's extrema are its (minimum, maximum) values.
+    alpha_range = (
+        list(cast(tuple[int, int], alpha.getextrema()))
+        if alpha is not None
+        else [255, 255]
+    )
+    result = {
+        "width": image.width,
+        "height": image.height,
+        "mode": image.mode,
+        "transparency": alpha_range[0] < 255,
+        "alphaRange": alpha_range,
+        "alphaChannel": "A" in image.getbands() or "transparency" in image.info,
+        "frames": getattr(image, "n_frames", 1),
+    }
+    if result["frames"] != 1:
+        raise ValueError(
+            "Animated PNGs require a separate workflow and cannot be patched here."
+        )
+    return result
 
 
 class Index:
@@ -226,24 +252,30 @@ class Index:
 
 
 class PreviewCache:
+    """Recent previews as (metadata, bytes), shared by concurrent readers."""
+
     def __init__(self, budget=24_000_000):
         self.values = OrderedDict()
         self.bytes, self.budget = 0, budget
+        self.lock = threading.Lock()
 
     def get(self, key):
-        value = self.values.get(key)
-        if value is not None:
-            self.values.move_to_end(key)
-        return value
+        with self.lock:
+            value = self.values.get(key)
+            if value is not None:
+                self.values.move_to_end(key)
+            return value
 
     def put(self, key, value):
-        if len(value) > self.budget:
+        size = len(value[1])
+        if size > self.budget:
             return
-        old = self.values.pop(key, b"")
-        self.bytes += len(value) - len(old)
-        self.values[key] = value
-        while self.bytes > self.budget:
-            self.bytes -= len(self.values.popitem(last=False)[1])
+        with self.lock:
+            old = self.values.pop(key, None)
+            self.bytes += size - (len(old[1]) if old else 0)
+            self.values[key] = value
+            while self.bytes > self.budget:
+                self.bytes -= len(self.values.popitem(last=False)[1][1])
 
 
 def inspect_row(root, adapter, row, old, key):

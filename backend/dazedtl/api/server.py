@@ -5,6 +5,8 @@ import json
 import os
 import platform
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -29,6 +31,10 @@ from dazedtl.translation.service import Translation
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
+
+# Read-only image previews run on a few workers beside the request loop.
+CONCURRENT = frozenset({"images_preview"})
+PREVIEW_WORKERS = 4
 
 PROTOCOL = json.loads(
     Path(__file__).with_name("protocol.json").read_text(encoding="utf-8")
@@ -694,6 +700,10 @@ def dispatcher(app, check=False):
         app.prepare_model_pricing(name, params)
         if name in {"connection_check", "openrouter_hosts", "settings_model_defaults"}:
             return present(handler(**params), params)
+        # Previews only read image files and run on the preview workers, which
+        # must not enter the engine context: it redirects stdout process-wide.
+        if name in CONCURRENT:
+            return present(handler(**params), params)
         with app.backend.context(), app.translation.engine.context():
             if app.closing:
                 raise ValueError(
@@ -723,51 +733,76 @@ def serve(args, diagnostics):
     diagnostics.workspace_ready(app.projects.data["version"])
     dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
     local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
+    # Electron matches replies by id, so previews may answer out of order
+    # while the loop keeps reading; every other request still runs in turn.
+    previews = ThreadPoolExecutor(PREVIEW_WORKERS, thread_name_prefix="preview")
+    output = threading.Lock()
+
+    def respond(response):
+        line = json.dumps(response, ensure_ascii=False)
+        with output:
+            print(line, file=RPC_OUTPUT, flush=True)
+
+    def answer(request):
+        try:
+            if not isinstance(request, dict):
+                request = {}
+                raise ValueError("Application requests must be objects.")
+            if request.get("version") != PROTOCOL["version"]:
+                return {
+                    "id": request.get("id"),
+                    "version": PROTOCOL["version"],
+                    "error": {
+                        "code": "protocol",
+                        "message": "The application and backend versions do not match. Restart after updating.",
+                    },
+                }
+            name = request.get("method")
+            if not isinstance(name, str) or name not in METHODS:
+                raise ValueError("Unknown application operation.")
+            params = request.get("params", {})
+            if not isinstance(params, dict):
+                raise ValueError("Application parameters must be an object.")
+            return {
+                "id": request.get("id"),
+                "version": PROTOCOL["version"],
+                "result": dispatch(name, params),
+            }
+        except Exception as exc:  # noqa: BLE001
+            name = request.get("method")
+            operation = name if isinstance(name, str) and name in METHODS else "native"
+            diagnostics.failure(exc, operation, request.get("id"))
+            return {
+                "id": request.get("id"),
+                "version": PROTOCOL["version"],
+                "error": views.error(exc),
+            }
+
     try:
         for line in sys.stdin:
-            request = {}
             try:
                 request = json.loads(line)
-                if not isinstance(request, dict):
-                    request = {}
-                    raise ValueError("Application requests must be objects.")
-                if request.get("version") != PROTOCOL["version"]:
-                    response = {
-                        "id": request.get("id"),
+            except ValueError as exc:
+                diagnostics.failure(exc, "native", None)
+                respond(
+                    {
+                        "id": None,
                         "version": PROTOCOL["version"],
-                        "error": {
-                            "code": "protocol",
-                            "message": "The application and backend versions do not match. Restart after updating.",
-                        },
+                        "error": views.error(exc),
                     }
-                    print(json.dumps(response), file=RPC_OUTPUT, flush=True)
-                    continue
-                name = request.get("method")
-                if not isinstance(name, str) or name not in METHODS:
-                    raise ValueError("Unknown application operation.")
-                params = request.get("params", {})
-                if not isinstance(params, dict):
-                    raise ValueError("Application parameters must be an object.")
-                result = dispatch(request["method"], params)
-                response = {
-                    "id": request.get("id"),
-                    "version": PROTOCOL["version"],
-                    "result": result,
-                }
-            except Exception as exc:  # noqa: BLE001
-                name = request.get("method")
-                operation = (
-                    name if isinstance(name, str) and name in METHODS else "native"
                 )
-                diagnostics.failure(exc, operation, request.get("id"))
-                response = {
-                    "id": request.get("id"),
-                    "version": PROTOCOL["version"],
-                    "error": views.error(exc),
-                }
-            print(json.dumps(response, ensure_ascii=False), file=RPC_OUTPUT, flush=True)
+                continue
+            if (
+                isinstance(request, dict)
+                and request.get("method") in CONCURRENT
+                and request.get("version") == PROTOCOL["version"]
+            ):
+                previews.submit(lambda request=request: respond(answer(request)))
+            else:
+                respond(answer(request))
     finally:
         app.closing = True
+        previews.shutdown(cancel_futures=True)
         app.guided.batch_monitor.close()
         local.close()
         app.translation.jobs.close()
