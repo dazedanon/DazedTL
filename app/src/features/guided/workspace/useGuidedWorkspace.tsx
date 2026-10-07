@@ -103,8 +103,11 @@ export function useGuidedWorkspace({
     );
     if (ended && !action.busy) {
       const outcome = historyOutcome(ended);
+      // The footer already counts saved files; other outcomes need their detail.
       action.succeed(
-        `Run finished · ${outcome.detail || outcome.label}`,
+        outcome.kind === "saved"
+          ? "Run finished."
+          : `Run finished · ${outcome.detail || outcome.label}`,
         "run:finished",
       );
     }
