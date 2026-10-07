@@ -305,7 +305,7 @@ Needs review also covers partial, rejected or unsaved results and never establis
 Ready to apply requires verified full output or explicit evidence that no requests were needed; Applied requires verified saved output matching the game.
 Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
 Detailed states and request counts belong in Inspect and the approval dialog.
-Run failures, collection errors and rejection details remain in the inspector and run views.
+The latest run's failure, or a Batch that could not be confirmed as sent, shows on its task with the reason instead of a finished notice; collection errors and rejection details remain in the inspector and run views.
 The observed `workerStatus` retains the actual worker state separately from public monitoring activity.
 File ownership, saved metrics and task completion use that worker state, so a background check cannot promote an older run or make its whole scope look queued.
 Automatic Batch monitoring cannot mark every file as submitted or override saved progress: In progress for provider work requires the file's latest submitted requests to be mapped to an explicitly active provider Batch, using the shared provider-state rules.

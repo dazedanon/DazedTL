@@ -184,6 +184,10 @@
   margin: var(--space-2) 0;
   font-size: var(--font-small);
 }
+/* A banner clears the toolbar's divider as the file list below does. */
+.translation-notices > .banner {
+  margin: var(--space-3) 0 0;
+}
 .translation-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

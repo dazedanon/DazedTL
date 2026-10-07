@@ -32,13 +32,22 @@ class ResultsUnavailable(ValueError):
 
 class RequestError(RuntimeError):
     def __init__(self, status, reason=""):
+        from .batch_continuation import REFUSED
+
         # A server-side timeout can follow a successful create.
         self.status_code = None if status == 408 else status
-        super().__init__(
-            f"OpenRouter returned HTTP {status}"
-            + (f" ({reason})" if reason else "")
-            + ". No automatic paid retry was made."
-        )
+        if status in REFUSED:
+            # A refusal created nothing, so only OpenRouter's reason matters.
+            message = f"OpenRouter refused the request (HTTP {status})" + (
+                f": {reason}." if reason else "."
+            )
+        else:
+            message = (
+                f"OpenRouter returned HTTP {status}"
+                + (f" ({reason})" if reason else "")
+                + ". No automatic paid retry was made."
+            )
+        super().__init__(message)
 
 
 def error_reason(body, secret):

@@ -1609,9 +1609,9 @@ class TranslationTaskCore:
                     self.finished_signal.emit(False, "Translation stopped")
 
         except Exception as e:
-            error_msg = f"❌ Unexpected error: {str(e)}"
-            self.emit_log(error_msg)
-            self.finished_signal.emit(False, error_msg)
+            self.emit_log(f"❌ Unexpected error: {str(e)}")
+            # The run's message is the error itself; the log keeps the marker.
+            self.finished_signal.emit(False, str(e) or type(e).__name__)
 
 class TranslationTask(TranslationTaskCore):
     """Plain-Python adapter, with the same observable events as TranslationWorker."""

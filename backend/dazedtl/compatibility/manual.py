@@ -13,6 +13,8 @@ from typing import Any
 from .preparations import discard, discardable, temporary
 
 SPEAKER_CANCELLATION = "Speaker translation canceled"
+# The engine's failure summary names no cause; its file errors do.
+ENGINE_FAILURE = "Translation failed"
 DECLINED_SPEAKERS = (
     "No unresolved speakers were sent, and the translation run did not start."
 )
@@ -364,6 +366,24 @@ def manual_jobs(source, workspace, lock, allow_providers):
                         current, self.folder(job["id"]), finishing=True
                     ):
                         job["phase"] = "canceled"
+                if (
+                    event.get("event") == "finished"
+                    and len(args) >= 2
+                    and args[0] is False
+                    and args[1] == ENGINE_FAILURE
+                    and job.get("errors")
+                ):
+                    name, error = next(iter(job["errors"].items()))
+                    failed = len(job["errors"])
+                    event = {
+                        **event,
+                        "args": [
+                            False,
+                            (f"{failed} files failed. " if failed > 1 else "")
+                            + f"{name}: {error}",
+                            *args[2:],
+                        ],
+                    }
                 return super()._event(job, event)
 
         def _launch(self, job, resume):

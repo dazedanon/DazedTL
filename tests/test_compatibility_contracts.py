@@ -529,6 +529,16 @@ class ManualJobs:
             self.assertEqual(
                 (paid["status"], paid["outputs"]), ("failed", {"Items.json": "kept"})
             )
+            # A failure the engine only summarizes names its first file error.
+            broken = {
+                **deepcopy(job),
+                "status": "running",
+                "errors": {"Map001.json": "Connection refused", "Map002.json": "x"},
+            }
+            controller._event(
+                broken, {"event": "finished", "args": [False, "Translation failed"]}
+            )
+            self.assertIn("Map001.json: Connection refused", broken["message"])
             controller._event(paid, {"event": "finished", "args": [True, "Completed"]})
             self.assertEqual(
                 (paid["status"], paid["outputs"]), ("complete", {"Items.json": "kept"})

@@ -93,6 +93,14 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       ),
   );
   const noRemainingWork = estimateEmpty(quote);
+  // The latest attempt's failure shows on the task itself, not only in Run
+  // history; an unconfirmed Batch also warns before anything is sent again.
+  const unconfirmed = pendingBatches.find(needsSubmissionReview);
+  const failure = unconfirmed
+    ? `The last Batch could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`
+    : current && !current.temporary && current.status === "failed"
+      ? `The last run failed. ${current.message || "Run history shows why."}`
+      : "";
 
   const prerequisites =
     resyncPending ||
@@ -158,6 +166,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {!paidModeReady && (
         <Message message="This connection does not support Batch. Choose Live or a supported connection." />
       )}
+      <Message message={failure} />
       {phase === "advanced" && (
         <>
           <p>
@@ -212,17 +221,13 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 ["failed", "interrupted", "stopped"].includes(current.status)
               ? current.message ||
                 "Preparation did not finish. Click Translate to try again."
-              : pendingBatches.some(needsSubmissionReview)
-                ? "The last Batch could not be confirmed as sent. Check it in Run history before translating these files again."
-                : pendingBatches.length
-                  ? applyFiles.length
-                    ? "Earlier Batches are available in Run history. You can apply saved output."
-                    : "Earlier Batches are available in Run history. Translate starts a new estimate."
-                  : current?.status === "failed"
-                    ? "The last run failed; Run history shows why. Translate starts a new estimate."
-                    : noRemainingWork
-                      ? "Checked these files: no new API requests are needed."
-                      : "Translate prepares an estimate for your approval.";
+              : pendingBatches.some((run) => !needsSubmissionReview(run))
+                ? applyFiles.length
+                  ? "Earlier Batches are available in Run history. You can apply saved output."
+                  : "Earlier Batches are available in Run history. Translate starts a new estimate."
+                : noRemainingWork
+                  ? "Checked these files: no new API requests are needed."
+                  : "Translate prepares an estimate for your approval.";
   actionContext = (
     <div className="translation-action-scope">
       <strong>

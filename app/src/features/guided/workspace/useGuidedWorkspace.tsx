@@ -115,7 +115,8 @@ export function useGuidedWorkspace({
         !activeRun(run) &&
         Date.parse(run.created || "") >= opened,
     );
-    if (ended && !action.busy) {
+    // A failed run shows its reason on its task instead of reading as finished.
+    if (ended && ended.status !== "failed" && !action.busy) {
       const outcome = historyOutcome(ended);
       // The footer already counts saved files; other outcomes need their detail.
       action.succeed(
