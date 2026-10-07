@@ -450,7 +450,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
               });
               await flushDrafts();
             },
-            "Recommendations staged. Review source choices before continuing.",
+            "Recommendations staged.",
             "event-text:recommendations",
           )
         }
