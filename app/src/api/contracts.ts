@@ -1695,6 +1695,7 @@ export type PluginCounts = {
 export type PluginUnreadable = {
   path: string;
   issue: string;
+  kept: boolean;
 };
 
 export type PluginState = {

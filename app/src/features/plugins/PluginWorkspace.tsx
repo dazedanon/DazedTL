@@ -29,7 +29,11 @@ import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
 import { PluginApplyContent } from "./PluginApplyContent";
-import { pluginFilesLeft, pluginTaskState } from "./pluginTask";
+import {
+  pluginFilesBlocked,
+  pluginFilesLeft,
+  pluginTaskState,
+} from "./pluginTask";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -58,15 +62,38 @@ const controlled = (key: string) =>
     "restore",
     "adopt",
     "start_over",
+    "keep_unreadable",
   ].includes(key) || key.startsWith("preview_restore:");
 
+/**
+ * Each file the app cannot read with why, one sentence per reason:
+ * "OldTool.js stays unchanged. Plugin files must be UTF-8 text."
+ */
+function unreadableDetail(rows: PluginState["unreadable"], kept: boolean) {
+  const reasons = new Map<string, string[]>();
+  for (const row of rows)
+    reasons.set(row.issue, [...(reasons.get(row.issue) || []), row.path]);
+  return [...reasons]
+    .map(([issue, paths]) => {
+      const names = selectionNames(paths.map(fileName));
+      return kept
+        ? `You kept ${names} unchanged. ${issue}`
+        : `${names} ${paths.length === 1 ? "stays" : "stay"} unchanged. ${issue}`;
+    })
+    .join(" ");
+}
+
 /** Where the assistant's task stands and each result it returns. */
-function pluginTask(state: PluginState, handoff: Handoff) {
+function pluginTask(state: PluginState, handoff: Handoff, keep: ReactNode) {
   const { counts } = state;
   const { waiting } = handoff;
   const left = pluginFilesLeft(state);
   const investigating = !state.scanned || counts.investigated < counts.files;
   const taskState: AssistantTaskState = pluginTaskState(state, handoff);
+  const blocked = pluginFilesBlocked(state);
+  const kept = state.unreadable.filter((row) => row.kept);
+  // Files kept unchanged were never read, so "no plugin" means none read.
+  const readable = kept.length ? "readable " : "";
   // A result redone because the game changed reads Outdated, not new.
   const idle: DisplayState =
     taskState === "outdated" ? "outdated" : "not_started";
@@ -84,15 +111,15 @@ function pluginTask(state: PluginState, handoff: Handoff) {
         : taskState === "outdated"
           ? `${fileCount(left)} changed since your assistant finished. Copy the task again to update ${left === 1 ? "it" : "them"}.`
           : taskState === "blocked"
-            ? "Every readable plugin file is done."
+            ? `Every readable plugin file is done. Fix the unreadable ${blocked.length === 1 ? "file, or keep it" : "files, or keep them"} unchanged.`
             : taskState === "applied"
               ? `${fileCount(counts.applied)} applied to the game.`
               : taskState === "done"
                 ? counts.textFiles
                   ? "Plugin text is checked; nothing needed changing."
                   : counts.files
-                    ? "No plugin shows its Japanese text to players."
-                    : "No plugin holds Japanese text."
+                    ? `No ${readable}plugin shows its Japanese text to players.`
+                    : `No ${readable}plugin holds Japanese text.`
                 : unfinished.trim() ||
                   "Your assistant finds the text plugins show to players and translates it with the game's glossary, translated text and reference games. The app checks every change before you apply it.";
   const findings: DisplayState = !investigating
@@ -140,13 +167,20 @@ function pluginTask(state: PluginState, handoff: Handoff) {
             : "Nothing to translate",
     },
   ];
-  const unreadable = state.unreadable.length;
-  if (unreadable)
+  if (blocked.length)
     results.push({
       id: "unreadable",
-      title: unreadable === 1 ? "Unreadable file" : "Unreadable files",
+      title: blocked.length === 1 ? "Unreadable file" : "Unreadable files",
       state: "blocked",
-      detail: `${selectionNames(state.unreadable.map((row) => fileName(row.path)))} ${unreadable === 1 ? "stays" : "stay"} unchanged: ${state.unreadable[0].issue}`,
+      detail: unreadableDetail(blocked, false),
+      action: keep,
+    });
+  if (kept.length)
+    results.push({
+      id: "kept",
+      title: kept.length === 1 ? "Unreadable file" : "Unreadable files",
+      state: "skipped",
+      detail: unreadableDetail(kept, true),
     });
   return { taskState, description, results };
 }
@@ -338,7 +372,20 @@ export function PluginWorkspace({
       </section>
     );
   const counts = state.counts;
-  const task = pluginTask(state, handoff);
+  const keep = (
+    <ActionControl
+      label="Keep unchanged"
+      disabled={busy}
+      {...feedback("keep_unreadable")}
+      pendingText="Keeping…"
+      onClick={() =>
+        run("keep_unreadable", {
+          paths: pluginFilesBlocked(state).map((row) => row.path),
+        })
+      }
+    />
+  );
+  const task = pluginTask(state, handoff, keep);
   const copied = feedback("plugin_task");
   // Nothing is left for the assistant; an unreadable file needs a fix
   // outside the app.

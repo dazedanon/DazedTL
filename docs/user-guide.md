@@ -93,7 +93,7 @@ It keeps going through every plugin file on its own, and the task panel shows ho
 You don't review plugin files or strings; **Review & apply** shows what goes into the game.
 Copying the task again continues where the assistant stopped, and once everything is done it has the assistant recheck its decisions, for example after you find untranslated plugin text in the game.
 A plugin that changes after the assistant finished reads **Outdated** until you copy the task again.
-A plugin file the app can't read, such as one not saved as UTF-8, stays unchanged and keeps the task **Blocked** until it is fixed.
+A plugin file the app can't read, such as one not saved as UTF-8, stays unchanged and keeps the task **Blocked** until you fix it or choose **Keep unchanged**.
 
 **Options** holds task settings and opens the translated folder.
 **Reload from game…** beside the file list replaces the checked working files with the current game files.

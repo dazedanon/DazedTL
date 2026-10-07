@@ -386,6 +386,8 @@ An Acorn AST inventory and recursive decoded parameter paths bind reports to exa
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated, so a task cannot start without it.
 Known lookup values, code keys, embedded expressions, serialization structure and control tokens remain protected by the app and are never asked about; a file with nothing else, and no JSON it loads, needs no investigation.
 Dynamic configuration, malformed data, unreadable sources and unsupported Ace publication remain explicit blockers.
+A parameter value that looks like JSON but does not decode, such as a script, stays one leaf the app protects and does not block the rest of its file; saved scans are redone once when these scanning rules change.
+The user can keep an unreadable file unchanged so the required task can finish; the choice lapses when the file fails for a different reason, and a listed plugin whose file is gone has nothing to translate.
 Only independently investigated static plugin-loaded JSON dependencies enter this scope; ordinary event and database files retain their existing text phase.
 The clipboard task edits owned working copies, while runtime Apply stays behind an app-only, one-use exact-file preview.
 Request hashes and publication journals retain authority in the app profile, with candidate freezing, verified backups, failure rollback, restart reconciliation and another review for restore.
@@ -486,7 +488,7 @@ Status shows where a Guided project stands from the observed snapshot through [g
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
-Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply, Images once applied work leaves nothing selected or edited waiting, or a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; the optional ones never block the next required task.
+Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once applied work leaves nothing selected or edited waiting, or a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; the optional ones never block the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.

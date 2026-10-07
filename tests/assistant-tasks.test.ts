@@ -106,6 +106,7 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
   const plugins = (
     counts: Partial<PluginState["counts"]>,
     unreadable: string[] = [],
+    kept = false,
   ) => ({
     records: [
       {
@@ -119,7 +120,11 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     plugins: {
       scanned: true,
       awaiting: false,
-      unreadable: unreadable.map((path) => ({ path, issue: "Not UTF-8." })),
+      unreadable: unreadable.map((path) => ({
+        path,
+        issue: "Not UTF-8.",
+        kept,
+      })),
       counts: {
         files: 1,
         investigated: 1,
@@ -146,6 +151,11 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     ["blocked"],
   );
   assert.deepEqual(assistantTasks(plugins({})), []);
+  // Keeping the file unchanged lets the task finish.
+  assert.deepEqual(
+    assistantTasks(plugins({}, ["js/plugins/Old.js"], true)),
+    [],
+  );
 
   // An image task copied before records existed still lists while it waits.
   const images = {

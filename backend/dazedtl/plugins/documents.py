@@ -9,6 +9,8 @@ from pathlib import Path
 from dazedtl.translation.files import digest, unique_object
 
 JAPANESE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+# The start of a JSON object or array, for values that fail to decode.
+OPAQUE = re.compile(r'^\s*(?:\{\s*"|\[\s*["\[{])')
 TOKENS = re.compile(
     r"\$\{[^}]*\}|#\{[^}]*\}|\\(?:[A-Za-z]+\[[^\]]*\]|[A-Za-z.!|^><{}$]|[nrtbfv0])|%(?:\d+\$)?[-+0 #]*\d*(?:\.\d+)?[a-zA-Z%]|\{\d+\}"
 )
@@ -23,31 +25,43 @@ def decode(value):
 
 
 def leaves(value, path=(), depth=0):
-    """Keep a decode marker for every serialization layer, including encoded scalars."""
+    """Keep a decode marker for every serialization layer, including encoded
+    scalars. Each leaf says whether it is opaque: text inside data that looks
+    like JSON but does not decode, which the app never edits."""
     if depth > 24:
         raise ValueError(
-            "Parameter serialization exceeds 24 layers; investigate it separately."
+            "A setting is nested more than 24 levels deep, so it cannot be checked."
         )
     if isinstance(value, str):
         try:
             inner = decode(value)
         except ValueError, TypeError:
-            if re.match(r'^\s*(?:\{\s*"|\[\s*["\[{])', value):
-                raise ValueError(
-                    "A JSON-shaped parameter does not decode; retain it for investigation."
-                )
-            yield list(path), value
+            # A script such as `[{}];` also looks like JSON; it stays one leaf
+            # the app protects, so the rest of the file is still checked.
+            yield list(path), value, bool(re.match(OPAQUE, value))
         else:
             if isinstance(inner, (dict, list, str)):
                 yield from leaves(inner, (*path, "$decode"), depth + 1)
             else:
-                yield list(path), value
+                yield list(path), value, False
     elif isinstance(value, dict):
         for key, inner in value.items():
             yield from leaves(inner, (*path, key), depth + 1)
     elif isinstance(value, list):
         for index, inner in enumerate(value):
             yield from leaves(inner, (*path, index), depth + 1)
+
+
+def reason(issue):
+    """A parser's complaint about a file, in words for the person reading it.
+    Validation keeps the parser's own message for the assistant's repairs."""
+    line = re.search(r"\((\d+):\d+\)$", issue)
+    if line:
+        return f"Its JavaScript has a syntax error on line {line[1]}."
+    if issue.startswith("JSON syntax: "):
+        line = re.search(r"line (\d+)", issue)
+        return "Its JSON has a syntax error" + (f" on line {line[1]}." if line else ".")
+    return issue
 
 
 def replace_leaf(value, path, target):
@@ -221,7 +235,7 @@ def occurrences(path, raw, parsed):
     rows = []
     for index, literal in enumerate(parsed["literals"]):
         values = leaves(literal["value"])
-        for logical, value in values:
+        for logical, value, opaque in values:
             if not JAPANESE.search(value):
                 continue
             identity = digest(
@@ -242,7 +256,7 @@ def occurrences(path, raw, parsed):
                     "line": literal["line"],
                     "start": literal["start"],
                     "end": literal["end"],
-                    "protected": literal["protected"],
+                    "protected": literal["protected"] or opaque,
                     "kind": literal["kind"],
                 }
             )

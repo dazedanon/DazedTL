@@ -594,8 +594,19 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(malformed["literals"], [])
         from dazedtl.plugins.documents import leaves
 
-        with self.assertRaisesRegex(ValueError, "does not decode"):
-            list(leaves('{"Text": "日本語"'))
+        # Data that looks like JSON but does not decode stays one leaf the app
+        # protects, without blocking the rest of its file; scripts such as
+        # `[{}];` look like that too.
+        self.assertEqual(
+            list(leaves('{"Text": "日本語"')), [([], '{"Text": "日本語"', True)]
+        )
+        self.assertEqual(
+            list(leaves('{"DataScript": "[{}];", "Text": "開始"}')),
+            [
+                (["$decode", "DataScript"], "[{}];", True),
+                (["$decode", "Text"], "開始", False),
+            ],
+        )
 
     def test_copying_a_current_plugin_task_again_keeps_its_request(self):
         # A second copy must not orphan the saved report of an unchanged task.
@@ -621,27 +632,47 @@ class PluginTests(unittest.TestCase):
         )
         self.assertIn("recheck", recheck["instructions"])
 
-    def test_a_plugin_file_that_reads_again_goes_back_to_the_assistant(self):
-        # A fixed file must not stay reported as unreadable, nor drop out of
-        # the counts as if it held no text.
+    def test_unreadable_plugin_files_can_be_kept_and_return_when_fixed(self):
+        # A file the app cannot read must not hold up the task for good, and a
+        # fixed or removed file must not stay reported as unreadable.
+        path = "www/js/plugins/PluginB.js"
         source = "drawText('隠れた文字');\r\n"
-        write_bytes(self.game / "www/js/plugins/PluginB.js", source.encode("shift_jis"))
+        write_bytes(self.game / path, source.encode("shift_jis"))
         self.translated()
+        unreadable = {"path": path, "issue": "Plugin files must be UTF-8 text."}
         state = self.service.state(self.identity)
-        self.assertEqual(
-            state["unreadable"],
-            [
-                {
-                    "path": "www/js/plugins/PluginB.js",
-                    "issue": "Plugin files must be UTF-8 text.",
-                }
-            ],
-        )
+        self.assertEqual(state["unreadable"], [{**unreadable, "kept": False}])
         self.assertEqual(state["counts"]["investigated"], state["counts"]["files"])
-        self.write("www/js/plugins/PluginB.js", source)
+        with self.assertRaisesRegex(ValueError, "cannot read"):
+            self.service.action(
+                self.identity,
+                "keep_unreadable",
+                {"paths": ["www/js/plugins/PluginA.js"]},
+            )
+        state = self.service.action(
+            self.identity, "keep_unreadable", {"paths": [path]}
+        )["state"]
+        self.assertEqual(state["unreadable"], [{**unreadable, "kept": True}])
+        # Fixed, it counts for the assistant again instead of dropping out.
+        self.write(path, source)
         state = self.service.state(self.identity)
         self.assertEqual(state["unreadable"], [])
         self.assertLess(state["counts"]["investigated"], state["counts"]["files"])
+        # Removed, it has nothing to translate, and the next scan drops it.
+        (self.game / path).unlink()
+        self.assertEqual(self.service.state(self.identity)["unreadable"], [])
+        self.service.action(self.identity, "plugin_task")
+        self.assertNotIn(path, self.service.load(self.identity)["files"])
+
+    def test_a_scan_saved_under_older_rules_is_read_again(self):
+        # A problem an earlier version reported must not linger and invite
+        # keeping a readable file unchanged.
+        self.translated()
+        value = self.service.load(self.identity)
+        value["files"]["www/js/plugins.js"]["issue"] = "An older complaint."
+        value["scanRules"] = 1
+        self.service.save(self.identity, value)
+        self.assertEqual(self.service.state(self.identity)["unreadable"], [])
 
     def test_explicit_loaded_json_needs_new_investigation_then_exact_leaf_checks(self):
         task = self.service.action(self.identity, "plugin_task")

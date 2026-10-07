@@ -10,7 +10,11 @@ import type {
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
-import { pluginFilesLeft, pluginTaskState } from "../plugins/pluginTask.ts";
+import {
+  pluginFilesBlocked,
+  pluginFilesLeft,
+  pluginTaskState,
+} from "../plugins/pluginTask.ts";
 
 /** A copied assistant task that still needs the user or the assistant. */
 export interface AssistantTaskView {
@@ -149,7 +153,7 @@ function standing(
     if (state === "blocked")
       return {
         state,
-        detail: `${files(plugins.unreadable.length)} could not be read`,
+        detail: `${files(pluginFilesBlocked(plugins).length)} could not be read`,
       };
     return { state: "finished" };
   }

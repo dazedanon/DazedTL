@@ -23,9 +23,12 @@ from dazedtl.translation.operations import (
     require_source_backup,
 )
 
-from .documents import Documents, decode, occurrences, validate
+from .documents import Documents, decode, occurrences, reason, validate
 
 WORK = ".dazedtl/plugin-work"
+# Bump when scanning finds different files, text or problems, so saved scans
+# are read again once.
+SCAN_RULES = 2
 # What the assistant can settle for one occurrence. Reports saved before every
 # occurrence needed a decision may still say "unresolved"; that text stays
 # with the assistant.
@@ -438,6 +441,9 @@ class PluginService:
             names.add(name)
             statuses[name] = entry["status"]
             path = prefix + "js/plugins/" + name + ".js"
+            # A listed plugin whose file is gone has no text to translate.
+            if not (root / path).exists():
+                continue
             rows[path] = {
                 "path": path,
                 "kind": "source",
@@ -596,8 +602,8 @@ class PluginService:
         for path, row in rows.items():
             prior = value["files"].get(path, {})
             row["sourceHash"] = digest(raw_files[path]) if path in raw_files else ""
-            row["issue"] = row.get("issue") or "; ".join(
-                parsed.get(path, {}).get("issues", [])
+            row["issue"] = row.get("issue") or " ".join(
+                reason(issue) for issue in parsed.get(path, {}).get("issues", [])
             )
             try:
                 row["occurrences"] = (
@@ -699,6 +705,7 @@ class PluginService:
         value["binding"] = digest(
             {path: row["sourceHash"] for path, row in rows.items()}
         )
+        value["scanRules"] = SCAN_RULES
         return parsed
 
     def eligible(self, value):
@@ -803,6 +810,11 @@ class PluginService:
 
         for row in value["files"].values():
             try:
+                if not project_path(root, row["path"], exists=False).exists():
+                    # A removed plugin has nothing to translate; the next scan
+                    # drops it.
+                    row.update(stale=True, issue="")
+                    continue
                 result = row.get("result", {})
                 expected = row.get("applied", {}).get("afterHash") or row["sourceHash"]
                 if fingerprint(row["path"]) != expected:
@@ -861,6 +873,13 @@ class PluginService:
         with self.lock:
             value = self.load(project_id)
             self.recover(project_id, value)
+            if value["binding"] and value.get("scanRules") != SCAN_RULES:
+                try:
+                    self.scan(project_id, value)
+                    self.save(project_id, value)
+                except OSError, ValueError, UnicodeError:
+                    # A copied task scans again and reports the problem.
+                    value = self.load(project_id)
             self.observe(project_id, value)
             project, _ = self.record(project_id)
             # Files with nothing for the assistant to decide stay out of the
@@ -909,8 +928,13 @@ class PluginService:
                     "ready": statuses["ready"],
                     "applied": statuses["applied"],
                 },
+                # A file kept unchanged stays kept while it fails the same way.
                 "unreadable": [
-                    {"path": path, "issue": row["issue"]}
+                    {
+                        "path": path,
+                        "issue": row["issue"],
+                        "kept": value.get("kept", {}).get(path) == row["issue"],
+                    }
                     for path, row in value["files"].items()
                     if row.get("issue")
                 ],
@@ -960,10 +984,30 @@ class PluginService:
                 }
             elif action in {"apply", "restore"}:
                 return self.publish(project_id, value, action, options)
+            elif action == "keep_unreadable":
+                result = self.keep_unreadable(value, options.get("paths"))
             else:
                 raise ValueError("Choose a supported Plugin files action.")
             self.save(project_id, value)
             return {**result, "state": self.state(project_id)}
+
+    @staticmethod
+    def keep_unreadable(value, paths):
+        """Leave files the app cannot read unchanged, so they stop holding up
+        the task; the choice lapses when a file fails differently."""
+        issues = {
+            path: row["issue"]
+            for path, row in value["files"].items()
+            if row.get("issue")
+        }
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or any(path not in issues for path in paths)
+        ):
+            raise ValueError("Choose plugin files the app cannot read.")
+        value.setdefault("kept", {}).update({path: issues[path] for path in paths})
+        return {}
 
     def copy_task(self, project_id, value):
         """The request a copied task starts from: whatever is left, or a recheck

@@ -5,16 +5,20 @@ import type { DisplayState } from "../../ui/displayStatus.ts";
 export const pluginFilesLeft = ({ counts }: PluginState) =>
   counts.files - counts.investigated + counts.textFiles - counts.translated;
 
+/** Files the app cannot read that the user has not chosen to keep unchanged. */
+export const pluginFilesBlocked = ({ unreadable }: PluginState) =>
+  unreadable.filter((row) => !row.kept);
+
 /**
  * Plugin files is done once every plugin with Japanese text is investigated
  * and its player text translated, with nothing waiting to go into the game
- * and no plugin file left unread.
+ * and every file the app cannot read kept unchanged.
  */
 export const pluginsComplete = (state: PluginState) =>
   state.scanned &&
   !pluginFilesLeft(state) &&
   !state.counts.ready &&
-  !state.unreadable.length;
+  !pluginFilesBlocked(state).length;
 
 /**
  * Where the plugin task stands, the same in its panel and the task list.
@@ -41,6 +45,6 @@ export function pluginTaskState(
   if (left && copied) return "outdated";
   if (!state.scanned || counts.investigated < counts.files || left)
     return "not_started";
-  if (state.unreadable.length) return "blocked";
+  if (pluginFilesBlocked(state).length) return "blocked";
   return counts.applied ? "applied" : "done";
 }

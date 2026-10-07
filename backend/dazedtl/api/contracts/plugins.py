@@ -61,6 +61,8 @@ class PluginCounts(TypedDict):
 class PluginUnreadable(TypedDict):
     path: str
     issue: str
+    # The user chose to leave it unchanged while it fails this way.
+    kept: bool
 
 
 class PluginState(TypedDict):
