@@ -1019,7 +1019,12 @@ export function useGuidedWorkspace({
         }
         await saveGuidanceSet(names, context.save);
       },
-      "Guidance saved.",
+      // Saving creates missing files and writes drafts; otherwise it is a no-op.
+      names.some(
+        (name) => context.drafts[name] || !discovery.documents[name]?.exists,
+      )
+        ? "Guidance saved."
+        : "Guidance is already saved.",
       "context:save",
     );
   const layoutOptions = {
