@@ -524,7 +524,9 @@ class WorkflowTests(unittest.TestCase):
         current = self.service.state(self.identity)
         self.assertEqual(current["warnings"], [])
         self.assertTrue(current["lifecycle"]["source_backup"]["available"])
-        execute(
+        # A later game backup, such as after translating, keeps the original.
+        write_json(self.game / "source.json", {"line": "Yes."})
+        later = execute(
             self.engine,
             self.profile,
             {"project_id": self.identity},
@@ -536,6 +538,9 @@ class WorkflowTests(unittest.TestCase):
             },
             lambda: False,
         )
+        saved = lifecycle(self.profile, self.identity)
+        self.assertEqual(saved["source_backup"], result)
+        self.assertEqual(saved["game_backup"], later)
         self.assertEqual(len(list(archive.parent.iterdir())), 1)
 
     def test_moved_game_takes_over_the_original_its_own_store_holds(self):

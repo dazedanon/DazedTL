@@ -153,6 +153,9 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     action = plan["action"]
     if action in {"backup_source", "backup_workspace"}:
         root = source if action == "backup_source" else source / ".dazedtl"
+        # Checked first: an identical snapshot would make a missing original
+        # look available again.
+        preserved = action == "backup_source" and original_available(source, state)
         result = backups.snapshot(
             root,
             destination,
@@ -162,9 +165,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 f"Backed up {count:,} files · {path}"
             ),
         )
-        state["source_backup" if action == "backup_source" else "workspace_backup"] = (
-            result
-        )
+        if action == "backup_workspace":
+            state["workspace_backup"] = result
+        elif preserved:
+            # A later game backup never replaces the original it was set up
+            # from; it is recorded as the latest one.
+            state["game_backup"] = result
+        else:
+            state["source_backup"] = result
     elif action == "use_source_backup":
         # A moved, copied or reinstalled game keeps its original in its own
         # store; a project without one takes over the snapshot it showed.
@@ -502,6 +510,14 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     if action in {"backup_source", "use_source_backup"}:
         reconcile_source_backup(workspace, job["project_id"], source, state)
     return result
+
+
+def original_available(source, state):
+    try:
+        require_source_backup(source, state)
+    except OSError, ValueError:
+        return False
+    return True
 
 
 def require_source_backup(source, state):

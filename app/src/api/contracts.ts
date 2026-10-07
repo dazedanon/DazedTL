@@ -994,6 +994,7 @@ export type VersionUpdate = {
 export type Lifecycle = {
   version: number;
   source_backup?: BackupRecord;
+  game_backup?: BackupRecord;
   prepared_source?: BackupRecord;
   workspace_backup?: BackupRecord;
   checkpoint?: LifecycleCheckpoint;

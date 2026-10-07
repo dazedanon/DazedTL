@@ -244,6 +244,7 @@ class Translation:
         )
         for key, kind in (
             ("source_backup", "source"),
+            ("game_backup", "source"),
             ("prepared_source", "source"),
             ("workspace_backup", "workspace"),
         ):
@@ -254,6 +255,7 @@ class Translation:
                 if not saved_lifecycle[key]["available"]:
                     title = {
                         "source_backup": "Source backup",
+                        "game_backup": "Latest game backup",
                         "prepared_source": "Prepared original backup",
                         "workspace_backup": "Workspace backup",
                     }[key]

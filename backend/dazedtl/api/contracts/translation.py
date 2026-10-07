@@ -207,7 +207,11 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
     """Saved lifecycle evidence; further keys are internal to the backend."""
 
     version: int
+    # The original the project was set up from; later game backups never
+    # replace it while it is available.
     source_backup: NotRequired[BackupRecord]
+    # The latest game backup saved after the original.
+    game_backup: NotRequired[BackupRecord]
     prepared_source: NotRequired[BackupRecord]
     workspace_backup: NotRequired[BackupRecord]
     checkpoint: NotRequired[LifecycleCheckpoint]

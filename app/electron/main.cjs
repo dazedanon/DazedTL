@@ -275,6 +275,7 @@ app
           backupFolders.clear();
           for (const key of [
             "source_backup",
+            "game_backup",
             "prepared_source",
             "workspace_backup",
           ]) {

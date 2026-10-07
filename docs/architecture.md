@@ -897,6 +897,8 @@ The managed store has its own writer lock.
 Content is verified before reuse/publication; source mutations abort capture.
 A failed capture removes only unpublished objects it created.
 Existing snapshots are never pruned.
+The project's `source_backup` record is the original it was set up from: a later game backup becomes `game_backup`, the latest one the Backups tab shows, and replaces the original only when that is missing or unreadable, judged before the new capture because an identical capture shares its identity.
+Plugin lookup evidence and release original bindings read the original, so saving the translated game must not move it.
 After a source backup is successfully saved, the operation reconciles profile references to a deleted workspace snapshot and engine investigation whose evidence files are all missing.
 It archives those records under profile `backups/stale-project-records` before retiring them.
 Read-only observations do not clear records.

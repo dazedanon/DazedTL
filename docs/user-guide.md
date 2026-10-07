@@ -201,6 +201,7 @@ Keep that folder with the game when moving it.
 Older full-copy backups in the app workspace remain readable and are never deleted automatically.
 
 The Project page's **Backups** saves game and project backups and opens their folders.
+The original backed up during setup stays the original; the **Game files** row shows the latest game backup.
 **Recover files…** restores a chosen copy into a new folder outside the game; existing folders are never overwritten.
 Game backups restore game files.
 Project backups restore the contents of `.dazedtl`, such as guidance, accepted translations, custom tools and image work, but not the backup store itself.

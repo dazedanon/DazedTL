@@ -117,7 +117,9 @@ export function BackupsPanel({
       onClick={() => operation(name)}
     />
   );
-  const openFolder = (key: "source_backup" | "workspace_backup") => {
+  const openFolder = (
+    key: "source_backup" | "game_backup" | "workspace_backup",
+  ) => {
     const record = state.lifecycle[key];
     return (
       record && (
@@ -159,11 +161,19 @@ export function BackupsPanel({
                   The game as it is now. Earlier backups remain available.
                 </small>
                 <small className="backup-saved">
+                  {/* The latest game backup, else the original. */}
                   <BackupSummary
-                    record={state.lifecycle.source_backup}
+                    record={
+                      state.lifecycle.game_backup ||
+                      state.lifecycle.source_backup
+                    }
                     fallback="No game backup saved yet"
                   />
-                  {openFolder("source_backup")}
+                  {openFolder(
+                    state.lifecycle.game_backup
+                      ? "game_backup"
+                      : "source_backup",
+                  )}
                 </small>
               </>
             }
