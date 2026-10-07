@@ -56,6 +56,16 @@ export interface ImageManagerProps {
   projectId: string;
   onOpenEditor: (assetIds: string[]) => void;
   observed?: ImageManagerState | null;
+  /**
+   * Replaces Review & apply with the host's own review, such as Guided's
+   * pending changes, given the selection it would apply.
+   */
+  applyControl?: (selection: {
+    ids: string[];
+    ready: number;
+    primary: boolean;
+    blocked: boolean;
+  }) => ReactNode;
   /** The host page's footer slot, which this manager's ActionBar fills. */
   footer: {
     target: HTMLElement | null;
@@ -177,6 +187,7 @@ function Manager({
   onOpenEditor,
   initial,
   observed,
+  applyControl,
   footer: host,
 }: ImageManagerProps & { initial: ImageManagerState }) {
   const [listRevision, setListRevision] = useState(0);
@@ -629,17 +640,26 @@ function Manager({
           {...step("refresh_results", "Reading results…")}
         />
       )}
-      <ActionControl
-        label={`Review & apply${selectedReady ? ` (${selectedReady.toLocaleString()})` : ""}`}
-        variant={primaryAction === "preview_apply" ? "primary" : "default"}
-        disabled={action.busy || jobRunning || !selectedReady}
-        disabledReason={
-          value.selection.length && !selectedReady
-            ? "No selected image is ready."
-            : ""
-        }
-        {...step("preview_apply", "Preparing review…")}
-      />
+      {applyControl ? (
+        applyControl({
+          ids: value.selection,
+          ready: selectedReady,
+          primary: primaryAction === "preview_apply",
+          blocked: action.busy || jobRunning,
+        })
+      ) : (
+        <ActionControl
+          label={`Review & apply${selectedReady ? ` (${selectedReady.toLocaleString()})` : ""}`}
+          variant={primaryAction === "preview_apply" ? "primary" : "default"}
+          disabled={action.busy || jobRunning || !selectedReady}
+          disabledReason={
+            value.selection.length && !selectedReady
+              ? "No selected image is ready."
+              : ""
+          }
+          {...step("preview_apply", "Preparing review…")}
+        />
+      )}
       {host.next(allApplied ? "primary" : "quiet")}
     </ActionBar>
   );

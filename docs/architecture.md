@@ -632,7 +632,14 @@ Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
 Release plans bind the profile's working-source index and original blobs; refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
-Check's Apply, Line width check and Text QA tasks share retained file choices and check settings.
+Check's Pending changes, Line width check and Text QA tasks share retained file choices and check settings.
+Pending changes lists every part waiting to go into the game from observed state through [pending.ts](../app/src/features/guided/pending.ts) and reviews them in one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx), whose sections reuse each part's own review content.
+Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares each part's own preview and applies the parts in order (plugin files, images, text, then rewraps and QA fixes) under one action key, so a repeated click cannot start it twice.
+Image and plugin parts execute their own one-use tokens; the Guided review keeps one preview at a time, so text, rewraps and QA fixes are previewed again just before they execute and refuse to run if the content differs from what was reviewed.
+A text part waits for its operation and an idle backend before the next part; a failed part leaves independent parts going and reports beside itself, and Review again prepares fresh previews of the parts that did not apply.
+Rewraps and QA fixes wait while text is applied in the same review, because applying text invalidates the check and QA task they were bound to.
+The Review & apply buttons in Images, Plugin files, Line width check and Text QA open the same review limited to their part; Assistant-led's Image Manager keeps its own review.
+Restores stay with each part: text batches in Pending changes, images in the Image Manager and plugin files in their workspace.
 TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested; it reuses the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
 The player walkthrough task sits with Release, since it produces player documentation.
 The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.

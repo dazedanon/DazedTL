@@ -14,6 +14,10 @@ import {
   unfinishedRun,
 } from "../app/src/features/guided/workflow.ts";
 import { guidedProgress } from "../app/src/features/guided/progress.ts";
+import {
+  pendingParts,
+  pendingSummary,
+} from "../app/src/features/guided/pending.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
@@ -242,4 +246,27 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
   images.counts.needsReview = 0;
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
+});
+
+test("pending changes hold rewraps and QA fixes back while text is applied with them", () => {
+  const input = {
+    unapplied: ["Map001.json"],
+    plugins: 0,
+    images: 1,
+    rewraps: { changes: 7, files: ["Map001.json"] },
+    qa: { fixes: 3, files: ["Items.json"] },
+  };
+  const held = (parts: ReturnType<typeof pendingParts>) =>
+    parts.filter((part) => part.held).map((part) => part.id);
+  // Both were checked against the text the text apply replaces.
+  assert.deepEqual(held(pendingParts(input)), ["rewraps", "qa"]);
+  // Leaving the text out, or having none, lets them apply.
+  assert.deepEqual(
+    held(pendingParts({ ...input, excluded: new Set(["text"] as const) })),
+    [],
+  );
+  assert.equal(
+    pendingSummary(pendingParts({ ...input, unapplied: [] })),
+    "1 image, 7 line rewraps, 3 QA fixes",
+  );
 });

@@ -1,6 +1,4 @@
 import type { Phase } from "../../../api/contracts";
-import { TextDiff } from "../../../ui/TextDiff";
-import { textLocation } from "../textLocation";
 import { ActionBar } from "../../../ui/ActionBar";
 import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
@@ -8,6 +6,7 @@ import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { PathText } from "../../../ui/PathText";
 import { VirtualList } from "../../../ui/VirtualList";
+import { PublicationContent, publicationActions } from "../PublicationContent";
 import { ReleaseReview } from "../Release";
 import { TranslationCost } from "../TranslationReview";
 import { actionKey, fileCount, pathKey, phaseLabels } from "./model";
@@ -37,9 +36,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
   if (!preview) return null;
   const paid =
     preview?.action === "start" && preview.options.mode !== "estimate";
-  const applying = preview?.rewrap
-    ? preview.rewrap.changes_found - preview.rewrap.overflow_skipped
-    : 0;
+  const publishing = publicationActions.includes(preview.action);
   const reviewEstimateCurrent =
     !paid ||
     preview?.options.mode === "speakers" ||
@@ -89,13 +86,15 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             }}
           />
         )}
+        {publishing && <PublicationContent preview={preview} />}
         {!["release", "release_patch", "refresh_sources"].includes(
           preview.action,
-        ) && (
-          <p className="path">
-            <PathText path={preview.destination} wrap />
-          </p>
-        )}
+        ) &&
+          !publishing && (
+            <p className="path">
+              <PathText path={preview.destination} wrap />
+            </p>
+          )}
         {preview.action === "start" && (
           <>
             <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>
@@ -112,8 +111,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           </>
         )}
         {!["release", "release_patch"].includes(preview.action) &&
-          !preview.rewrap &&
-          !(preview.publication && preview.action !== "export_selected") &&
+          !publishing &&
           !!preview.paths.length && (
             <>
               <p>
@@ -147,12 +145,6 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
               )}
             </>
           )}
-        {preview.action === "export_selected" && !!preview.options.run_id && (
-          <p>
-            Uses the saved files from this run. Reapplying makes no API
-            requests.
-          </p>
-        )}
         {!!preview.additions?.length && (
           <p>
             {preview.additions.length} files are additions to the original
@@ -171,61 +163,6 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             versions? Their translation progress will be replaced. Previous
             copies and run history are kept. Your game files won’t change.
           </p>
-        )}
-        {preview.action === "export_selected" && (
-          <p>
-            Fully overwrite these game files with the selected saved
-            translations. Existing game edits will be replaced. Working copies
-            and saved runs are retained.
-          </p>
-        )}
-        {preview.action === "runtime_restore" && (
-          <p>
-            Return these files to how they were before this change. Open a file
-            below to compare its current and restored text. Later edits to these
-            files block the restore.
-          </p>
-        )}
-        {preview.publication && preview.action !== "export_selected" && (
-          <>
-            {preview.action !== "runtime_restore" && (
-              <p>
-                Each file is checked again first, and a backup is saved so you
-                can restore it later.
-              </p>
-            )}
-            {/* Fitting lists each change below; the file diff repeats it. */}
-            {!preview.rewrap &&
-              preview.publication.map((row) => (
-                <details className="text-publication" key={row.path}>
-                  {/* The text comparison is what the user reviews; the frozen
-                      plan keeps the hashes it checks. */}
-                  <summary>
-                    {row.path}
-                    {row.later_edits ? " · Replaces later game edits" : ""}
-                  </summary>
-                  <strong>
-                    Changes
-                    {row.truncated ? " (first 16,000 characters)" : ""}
-                  </strong>
-                  {row.diff ? (
-                    <TextDiff
-                      diff={row.diff}
-                      label={`Changes to ${row.path}`}
-                    />
-                  ) : (
-                    <p>The game file already matches.</p>
-                  )}
-                  <details>
-                    <summary>Full file text</summary>
-                    <strong>Current (first 16,000 characters)</strong>
-                    <pre>{row.before_text}</pre>
-                    <strong>After (first 16,000 characters)</strong>
-                    <pre>{row.after_text}</pre>
-                  </details>
-                </details>
-              ))}
-          </>
         )}
         {paid && preview.estimate && (
           <section
@@ -336,32 +273,6 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             in the selected code-111 expressions. Unmatched literals remain
             unchanged.
           </p>
-        )}
-        {preview.rewrap && (
-          <>
-            {/* Protected overflows are found but not written, so the review
-                counts and lists only the changes this apply makes. */}
-            <p>
-              {applying} {applying === 1 ? "change" : "changes"}
-              {!!preview.rewrap.overflow_skipped &&
-                ` · ${preview.rewrap.overflow_skipped} protected ${preview.rewrap.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
-            </p>
-            {preview.rewrap.previews
-              .filter(
-                (row) => !(row.overflow && preview.rewrap!.overflow_skipped),
-              )
-              .map((row, index) => (
-                <details key={index}>
-                  <summary>
-                    {row.file_name} · {textLocation(row.locator)}
-                  </summary>
-                  <strong>Before</strong>
-                  <pre>{row.before}</pre>
-                  <strong>After</strong>
-                  <pre>{row.after}</pre>
-                </details>
-              ))}
-          </>
         )}
       </DialogBody>
       <ActionBar feedback={<Message message={action.error} />}>

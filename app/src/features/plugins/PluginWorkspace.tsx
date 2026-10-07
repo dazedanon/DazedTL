@@ -26,6 +26,7 @@ import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
 import { displayLabels, pluginDisplay } from "../../ui/displayStatus";
 import { StatusMark } from "../../ui/StatusMark";
+import { PluginApplyContent } from "./PluginApplyContent";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -92,6 +93,7 @@ export function PluginWorkspace({
   backControl,
   continueControl,
   beforeAction,
+  applyControl,
   disabled = false,
 }: {
   projectId: string;
@@ -101,6 +103,8 @@ export function PluginWorkspace({
   backControl?: ReactNode;
   continueControl: ReactNode;
   beforeAction: () => Promise<unknown>;
+  /** Replaces Review & apply with the host's own review. */
+  applyControl?: ReactNode;
   disabled?: boolean;
 }) {
   const application = useApplication();
@@ -574,15 +578,16 @@ export function PluginWorkspace({
             </Button>
           )}
           {copyControl}
-          {counts.ready > 0 && (
-            <ActionControl
-              label="Review & apply"
-              variant="primary"
-              disabled={busy}
-              {...feedback("preview_apply")}
-              onClick={() => run("preview_apply")}
-            />
-          )}
+          {counts.ready > 0 &&
+            (applyControl ?? (
+              <ActionControl
+                label="Review & apply"
+                variant="primary"
+                disabled={busy}
+                {...feedback("preview_apply")}
+                onClick={() => run("preview_apply")}
+              />
+            ))}
           {continueControl}
         </>,
       )}
@@ -917,39 +922,7 @@ export function PluginWorkspace({
             }
           />
           <DialogBody className="plugin-review-body">
-            <p>
-              {preview.mode === "apply"
-                ? "Replace these game files with the checked translations. Each file is checked again first, and a backup is saved for recovery."
-                : "Restore these game files from their saved backups. Each file is checked again first."}
-            </p>
-            <div className="plugin-review-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Game file</th>
-                    <th>Text changes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.files.map((file) => (
-                    <tr key={file.path}>
-                      <td>{file.destination}</td>
-                      <td>{file.changes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!!preview.blocked.length && (
-              <details open>
-                <summary>Files left unchanged</summary>
-                {preview.blocked.map((file) => (
-                  <p key={file.path}>
-                    <strong>{file.path}</strong> · {file.reason}
-                  </p>
-                ))}
-              </details>
-            )}
+            <PluginApplyContent preview={preview} />
             <Message
               message={action.key === preview.mode ? action.error : ""}
             />

@@ -45,9 +45,9 @@ export function packageView(w: GuidedWorkspace): TaskView {
       unapplied={state.readiness.unapplied}
       apply={
         <ActionControl
-          label="Open Apply"
+          label="Open Pending changes"
           disabled={disabled}
-          {...feedback("release:apply", "Opening Apply…")}
+          {...feedback("release:apply", "Opening Pending changes…")}
           onClick={() =>
             action.run(() => navigate("check", "apply"), "", "release:apply")
           }

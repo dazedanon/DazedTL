@@ -37,6 +37,8 @@ import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks } from "../progress";
+import { applyOrder, type PendingPartId, pendingParts } from "../pending";
+import { usePendingChanges } from "./usePendingChanges";
 import { initialPosition, stagesFor } from "../workflow";
 
 /** The operations setting up a game runs, in order. */
@@ -1039,6 +1041,15 @@ export function useGuidedWorkspace({
         JSON.stringify(fields.text[key as keyof GuidedForm["text"]]) ===
         JSON.stringify(state.form.text[key as keyof GuidedForm["text"]]),
     );
+  // A check is current while its widths and options are the saved ones.
+  const fittingCurrent =
+    !!state.readiness.layout_scan &&
+    !draft.dirty &&
+    fittingSettingsSaved &&
+    !!fitting;
+  const fittingEligible = fitting
+    ? fitting.changes_found - fitting.overflow_skipped
+    : 0;
   const widths = (
     <fieldset disabled={disabled} className="guided-widths">
       {(
@@ -1153,51 +1164,175 @@ export function useGuidedWorkspace({
           ["failed", "interrupted", "stopped"].includes(stoppedJob.status)
         ? stoppedJob.message || "This step did not finish."
         : "";
-  // What the running sequence reads after each observation.
-  const observedSetup = {
+  // What a running sequence (setup, pending changes) reads after each
+  // observation.
+  const observedState = {
     step: setupStep,
     failure: setupFailure,
     preview: preview?.token ?? null,
     taskId,
     // The backend starts the next step only once no worker is running.
     running,
-    // Finished operations by id, with their outcome message.
+    // Finished operations by id, with how they ended.
     finished: new Map(
       [...state.operations, ...translation.jobs]
         .filter(
           (item) => !["ready", "running", "waiting"].includes(item.status),
         )
-        .map((item) => [item.id, item.message || ""]),
+        .map((item) => [
+          item.id,
+          { status: item.status, message: item.message || "" },
+        ]),
     ),
   };
-  const latestSetup = useRef(observedSetup);
-  const setupWaiters = useRef(new Set<() => void>());
+  const latestObserved = useRef(observedState);
+  const observedWaiters = useRef(new Set<() => void>());
   useEffect(() => {
-    latestSetup.current = observedSetup;
-    for (const check of setupWaiters.current) check();
+    latestObserved.current = observedState;
+    for (const check of observedWaiters.current) check();
   });
-  const whenObserved = (ready: (value: typeof observedSetup) => boolean) =>
+  const whenObserved = (ready: (value: typeof observedState) => boolean) =>
     new Promise<void>((resolve) => {
       const check = () => {
-        if (!ready(latestSetup.current)) return;
-        setupWaiters.current.delete(check);
+        if (!ready(latestObserved.current)) return;
+        observedWaiters.current.delete(check);
         resolve();
       };
-      setupWaiters.current.add(check);
+      observedWaiters.current.add(check);
       check();
     });
+  /** How an operation started here ended, once no worker is running. */
+  const whenFinished = async (id: string) => {
+    await whenObserved((value) => !value.running && value.finished.has(id));
+    return latestObserved.current.finished.get(id)!;
+  };
+  // Everything reviewed and waiting to go into the game.
+  const [pendingExcluded, setPendingExcluded] = useState<
+    ReadonlySet<PendingPartId>
+  >(new Set());
+  const ownState = <T extends { projectId: string }>(value?: T | null) =>
+    value && value.projectId === project.id ? value : null;
+  const chosenFixes = qa.corrections.filter((change) =>
+    chosenFindings.includes(change.finding_id),
+  );
+  const pendingInput = {
+    unapplied: state.readiness.unapplied,
+    plugins: ownState(application.snapshot?.plugins)?.counts.ready || 0,
+    images: ownState(application.snapshot?.images)?.counts.ready || 0,
+    rewraps:
+      fittingCurrent && fittingEligible > 0
+        ? {
+            changes: fittingEligible,
+            files: [
+              ...new Set(
+                fitting.previews
+                  .filter((row) => !(row.overflow && fitting.overflow_skipped))
+                  .map((row) => row.file_name),
+              ),
+            ],
+          }
+        : null,
+    qa:
+      qa.current && chosenFindings.length
+        ? {
+            fixes: chosenFindings.length,
+            files: [...new Set(chosenFixes.map((change) => change.file))],
+          }
+        : null,
+  };
+  const pendingList = pendingParts({
+    ...pendingInput,
+    excluded: pendingExcluded,
+  });
+  const pending = usePendingChanges({
+    projectId: project.id,
+    settle: application.settle,
+    guided: (part) =>
+      part.id === "text"
+        ? { name: "export_selected", options: {}, files: part.files }
+        : part.id === "rewraps"
+          ? { name: "rewrap_apply", options: layoutOptions }
+          : {
+              name: "qa_apply",
+              options: {
+                focus: fields.text.focus,
+                task: fields.text.findings_task,
+                findings: chosenFindings,
+              },
+            },
+    preparePreview,
+    execute,
+    lastExecuted,
+    whenFinished,
+  });
+  /**
+   * Opens the review of every included part, or of one part from its own
+   * task; Images passes the images its selection chose, and Apply again
+   * passes the saved text it re-applies.
+   */
+  const openPending = (
+    only?: PendingPartId,
+    choice: { images?: { ids: string[]; count: number }; text?: string[] } = {},
+  ) => {
+    const parts = only
+      ? pendingParts({
+          ...pendingInput,
+          unapplied: choice.text ?? pendingInput.unapplied,
+          images: choice.images?.count ?? pendingInput.images,
+          excluded: new Set(applyOrder.filter((id) => id !== only)),
+        })
+          .filter((part) => part.id === only)
+          .map((part) =>
+            part.id === "images" && choice.images
+              ? { ...part, assetIds: choice.images.ids }
+              : part,
+          )
+      : pendingList.filter((part) => !pendingExcluded.has(part.id));
+    return pending.open(parts);
+  };
+  /** A task's Review & apply, opening the pending review for its part. */
+  const reviewPending = ({
+    only,
+    label,
+    variant = "primary",
+    blocked = false,
+    choice,
+  }: {
+    only: PendingPartId;
+    label: string;
+    variant?: "primary" | "default";
+    blocked?: boolean | string;
+    choice?: Parameters<typeof openPending>[1];
+  }) => (
+    <ActionControl
+      label={label}
+      variant={variant}
+      disabled={disabled || pending.busy || !!blocked}
+      disabledReason={typeof blocked === "string" ? blocked : ""}
+      pending={pending.busy && pending.key === "pending:review"}
+      pendingText="Preparing the review…"
+      error={
+        pending.key === "pending:review" ||
+        (pending.key === "pending:apply" && !pending.review)
+          ? pending.error
+          : ""
+      }
+      notice={pending.key === "pending:apply" ? pending.notice : ""}
+      onClick={() => void openPending(only, choice)}
+    />
+  );
   const startSetup = () =>
     setupAction.run(
       async () => {
         const tried = new Set<SetupStep>();
         let job: Job | undefined;
         for (;;) {
-          const { step, failure, finished } = latestSetup.current;
+          const { step, failure, finished } = latestObserved.current;
           if (!step || step === "ace") break;
           if (tried.has(step))
             throw new Error(
               failure ||
-                (job && finished.get(job.id)) ||
+                (job && finished.get(job.id)?.message) ||
                 "Setup stopped before this step finished.",
             );
           tried.add(step);
@@ -1226,11 +1361,11 @@ export function useGuidedWorkspace({
               !value.running && (value.finished.has(id) || value.step !== step),
           );
         }
-        if (latestSetup.current.step === null) {
+        if (latestObserved.current.step === null) {
           setSetupNotice(
             `Version ${fields.version.trim()} saved. Setup complete.`,
           );
-          if (latestSetup.current.taskId === "setup")
+          if (latestObserved.current.taskId === "setup")
             await navigate("context", "names");
         }
       },
@@ -1463,6 +1598,14 @@ export function useGuidedWorkspace({
     setupAction,
     setupWorking,
     startSetup,
+    pending,
+    pendingList,
+    pendingExcluded,
+    setPendingExcluded,
+    openPending,
+    reviewPending,
+    fittingCurrent,
+    fittingEligible,
     applyRun,
     nextRun,
     completed,

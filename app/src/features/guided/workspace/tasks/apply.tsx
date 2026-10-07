@@ -4,14 +4,26 @@ import { textLocation } from "../../textLocation";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
-import { CheckField, DetailRow, FieldRow } from "../../../../ui/FieldRow";
+import { CheckField, FieldRow } from "../../../../ui/FieldRow";
 import { displayText, sentence } from "../../../../ui/displayText";
-import { fileCount, publicationLabels, publicationTitle } from "../model";
+import { publicationLabels, publicationTitle } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { AssistantTask } from "../../../../ui/AssistantTask";
 import { HelpPopover } from "../../../../ui/HelpPopover";
 import { Notice } from "../../../../ui/Notice";
+import { StatusHeading } from "../../../../ui/StatusMark";
+import { selectionNames } from "../../../../ui/displayText";
+import { type PendingPartId, pendingSummary } from "../../pending";
+
+/** Where each pending part is worked on, for its row's link. */
+const partTasks: Record<PendingPartId, [string, string]> = {
+  plugins: ["plugins", "Plugin files"],
+  images: ["images", "Images"],
+  text: ["", ""],
+  rewraps: ["fitting", "Line width check"],
+  qa: ["qa", "Text QA"],
+};
 
 export function applyView(w: GuidedWorkspace): TaskView {
   const {
@@ -19,28 +31,96 @@ export function applyView(w: GuidedWorkspace): TaskView {
     baseline,
     changed,
     outputFiles,
-    applied,
+    disabled,
     task,
     advance,
-    fileSummary,
+    stepTask,
+    chooseFiles,
+    pending,
+    pendingList,
+    pendingExcluded,
+    setPendingExcluded,
+    openPending,
   } = w;
+  const included = pendingList.filter(
+    (part) => !pendingExcluded.has(part.id) && !part.held,
+  );
+  const toggle = (id: PendingPartId) =>
+    setPendingExcluded((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const textChanged =
+    !!changed.length && included.some((part) => part.id === "text");
   let content: ReactNode;
   content = (
     <>
-      {fileSummary()}
-      {/* With nothing saved, Review & apply's reason says so once. */}
-      {!!outputFiles.length && (
-        <dl className="guided-scope-summary">
-          <DetailRow label="Saved outputs">
-            {fileCount(outputFiles.length)} available
-          </DetailRow>
-          {/* Once applied, the publication below says so with its files. */}
-          {!applied && (
-            <DetailRow label="Applied to game">
-              Ready for application review
-            </DetailRow>
+      {pendingList.length ? (
+        <ActionList>
+          {pendingList.map((part) => {
+            const left = pendingExcluded.has(part.id);
+            const [taskId, owner] = partTasks[part.id];
+            return (
+              <ActionRow
+                key={part.id}
+                label={
+                  <>
+                    <StatusHeading
+                      state={left || part.held ? "skipped" : "ready"}
+                      title={`${part.title} · ${part.summary}`}
+                    />
+                    <small>
+                      {left
+                        ? "Left out of this apply."
+                        : part.held ||
+                          selectionNames(part.files) ||
+                          `Reviewed in ${owner}.`}
+                    </small>
+                  </>
+                }
+              >
+                {taskId ? (
+                  <Button
+                    variant="quiet"
+                    disabled={disabled}
+                    onClick={() => stepTask(taskId)}
+                  >
+                    Open {owner}
+                  </Button>
+                ) : (
+                  // Text applies the checked files that have saved output.
+                  <Button
+                    variant="quiet"
+                    disabled={disabled}
+                    onClick={() => chooseFiles()}
+                  >
+                    Choose files
+                  </Button>
+                )}
+                <Button
+                  disabled={disabled || pending.busy}
+                  onClick={() => toggle(part.id)}
+                >
+                  {left ? "Include" : "Leave out"}
+                </Button>
+              </ActionRow>
+            );
+          })}
+        </ActionList>
+      ) : (
+        <Notice>
+          <span>Nothing is waiting to go into the game.</span>
+          {!!outputFiles.length && (
+            <Button
+              variant="link"
+              disabled={disabled || pending.busy || !baseline}
+              onClick={() => void openPending("text", { text: outputFiles })}
+            >
+              Apply saved text again
+            </Button>
           )}
-        </dl>
+        </Notice>
       )}
 
       <ActionList>
@@ -143,35 +223,52 @@ export function applyView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
-  const review = task(
-    "export_selected",
-    applied ? "Review & apply again" : "Review & apply",
-    {},
-    !baseline
-      ? "Set up the game first."
-      : changed.length
-        ? "Reload the changed files from the game first."
-        : !outputFiles.length
-          ? "No checked file has saved output yet."
-          : false,
-    applied ? "default" : "primary",
-    outputFiles,
+  const blocked = !baseline
+    ? "Set up the game first."
+    : textChanged
+      ? "Reload the changed files from the game first."
+      : !included.length
+        ? pendingList.length
+          ? "Include a part to apply."
+          : ""
+        : "";
+  const review = (
+    <ActionControl
+      label={
+        included.length
+          ? `Review & apply · ${pendingSummary(included)}`
+          : "Review & apply"
+      }
+      variant="primary"
+      disabled={disabled || pending.busy || !!blocked || !included.length}
+      disabledReason={blocked}
+      feedbackKey="pending:review"
+      pending={pending.busy && pending.key === "pending:review"}
+      pendingText="Preparing the review…"
+      error={
+        pending.key === "pending:review" ||
+        (pending.key === "pending:apply" && !pending.review)
+          ? pending.error
+          : ""
+      }
+      notice={pending.key === "pending:apply" ? pending.notice : ""}
+      onClick={() => void openPending()}
+    />
   );
   return {
     content,
     action: review,
-    next: advance(undefined, undefined, applied ? "primary" : "quiet"),
-    heading: {
-      title: "Apply translations",
-      description: "Overwrite the checked game files with their saved output.",
-    },
+    next: advance(
+      undefined,
+      undefined,
+      pendingList.length ? "quiet" : "primary",
+    ),
   };
 }
 
 export function fittingView(w: GuidedWorkspace): TaskView {
   const {
     state,
-    draft,
     values,
     setPanel,
     baseline,
@@ -182,20 +279,13 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     task,
     layoutOptions,
     fitting,
-    fittingSettingsSaved,
+    fittingCurrent: scanCurrent,
+    fittingEligible: eligible,
+    reviewPending,
     advance,
     fileRow,
     fields,
   } = w;
-  // A scan is current while its widths and options are the saved ones.
-  const scanCurrent =
-    state.readiness.layout_scan &&
-    !draft.dirty &&
-    fittingSettingsSaved &&
-    !!fitting;
-  const eligible = fitting
-    ? fitting.changes_found - fitting.overflow_skipped
-    : 0;
   // Translated plugin command text (357) loses its line breaks, so a
   // project that translates it needs 357 in fitting to wrap it again.
   const fittingCodes = fields.text.codes
@@ -369,13 +459,11 @@ export function fittingView(w: GuidedWorkspace): TaskView {
   );
   const run =
     scanCurrent && eligible > 0
-      ? task(
-          "rewrap_apply",
-          "Review & apply rewraps",
-          layoutOptions,
-          !baseline || !layoutFiles.length,
-          "primary",
-        )
+      ? reviewPending({
+          only: "rewraps",
+          label: "Review & apply rewraps",
+          blocked: !baseline || !layoutFiles.length,
+        })
       : task(
           "rewrap_preview",
           "Check line widths",
@@ -420,6 +508,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     task,
     copyTask,
     inspect,
+    reviewPending,
     advance,
     fields,
   } = w;
@@ -674,15 +763,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
       !baseline,
     )
   ) : qa.findings.length ? (
-    task(
-      "qa_apply",
-      "Review chosen corrections",
-      {
-        focus: fields.text.focus,
-        task: fields.text.findings_task,
-        findings: chosenFindings,
-      },
-      !baseline
+    reviewPending({
+      only: "qa",
+      label: "Review chosen corrections",
+      blocked: !baseline
         ? true
         : !qa.current
           ? qa.message
@@ -691,8 +775,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
               ? "Choose corrections first."
               : "No finding has a prepared correction yet."
             : false,
-      "primary",
-    )
+    })
   ) : qaTask ? (
     <ActionControl
       label="Copy QA task"

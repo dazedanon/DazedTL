@@ -102,9 +102,8 @@ export const workflow: WorkflowStage[] = [
     tasks: [
       {
         id: "apply",
-        title: "Apply",
-        description:
-          "Overwrite the checked game files with their saved output.",
+        title: "Pending changes",
+        description: "Everything reviewed and waiting to go into the game.",
       },
       {
         id: "fitting",

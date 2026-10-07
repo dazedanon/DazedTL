@@ -6,7 +6,15 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
 export function pluginsView(w: GuidedWorkspace): TaskView {
-  const { project, application, taskFooter, disabled, advance, back } = w;
+  const {
+    project,
+    application,
+    taskFooter,
+    disabled,
+    advance,
+    back,
+    reviewPending,
+  } = w;
   let content: ReactNode;
   content = (
     <PluginWorkspace
@@ -19,6 +27,8 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       beforeAction={flushDrafts}
       disabled={disabled}
       continueControl={advance(undefined, undefined, "quiet")}
+      // Applying goes through the same review as Check's pending changes.
+      applyControl={reviewPending({ only: "plugins", label: "Review & apply" })}
     />
   );
   return {

@@ -16,6 +16,7 @@ import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { runPhase, taskForStage } from "./workflow";
 import { ActionReview } from "./workspace/ActionReview";
+import { PendingReview } from "./workspace/PendingReview";
 import { GuidedDialogs } from "./workspace/GuidedDialogs";
 import { GuidedPanel } from "./workspace/GuidedPanel";
 import { type GuidedProps, fileCount, phaseLabels } from "./workspace/model";
@@ -325,6 +326,7 @@ function Workspace(
       <GuidedPanel w={w} />
       <GuidedDialogs w={w} />
       <ActionReview w={w} />
+      <PendingReview pending={w.pending} />
     </PageLayout>
   );
 }
