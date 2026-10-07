@@ -652,7 +652,7 @@ Each copy reply names its handoff: the task's kind, request id and the result fi
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.
 The snapshot lists the records with the newest time an expected file was saved, read from file times only, and [assistantTasks.ts](../app/src/features/assistant/assistantTasks.ts) derives each task's display state from that and its feature's observed state, so the Project page list, the top-bar count and each feature's panel agree.
 Dismissing marks a record abandoned: the task leaves the list and its feature stops showing Waiting until the next copy, while saved requests and reports stay.
-Tasks copied before records existed list only while their feature still waits; the running-jokes investigation saves no checked result, so it is not tracked.
+Tasks copied before records existed list only while their feature still waits; the running-jokes investigation saves no checked result, so it is not tracked and its row shows no state.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
