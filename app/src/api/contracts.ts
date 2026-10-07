@@ -1589,7 +1589,7 @@ export type ImageNativeTranslationState = {
   jobs: ImageNativeJob[];
   job: ImageNativeJob | null;
   activeId: string | null;
-  quote: Job | null;
+  quote: ImageNativeJob | null;
   quoteCurrent: boolean;
   current: ImageNativeSelection | null;
   error: string;

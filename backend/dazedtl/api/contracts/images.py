@@ -387,7 +387,7 @@ class ImageNativeTranslationState(TypedDict):
     jobs: list[ImageNativeJob]
     job: ImageNativeJob | None
     activeId: str | None
-    quote: Job | None
+    quote: ImageNativeJob | None
     quoteCurrent: bool
     current: ImageNativeSelection | None
     error: str
