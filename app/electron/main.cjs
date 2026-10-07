@@ -43,7 +43,7 @@ async function finishClose() {
   quit = true;
   closeToken = 0;
   clearTimeout(closeTimer);
-  window?.hide();
+  if (window && !window.isDestroyed()) window.hide();
   if (backend) await backend.close();
   app.exit(0);
 }
@@ -72,10 +72,12 @@ app.on("second-instance", () => {
   window?.focus();
 });
 app.on("before-quit", (event) => {
-  if (!quit) {
-    event.preventDefault();
-    window?.close();
-  }
+  if (quit) return;
+  event.preventDefault();
+  // A window that is already gone can no longer save drafts; finish instead
+  // of closing it, or the app would stay running without a window.
+  if (!window || window.isDestroyed()) void finishClose();
+  else window.close();
 });
 // Startup failures would otherwise leave a running process without a window.
 function startupFailed(error) {
@@ -167,6 +169,9 @@ app
     window.webContents.session.setPermissionRequestHandler(
       (_web, _permission, callback) => callback(false),
     );
+    // A window destroyed without the guarded close below, such as by a
+    // script calling window.close(), still ends the app and its backend.
+    window.on("closed", () => void finishClose());
     window.on("close", (event) => {
       if (quit) return;
       event.preventDefault();
