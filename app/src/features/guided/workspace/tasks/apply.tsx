@@ -33,9 +33,12 @@ export function applyView(w: GuidedWorkspace): TaskView {
           <DetailRow label="Saved outputs">
             {fileCount(outputFiles.length)} available
           </DetailRow>
-          <DetailRow label="Applied to game">
-            {applied ? "Previously applied" : "Ready for application review"}
-          </DetailRow>
+          {/* Once applied, the publication below says so with its files. */}
+          {!applied && (
+            <DetailRow label="Applied to game">
+              Ready for application review
+            </DetailRow>
+          )}
         </dl>
       )}
 
