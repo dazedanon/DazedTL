@@ -210,6 +210,30 @@ class OpenRouterBatchTests(unittest.TestCase):
                 with self.assertRaises((httpx.ReadTimeout, batch.RequestError)):
                     client.submit([request()])
                 self.assertEqual(len(attempts), 1)
+        # A refusal keeps OpenRouter's reason, such as which credit limit a
+        # 402 hit, without any credential it echoes back.
+        refusal = {
+            "error": {
+                "code": 402,
+                "message": "Budget too small for fixture-key.",
+                "metadata": {"limit_source": "in_flight_budget", "echo": "input"},
+            }
+        }
+        with (
+            batch.Client(
+                "fixture-key",
+                policy=POLICY,
+                transport=httpx.MockTransport(
+                    lambda _: httpx.Response(402, json=refusal)
+                ),
+            ) as client,
+            self.assertRaises(batch.RequestError) as raised,
+        ):
+            client.submit([request()])
+        self.assertEqual(raised.exception.status_code, 402)
+        self.assertIn("limit: in_flight_budget", str(raised.exception))
+        self.assertNotIn("fixture-key", str(raised.exception))
+        self.assertNotIn("input", str(raised.exception))
 
     def test_openrouter_preview_shows_live_routing_as_a_chat_completion(self):
         # A Live estimate's queue carries OpenRouter preferences such as

@@ -31,12 +31,36 @@ class ResultsUnavailable(ValueError):
 
 
 class RequestError(RuntimeError):
-    def __init__(self, status):
+    def __init__(self, status, reason=""):
         # A server-side timeout can follow a successful create.
         self.status_code = None if status == 408 else status
         super().__init__(
-            f"OpenRouter returned HTTP {status}. No automatic paid retry was made."
+            f"OpenRouter returned HTTP {status}"
+            + (f" ({reason})" if reason else "")
+            + ". No automatic paid retry was made."
         )
+
+
+def error_reason(body, secret):
+    """OpenRouter's own explanation of a refused request, such as which credit
+    limit a 402 hit. Only its message and limit source are kept, so echoed
+    input or credentials never reach run records."""
+    from .process_view import clean_message
+
+    try:
+        value = json.loads(body.decode("utf-8", "replace"))
+    except ValueError:
+        return ""
+    error = value.get("error") if isinstance(value, dict) else None
+    if not isinstance(error, dict):
+        return ""
+    metadata = error.get("metadata")
+    source = metadata.get("limit_source") if isinstance(metadata, dict) else None
+    parts = [
+        " ".join(str(error.get("message") or "").split()).rstrip("."),
+        f"limit: {source}" if isinstance(source, str) and source else "",
+    ]
+    return clean_message("; ".join(part for part in parts if part), secret, limit=400)
 
 
 def is_route(endpoint):
@@ -200,7 +224,14 @@ class Client:
                     "OpenRouter's retained results have expired. Saved local responses remain available; this Batch will not be resubmitted."
                 )
             if response.status_code not in ({202} if method == "POST" else {200}):
-                raise RequestError(response.status_code)
+                body = bytearray()
+                for part in response.iter_bytes(65536):
+                    body.extend(part)
+                    if len(body) > 65536:
+                        break
+                raise RequestError(
+                    response.status_code, error_reason(bytes(body), self.api_key)
+                )
             for part in response.iter_bytes(65536):
                 data.extend(part)
                 if len(data) > MAX_RESPONSE_BYTES or time.monotonic() - start > 90:
