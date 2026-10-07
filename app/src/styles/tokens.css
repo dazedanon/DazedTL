@@ -102,6 +102,8 @@
   /* A panel's first or last row fills to just inside its border. */
   --panel-inner-radius: calc(var(--panel-radius) - 1px);
   --icon-size: 16px;
+  /* Status marks in dense lists, such as the Project page's task list. */
+  --icon-size-small: 14px;
   --section-gap: var(--space-6);
   --section-padding: var(--space-5);
   --field-row-gap: var(--space-3);

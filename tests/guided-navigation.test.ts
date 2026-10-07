@@ -188,7 +188,7 @@ test("phase navigation restores an available task and falls back for removed or 
   );
 });
 
-test("the Project page continues past a finished one-way step but keeps a later saved position", () => {
+test("the Project page continues with the next step and keeps a later saved position", () => {
   const translation = {
     lifecycle: { source_backup: { available: true } },
     git: { configured: false },
@@ -210,34 +210,29 @@ test("the Project page continues past a finished one-way step but keeps a later 
     preparation: { complete: false },
     artifacts: [],
   } as unknown as GuidedState;
-  // An unfinished setup resumes there, even from an older Prepare position.
-  assert.deepEqual(guidedProgress(state, translation).current, {
-    step: "prepare",
-    task: "setup",
-    stage: "Prepare",
-    title: "Set up this game",
-    advanced: false,
-  });
-  // A finished setup has nothing to resume, so Continue opens the next task.
+  // An unfinished setup is the next step, even from an older Prepare
+  // position, and needs no separate way back.
+  let progress = guidedProgress(state, translation);
+  assert.equal(progress.next?.task, "setup");
+  assert.equal(progress.last, null);
+  // A finished setup has nothing to return to, so Continue opens the next task.
   translation.git!.configured = true;
   state.task = "setup";
-  assert.deepEqual(guidedProgress(state, translation).current, {
-    step: "context",
-    task: "names",
-    stage: "Context",
-    title: "Names & glossary",
-    advanced: true,
-  });
+  progress = guidedProgress(state, translation);
+  assert.equal(progress.next?.task, "names");
+  assert.equal(progress.last, null);
   // Apply counts as done once outputs are applied, with earlier work open.
   state.step = "apply";
   state.task = "apply";
   state.preferences.values.selected = ["Map001.json"];
   state.readiness.outputs = state.readiness.applied = ["Map001.json"];
-  const progress = guidedProgress(state, translation);
+  progress = guidedProgress(state, translation);
   assert.ok(
     progress.stages.some((stage) => stage.id === "apply" && stage.done),
   );
-  assert.equal(progress.current.task, "apply");
+  // A later saved position stays reachable beside the next step.
+  assert.equal(progress.next?.task, "names");
+  assert.equal(progress.last?.task, "apply");
   // Optional stages finish once their work reaches the game with nothing
   // waiting: an edited image awaiting review keeps Images open.
   state.artifacts = [{ current: true }] as GuidedState["artifacts"];

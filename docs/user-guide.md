@@ -9,8 +9,9 @@ Choose **Open a game** on the Project page and select the game folder.
 A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Assistant-led](#assistant-led) for any game.
 **Translation** in the sidebar then opens that method.
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
-The Project page's **Status** shows the next unfinished task and every stage's tasks; **Start** or **Resume** opens Translation where you left off, or **Continue** opens the next task when the one you left is finished.
-The optional stages never hold up the next step: Plugin files and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
+The Project page's **Status** shows the next unfinished task and every stage's tasks.
+**Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
+Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 

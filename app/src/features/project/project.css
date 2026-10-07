@@ -76,8 +76,24 @@
   font-size: var(--font-control);
 }
 .project-stages .link-button {
+  display: inline;
   color: var(--color-text);
   text-align: left;
+}
+/* An optional task not yet done names itself instead of showing an empty
+   mark; the mark's space keeps the titles aligned. */
+.project-task-mark {
+  flex-shrink: 0;
+  width: var(--icon-size-small);
+}
+.project-task-optional {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+  white-space: nowrap;
+}
+.project-last-opened {
+  margin-top: var(--space-2);
+  font-size: var(--font-control);
 }
 .project-stages .link-button[aria-current="step"] {
   color: var(--color-accent);

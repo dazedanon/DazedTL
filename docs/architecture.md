@@ -466,7 +466,9 @@ The sidebar has three places: the Project page holds everything about the game, 
 Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx) when it is first opened and kept in the project registry; games opened before the choice keep the method they already have work in, and changing it keeps the other method's work.
 The one Translation entry opens that method's workspace.
 The Project page's Status, History, Game updates and Backups tabs serve both methods.
-Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
+Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity.
+Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
+A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Optional stages complete from the same snapshot: Plugin files and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.

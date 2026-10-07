@@ -179,6 +179,9 @@ function ProjectStatus({
   const active =
     !!operation && ["ready", "running", "waiting"].includes(operation.status);
   const guided = project.method === "guided" && progress;
+  // One Continue: the next required task, or the last opened task once every
+  // required task is done.
+  const target = guided ? progress.next || progress.last : null;
   const primary = !project.available ? (
     <Button variant="primary" disabled={busy || state.running} onClick={open}>
       {project.next_label}
@@ -187,19 +190,19 @@ function ProjectStatus({
     <Button variant="primary" disabled={busy} onClick={chooseMethod}>
       Choose translation method
     </Button>
-  ) : guided ? (
+  ) : guided && target ? (
     <Button
       variant="primary"
       disabled={busy}
-      onClick={() => openTask(progress.current.step, progress.current.task)}
+      onClick={() => openTask(target.step, target.task)}
     >
       {/* Nothing done yet is a start, not a return to saved work. */}
       {!progress.stages.some((stage) => stage.done)
         ? "Start"
-        : progress.current.advanced
+        : progress.next
           ? "Continue"
           : "Resume"}
-      : {progress.current.title}
+      : {target.title}
       <ArrowRight size={15} aria-hidden="true" />
     </Button>
   ) : (
@@ -239,6 +242,18 @@ function ProjectStatus({
                       </span>
                       <strong>{progress.next.title}</strong>
                       <small>{progress.next.description}</small>
+                      {progress.last && (
+                        <Button
+                          variant="link"
+                          className="project-last-opened"
+                          disabled={busy}
+                          onClick={() =>
+                            openTask(progress.last!.step, progress.last!.task)
+                          }
+                        >
+                          Last opened: {progress.last.title}
+                        </Button>
+                      )}
                     </>
                   ) : (
                     <>
@@ -250,19 +265,7 @@ function ProjectStatus({
                     </>
                   )
                 }
-              >
-                {progress.next &&
-                  progress.next.task !== progress.current.task && (
-                    <Button
-                      disabled={busy}
-                      onClick={() =>
-                        openTask(progress.next!.step, progress.next!.task)
-                      }
-                    >
-                      Go to {progress.next.title}
-                    </Button>
-                  )}
-              </ActionRow>
+              />
             </ActionList>
             {amounts && <ProjectAmounts amounts={amounts} />}
             <Section title="Tasks" className="project-tasks-section">
@@ -288,30 +291,46 @@ function ProjectStatus({
                         )}
                       </span>
                       {stage.short}
-                      <span className="project-stage-count">
-                        {stage.done}/{stage.total}
-                      </span>
+                      {/* A one-task stage's mark already says it all. */}
+                      {stage.total > 1 && (
+                        <span className="project-stage-count">
+                          {stage.done}/{stage.total}
+                        </span>
+                      )}
                     </h3>
                     <ul>
                       {stage.tasks.map((task) => (
                         <li key={task.id}>
-                          <StatusIcon
-                            status={task.done ? "done" : "idle"}
-                            label={task.done ? "Complete" : "Not done"}
-                            size={14}
-                          />
-                          <Button
-                            variant="link"
-                            disabled={busy}
-                            aria-current={
-                              task.id === progress.current.task
-                                ? "step"
-                                : undefined
-                            }
-                            onClick={() => openTask(stage.id, task.id)}
-                          >
-                            {task.title}
-                          </Button>
+                          {task.done || !task.optional ? (
+                            <StatusIcon
+                              status={task.done ? "done" : "idle"}
+                              label={task.done ? "Complete" : "Not done"}
+                              size={14}
+                            />
+                          ) : (
+                            <span className="project-task-mark" />
+                          )}
+                          {/* Inline, so Optional wraps with a long title. */}
+                          <span>
+                            <Button
+                              variant="link"
+                              disabled={busy}
+                              aria-current={
+                                task.id === target?.task ? "step" : undefined
+                              }
+                              onClick={() => openTask(stage.id, task.id)}
+                            >
+                              {task.title}
+                            </Button>
+                            {task.optional && !task.done && (
+                              <>
+                                {" "}
+                                <span className="project-task-optional">
+                                  Optional
+                                </span>
+                              </>
+                            )}
+                          </span>
                         </li>
                       ))}
                     </ul>

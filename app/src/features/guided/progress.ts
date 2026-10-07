@@ -116,7 +116,7 @@ export type GuidedProgress = {
     title: string;
     done: number;
     total: number;
-    tasks: { id: string; title: string; done: boolean }[];
+    tasks: { id: string; title: string; done: boolean; optional: boolean }[];
   }[];
   /** The first unfinished required task, in workflow order. */
   next: {
@@ -127,16 +127,15 @@ export type GuidedProgress = {
     description: string;
   } | null;
   /**
-   * Where the Project page returns: the saved position, or the next task when
-   * the saved one is finished and the next lies ahead of it (`advanced`).
+   * The task last opened in Translation, when it differs from `next`. A
+   * finished task before `next`, such as setup, has nothing to return to.
    */
-  current: {
+  last: {
     step: GuidedStep;
     task: string;
     stage: string;
     title: string;
-    advanced: boolean;
-  };
+  } | null;
 };
 
 /** Where a Guided project stands, from saved state only. */
@@ -153,6 +152,23 @@ export function guidedProgress(
   const next = order.find(
     ({ task }) => tracked.has(task.id) && !done.has(task.id),
   );
+  const position = initialPosition(state, translation);
+  const index = (task: string) =>
+    order.findIndex((item) => item.task.id === task);
+  const opened = stages.find((item) => item.id === position.step);
+  const last =
+    next &&
+    (position.task === next.task.id ||
+      (done.has(position.task) && index(position.task) < index(next.task.id)))
+      ? null
+      : {
+          ...position,
+          stage: opened?.short || "",
+          title:
+            opened?.tasks.find((item) => item.id === position.task)?.title ||
+            opened?.short ||
+            "",
+        };
   return {
     stages: stages.map((stage) => ({
       id: stage.id,
@@ -164,6 +180,7 @@ export function guidedProgress(
         id: task.id,
         title: task.title,
         done: done.has(task.id),
+        optional: !tracked.has(task.id),
       })),
     })),
     next: next
@@ -175,33 +192,7 @@ export function guidedProgress(
           description: next.task.description,
         }
       : null,
-    current: (() => {
-      const position = initialPosition(state, translation);
-      // A finished one-way step, such as the backup, has nothing to resume;
-      // a later saved position, such as Apply while Translate is open, stays.
-      const index = (task: string) =>
-        order.findIndex((item) => item.task.id === task);
-      if (
-        next &&
-        done.has(position.task) &&
-        index(next.task.id) > index(position.task)
-      )
-        return {
-          step: next.stage.id,
-          task: next.task.id,
-          stage: next.stage.short,
-          title: next.task.title,
-          advanced: true,
-        };
-      const stage = stages.find((item) => item.id === position.step);
-      const task = stage?.tasks.find((item) => item.id === position.task);
-      return {
-        ...position,
-        stage: stage?.short || "",
-        title: task?.title || stage?.short || "",
-        advanced: false,
-      };
-    })(),
+    last,
   };
 }
 
