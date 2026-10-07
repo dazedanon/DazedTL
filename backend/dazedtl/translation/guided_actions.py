@@ -670,6 +670,11 @@ class GuidedActions:
             if action == "release_patch"
             else project["source"]
         )
+        archive = (
+            self.guided.backend.guided_ace_archive(project["source"])
+            if action == "release_patch" and native["engine"] == "ACE"
+            else None
+        )
         return {
             "token": token,
             "action": action,
@@ -711,8 +716,14 @@ class GuidedActions:
                 ]
                 if (Path(project["source"]) / "gameupdate/patch-config.txt").is_file()
                 else [],
-                "updater": "GameUpdate configuration is omitted from local patches. Publishing is separate.",
-                "generated": [".gitignore", ".gitattributes", "README.md"],
+                "updater": "GameUpdate configuration is omitted from local patches. Publishing is separate."
+                + (
+                    f" This game came encrypted, so the patch carries {archive} rebuilt with the translation; GameUpdate cannot update it."
+                    if archive
+                    else ""
+                ),
+                "generated": [".gitignore", ".gitattributes", "README.md"]
+                + ([archive] if archive else []),
             }
             if action == "release_patch"
             else None,

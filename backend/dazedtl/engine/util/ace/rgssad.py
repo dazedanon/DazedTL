@@ -1,22 +1,30 @@
-"""Extracts RPG Maker's encrypted RGSS archives (Game.rgss3a and older).
+"""Extracts RPG Maker's encrypted RGSS archives (Game.rgss3a and older) and
+rebuilds an RGSS3 archive with a game's current files.
 
-Behaves like uuksu's RPGMakerDecrypter CLI (MIT,
+Extraction behaves like uuksu's RPGMakerDecrypter CLI (MIT,
 https://github.com/uuksu/RPGMakerDecrypter) as DazedTL ran it: files are
 written beside the archive under their archived paths, names drop the
 characters Windows does not allow so they extract the same everywhere, and
 files that already exist are left alone. Unlike it, ".." in a name never
 leads outside the target folder.
+
+While a game has an archive, RPG Maker reads the archived copy of a file and
+never a loose one, and loads its scripts only from the archive.
 """
 
 from __future__ import annotations
 
 import re
 import struct
-from collections.abc import Callable, Iterator
+import zlib
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
 HEADER = b"RGSSAD\0"
 V1_KEY = 0xDEADCAFE
+MASK = 0xFFFFFFFF
+# The archive each engine reads: Ace, then VX, then XP.
+_RANK = {".rgss3a": 0, ".rgss2a": 1, ".rgssad": 2}
 # Path.GetInvalidFileNameChars on Windows, which RPGMakerDecrypter removes.
 _INVALID = re.compile(r'[\x00-\x1f"<>|:*?/\\]')
 
@@ -28,9 +36,12 @@ class ArchiveError(ValueError):
 
 
 def archives(root: Path) -> list[Path]:
-    """The game's RGSS archives (Game.rgss3a and older), named in any case
-    as Windows and the game itself accept."""
-    return sorted(Path(root).glob("Game.rgss*", case_sensitive=False))
+    """The game's RGSS archives, Game.rgss3a first, named in any case as
+    Windows and the game itself accept."""
+    found = Path(root).glob("Game.rgss*", case_sensitive=False)
+    return sorted(
+        found, key=lambda path: (_RANK.get(path.suffix.lower(), 3), path.name)
+    )
 
 
 def _keystream(key: int, length: int) -> bytes:
@@ -62,17 +73,24 @@ def decrypt(data: bytes, key: int) -> bytes:
     return np.bitwise_xor(np.frombuffer(data, dtype=np.uint8), stream).tobytes()
 
 
+def _table_key(header: bytes) -> int:
+    return (struct.unpack_from("<I", header, 8)[0] * 9 + 3) & MASK
+
+
 def _entries_v3(data: bytes) -> Iterator[tuple[str, int, int, int]]:
-    key = (struct.unpack_from("<I", data, 8)[0] * 9 + 3) & 0xFFFFFFFF
+    key = _table_key(data)
     key_bytes = struct.pack("<I", key)
     position = 12
-    while position + 16 <= len(data):
+    while position + 4 <= len(data):
+        # A zero offset ends the table; the data follows right after it.
+        if struct.unpack_from("<I", data, position)[0] ^ key == 0:
+            return
+        if position + 16 > len(data):
+            break
         offset, size, file_key, length = (
             value ^ key for value in struct.unpack_from("<4I", data, position)
         )
         position += 16
-        if offset == 0:
-            return
         raw = data[position : position + length]
         position += length
         name = bytes(byte ^ key_bytes[i % 4] for i, byte in enumerate(raw))
@@ -85,7 +103,7 @@ def _entries_v1(data: bytes) -> Iterator[tuple[str, int, int, int]]:
     position = 8
 
     def advance(value: int) -> int:
-        return (value * 7 + 3) & 0xFFFFFFFF
+        return (value * 7 + 3) & MASK
 
     while position < len(data):
         if position + 4 > len(data):
@@ -115,6 +133,83 @@ def entries(data: bytes) -> list[tuple[str, int, int, int]]:
     if version == 1:
         return list(_entries_v1(data))
     raise ArchiveError(f"RGSS archive version {version} is not supported.")
+
+
+def table(archive: Path) -> tuple[bytes, list[tuple[bytes, int]]]:
+    """An RGSS3 archive's header and its files as (raw name, key), in order,
+    read without loading the archived data."""
+    with open(archive, "rb") as stream:
+        header = stream.read(12)
+        if len(header) < 12 or not header.startswith(HEADER) or header[7] != 3:
+            raise ArchiveError(Path(archive).name + " is not an RGSS3 archive.")
+        key = _table_key(header)
+        key_bytes = struct.pack("<I", key)
+        rows = []
+        while True:
+            word = stream.read(4)
+            if len(word) == 4 and struct.unpack("<I", word)[0] ^ key == 0:
+                return header, rows
+            rest = stream.read(12)
+            if len(word) < 4 or len(rest) < 12:
+                raise ArchiveError("The archive's file table is incomplete.")
+            _size, file_key, length = (
+                value ^ key for value in struct.unpack("<3I", rest)
+            )
+            raw = stream.read(length)
+            if len(raw) < length:
+                raise ArchiveError("The archive's file table is incomplete.")
+            rows.append(
+                (bytes(b ^ key_bytes[i % 4] for i, b in enumerate(raw)), file_key)
+            )
+
+
+def rebuild(
+    original: Path, target: Path, root: Path, *, extra: Iterable[str] = ()
+) -> int:
+    """Writes ``original`` again with each archived file's current copy in
+    ``root``, keeping its header, file order and keys, so unchanged files
+    give the original bytes. ``extra`` names (with backslashes) are added
+    after them. Returns the number of archived files."""
+    header, rows = table(original)
+
+    def place(raw: bytes) -> str:
+        return safe_path(raw.decode("utf-8", "replace")).as_posix().casefold()
+
+    known = {place(raw) for raw, _ in rows}
+    for name in extra:
+        if place(name.encode()) not in known:
+            known.add(place(name.encode()))
+            rows.append((name.encode(), zlib.crc32(name.encode())))
+    paths = []
+    for raw, _ in rows:
+        relative = safe_path(raw.decode("utf-8", "replace"))
+        if not (root / relative).is_file():
+            raise ArchiveError(
+                f"{relative.as_posix()} from {Path(original).name} is missing from the game folder."
+            )
+        paths.append(root / relative)
+    sizes = [path.stat().st_size for path in paths]
+    key = _table_key(header)
+    key_bytes = struct.pack("<I", key)
+    offset = len(header) + sum(16 + len(raw) for raw, _ in rows) + 4
+    with open(target, "wb") as out:
+        out.write(header)
+        for (raw, file_key), size in zip(rows, sizes, strict=True):
+            out.write(
+                struct.pack(
+                    "<4I", offset ^ key, size ^ key, file_key ^ key, len(raw) ^ key
+                )
+            )
+            out.write(bytes(b ^ key_bytes[i % 4] for i, b in enumerate(raw)))
+            offset += size
+        out.write(struct.pack("<I", key))
+        for (_, file_key), path, size in zip(rows, paths, sizes, strict=True):
+            data = path.read_bytes()
+            if len(data) != size:
+                raise ArchiveError(f"{path.name} changed while the archive was built.")
+            # The cipher is a XOR stream, so encrypting is decrypting.
+            out.write(decrypt(data, file_key))
+    return len(rows)
 
 
 def safe_path(name: str) -> Path:

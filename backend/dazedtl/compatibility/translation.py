@@ -632,6 +632,7 @@ class TranslationEngine:
     def package(self, source, options, manifest, destination):
         import zipfile
 
+        from util.ace.actions import patch_archive
         from util.len_patch_scope import patch_manifest
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
@@ -660,6 +661,7 @@ class TranslationEngine:
         destination.mkdir(parents=True, exist_ok=True)
         output = destination / (status["translation_commit"] + ".zip")
         temporary = output.with_suffix(".zip.tmp")
+        rebuilt = output.with_suffix(".archive.tmp")
         try:
             patch_sha = (
                 _release_patch_sha(source)
@@ -673,22 +675,32 @@ class TranslationEngine:
             _run_git(
                 source, "archive", "--format=zip", "--output=" + str(temporary), "HEAD"
             )
-            if patch_sha:
+            # An encrypted game reads only its archive, so the patch carries
+            # the archive rebuilt with the translated files.
+            game_archive = patch_archive(source, rebuilt, tracked)
+            if patch_sha or game_archive:
                 with zipfile.ZipFile(
                     temporary, "a", compression=zipfile.ZIP_DEFLATED
                 ) as archive:
-                    archive.writestr(
-                        "gameupdate/previous_patch_sha.txt", patch_sha + "\n"
-                    )
+                    if patch_sha:
+                        archive.writestr(
+                            "gameupdate/previous_patch_sha.txt", patch_sha + "\n"
+                        )
+                    if game_archive:
+                        archive.write(
+                            rebuilt, game_archive, compress_type=zipfile.ZIP_STORED
+                        )
             temporary.replace(output)
         finally:
             temporary.unlink(missing_ok=True)
+            rebuilt.unlink(missing_ok=True)
+        packaged = sorted(tracked | ({game_archive} if game_archive else set()))
         write_json(
             output.with_suffix(".json"),
             {
                 "commit": status["translation_commit"],
                 "game_version": status["original_version"],
-                "files": sorted(tracked),
+                "files": packaged,
                 "updater_stamp": bool(patch_sha),
             },
         )
@@ -696,7 +708,7 @@ class TranslationEngine:
             "path": str(output),
             "commit": status["translation_commit"],
             "game_version": status["original_version"],
-            "files": len(tracked),
+            "files": len(packaged),
             "updater_stamp": bool(patch_sha),
         }
 

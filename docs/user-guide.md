@@ -144,6 +144,11 @@ Set up's **Convert Ace data** step extracts an encrypted `Game.rgss3a` and conve
 **Review native Ace packing** in Release writes the translated JSON back into `Data`; the original stays in Set up's backup.
 Release verifies saved packing evidence against the current JSON and native files.
 
+An encrypted game reads only its archive while one sits beside `Game.exe`, so Set up moves `Game.rgss3a` into `.dazedtl/ace` once its files are extracted.
+The game in its folder then plays the translated files, and the clean game ZIP ships them unencrypted.
+A patch ZIP for an encrypted game carries `Game.rgss3a` rebuilt with the translated files, so players replace one archive.
+GameUpdate delivers loose files, which an encrypted game ignores, so share a new patch for each update instead.
+
 ## Assistant-led
 
 Assistant-led runs translation through a coding assistant using Len's game-translation skills bundled with the engine, with Agent, Live API and API Batch execution.

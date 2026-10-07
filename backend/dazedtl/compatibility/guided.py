@@ -465,6 +465,15 @@ def runtime_files(source):
     return names
 
 
+def ace_archive(source):
+    """The name of the archive an encrypted Ace game came with, once Set up
+    set it aside; patches carry it rebuilt."""
+    from util.ace.actions import original_archive
+
+    found = original_archive(Path(source))
+    return found.name if found else None
+
+
 def run_ace(plan, log):
     """Ace preparation with the built-in converter; packing checks its outputs."""
     from desktop.backend.workflow_actions import validate_plan

@@ -15,6 +15,7 @@ from tempfile import TemporaryDirectory
 from tests.engine import engine_package
 
 ace = engine_package("util/ace")
+actions = importlib.import_module(ace.__name__ + ".actions")
 rgssad = importlib.import_module(ace.__name__ + ".rgssad")
 ruby_marshal = importlib.import_module(ace.__name__ + ".ruby_marshal")
 rv2json = importlib.import_module(ace.__name__ + ".rv2json")
@@ -52,7 +53,8 @@ def stream(key, data):
 def archive_v3(entries, seed):
     key = (seed * 9 + 3) & MASK
     key_bytes = key.to_bytes(4, "little")
-    offset = 12 + sum(16 + len(name.encode()) for name, _ in entries) + 16
+    # A zero offset ends the table, as in shipped archives.
+    offset = 12 + sum(16 + len(name.encode()) for name, _ in entries) + 4
     table, body = bytearray(), bytearray()
     for index, (name, data) in enumerate(entries):
         raw, file_key = name.encode(), 0x9E3779B9 + index
@@ -61,8 +63,16 @@ def archive_v3(entries, seed):
         table += bytes(byte ^ key_bytes[i % 4] for i, byte in enumerate(raw))
         body += stream(file_key, data)
         offset += len(data)
-    table += struct.pack("<4I", key, key, key, key)
+    table += struct.pack("<I", key)
     return b"RGSSAD\0\x03" + struct.pack("<I", seed) + table + body
+
+
+def contents(archive):
+    data = archive.read_bytes()
+    return [
+        (name, rgssad.decrypt(data[offset : offset + size], key))
+        for name, offset, size, key in rgssad.entries(data)
+    ]
 
 
 def archive_v1(entries):
@@ -152,6 +162,31 @@ class AceConversionTests(unittest.TestCase):
             )
             self.assertEqual(len(written), 3)
 
+            # A rebuilt archive holds each file's current copy under its
+            # archived name, then the added files it lacked.
+            (game / "Data/New.rvdata2").write_bytes(b"added")
+            rebuilt = root / "rebuilt.rgss3a"
+            rgssad.rebuild(
+                archive,
+                rebuilt,
+                game,
+                extra=["Data\\New.rvdata2", "Graphics\\Pictures\\ab.png"],
+            )
+            self.assertEqual(
+                contents(rebuilt),
+                [
+                    ("Data\\Map001.rvdata2", b"\x04\x08short"),
+                    ("Graphics\\Pictures\\a:b?.png", long),
+                    ("..\\..\\outside.txt", b"stays inside"),
+                    ("Data\\Kept.rvdata2", b"translated copy"),
+                    ("Data\\New.rvdata2", b"added"),
+                ],
+            )
+            # Unchanged files rebuild the original archive byte for byte.
+            (game / "Data/Kept.rvdata2").write_bytes(b"archived copy")
+            rgssad.rebuild(archive, rebuilt, game)
+            self.assertEqual(rebuilt.read_bytes(), archive.read_bytes())
+
             older = root / "Game.rgssad"
             older.write_bytes(archive_v1(entries[:2]))
             rgssad.extract(older, root / "xp", log=lambda _line: None)
@@ -164,6 +199,41 @@ class AceConversionTests(unittest.TestCase):
             )
             with self.assertRaises(rgssad.ArchiveError):
                 rgssad.entries(b"RGSSAD\0\x03" + bytes(4))
+
+    def test_setup_sets_an_encrypted_games_archive_aside_and_patches_rebuild_it(self):
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            game = root / "game"
+            game.mkdir()
+            original = files(FIXTURE / "Data")
+            entries = [("Data\\" + name, data) for name, data in original.items()]
+            (game / "Game.rgss3a").write_bytes(archive_v3(entries, seed=7))
+            actions.run(game, "ace_extract", log=lambda _line: None)
+            # The game reads its extracted, translated files only while no
+            # archive sits beside Game.exe.
+            self.assertEqual(rgssad.archives(game), [])
+            kept = game / ".dazedtl/ace/Game.rgss3a"
+            self.assertEqual(actions.original_archive(game), kept)
+            self.assertEqual(files(game / "Data"), original)
+            self.assertTrue((game / "ace_json/System.json").is_file())
+
+            shutil.copy(FIXTURE / "packed/Actors.rvdata2", game / "Data/Actors.rvdata2")
+            (game / "Data/Extra.rvdata2").write_bytes(b"tracked addition")
+            tracked = ["Data/Actors.rvdata2", "Data/Extra.rvdata2", "Game.ini"]
+            self.assertEqual(
+                actions.patch_archive(game, root / "patch.rgss3a", tracked),
+                "Game.rgss3a",
+            )
+            patched = dict(contents(root / "patch.rgss3a"))
+            self.assertEqual(
+                patched,
+                {
+                    **{"Data\\" + name: data for name, data in original.items()},
+                    "Data\\Actors.rvdata2": files(FIXTURE / "packed")["Actors.rvdata2"],
+                    "Data\\Extra.rvdata2": b"tracked addition",
+                },
+            )
+            self.assertIsNone(actions.patch_archive(root, root / "none", tracked))
 
 
 if __name__ == "__main__":

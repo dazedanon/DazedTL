@@ -322,6 +322,12 @@ class ExistingBackend:
         return runtime_files(source)
 
     @staticmethod
+    def guided_ace_archive(source):
+        from .guided import ace_archive
+
+        return ace_archive(source)
+
+    @staticmethod
     def guided_titles(native):
         from .guided import file_titles
 
