@@ -158,7 +158,8 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {phase === "advanced" && (
         <>
           <p>
-            {enabledCodes.length} sources enabled ·{" "}
+            {enabledCodes.length}{" "}
+            {enabledCodes.length === 1 ? "source" : "sources"} enabled ·{" "}
             {advancedReady ? "Coverage reviewed" : "Source review needed"}
           </p>
           <Button
