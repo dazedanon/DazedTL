@@ -870,7 +870,10 @@ export function useGuidedWorkspace({
         {...(appliedHere
           ? { notice: "Saved translations applied." }
           : fittedHere
-            ? { notice: "Rewrapped lines applied. Restore them from Apply." }
+            ? {
+                notice:
+                  "Rewrapped lines applied. Restore them from Pending changes.",
+              }
             : toolDoneHere
               ? {
                   // Short, so the row's buttons stay side by side.

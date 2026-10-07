@@ -584,7 +584,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
           // Before any result exists, "saved results match" has nothing to
           // describe; say what happens next instead.
           qaApplied
-            ? "Chosen corrections are applied. Restore them from Apply, or prepare QA again to check the current text."
+            ? "Chosen corrections are applied. Restore them from Pending changes, or prepare QA again to check the current text."
             : qa.current && qaTask && !qa.findings.length && !qaStarted
               ? qaCopied
                 ? "Results appear here as your assistant saves them."
