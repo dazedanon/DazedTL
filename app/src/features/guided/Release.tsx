@@ -270,21 +270,24 @@ export function ReleaseReview({
         </div>
       )}
       {!preview.overwrite && <p className="path">{preview.destination}</p>}
-      <ActionList>
-        <ActionRow
-          label={
-            <strong>
-              {preview.paths.length.toLocaleString()} runtime files
-            </strong>
-          }
-        >
-          {patch && (
+      {/* Only a patch has assets to edit; a bare count needs no panel. */}
+      {patch ? (
+        <ActionList>
+          <ActionRow
+            label={
+              <strong>
+                {preview.paths.length.toLocaleString()} runtime files
+              </strong>
+            }
+          >
             <Button disabled={busy} onClick={editAssets}>
               Edit runtime assets
             </Button>
-          )}
-        </ActionRow>
-      </ActionList>
+          </ActionRow>
+        </ActionList>
+      ) : (
+        <p>{preview.paths.length.toLocaleString()} runtime files</p>
+      )}
       <div className="guided-preview-files">
         <VirtualList
           items={preview.paths}
