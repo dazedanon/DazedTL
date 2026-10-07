@@ -25,6 +25,7 @@ import {
   translationTaskComplete,
   unsettledBatches,
   needsSubmissionReview,
+  unconfirmedSubmission,
   canResumeRun,
   requestContext,
   translatedLines,
@@ -973,6 +974,28 @@ test("new attempts supersede historical warnings without releasing submission pr
     terminalFailure,
   ]);
   assert.equal(needsSubmissionReview(terminalFailure), true);
+  // A Batch the provider confirmed stays protected without being reported as
+  // possibly unsent; doubt needs an unconfirmed request after sending ended.
+  const atProvider = {
+    ...terminalFailure,
+    status: "running",
+    process: {
+      ...terminalFailure.process,
+      uncertain: 0,
+      batches: [{ ...failedBatch, status: "in_progress" }],
+    },
+  } as Job;
+  assert.equal(unsettledBatches([atProvider], ["Items.json"]).length, 1);
+  assert.equal(unconfirmedSubmission(atProvider), false);
+  const unconfirmed = {
+    ...terminalFailure,
+    process: { ...terminalFailure.process, uncertain: 1 },
+  } as Job;
+  assert.equal(unconfirmedSubmission(unconfirmed), true);
+  assert.equal(
+    unconfirmedSubmission({ ...unconfirmed, status: "running" }),
+    false,
+  );
   for (const guarded of [
     unresolved,
     { ...terminalFailure, status: "running" },

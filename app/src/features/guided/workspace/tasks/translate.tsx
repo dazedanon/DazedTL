@@ -12,9 +12,9 @@ import {
   activeRun,
   completeForSelection,
   estimateEmpty,
-  needsSubmissionReview,
   phaseRun,
   translationStopLabel,
+  unconfirmedSubmission,
   unsettledBatches,
 } from "../../translationView";
 import { actionKey, fileCount } from "../model";
@@ -95,7 +95,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   const noRemainingWork = estimateEmpty(quote);
   // The latest attempt's failure shows on the task itself, not only in Run
   // history; an unconfirmed Batch also warns before anything is sent again.
-  const unconfirmed = pendingBatches.find(needsSubmissionReview);
+  const unconfirmed = pendingBatches.find(unconfirmedSubmission);
   const failure = unconfirmed
     ? `The last Batch could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`
     : current && !current.temporary && current.status === "failed"
@@ -221,7 +221,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 ["failed", "interrupted", "stopped"].includes(current.status)
               ? current.message ||
                 "Preparation did not finish. Click Translate to try again."
-              : pendingBatches.some((run) => !needsSubmissionReview(run))
+              : pendingBatches.some((run) => !unconfirmedSubmission(run))
                 ? applyFiles.length
                   ? "Earlier Batches are available in Run history. You can apply saved output."
                   : "Earlier Batches are available in Run history. Translate starts a new estimate."

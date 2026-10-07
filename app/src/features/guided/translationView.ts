@@ -169,6 +169,11 @@ export const needsSubmissionReview = (run: Job) =>
   run.mode !== "estimate" &&
   run.status !== "complete" &&
   !!run.process?.retryBlocked;
+/** Paid work the provider never confirmed receiving, after its worker stopped.
+ * Confirmed Batches still need review before resending, but are not in doubt;
+ * a worker that is still sending has not finished confirming. */
+export const unconfirmedSubmission = (run: Job) =>
+  needsSubmissionReview(run) && !!run.process?.uncertain && !activeWorker(run);
 export const canResumeRun = (run: Job) =>
   !run.temporary &&
   !["estimate", "batch"].includes(run.mode || "") &&
