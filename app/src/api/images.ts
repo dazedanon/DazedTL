@@ -33,6 +33,12 @@ export const imagesApi = {
     action: string,
     options: Record<string, unknown> = {},
   ) => request("images_action", { project_id, action, options }),
+  /** Uses another project's saved image work here, as it was shown. */
+  adopt: (project_id: string, binding: string) =>
+    request("images_adopt", { project_id, binding }),
+  /** Moves another project's saved image work aside and starts fresh. */
+  startOver: (project_id: string, binding: string) =>
+    request("images_start_over", { project_id, binding }),
   pixels: (
     project_id: string,
     asset_id: string,

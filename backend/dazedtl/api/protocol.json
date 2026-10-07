@@ -1,5 +1,5 @@
 {
-  "version": "88630e9789a94b7e",
+  "version": "b384eb2497203030",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -317,6 +317,14 @@
       "refresh": true,
       "duringClose": false
     },
+    "images_adopt": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "images_start_over": {
+      "refresh": true,
+      "duringClose": false
+    },
     "images_editor_state": {
       "refresh": false,
       "duringClose": false
@@ -366,6 +374,14 @@
       "duringClose": false
     },
     "plugins_continue": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "plugins_adopt": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "plugins_start_over": {
       "refresh": true,
       "duringClose": false
     }

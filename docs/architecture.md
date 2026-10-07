@@ -411,6 +411,17 @@ Preserved originals and durable receipts support reviewed restore without removi
 The authenticated project helper exposes read-only image state, listing and previews; image application remains an app review.
 Clipboard handoffs never claim an external assistant is running.
 
+Plugin and image progress in the game folder belongs to the project that saved it, and projects are keyed by source path, so a moved or copied game, a new profile or a reinstall opens that work under a new project.
+[Foreign work](../backend/dazedtl/foreign_work.py) reports it in the snapshot instead of failing, and the shared [ForeignWork](../app/src/ui/ForeignWork.tsx) panel offers the choice in Plugin files and both Image Manager hosts.
+Nothing is used or moved until the user chooses, and each choice binds the hash of the saved state it was shown.
+Using it rebinds the state after rechecking what the new project can verify.
+Findings, choices, working copies, reviews and application records carry over; copied requests do not, because their authority (plugin request hashes in the old profile, image requests bound to the old project) cannot be checked here.
+Their reports are never accepted, plugin results not yet applied need a new check, and image tasks resume from them through a new request.
+A plugin application journal is authorized again only while a file still carries that application and its journal and backups match the receipt exactly.
+Image restores need only the originals saved in the game folder, so they carry over unchanged.
+An interrupted publication blocks the takeover, because only the profile that authorized it can reconcile it.
+Starting over moves the work folder to `.dazedtl/archived` under a dated name with every file kept; editable image copies and preserved originals outside it stay in place.
+
 The optional [image text editor](../backend/dazedtl/images/editor.py) retains the toolkit's boxes, target-only exchange import, rendering and undo process behind compatibility adapters.
 Its local OCR capability is limited to installed offline resources, with no hosted fallback or model download.
 Native Image Text translation uses the preserved isolated manual runner with project-owned frozen inputs, a current estimate and one-use paid approval, independently of JSON translation runs and image application.

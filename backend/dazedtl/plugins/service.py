@@ -11,9 +11,11 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from dazedtl import foreign_work
+from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import backups
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.operations import (
     lifecycle,
     lifecycle_path,
@@ -109,21 +111,33 @@ def preview_view(preview):
     }
 
 
+def carries(files, receipt):
+    """Whether a file still carries this application; later restores and
+    applications supersede older receipts."""
+    return receipt["mode"] == "apply" and any(
+        files.get(row["path"], {}).get("applied", {}).get("receipt") == receipt["id"]
+        for row in receipt["files"]
+    )
+
+
 def receipt_view(receipt, files):
     return {
         **pick(
             receipt,
-            ("id", "mode", "saved", "status", "failure", "conflicts", "manifest"),
+            (
+                "id",
+                "mode",
+                "saved",
+                "status",
+                "failure",
+                "conflicts",
+                "manifest",
+                "restoreIssue",
+            ),
         ),
         "files": [pick(row, REVIEW_KEYS) for row in receipt["files"]],
-        # Only the application a file still carries can restore it; later
-        # restores and applications supersede older receipts.
-        "restorable": receipt["mode"] == "apply"
-        and any(
-            files.get(row["path"], {}).get("applied", {}).get("receipt")
-            == receipt["id"]
-            for row in receipt["files"]
-        ),
+        # Only the application a file still carries can restore it.
+        "restorable": carries(files, receipt) and not receipt.get("restoreIssue"),
     }
 
 
@@ -145,7 +159,7 @@ class PluginService:
         self.projects, self.translation, self.backend = projects, translation, backend
         self.documents = documents or Documents()
         self.lock = threading.RLock()
-        self.previews, self.cache, self.observed = {}, {}, {}
+        self.previews, self.cache, self.observed, self.foreign = {}, {}, {}, {}
 
     def record(self, project_id):
         project = self.projects.get(project_id)
@@ -182,15 +196,18 @@ class PluginService:
             }
         signature = (path.stat().st_mtime_ns, path.stat().st_size)
         saved = self.cache.get(project_id)
-        value = (
-            deepcopy(saved[1])
-            if saved and saved[0] == signature
-            else read_json(path, limit=64_000_000)
-        )
-        if value.get("version") != 1 or value.get("projectId") != project_id:
-            raise ValueError(
-                "Plugin state belongs to a different project or version. Its files were retained."
-            )
+        if saved and saved[0] == signature:
+            value = deepcopy(saved[1])
+        else:
+            try:
+                value = read_json(path, limit=64_000_000)
+            except ValueError:
+                value = None
+            if not foreign_work.owned(value, project_id):
+                raise ForeignWorkError(
+                    "Plugin work in this game folder was saved by another project or app version. Its files were kept; choose how to continue in Plugin files.",
+                    self.foreign_summary(project_id, path, value, signature),
+                )
         if value["view"]["filter"] not in FILTERS:
             value["view"].update(filter="all", offset=0)
         self.cache[project_id] = (signature, deepcopy(value))
@@ -203,6 +220,158 @@ class PluginService:
             (path.stat().st_mtime_ns, path.stat().st_size),
             deepcopy(value),
         )
+
+    def foreign_summary(self, project_id, path, value, signature):
+        """What another project's saved plugin work holds, and whether it can be
+        used here. Snapshots ask often, so it is kept until the file changes."""
+        saved = self.foreign.get(project_id)
+        if saved and saved[0] == signature:
+            return saved[1]
+        counts = {"investigated": 0, "translated": 0, "applied": 0, "restorable": 0}
+        blocked = ""
+        try:
+            if not foreign_work.readable(value):
+                raise TypeError
+            rows = value["files"].values()
+            carried = self.carried_receipts(project_id, value)
+            counts.update(
+                investigated=sum(bool(row.get("examined")) for row in rows),
+                translated=sum(bool(row.get("result")) for row in rows),
+                applied=sum(bool(row.get("applied")) for row in rows),
+                restorable=sum(
+                    row.get("applied", {}).get("receipt") in carried for row in rows
+                ),
+            )
+            if value["pending"]:
+                blocked = foreign_work.INTERRUPTED
+        except AttributeError, KeyError, TypeError:
+            blocked = foreign_work.UNREADABLE
+        summary = {**foreign_work.summary(path), **counts, "blocked": blocked}
+        self.foreign[project_id] = (signature, summary)
+        return summary
+
+    def carried_receipts(self, project_id, value):
+        """Earlier applications a new owner can restore: a file still carries
+        each one, and its journal and backups match its receipt exactly."""
+        _, root = self.record(project_id)
+        verified = {}
+        for receipt in value["receipts"]:
+            if not carries(value["files"], receipt):
+                continue
+            try:
+                publication = read_json(
+                    self.path(
+                        project_id, "publications/" + receipt["id"] + "/approval.json"
+                    )
+                )
+                approved = {row["path"]: row for row in publication["files"]}
+                if (
+                    publication["id"] != receipt["id"]
+                    or publication["mode"] != "apply"
+                    or publication["manifest"] != receipt["manifest"]
+                    or any(approved.get(row["path"]) != row for row in receipt["files"])
+                    or any(
+                        digest(self.source(root, row["backup"])) != row["beforeHash"]
+                        for row in receipt["files"]
+                    )
+                ):
+                    continue
+            except OSError, ValueError, KeyError, TypeError:
+                continue
+            verified[receipt["id"]] = publication
+        return verified
+
+    def foreign_state(self, project_id, binding):
+        """Another project's saved work and its summary, as the user was shown them."""
+        try:
+            self.load(project_id)
+        except ForeignWorkError as exc:
+            path = self.path(project_id, "state.json")
+            return foreign_work.reviewed(path, exc.summary, binding), exc.summary
+        raise ValueError("This project's plugin work is already in use.")
+
+    def adopt(self, project_id, binding):
+        """Takes over another project's saved work after the user chose it.
+
+        Findings, choices, working copies and application records carry over.
+        Copied tasks do not: their requests are bound to the other project, so
+        their reports are never accepted here and the next copy starts afresh.
+        Applications stay restorable only where journal and backups still match.
+        """
+        with self.lock:
+            raw, summary = self.foreign_state(project_id, binding)
+            if summary["blocked"]:
+                raise ValueError(summary["blocked"])
+            value = decode_json(raw)
+            previous = value["projectId"]
+            carried = self.carried_receipts(project_id, value)
+            for receipt in value["receipts"]:
+                if receipt["id"] in carried:
+                    write_json(
+                        Path(self.translation.workspace)
+                        / "plugin-approvals"
+                        / project_id
+                        / (receipt["id"] + ".json"),
+                        {
+                            "journalHash": digest(carried[receipt["id"]]),
+                            "projectId": project_id,
+                            "id": receipt["id"],
+                        },
+                    )
+                elif carries(value["files"], receipt):
+                    receipt["restoreIssue"] = (
+                        "Its saved record no longer matches the files it applied, so it can't be restored here. The Project page's Backups can recover the original game."
+                    )
+            rows = value["files"].values()
+            results = [row["result"] for row in rows if row.get("result")]
+            for result in results:
+                result["carried"] = True
+            # A report still awaited will never arrive here; the record
+            # describes the work kept instead.
+            for key, done in (
+                ("findings", [bool(row.get("examined")) for row in rows]),
+                ("editing", [result["status"] == "ready" for result in results]),
+            ):
+                if value[key]["status"] == "awaiting_report":
+                    accepted = sum(done)
+                    value[key] = {
+                        "status": "idle"
+                        if not accepted
+                        else "current"
+                        if accepted == len(done)
+                        else "partial",
+                        "errors": [],
+                        **(
+                            {"accepted": accepted, "expected": len(done)}
+                            if done
+                            else {}
+                        ),
+                    }
+            value.update(
+                projectId=project_id,
+                requests={},
+                activeRequest="",
+                adopted={"projectId": previous, "saved": now()},
+            )
+            self.save(project_id, value)
+            self.foreign.pop(project_id, None)
+            return {
+                "state": self.state(project_id),
+                "message": "Saved plugin work is now used here.",
+            }
+
+    def start_over(self, project_id, binding):
+        """Moves another project's saved work aside, keeping every file."""
+        with self.lock:
+            self.foreign_state(project_id, binding)
+            _, root = self.record(project_id)
+            archived = foreign_work.archive(root, WORK, "plugin-work")
+            self.cache.pop(project_id, None)
+            self.foreign.pop(project_id, None)
+            return {
+                "state": self.state(project_id),
+                "message": "Earlier plugin work moved to " + archived + ".",
+            }
 
     @staticmethod
     def revision(value):
@@ -692,15 +861,29 @@ class PluginService:
                         "reason": "Text selection changed; copy a new translation task and refresh its results.",
                         "checks": {},
                     }
-                if result and result.get("requestId") != value["requests"].get(
-                    "translation", {}
-                ).get("requestId"):
-                    row["result"] = {
-                        **result,
-                        "status": "needs_revision",
-                        "reason": "Saved results belong to an earlier task; refresh the current task report. Existing working copies are retained.",
-                        "checks": {},
-                    }
+                current = value["requests"].get("translation")
+                if result and result.get("requestId") != (current or {}).get(
+                    "requestId"
+                ):
+                    # Work taken over from another project was checked there;
+                    # what the game already holds stays applied.
+                    if result.get("carried") and not current:
+                        if result.get("candidateHash") != row.get("applied", {}).get(
+                            "afterHash"
+                        ):
+                            row["result"] = {
+                                **result,
+                                "status": "needs_revision",
+                                "reason": "Checked by the project that saved this work. Copy the plugin task so your assistant checks it here; the working copy is kept.",
+                                "checks": {},
+                            }
+                    else:
+                        row["result"] = {
+                            **result,
+                            "status": "needs_revision",
+                            "reason": "Saved results belong to an earlier task; refresh the current task report. Existing working copies are retained.",
+                            "checks": {},
+                        }
             except (OSError, ValueError) as exc:
                 row["issue"] = str(exc)
 

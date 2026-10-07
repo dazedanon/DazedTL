@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from dazedtl.api.contracts.common import ForeignWork
 from dazedtl.api.contracts.runs import Job
 
 type ImageDiscoveryScope = Literal["all", "folders", "selected"]
@@ -199,6 +200,11 @@ class ImageManagerState(TypedDict):
     editableRoot: NotRequired[str]
     supported: NotRequired[bool]
     job: NotRequired[ImageJob | None]
+
+
+class ImageForeignWork(ForeignWork):
+    examined: int
+    edited: int
 
 
 class ImageDraft(TypedDict):

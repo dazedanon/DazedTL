@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.plugins import PluginService
 from dazedtl.plugins.documents import Documents, occurrences, replace_leaf, validate
 from dazedtl.plugins.service import safe_name
@@ -694,6 +695,68 @@ class PluginTests(unittest.TestCase):
         self.service.action(self.identity, "plugin_task")
         with self.assertRaisesRegex(ValueError, "replaced"):
             self.service.continue_task(self.identity, request["requestId"])
+
+    def test_another_projects_work_is_taken_over_on_request_or_set_aside(self):
+        # A copied game, a new profile or a reinstall opens this folder as a
+        # new project; its saved work waits for the user's choice.
+        request, _report = self.translated()
+        original = {
+            row["path"]: (self.game / row["path"]).read_bytes()
+            for row in request["files"]
+        }
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        receipt = self.service.action(
+            self.identity, "apply", {"token": preview["token"]}
+        )["receipt"]["id"]
+
+        def reopened(name):
+            profile = self.root / name
+            projects = Projects(profile)
+            project = projects.open({"source": str(self.game), "engine": "MVMZ"})
+            translation = SimpleNamespace(
+                workspace=profile, idle=lambda _: None, clean_drafts=lambda _: None
+            )
+            service = PluginService(
+                projects, translation, self.backend, documents=self.documents
+            )
+            return project["id"], service
+
+        def foreign(identity, service):
+            with self.assertRaises(ForeignWorkError) as raised:
+                service.state(identity)
+            return raised.exception.summary
+
+        identity, service = reopened("fresh-profile")
+        saved = foreign(identity, service)
+        self.assertEqual((saved["applied"], saved["restorable"]), (2, 2))
+        with self.assertRaisesRegex(ValueError, "changed since it was shown"):
+            service.adopt(identity, "0" * 64)
+        reply = service.adopt(identity, saved["binding"])
+        check_response("plugins_adopt", reply)
+        self.assertEqual(reply["state"]["counts"]["applied"], 2)
+        # The earlier project and its copied task no longer act on this work.
+        foreign(self.identity, self.service)
+        with self.assertRaisesRegex(ValueError, "Copy the scoped task"):
+            service.action(identity, "refresh_results")
+        # A verified application stays restorable through its own review.
+        restore = service.action(identity, "preview_restore", {"receipt": receipt})
+        service.action(identity, "restore", {"token": restore["preview"]["token"]})
+        for path, raw in original.items():
+            self.assertEqual((self.game / path).read_bytes(), raw)
+
+        # Only the project that was interrupted can reconcile its publication.
+        identity, service = reopened("reinstalled-profile")
+        state = self.game / ".dazedtl/plugin-work/state.json"
+        value = read_json(state)
+        write_json(state, {**value, "pending": ["0" * 32]})
+        saved = foreign(identity, service)
+        with self.assertRaisesRegex(ValueError, "interrupted"):
+            service.adopt(identity, saved["binding"])
+        service.start_over(identity, saved["binding"])
+        [archived] = (self.game / ".dazedtl/archived").iterdir()
+        self.assertTrue(archived.name.startswith("plugin-work-"))
+        self.assertEqual(read_json(archived / "state.json")["pending"], ["0" * 32])
+        self.assertEqual(service.state(identity)["counts"]["files"], 0)
 
     def test_interrupted_publication_reconciles_exact_bytes_and_rejects_tampered_journal(
         self,

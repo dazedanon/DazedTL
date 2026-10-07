@@ -15,6 +15,7 @@ from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
 from dazedtl.diagnostics import Diagnostics
+from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
 from dazedtl.images.native_translation import ImageNativeTranslation
@@ -275,16 +276,20 @@ class Application:
                     detail=error,
                     next_label="Open translation",
                 )
-        images, image_error = None, ""
+        images, image_error, foreign = None, "", {}
         if project and project["available"]:
             try:
                 images = self.images.state(project["id"])
+            except ForeignWorkError as exc:
+                foreign["imagesForeign"] = exc.summary
             except (ValueError, OSError) as exc:
                 image_error = str(exc)
         plugins, plugin_error = None, ""
         if project and project["available"]:
             try:
                 plugins = self.plugins.state(project["id"])
+            except ForeignWorkError as exc:
+                foreign["pluginsForeign"] = exc.summary
             except (ValueError, OSError) as exc:
                 plugin_error = str(exc)
         assistant_tasks = []
@@ -303,6 +308,7 @@ class Application:
             "imagesError": image_error,
             "plugins": plugins,
             "pluginsError": plugin_error,
+            **foreign,
         }
 
     def recheck(self, project_id):
@@ -640,6 +646,15 @@ def routes(app):
         app.images_action,
         lambda value, _params: views.image_action(value),
     )
+    for name in ("adopt", "start_over"):
+        methods["images_" + name] = (
+            getattr(app.images, name),
+            lambda value, _params: value,
+        )
+        methods["plugins_" + name] = (
+            getattr(app.plugins, name),
+            lambda value, _params: value,
+        )
     methods["plugins_action"] = (app.plugins_action, lambda value, _params: value)
     for name in ("state", "list", "detail", "update"):
         methods["plugins_" + name] = (

@@ -3,8 +3,8 @@
 from typing import Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.guided import GuidedState
-from dazedtl.api.contracts.images import ImageManagerState
-from dazedtl.api.contracts.plugins import PluginState
+from dazedtl.api.contracts.images import ImageForeignWork, ImageManagerState
+from dazedtl.api.contracts.plugins import PluginForeignWork, PluginState
 from dazedtl.api.contracts.translation import TranslationState
 
 type Screen = Literal["project", "translation", "guided", "manual", "settings"]
@@ -73,5 +73,8 @@ class WorkspaceSnapshot(TypedDict):
     translationError: str
     images: NotRequired[ImageManagerState | None]
     imagesError: NotRequired[str]
+    # Image work saved by another project, waiting for the user's choice.
+    imagesForeign: NotRequired[ImageForeignWork]
     plugins: NotRequired[PluginState | None]
     pluginsError: NotRequired[str]
+    pluginsForeign: NotRequired[PluginForeignWork]

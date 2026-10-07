@@ -3,6 +3,7 @@ import { FileCode2, Search, TriangleAlert } from "lucide-react";
 import { useApplication } from "../../app/ApplicationProvider";
 import { pluginsApi } from "../../api/plugins";
 import type {
+  PluginForeignWork,
   PluginList,
   PluginPreview,
   PluginReceipt,
@@ -24,6 +25,7 @@ import { ActionSlot } from "../../ui/ActionSlot";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { ForeignWork } from "../../ui/ForeignWork";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
 import { displayLabels, pluginDisplay } from "../../ui/displayStatus";
@@ -91,6 +93,7 @@ export function PluginWorkspace({
   projectId,
   observed,
   error,
+  foreign,
   footerTarget,
   backControl,
   continueControl,
@@ -101,6 +104,8 @@ export function PluginWorkspace({
   projectId: string;
   observed?: PluginState | null;
   error?: string;
+  /** Plugin work this game folder holds for another project. */
+  foreign?: PluginForeignWork;
   footerTarget: HTMLElement | null;
   backControl?: ReactNode;
   continueControl: ReactNode;
@@ -151,11 +156,15 @@ export function PluginWorkspace({
   });
   const state = plugins.value;
   const view = draft.value || state?.view;
+  // The choice made for saved work stays settled until the snapshot shows it.
+  const [settled, setSettled] = useState("");
+  const foreignWork =
+    foreign && foreign.binding !== settled ? foreign : undefined;
   const report = useEffectEvent((error: unknown, key = "") =>
     action.report(error, key),
   );
   const loadInitial = useEffectEvent((alive: () => boolean) => {
-    if (state) return;
+    if (state || foreignWork) return;
     void pluginsApi
       .state(projectId)
       .then((next) => {
@@ -252,6 +261,27 @@ export function PluginWorkspace({
     error: action.key === key ? action.error : "",
     notice: action.key === key ? action.notice : "",
   });
+  const choose = async (
+    choice: "adopt" | "start_over",
+    work: PluginForeignWork,
+  ) => {
+    const result = await action.run(
+      async () => {
+        const reply = await (choice === "adopt"
+          ? pluginsApi.adopt(projectId, work.binding)
+          : pluginsApi.startOver(projectId, work.binding));
+        if (reply.state) {
+          plugins.set(reply.state);
+          draft.session.adopt(reply.state.view);
+        }
+        setSettled(work.binding);
+        return reply;
+      },
+      "",
+      choice,
+    );
+    if (result.ok) action.succeed(result.value.message || "", choice);
+  };
   const chooseFile = async (
     path: string,
     selected: boolean,
@@ -283,6 +313,47 @@ export function PluginWorkspace({
       </ActionBar>
     </ActionSlot>
   );
+  if (foreignWork) {
+    return (
+      <section className="plugin-workspace" aria-label="Plugin files workspace">
+        <ForeignWork
+          title="Plugin work from another project"
+          work={foreignWork}
+          counts={[
+            [foreignWork.investigated, "files investigated"],
+            [foreignWork.translated, "translated"],
+            [foreignWork.applied, "applied"],
+          ]}
+          kept={["findings", "text choices", "working copies"]}
+          noun="files"
+          next="Copy the plugin task again before applying more: tasks copied in the other project aren't accepted here."
+          left={
+            foreignWork.applied
+              ? "Applied plugin files stay in the game but can't be restored here."
+              : ""
+          }
+          adopt={
+            <ActionControl
+              label="Use saved progress"
+              variant={foreignWork.blocked ? "default" : "primary"}
+              disabled={busy || !!foreignWork.blocked}
+              {...feedback("adopt")}
+              onClick={() => choose("adopt", foreignWork)}
+            />
+          }
+          startOver={
+            <ActionControl
+              label="Start over"
+              disabled={busy}
+              {...feedback("start_over")}
+              onClick={() => choose("start_over", foreignWork)}
+            />
+          }
+        />
+        {footer(null, continueControl)}
+      </section>
+    );
+  }
   if (!state || !view)
     return (
       <>
@@ -573,11 +644,12 @@ export function PluginWorkspace({
               ? `${counts.selected} text ${counts.selected === 1 ? "location" : "locations"} in ${fileCount(counts.selectedFiles)} included`
               : "No plugin text included"}
           </span>
-          {["apply", "restore"].includes(action.key) && action.notice && (
-            <span role="status" className="plugin-success">
-              {action.notice}
-            </span>
-          )}
+          {["apply", "restore", "adopt", "start_over"].includes(action.key) &&
+            action.notice && (
+              <span role="status" className="plugin-success">
+                {action.notice}
+              </span>
+            )}
         </div>,
         <>
           {!!state.receipts.length && (
@@ -857,7 +929,11 @@ export function PluginWorkspace({
                 .slice()
                 .reverse()
                 .map((receipt) => {
-                  const problem = [receipt.failure, ...receipt.conflicts]
+                  const problem = [
+                    receipt.failure,
+                    ...receipt.conflicts,
+                    receipt.restoreIssue,
+                  ]
                     .filter(Boolean)
                     .join(" · ");
                   return (

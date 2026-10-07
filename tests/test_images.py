@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
+from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
@@ -433,3 +434,49 @@ class ImageTests(unittest.TestCase):
         restore = reopened.action(self.identity, "preview_restore")["preview"]
         reopened.action(self.identity, "restore", {"token": restore["token"]})
         self.assertEqual((self.game / "img/A.png").read_bytes(), original)
+
+    def test_another_projects_work_is_taken_over_on_request_or_set_aside(self):
+        # A copied game, a new profile or a reinstall opens this folder as a
+        # new project; its saved work waits for the user's choice.
+        original = (self.game / "img/A.png").read_bytes()
+        self.reviewed_candidate()
+        preview = self.service.action(self.identity, "preview_apply")["preview"]
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        copied, _ = self.request("discovery_task", ["img/B.png"])
+        backup = read_json(lifecycle_path(self.profile, self.identity))
+
+        def reopened(name):
+            profile = self.root / name
+            projects = Projects(profile)
+            project = projects.open({"source": str(self.game), "engine": "MVMZ"})
+            write_json(lifecycle_path(profile, project["id"]), backup)
+            translation = SimpleNamespace(
+                workspace=profile, idle=lambda _: None, clean_drafts=lambda _: None
+            )
+            service = ImageService(
+                projects, translation, None, self.backend, adapter=self.adapter
+            )
+            with self.assertRaises(ForeignWorkError) as raised:
+                service.state(project["id"])
+            return project["id"], service, raised.exception.summary
+
+        self.identity, self.service, saved = reopened("fresh-profile")
+        self.assertEqual((saved["applied"], saved["restorable"]), (1, 1))
+        reply = self.service.adopt(self.identity, saved["binding"])
+        check_response("images_adopt", reply)
+        self.assertEqual(reply["state"]["discovery"]["status"], "idle")
+        # The other project's task is resumed by a new one, never handed out again.
+        again, _ = self.request("discovery_task", ["img/B.png"])
+        self.assertNotEqual(again["id"], copied["id"])
+        self.assertEqual(again["resumeFrom"], copied["id"])
+        # Restores keep the original saved in the game folder.
+        self.choose(["img/A.png"])
+        restore = self.service.action(self.identity, "preview_restore")["preview"]
+        self.service.action(self.identity, "restore", {"token": restore["token"]})
+        self.assertEqual((self.game / "img/A.png").read_bytes(), original)
+
+        identity, service, saved = reopened("reinstalled-profile")
+        service.start_over(identity, saved["binding"])
+        [archived] = (self.game / ".dazedtl/archived").iterdir()
+        self.assertTrue((archived / "inventory.sqlite3").is_file())
+        self.assertEqual(service.state(identity)["inventoryRevision"], "")

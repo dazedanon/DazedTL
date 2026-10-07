@@ -23,6 +23,7 @@ import type {
   ImageActionResult,
   ImageAsset,
   ImageDraft,
+  ImageForeignWork,
   ImageManagerState,
   ImagePreview,
 } from "../../api/contracts";
@@ -37,6 +38,7 @@ import { ActionSlot } from "../../ui/ActionSlot";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
+import { ForeignWork } from "../../ui/ForeignWork";
 import {
   imageDraft,
   imageStatus,
@@ -57,6 +59,8 @@ export interface ImageManagerProps {
   projectId: string;
   onOpenEditor: (assetIds: string[]) => void;
   observed?: ImageManagerState | null;
+  /** Image work this game folder holds for another project. */
+  foreign?: ImageForeignWork;
   /**
    * Replaces Review & apply with the host's own review, such as Guided's
    * pending changes, given the selection it would apply.
@@ -81,24 +85,50 @@ export function ImageManager(props: ImageManagerProps) {
     props.observed?.projectId === props.projectId ? props.observed : null;
   const [start, setStart] = useState(own);
   if (own && start?.projectId !== props.projectId) setStart(own);
+  // The choice made for saved work stays settled until the snapshot shows it.
+  const [settled, setSettled] = useState({ binding: "", notice: "" });
+  const foreign =
+    props.foreign && props.foreign.binding !== settled.binding
+      ? props.foreign
+      : undefined;
   const observed = start?.projectId === props.projectId ? start : null;
-  const loaded = useRead(observed ? null : props.projectId, () =>
+  const loaded = useRead(observed || foreign ? null : props.projectId, () =>
     imagesApi.state(props.projectId),
   );
   const initial = observed || loaded.value;
   const error = loaded.error === undefined ? "" : messageOf(loaded.error);
+  const hostFooter = (
+    <ActionSlot target={props.footer.target}>
+      <ActionBar
+        feedback={
+          <div className="image-footer-context">{props.footer.back}</div>
+        }
+      >
+        {props.footer.next("quiet")}
+      </ActionBar>
+    </ActionSlot>
+  );
+  if (foreign)
+    return (
+      <section className="image-manager">
+        {hostFooter}
+        <ForeignImages
+          projectId={props.projectId}
+          work={foreign}
+          onSettled={(reply) => {
+            setStart(reply.state);
+            setSettled({
+              binding: foreign.binding,
+              notice: reply.message || "",
+            });
+          }}
+        />
+      </section>
+    );
   if (!initial || initial.projectId !== props.projectId)
     return (
       <section className="image-manager image-manager-loading">
-        <ActionSlot target={props.footer.target}>
-          <ActionBar
-            feedback={
-              <div className="image-footer-context">{props.footer.back}</div>
-            }
-          >
-            {props.footer.next("quiet")}
-          </ActionBar>
-        </ActionSlot>
+        {hostFooter}
         <Message message={error} />
         <p role="status">
           {error
@@ -108,7 +138,74 @@ export function ImageManager(props: ImageManagerProps) {
         {error && <Button onClick={loaded.retry}>Retry</Button>}
       </section>
     );
-  return <Manager key={props.projectId} {...props} initial={initial} />;
+  return (
+    <Manager
+      key={props.projectId}
+      {...props}
+      initial={initial}
+      notice={settled.notice}
+    />
+  );
+}
+
+/** Image work another project saved here, and the two ways on. */
+function ForeignImages({
+  projectId,
+  work,
+  onSettled,
+}: {
+  projectId: string;
+  work: ImageForeignWork;
+  onSettled: (reply: ImageActionResult) => void;
+}) {
+  const action = useAction();
+  const choose = async (choice: "adopt" | "start_over") => {
+    const result = await action.run(
+      () =>
+        choice === "adopt"
+          ? imagesApi.adopt(projectId, work.binding)
+          : imagesApi.startOver(projectId, work.binding),
+      "",
+      choice,
+    );
+    if (result.ok) onSettled(result.value);
+  };
+  const feedback = (key: string) => ({
+    pending: action.busy && action.key === key,
+    error: action.key === key ? action.error : "",
+  });
+  return (
+    <ForeignWork
+      title="Image work from another project"
+      work={work}
+      counts={[
+        [work.examined, "images examined"],
+        [work.edited, "edited"],
+        [work.applied, "applied"],
+      ]}
+      kept={["findings", "selected and edited images", "reviews"]}
+      noun="images"
+      next="Copy image tasks again to continue them: tasks copied in the other project aren't accepted here."
+      left={`Edited copies are kept and found again by the next scan.${work.applied ? " Applied images stay in the game but can't be restored or added to patch ZIPs here." : ""}`}
+      adopt={
+        <ActionControl
+          label="Use saved progress"
+          variant={work.blocked ? "default" : "primary"}
+          disabled={action.busy || !!work.blocked}
+          {...feedback("adopt")}
+          onClick={() => choose("adopt")}
+        />
+      }
+      startOver={
+        <ActionControl
+          label="Start over"
+          disabled={action.busy}
+          {...feedback("start_over")}
+          onClick={() => choose("start_over")}
+        />
+      }
+    />
+  );
 }
 
 function Tile({
@@ -190,7 +287,12 @@ function Manager({
   observed,
   applyControl,
   footer: host,
-}: ImageManagerProps & { initial: ImageManagerState }) {
+  notice,
+}: ImageManagerProps & {
+  initial: ImageManagerState;
+  /** What the choice made for another project's saved work did. */
+  notice: string;
+}) {
   const [listRevision, setListRevision] = useState(0);
   const [compare, setCompare] = useState<ImageAsset | null>(null);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
@@ -353,21 +455,23 @@ function Manager({
         name,
       );
   };
-  const scanNewInventory = useEffectEvent(() => {
+  // A project's first visit indexes its images once. What opened the
+  // manager, such as setting earlier work aside, reports as its result.
+  const opened = useEffectEvent(() => {
     if (
       state.profile.supported &&
       !state.inventoryRevision &&
       !state.counts.indexed &&
       !state.job
     )
-      void perform("scan");
+      void perform("scan", {}, notice);
+    else if (notice) action.succeed(notice, "opened");
   });
-  // A project's first visit indexes its images once.
   const initialScan = useRef(false);
   useEffect(() => {
     if (initialScan.current) return;
     initialScan.current = true;
-    scanNewInventory();
+    opened();
   }, []);
   const saveFolder = () =>
     action.run(

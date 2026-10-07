@@ -22,6 +22,7 @@ export function pluginsView(w: GuidedWorkspace): TaskView {
       projectId={project.id}
       observed={application.snapshot?.plugins}
       error={application.snapshot?.pluginsError}
+      foreign={application.snapshot?.pluginsForeign}
       footerTarget={taskFooter}
       backControl={back()}
       beforeAction={flushDrafts}

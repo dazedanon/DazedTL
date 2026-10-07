@@ -31,6 +31,17 @@ export type ExportedFiles = {
   files: number;
 };
 
+/** Work the game folder holds for another project or app version, and the
+choice offered for it. */
+export type ForeignWork = {
+  binding: string;
+  saved: string;
+  archive: string;
+  blocked: string;
+  applied: number;
+  restorable: number;
+};
+
 export type Progress = {
   current: number;
   total: number;
@@ -1397,6 +1408,11 @@ export type ImageManagerState = {
   job?: ImageJob | null;
 };
 
+export type ImageForeignWork = ForeignWork & {
+  examined: number;
+  edited: number;
+};
+
 export type ImageDraft = {
   selection: string[];
   view: ImageView;
@@ -1724,6 +1740,7 @@ export type PluginReceipt = {
   conflicts: string[];
   manifest: string;
   restorable: boolean;
+  restoreIssue?: string;
 };
 
 export type PluginCounts = {
@@ -1763,6 +1780,11 @@ export type PluginState = {
   receipts: PluginReceipt[];
   requestPaths: Record<string, string>;
   activeRequest: string;
+};
+
+export type PluginForeignWork = ForeignWork & {
+  investigated: number;
+  translated: number;
 };
 
 export type PluginList = {
@@ -1857,8 +1879,10 @@ export type WorkspaceSnapshot = {
   translationError: string;
   images?: ImageManagerState | null;
   imagesError?: string;
+  imagesForeign?: ImageForeignWork;
   plugins?: PluginState | null;
   pluginsError?: string;
+  pluginsForeign?: PluginForeignWork;
 };
 
 export type ProjectRequest = {
@@ -1911,6 +1935,11 @@ export type ActionRequest = {
   project_id: string;
   action: string;
   options?: Record<string, unknown>;
+};
+
+export type ForeignWorkRequest = {
+  project_id: string;
+  binding: string;
 };
 
 export type PluginsContinueRequest = {
@@ -2467,6 +2496,11 @@ export type RpcContract = {
   images_preview: { request: ImagesPreviewRequest; response: ImagePixels };
   images_update: { request: ImagesUpdateRequest; response: ImageManagerState };
   images_action: { request: ActionRequest; response: ImageActionResult };
+  images_adopt: { request: ForeignWorkRequest; response: ImageActionResult };
+  images_start_over: {
+    request: ForeignWorkRequest;
+    response: ImageActionResult;
+  };
   images_editor_state: {
     request: ImagesEditorStateRequest;
     response: ImageEditorState;
@@ -2502,6 +2536,11 @@ export type RpcContract = {
   plugins_action: { request: ActionRequest; response: PluginActionResult };
   plugins_continue: {
     request: PluginsContinueRequest;
+    response: PluginActionResult;
+  };
+  plugins_adopt: { request: ForeignWorkRequest; response: PluginActionResult };
+  plugins_start_over: {
+    request: ForeignWorkRequest;
     response: PluginActionResult;
   };
 };

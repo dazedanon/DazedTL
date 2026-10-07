@@ -34,3 +34,19 @@ class Saved(TypedDict):
 class ExportedFiles(TypedDict):
     path: str
     files: int
+
+
+class ForeignWork(TypedDict):
+    """Work the game folder holds for another project or app version, and the
+    choice offered for it."""
+
+    # What the user was shown; adopting or starting over repeats it.
+    binding: str
+    saved: str
+    # Where starting over moves it, inside the game folder.
+    archive: str
+    # Why the work cannot be used here, or empty.
+    blocked: str
+    applied: int
+    # Applications that stay restorable once the work is used here.
+    restorable: int

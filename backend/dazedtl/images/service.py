@@ -3,17 +3,21 @@
 import base64
 import hashlib
 import json
+import sqlite3
 import threading
 import time
 import uuid
+from contextlib import closing
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
+from dazedtl import foreign_work
 from dazedtl.compatibility.images import ImageCompatibility
+from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
-from dazedtl.translation.files import digest, project_path, read_json
+from dazedtl.translation.files import decode_json, digest, project_path, read_json
 from dazedtl.translation.operations import lifecycle, require_source_backup
 
 from .inventory import Index, PreviewCache, inspect_row, png_metadata, sha_file
@@ -105,6 +109,7 @@ class ImageService:
         self.previews = {}
         self.mutating = set()
         self.threads = {}
+        self.foreign = {}
 
     def close(self):
         for event in self.cancellations.values():
@@ -137,14 +142,14 @@ class ImageService:
         _project, root = self.record(project_id)
         path = project_path(root, WORK + "/state.json", exists=False)
         if path.exists():
-            value = read_json(path, limit=16_000_000)
-            if (
-                not isinstance(value, dict)
-                or value.get("version") != 1
-                or value.get("projectId") != project_id
-            ):
-                raise ValueError(
-                    "Image progress belongs to another project or app version. Its files were retained."
+            try:
+                value = read_json(path, limit=16_000_000)
+            except ValueError:
+                value = None
+            if not foreign_work.owned(value, project_id):
+                raise ForeignWorkError(
+                    "Image work in this game folder was saved by another project or app version. Its files were kept; choose how to continue in Images.",
+                    self._foreign_summary(project_id, root, path, value),
                 )
             return value
         return {
@@ -169,6 +174,104 @@ class ImageService:
 
     def _save(self, project_id, value):
         write_json(self.workspace(project_id) / "state.json", value)
+
+    def _foreign_summary(self, project_id, root, path, value):
+        """What another project's saved image work holds, and whether it can be
+        used here. Snapshots ask often, so it is kept until its files change."""
+        inventory = project_path(root, WORK + "/inventory.sqlite3", exists=False)
+        signature = [
+            (item.stat().st_mtime_ns, item.stat().st_size) if item.exists() else None
+            for item in (path, inventory)
+        ]
+        saved = self.foreign.get(project_id)
+        if saved and saved[0] == signature:
+            return saved[1]
+        counts = {"examined": 0, "edited": 0, "applied": 0, "restorable": 0}
+        blocked = ""
+        try:
+            if not foreign_work.readable(value):
+                raise TypeError
+            if inventory.is_file():
+                with closing(
+                    sqlite3.connect(inventory.as_uri() + "?mode=ro", uri=True)
+                ) as db:
+                    for (raw,) in db.execute("SELECT data FROM assets"):
+                        row = json.loads(raw)
+                        applied = (row.get("applied") or {}).get("runtimeHash")
+                        counts["examined"] += bool(
+                            (row.get("finding") or {}).get("examined")
+                        )
+                        counts["edited"] += bool(row.get("changed"))
+                        counts["applied"] += bool(applied)
+                        # Restores need only the original saved in the game folder.
+                        counts["restorable"] += bool(
+                            applied
+                            and row.get("runtimeBackup")
+                            and applied == row.get("sourceHash")
+                        )
+            if value["pendingPublications"]:
+                blocked = foreign_work.INTERRUPTED
+        except AttributeError, KeyError, TypeError, ValueError, sqlite3.Error:
+            blocked = foreign_work.UNREADABLE
+        summary = {**foreign_work.summary(path), **counts, "blocked": blocked}
+        self.foreign[project_id] = (signature, summary)
+        return summary
+
+    def _foreign_state(self, project_id, binding):
+        """Another project's saved work and its summary, as the user was shown them."""
+        try:
+            self._load(project_id)
+        except ForeignWorkError as exc:
+            path = self.workspace(project_id) / "state.json"
+            return foreign_work.reviewed(path, exc.summary, binding), exc.summary
+        raise ValueError("This project's image work is already in use.")
+
+    def adopt(self, project_id, binding):
+        """Takes over another project's saved work after the user chose it.
+
+        Selection, findings, edited copies, reviews and application records
+        carry over, and restores keep the originals saved in the game folder.
+        Copied tasks do not: their requests are bound to the other project, so
+        they are never handed out again or their reports accepted, and the next
+        copy resumes from them.
+        """
+        with self.lock:
+            raw, summary = self._foreign_state(project_id, binding)
+            if summary["blocked"]:
+                raise ValueError(summary["blocked"])
+            value = decode_json(raw)
+            previous = value["projectId"]
+            for entry in value["requests"].values():
+                entry["carried"] = True
+            for kind in ("discovery", "editing"):
+                if value[kind]["status"] == "awaiting_results":
+                    value[kind]["status"] = "idle"
+                value[kind].pop("rejected", None)
+                value[kind].pop("rejectedHash", None)
+            value.update(
+                projectId=project_id, adopted={"projectId": previous, "saved": now()}
+            )
+            self._save(project_id, value)
+            self.indexes.pop(project_id, None)
+            self.foreign.pop(project_id, None)
+            return {
+                "state": self.state(project_id),
+                "message": "Saved image work is now used here.",
+            }
+
+    def start_over(self, project_id, binding):
+        """Moves another project's saved work aside, keeping every file."""
+        with self.lock:
+            self._foreign_state(project_id, binding)
+            archived = foreign_work.archive(
+                self.record(project_id)[1], WORK, "image-work"
+            )
+            for cache in (self.indexes, self.jobs, self.foreign):
+                cache.pop(project_id, None)
+            return {
+                "state": self.state(project_id),
+                "message": "Earlier image work moved to " + archived + ".",
+            }
 
     @staticmethod
     def _preferences_revision(value):
@@ -612,7 +715,10 @@ class ImageService:
         """
         with self.lock:
             self.record(project_id)
-            value = self._load(project_id)
+            try:
+                value = self._load(project_id)
+            except ForeignWorkError:
+                return 0  # Nothing is worked on here until the user chooses.
             if (
                 project_id in self.mutating
                 or self.jobs.get(project_id, {}).get("status") == "running"
@@ -636,10 +742,13 @@ class ImageService:
         it is reported once and not retried until the file changes."""
         root = self.record(project_id)[1]
         for kind in ("discovery", "editing"):
-            task = self._load(project_id)[kind]
+            value = self._load(project_id)
+            task = value[kind]
             if task.get("status") not in {"awaiting_results", "partial"}:
                 continue
-            if not task.get("requestId"):
+            entry = value["requests"].get(task.get("requestId"))
+            # Another project's task reports only after it is copied again here.
+            if not entry or entry.get("carried"):
                 continue
             path = project_path(
                 root, WORK + "/reports/" + task["requestId"] + ".json", exists=False
@@ -1079,8 +1188,9 @@ class ImageService:
         )
         guidance = self._guidance(project_id)
         previous_id = value[kind].get("requestId", "")
-        if previous_id and previous_id in value["requests"]:
-            previous_entry = value["requests"][previous_id]
+        previous_entry = value["requests"].get(previous_id)
+        # A task taken over from another project is resumed, never handed out again.
+        if previous_entry and not previous_entry.get("carried"):
             previous_path = project_path(root, previous_entry["path"])
             previous = read_json(previous_path, limit=48_000_000)
             current_bindings = [(row["id"], row["sourceHash"]) for row in rows]
@@ -1301,7 +1411,8 @@ class ImageService:
         value = self._load(project_id)
         identity = value[kind].get("requestId")
         entry = value["requests"].get(identity)
-        if not entry:
+        # A task taken over from another project reports only once copied here.
+        if not entry or entry.get("carried"):
             raise ValueError(
                 "Copy a scoped " + kind + " task before refreshing its report."
             )

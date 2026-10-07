@@ -498,6 +498,7 @@ function Workspace({
                 key={project.id}
                 projectId={project.id}
                 observed={application.snapshot?.images}
+                foreign={application.snapshot?.imagesForeign}
                 footer={{
                   target: imageFooter,
                   next: (variant) =>

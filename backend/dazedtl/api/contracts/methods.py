@@ -146,6 +146,11 @@ class ActionRequest(TypedDict):
     options: NotRequired[dict[str, object]]
 
 
+class ForeignWorkRequest(TypedDict):
+    project_id: str
+    binding: str
+
+
 class PluginsContinueRequest(TypedDict):
     project_id: str
     request_id: str
@@ -630,6 +635,8 @@ METHODS: dict[str, Method] = {
     "images_preview": Method(ImagesPreviewRequest, ImagePixels, refresh=False),
     "images_update": Method(ImagesUpdateRequest, ImageManagerState, during_close=True),
     "images_action": Method(ActionRequest, ImageActionResult),
+    "images_adopt": Method(ForeignWorkRequest, ImageActionResult),
+    "images_start_over": Method(ForeignWorkRequest, ImageActionResult),
     "images_editor_state": Method(
         ImagesEditorStateRequest, ImageEditorState, refresh=False
     ),
@@ -658,4 +665,6 @@ METHODS: dict[str, Method] = {
     "plugins_update": Method(PluginsUpdateRequest, PluginState),
     "plugins_action": Method(ActionRequest, PluginActionResult),
     "plugins_continue": Method(PluginsContinueRequest, PluginActionResult),
+    "plugins_adopt": Method(ForeignWorkRequest, PluginActionResult),
+    "plugins_start_over": Method(ForeignWorkRequest, PluginActionResult),
 }

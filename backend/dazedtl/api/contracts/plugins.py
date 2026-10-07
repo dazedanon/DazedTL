@@ -2,6 +2,8 @@
 
 from typing import Literal, NotRequired, TypedDict
 
+from dazedtl.api.contracts.common import ForeignWork
+
 
 class PluginFinding(TypedDict):
     disposition: str
@@ -101,6 +103,8 @@ class PluginReceipt(TypedDict):
     conflicts: list[str]
     manifest: str
     restorable: bool
+    # Why an application taken over from another project cannot be restored.
+    restoreIssue: NotRequired[str]
 
 
 class PluginCounts(TypedDict):
@@ -140,6 +144,11 @@ class PluginState(TypedDict):
     receipts: list[PluginReceipt]
     requestPaths: dict[str, str]
     activeRequest: str
+
+
+class PluginForeignWork(ForeignWork):
+    investigated: int
+    translated: int
 
 
 class PluginList(TypedDict):
