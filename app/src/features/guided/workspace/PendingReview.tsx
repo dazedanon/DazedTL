@@ -68,8 +68,9 @@ export function PendingReview({ pending }: { pending: PendingChanges }) {
           <details
             key={part.id}
             className="pending-part"
-            // The first part opens; the rest stay closed until wanted.
-            open={index === 0 && !!part.preview}
+            // The first part opens, and a blocked part shows its reason; the
+            // rest stay closed until wanted.
+            open={part.state === "blocked" || (index === 0 && !!part.preview)}
           >
             <summary>
               <StatusHeading

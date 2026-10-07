@@ -210,15 +210,12 @@ export function usePendingChanges({
       });
   /**
    * The parts a new review would retry: those not applied, except rewraps
-   * and QA fixes held for a text apply that went in, which need a new check.
+   * and QA fixes held for parts that went in, which need a new check.
    */
+  const applied = (review || []).some((part) => part.state === "applied");
   const remaining = (review || [])
     .filter((part) => part.state !== "applied")
-    .filter(
-      (part) =>
-        !part.held ||
-        !review!.some((item) => item.id === "text" && item.state === "applied"),
-    );
+    .filter((part) => !part.held || !applied);
   return {
     review,
     attempted,

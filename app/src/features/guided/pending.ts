@@ -54,11 +54,22 @@ export function pendingParts({
   /** Parts left out of this apply. */
   excluded?: ReadonlySet<PendingPartId>;
 }): PendingPart[] {
-  const text = !excluded.has("text") && unapplied.length > 0;
-  // Both were checked against the game's current text, which the text part
-  // replaces, so they wait for it and are checked again afterwards.
-  const after = (what: string) =>
-    text ? `Waits for the text apply; ${what} again afterwards.` : "";
+  const included = (id: PendingPartId, count: number) =>
+    !excluded.has(id) && count > 0;
+  const text = included("text", unapplied.length);
+  // Rewraps were checked against the game's text, which the text part
+  // replaces. QA was checked against the text and plugin files, which the
+  // plugin, text and rewrap parts all change, so it waits for any of them.
+  // Each is checked again afterwards.
+  const before = [
+    included("plugins", plugins) && "plugin files",
+    text && "translated text",
+    included("rewraps", rewraps?.changes || 0) && "line rewraps",
+  ].filter((name): name is string => !!name);
+  const after = (waits: string[], what: string) =>
+    waits.length
+      ? `Waits for the ${new Intl.ListFormat("en", { type: "conjunction" }).format(waits)} in this apply; ${what} again afterwards.`
+      : "";
   const parts: PendingPart[] = [];
   if (plugins)
     parts.push({
@@ -94,7 +105,7 @@ export function pendingParts({
       count: rewraps.changes,
       summary: plural(rewraps.changes, "line rewrap"),
       files: rewraps.files,
-      held: after("check line widths"),
+      held: after(text ? ["translated text"] : [], "check line widths"),
     });
   if (qa?.fixes)
     parts.push({
@@ -103,14 +114,11 @@ export function pendingParts({
       count: qa.fixes,
       summary: plural(qa.fixes, "QA fix", "QA fixes"),
       files: qa.files,
-      held: after("prepare QA"),
+      held: after(before, "prepare QA"),
     });
   return parts;
 }
 
-/** The parts an apply includes, in words: "12 files, 1 image, 3 QA fixes". */
-export const pendingSummary = (parts: PendingPart[]) =>
-  parts.map((part) => part.summary).join(", ");
 /**
  * What a text, rewrap or QA review would write, so a fresh preview taken just
  * before Apply can be compared with the reviewed one. It binds the exact
@@ -123,3 +131,7 @@ export const reviewSignature = (preview: Preview) =>
     preview.rewrap?.previews.map((row) => [row.file_name, row.after]),
     preview.publication?.map((row) => [row.path, row.before, row.after]),
   ]);
+
+/** The parts an apply includes, in words: "12 files, 1 image, 3 QA fixes". */
+export const pendingSummary = (parts: PendingPart[]) =>
+  parts.map((part) => part.summary).join(", ");

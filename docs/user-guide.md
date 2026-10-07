@@ -115,7 +115,7 @@ Check has three tasks: **Pending changes**, **Line width check** and the optiona
 **Pending changes** lists everything reviewed and waiting to go into the game: translated text files, plugin files, images, line rewraps and QA fixes.
 **Review & apply** opens one review of every part, and **Apply all** applies them in order, with each part's result beside it; **Leave out** keeps a part for later.
 A part that did not apply leaves the game unchanged, and **Review again** prepares a new review of the parts left.
-Line rewraps and QA fixes wait while translated text is applied with them, because they were checked against the text it replaces; check line widths or prepare QA again afterwards.
+Line rewraps wait while translated text is applied with them, and QA fixes wait while text, rewraps or plugin files are applied with them, because each was checked against the game files those parts change; check line widths or prepare QA again afterwards.
 The Review & apply buttons in Images, Plugin files, Line width check and Text QA open the same review for their own part.
 Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
 You can apply saved partial translations while Batch work continues.

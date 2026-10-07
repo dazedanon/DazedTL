@@ -250,7 +250,7 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
 });
 
-test("pending changes hold rewraps and QA fixes back while text is applied with them", () => {
+test("pending changes hold rewraps and QA fixes back until the parts they were checked against apply", () => {
   const input = {
     unapplied: ["Map001.json"],
     plugins: 0,
@@ -262,9 +262,18 @@ test("pending changes hold rewraps and QA fixes back while text is applied with 
     parts.filter((part) => part.held).map((part) => part.id);
   // Both were checked against the text the text apply replaces.
   assert.deepEqual(held(pendingParts(input)), ["rewraps", "qa"]);
-  // Leaving the text out, or having none, lets them apply.
+  // Rewraps change the text QA checked, as plugin files change what it
+  // read; images change neither.
   assert.deepEqual(
     held(pendingParts({ ...input, excluded: new Set(["text"] as const) })),
+    ["qa"],
+  );
+  assert.deepEqual(
+    held(pendingParts({ ...input, unapplied: [], rewraps: null, plugins: 2 })),
+    ["qa"],
+  );
+  assert.deepEqual(
+    held(pendingParts({ ...input, unapplied: [], rewraps: null })),
     [],
   );
   assert.equal(
