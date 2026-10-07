@@ -205,8 +205,8 @@ class PublicationTests(unittest.TestCase):
             p.publish(self.folder, self.root, plan)
 
     def test_saved_qa_findings_reach_the_app_as_contract_findings(self):
-        # Engine findings also carry cluster, family, severity and target
-        # fields; passing them through broke the workspace snapshot contract.
+        # Engine findings and correction operations carry extra engine fields;
+        # passing them through broke the workspace snapshot contract.
         import json
         import sys
         from types import ModuleType
@@ -278,8 +278,26 @@ class PublicationTests(unittest.TestCase):
         )
         package = ModuleType("util")
         package.rpgmaker_qa = engine
+        engine._validate_correction_map = lambda document, task: None
+        write_json(
+            task_dir / "correction-map.json",
+            {
+                "operations": [
+                    {
+                        "finding_id": "QA-0001",
+                        "identity": "MapInfos.json#/1/name@a",
+                        "file": "MapInfos.json",
+                        "live_pointers": ["/1/name"],
+                        "live_transform": "identity",
+                        "expected": "Arjilee Highlands",
+                        "replacement": "Arjilee Plateau",
+                    }
+                ]
+            },
+        )
         with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
             state = text.qa_state(plan)
         _close_contracts()
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
+        self.assertEqual(state["corrections"][0]["replacement"], "Arjilee Plateau")

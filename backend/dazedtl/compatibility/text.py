@@ -23,6 +23,8 @@ FINDING_FIELDS = (
     "classification",
     "identity",
 )
+# The QaCorrection contract: what a chosen correction shows in the app.
+CORRECTION_FIELDS = ("finding_id", "file", "expected", "replacement", "identity")
 
 
 def binding(plan):
@@ -102,7 +104,11 @@ def qa_state(plan):
     if path.exists() and checkpoint["stage"] == "complete":
         document = read_json(path)
         qa._validate_correction_map(document, task)
-        corrections = document.get("operations", [])
+        # Operations also carry engine pointers and transforms for the apply.
+        corrections = [
+            {key: row[key] for key in CORRECTION_FIELDS}
+            for row in document.get("operations", [])
+        ]
     return {
         "current": current,
         "task": str(root),
