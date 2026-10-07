@@ -1020,9 +1020,11 @@ pre {
 .action-list:not(.action-list--compact):last-child {
   margin-bottom: 0;
 }
+/* The action track never grows past the actions' own width, so feedback
+   wrapping beneath a control keeps it at the row's end. */
 .action-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) fit-content(var(--action-column-width));
   align-items: center;
   gap: var(--space-2) var(--space-6);
   padding: var(--space-3) var(--space-4);
@@ -1105,7 +1107,6 @@ pre {
   background: none;
 }
 .action-list--compact > .action-row {
-  grid-template-columns: minmax(0, 1fr) fit-content(var(--action-column-width));
   gap: var(--space-3);
   padding: 0;
 }
