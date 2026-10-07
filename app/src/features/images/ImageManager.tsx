@@ -1,3 +1,4 @@
+import { PathText } from "../../ui/PathText";
 import { FileName } from "../../ui/FileName";
 import {
   useEffect,
@@ -1155,7 +1156,9 @@ function Manager({
                 placeholder="assets/images"
               />
             </label>
-            <p className="muted">Game root: {state.source}</p>
+            <p className="muted">
+              Game root: <PathText path={state.source} wrap />
+            </p>
           </DialogBody>
           <ActionBar feedback={<Message message={action.error} />}>
             <Button

@@ -21,6 +21,7 @@ import ProjectPage, { type ProjectTab } from "../features/project/ProjectPage";
 import { MethodDialog } from "../features/project/MethodDialog";
 import Translation from "../features/translation/Translation";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
+import { PathText } from "../ui/PathText";
 import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
@@ -188,7 +189,9 @@ export default function App() {
                 <FolderOpen size={16} aria-hidden="true" />
                 <span>
                   <strong>{item.name}</strong>
-                  <small title={item.source}>{item.source}</small>
+                  <small>
+                    <PathText path={item.source} />
+                  </small>
                 </span>
                 {item.id === project.id && (
                   <Check size={15} aria-label="Open now" />

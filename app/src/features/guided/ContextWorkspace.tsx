@@ -1,3 +1,4 @@
+import { PathText } from "../../ui/PathText";
 import { useMemo, useState, type ReactNode } from "react";
 import type {
   GuidedState,
@@ -102,7 +103,9 @@ export function ContextWorkspace({
               label={
                 <>
                   <strong>{row.title}</strong>
-                  <small className="context-reference-path">{row.path}</small>
+                  <small>
+                    <PathText path={row.path} />
+                  </small>
                   {!row.available && (
                     <small>
                       Folder unavailable · choose it again if it moved.

@@ -227,8 +227,10 @@ main > p {
     max-width: 350px;
   }
 }
+/* Long paths give way at their start instead of widening the menu. */
 .project-menu-item {
   min-width: min(26rem, calc(100vw - var(--space-8)));
+  max-width: min(36rem, calc(100vw - var(--space-8)));
 }
 .project-menu-item > span {
   flex: 1;

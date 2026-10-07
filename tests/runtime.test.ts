@@ -9,6 +9,7 @@ import os from "node:os";
 import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
 import { Diagnostics } from "../app/electron/diagnostics.cjs";
 import { rendererFailure } from "../app/src/app/rendererErrors.ts";
+import { homeRelative } from "../app/src/ui/displayPath.ts";
 
 const turn = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -213,4 +214,20 @@ test("Node updates can launch the app while setup retains its exact runtime pin"
   } finally {
     Object.defineProperty(process.versions, "node", descriptor);
   }
+});
+
+test("paths inside the home folder read home-relative, and only there", () => {
+  assert.equal(
+    homeRelative("/home/ana/Downloads/Game", "/home/ana"),
+    "~/Downloads/Game",
+  );
+  assert.equal(
+    homeRelative("/home/anabel/Game", "/home/ana"),
+    "/home/anabel/Game",
+  );
+  assert.equal(
+    homeRelative("c:\\users\\Ana\\Games\\X", "C:\\Users\\Ana"),
+    "~\\Games\\X",
+  );
+  assert.equal(homeRelative("/tmp/Game", ""), "/tmp/Game");
 });

@@ -50,11 +50,6 @@
 .context-references .action-list + .action-list {
   margin-top: var(--space-3);
 }
-.context-reference-path {
-  display: block;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
 .context-empty {
   padding-block: var(--space-3);
 }

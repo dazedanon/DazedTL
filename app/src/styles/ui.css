@@ -1438,10 +1438,11 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
-/* A file name shortened in the middle: the head gives way, the ending stays. */
-/* A right-to-left box puts the ellipsis at the start; a name that fits stays
-   left-aligned. */
-.file-name {
+/* A file name or path shortened at the start: the head gives way, the ending
+   that names it stays. A right-to-left box puts the ellipsis at the start; a
+   name that fits stays left-aligned. */
+.file-name,
+.path-text {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -1449,4 +1450,21 @@ pre {
   text-overflow: ellipsis;
   direction: rtl;
   text-align: left;
+}
+.path-text--wrap {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  direction: ltr;
+}
+/* A line of facts that ends in a path: the facts keep their width and the
+   path gives way. */
+.path-line {
+  display: flex;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.path-line > :not(.path-text) {
+  flex: none;
+  white-space: nowrap;
 }

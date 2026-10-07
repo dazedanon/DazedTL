@@ -6,6 +6,7 @@ import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { engineLabel } from "../../ui/displayText";
 import { Modal } from "../../ui/Modal";
 import { OptionCards } from "../../ui/OptionCards";
+import { PathText } from "../../ui/PathText";
 
 export const methodLabels: Record<TranslationMethod, string> = {
   guided: "Guided steps",
@@ -49,7 +50,12 @@ export function MethodDialog({
     >
       <DialogHeader
         title={`Translate ${project.name}`}
-        description={`${engineLabel(project.engine_label || project.engine)} · ${project.source}`}
+        description={
+          <span className="path-line">
+            <span>{engineLabel(project.engine_label || project.engine)} ·</span>
+            <PathText path={project.source} />
+          </span>
+        }
       />
       <DialogBody>
         <OptionCards

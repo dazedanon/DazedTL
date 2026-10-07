@@ -9,6 +9,7 @@ import { HelpPopover } from "../../ui/HelpPopover";
 import { JobStatus } from "../../ui/JobStatus";
 import { Notice } from "../../ui/Notice";
 import { PageBody, PageHeader, PageLayout } from "../../ui/PageLayout";
+import { PathText } from "../../ui/PathText";
 import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
@@ -74,11 +75,16 @@ export default function ProjectPage({
       <PageHeader
         title={project.name}
         description={
-          <>
-            {engineLabel(project.engine_label || project.engine)} ·{" "}
-            {project.method ? methodLabels[project.method] : "No method chosen"}{" "}
-            · <span title={project.source}>{project.source}</span>
-          </>
+          <span className="path-line">
+            <span>
+              {engineLabel(project.engine_label || project.engine)} ·{" "}
+              {project.method
+                ? methodLabels[project.method]
+                : "No method chosen"}{" "}
+              ·
+            </span>
+            <PathText path={project.source} />
+          </span>
         }
         actions={
           <div className="actions">
@@ -611,7 +617,9 @@ function NoProject({
                 <Folder size={17} aria-hidden="true" />
                 <span>
                   <strong>{item.name}</strong>
-                  <small title={item.source}>{item.source}</small>
+                  <small>
+                    <PathText path={item.source} />
+                  </small>
                 </span>
                 <ArrowRight size={15} aria-hidden="true" />
               </Button>

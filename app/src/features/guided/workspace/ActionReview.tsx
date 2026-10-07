@@ -6,6 +6,7 @@ import { Button } from "../../../ui/Button";
 import { Message } from "../../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
+import { PathText } from "../../../ui/PathText";
 import { VirtualList } from "../../../ui/VirtualList";
 import { ReleaseReview } from "../Release";
 import { TranslationCost } from "../TranslationReview";
@@ -90,7 +91,11 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
         )}
         {!["release", "release_patch", "refresh_sources"].includes(
           preview.action,
-        ) && <p className="path">{preview.destination}</p>}
+        ) && (
+          <p className="path">
+            <PathText path={preview.destination} wrap />
+          </p>
+        )}
         {preview.action === "start" && (
           <>
             <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>

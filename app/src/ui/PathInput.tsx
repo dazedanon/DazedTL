@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, type ComponentProps } from "react";
 
 /**
  * A path field that shows the end of a long path, where the folder or file
- * name is, whenever the reader is not editing it.
+ * name is, whenever the reader is not editing it, including after the window
+ * resizes.
  */
 export function PathInput(props: ComponentProps<"input">) {
   const input = useRef<HTMLInputElement>(null);
@@ -11,6 +12,16 @@ export function PathInput(props: ComponentProps<"input">) {
     if (element && document.activeElement !== element)
       element.scrollLeft = element.scrollWidth;
   }, [props.value]);
+  useLayoutEffect(() => {
+    const element = input.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (document.activeElement !== element)
+        element.scrollLeft = element.scrollWidth;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   return (
     <input
       {...props}

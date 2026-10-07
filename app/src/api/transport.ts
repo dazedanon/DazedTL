@@ -23,6 +23,8 @@ type Envelope =
 declare global {
   interface Window {
     dazedtl: {
+      /** The user's home folder, for showing paths home-relative. */
+      home: string;
       call(version: string, method: string, params: object): Promise<Envelope>;
       ready(): Promise<void>;
       copyDiagnostics(): Promise<void>;

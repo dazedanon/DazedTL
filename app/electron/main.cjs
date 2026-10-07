@@ -7,6 +7,7 @@ const {
   clipboard,
   screen,
 } = require("electron");
+const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
 const { Backend } = require("./backend.cjs");
@@ -120,6 +121,9 @@ app
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
+        // Paths read home-relative in the interface; the sandboxed preload
+        // has no access to the OS module.
+        additionalArguments: [`--dazedtl-home=${os.homedir()}`],
       },
     });
     const fitMinimumSize = () => {

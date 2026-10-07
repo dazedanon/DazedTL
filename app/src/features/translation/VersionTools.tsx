@@ -1,3 +1,4 @@
+import { PathText } from "../../ui/PathText";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { TranslationState } from "../../api/contracts";
@@ -127,7 +128,7 @@ export function VersionTools({
         </div>
         {state.lifecycle.delivery && (
           <p className="translation-path">
-            Last package: {state.lifecycle.delivery.path}
+            Last package: <PathText path={state.lifecycle.delivery.path} wrap />
           </p>
         )}
       </Section>

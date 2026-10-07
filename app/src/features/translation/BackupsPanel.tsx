@@ -1,3 +1,4 @@
+import { PathText } from "../../ui/PathText";
 import { FolderOpen } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/client";
@@ -369,7 +370,8 @@ export function BackupsPanel({
         {typeof selectedRestore?.result?.path === "string" &&
           selectedRestore.status === "complete" && (
             <p className="translation-path">
-              Last recovery saved to: {selectedRestore.result.path}
+              Last recovery saved to:{" "}
+              <PathText path={String(selectedRestore.result.path)} wrap />
             </p>
           )}
       </Section>

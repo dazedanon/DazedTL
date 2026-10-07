@@ -10,7 +10,11 @@ const invoke = (channel, ...args) =>
       ),
     );
   });
+const homeArgument = "--dazedtl-home=";
 contextBridge.exposeInMainWorld("dazedtl", {
+  home: (
+    process.argv.find((value) => value.startsWith(homeArgument)) || ""
+  ).slice(homeArgument.length),
   call: (version, method, params = {}) =>
     invoke("dazedtl:call", version, method, params),
   ready: () => invoke("dazedtl:ready"),

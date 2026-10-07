@@ -1,3 +1,4 @@
+import { PathText } from "../../ui/PathText";
 import { PathInput } from "../../ui/PathInput";
 import type { ReactNode } from "react";
 import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
@@ -223,7 +224,9 @@ export function ReleaseContent({
                           ? "Game files changed since this build"
                           : "Available on disk"}
                   </small>
-                  <small className="path">{artifact.path}</small>
+                  <small>
+                    <PathText path={artifact.path} />
+                  </small>
                   {artifact.available && !artifact.current && (
                     <small>
                       {artifact.current === false
@@ -271,13 +274,19 @@ export function ReleaseReview({
               ? "An archive already exists here"
               : "Replace an existing ZIP"}
           </strong>
-          <p className="path">{preview.destination}</p>
+          <p className="path">
+            <PathText path={preview.destination} wrap />
+          </p>
           <small>
             The previous ZIP stays in place until the new archive is complete.
           </small>
         </div>
       )}
-      {!preview.overwrite && <p className="path">{preview.destination}</p>}
+      {!preview.overwrite && (
+        <p className="path">
+          <PathText path={preview.destination} wrap />
+        </p>
+      )}
       {/* Only a patch has assets to edit; a bare count needs no panel. */}
       {patch ? (
         <ActionList>
