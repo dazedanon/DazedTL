@@ -50,10 +50,15 @@ export function versionSession(
       "version_abort",
     ].includes(job.action || ""),
   );
+  // History alone can outlive the update: a reset or restored repository no
+  // longer carries the version the job applied.
   const finished =
     mutation?.status === "complete" &&
     ["version_apply", "version_continue"].includes(mutation.action || "") &&
-    mutation.result?.complete === true;
+    mutation.result?.complete === true &&
+    (!git?.original_version ||
+      typeof mutation.result?.version !== "string" ||
+      mutation.result.version === git.original_version);
   const aborted =
     mutation?.action === "version_abort" && mutation.status === "complete";
   const matchesStage =

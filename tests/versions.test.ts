@@ -9,6 +9,20 @@ import {
   updateCounts,
 } from "../app/src/features/translation/versionState.ts";
 
+test("an applied update counts as done only while the repository is at that version", () => {
+  const apply = {
+    id: "apply",
+    kind: "operation",
+    action: "version_apply",
+    status: "complete",
+    result: { complete: true, version: "1.10" },
+  } as unknown as TranslationJob;
+  const at = (version: string) =>
+    ({ original_version: version }) as TranslationState["git"];
+  assert.equal(versionSession([apply], at("1.10")).finished, true);
+  assert.equal(versionSession([apply], at("1.00")).finished, false);
+});
+
 test("a new or failed release attempt cannot offer an older comparison for application", () => {
   const git = {
     original_commit: "original",
