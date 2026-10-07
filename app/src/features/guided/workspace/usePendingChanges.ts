@@ -15,6 +15,7 @@ import {
   type PendingPart,
   type PendingPartId,
   pendingSummary,
+  reviewSignature,
 } from "../pending";
 
 /** A part of an open pending changes review, and how its apply went. */
@@ -30,20 +31,6 @@ export type GuidedRequest = {
   options: Record<string, unknown>;
   files?: string[];
 };
-
-/**
- * Text, rewraps and QA fixes share the Guided review, which keeps one
- * preview at a time, so their review content is compared again with a fresh
- * preview just before each executes. Images and plugin files keep their
- * own one-use tokens.
- */
-const signature = (preview: Preview) =>
-  JSON.stringify([
-    preview.action,
-    [...preview.paths].sort(),
-    preview.rewrap?.previews.map((row) => [row.file_name, row.after]),
-    preview.publication?.map((row) => [row.path, row.diff]),
-  ]);
 
 /**
  * One review and one Apply for everything waiting to go into the game. Each
@@ -124,12 +111,16 @@ export function usePendingChanges({
       return;
     }
     const request = guided(part);
+    // Text, rewraps and QA fixes share the Guided review, which keeps one
+    // preview at a time, so each is previewed again just before it runs and
+    // must match what was reviewed. Images and plugin files keep their own
+    // one-use tokens.
     const fresh = await preparePreview(
       request.name,
       request.options,
       request.files,
     );
-    if (signature(fresh) !== signature(part.preview as Preview))
+    if (reviewSignature(fresh) !== reviewSignature(part.preview as Preview))
       throw new Error(
         `${part.title} changed since you reviewed it. Review it again.`,
       );

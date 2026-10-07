@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   GuidedState,
+  Preview,
   ImageManagerState,
   TranslationState,
 } from "../app/src/api/contracts.ts";
@@ -17,6 +18,7 @@ import { guidedProgress } from "../app/src/features/guided/progress.ts";
 import {
   pendingParts,
   pendingSummary,
+  reviewSignature,
 } from "../app/src/features/guided/pending.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
@@ -268,5 +270,26 @@ test("pending changes hold rewraps and QA fixes back while text is applied with 
   assert.equal(
     pendingSummary(pendingParts({ ...input, unapplied: [] })),
     "1 image, 7 line rewraps, 3 QA fixes",
+  );
+});
+
+test("a text review re-checked before Apply notices changes past the visible diff", () => {
+  const preview = (after: string) =>
+    ({
+      action: "export_selected",
+      paths: ["Map038.json"],
+      // A large file's diff is cut off, so both reviews show the same text.
+      publication: [
+        {
+          path: "data/Map038.json",
+          before: "b",
+          after,
+          diff: "@@ first 16,000 characters",
+        },
+      ],
+    }) as unknown as Preview;
+  assert.notEqual(
+    reviewSignature(preview("reviewed")),
+    reviewSignature(preview("changed later")),
   );
 });

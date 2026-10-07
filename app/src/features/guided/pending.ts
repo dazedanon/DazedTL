@@ -1,5 +1,7 @@
 /** Everything reviewed and waiting to go into the game, from observed state. */
 
+import type { Preview } from "../../api/contracts.ts";
+
 export type PendingPartId = "plugins" | "images" | "text" | "rewraps" | "qa";
 
 export interface PendingPart {
@@ -109,3 +111,15 @@ export function pendingParts({
 /** The parts an apply includes, in words: "12 files, 1 image, 3 QA fixes". */
 export const pendingSummary = (parts: PendingPart[]) =>
   parts.map((part) => part.summary).join(", ");
+/**
+ * What a text, rewrap or QA review would write, so a fresh preview taken just
+ * before Apply can be compared with the reviewed one. It binds the exact
+ * bytes by hash: the visible diff is cut off on large files.
+ */
+export const reviewSignature = (preview: Preview) =>
+  JSON.stringify([
+    preview.action,
+    [...preview.paths].sort(),
+    preview.rewrap?.previews.map((row) => [row.file_name, row.after]),
+    preview.publication?.map((row) => [row.path, row.before, row.after]),
+  ]);
