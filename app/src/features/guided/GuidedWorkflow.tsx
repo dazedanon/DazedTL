@@ -74,7 +74,7 @@ function Workspace(
     setEditorAssets,
     setTaskFooter,
     preview,
-    baselineNotice,
+    setupNotice,
     bodyRef,
     headingRef,
     preserved,
@@ -279,9 +279,9 @@ function Workspace(
                     )}
                 </Notice>
               )}
-            {baselineNotice && taskId === "names" && (
+            {setupNotice && taskId === "names" && (
               <p className="guided-success" role="status">
-                {baselineNotice}
+                {setupNotice}
               </p>
             )}
             <ErrorBoundary resetKey={`${taskId}:${taskView}`} label="This task">

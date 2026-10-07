@@ -67,8 +67,7 @@ export function completedTasks(
   const imageCounts =
     images && images.projectId === state.projectId ? images.counts : null;
   return new Set<string>([
-    ...(preserved ? ["backup"] : []),
-    ...(baseline ? ["baseline"] : []),
+    ...(baseline ? ["setup"] : []),
     ...(applied ? ["apply"] : []),
     ...(phaseComplete("database") ? ["database"] : []),
     ...(phaseComplete("dialogue") ? ["dialogue"] : []),
@@ -80,7 +79,6 @@ export function completedTasks(
     ...(investigationResults(state).every((row) => row.saved) ? ["names"] : []),
     ...(guidanceAvailability(discovery.documents).complete ? ["guidance"] : []),
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
-    ...(state.preparation.complete || baseline ? ["format"] : []),
     ...(state.tools?.inspector.installed && state.tools.forge.installed
       ? ["tools"]
       : []),
@@ -102,9 +100,7 @@ export function completedTasks(
 // Required tasks; optional work such as Plugin text, Images and Release can be
 // done but never blocks "next".
 const tracked = new Set([
-  "backup",
-  "format",
-  "baseline",
+  "setup",
   "names",
   "guidance",
   "speakers",

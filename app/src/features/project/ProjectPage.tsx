@@ -511,7 +511,7 @@ function ProjectVersions({
           project={project}
           state={translation}
           onBackups={onBackups}
-          onPrepare={guided ? () => openTask("prepare", "baseline") : undefined}
+          onPrepare={guided ? () => openTask("prepare", "setup") : undefined}
           onCheckpoint={
             guided
               ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })

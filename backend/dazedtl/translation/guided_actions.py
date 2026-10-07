@@ -695,7 +695,10 @@ class GuidedActions:
                     )
                 )
                 if action == "backup_source"
-                else not (action == "start" and options["mode"] == "estimate")
+                # Setup saves the version from the form it shows, right after
+                # backing up and preparing; execution rechecks the same scope.
+                else action != "git_setup"
+                and not (action == "start" and options["mode"] == "estimate")
             ),
             "package": {
                 "included": len(paths),

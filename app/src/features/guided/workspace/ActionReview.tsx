@@ -48,20 +48,18 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
   return (
     <Modal
       label={
-        preview.action === "git_setup"
-          ? "Review version baseline"
-          : preview.action === "release_patch"
+        preview.action === "release_patch"
+          ? inspectRelease
+            ? "Archive contents"
+            : "Review patch ZIP"
+          : preview.action === "release"
             ? inspectRelease
               ? "Archive contents"
-              : "Review patch ZIP"
-            : preview.action === "release"
-              ? inspectRelease
-                ? "Archive contents"
-                : "Replace game ZIP"
-              : "Review translation action"
+              : "Replace game ZIP"
+            : "Review translation action"
       }
       size="md"
-      className={`guided-sheet${paid ? " translation-review" : ""}${preview.action === "git_setup" ? " guided-baseline-review" : ["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`}
+      className={`guided-sheet${paid ? " translation-review" : ""}${["release", "release_patch"].includes(preview.action) ? " guided-release-review" : ""}`}
       dismissible={!action.busy}
       onDismiss={cancelPreview}
     >
@@ -90,32 +88,9 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             }}
           />
         )}
-        {preview.action === "git_setup" ? (
-          <>
-            <p>
-              Check the version, original source and runtime files before
-              saving.
-            </p>
-            <dl className="guided-baseline-summary">
-              <div>
-                <dt>Game version</dt>
-                <dd>{String(preview.options.version)}</dd>
-              </div>
-              <div>
-                <dt>Original source</dt>
-                <dd>
-                  {preview.options.untranslated
-                    ? `This untranslated game, after preparation: ${preview.destination}`
-                    : String(preview.options.original)}
-                </dd>
-              </div>
-            </dl>
-          </>
-        ) : (
-          !["release", "release_patch", "refresh_sources"].includes(
-            preview.action,
-          ) && <p className="path">{preview.destination}</p>
-        )}
+        {!["release", "release_patch", "refresh_sources"].includes(
+          preview.action,
+        ) && <p className="path">{preview.destination}</p>}
         {preview.action === "start" && (
           <>
             <p>Phase: {phaseLabels[preview.options.phase as Phase]}</p>
@@ -137,10 +112,8 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           !!preview.paths.length && (
             <>
               <p>
-                {fileCount(preview.files || preview.paths.length)}{" "}
-                {preview.action === "git_setup"
-                  ? "in this baseline"
-                  : "in this action"}
+                {fileCount(preview.files || preview.paths.length)} in this
+                action
               </p>
               {preview.paths.length <= 8 ? (
                 <ul
@@ -389,7 +362,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
       <ActionBar feedback={<Message message={action.error} />}>
         {!inspectRelease && (
           <Button disabled={action.busy} onClick={cancelPreview}>
-            {preview.action === "git_setup" ? "Back" : "Cancel"}
+            Cancel
           </Button>
         )}
         {!inspectRelease && (
@@ -415,17 +388,15 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
                 ? preview.action === "runtime_restore"
                   ? "Restore reviewed files"
                   : "Apply reviewed files"
-                : preview.action === "git_setup"
-                  ? "Save baseline & continue"
-                  : paid && preview.options.mode === "translate"
-                    ? "Approve and start Live API"
-                    : paid && preview.options.mode === "batch"
-                      ? "Prepare Batch for cost review"
-                      : preview.action === "refresh_sources"
-                        ? "Reload files"
-                        : ["release", "release_patch"].includes(preview.action)
-                          ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP`
-                          : preview.label || "Run this action"}
+                : paid && preview.options.mode === "translate"
+                  ? "Approve and start Live API"
+                  : paid && preview.options.mode === "batch"
+                    ? "Prepare Batch for cost review"
+                    : preview.action === "refresh_sources"
+                      ? "Reload files"
+                      : ["release", "release_patch"].includes(preview.action)
+                        ? `${preview.overwrite ? "Replace & build" : "Build"} ${preview.action === "release_patch" ? "patch" : "game"} ZIP`
+                        : preview.label || "Run this action"}
           </Button>
         )}
       </ActionBar>

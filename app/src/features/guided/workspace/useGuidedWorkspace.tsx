@@ -38,6 +38,14 @@ import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks } from "../progress";
 import { initialPosition, stagesFor } from "../workflow";
+
+/** The operations setting up a game runs, in order. */
+export const setupSteps = [
+  "backup_source",
+  "prepare_game",
+  "git_setup",
+] as const;
+export type SetupStep = (typeof setupSteps)[number];
 import {
   type GuidedIntent,
   type GuidedProps,
@@ -166,8 +174,7 @@ export function useGuidedWorkspace({
       application.navigateGuided(project.id, { contextDocument: name }),
     );
   };
-  const [baselineRun, setBaselineRun] = useState<string | null>(null);
-  const [baselineNotice, setBaselineNotice] = useState("");
+  const [setupNotice, setSetupNotice] = useState("");
   const bodyRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [inspectorReturnFocus, setInspectorReturnFocus] =
@@ -254,27 +261,24 @@ export function useGuidedWorkspace({
   const activeOperation = activity.find((item) =>
     ["ready", "running", "waiting"].includes(item.status),
   );
+  // Setup and Release show their own operations in the task, so the shared
+  // operation row above the task leaves them out.
   const localOperation =
     !panel &&
     activeOperation &&
-    ((taskId === "backup" && activeOperation.action === "backup_source") ||
-      (taskId === "format" &&
-        [
-          "prepare_game",
-          "format_data",
-          "format_plugins",
-          "gameupdate",
-        ].includes(activeOperation.action || "")) ||
+    ((taskId === "setup" &&
+      [
+        "backup_source",
+        "prepare_game",
+        "format_data",
+        "format_plugins",
+        "gameupdate",
+        "git_setup",
+      ].includes(activeOperation.action || "")) ||
       (taskId === "package" &&
         ["release", "release_patch"].includes(activeOperation.action || "")))
       ? activeOperation
       : null;
-  const backupPending =
-    taskId === "backup" &&
-    (!!localOperation || (action.busy && action.key === "backup_source"));
-  const preparationPending =
-    taskId === "format" &&
-    (!!localOperation || (action.busy && action.key === "prepare_game"));
   const stopOperation = (current: Job) =>
     action.run(
       async () => {
@@ -565,6 +569,10 @@ export function useGuidedWorkspace({
     checkpointReturn.current = null;
     openProject(tab);
   };
+  // The last executed review, so a sequence waiting on a review it opened
+  // learns which operation the user's approval started.
+  const executed = useRef<{ token: string; job: Job } | null>(null);
+  const lastExecuted = () => executed.current;
   const execute = async (value: Preview) => {
     setAttemptedPreview(value.token);
     const result = await api.execute(project.id, value.token);
@@ -572,9 +580,9 @@ export function useGuidedWorkspace({
       ...previous,
       [actionKey(value.action, value.options)]: result,
     }));
+    executed.current = { token: value.token, job: result };
     setPreview(null);
     leaveCheckpoint(value.action);
-    if (value.action === "git_setup") setBaselineRun(result.id);
     if (value.action === "start") {
       if (value.options.mode !== "estimate")
         await navigate(
@@ -810,10 +818,6 @@ export function useGuidedWorkspace({
         (qaOperation && (!qa.current || current.result?.task !== qa.task)))
         ? undefined
         : current;
-    const localFeedback =
-      !panel &&
-      ((taskId === "backup" && name === "backup_source") ||
-        (taskId === "format" && name === "prepare_game"));
     if (name === "refresh_sources")
       return (
         <ActionControl
@@ -840,20 +844,7 @@ export function useGuidedWorkspace({
           onClick={() => review(name, options, files)}
         />
       );
-    if (localFeedback)
-      return (
-        <Button
-          variant={variant}
-          pending={
-            !!active || (action.busy && action.key === actionKey(name, options))
-          }
-          disabled={disabled || !!blocked}
-          onClick={() => review(name, options, files)}
-        >
-          {label}
-        </Button>
-      );
-    // Prepare reports its operations in the task's stage rows; a build
+    // Setup reports its operations in the task's step rows; a build
     // reports its progress beside its own button.
     if (localOperation?.action === name && !releaseBuild)
       return (
@@ -1139,24 +1130,137 @@ export function useGuidedWorkspace({
   const preparation = state.preparation;
   const preparationComplete = preparation.complete;
   const aceNeedsExport = state.engine === "ACE" && !state.files.length;
-  // A saved baseline continues to Context once. Failed attempts stay
-  // on this task; a later review tracks its own run.
-  const baselineSaved =
-    baseline &&
-    !!baselineRun &&
-    translation.jobs.find((item) => item.id === baselineRun)?.status ===
-      "complete";
-  const continueAfterBaseline = useEffectEvent(() => {
-    const version = translation.git?.original_version || "baseline";
-    void move("context", "names").then(() => {
-      setBaselineRun(null);
-      setBaselineNotice(`Version ${version} saved. Prepare complete.`);
-    });
-  });
+  // Setting up backs up the original, prepares the game files and saves the
+  // version in sequence from one click. Each step keeps its own preview and
+  // execution checks, and a replacement backup keeps its review. A step that
+  // fails, stops or whose review is declined ends the sequence; the next
+  // click resumes from the first step that is not done. The sequence has its
+  // own action, so navigation and Stop stay available while it runs.
+  const setupAction = useAction({ after: application.settle });
+  const gitConfigured = !!translation.git?.configured;
+  const setupStep: SetupStep | "ace" | null = !preserved
+    ? "backup_source"
+    : aceNeedsExport
+      ? "ace"
+      : !(preparationComplete || gitConfigured)
+        ? "prepare_game"
+        : !gitConfigured
+          ? "git_setup"
+          : null;
+  const setupJobs = Object.fromEntries(
+    setupSteps.map((name) => [name, operationJob(name)]),
+  ) as Record<SetupStep, Job | undefined>;
+  const setupWorking = setupSteps.some((name) =>
+    ["ready", "running", "waiting"].includes(setupJobs[name]?.status || ""),
+  );
+  // Why the step setup would run next stopped, until a newer attempt starts.
+  const stoppedStage = preparation.stages.find((stage) =>
+    ["failed", "interrupted", "stopped"].includes(stage.status),
+  );
+  // Preparation's stage rows reset when the game files change, retiring an
+  // older failure that no longer applies.
+  const stoppedJob =
+    setupStep === "backup_source" || setupStep === "git_setup"
+      ? setupJobs[setupStep]
+      : undefined;
+  const setupFailure =
+    setupStep === "prepare_game"
+      ? stoppedStage
+        ? `${stoppedStage.label}: ${stoppedStage.message || "it did not finish."}`
+        : ""
+      : stoppedJob &&
+          ["failed", "interrupted", "stopped"].includes(stoppedJob.status)
+        ? stoppedJob.message || "This step did not finish."
+        : "";
+  // What the running sequence reads after each observation.
+  const observedSetup = {
+    step: setupStep,
+    failure: setupFailure,
+    preview: preview?.token ?? null,
+    taskId,
+    // The backend starts the next step only once no worker is running.
+    running,
+    // Finished operations by id, with their outcome message.
+    finished: new Map(
+      [...state.operations, ...translation.jobs]
+        .filter(
+          (item) => !["ready", "running", "waiting"].includes(item.status),
+        )
+        .map((item) => [item.id, item.message || ""]),
+    ),
+  };
+  const latestSetup = useRef(observedSetup);
+  const setupWaiters = useRef(new Set<() => void>());
   useEffect(() => {
-    if (baselineSaved && !action.busy && taskId === "baseline")
-      continueAfterBaseline();
-  }, [baselineSaved, action.busy, taskId]);
+    latestSetup.current = observedSetup;
+    for (const check of setupWaiters.current) check();
+  });
+  const whenObserved = (ready: (value: typeof observedSetup) => boolean) =>
+    new Promise<void>((resolve) => {
+      const check = () => {
+        if (!ready(latestSetup.current)) return;
+        setupWaiters.current.delete(check);
+        resolve();
+      };
+      setupWaiters.current.add(check);
+      check();
+    });
+  const startSetup = () =>
+    setupAction.run(
+      async () => {
+        const tried = new Set<SetupStep>();
+        let job: Job | undefined;
+        for (;;) {
+          const { step, failure, finished } = latestSetup.current;
+          if (!step || step === "ace") break;
+          if (tried.has(step))
+            throw new Error(
+              failure ||
+                (job && finished.get(job.id)) ||
+                "Setup stopped before this step finished.",
+            );
+          tried.add(step);
+          const options = step === "git_setup" ? setupOptions() : {};
+          const result = await preparePreview(step, options);
+          setPreviewRequest({ name: step, options });
+          if (result.confirmation) {
+            // A replacement backup keeps its review; the sequence continues
+            // once the user approves it and ends if they cancel.
+            executed.current = null;
+            setInspectRelease(false);
+            setPreview(result);
+            await whenObserved((value) => value.preview === result.token);
+            await whenObserved((value) => value.preview !== result.token);
+            const approved = lastExecuted();
+            if (approved?.token !== result.token) return;
+            job = approved.job;
+          } else {
+            await execute(result);
+            job = lastExecuted()!.job;
+          }
+          // The step's records can update before its worker exits.
+          const id = job.id;
+          await whenObserved(
+            (value) =>
+              !value.running && (value.finished.has(id) || value.step !== step),
+          );
+        }
+        if (latestSetup.current.step === null) {
+          setSetupNotice(
+            `Version ${fields.version.trim()} saved. Setup complete.`,
+          );
+          if (latestSetup.current.taskId === "setup")
+            await navigate("context", "names");
+        }
+      },
+      "",
+      "setup",
+    );
+  const setupOptions = () => ({
+    version: fields.version,
+    original: fields.untranslated ? "" : fields.original,
+    untranslated: fields.untranslated,
+  });
   const applyRun = (current: Job) => (
     <Button
       variant="primary"
@@ -1280,7 +1384,7 @@ export function useGuidedWorkspace({
     started,
     documentName,
     setDocumentName,
-    baselineNotice,
+    setupNotice,
     bodyRef,
     headingRef,
     inspectorReturnFocus,
@@ -1312,8 +1416,6 @@ export function useGuidedWorkspace({
     currentEstimate,
     activeOperation,
     localOperation,
-    backupPending,
-    preparationPending,
     stopOperation,
     qaTask,
     qaJob,
@@ -1375,6 +1477,13 @@ export function useGuidedWorkspace({
     preparation,
     preparationComplete,
     aceNeedsExport,
+    gitConfigured,
+    setupStep,
+    setupJobs,
+    setupFailure,
+    setupAction,
+    setupWorking,
+    startSetup,
     applyRun,
     nextRun,
     completed,

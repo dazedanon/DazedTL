@@ -24,28 +24,10 @@ export const workflow: WorkflowStage[] = [
     short: "Prepare",
     tasks: [
       {
-        id: "backup",
-        title: "Protect the original",
+        id: "setup",
+        title: "Set up this game",
         description:
-          "Save a recoverable original before any game files change.",
-      },
-      {
-        id: "extract",
-        title: "Extract Ace data",
-        description:
-          "Extract encrypted data if needed, then convert the native files to JSON.",
-        engine: "ACE",
-      },
-      {
-        id: "format",
-        title: "Prepare game files",
-        description: "Run the required preparation stages in order.",
-      },
-      {
-        id: "baseline",
-        title: "Save version baseline",
-        description:
-          "Record this prepared version so future game updates can be compared and merged.",
+          "Back up the original, prepare its files and save its version so later game updates can be merged.",
       },
     ],
   },
@@ -245,7 +227,7 @@ export function initialPosition(
   const preserved =
     translation.lifecycle.source_backup &&
     translation.lifecycle.source_backup.available !== false;
-  if (!preserved) return { step: "prepare" as const, task: "backup" };
+  if (!preserved) return { step: "prepare" as const, task: "setup" };
   if (unfinishedRun(state))
     return {
       step: runStage(state),
@@ -254,5 +236,5 @@ export function initialPosition(
     };
   if (step === "prepare" && translation.git?.configured)
     return { step: "context" as const, task: "names" };
-  return { step, task: saved?.tasks[0].id || "backup" };
+  return { step, task: saved?.tasks[0].id || "setup" };
 }

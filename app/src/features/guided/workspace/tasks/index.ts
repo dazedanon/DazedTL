@@ -3,17 +3,14 @@ import { applyView, fittingView, qaView, toolsView } from "./apply";
 import { namesView, guidanceView, layoutView } from "./context";
 import { imagesView } from "./images";
 import { pluginsView } from "./plugins";
-import { backupView, extractView, formatView, baselineView } from "./prepare";
 import { packageView } from "./release";
 import { runView } from "./run";
+import { setupView } from "./setup";
 import { phaseView, auditView, sourcesView } from "./translate";
 import type { TaskView } from "./view";
 
 const views: Record<string, (w: GuidedWorkspace) => TaskView> = {
-  backup: backupView,
-  extract: extractView,
-  format: formatView,
-  baseline: baselineView,
+  setup: setupView,
   names: namesView,
   guidance: guidanceView,
   speakers: layoutView,

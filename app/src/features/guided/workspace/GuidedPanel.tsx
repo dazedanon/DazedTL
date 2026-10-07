@@ -87,7 +87,7 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
       ? "No names to translate yet."
       : true
     : !baseline
-      ? "Save the version baseline first."
+      ? "Set up the game first."
       : !eventFiles.length
         ? "Choose event files to translate first."
         : !state.provider.ready

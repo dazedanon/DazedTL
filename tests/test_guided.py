@@ -2265,17 +2265,17 @@ class GuidedTests(unittest.TestCase):
 
     def test_baseline_needs_current_preparation_but_reuses_existing_baselines(self):
         options = {"version": "1.0", "untranslated": True}
-        with self.assertRaisesRegex(ValueError, "Complete game preparation first"):
+        with self.assertRaisesRegex(ValueError, "Prepare the game files before"):
             self.guided.preview(self.identity, "git_setup", options=options)
         self.complete_preparation()
         preview = self.guided.preview(self.identity, "git_setup", options=options)
         # Receipt loss after review also blocks execution.
         (self.folder / "preparation.json").unlink()
-        with self.assertRaisesRegex(ValueError, "Complete game preparation first"):
+        with self.assertRaisesRegex(ValueError, "Prepare the game files before"):
             self.guided.execute(self.identity, preview["token"])
         self.translation.operation.assert_not_called()
         self.git_configured = True
-        self.assertTrue(
+        self.assertFalse(
             self.guided.preview(self.identity, "git_setup", options=options)[
                 "confirmation"
             ]
@@ -2294,7 +2294,7 @@ class GuidedTests(unittest.TestCase):
         preview = self.guided.preview(
             self.identity, "git_setup", options={"version": "1.0", "untranslated": True}
         )
-        self.assertTrue(preview["confirmation"])
+        self.assertFalse(preview["confirmation"])
         write_json(self.source / "NewFile.json", [{"name": "New scope"}])
         with self.assertRaises(ValueError):
             self.guided.execute(self.identity, preview["token"])

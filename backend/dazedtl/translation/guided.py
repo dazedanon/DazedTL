@@ -656,9 +656,7 @@ class Guided:
             not self.translation.engine.git_status(project.root, options)["configured"]
             and not self.preparation(native)["complete"]
         ):
-            raise ValueError(
-                "Complete game preparation first. Return to preparation before saving a new baseline."
-            )
+            raise ValueError("Prepare the game files before saving its version.")
 
     def phase_select(self, project_id, phase):
         _project, _native = self.record(project_id)

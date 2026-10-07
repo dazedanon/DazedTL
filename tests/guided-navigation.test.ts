@@ -146,7 +146,8 @@ test("phase navigation restores an available task and falls back for removed or 
   const stages = stagesFor(state.engine);
   const context = stages.find((stage) => stage.id === "context")!;
   assert.equal(taskForStage(state, context), "speakers");
-  assert.equal(taskForStage(state, stages[0]), "backup");
+  // Positions saved before setup became one task open it.
+  assert.equal(taskForStage(state, stages[0]), "setup");
   assert.equal(
     taskForStage(
       state,
@@ -177,7 +178,7 @@ test("phase navigation restores an available task and falls back for removed or 
   state.task = "no-longer-available";
   assert.deepEqual(
     initialPosition(state, { lifecycle: {}, git: {} } as TranslationState),
-    { step: "prepare", task: "backup" },
+    { step: "prepare", task: "setup" },
   );
   assert.deepEqual(
     initialPosition(state, {
@@ -209,11 +210,22 @@ test("the Project page continues past a finished one-way step but keeps a later 
     preparation: { complete: false },
     artifacts: [],
   } as unknown as GuidedState;
+  // An unfinished setup resumes there, even from an older Prepare position.
   assert.deepEqual(guidedProgress(state, translation).current, {
     step: "prepare",
-    task: "format",
+    task: "setup",
     stage: "Prepare",
-    title: "Prepare game files",
+    title: "Set up this game",
+    advanced: false,
+  });
+  // A finished setup has nothing to resume, so Continue opens the next task.
+  translation.git!.configured = true;
+  state.task = "setup";
+  assert.deepEqual(guidedProgress(state, translation).current, {
+    step: "context",
+    task: "names",
+    stage: "Context",
+    title: "Investigation",
     advanced: true,
   });
   // Apply counts as done once outputs are applied, with earlier work open.
@@ -237,7 +249,7 @@ test("the Project page continues past a finished one-way step but keeps a later 
     guidedProgress(state, translation, { images })
       .stages.filter((stage) => stage.done === stage.total)
       .map((stage) => stage.id);
-  assert.deepEqual(finished(), ["apply", "review"]);
+  assert.deepEqual(finished(), ["prepare", "apply", "review"]);
   images.counts.needsReview = 0;
-  assert.deepEqual(finished(), ["images", "apply", "review"]);
+  assert.deepEqual(finished(), ["prepare", "images", "apply", "review"]);
 });

@@ -743,17 +743,8 @@
 .guided-widths input {
   max-width: var(--short-control-width);
 }
-.guided-backup-location,
 .guided-artifact {
   margin-top: var(--space-5);
-}
-/* The backup's state, then its explanation or recovery link beneath it. */
-.guided-backup-location {
-  display: grid;
-  gap: var(--space-2);
-}
-.guided-backup-location p {
-  margin: 0;
 }
 .guided-engine-options {
   margin: var(--space-4) 0;
@@ -990,12 +981,6 @@
   }
 }
 
-.guided-prerequisite {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-}
 /* The translation state reads as one more field: its legend matches a field
    label and sits as close to its choices as a label to its control. */
 .guided-workspace .guided-baseline-choice {
@@ -1022,27 +1007,6 @@
   accent-color: var(--color-accent);
   margin: var(--space-half) 0 0;
   flex-shrink: 0;
-}
-.guided-backup-location > .link-button {
-  justify-self: start;
-}
-
-.guided-baseline-summary {
-  display: grid;
-  gap: var(--space-4);
-}
-.guided-baseline-summary dt {
-  color: var(--color-muted);
-  font-size: var(--font-small);
-  margin-bottom: var(--space-2);
-}
-.guided-baseline-summary dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.guided-baseline-review .action-bar-actions {
-  width: 100%;
-  justify-content: space-between;
 }
 
 .guided-status-warning {

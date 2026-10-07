@@ -149,12 +149,12 @@ export function VersionsPanel({
         <Message message={action.error} onDismiss={action.clear} />
       )}
       {!configured ? (
-        <Section title="Finish preparation first">
-          <p>Record the original game version before bringing in an update.</p>
+        <Section title="Set up the game first">
+          <p>Save the game’s version before bringing in an update.</p>
           <ActionSlot target={actionTarget}>
             {onPrepare ? (
               <Button variant="primary" onClick={onPrepare}>
-                Go to version baseline
+                Go to setup
               </Button>
             ) : (
               <Button onClick={() => setAdvanced(true)}>

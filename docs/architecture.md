@@ -467,7 +467,7 @@ The Project page's Status, History, Game updates and Backups tabs serve both met
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
 Optional stages complete from the same snapshot: Plugin text and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
-Prepare's backup links open the Project page's Backups tab, and the Translation entry returns to the same task.
+Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
 Screens use four kinds of surface, each with one job.
 A page is somewhere you work or browse, reached from the sidebar and kept when you leave and return.
@@ -526,7 +526,7 @@ Staged preparation requires existing game JSON at preview and execution; missing
 The engine's [JSON](../backend/dazedtl/engine/util/dazedformat.py) and [`plugins.js`](../backend/dazedtl/engine/util/project_preparation.py) preparation formatters write UTF-8 with LF on every platform, matching translated JSON and fitting output.
 Byte comparisons normalize already-formatted CRLF/CR files too, preventing whole-file line-ending diffs on Apply.
 Frozen outputs and exact backup/restore bytes remain authoritative.
-Formatting, GameUpdate creation, initial source backup, and local estimation consume a preview immediately after the user's click; the same backup, project ownership, input validation, and one-use execution checks still apply.
+Formatting, GameUpdate creation, initial source backup, the version baseline and local estimation consume a preview immediately after the user's click; the same backup, project ownership, input validation, and one-use execution checks still apply.
 Replacement backups, paid work, runtime replacement, and file resync retain their review requirements.
 
 Translation follows the working Qt GUI's task order through the tasks in [workflow.ts](../app/src/features/guided/workflow.ts).
@@ -595,12 +595,13 @@ A failed automatic save is held for an explicit retry rather than repeated by po
 Defaults remain identified separately, and remeasurement is optional.
 Saved findings describe the investigated source; translating runtime files does not erase that record.
 New projects also clear inherited optional speaker rules.
-Prepare retains the untouched backup, one stoppable file-preparation action, and a reviewed version baseline as separate tasks.
+Prepare is one setup task: its form takes the version and the explicit untranslated/original-source choice, retained in the Guided form, and one action runs the untouched backup, file preparation and version baseline in sequence.
+The [workspace hook](../app/src/features/guided/workspace/useGuidedWorkspace.tsx) runs each step through its own preview and execution and waits for the observed operation and an idle backend before the next, so every step keeps its checks and receipts; a replacement backup keeps its review and the sequence continues once it is approved.
+A failed, stopped or declined step ends the sequence with its reason beside the action; the next click resumes from the first step that is not done, and projects set up before this keep their saved backup and baseline.
 The preparation worker records each completed stage against the current prepared files, stops on failure or cancellation, and resumes remaining stages without repeating current completed work.
 Individual preparation tools update the same receipts; GameUpdate file installation does not imply a tested delivery configuration.
 New baselines require current preparation evidence at preview and execution; existing Git baselines remain usable without historical preparation receipts.
-The explicit untranslated/original-source choice and version are retained in the Guided form.
-Saving a reviewed baseline continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
+A finished setup continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
 They are the Project page's Game updates and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.

@@ -23,8 +23,12 @@ Navigation never starts paid work.
 
 ### Prepare
 
-Preserve the original, prepare the game files, then save a version baseline with the game version.
-The baseline sets up Git so later game updates can be compared and merged.
+**Set up this game** asks for the game version and whether the game already contains translations.
+Its one button backs up the original, prepares the game files (data, `plugins.js` and GameUpdate files) and saves the version, showing each step's progress.
+The saved version sets up Git so later game updates can be compared and merged.
+If a step fails or you stop it, the reason appears beside the button, and **Finish setup** continues from that step.
+Replacing a missing backup still asks for your approval first.
+**Preparation tools** reruns a single preparation step.
 
 ### Context
 
