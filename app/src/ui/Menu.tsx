@@ -177,16 +177,22 @@ export function MenuItem({
 }
 
 /** Filters a long menu's items; the menu focuses it when opened, including
-    when items load after opening. */
+    when items load after opening. Enter submits the typed value when the
+    menu accepts one. */
 export function MenuSearch({
   value,
   onChange,
   label,
+  placeholder = "Search…",
+  onSubmit,
 }: {
   value: string;
   onChange: (value: string) => void;
   label: string;
+  placeholder?: string;
+  onSubmit?: () => void;
 }) {
+  const close = useContext(MenuClose);
   const input = useRef<HTMLInputElement>(null);
   useLayoutEffect(() => {
     if (input.current?.closest(":popover-open")) input.current.focus();
@@ -198,9 +204,15 @@ export function MenuSearch({
       data-menu-search
       className="menu-search"
       aria-label={label}
-      placeholder="Search…"
+      placeholder={placeholder}
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" || !onSubmit || !value.trim()) return;
+        event.preventDefault();
+        close();
+        onSubmit();
+      }}
     />
   );
 }

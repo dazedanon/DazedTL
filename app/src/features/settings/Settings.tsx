@@ -6,7 +6,8 @@ import { useOnChange } from "../../state/useOnChange";
 import { flushDrafts } from "../../state/leaveGuards";
 import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
-import Preferences from "./Preferences";
+import { ModelMenu } from "./ModelMenu";
+import TranslationDefaults from "./TranslationDefaults";
 import { RemoveConnection } from "./RemoveConnection";
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
@@ -19,7 +20,7 @@ import { Message } from "../../ui/Feedback";
 
 const sections = [
   { id: "api", label: "API connections" },
-  { id: "preferences", label: "Preferences" },
+  { id: "preferences", label: "Translation defaults" },
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
 
@@ -92,7 +93,7 @@ export default function Settings({
       ) : (
         <TabPanel id="settings" value={section}>
           {section === "preferences" ? (
-            <Preferences
+            <TranslationDefaults
               config={config}
               connection={current}
               dirty={draft.dirty}
@@ -102,9 +103,9 @@ export default function Settings({
               notice={action.notice}
               edit={draft.edit}
               editModelOptions={draft.editModelOptions}
-              save={() => action.run(draft.save, "Preferences saved.")}
+              save={() => action.run(draft.save, "Translation defaults saved.")}
               revert={() =>
-                action.run(draft.revert, "Reverted to saved preferences.")
+                action.run(draft.revert, "Reverted to saved defaults.")
               }
             />
           ) : editId !== null ? (
@@ -231,15 +232,15 @@ export default function Settings({
                           </span>
                         </DetailRow>
                       )}
-                      <DetailRow label="Model">
-                        {current.model || (
-                          <Button
-                            variant="link"
-                            onClick={() => move("preferences")}
-                          >
-                            Choose a model in Preferences
-                          </Button>
-                        )}
+                      <DetailRow
+                        label="Model"
+                        valueClassName="connection-model"
+                      >
+                        <ModelMenu
+                          model={current.model}
+                          connection={current.name}
+                          disabled={busy || running}
+                        />
                       </DetailRow>
                     </dl>
                     <div className="connection-panel-note">

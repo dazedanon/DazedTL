@@ -12,14 +12,16 @@ import {
   useSaveForm,
 } from "../../state/useShortcut";
 import { PageBody } from "../../ui/PageLayout";
-import { Section } from "../../ui/Section";
 import { FieldRow } from "../../ui/FieldRow";
 import { ActionBar } from "../../ui/ActionBar";
 import { Feedback } from "../../ui/Feedback";
 import { Button } from "../../ui/Button";
-import { ComboBox } from "../../ui/ComboBox";
 
-export default function Preferences({
+/**
+ * What new translations start with: the target language and per-model request
+ * options. The model itself is chosen on the connection panel.
+ */
+export default function TranslationDefaults({
   config,
   connection,
   dirty,
@@ -58,41 +60,16 @@ export default function Preferences({
     >
       <PageBody>
         <fieldset disabled={busy}>
-          <Section title="Translation defaults">
-            <FieldRow
-              id="translation-model"
-              label="Translation model"
-              help={
-                !connection
-                  ? "Used for estimates until you add an API connection."
-                  : connection.models.length
-                    ? `Saved for ${connection.name}. Its list can include image and audio models; translation needs a text model.`
-                    : `Saved for ${connection.name}. Check the connection to load model suggestions, or enter a model ID.`
-              }
-            >
-              {(control) => (
-                <ComboBox
-                  {...control}
-                  required={!connection}
-                  disabled={busy}
-                  options={connection?.models ?? []}
-                  value={String(config.values.model)}
-                  placeholder="Choose or enter a model ID"
-                  onChange={(value) => edit("model", value)}
-                />
-              )}
-            </FieldRow>
-            <FieldRow id="target-language" label="Target language">
-              {(control) => (
-                <input
-                  {...control}
-                  required
-                  value={String(config.values.language)}
-                  onChange={(event) => edit("language", event.target.value)}
-                />
-              )}
-            </FieldRow>
-          </Section>
+          <FieldRow id="target-language" label="Target language">
+            {(control) => (
+              <input
+                {...control}
+                required
+                value={String(config.values.language)}
+                onChange={(event) => edit("language", event.target.value)}
+              />
+            )}
+          </FieldRow>
           <details
             className="settings-advanced"
             onToggle={(event) => setAdvanced(event.currentTarget.open)}
@@ -116,7 +93,7 @@ export default function Preferences({
             dirty={dirty}
             notice={
               running && dirty
-                ? "Save preferences after the current run finishes."
+                ? "Save defaults after the current run finishes."
                 : notice
             }
           />
@@ -128,11 +105,11 @@ export default function Preferences({
         <Button
           type="submit"
           variant="primary"
-          title={`Save preferences (${shortcutLabel.save})`}
+          title={`Save defaults (${shortcutLabel.save})`}
           aria-keyshortcuts={shortcutKeys.save}
           disabled={!dirty || busy || running}
         >
-          Save preferences
+          Save defaults
         </Button>
       </ActionBar>
     </form>

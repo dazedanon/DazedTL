@@ -187,7 +187,8 @@ Do not edit the store's objects or remove snapshot files manually; several backu
 
 In Settings, choose a provider, paste its API key and save the connection.
 **Check connection** requests the provider's model list without generating text.
-Choose the connection's model under Preferences, or from the **Model** menu on Translate and in Assistant-led, which lists the active connection's checked models.
+Choose the connection's model from **Model** on its Settings panel, on Translate or in Assistant-led; the menu lists the models the last check found and also accepts a typed model ID.
+**Translation defaults** holds the target language and the advanced model options.
 **Remove…** deletes the connection and its saved key, and another saved connection becomes active.
 Unfinished runs that used it can no longer resume or collect their Batches, so the confirmation counts them and asks you to remove it anyway.
 
@@ -207,12 +208,12 @@ Settings carried over from the older app are backed up, and connections with an 
 
 ### OpenRouter
 
-Save an OpenRouter API key, check the connection, then choose or enter the full model ID (such as `anthropic/claude-sonnet-4.5`) in Preferences.
+Save an OpenRouter API key, check the connection, then choose or enter the full model ID (such as `anthropic/claude-sonnet-4.5`) from **Model** on the connection panel.
 Live prices load when you open model options or prepare an estimate, including the selected host's rates.
 **Check connection** caches your account's model catalog, and saving a different model or host checks its Batch endpoints and prices automatically.
 **Check again** refreshes the catalog or retries a failed check.
 
-To choose a hosting provider, select the model in Preferences, then edit the connection and choose **Host**.
+To choose a hosting provider, choose the model first, then edit the connection and choose **Host**.
 **Refresh hosts** reloads the list.
 **Automatic** lets OpenRouter choose among compatible endpoints; a selected host is exclusive, so an unavailable host returns an error instead of falling back.
 The host list is public and does not override your account's privacy or routing restrictions.

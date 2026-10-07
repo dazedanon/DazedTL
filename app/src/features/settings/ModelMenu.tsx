@@ -11,7 +11,8 @@ import { settingsSaved } from "./settingsChanges";
 
 /**
  * Changes the active connection's model in place, so changing models mid-task
- * does not mean leaving the task. Connections themselves stay in Settings.
+ * does not mean leaving the task. The list comes from the connection's last
+ * check, and a typed model ID is accepted for models it does not list.
  */
 export function ModelMenu({
   model,
@@ -22,7 +23,8 @@ export function ModelMenu({
   model: string;
   connection: string;
   disabled?: boolean;
-  manage: () => void;
+  /** Opens Settings; absent when the menu already sits there. */
+  manage?: () => void;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
@@ -40,10 +42,9 @@ export function ModelMenu({
     (item) => item.id === settings.activeConnectionId,
   );
   const models = active?.models ?? [];
-  // Provider lists can hold hundreds of models; long ones get a search.
-  const searchable = models.length > 12;
+  const typed = query.trim();
   const matches = models.filter((item) =>
-    item.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+    item.toLocaleLowerCase().includes(typed.toLocaleLowerCase()),
   );
   // Pending Settings edits stay theirs; the menu never overwrites them.
   const pending = !!settings?.draft;
@@ -89,15 +90,24 @@ export function ModelMenu({
             Settings has unsaved changes. Save or discard them to switch models
             here.
           </p>
-        ) : models.length ? (
+        ) : (
           <>
-            {searchable && (
-              <MenuSearch
-                label="Search models"
-                value={query}
-                onChange={setQuery}
-              />
-            )}
+            {/* The search doubles as entry for a model ID the list lacks. */}
+            <MenuSearch
+              label="Search or enter a model ID"
+              placeholder="Search or enter a model ID…"
+              value={query}
+              onChange={setQuery}
+              // Enter takes the one match, or the typed ID when nothing
+              // matches; with several matches, arrows choose among them.
+              onSubmit={
+                models.includes(typed) || matches.length === 1
+                  ? () => choose(models.includes(typed) ? typed : matches[0])
+                  : !matches.length
+                    ? () => choose(typed)
+                    : undefined
+              }
+            />
             {matches.map((item) => (
               <MenuItem
                 key={item}
@@ -107,18 +117,23 @@ export function ModelMenu({
                 {item}
               </MenuItem>
             ))}
-            {!matches.length && (
-              <p className="menu-note">No models match “{query.trim()}”.</p>
+            {!!typed && !models.includes(typed) && (
+              <MenuItem onSelect={() => choose(typed)}>Use “{typed}”</MenuItem>
+            )}
+            {!models.length && !typed && (
+              <p className="menu-note">
+                No model list for {active?.name || "this connection"} yet. Check
+                the connection to load one, or enter a model ID.
+              </p>
             )}
           </>
-        ) : (
-          <p className="menu-note">
-            No model list for {active?.name || "this connection"} yet. Check the
-            connection in Settings to load one.
-          </p>
         )}
-        <MenuSeparator />
-        <MenuItem onSelect={manage}>Manage connections…</MenuItem>
+        {manage && (
+          <>
+            <MenuSeparator />
+            <MenuItem onSelect={manage}>Manage connections…</MenuItem>
+          </>
+        )}
       </Menu>
       {action.key === "model" && (
         <Feedback

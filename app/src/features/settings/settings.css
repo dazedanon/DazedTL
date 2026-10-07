@@ -124,6 +124,16 @@
 .connection-details dd {
   overflow-wrap: anywhere;
 }
+/* The model menu's trigger with its save feedback beside it. */
+.connection-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.connection-model > .feedback {
+  align-self: center;
+}
 
 .model-options-scope {
   margin-top: 0;

@@ -494,7 +494,9 @@ One choice among a few, such as Batch or Live and the file-group filters, uses [
 Editable suggestion fields use the shared [ComboBox](../app/src/ui/ComboBox.tsx): its top-layer list scrolls within the available window height and opens above the field when space below is limited.
 Action lists that open from a button, such as the project switcher, the [model menu](../app/src/features/settings/ModelMenu.tsx) and Image Manager's Select and More, use the shared [Menu](../app/src/ui/Menu.tsx) in the same top-layer style, with arrow-key movement and light dismiss.
 The model menu reads the connection's models only when opened and saves against a fresh settings revision; it refuses while Settings holds unsaved edits, and a clean Settings page reloads after it saves.
-A long model list opens with a [MenuSearch](../app/src/ui/Menu.tsx) field focused, and Down moves into its matches; choosing a model saves it as the Settings default, which the feedback beside the menu says.
+The same menu sits on the Settings connection panel, so the model is chosen beside the connection it belongs to; Translation defaults keeps the language and per-model options.
+The list opens with a [MenuSearch](../app/src/ui/Menu.tsx) field focused, and Down moves into its matches; the field also takes a model ID the list lacks, offered as Use and taken by Enter when nothing matches.
+Choosing a model saves it as the Settings default, which the feedback beside the menu says.
 It retains typed values and keyboard selection without relying on the native datalist popup.
 Keyboard focus shows the shared `--focus-ring`; pointer focus adds no outline, and text fields mark focus with their border.
 A [Modal](../app/src/ui/Modal.tsx) opens with focus on its first control, or on a control marked `data-autofocus`, such as the chosen card; React's `autoFocus` runs before the dialog opens and is overridden.

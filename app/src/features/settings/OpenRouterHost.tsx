@@ -55,7 +55,7 @@ export function OpenRouterHost({
       help={
         model
           ? `Hosts for ${model}. A selected host is exclusive for new runs.`
-          : "Choose a model in Preferences to see its supported hosts."
+          : "Choose a model on the connection panel to see its supported hosts."
       }
       error={action.error}
     >
