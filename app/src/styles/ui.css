@@ -299,6 +299,11 @@ pre {
   margin-left: var(--space-1);
   vertical-align: -0.15em;
 }
+/* A badge in a tab label, such as Draft, overhangs its padding instead of
+   making that tab, and the content below it, taller. */
+.ui-tabs .badge {
+  margin-block: calc(-1 * var(--space-1));
+}
 .ui-tab-hint {
   margin-left: var(--space-1);
   color: var(--color-muted);
