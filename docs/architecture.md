@@ -465,6 +465,7 @@ Each game has one translation method, chosen in [MethodDialog](../app/src/featur
 The one Translation entry opens that method's workspace.
 The Project page's Status, History, Game updates and Backups tabs serve both methods.
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity; its footer action resumes the saved workspace position.
+Optional stages complete from the same snapshot: Plugin text and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Prepare's backup links open the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
@@ -542,6 +543,7 @@ The stage strip is a stepper: each stage's number sits in a circle that turns ac
 Tabs and Continue retain drafts and allow navigation regardless of task completion or stale investigation status; they do not save review receipts or complete skipped tasks.
 Status checks remain at execution and explicit save boundaries.
 Release shows the backend's selected unapplied-output list and directs the user to Apply before enabling packaging.
+Each saved ZIP records the size and modification time of the runtime files it was built from, ignoring device, inode and change time, which metadata updates such as permission changes also alter; a later difference or a newly applied image marks it outdated, and archives saved without that record are not compared.
 Its destination fields are checked as they change through a read-only call to the same rule packaging enforces, so Build stays disabled with the reason instead of failing late.
 Explicitly declined speaker preflight is interpreted as canceled only with verified first-attempt, no-submission evidence and no saved outputs or queue artifacts.
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.

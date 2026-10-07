@@ -1,6 +1,8 @@
 import type {
   GuidedState,
   GuidedStep,
+  ImageManagerState,
+  PluginState,
   TranslationState,
 } from "../../api/contracts";
 import { investigationResults } from "./contextView.ts";
@@ -15,6 +17,12 @@ import { initialPosition, stagesFor } from "./workflow.ts";
 
 type Values = GuidedState["preferences"]["values"];
 
+/** The observed Plugin text and Images work, which Guided state leaves out. */
+export type OptionalWork = {
+  plugins?: PluginState | null;
+  images?: ImageManagerState | null;
+};
+
 /**
  * Tasks whose saved evidence shows them done. `values` lets the open
  * workspace pass its draft selection; unsaved width edits never count.
@@ -22,8 +30,12 @@ type Values = GuidedState["preferences"]["values"];
 export function completedTasks(
   state: GuidedState,
   translation: TranslationState,
-  values: Values = state.preferences.values,
-  widthsDirty = false,
+  {
+    values = state.preferences.values,
+    widthsDirty = false,
+    plugins,
+    images,
+  }: { values?: Values; widthsDirty?: boolean } & OptionalWork = {},
 ) {
   const sourceBackup = translation.lifecycle.source_backup;
   const preserved = !!sourceBackup && sourceBackup.available !== false;
@@ -48,6 +60,12 @@ export function completedTasks(
     );
   };
   const discovery = state.contextSetup;
+  // Optional stages are done once their work reaches the game with nothing
+  // left waiting, and Release while a saved ZIP still matches the game.
+  const pluginCounts =
+    plugins && plugins.projectId === state.projectId ? plugins.counts : null;
+  const imageCounts =
+    images && images.projectId === state.projectId ? images.counts : null;
   return new Set<string>([
     ...(preserved ? ["backup"] : []),
     ...(baseline ? ["baseline"] : []),
@@ -66,11 +84,23 @@ export function completedTasks(
     ...(state.tools?.inspector.installed && state.tools.forge.installed
       ? ["tools"]
       : []),
+    ...(pluginCounts?.applied && !pluginCounts.ready && !pluginCounts.blocked
+      ? ["plugins"]
+      : []),
+    ...(imageCounts?.applied &&
+    !imageCounts.ready &&
+    !imageCounts.needsReview &&
+    !imageCounts.blocked
+      ? ["images"]
+      : []),
+    ...(state.artifacts.some((artifact) => artifact.current)
+      ? ["package"]
+      : []),
   ]);
 }
 
-// Tasks with a completion signal; optional work such as Plugin text, Images
-// and Release never blocks "next".
+// Required tasks; optional work such as Plugin text, Images and Release can be
+// done but never blocks "next".
 const tracked = new Set([
   "backup",
   "format",
@@ -117,9 +147,10 @@ export type GuidedProgress = {
 export function guidedProgress(
   state: GuidedState,
   translation: TranslationState,
+  optional: OptionalWork = {},
 ): GuidedProgress {
   const stages = stagesFor(state.engine);
-  const done = completedTasks(state, translation);
+  const done = completedTasks(state, translation, optional);
   const order = stages.flatMap((stage) =>
     stage.tasks.map((task) => ({ stage, task })),
   );

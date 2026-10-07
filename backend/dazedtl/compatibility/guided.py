@@ -89,6 +89,7 @@ def run_release(plan, log):
 
     from dazedtl.translation.release import (
         destination,
+        input_stamps,
         packing_state,
         publish,
         write_archive,
@@ -122,6 +123,13 @@ def run_release(plan, log):
             raise ValueError(
                 "The game or public version changed during packaging. Its partial archive was discarded."
             )
+        # Later checks compare only the runtime files translation work
+        # changes, not the whole game. An applied image edited outside Images
+        # still packages; that archive just cannot be compared later.
+        try:
+            inputs = input_stamps(source, runtime_files(source))
+        except ValueError:
+            inputs = None
         saved = publish(
             staged,
             output,
@@ -131,6 +139,7 @@ def run_release(plan, log):
     return {
         **saved,
         "kind": "game",
+        "inputs": inputs,
         "files": len(expected["files"]) + bool(expected["updater_stamp"]),
         "excluded": len(expected["exclusions"]),
         "updater_stamp": bool(expected["updater_stamp"]),

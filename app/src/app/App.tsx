@@ -136,7 +136,10 @@ export default function App() {
     project &&
     guidedState?.projectId === project.id &&
     translationState?.projectId === project.id
-      ? guidedProgress(guidedState, translationState)
+      ? guidedProgress(guidedState, translationState, {
+          plugins: application.snapshot?.plugins,
+          images: application.snapshot?.images,
+        })
       : null;
   const amounts = progress && guidedState ? projectAmounts(guidedState) : null;
   const error = application.stopped

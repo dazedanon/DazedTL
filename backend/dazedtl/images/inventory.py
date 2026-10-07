@@ -199,6 +199,7 @@ class Index:
                 "uncertain": classifications.get("uncertain", 0),
                 "notExamined": indexed - examined,
                 "ready": states.get("ready", 0),
+                "needsReview": states.get("needs_review", 0),
                 "blocked": states.get("blocked", 0),
                 "applied": states.get("applied", 0),
                 "selected": sum(selected.values()),

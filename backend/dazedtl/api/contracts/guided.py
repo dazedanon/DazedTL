@@ -109,6 +109,9 @@ class ReleaseArtifact(TypedDict):
     path: str
     folder: str
     available: bool
+    # Built from the game's current runtime files; None for an archive saved
+    # before DazedTL recorded them.
+    current: bool | None
     size: int | None
     saved: str | None
 

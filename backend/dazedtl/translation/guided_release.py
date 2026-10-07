@@ -219,8 +219,8 @@ class GuidedRelease:
             },
         )
 
-    def release_artifacts(self, project_id, jobs):
-        from .release import available
+    def release_artifacts(self, project_id, jobs, source):
+        from .release import available, current
 
         values = [
             (job["id"], job.get("result") or {})
@@ -235,6 +235,11 @@ class GuidedRelease:
         ):
             legacy = {**state["delivery"], "kind": "patch"}
             values.append(("previous-patch", legacy))
+        values = [
+            (identity, value)
+            for identity, value in values
+            if isinstance(value.get("path"), str)
+        ][:10]
         return [
             {
                 "id": identity,
@@ -244,10 +249,10 @@ class GuidedRelease:
                 "size": value.get("size"),
                 "saved": value.get("saved"),
                 "available": available(value),
+                "current": current(value, source),
             }
             for identity, value in values
-            if isinstance(value.get("path"), str)
-        ][:10]
+        ]
 
     def release_paths(self, project_id, source, action):
         from .release import runtime_asset

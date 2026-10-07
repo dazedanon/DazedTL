@@ -101,6 +101,7 @@ class ImageCounts(TypedDict):
     uncertain: int
     notExamined: int
     ready: int
+    needsReview: int
     blocked: int
     applied: int
     selected: int

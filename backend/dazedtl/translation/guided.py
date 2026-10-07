@@ -605,7 +605,9 @@ class Guided:
             ),
             "event_text": self.event_text.status(project_id, native),
             "tools": self.backend.guided_tools(native),
-            "artifacts": self.release_artifacts(project_id, value["jobs"]),
+            "artifacts": self.release_artifacts(
+                project_id, value["jobs"], native["source"]
+            ),
             "ace_available": self.backend.ace_available(),
             "ace_packing": self.ace_packing(native),
             "documents": documents,

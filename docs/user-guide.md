@@ -10,6 +10,7 @@ A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ac
 **Translation** in the sidebar then opens that method.
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks; **Start** or **Resume** opens Translation where you left off, or **Continue** opens the next task when the one you left is finished.
+The optional stages never hold up the next step: Plugin text and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
@@ -106,6 +107,8 @@ Apply and playtest an early scene before expanding the scope.
 A patch build saves a local checkpoint and workspace backup first; a clean game ZIP leaves the working game untouched.
 Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
 With no translation applied yet, the footer notes that the ZIP keeps the original text.
+The last saved ZIP shows **Up to date** until the game's runtime files change or another image is applied; build again to include later changes.
+A ZIP saved by an earlier DazedTL version is not compared until you build it again.
 The app checks the package contents and finished archive before offering its folder; these checks do not mean the game passed QA.
 GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the app never publishes or pushes.
 

@@ -215,14 +215,22 @@ export function ReleaseContent({
                       ? ` · Saved ${new Date(artifact.saved).toLocaleString()}`
                       : ""}{" "}
                     ·{" "}
-                    {artifact.available
-                      ? "Available on disk"
-                      : "Unavailable or changed on disk"}
+                    {!artifact.available
+                      ? "Unavailable or changed on disk"
+                      : artifact.current
+                        ? "Up to date"
+                        : artifact.current === false
+                          ? "Game files changed since this build"
+                          : "Available on disk"}
                   </small>
                   <small className="path">{artifact.path}</small>
-                  <small>
-                    Later game edits are included only when you build again.
-                  </small>
+                  {artifact.available && !artifact.current && (
+                    <small>
+                      {artifact.current === false
+                        ? "Build again to include the changes."
+                        : "Later game edits are included only when you build again."}
+                    </small>
+                  )}
                 </>
               }
             >

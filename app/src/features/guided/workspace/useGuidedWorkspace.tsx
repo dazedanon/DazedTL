@@ -1194,7 +1194,12 @@ export function useGuidedWorkspace({
             : "Continue to plugin text"}
     </Button>
   );
-  const completed = completedTasks(state, translation, values, widthsDirty);
+  const completed = completedTasks(state, translation, {
+    values,
+    widthsDirty,
+    plugins: application.snapshot?.plugins,
+    images: application.snapshot?.images,
+  });
   const applySpeakerControl = findings.status === "ready" && (
     <ActionControl
       label={

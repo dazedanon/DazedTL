@@ -385,6 +385,7 @@ export type ReleaseArtifact = {
   path: string;
   folder: string;
   available: boolean;
+  current: boolean | null;
   size: number | null;
   saved: string | null;
 };
@@ -1308,6 +1309,7 @@ export type ImageCounts = {
   uncertain: number;
   notExamined: number;
   ready: number;
+  needsReview: number;
   blocked: number;
   applied: number;
   selected: number;

@@ -17,6 +17,7 @@ from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
 from dazedtl.translation.release import (
     applied_assets,
     available,
+    current,
     destination,
     git_identity,
     inventory,
@@ -274,6 +275,31 @@ class ReleaseTests(unittest.TestCase):
             self.assertNotIn("guided_review", state)
             self.assertEqual(state["guided_release"]["path"], str(root / "release.zip"))
             self.assertEqual(read_json(game / "data.json"), {"line": "translated"})
+            # The saved ZIP stays current until its runtime files change or
+            # another image is applied; one saved before inputs were recorded
+            # cannot be compared.
+            release = state["guided_release"]
+            self.assertTrue(current(release, game))
+            legacy = {key: value for key, value in release.items() if key != "inputs"}
+            self.assertIsNone(current(legacy, game))
+            image = game / "img/pictures/Menu.png"
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"applied image")
+            index = game / ".dazedtl/image_manager/guided/inventory.sqlite3"
+            index.parent.mkdir(parents=True)
+            row = {
+                "runtime": "img/pictures/Menu.png",
+                "applied": {"runtimeHash": digest(image.read_bytes())},
+            }
+            with closing(sqlite3.connect(index)) as db:
+                db.execute("CREATE TABLE assets (data TEXT)")
+                db.execute("INSERT INTO assets VALUES (?)", (json.dumps(row),))
+                db.commit()
+            self.assertFalse(current(release, game))
+            index.unlink()
+            self.assertTrue(current(release, game))
+            write_json(game / "data.json", {"line": "edited later"})
+            self.assertFalse(current(release, game))
 
     def test_destinations_and_atomic_publication_preserve_the_previous_release(self):
         with TemporaryDirectory() as folder:

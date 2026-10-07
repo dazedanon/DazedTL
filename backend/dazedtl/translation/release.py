@@ -331,6 +331,39 @@ def available(value):
         return False
 
 
+def input_stamps(source, paths):
+    """Size and modification time of each runtime file an archive is built from.
+
+    Device, inode and change time are left out: metadata updates such as a
+    permission change alter them without changing the content.
+    """
+    root = Path(source)
+    stamps = {}
+    for path in paths:
+        stat = project_path(root, path).stat()
+        stamps[path] = [stat.st_size, stat.st_mtime_ns]
+    return stamps
+
+
+def current(value, source):
+    """Whether a saved archive still matches the game's runtime files.
+
+    None means the archive predates recorded inputs, so it cannot be compared.
+    Images applied after the build also make it outdated.
+    """
+    if not available(value):
+        return False
+    inputs = value.get("inputs")
+    if not isinstance(inputs, dict):
+        return None
+    try:
+        return input_stamps(source, inputs) == inputs and set(
+            applied_assets(source)
+        ) <= set(inputs)
+    except OSError, ValueError:
+        return False
+
+
 def publish(staged, output, expected, *, stopped=lambda: False):
     """Keep the previous ZIP until a complete archive is ready to replace it."""
     staged, output = Path(staged), Path(output)

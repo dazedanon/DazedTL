@@ -253,6 +253,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         )
         from .release import (
             git_identity,
+            input_stamps,
             output_hash,
             publish,
         )
@@ -302,6 +303,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             manifest = read_json(project_path(source, payload["manifest"]))
             packaged = engine.package(source, options, manifest, Path(temporary))
             verify_evidence(source, payload["evidence"])
+            inputs = input_stamps(source, payload["evidence"])
             if (
                 git_identity(engine.git_status(source, options)) != package_git
                 or digest(read_json(project_path(workspace, payload["source_inputs"])))
@@ -316,6 +318,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                     packaged["path"], output, payload["output_hash"], stopped=stopped
                 ),
                 "kind": "patch",
+                "inputs": inputs,
             }
         state["guided_release"] = result
     elif action == "guided_review":

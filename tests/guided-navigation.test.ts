@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   GuidedState,
+  ImageManagerState,
   TranslationState,
 } from "../app/src/api/contracts.ts";
 import {
@@ -192,6 +193,7 @@ test("the Project page continues past a finished one-way step but keeps a later 
     git: { configured: false },
   } as TranslationState;
   const state = {
+    projectId: "game",
     engine: "MVMZ",
     step: "prepare",
     task: "backup",
@@ -205,6 +207,7 @@ test("the Project page continues past a finished one-way step but keeps a later 
     speakerSetup: {},
     speakerScan: {},
     preparation: { complete: false },
+    artifacts: [],
   } as unknown as GuidedState;
   assert.deepEqual(guidedProgress(state, translation).current, {
     step: "prepare",
@@ -223,4 +226,18 @@ test("the Project page continues past a finished one-way step but keeps a later 
     progress.stages.some((stage) => stage.id === "apply" && stage.done),
   );
   assert.equal(progress.current.task, "apply");
+  // Optional stages finish once their work reaches the game with nothing
+  // waiting: an edited image awaiting review keeps Images open.
+  state.artifacts = [{ current: true }] as GuidedState["artifacts"];
+  const images = {
+    projectId: state.projectId,
+    counts: { applied: 1, ready: 0, needsReview: 1, blocked: 0 },
+  } as unknown as ImageManagerState;
+  const finished = () =>
+    guidedProgress(state, translation, { images })
+      .stages.filter((stage) => stage.done === stage.total)
+      .map((stage) => stage.id);
+  assert.deepEqual(finished(), ["apply", "review"]);
+  images.counts.needsReview = 0;
+  assert.deepEqual(finished(), ["images", "apply", "review"]);
 });
