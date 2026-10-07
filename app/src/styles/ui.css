@@ -988,9 +988,11 @@ pre {
   min-width: 0;
   max-width: min(100%, var(--action-column-width));
 }
+/* Bordered buttons share a width; borderless quiet buttons fit their label,
+   so their text keeps the column's right edge instead of centering. */
 .action-row-actions
-  > :is(.ui-button, .action-control > .ui-button):not(.link-button),
-.action-row-actions > .action-control > .ui-button:not(.link-button) {
+  > :is(.ui-button, .action-control > .ui-button):not(.link-button, .quiet),
+.action-row-actions > .action-control > .ui-button:not(.link-button, .quiet) {
   min-width: 8rem;
 }
 .action-row-actions > .action-control {
