@@ -419,6 +419,13 @@ class Application:
         self.guided.idle()
         return self.settings.check_connection(revision, connection_id)
 
+    def connection_usage(self, connection_id):
+        return self.settings.connection_usage(connection_id)
+
+    def connection_remove(self, revision, connection_id, unfinished):
+        self.guided.idle()
+        return self.settings.remove_connection(revision, connection_id, unfinished)
+
 
 def routes(app):
     """Each method's handler and the view that shapes its result."""
@@ -437,8 +444,10 @@ def routes(app):
                 "connection_save",
                 "connection_select",
                 "connection_check",
+                "connection_remove",
             )
         },
+        "connection_usage": (app.connection_usage, lambda value, _params: value),
         "settings_draft": (app.settings_draft, lambda value, _params: value),
         "settings_model_defaults": (
             app.settings_model_defaults,

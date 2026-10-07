@@ -725,6 +725,7 @@ A bounded session cache binds those prices to connection, model and host; a late
 Observations only read cached metadata.
 Price lookup stays a read-only operation, so it cannot hold navigation behind a pending mutation; connection checks invalidate shared observations.
 Existing custom connections and frozen runs retain their original identity and route.
+Runs resolve credentials by the connection's recorded runtime name, so removing a connection strands its unfinished runs; removal takes the count the user confirmed, refuses it when the backend's recount differs, and rematerializes engine settings so the key leaves the derived cache.
 OpenRouter connections optionally pin a host.
 The editor loads the selected model's bounded public `/models/{author}/{slug}/endpoints` list without credentials, state refresh, or the engine context lock; requests and late results stay scoped to that model's picker.
 A bounded session cache retains model-specific suggestions across editor and tab revisits until explicit refresh.

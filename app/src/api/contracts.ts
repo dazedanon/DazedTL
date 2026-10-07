@@ -1206,6 +1206,11 @@ export type OpenRouterHost = {
   name: string;
 };
 
+/** Unfinished saved runs that need a connection to resume or collect. */
+export type ConnectionUsage = {
+  unfinished: number;
+};
+
 export type ImageDiscoveryScope = "all" | "folders" | "selected";
 
 export type ImageEntryMode = "discovery" | "manual" | "findings" | "review";
@@ -2092,6 +2097,16 @@ export type ConnectionSaveRequest = ConnectionInput & {
   revision: number;
 };
 
+export type ConnectionUsageRequest = {
+  connection_id: string;
+};
+
+export type ConnectionRemoveRequest = {
+  revision: number;
+  connection_id: string;
+  unfinished: number;
+};
+
 export type GuidedPhaseSelectRequest = {
   project_id: string;
   phase: Phase;
@@ -2251,6 +2266,11 @@ export type RpcContract = {
   connection_save: { request: ConnectionSaveRequest; response: Settings };
   connection_select: { request: ConnectionRequest; response: Settings };
   connection_check: { request: ConnectionRequest; response: Settings };
+  connection_usage: {
+    request: ConnectionUsageRequest;
+    response: ConnectionUsage;
+  };
+  connection_remove: { request: ConnectionRemoveRequest; response: Settings };
   settings_model_defaults: {
     request: SettingsModelDefaultsRequest;
     response: ModelDefaults;

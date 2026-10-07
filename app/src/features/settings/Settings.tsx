@@ -7,6 +7,7 @@ import { flushDrafts } from "../../state/leaveGuards";
 import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
 import Preferences from "./Preferences";
+import { RemoveConnection } from "./RemoveConnection";
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { FieldRow, DetailRow } from "../../ui/FieldRow";
@@ -49,6 +50,8 @@ export default function Settings({
   const editId =
     editor ?? (config && !config.connections.length ? "new" : null);
   const editConnection = config?.connections.find((item) => item.id === editId);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const removal = config?.connections.find((item) => item.id === removing);
   const move = (next: SectionId) =>
     action.run(async () => {
       await flushDrafts();
@@ -180,15 +183,27 @@ export default function Settings({
                                   : "Could not verify connection"}
                         </span>
                       </div>
-                      <Button
-                        disabled={busy || running}
-                        onClick={() => {
-                          action.clear();
-                          setEditor(current.id);
-                        }}
-                      >
-                        Edit
-                      </Button>
+                      <div className="actions">
+                        <Button
+                          variant="quiet"
+                          disabled={busy || running}
+                          onClick={() => {
+                            action.clear();
+                            setRemoving(current.id);
+                          }}
+                        >
+                          Remove…
+                        </Button>
+                        <Button
+                          disabled={busy || running}
+                          onClick={() => {
+                            action.clear();
+                            setEditor(current.id);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </div>
                     </header>
                     <dl className="connection-details">
                       <DetailRow label="Provider">
@@ -316,6 +331,21 @@ export default function Settings({
             </>
           )}
         </TabPanel>
+      )}
+      {removal && config && (
+        <RemoveConnection
+          connection={removal}
+          next={
+            removal.id === config.activeConnectionId
+              ? config.connections.find((item) => item.id !== removal.id)
+              : undefined
+          }
+          remove={async (unfinished) => {
+            await draft.removeConnection(removal.id, unfinished);
+            action.succeed(`${removal.name} removed.`);
+          }}
+          close={() => setRemoving(null)}
+        />
       )}
     </PageLayout>
   );

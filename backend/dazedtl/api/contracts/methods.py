@@ -58,6 +58,7 @@ from dazedtl.api.contracts.runs import (
 )
 from dazedtl.api.contracts.settings import (
     ConnectionInput,
+    ConnectionUsage,
     ModelDefaults,
     ModelOptions,
     OpenRouterHost,
@@ -345,6 +346,17 @@ class ConnectionSaveRequest(ConnectionInput):
     revision: int
 
 
+class ConnectionUsageRequest(TypedDict):
+    connection_id: str
+
+
+class ConnectionRemoveRequest(TypedDict):
+    revision: int
+    connection_id: str
+    # The unfinished runs the user was shown; a different count is refused.
+    unfinished: int
+
+
 class GuidedPhaseSelectRequest(TypedDict):
     project_id: str
     phase: Phase
@@ -510,6 +522,8 @@ METHODS: dict[str, Method] = {
     "connection_save": Method(ConnectionSaveRequest, Settings, during_close=True),
     "connection_select": Method(ConnectionRequest, Settings),
     "connection_check": Method(ConnectionRequest, Settings),
+    "connection_usage": Method(ConnectionUsageRequest, ConnectionUsage, refresh=False),
+    "connection_remove": Method(ConnectionRemoveRequest, Settings),
     "settings_model_defaults": Method(
         SettingsModelDefaultsRequest, ModelDefaults, refresh=False
     ),

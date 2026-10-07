@@ -706,6 +706,58 @@ class Settings:
         self._write(state)
         return self.describe()
 
+    def connection_usage(self, connection_id):
+        """Unfinished saved runs that need this connection to resume or collect."""
+        from dazedtl.compatibility.preparations import temporary
+
+        connection = self._connection(self._read(), connection_id)
+        if connection is None:
+            raise ValueError("That saved connection is no longer available.")
+        # Live runs block every settings change, so a counted run is one that
+        # stopped, failed or was interrupted.
+        unfinished = 0
+        for identity, job in list(self.adapter.manual.jobs.items()):
+            # Estimates and offline runs never call a provider, and unapproved
+            # preparations are discarded rather than resumed.
+            if (
+                job.get("mode") not in {"translate", "batch", "speakers"}
+                or job.get("status") in {"complete", "canceled"}
+                or temporary(job)
+            ):
+                continue
+            try:
+                plan = self.adapter.saved_run_configuration(identity)
+            except ValueError, OSError:
+                continue
+            if plan.get("key_name") == connection["runtime_name"]:
+                unfinished += 1
+        return {"unfinished": unfinished}
+
+    def remove_connection(self, revision, connection_id, unfinished):
+        """Forget a connection and its key; unfinished runs that used it stay saved."""
+        state = self._read()
+        self._revision(state, revision)
+        usage = self.connection_usage(connection_id)
+        # The user confirmed a specific count of runs this strands; a change
+        # since then needs a new review.
+        if type(unfinished) is not int or unfinished != usage["unfinished"]:
+            raise ValueError(
+                "The runs that used this connection changed. Review the removal again."
+            )
+        state["connections"] = [
+            item for item in state["connections"] if item["id"] != connection_id
+        ]
+        if state["active"] == connection_id:
+            state["active"] = (
+                state["connections"][0]["id"] if state["connections"] else ""
+            )
+        if state["draft"]:
+            state["draft"]["connections"].pop(connection_id, None)
+        self._write(state)
+        # The engine's derived key cache must not keep the removed key.
+        self.prepare_engine()
+        return self.describe()
+
     def save_connection(
         self,
         revision,

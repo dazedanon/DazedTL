@@ -191,6 +191,68 @@ class SettingsTests(unittest.TestCase):
             )
             self.assertEqual(view["connections"][0]["openrouter_host"], "")
 
+    def test_removing_a_connection_forgets_its_key_and_respects_saved_runs(self):
+        # Removal must not strand a run silently or leave the removed key in the engine's derived key cache.
+        metadata = {
+            "values": {
+                "language": "English",
+                "model": "fixture-model",
+                "api": "",
+                "API_PROVIDER": "openai",
+            }
+        }
+        jobs = {
+            "old": {"mode": "batch", "status": "failed"},
+            "done": {"mode": "translate", "status": "complete"},
+            "quote": {"mode": "estimate", "status": "stopped"},
+        }
+        adapter = SimpleNamespace(
+            settings_metadata=lambda: metadata,
+            allow_providers=True,
+            manual=SimpleNamespace(request_policy=None, jobs=jobs),
+            saved_run_configuration=lambda identity: {"key_name": key_name},
+            install_settings=Mock(),
+        )
+        state = {
+            "version": 2,
+            "revision": 0,
+            "values": {"language": "English", "model": "fixture-model"},
+            "legacy": {"values": metadata["values"], "engines": {}, "draft": None},
+            "model_options": {},
+            "active": "",
+            "draft": None,
+            "connections": [],
+        }
+        with TemporaryDirectory() as temporary:
+            write_json(Path(temporary) / "settings/settings.json", state)
+            settings = Settings(temporary, adapter)
+            view = settings.save_connection(0, "openrouter", secret="router-key")
+            router = view["activeConnectionId"]
+            view = settings.save_connection(
+                view["revision"], "openai", secret="openai-key"
+            )
+            native = view["activeConnectionId"]
+            key_name = "connection-" + router
+            # Only the failed Batch counts: complete runs and estimates are done.
+            self.assertEqual(settings.connection_usage(router), {"unfinished": 1})
+            with self.assertRaisesRegex(ValueError, "changed"):
+                settings.remove_connection(view["revision"], router, 0)
+            view = settings.select(view["revision"], router)
+            view = settings.remove_connection(view["revision"], router, 1)
+            self.assertEqual(
+                (
+                    [item["id"] for item in view["connections"]],
+                    view["activeConnectionId"],
+                ),
+                ([native], native),
+            )
+            vault = adapter.install_settings.call_args.args[3]
+            self.assertNotIn(key_name, vault["keys"])
+            view = settings.remove_connection(view["revision"], native, 0)
+            self.assertEqual(
+                (view["connections"], view["activeConnectionId"]), ([], "")
+            )
+
     def test_openrouter_host_lookup_is_read_only_and_rejects_unusable_catalogs(self):
         # A public suggestion lookup must not send credentials, follow a
         # redirect, or show unrelated hosts for the selected model. Endpoint

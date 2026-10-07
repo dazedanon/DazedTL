@@ -55,7 +55,8 @@
   margin: var(--space-3) 0 var(--space-4);
   line-height: 1.6;
 }
-/* The active connection: its name and state head the panel, Edit beside them. */
+/* The active connection: its name and state head the panel, and its actions
+   stay together beside them while a long name wraps. */
 .connection-panel-header {
   display: flex;
   align-items: center;
@@ -64,9 +65,17 @@
   padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border);
 }
+.connection-panel-header > div:first-child {
+  min-width: 0;
+}
+.connection-panel-header > .actions {
+  flex: none;
+  flex-wrap: nowrap;
+}
 .connection-panel-header h2 {
   margin: 0;
   font-size: var(--font-heading);
+  overflow-wrap: anywhere;
 }
 .connection-panel-state {
   display: inline-flex;

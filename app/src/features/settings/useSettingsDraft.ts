@@ -148,5 +148,9 @@ export function useSettingsDraft(report: (error: unknown) => void) {
       connectionAction((revision) => api.selectConnection(revision, id)),
     checkConnection: (id: string) =>
       connectionAction((revision) => api.checkConnection(revision, id)),
+    removeConnection: (id: string, unfinished: number) =>
+      connectionAction((revision) =>
+        api.removeConnection(revision, id, unfinished),
+      ),
   };
 }

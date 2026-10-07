@@ -115,3 +115,9 @@ class SettingsPayload(TypedDict):
 class OpenRouterHost(TypedDict):
     slug: str
     name: str
+
+
+class ConnectionUsage(TypedDict):
+    """Unfinished saved runs that need a connection to resume or collect."""
+
+    unfinished: int
