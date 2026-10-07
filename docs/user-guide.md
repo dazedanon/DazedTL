@@ -279,8 +279,9 @@ Downloaded responses stay available locally after the provider's retention expir
 
 ## Diagnostics
 
-**Copy diagnostics** in the sidebar copies versions and recent error details, even when the backend cannot start.
-Diagnostic logs live in the profile's `diagnostics/` folder, capped at three 64 KiB files per process.
+**Copy diagnostics** in the sidebar copies the app versions, checkout revision and recent unexpected failures, even when the backend cannot start.
+Errors the app explains on screen are not recorded, so include that message when reporting one.
+Diagnostic logs live in the profile's `diagnostics/` folder; the desktop and backend logs are each capped at three 64 KiB files.
 They exclude credentials, request bodies, game text and raw error output.
 
 If a view fails, its recovery panel offers **Try again**, **Copy diagnostics** and **Reload interface** while navigation stays available.

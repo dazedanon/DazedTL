@@ -118,15 +118,15 @@ test("crash recovery can copy diagnostics, and stale dialog responses cannot rel
   }
 });
 
-test("renderer diagnostics retain useful code coordinates without messages, paths, or arbitrary rejection data", (t) => {
-  const directory = fs.mkdtempSync(
+test("renderer diagnostics map bundle frames to source without messages, paths, or arbitrary rejection data", async (t) => {
+  const checkout = fs.mkdtempSync(
     path.join(os.tmpdir(), "dazedtl-diagnostics-"),
   );
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  t.after(() => fs.rmSync(checkout, { recursive: true, force: true }));
   const error = new TypeError(
     "private game text\n    at private (/assets/not-code.js:1:2)",
   );
-  error.stack = `${error.name}: ${error.message}\n    at render (file:///private/home/app/dist/assets/index-abc.js:25:617)\n    at secret (file:///private/credentials.json:12:3)`;
+  error.stack = `${error.name}: ${error.message}\n    at render (file:///private/home/app/dist/assets/index-abc.js:2:5)\n    at secret (file:///private/credentials.json:12:3)`;
   const fields = rendererFailure(error, "render");
   assert.deepEqual(fields.causes, [
     {
@@ -134,23 +134,39 @@ test("renderer diagnostics retain useful code coordinates without messages, path
       frames: [
         {
           file: "app/renderer/assets/index-abc.js",
-          line: 25,
-          column: 617,
+          line: 2,
+          column: 5,
           function: "unknown",
         },
       ],
     },
   ]);
-  const diagnostics = new Diagnostics(directory, { app: "fixture" }, root);
-  diagnostics.record("renderer.error", {
-    ...fields,
-    message: error.message,
-    stack: error.stack,
-  });
-  const report = diagnostics.report();
-  assert.match(report, /renderer.error/);
-  assert.match(report, /index-abc.js/);
-  assert.doesNotMatch(report, /private|credentials|not-code/);
+  const assets = path.join(checkout, "app/dist/assets");
+  fs.mkdirSync(assets, { recursive: true });
+  fs.writeFileSync(
+    path.join(assets, "index-abc.js.map"),
+    JSON.stringify({
+      version: 3,
+      sources: ["../../src/app/View.tsx"],
+      names: [],
+      mappings: ";AAEA", // Generated line 2 starts at source line 3.
+    }),
+  );
+  const diagnostics = new Diagnostics(
+    path.join(checkout, "diagnostics"),
+    { app: "fixture" },
+    checkout,
+  );
+  diagnostics.renderer(
+    "render",
+    fields.causes.map((cause) => ({ ...cause, message: error.message })),
+  );
+  const report = await diagnostics.report();
+  assert.match(
+    report,
+    /"file":"app\/app\/src\/app\/View.tsx","line":3,"column":5/,
+  );
+  assert.doesNotMatch(report, /private|credentials|not-code|index-abc/);
   assert.deepEqual(
     rendererFailure(
       { message: "secret", stack: "private" },

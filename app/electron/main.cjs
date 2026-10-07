@@ -108,7 +108,6 @@ app
       },
       root,
     );
-    diagnostics.record("desktop.started");
     window = new BrowserWindow({
       show: false,
       ...windowSize(screen.getPrimaryDisplay().workAreaSize),
@@ -224,7 +223,7 @@ app
     ipcMain.handle("dazedtl:copy-diagnostics", async (event) => {
       trusted(event);
       try {
-        await clipboard.writeText(diagnostics.report());
+        await clipboard.writeText(await diagnostics.report());
       } catch (error) {
         diagnostics.failure("desktop.error", error, { operation: "native" });
         throw new Error("Diagnostics could not be copied. Try again.");
@@ -234,10 +233,7 @@ app
       trusted(event);
       if (!["render", "error", "unhandledrejection"].includes(failure?.reason))
         return;
-      diagnostics.record("renderer.error", {
-        reason: failure.reason,
-        causes: failure.causes,
-      });
+      diagnostics.renderer(failure.reason, failure.causes);
     });
     ipcMain.handle("dazedtl:reload-interface", (event) => {
       trusted(event);
@@ -301,21 +297,26 @@ app
         }
         return { version: protocol.version, ok: true, value: result };
       } catch (error) {
-        diagnostics.failure("desktop.error", error, {
-          operation: methods.has(method) ? method : "native",
-        });
         const failure =
           /** @type {{ code?: string, message?: string, details?: unknown }} */ (
             error
           );
+        // Coded errors were explained to the user or recorded by the backend;
+        // only unexpected desktop errors need a trail, like backend ones.
+        if (!failure.code)
+          diagnostics.failure("desktop.error", error, {
+            operation: methods.has(method) ? method : "native",
+          });
         return {
           version: protocol.version,
           ok: false,
-          error: {
-            code: failure.code || "internal",
-            message: failure.message || "The operation could not finish.",
-            details: failure.details,
-          },
+          error: failure.code
+            ? {
+                code: failure.code,
+                message: failure.message,
+                details: failure.details,
+              }
+            : { code: "internal", message: "The operation could not finish." },
         };
       }
     });

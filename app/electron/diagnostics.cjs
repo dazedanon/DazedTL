@@ -1,4 +1,6 @@
+const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const { SourceMap } = require("node:module");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const protocol = require("../../backend/dazedtl/api/protocol.json");
@@ -11,20 +13,18 @@ const OPERATIONS = new Set([
   "native",
 ]);
 const EVENTS = new Set([
-  "desktop.started",
   "desktop.error",
   "renderer.gone",
   "renderer.error",
   "renderer.unresponsive",
   "renderer.reload",
   "renderer.load-failed",
-  "backend.started",
   "backend.error",
   "backend.spawn-failed",
   "backend.exit",
   "backend.invalid-response",
-  "workspace.ready",
 ]);
+const LOGS = ["desktop-failures.jsonl", "backend-failures.jsonl"];
 const identifier = (value) =>
   typeof value === "string" && /^[\w.<>-]{1,80}$/.test(value)
     ? value
@@ -73,15 +73,52 @@ function safeRecord(record) {
   return safe;
 }
 
+/** Code locations are only meaningful against the checkout's exact revision. */
+function revision(root) {
+  return new Promise((resolve) =>
+    execFile(
+      "git",
+      ["status", "--porcelain=v2", "--branch", "--untracked-files=no"],
+      {
+        cwd: root,
+        timeout: 3000,
+        windowsHide: true,
+        // Reading status must not lock the index against the user's own Git use.
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      },
+      (error, stdout) => {
+        const commit = /^# branch\.oid ([0-9a-f]{40})$/m.exec(stdout)?.[1];
+        resolve(
+          error || !commit
+            ? { revision: "unknown" }
+            : {
+                revision: commit.slice(0, 12),
+                modified: stdout
+                  .split("\n")
+                  .some((line) => line && !line.startsWith("#")),
+              },
+        );
+      },
+    ),
+  );
+}
+
 class Diagnostics {
   constructor(directory, versions, root) {
     this.directory = directory;
     this.versions = versions;
     this.root = root;
     this.recent = [];
+    this.maps = new Map();
     this.available = true;
     try {
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+      // Logs from before failure-only recording would bury new failures.
+      for (const name of ["desktop", "backend"])
+        for (const suffix of ["", ".1", ".2"])
+          fs.rmSync(path.join(directory, `${name}.jsonl${suffix}`), {
+            force: true,
+          });
     } catch {
       this.available = false;
     }
@@ -96,7 +133,7 @@ class Diagnostics {
     this.recent.push(record);
     this.recent = this.recent.slice(-40);
     try {
-      const file = path.join(this.directory, "desktop.jsonl");
+      const file = path.join(this.directory, LOGS[0]);
       const line = JSON.stringify(record) + "\n";
       if (
         (fs.existsSync(file) ? fs.statSync(file).size : 0) +
@@ -112,6 +149,60 @@ class Diagnostics {
     } catch {
       this.available = false;
     }
+  }
+  location(file) {
+    const relative = path.relative(this.root, file);
+    return relative &&
+      !path.isAbsolute(relative) &&
+      !relative.split(path.sep).includes("..")
+      ? "app/" + relative.split(path.sep).join("/")
+      : "external";
+  }
+  /** Bundle coordinates resolve through the build's hidden source maps. */
+  renderer(reason, causes) {
+    this.record("renderer.error", {
+      reason,
+      causes: Array.isArray(causes)
+        ? causes.map((cause) => ({
+            ...cause,
+            frames: Array.isArray(cause?.frames)
+              ? cause.frames.map((frame) => this.source(frame))
+              : [],
+          }))
+        : undefined,
+    });
+  }
+  source(frame) {
+    const bundle = /^app\/renderer\/(assets\/[\w.-]+\.js)$/.exec(
+      frame?.file,
+    )?.[1];
+    if (
+      !bundle ||
+      !Number.isSafeInteger(frame.line) ||
+      !Number.isSafeInteger(frame.column)
+    )
+      return frame;
+    const file = path.join(this.root, "app/dist", bundle);
+    if (!this.maps.has(bundle))
+      try {
+        this.maps.set(
+          bundle,
+          new SourceMap(JSON.parse(fs.readFileSync(file + ".map", "utf8"))),
+        );
+      } catch {
+        this.maps.set(bundle, null); // Development and older builds have no map.
+      }
+    const origin = this.maps.get(bundle)?.findOrigin(frame.line, frame.column);
+    return origin?.fileName
+      ? {
+          file: this.location(
+            path.resolve(path.dirname(file), origin.fileName),
+          ),
+          line: origin.lineNumber,
+          column: origin.columnNumber,
+          function: frame.function,
+        }
+      : frame;
   }
   failure(event, error, fields = {}) {
     const frames = [];
@@ -129,17 +220,10 @@ class Diagnostics {
         /(?:\(|\s)(file:\/\/\/.*|[A-Za-z]:\\.*|\/.*):(\d+):\d+\)?$/.exec(line);
       if (!match) continue;
       try {
-        const file = match[1].startsWith("file:")
-          ? fileURLToPath(match[1])
-          : match[1];
-        const relative = path.relative(this.root, file);
         frames.push({
-          file:
-            relative &&
-            !path.isAbsolute(relative) &&
-            !relative.split(path.sep).includes("..")
-              ? "app/" + relative.split(path.sep).join("/")
-              : "external",
+          file: this.location(
+            match[1].startsWith("file:") ? fileURLToPath(match[1]) : match[1],
+          ),
           line: Number(match[2]),
           function: "native",
         });
@@ -155,16 +239,9 @@ class Diagnostics {
       ],
     });
   }
-  report() {
+  async report() {
     const records = [...this.recent];
-    for (const name of [
-      "desktop.jsonl.2",
-      "desktop.jsonl.1",
-      "desktop.jsonl",
-      "backend.jsonl.2",
-      "backend.jsonl.1",
-      "backend.jsonl",
-    ]) {
+    for (const name of LOGS.flatMap((log) => [log + ".2", log + ".1", log])) {
       let file;
       try {
         file = fs.openSync(path.join(this.directory, name), "r");
@@ -202,7 +279,11 @@ class Diagnostics {
     return [
       "DazedTL diagnostics",
       JSON.stringify(
-        { ...this.versions, desktopLogAvailable: this.available },
+        {
+          ...this.versions,
+          ...(await revision(this.root)),
+          desktopLogAvailable: this.available,
+        },
         null,
         2,
       ),

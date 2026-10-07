@@ -132,12 +132,13 @@ class Backend {
       );
     });
     this.process.on("exit", (exitCode, signal) => {
-      diagnostics.record("backend.exit", {
-        exitCode,
-        signal,
-        stderrBytes,
-        code: startupCode || undefined,
-      });
+      if (!this.stopping || exitCode !== 0 || stderrBytes || startupCode)
+        diagnostics.record("backend.exit", {
+          exitCode,
+          signal,
+          stderrBytes,
+          code: startupCode || undefined,
+        });
       const message =
         startupMessages[startupCode] ||
         "The translation service stopped. Restart to recover saved work.";

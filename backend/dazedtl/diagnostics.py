@@ -1,8 +1,7 @@
-"""Bounded local diagnostics containing metadata and code locations, never payloads."""
+"""Bounded local failure records containing metadata and code locations, never payloads."""
 
 import json
 import logging
-import platform
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -24,7 +23,7 @@ class Diagnostics:
             directory = Path(directory)
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
             handler = RotatingFileHandler(
-                directory / "backend.jsonl",
+                directory / "backend-failures.jsonl",
                 maxBytes=65536,
                 backupCount=2,
                 encoding="utf-8",
@@ -49,13 +48,6 @@ class Diagnostics:
             )
         except OSError, ValueError:
             pass  # Logging must not prevent returning the original error.
-
-    def started(self):
-        self._record("backend.started", python=platform.python_version())
-
-    def workspace_ready(self, version):
-        if type(version) is int:
-            self._record("workspace.ready", schema=version)
 
     def location(self, filename):
         try:

@@ -730,7 +730,6 @@ def dispatcher(app, check=False):
 def serve(args, diagnostics):
     os.environ["PYTHON_DOTENV_DISABLED"] = "1"
     app = Application(args.workspace, not args.offline)
-    diagnostics.workspace_ready(app.projects.data["version"])
     dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
     local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
     # Electron matches replies by id, so previews may answer out of order
@@ -769,13 +768,19 @@ def serve(args, diagnostics):
                 "result": dispatch(name, params),
             }
         except Exception as exc:  # noqa: BLE001
-            name = request.get("method")
-            operation = name if isinstance(name, str) and name in METHODS else "native"
-            diagnostics.failure(exc, operation, request.get("id"))
+            error = views.error(exc)
+            # Validation and missing-file messages reach the user as written;
+            # only failures shown as a generic message need a diagnostic trail.
+            if error["code"] in {"internal", "storage"}:
+                name = request.get("method")
+                operation = (
+                    name if isinstance(name, str) and name in METHODS else "native"
+                )
+                diagnostics.failure(exc, operation, request.get("id"))
             return {
                 "id": request.get("id"),
                 "version": PROTOCOL["version"],
-                "error": views.error(exc),
+                "error": error,
             }
 
     try:
@@ -826,7 +831,6 @@ def main():
         ENGINE_ROOT,
     )
     try:
-        diagnostics.started()
         if platform.python_version() != (root / ".python-version").read_text().strip():
             print("DAZEDTL_ERROR runtime_version", file=sys.stderr, flush=True)
             return 1

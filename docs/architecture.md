@@ -762,7 +762,7 @@ Explicit retries and interface reloads flush retained draft guards, including fa
 Plugins is bundled with the other screens so rebuilding the desktop app cannot remove a deferred chunk still needed by an open window.
 Electron owns the native renderer-crash/unresponsive dialog and reloads only on explicit user choice, keeping the existing Python process and job ownership.
 Forced renderer replacement bypasses unavailable draft saving only after explaining the possible loss.
-Renderer diagnostics contain fixed error types and relative bundled code locations, never exception messages or raw stacks.
+Renderer diagnostics contain fixed error types and source locations resolved through the build's hidden source maps, never exception messages or raw stacks.
 
 ### Persistence and settings
 
@@ -771,6 +771,8 @@ The storage helper validates the result, retains the original bytes in a backup,
 Project opening and selection publish their in-memory ownership only after backend persistence succeeds; presentation-only navigation does not change that ownership.
 Engine-owned settings and run formats remain the adapter's responsibility.
 Diagnostics record only fixed metadata and relative code locations, excluding exception messages, payloads, and raw stderr.
+They keep only failures the interface reports generically (internal and storage errors, abnormal backend exits, renderer failures), so explained refusals, clean shutdowns and relayed backend errors cannot push them out of the bounded report.
+The report names the checkout revision and whether tracked files changed, since code locations resolve only against that revision.
 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
 The Settings editor retains its session while hidden, so returning preserves its current view and fields without another initial settings read; the sidebar marks Settings while that hidden draft is unsaved.
