@@ -19,7 +19,7 @@ export function DiagnosticsAction() {
         title="Copy app versions and recent error details"
         onClick={() => action.run(copy, "Diagnostics copied.")}
       >
-        <Copy size={16} />
+        <Copy size={18} />
         Copy diagnostics
       </Button>
       {(action.error || action.notice) && (
