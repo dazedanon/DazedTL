@@ -780,7 +780,10 @@ function RequestProcess({
                             : ["submitted", "uncertain"].includes(
                                   visiblePayload.state,
                                 )
-                              ? "No response recorded. Submission could not be confirmed."
+                              ? job.mode === "batch"
+                                ? "No response recorded. Submission could not be confirmed."
+                                : // A Live request is never resent on its own; say how.
+                                  "No response recorded, and the provider may or may not have received this request. It is not resent automatically; translate the file again to resend it, which can charge twice if the first one arrived."
                               : ["failed", "rejected"].includes(
                                     visiblePayload.state,
                                   )

@@ -261,6 +261,10 @@ export function fileLines(
     return { done, total: done };
   if (run && run.mode !== "batch" && activeWorker(run))
     return { done, total: null, running: true };
+  // Live prepares requests as it goes, so one that ended early never saw
+  // the rest of the file and its prepared lines are not the file's total.
+  if (run && run.mode !== "batch" && run.status !== "complete")
+    return { done, total: null };
   return { done, total: rows.length ? sum(rows) : null };
 }
 /** Run-scoped tasks are also complete when every selected file needs nothing. */

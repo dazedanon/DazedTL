@@ -205,10 +205,12 @@ export function TranslateWorkspace({
                           ? "Lines saved so far; the total is known when the run ends"
                           : lines.total
                             ? "Lines saved of the lines the latest run prepared"
-                            : "Line counts appear once a run prepares this file"
+                            : lines.done
+                              ? "Lines saved before the latest run ended; it did not reach the rest of the file"
+                              : "Line counts appear once a run prepares this file"
                       }
                     >
-                      {lines.running
+                      {lines.running || (!lines.total && lines.done)
                         ? `${lines.done.toLocaleString()} so far`
                         : lines.total
                           ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`

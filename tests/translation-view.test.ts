@@ -1986,6 +1986,12 @@ test("file line amounts count each source request once at its latest attempt", (
     total: null,
     running: true,
   });
+  // One that stopped early never prepared the rest, so the lines it did
+  // prepare are not the file's total.
+  assert.deepEqual(lines(state([{ ...run, status: "stopped" }])), {
+    done: 40,
+    total: null,
+  });
 });
 
 test("text locations name the editor's event, page and command, counting from one", () => {
