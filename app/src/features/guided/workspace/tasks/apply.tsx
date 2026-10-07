@@ -5,7 +5,7 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { CheckField, DetailRow, FieldRow } from "../../../../ui/FieldRow";
-import { displayText } from "../../../../ui/displayText";
+import { displayText, sentence } from "../../../../ui/displayText";
 import { fileCount, publicationLabels, publicationTitle } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -421,6 +421,20 @@ export function qaView(w: GuidedWorkspace): TaskView {
   // The app prepares the task and its mechanical inventory itself; the
   // assistant has the task once it is copied or its screening has begun.
   const qaCopied = action.key === "copy:qa" && !!action.notice;
+  // A finding can be chosen once its assistant prepared a correction for it.
+  const operations = new Map<string, typeof qa.corrections>();
+  for (const change of qa.corrections)
+    operations.set(change.finding_id, [
+      ...(operations.get(change.finding_id) || []),
+      change,
+    ]);
+  const choosable = qa.findings
+    .map((row) => row.id)
+    .filter((id) => operations.has(id));
+  const choose = (ids: string[]) => {
+    editText("findings_task", qa.task || "");
+    editText("findings", [...new Set(ids)]);
+  };
   const qaStarted = (["screen", "deep"] as const).some((key) => {
     const counts = qaStatus[key] as Record<string, number> | undefined;
     return !!(counts?.accepted || counts?.checked);
@@ -544,50 +558,90 @@ export function qaView(w: GuidedWorkspace): TaskView {
         ]}
       />
       {/* The QA findings row already says whether results are pending. */}
-      {(!!qa.findings.length || !!qa.corrections.length) && (
+      {!!qa.findings.length && (
         <section className="text-qa-results">
-          <h3>Findings and corrections</h3>
-          {qa.findings.map((row) => (
-            <details key={row.id}>
-              <summary>
-                {row.id} ·{" "}
-                {row.classification ||
-                  row.category ||
-                  row.identity ||
-                  "Saved finding"}
-              </summary>
-              <strong>Original source</strong>
-              <pre>{row.source || "Source evidence is in the saved task."}</pre>
-              <strong>Current translation</strong>
-              <pre>{row.current || row.live}</pre>
-              <p>{row.reason || row.evidence || row.note}</p>
-            </details>
-          ))}
-          {qa.corrections.map((row, index) => (
-            <div className="text-qa-correction" key={row.finding_id + index}>
-              <label className="toggle">
-                <input
-                  type="checkbox"
-                  disabled={disabled || !qa.current}
-                  checked={chosenFindings.includes(row.finding_id)}
-                  onChange={(event) => {
-                    editText("findings_task", qa.task || "");
-                    editText(
-                      "findings",
-                      event.target.checked
-                        ? [...new Set([...chosenFindings, row.finding_id])]
-                        : chosenFindings.filter((id) => id !== row.finding_id),
-                    );
-                  }}
-                />
-                {row.finding_id} · {row.file}
-              </label>
-              <strong>Before</strong>
-              <pre>{row.expected}</pre>
-              <strong>Chosen correction</strong>
-              <pre>{row.replacement}</pre>
-            </div>
-          ))}
+          {/* One row per finding: its change, evidence and, when it has a
+              prepared correction, the choice to apply it. */}
+          <div className="text-qa-results-heading">
+            <h3>Findings</h3>
+            {!!choosable.length && (
+              <>
+                <span className="muted">
+                  {chosenFindings.length} of {choosable.length} chosen
+                </span>
+                <Button
+                  variant="link"
+                  disabled={
+                    disabled ||
+                    !qa.current ||
+                    chosenFindings.length === choosable.length
+                  }
+                  onClick={() => choose(choosable)}
+                >
+                  Choose all
+                </Button>
+                <Button
+                  variant="link"
+                  disabled={disabled || !chosenFindings.length}
+                  onClick={() => choose([])}
+                >
+                  Clear
+                </Button>
+              </>
+            )}
+          </div>
+          <ul className="text-qa-findings">
+            {qa.findings.map((row) => {
+              const changes = operations.get(row.id) || [];
+              const before = row.current || row.live || changes[0]?.expected;
+              const after = row.correction || changes[0]?.replacement;
+              const files = [...new Set(changes.map((change) => change.file))];
+              return (
+                <li key={row.id}>
+                  <input
+                    type="checkbox"
+                    id={`qa-${row.id}`}
+                    aria-label={`Apply ${row.id}`}
+                    disabled={disabled || !qa.current || !changes.length}
+                    checked={chosenFindings.includes(row.id)}
+                    onChange={(event) =>
+                      choose(
+                        event.target.checked
+                          ? [...chosenFindings, row.id]
+                          : chosenFindings.filter((id) => id !== row.id),
+                      )
+                    }
+                  />
+                  <label htmlFor={`qa-${row.id}`}>
+                    <span className="text-qa-change">
+                      <span>{before}</span>
+                      {after && (
+                        <>
+                          <span aria-label="becomes">→</span>
+                          <strong>{after}</strong>
+                        </>
+                      )}
+                    </span>
+                    <small>
+                      {[
+                        row.classification ||
+                          (row.category && sentence(row.category)),
+                        row.source,
+                        files.join(", "),
+                        changes.length > 1 && `${changes.length} places`,
+                        row.id,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
+                    {(row.reason || row.evidence || row.note) && (
+                      <small>{row.reason || row.evidence || row.note}</small>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         </section>
       )}
     </>
@@ -603,7 +657,15 @@ export function qaView(w: GuidedWorkspace): TaskView {
         task: fields.text.findings_task,
         findings: chosenFindings,
       },
-      !baseline || !qa.current || !chosenFindings.length,
+      !baseline
+        ? true
+        : !qa.current
+          ? qa.message
+          : !chosenFindings.length
+            ? choosable.length
+              ? "Choose corrections first."
+              : "No finding has a prepared correction yet."
+            : false,
       "primary",
     )
   ) : qaTask ? (
