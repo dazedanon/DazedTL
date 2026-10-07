@@ -196,7 +196,9 @@ function ProjectStatus({
       disabled={busy}
       onClick={() => openTask(progress.current.step, progress.current.task)}
     >
-      Resume: {progress.current.title}
+      {/* Nothing done yet is a start, not a return to saved work. */}
+      {progress.stages.some((stage) => stage.done) ? "Resume" : "Start"}:{" "}
+      {progress.current.title}
       <ArrowRight size={15} aria-hidden="true" />
     </Button>
   ) : (

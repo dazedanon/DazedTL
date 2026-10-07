@@ -9,7 +9,7 @@ Choose **Open a game** on the Project page and select the game folder.
 A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Len's method](#lens-method) for any game.
 **Translation** in the sidebar then opens that method.
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
-The Project page's **Status** shows the next unfinished task and every stage's tasks; **Resume** reopens Translation where you left off.
+The Project page's **Status** shows the next unfinished task and every stage's tasks; **Start** or **Resume** opens Translation where you left off.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
