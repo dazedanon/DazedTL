@@ -12,6 +12,7 @@ from typing import cast
 
 from dazedtl.translation.files import digest
 
+from . import transmission
 from .process_view import source_values
 from .request_scope import columns, identities, source_locations
 
@@ -157,6 +158,7 @@ class Evidence:
             "submitted" if self.mode == "translate" else "prepared",
             clarification_of=clarification_of,
         )
+        transmission.begin()
 
     def update(self, state, usage=None, error=None):
         current = getattr(self.local, "current", None)
@@ -254,8 +256,12 @@ class Evidence:
                 == REFUSAL_POLICY,
             )
 
+        if self.mode == "translate":
+            transmission.install()
+
         def call(native, *args, **kwargs):
             self.local.current = None
+            transmission.end()
             attempt = partial(captured, native)
             try:
                 if retry is not None:
@@ -268,16 +274,21 @@ class Evidence:
                     getattr(getattr(translation, "openai", None), "api_key", "") or ""
                 )
                 detail = error_evidence(error, secret)
-                # Keep the existing submission classification: recovered inner
-                # errors are display evidence, not new authority to retry.
-                status = getattr(error, "status_code", None)
+                # Observed tries decide whether anything reached the provider.
+                # Without them only an outright refusal of the final error does;
+                # recovered inner errors are display evidence, not authority.
+                tries = transmission.observed()
+                never_sent = (
+                    transmission.never_sent(tries)
+                    if tries
+                    else getattr(error, "status_code", None) in transmission.REFUSED
+                )
                 self.update(
-                    "failed"
-                    if status in {400, 401, 403, 404, 405, 413, 415, 422, 429}
-                    else "uncertain",
-                    error=json.dumps(detail),
+                    "failed" if never_sent else "uncertain", error=json.dumps(detail)
                 )
                 raise
+            finally:
+                transmission.end()
 
         translation.translateText.layer(LAYER, call)
         # Translate runs validate through the native cache writer; others settle

@@ -151,6 +151,92 @@ class ProcessTests(unittest.TestCase):
                     self.assertEqual(process_view.payload(root, 0)["error"], detail)
                     self.assertEqual(evidence.path.read_bytes(), before)
 
+    def test_live_failures_count_as_never_sent_only_when_no_try_reached_the_provider(
+        self,
+    ):
+        # SDK clients retry inside one recorded request, so a response lost
+        # after the provider processed it can precede a refused connection.
+        # Only tries that never connected or were refused outright prove that
+        # resending cannot charge twice. The tries go through a real SDK client,
+        # whose HTTP library is the one that must be observed.
+        import socket
+
+        import openai
+
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen()
+        self.addCleanup(server.close)
+        replies = []
+
+        def serve():
+            while True:
+                try:
+                    connection, _ = server.accept()
+                except OSError:
+                    return
+                with connection:
+                    connection.recv(65536)
+                    connection.sendall(replies.pop(0))
+
+        threading.Thread(target=serve, daemon=True).start()
+        closed = socket.socket()
+        closed.bind(("127.0.0.1", 0))
+        dead = f"http://127.0.0.1:{closed.getsockname()[1]}/"
+        closed.close()
+        live = f"http://127.0.0.1:{server.getsockname()[1]}/"
+        refusal = b"HTTP/1.1 402 Payment Required\r\nContent-Length: 0\r\n\r\n"
+        cases = [
+            ("refused connection", [dead], [], "failed"),
+            ("refused request", [live], [refusal], "failed"),
+            (
+                "lost response, then refused connection",
+                [live, dead],
+                [b""],
+                "uncertain",
+            ),
+        ]
+        params = {
+            "model": "fixture",
+            "messages": [{"role": "user", "content": '{"Line1":"薬"}'}],
+        }
+        with TemporaryDirectory() as temporary:
+            for name, urls, answers, state in cases:
+                with self.subTest(name=name):
+                    replies[:] = answers
+                    root = Path(temporary) / name
+                    evidence = Evidence(root, "translate")
+
+                    def tries(urls, evidence):
+                        def native(user):
+                            evidence.record(params)
+                            for url in urls:
+                                client = openai.OpenAI(
+                                    api_key="fixture-key",
+                                    base_url=url,
+                                    max_retries=0,
+                                    timeout=5,
+                                )
+                                try:
+                                    client.chat.completions.create(**params)
+                                except openai.OpenAIError:
+                                    pass
+                            raise RuntimeError("Connection error.")
+
+                        return native
+
+                    translation = SimpleNamespace(
+                        queue_batch_request=point(lambda *_: "unused"),
+                        _write_request_debug_log=point(lambda *_: None),
+                        translateText=point(tries(urls, evidence)),
+                        translateAI=point(lambda text: None),
+                        openai=SimpleNamespace(api_key="fixture-key"),
+                    )
+                    evidence.install(translation)
+                    with self.assertRaises(RuntimeError):
+                        translation.translateText('{"Line1":"薬"}')
+                    self.assertEqual(process_view.payload(root, 0)["state"], state)
+
     def test_live_clarification_groups_require_exact_ownership_and_preserve_each_receipt(
         self,
     ):

@@ -9,17 +9,15 @@ from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
 from .process_view import ledger, queue, saved
+from .transmission import REFUSED
 
 APPROVAL = "dazedtl_batch_approval"
 JOURNAL = "dazedtl-batch-submission.json"
-# HTTP statuses where the provider refused the create request itself, so no
-# Batch exists. Timeouts, conflicts, server errors and lost responses can
-# follow a successful create and stay uncertain.
-REFUSED = frozenset({400, 401, 402, 403, 404, 413, 422, 429})
 
 
 def refused_create(intent):
-    """A journaled create the provider definitively refused."""
+    """A journaled create the provider refused outright, which left no Batch;
+    timeouts, conflicts, server errors and lost responses stay uncertain."""
     return (
         bool(intent) and not intent.get("receipt") and intent.get("refused") in REFUSED
     )

@@ -171,6 +171,7 @@ Partial request progress does not release a pending job’s tokens.
 Only the owning worker advances its approved queue; the background monitor restarts that worker after interruption and collects its retained responses.
 A fully successful provider receipt with a matching submission manifest remains submitted while awaiting download; missing fetched responses or conflicting evidence retain submission uncertainty and outstanding work is never automatically resubmitted.
 The [submission journal](../backend/dazedtl/compatibility/batch_continuation.py) records a create the provider refused outright with a client error, such as OpenRouter's HTTP 402, so its requests read as never sent and a new approval may send them; timeouts, conflicts, server errors and lost responses can follow a successful create and stay uncertain.
+A failed Live request reads as never sent only when every HTTP try inside it failed to connect or was refused outright, as the [transport observer](../backend/dazedtl/compatibility/transmission.py) records, because SDK retries can hide a processed try behind a later refused connection; anything else stays uncertain.
 Cancellation binds one provider Batch and its request mapping through a project-owned, one-use review; it retains the queue and receipts.
 Terminal collection uses the recorded connection and retains successful responses.
 It settles any authorized clarification Batch before native fetched-results consumption, including partial results from canceled Batches.

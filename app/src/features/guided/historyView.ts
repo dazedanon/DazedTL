@@ -60,9 +60,10 @@ export function historyOutcome(job: Job): HistoryOutcome {
     .join(" · ");
   const prepared = process?.prepared;
   const received = process?.received;
-  const rejected = process?.failed;
+  // Requests the provider errored, refused or never received.
+  const failed = process?.failed;
   const requestDetail = [
-    rejected ? `${rejected.toLocaleString()} rejected` : "",
+    failed ? `${failed.toLocaleString()} failed` : "",
     process?.remaining ? `${process.remaining.toLocaleString()} unsent` : "",
     received ? `${received.toLocaleString()} received` : "",
   ]
