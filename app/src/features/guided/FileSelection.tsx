@@ -232,9 +232,9 @@ export function FileSelection({
       <div className="file-browser-toolbar">
         <span>
           {inline
-            ? `${visible.length} files`
+            ? `${visible.length} ${visible.length === 1 ? "file" : "files"}`
             : `${visible.length} ${visible.length === 1 ? "match" : "matches"}`}
-          {inline && hidden > 0 && ` · ${hidden} hidden`}
+          {inline && hidden > 0 && ` · ${hidden} selected outside this search`}
         </span>
         <div className="actions">
           <Button
