@@ -215,7 +215,7 @@ export default function ModelOptionsEditor({
         </FieldRow>
         {value.pricing === "custom" ? (
           <>
-            <div className="paired-settings custom-rates">
+            <div className="custom-rates">
               {(["inputRate", "outputRate"] as const).map((key) => (
                 <FieldRow
                   key={key}
@@ -317,7 +317,7 @@ export default function ModelOptionsEditor({
             )}
           </FieldRow>
           {value.batchPricing === "custom" ? (
-            <div className="paired-settings custom-rates">
+            <div className="custom-rates">
               {(["batchInputRate", "batchOutputRate"] as const).map((key) => (
                 <FieldRow
                   key={key}

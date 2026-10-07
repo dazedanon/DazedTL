@@ -55,15 +55,6 @@
   margin: var(--space-3) 0 var(--space-4);
   line-height: 1.6;
 }
-.paired-settings {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3) var(--space-6);
-}
-.paired-settings .field-row {
-  grid-template-columns: var(--field-label-width) minmax(0, 1fr);
-  margin-top: 0;
-}
 /* The active connection: its name and state head the panel, Edit beside them. */
 .connection-panel-header {
   display: flex;
@@ -115,23 +106,7 @@
   .connection-keyless {
     margin-left: calc(min(var(--field-label-width), 45%) + var(--space-3));
   }
-  .paired-settings {
-    gap: var(--space-3) var(--space-4);
-  }
-  .paired-settings .field-row {
-    grid-template-columns: 125px minmax(0, 1fr);
-    gap: var(--space-3);
-  }
   .connection-details .summary-row {
-    grid-template-columns: 140px minmax(0, 1fr);
-    gap: var(--space-3);
-  }
-}
-@media (max-width: 800px) {
-  .paired-settings {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .paired-settings .field-row {
     grid-template-columns: 140px minmax(0, 1fr);
     gap: var(--space-3);
   }
