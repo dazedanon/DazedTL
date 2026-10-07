@@ -385,6 +385,37 @@ class ProcessTests(unittest.TestCase):
                             ),
                         )
 
+    def test_older_live_retries_count_once_only_after_a_replaced_attempt(self):
+        # Runs saved before retries recorded their first attempt showed a
+        # fully translated file as 50 / 100 lines. Only a replaced attempt
+        # proves that the next attempt at the same lines was its retry.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = Evidence(root, "translate")
+            params = {"messages": [{"role": "user", "content": '{"Line1":"薬"}'}]}
+            for filename, state in (
+                ("Map001.json", "rejected"),
+                ("Other.json", "validated"),
+                ("Map001.json", "validated"),
+                ("Map001.json", "rejected"),
+                ("Map001.json", "validated"),
+            ):
+                evidence.local.filename, evidence.local.sources = filename, ["a"]
+                evidence.prepared(params, state)
+            with evidence.connect() as connection:
+                connection.execute(
+                    "UPDATE requests SET error=? WHERE id=1",
+                    (json.dumps({"code": "replaced_response", "message": "Replaced"}),),
+                )
+            value = process_view.summary(
+                root, {"mode": "translate", "status": "complete"}
+            )
+            self.assertEqual(
+                [row.get("retryOf") for row in value["requests"]],
+                [None, None, 0, None, None],
+            )
+            self.assertEqual(value["rejected"], 1)
+
     def test_completed_live_rejections_release_only_exact_returned_attempts(self):
         # Old Live rows stopped at "received" and blocked all later estimates.
         # Only a complete, unchanged run and exact unambiguous rejection record

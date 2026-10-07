@@ -150,6 +150,7 @@ class ProcessRequest(TypedDict):
     file: NotRequired[str | None]
     sourceItems: int
     clarificationOf: NotRequired[int]
+    retryOf: NotRequired[int]
     preview: NotRequired[str]
     providerFinished: NotRequired[bool]
 
@@ -220,7 +221,7 @@ class BatchCancellation(TypedDict):
 
 
 class ResponseAttempt(TypedDict):
-    kind: Literal["original", "clarification"]
+    kind: Literal["original", "clarification", "retry"]
     batchId: NotRequired[str]
     response: object
     payload: NotRequired[RunPayload]

@@ -43,8 +43,9 @@ export function groupedRequests(rows: NonNullable<RunProcess["requests"]>) {
   })[] = [];
   const owners = new Map<number, (typeof groups)[number]>();
   for (const row of rows) {
-    const parent =
-      row.clarificationOf == null ? undefined : owners.get(row.clarificationOf);
+    // Clarifications and validation retries are attempts at the same lines.
+    const first = row.clarificationOf ?? row.retryOf;
+    const parent = first == null ? undefined : owners.get(first);
     if (parent && parent.file === row.file) {
       parent.indices.push(row.index);
       parent.state = row.state;

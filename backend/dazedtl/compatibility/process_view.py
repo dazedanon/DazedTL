@@ -167,6 +167,7 @@ def _ledger_records(root, signature, consumed):
             "response",
             "raw_response",
             "clarification_of",
+            "retry_of",
         )
         rows = connection.execute(
             "SELECT "
@@ -239,6 +240,7 @@ def _ledger_records(root, signature, consumed):
             )
         result.append(entry)
     link_clarifications(result)
+    link_retries(result)
     return result
 
 
@@ -275,6 +277,46 @@ def link_clarifications(rows):
         if row["provider_refusal"] and "clarificationOf" not in row:
             signatures[index] = request_signature(row, params)
             originals.setdefault(signatures[index], []).append(index)
+
+
+def link_retries(rows):
+    """Link validation retries to the first attempt at the same lines.
+
+    Runs record that attempt. Older runs only marked attempts that a later
+    validated response replaced, so each of those leads the following attempts
+    at its lines, through the one that replaced it.
+    """
+    positions = {row["id"]: index for index, row in enumerate(rows)}
+
+    def lines(row):
+        return json.dumps(
+            [row["filename"], row["sources"] or source_values(row["params"])],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    replaced = {}
+    for index, row in enumerate(rows):
+        key = lines(row)
+        first = positions.get(row["retry_of"], replaced.get(key))
+        if (
+            first is not None
+            and first < index
+            and lines(rows[first]) == key
+            and "clarificationOf" not in row
+        ):
+            row["retryOf"] = first
+        if (row["error"] or {}).get("code") == "replaced_response":
+            replaced.setdefault(key, row.get("retryOf", index))
+        else:
+            replaced.pop(key, None)
+
+
+def attempt_root(rows, index):
+    """The first attempt of a request across clarifications and retries."""
+    row = rows[index]
+    parent = row.get("clarificationOf", row.get("retryOf"))
+    return index if parent is None else attempt_root(rows, parent)
 
 
 def queue(root):
@@ -694,12 +736,23 @@ def summary(root, job):
     from .request_scope import requests as source_requests
 
     items = list(source_requests(root, job))
-    rejected = sum(row["state"] == "rejected" for row in items)
-    unresolved = [
+    # A request's latest attempt decides whether it was rejected.
+    latest = set(
+        {
+            attempt_root(records, number): number
+            for number in range(len(records or []))
+        }.values()
+    )
+    rejected_items = [
         row
         for row in items
-        if row["state"] == "rejected"
-        and (row.get("error") or {}).get("code") != "replaced_response"
+        if row["state"] == "rejected" and (not records or row["index"] in latest)
+    ]
+    rejected = len(rejected_items)
+    unresolved = [
+        row
+        for row in rejected_items
+        if (row.get("error") or {}).get("code") != "replaced_response"
     ]
     validation_files = set(job.get("mismatches", {})) | {
         row["file"] for row in unresolved if row["file"]
@@ -876,10 +929,12 @@ def summary(root, job):
                 "preview": source_preview(row["source"]),
                 **({"providerFinished": True} if row.get("providerFinished") else {}),
                 **(
-                    {"clarificationOf": records[row["index"]]["clarificationOf"]}
-                    if records
-                    and row["index"] < len(records)
-                    and "clarificationOf" in records[row["index"]]
+                    {
+                        key: records[row["index"]][key]
+                        for key in ("clarificationOf", "retryOf")
+                        if key in records[row["index"]]
+                    }
+                    if records and row["index"] < len(records)
                     else {}
                 ),
             }
@@ -1218,11 +1273,11 @@ def payload(root, index):
     if index >= len(rows):
         raise ValueError("This request is no longer available.")
     value = live_payload(rows[index], index, len(rows))
-    parent = rows[index].get("clarificationOf", index)
-    group = [parent] + [
+    parent = attempt_root(rows, index)
+    group = [
         number
-        for number, row in enumerate(rows)
-        if row.get("clarificationOf") == parent
+        for number in range(parent, len(rows))
+        if attempt_root(rows, number) == parent
     ]
     if len(group) > 1:
         value["responseAttempts"] = []
@@ -1230,7 +1285,11 @@ def payload(root, index):
             detail = live_payload(rows[number], number, len(rows))
             value["responseAttempts"].append(
                 {
-                    "kind": "original" if number == parent else "clarification",
+                    "kind": "original"
+                    if number == parent
+                    else "clarification"
+                    if "clarificationOf" in rows[number]
+                    else "retry",
                     "response": detail["response"],
                     "payload": detail,
                 }

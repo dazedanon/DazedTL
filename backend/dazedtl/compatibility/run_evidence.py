@@ -79,10 +79,11 @@ class Evidence:
                     connection.execute(
                         "ALTER TABLE requests ADD COLUMN " + name + " TEXT"
                     )
-            if "clarification_of" not in columns(connection):
-                connection.execute(
-                    "ALTER TABLE requests ADD COLUMN clarification_of INTEGER"
-                )
+            for name in ("clarification_of", "retry_of"):
+                if name not in columns(connection):
+                    connection.execute(
+                        "ALTER TABLE requests ADD COLUMN " + name + " INTEGER"
+                    )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS validated_items (identity TEXT PRIMARY KEY, source TEXT, response TEXT)"
             )
@@ -127,23 +128,32 @@ class Evidence:
             self.translatable.add(filename)
 
     def prepared(self, params, state="prepared", *, clarification_of=None):
+        # A validation retry sends the same lines again, so it records the
+        # first attempt; the request's lines then count once.
+        identity = getattr(self.local, "request_identity", None)
+        attempts = (
+            self.local.validation_groups.get(identity, [])
+            if identity is not None and getattr(self.local, "call", None) is not None
+            else []
+        )
         with self.connect() as connection:
             row = connection.execute(
-                "INSERT INTO requests(params,state,sources,filename,clarification_of) VALUES (?,?,?,?,?)",
+                "INSERT INTO requests(params,state,sources,filename,clarification_of,retry_of) VALUES (?,?,?,?,?,?)",
                 (
                     json.dumps(params, ensure_ascii=False),
                     state,
                     json.dumps(getattr(self.local, "sources", [])),
                     getattr(self.local, "filename", None),
                     clarification_of,
+                    attempts[0] if attempts else None,
                 ),
             )
             self.local.current = row.lastrowid
             if getattr(self.local, "call", None) is not None:
                 self.local.call.append(row.lastrowid)
-                self.local.validation_groups.setdefault(
-                    getattr(self.local, "request_identity", None), []
-                ).append(row.lastrowid)
+                self.local.validation_groups.setdefault(identity, []).append(
+                    row.lastrowid
+                )
 
     def record(self, params, *, clarification_of=None):
         # Durable intent precedes the SDK call; merely built estimate payloads

@@ -9,7 +9,12 @@ import { ProtectedText, RequestSource } from "./RequestSource";
 import { RequestTechnical } from "./RequestTechnical";
 import { ExpandableText } from "../../ui/ExpandableText";
 import { historyOutcome } from "./historyView";
-import { activeRun, requestAttempt, translatedLines } from "./translationView";
+import {
+  activeRun,
+  groupedRequests,
+  requestAttempt,
+  translatedLines,
+} from "./translationView";
 import {
   requestOutcome,
   requestBatches,
@@ -69,7 +74,8 @@ const unconfirmed = (
 /** The request to read first: an unconfirmed submission, then a failed or
     rejected one. */
 function issueRequest(job: Job) {
-  const requests = job.process?.requests || [];
+  // A later attempt that passed validation settles the request.
+  const requests = groupedRequests(job.process?.requests || []);
   return (
     requests.find((row) => unconfirmed(job, row)) ||
     requests.find((row) => ["failed", "rejected"].includes(row.state))
@@ -246,6 +252,7 @@ function RequestProcess({
         )
       : null;
   const attempts = requestPayload?.responseAttempts || [];
+  const retries = attempts.filter((attempt) => attempt.kind === "retry");
   const attemptIndex = Math.max(
     0,
     Math.min(
@@ -331,7 +338,7 @@ function RequestProcess({
   const legacyIssues = (process.validationIssues || []).filter(
     (issue) =>
       (!selectedFile || issue.file === selectedFile) &&
-      !process.requests?.some(
+      !groupedRequests(process.requests || []).some(
         (row) => row.file === issue.file && row.state === "rejected",
       ),
   );
@@ -542,7 +549,11 @@ function RequestProcess({
                 label:
                   attempt.kind === "original"
                     ? "Original"
-                    : "Clarification retry",
+                    : attempt.kind === "clarification"
+                      ? "Clarification retry"
+                      : retries.length > 1
+                        ? `Retry ${retries.indexOf(attempt) + 1}`
+                        : "Retry",
               }))}
               onChange={(attempt) =>
                 setAttemptSelection({

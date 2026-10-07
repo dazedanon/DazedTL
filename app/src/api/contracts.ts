@@ -184,6 +184,7 @@ export type ProcessRequest = {
   file?: string | null;
   sourceItems: number;
   clarificationOf?: number;
+  retryOf?: number;
   preview?: string;
   providerFinished?: boolean;
 };
@@ -254,7 +255,7 @@ export type BatchCancellation = {
 };
 
 export type ResponseAttempt = {
-  kind: "original" | "clarification";
+  kind: "original" | "clarification" | "retry";
   batchId?: string;
   response: unknown;
   payload?: RunPayload;

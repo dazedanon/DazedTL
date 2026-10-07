@@ -1038,12 +1038,22 @@ try:
             ["Heal"],
         ]
         result = summary(live_root, {"mode": "translate", "status": "complete"})
+        # The retry resends the first request's lines, so they count once.
         assert (
             result["received"],
             result["validated"],
             result["rejected"],
             result["retryBlocked"],
-        ) == (4, 2, 2, False), result
+        ) == (4, 2, 1, False), result
+        assert [row.get("retryOf") for row in result["requests"]] == [
+            None,
+            0,
+            None,
+            None,
+        ], result
+        assert [
+            attempt["kind"] for attempt in payload(live_root, 1)["responseAttempts"]
+        ] == ["original", "retry"]
         assert result["validationIssues"] == [{"file": "Map001.json", "rejected": 1}], (
             result
         )

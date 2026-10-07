@@ -16,7 +16,8 @@ export function RequestFailure({
       ? (error as Record<string, unknown>)
       : null;
   // The lines of a failed request are not lost; say what happens to them.
-  const kept = failed && (
+  // A replaced attempt's lines came from the later response instead.
+  const kept = failed && record?.code !== "replaced_response" && (
     <p className="muted">
       Its lines keep their original text until the next Translate.
     </p>

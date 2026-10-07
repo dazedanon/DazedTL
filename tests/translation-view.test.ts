@@ -70,6 +70,18 @@ test("clarification selection groups stable receipt indices and keeps each attem
     ],
   );
   assert.equal(original.state, "rejected");
+  // A validation retry resends the same lines; they count once.
+  assert.deepEqual(
+    groupedRequests([
+      original,
+      other,
+      { ...retry, clarificationOf: undefined, retryOf: 0 },
+    ]).map((row) => [row.indices, row.sourceItems]),
+    [
+      [[0, 2], 1],
+      [[1], 1],
+    ],
+  );
   assert.equal(
     groupedRequests([original, other, { ...retry, file: "Foreign.json" }])
       .length,

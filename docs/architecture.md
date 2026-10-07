@@ -130,12 +130,14 @@ The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records in
 The guided adapter waits before native consume, while the background monitor can finish the same authorized retry after interruption.
 Uncertain submissions are never retried automatically, and repeated refusals remain untranslated.
 Original payloads and responses remain available beside the clarification evidence.
-The request inspector groups a clarification with its original request and offers Original and Clarification retry tabs inside that selection.
+The request inspector groups a clarification or a validation retry with its original request and offers Original, Clarification retry and Retry tabs inside that selection.
 Response, source/context, exact payload and usage follow the selected attempt without another backend read; the latest attempt opens by default.
 Both replies come from retained receipts, separately from the refusal-filtered native consume result.
 Live workers record the parent before sending.
 Older Live pairs require an exact, unambiguous match of payload, file and source identities; unrelated or ambiguous requests stay separate.
+Validation retries record their first attempt the same way; in older runs only an attempt that a later validated response replaced leads the following attempts at its lines.
 Grouping is presentation-only: raw receipt indices, submission guards and billed usage stay intact.
+File line counts and rejected-request counts follow each request's latest attempt, so retried lines count once.
 Each clarification retains the original source and instructions with one appended clarification.
 New MV/MZ state runs also freeze compatible state-call grouping before submission.
 The app adapter delegates extraction and field writing to the native state handler, groups only calls with identical instructions and matched system/glossary/SFX context within the saved request limit, and reuses the saved response partition during consume.
