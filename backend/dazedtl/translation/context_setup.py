@@ -13,6 +13,9 @@ REPORT = ".dazedtl/guided/context-findings.json"
 CORE = ("glossary", "quirks", "game")
 WIDTHS = ("width", "faceWidth", "listWidth", "noteWidth")
 DEFAULT_WIDTHS = dict(zip(WIDTHS, (60, 50, 100, 75)))
+# The speaker request a line width task records when no Names & glossary task
+# was copied; such a request waits for widths, never for guidance files.
+LAYOUT_REQUEST = "layout"
 
 
 def retained_documents(source, documents, drafts):
@@ -102,8 +105,12 @@ def inspect(
     complete = all(document_states.get(name, {}).get("exists") for name in CORE)
     receipt = native.get("guided_layout", {})
     applied = bool(receipt.get("applied") and native["widths"] == receipt.get("widths"))
+    names_request = (
+        bool(request_value)
+        and request_value.get("speaker_request_id") != LAYOUT_REQUEST
+    )
     result = {
-        "status": "ready" if complete else "waiting" if request_value else "missing",
+        "status": "ready" if complete else "waiting" if names_request else "missing",
         "message": "Guidance files are saved in the game folder."
         if complete
         else "Save the glossary, style and game context files when needed.",

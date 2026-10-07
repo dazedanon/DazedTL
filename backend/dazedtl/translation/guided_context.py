@@ -125,7 +125,11 @@ class GuidedContext:
             request = context_setup.request(
                 path,
                 project_id,
-                {"request_id": previous.get("speaker_request_id", "layout")},
+                {
+                    "request_id": previous.get(
+                        "speaker_request_id", context_setup.LAYOUT_REQUEST
+                    )
+                },
                 native["widths"],
             )
             command = shlex.join(

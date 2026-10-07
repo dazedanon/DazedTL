@@ -42,6 +42,11 @@ class ContextSetupTests(unittest.TestCase):
 
     def test_guidance_completion_requires_only_existing_core_files(self):
         self.assertEqual(self.inspect()["status"], "missing")
+        # A line width task shares the request but never waits for guidance.
+        C.request(self.request_path, "game", {"request_id": C.LAYOUT_REQUEST})
+        self.assertEqual(self.inspect()["status"], "missing")
+        C.request(self.request_path, "game", {"request_id": "speaker-request"})
+        self.assertEqual(self.inspect()["status"], "waiting")
         for doc in self.docs.values():
             Path(doc["path"]).write_text("")
         self.assertEqual(self.inspect()["status"], "ready")

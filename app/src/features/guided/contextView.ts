@@ -71,7 +71,7 @@ export function investigationResults(
       saved: guidance.complete,
       status: guidance.complete
         ? "saved"
-        : context.requestId
+        : context.status === "waiting"
           ? "waiting"
           : "idle",
       detail: guidance.complete
