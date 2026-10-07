@@ -1071,6 +1071,26 @@ pre {
   align-items: flex-end;
   text-align: end;
 }
+/* Right-aligned feedback flows as one paragraph led by its status icon, so a
+   wrapped result keeps the icon beside its first line instead of at the
+   column's far edge. */
+@container (width > 36rem) {
+  .action-row-actions
+    > .action-control
+    > .action-control-feedback
+    > .feedback:not(.error) {
+    display: block;
+  }
+  .action-row-actions
+    > .action-control
+    > .action-control-feedback
+    > .feedback
+    > :is(svg, .unsaved-dot) {
+    display: inline-block;
+    margin-inline-end: var(--space-2);
+    vertical-align: middle;
+  }
+}
 .action-row-actions > .actions {
   margin-top: 0;
   flex-wrap: wrap;
