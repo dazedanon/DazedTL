@@ -228,11 +228,36 @@ class Application:
                                 **views.pick(run, ("status", "message")),
                             },
                         )
-                    elif not current["jobs"] and not current["progress"]:
-                        project.update(
-                            status="Guided workflow ready",
-                            detail="Continue from " + legacy["step"] + ".",
+                    else:
+                        # The latest finished activity, whichever part of the
+                        # app ran it: setup jobs, Guided operations or runs.
+                        latest = max(
+                            [
+                                *current["jobs"][:1],
+                                *legacy["operations"],
+                                *(
+                                    {**item, "label": "Translation run"}
+                                    for item in legacy["runs"]
+                                ),
+                            ],
+                            key=lambda item: item.get("updated") or "",
+                            default=None,
                         )
+                        if latest:
+                            project.update(
+                                status=latest["label"]
+                                + " · "
+                                + latest["status"].replace("_", " "),
+                                detail=latest.get("message") or "",
+                                operation=views.pick(
+                                    latest, ("label", "status", "message")
+                                ),
+                            )
+                        elif not current["progress"]:
+                            project.update(
+                                status="Guided workflow ready",
+                                detail="Continue from " + legacy["step"] + ".",
+                            )
                 elif (
                     project["engine"] in {"MVMZ", "ACE"}
                     and not current["jobs"]
