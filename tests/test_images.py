@@ -2,6 +2,7 @@
 
 import time
 import unittest
+from base64 import b64decode
 from contextlib import nullcontext
 from copy import deepcopy
 from io import BytesIO
@@ -14,6 +15,7 @@ from dazedtl.api import views
 from dazedtl.api.contracts.validation import check_response
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService
+from dazedtl.images.inventory import png_metadata
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.backups import snapshot, store_path
@@ -371,7 +373,16 @@ class ImageTests(unittest.TestCase):
         item = self.service.list(self.identity)["items"][0]
         self.assertEqual(item["state"], "blocked")
         self.assertIn("transparency", item["blockedReason"])
-        write_bytes(self.game / "img/A.png", png((8, 7, 6, 0), (9, 8)))
+        # Previews decode once, so their metadata must still match a full
+        # check, and a changed file must never come back from the cache.
+        self.service.preview(self.identity, "img/A.png", "source", 4)
+        source = png((8, 7, 6, 0), (9, 8))
+        write_bytes(self.game / "img/A.png", source)
+        changed = self.service.preview(self.identity, "img/A.png", "source", 4)
+        expected = png_metadata(source)
+        self.assertEqual({key: changed[key] for key in expected}, expected)
+        with Image.open(BytesIO(b64decode(changed["url"].split(",")[1]))) as scaled:
+            self.assertEqual(scaled.size, (4, 4))
         self.service.refresh_assets(self.identity, ["img/A.png"])
         item = self.service.list(self.identity)["items"][0]
         self.assertFalse(item["aiReviewed"])
