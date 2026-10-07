@@ -274,9 +274,11 @@ main > .image-manager {
 .image-tile:hover {
   border-color: var(--color-control-border);
 }
+/* The second ring sits outside the border: inside, the image's background
+   would cover it everywhere but beside the name. */
 .image-tile[data-selected="true"] {
   border-color: var(--color-accent);
-  box-shadow: inset 0 0 0 1px var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 .image-tile-select {
   position: absolute;
@@ -289,6 +291,10 @@ main > .image-manager {
 }
 .image-tile-select input {
   margin: 0;
+}
+/* The tile clips anything outside it, so the ring fills the label's padding. */
+.image-tile-select input:focus-visible {
+  outline-offset: 0;
 }
 .image-tile-preview {
   flex: 1;
