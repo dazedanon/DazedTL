@@ -96,6 +96,8 @@ Reloading archives previous working copies and their cached results.
 
 The Project page's **History** lists approved runs, including failed and canceled ones, estimates and other project activity.
 **Run history** on a Translate task shows that stage's runs over the task; close it to return to your files.
+When the latest run failed, or a Batch could not be confirmed as sent, a banner above the files says why.
+Its close button hides it until that run reports a different reason; the run stays in history.
 **Inspect**, or a file's inspect icon, opens the request inspector.
 **Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage, the exact API payload and the run log.
 **File contents** shows the file's current text even when no request was prepared.

@@ -6,6 +6,7 @@ import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
 import { EventTextSources } from "../../EventTextSources";
+import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
 import { nothingToTranslate, sourceErrors } from "../../eventTextSelection";
 import {
@@ -96,11 +97,22 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   // The latest attempt's failure shows on the task itself, not only in Run
   // history; an unconfirmed Batch also warns before anything is sent again.
   const unconfirmed = pendingBatches.find(unconfirmedSubmission);
+  const failed =
+    current && !current.temporary && current.status === "failed"
+      ? current
+      : undefined;
+  // Provider progress changes an unconfirmed Batch's message, not its doubt.
   const failure = unconfirmed
-    ? `The last Batch could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`
-    : current && !current.temporary && current.status === "failed"
-      ? `The last run failed. ${current.message || "Run history shows why."}`
-      : "";
+    ? {
+        run: unconfirmed.id,
+        reason: "unconfirmed " + unconfirmed.process?.uncertain,
+        message: `The last Batch could not be confirmed as sent, so it may still be at the provider. ${unconfirmed.message ? unconfirmed.message + " " : ""}Check Run history before translating these files again.`,
+      }
+    : failed && {
+        run: failed.id,
+        reason: "failed " + (failed.message || ""),
+        message: `The last run failed. ${failed.message || "Run history shows why."}`,
+      };
 
   const prerequisites =
     resyncPending ||
@@ -166,7 +178,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {!paidModeReady && (
         <Message message="This connection does not support Batch. Choose Live or a supported connection." />
       )}
-      <Message message={failure} />
+      {failure && <RunFailure {...failure} />}
       {phase === "advanced" && (
         <>
           <p>

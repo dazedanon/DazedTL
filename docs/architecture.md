@@ -273,7 +273,7 @@ Legacy history remains readable; new unapproved preparation is excluded.
 The native pointer is not the ownership registry.
 Creation order determines the newest attempt in each task; an active worker stays visible, while a newer estimate or different scope never falls back to an older overlapping failure.
 The application-wide run view represents active work only.
-Runs have no dismissible notices, hidden-history preference or separate output-copy action; Apply and the translated-folder tool remain the guided output workflow.
+Runs have no hidden-history preference or separate output-copy action; Apply and the translated-folder tool remain the guided output workflow.
 Legacy `kept_failed_runs` keys remain an ownership-discovery source only; they do not hide runs or settle receipts.
 Unresolved submissions remain inspectable in history and subject to the existing execution guards and overlapping-charge review.
 Saved run status never vetoes an explicitly requested new Guided translation.
@@ -307,6 +307,7 @@ Ready to apply requires verified full output or explicit evidence that no reques
 Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
 Detailed states and request counts belong in Inspect and the approval dialog.
 The latest run's failure, or a Batch that could not be confirmed as sent, shows on its task with the reason instead of a finished notice; collection errors and rejection details remain in the inspector and run views.
+Dismissing that [banner](../app/src/features/guided/RunFailure.tsx) is a browser-profile preference for the run and a fingerprint of its reason; it hides no run, receipt or execution guard, and a different reason shows again.
 The observed `workerStatus` retains the actual worker state separately from public monitoring activity.
 File ownership, saved metrics and task completion use that worker state, so a background check cannot promote an older run or make its whole scope look queued.
 Automatic Batch monitoring cannot mark every file as submitted or override saved progress: In progress for provider work requires the file's latest submitted requests to be mapped to an explicitly active provider Batch, using the shared provider-state rules.
