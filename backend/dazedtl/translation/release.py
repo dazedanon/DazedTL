@@ -231,21 +231,31 @@ def applied_assets(source):
     return sorted(set(paths))
 
 
-def packing_inputs(native):
+def packing_paths(native):
+    """The Ace exports packing reads: each data file's JSON and each script."""
     root, data = Path(native["source"]), Path(native["data"])
-    paths = sorted(path.relative_to(root).as_posix() for path in data.glob("*.json"))
-    if not paths:
+    found = [*data.glob("*.json"), *data.glob("scripts/*.rb")]
+    return sorted(path.relative_to(root).as_posix() for path in found)
+
+
+def packing_inputs(native):
+    paths = packing_paths(native)
+    if not any(path.endswith(".json") for path in paths):
         raise ValueError("Ace JSON exports are missing. Extract them before packing.")
-    return evidence(root, paths)
+    return evidence(Path(native["source"]), paths)
 
 
 def unpacked(inputs, outputs):
-    """JSON exports without a packed native file of the same name; the game
-    and the converter match data file names without regard to case."""
+    """Exports without a packed native file: a JSON file packs into the data
+    file of its name and a script into Scripts; the game and the converter
+    match names without regard to case."""
     packed = {PurePosixPath(name).stem.casefold() for name in outputs}
-    return [
-        name for name in inputs if PurePosixPath(name).stem.casefold() not in packed
-    ]
+
+    def target(name):
+        path = PurePosixPath(name)
+        return "scripts" if path.parent.name == "scripts" else path.stem.casefold()
+
+    return [name for name in inputs if target(name) not in packed]
 
 
 def packing_state(native, folder):

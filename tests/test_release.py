@@ -145,6 +145,10 @@ class ReleaseTests(unittest.TestCase):
             data = root / "Data/Items.rvdata2"
             data.parent.mkdir()
             data.write_bytes(b"\x04\x08generated native data")
+            script = root / "ace_json/scripts/1_Main.rb"
+            script.parent.mkdir()
+            script.write_text("generated script")
+            (root / "Data/Scripts.rvdata2").write_bytes(b"\x04\x08generated scripts")
             native = {
                 "source": str(root),
                 "data": str(root / "ace_json"),
@@ -154,8 +158,16 @@ class ReleaseTests(unittest.TestCase):
             receipt = {
                 "source": str(root),
                 "inputs": packing_inputs(native),
-                "outputs": evidence(root, ["Data/Items.rvdata2"]),
+                "outputs": evidence(
+                    root, ["Data/Items.rvdata2", "Data/Scripts.rvdata2"]
+                ),
             }
+            write_json(work / "ace-packing.json", receipt)
+            self.assertTrue(packing_state(native, work)["current"])
+            # A script translated after packing needs packing again too.
+            script.write_text("later script translation")
+            self.assertFalse(packing_state(native, work)["current"])
+            receipt["inputs"] = packing_inputs(native)
             write_json(work / "ace-packing.json", receipt)
             self.assertTrue(packing_state(native, work)["current"])
             write_json(root / "ace_json/Items.json", [{"name": "later fitting edit"}])

@@ -284,6 +284,8 @@ class GuidedRelease:
         return status
 
     def patch_manifest(self, project_id, paths, action):
+        from .release import packing_paths
+
         project, native = self.guided.record(project_id)
         entries = {name: {} for name in paths}
         if action != "git_setup":
@@ -303,13 +305,8 @@ class GuidedRelease:
             for name in paths:
                 if name not in originals and name not in source_files:
                     entries[name] = {"original_sha256": None}
-        inputs = []
-        if native["engine"] == "ACE":
-            inputs = [
-                path.relative_to(Path(project["source"])).as_posix()
-                for path in Path(native["data"]).glob("*.json")
-            ]
-        return {"files": entries, "inputs": sorted(inputs)}
+        inputs = packing_paths(native) if native["engine"] == "ACE" else []
+        return {"files": entries, "inputs": inputs}
 
     def ace_packing(self, native):
         from .release import packing_state
