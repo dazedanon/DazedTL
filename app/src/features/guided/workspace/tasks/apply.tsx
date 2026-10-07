@@ -569,8 +569,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
         state={
           qaApplied
             ? "applied"
-            : !qa.current && qaStatus.stage
-              ? "attention"
+            : // The text this task checked changed since.
+              !qa.current && qaStatus.stage
+              ? "outdated"
               : qa.findings.length
                 ? "ready"
                 : qaCopied || qaStarted

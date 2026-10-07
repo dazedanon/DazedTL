@@ -340,7 +340,7 @@ export function auditView(w: GuidedWorkspace): TaskView {
             missing: "idle",
             waiting: "waiting",
             ready: "ready",
-            stale: "attention",
+            stale: "outdated",
             invalid: "attention",
           }[status] as AssistantTaskState
         }

@@ -112,5 +112,6 @@ export const assistantDisplay: Record<AssistantTaskState, DisplayState> = {
   waiting: "waiting",
   ready: "needs_review",
   applied: "applied",
+  outdated: "outdated",
   attention: "blocked",
 };
