@@ -76,6 +76,8 @@ export function usePendingChanges({
   const [review, setReview] = useState<PartReview[] | null>(null);
   // Whether Apply ran on this review, which then reports its outcome.
   const [attempted, setAttempted] = useState(false);
+  // The control that opened the review, the one that reports beside itself.
+  const [origin, setOrigin] = useState("");
   const update = (id: PendingPartId, patch: Partial<PartReview>) =>
     setReview(
       (current) =>
@@ -136,39 +138,52 @@ export function usePendingChanges({
     if (ended.status !== "complete")
       throw new Error(ended.message || `${part.title} did not finish.`);
   };
-  /** Prepares every part's review, in apply order, then opens it. */
-  const open = (parts: PendingPart[]) =>
-    action.run(
-      async () => {
-        const reviewed: PartReview[] = [];
-        for (const id of applyOrder) {
-          const part = parts.find((item) => item.id === id);
-          if (!part) continue;
-          if (part.held) {
-            reviewed.push({ ...part, state: "skipped", message: part.held });
-            continue;
+  /**
+   * Prepares every part's review, in apply order. It opens once the action
+   * and its refresh settle, so Apply all starts ready instead of meeting the
+   * duplicate-submission guard; until then the clicked control shows the wait.
+   */
+  const open = (parts: PendingPart[], from = origin) => {
+    setOrigin(from);
+    return action
+      .run(
+        async () => {
+          const reviewed: PartReview[] = [];
+          for (const id of applyOrder) {
+            const part = parts.find((item) => item.id === id);
+            if (!part) continue;
+            if (part.held) {
+              reviewed.push({ ...part, state: "skipped", message: part.held });
+              continue;
+            }
+            try {
+              reviewed.push({
+                ...part,
+                preview: await prepare(part),
+                state: "ready",
+                message: "",
+              });
+            } catch (error) {
+              reviewed.push({
+                ...part,
+                state: "blocked",
+                message: messageOf(error),
+              });
+            }
           }
-          try {
-            reviewed.push({
-              ...part,
-              preview: await prepare(part),
-              state: "ready",
-              message: "",
-            });
-          } catch (error) {
-            reviewed.push({
-              ...part,
-              state: "blocked",
-              message: messageOf(error),
-            });
-          }
+          return reviewed;
+        },
+        "",
+        "pending:review",
+      )
+      .then((outcome) => {
+        if (outcome.ok) {
+          setAttempted(false);
+          setReview(outcome.value);
         }
-        setAttempted(false);
-        setReview(reviewed);
-      },
-      "",
-      "pending:review",
-    );
+        return outcome;
+      });
+  };
   /** Applies the ready parts in order; a failed part leaves the rest going. */
   const apply = () =>
     action
@@ -235,6 +250,20 @@ export function usePendingChanges({
     key: action.key,
     error: action.error,
     notice: action.notice,
+    /** Pending, failure and success for the control `from` that opened it. */
+    feedback: (from: string) => {
+      const own = origin === from;
+      return {
+        pending: own && action.busy && action.key === "pending:review",
+        error:
+          own &&
+          (action.key === "pending:review" ||
+            (action.key === "pending:apply" && !review))
+            ? action.error
+            : "",
+        notice: own && action.key === "pending:apply" ? action.notice : "",
+      };
+    },
   };
 }
 

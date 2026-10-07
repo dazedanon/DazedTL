@@ -116,7 +116,10 @@ export function applyView(w: GuidedWorkspace): TaskView {
             <Button
               variant="link"
               disabled={disabled || pending.busy || !baseline}
-              onClick={() => void openPending("text", { text: outputFiles })}
+              // Its result reports beside the footer's Review & apply.
+              onClick={() =>
+                void openPending("text", { text: outputFiles }, "all")
+              }
             >
               Apply saved text again
             </Button>
@@ -244,15 +247,8 @@ export function applyView(w: GuidedWorkspace): TaskView {
       disabled={disabled || pending.busy || !!blocked || !included.length}
       disabledReason={blocked}
       feedbackKey="pending:review"
-      pending={pending.busy && pending.key === "pending:review"}
       pendingText="Preparing the review…"
-      error={
-        pending.key === "pending:review" ||
-        (pending.key === "pending:apply" && !pending.review)
-          ? pending.error
-          : ""
-      }
-      notice={pending.key === "pending:apply" ? pending.notice : ""}
+      {...pending.feedback("all")}
       onClick={() => void openPending()}
     />
   );

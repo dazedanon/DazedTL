@@ -1286,6 +1286,7 @@ export function useGuidedWorkspace({
   const openPending = (
     only?: PendingPartId,
     choice: { images?: { ids: string[]; count: number }; text?: string[] } = {},
+    from: string = only ?? "all",
   ) => {
     const parts = only
       ? pendingParts({
@@ -1301,7 +1302,7 @@ export function useGuidedWorkspace({
               : part,
           )
       : pendingList.filter((part) => !pendingExcluded.has(part.id));
-    return pending.open(parts);
+    return pending.open(parts, from);
   };
   /** A task's Review & apply, opening the pending review for its part. */
   const reviewPending = ({
@@ -1322,15 +1323,8 @@ export function useGuidedWorkspace({
       variant={variant}
       disabled={disabled || pending.busy || !!blocked}
       disabledReason={typeof blocked === "string" ? blocked : ""}
-      pending={pending.busy && pending.key === "pending:review"}
       pendingText="Preparing the review…"
-      error={
-        pending.key === "pending:review" ||
-        (pending.key === "pending:apply" && !pending.review)
-          ? pending.error
-          : ""
-      }
-      notice={pending.key === "pending:apply" ? pending.notice : ""}
+      {...pending.feedback(only)}
       onClick={() => void openPending(only, choice)}
     />
   );
