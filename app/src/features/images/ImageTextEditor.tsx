@@ -1255,7 +1255,7 @@ function Editor({
         {/* Undo returns the copy to its original pixels, so it appears
             while the copy differs from the game image; later text edits
             leave a render in place. */}
-        {!!image && image.candidateHash !== image.sourceHash && (
+        {!!image?.changed && (
           <Button
             disabled={busy}
             onClick={() => {

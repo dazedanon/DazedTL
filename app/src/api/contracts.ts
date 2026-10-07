@@ -1515,6 +1515,7 @@ export type ImageEditorImage = {
   blocks: ImageTextBlock[];
   sourceHash: string;
   candidateHash: string;
+  changed: boolean;
   originalUrl: string;
   candidateUrl: string;
   error: string;

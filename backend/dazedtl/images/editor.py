@@ -297,6 +297,13 @@ class ImageEditor:
                     "blocks": [block.to_dict() for block in entry.blocks],
                     "sourceHash": row.get("sourceHash", ""),
                     "candidateHash": row.get("candidateHash", ""),
+                    # Encrypted sources differ from their decrypted copy, so
+                    # a render is judged against the original PNG pixels.
+                    "changed": bool(
+                        row.get("candidateHash")
+                        and row.get("candidateHash")
+                        != row.get("originalPngHash", row.get("sourcePngHash"))
+                    ),
                     "originalUrl": "",
                     "candidateUrl": "",
                     "notes": saved.get("notes", {}).get(row["id"], []),

@@ -313,6 +313,7 @@ class ImageEditorImage(TypedDict):
     blocks: list[ImageTextBlock]
     sourceHash: str
     candidateHash: str
+    changed: bool
     originalUrl: str
     candidateUrl: str
     error: str
