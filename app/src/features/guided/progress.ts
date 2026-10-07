@@ -8,6 +8,7 @@ import type {
   TranslationState,
 } from "../../api/contracts";
 import { investigationResults } from "./contextView.ts";
+import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import {
   completeForSelection,
@@ -20,7 +21,7 @@ import { initialPosition, stageDone, stagesFor } from "./workflow.ts";
 type Values = GuidedState["preferences"]["values"];
 
 /** The observed Plugin files and Images work, which Guided state leaves out. */
-export type OptionalWork = {
+export type ObservedWork = {
   plugins?: PluginState | null;
   images?: ImageManagerState | null;
   /** Work another project saved in the game folder, waiting for a choice. */
@@ -29,7 +30,7 @@ export type OptionalWork = {
 };
 
 /** Tasks that need the user's choice before their work can continue. */
-export function reviewTasks({ pluginsForeign, imagesForeign }: OptionalWork) {
+export function reviewTasks({ pluginsForeign, imagesForeign }: ObservedWork) {
   return new Set<string>([
     ...(pluginsForeign ? ["plugins"] : []),
     ...(imagesForeign ? ["images"] : []),
@@ -48,7 +49,7 @@ export function completedTasks(
     widthsDirty = false,
     plugins,
     images,
-  }: { values?: Values; widthsDirty?: boolean } & OptionalWork = {},
+  }: { values?: Values; widthsDirty?: boolean } & ObservedWork = {},
 ) {
   const sourceBackup = translation.lifecycle.source_backup;
   const preserved = !!sourceBackup && sourceBackup.available !== false;
@@ -73,18 +74,26 @@ export function completedTasks(
     );
   };
   const discovery = state.contextSetup;
-  // Optional stages are done once their work reaches the game with nothing
-  // left waiting, and Release while a saved ZIP still matches the game.
+  // Plugin files and Images are done once their work reaches the game with
+  // nothing left waiting, and Release while a saved ZIP still matches the game.
+  // A complete image discovery that left nothing recommended or uncertain
+  // also closes Images: the game has no image text to translate.
   const pluginCounts =
     plugins && plugins.projectId === state.projectId ? plugins.counts : null;
-  const imageCounts =
-    images && images.projectId === state.projectId ? images.counts : null;
+  const ownImages =
+    images && images.projectId === state.projectId ? images : null;
+  const imageCounts = ownImages?.counts;
+  const noImageText =
+    ownImages?.discovery.status === "complete" &&
+    !ownImages.counts.recommended &&
+    !ownImages.counts.uncertain;
   return new Set<string>([
     ...(baseline ? ["setup"] : []),
     ...(applied ? ["apply"] : []),
     ...(phaseComplete("database") ? ["database"] : []),
     ...(phaseComplete("dialogue") ? ["dialogue"] : []),
-    ...(phaseComplete("advanced") &&
+    ...((nothingToTranslate(state.eventText, values.engine_options) ||
+      phaseComplete("advanced")) &&
     (state.comparisons.status === "not_needed" ||
       (state.comparisons.status === "ready" && phaseComplete("variables")))
       ? ["other-event-text"]
@@ -95,7 +104,8 @@ export function completedTasks(
     ...(pluginCounts?.applied && !pluginCounts.ready && !pluginCounts.blocked
       ? ["plugins"]
       : []),
-    ...(imageCounts?.applied &&
+    ...(imageCounts &&
+    (imageCounts.applied || noImageText) &&
     !imageCounts.ready &&
     !imageCounts.needsReview &&
     !imageCounts.blocked
@@ -161,11 +171,11 @@ export type GuidedProgress = {
 export function guidedProgress(
   state: GuidedState,
   translation: TranslationState,
-  optional: OptionalWork = {},
+  observed: ObservedWork = {},
 ): GuidedProgress {
   const stages = stagesFor(state.engine);
-  const done = completedTasks(state, translation, optional);
-  const review = reviewTasks(optional);
+  const done = completedTasks(state, translation, observed);
+  const review = reviewTasks(observed);
   const order = stages.flatMap((stage) =>
     stage.tasks.map((task) => ({ stage, task })),
   );

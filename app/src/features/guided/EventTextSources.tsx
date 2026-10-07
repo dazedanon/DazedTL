@@ -7,6 +7,7 @@ import { FieldRow } from "../../ui/FieldRow";
 import { Message } from "../../ui/Feedback";
 import {
   manualSources,
+  nothingToTranslate,
   sourceErrors,
   type SelectorKey,
 } from "./eventTextSelection";
@@ -39,14 +40,18 @@ export function EventTextSources({
           label={
             <>
               <strong>
-                {state.status === "ready"
-                  ? "Findings ready"
-                  : "Manual source choices"}
+                {nothingToTranslate(state, values)
+                  ? "Nothing to translate"
+                  : state.status === "ready"
+                    ? "Findings ready"
+                    : "Manual source choices"}
               </strong>
               <small>
-                {state.status === "ready"
-                  ? "Review coverage before enabling sources."
-                  : "No source is investigated yet. Review coverage before enabling any."}
+                {nothingToTranslate(state, values)
+                  ? "You confirmed these findings with every source off."
+                  : state.status === "ready"
+                    ? "Review coverage before enabling sources."
+                    : "No source is investigated yet. Review coverage before enabling any."}
               </small>
             </>
           }

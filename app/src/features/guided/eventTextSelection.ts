@@ -19,6 +19,20 @@ export interface SourcePickerDraft {
   filter: PickerFilter;
 }
 
+/**
+ * Current findings reviewed with every source off, saved and in the draft
+ * `values`: the selected event files have no other event text to translate,
+ * so the task needs no run.
+ */
+export const nothingToTranslate = (
+  state: Pick<EventTextState, "status" | "accepted" | "enabled" | "rows">,
+  values: Record<string, EngineValue>,
+) =>
+  state.status === "ready" &&
+  state.accepted &&
+  !state.enabled.length &&
+  !state.rows.some((row) => values[row.key] === true);
+
 export function filteredChoices(
   choices: SourceChoice[],
   selected: readonly string[],

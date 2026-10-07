@@ -74,7 +74,6 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "other-event-text",
-        optional: true,
         title: "Other event text",
         description:
           "Investigate specific text sources, review their coverage, then translate.",
@@ -88,7 +87,6 @@ export const workflow: WorkflowStage[] = [
       },
       {
         id: "images",
-        optional: true,
         title: "Images",
         description:
           "Find relevant images, edit selected copies, and apply reviewed results.",

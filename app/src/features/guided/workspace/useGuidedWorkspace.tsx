@@ -468,6 +468,28 @@ export function useGuidedWorkspace({
       "",
       "event-text:review",
     );
+  /** Current findings reviewed with no source enabled close the task. */
+  const confirmNoEventText = () =>
+    action.run(
+      async () => {
+        await save();
+        const { findings } = await api.guided.eventTextRequest(project.id);
+        if (findings.status !== "ready" || findings.enabled.length)
+          throw new Error(
+            "The findings or source choices changed. Review them again.",
+          );
+        await api.guided.eventTextReview(
+          project.id,
+          draft.session.getSnapshot().value!.revision,
+          findings.binding,
+          findings.reportId,
+          "",
+          false,
+        );
+      },
+      "Nothing to translate.",
+      "event-text:none",
+    );
   const skipEventText = () =>
     stepTask(
       state.comparisons.status !== "not_needed" ? "variables" : "plugins",
@@ -1590,6 +1612,7 @@ export function useGuidedWorkspace({
     openSourcePicker,
     saveSourcePicker,
     reviewSources,
+    confirmNoEventText,
     skipEventText,
     advance,
     back,

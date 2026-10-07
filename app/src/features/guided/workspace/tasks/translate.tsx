@@ -2,11 +2,12 @@
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { flushDrafts } from "../../../../state/leaveGuards";
+import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
 import { EventTextSources } from "../../EventTextSources";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
-import { sourceErrors } from "../../eventTextSelection";
+import { nothingToTranslate, sourceErrors } from "../../eventTextSelection";
 import {
   activeRun,
   completeForSelection,
@@ -422,6 +423,7 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     stepTask,
     openSourcePicker,
     reviewSources,
+    confirmNoEventText,
     skipEventText,
     chooseFiles,
     feedback,
@@ -482,9 +484,22 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
       Review source choices
     </Button>
   );
+  const findingsReady = state.eventText.status === "ready";
+  const nothing = nothingToTranslate(state.eventText, values.engine_options);
   return {
     content,
-    action: review,
+    action: enabledCodes.length
+      ? review
+      : findingsReady &&
+        !nothing && (
+          <ActionControl
+            variant="primary"
+            label="Confirm nothing to translate"
+            disabled={disabled}
+            {...feedback("event-text:none", "Saving…")}
+            onClick={confirmNoEventText}
+          />
+        ),
     next: enabledCodes.length ? (
       <Button
         variant="quiet"
@@ -493,10 +508,18 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
       >
         Continue to translation
       </Button>
-    ) : (
+    ) : nothing ? (
       <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-        Skip event codes
+        {state.comparisons.status !== "not_needed"
+          ? "Review comparisons"
+          : "Continue to plugin files"}
       </Button>
+    ) : (
+      !findingsReady && (
+        <Button variant="primary" disabled={disabled} onClick={skipEventText}>
+          Skip event codes
+        </Button>
+      )
     ),
     heading: {
       title: "Source choices",

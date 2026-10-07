@@ -64,10 +64,10 @@ Cost dialogs focus on price, selected scope and approval; an optional Preview re
 Preview request shows requests an estimate kept: estimates keep them on connections that support Batch, while Live-only connections estimate from token counts and offer no preview; Batch review previews its collected requests.
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
-Translate keeps three tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
+Translate keeps its game text tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
 Database and map task completion aggregates verified per-file progress across their full file groups, independent of checkbox selection.
 The current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
-Event-code and comparison completion retain their reviewed scope checks.
+Event-code and comparison completion retain their reviewed scope checks; current findings reviewed with no source enabled complete Other event text without a run, since nothing in it needs translating.
 Translate is complete only when all its tasks are complete; action and cost reviews remain bound to the selected scope.
 Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation.
 Failed, stopped and stale estimates stop preparation with feedback.
@@ -376,7 +376,7 @@ Legacy Guided review receipts remain readable for existing records.
 
 ## Plugins and images
 
-Guided Plugin files and Images are optional Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
+Guided Plugin files (optional) and Images are Translate tasks; positions saved by earlier stage layouts open them without rewriting saved run records.
 The [plugin service](../backend/dazedtl/plugins/service.py) owns retained investigation, occurrence choices, working copies and reviewed publication for MV/MZ root and `www` layouts.
 An Acorn AST inventory and recursive decoded parameter paths bind reports to exact source bytes without evaluating plugin code.
 Original Japanese database fields, notetags, command arguments and parameter evidence come from a verified source backup even after runtime JSON has been translated.
@@ -481,7 +481,7 @@ Status shows where a Guided project stands from the observed snapshot through [g
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
-Optional stages complete from the same snapshot: Plugin files and Images once applied work leaves nothing selected or edited waiting, and Release while a saved ZIP still matches the game; none of them blocks the next required task.
+Plugin files and Images complete from the same snapshot once applied work leaves nothing selected or edited waiting, Images also once a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; the optional ones never block the next required task.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.

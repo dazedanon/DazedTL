@@ -11,7 +11,7 @@ A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ac
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks.
 **Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
-Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files and Images count as done once their applied work has nothing left waiting, and Release while its last ZIP is up to date.
+Optional tasks say **Optional** until they are done, and they never hold up the next step: Plugin files counts as done once its applied work has nothing left waiting, and Release while its last ZIP is up to date.
 Its **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
@@ -66,7 +66,7 @@ Measured line widths are saved automatically when the assistant reports them; **
 
 ### Translate
 
-Translate has three tasks for game text, **Database files**, **Maps & events** and **Other event text**, and the optional **Plugin files** and **Images** tasks.
+Translate has four tasks, **Database files**, **Maps & events**, **Other event text** and **Images**, and the optional **Plugin files** task.
 All supported files start selected.
 Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
 The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
@@ -84,7 +84,8 @@ Cancellation and newer overlapping approvals stop automatic continuation.
 Files with active or unresolved Batch work are locked against source reloads.
 
 **Other event text** investigates variables, plugin commands, scripts and labels before translation.
-Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns, or skip the task if none are needed.
+Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns.
+When the findings leave nothing to enable, **Confirm nothing to translate** in **Source choices** finishes the task.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
 
 **Options** holds task settings and opens the translated folder.
@@ -117,6 +118,7 @@ Copying a task only uses the clipboard; it does not start an assistant or provid
 An edited copy saved in another image editor is checked again when you return to DazedTL.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
+Images is done once applied images have nothing left waiting, or once a complete discovery leaves no recommended or uncertain image; **Exclude selected** records images you leave untranslated.
 
 ### Check
 

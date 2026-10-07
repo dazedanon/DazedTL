@@ -99,8 +99,8 @@ test("saved runs choose their owning task instead of native progress labels", ()
       .tasks.map((task) => task.id),
     ["package"],
   );
-  // Five stages: Plugin files and Images are optional Translate tasks, and
-  // Check holds Apply, the line width check and Text QA.
+  // Five stages: Plugin files and Images are Translate tasks, and Check
+  // holds Apply, the line width check and Text QA.
   assert.deepEqual(
     stagesFor("MVMZ").map((stage) => stage.id),
     ["setup", "context", "translate", "check", "release"],
@@ -198,12 +198,18 @@ test("the Project page continues with the next step and keeps a later saved posi
     engine: "MVMZ",
     step: "setup",
     task: "backup",
-    preferences: { values: { selected: [] } },
+    preferences: { values: { selected: [], engine_options: {} } },
     files: [],
     runs: [],
     phaseRuns: {},
     readiness: { outputs: [], applied: [], layout_scan: null },
     comparisons: { status: "not_needed" },
+    eventText: {
+      status: "missing",
+      accepted: false,
+      enabled: [],
+      rows: [{ key: "CODE356" }],
+    },
     contextSetup: { documents: {}, layoutStatus: "missing" },
     speakerSetup: {},
     speakerScan: {},
@@ -234,12 +240,20 @@ test("the Project page continues with the next step and keeps a later saved posi
   // A later saved position stays reachable beside the next step.
   assert.equal(progress.next?.task, "names");
   assert.equal(progress.last?.task, "apply");
-  // Optional stages finish once their work reaches the game with nothing
-  // waiting: an edited image awaiting review keeps Images open.
+  // Images finishes once its work reaches the game with nothing waiting: an
+  // edited image awaiting review keeps it open.
   state.artifacts = [{ current: true }] as GuidedState["artifacts"];
   const images = {
     projectId: state.projectId,
-    counts: { applied: 1, ready: 0, needsReview: 1, blocked: 0 },
+    discovery: { status: "partial" },
+    counts: {
+      applied: 1,
+      ready: 0,
+      needsReview: 1,
+      blocked: 0,
+      recommended: 1,
+      uncertain: 0,
+    },
   } as unknown as ImageManagerState;
   const finished = () =>
     guidedProgress(state, translation, { images }).stages.flatMap((stage) =>
@@ -247,6 +261,26 @@ test("the Project page continues with the next step and keeps a later saved posi
     );
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
   images.counts.needsReview = 0;
+  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
+  // A game with nothing to translate closes Images after a complete
+  // discovery leaves nothing recommended or uncertain, and Other event text
+  // once current findings are reviewed with no source enabled.
+  Object.assign(images.counts, { applied: 0, recommended: 0, uncertain: 1 });
+  images.discovery.status = "complete";
+  assert.deepEqual(finished(), ["setup", "apply", "package"]);
+  images.counts.uncertain = 0;
+  state.eventText.status = "ready";
+  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
+  state.eventText.accepted = true;
+  assert.deepEqual(finished(), [
+    "setup",
+    "other-event-text",
+    "images",
+    "apply",
+    "package",
+  ]);
+  // A source turned on since that review reopens the task.
+  state.preferences.values.engine_options.CODE356 = true;
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
 });
 
