@@ -8,6 +8,8 @@ import { Button } from "../../../../ui/Button";
 import { ReleaseContent } from "../../Release";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
+import { StatusHeading } from "../../../../ui/StatusMark";
+import { sinceLabel } from "../../../assistant/assistantTasks";
 
 export function packageView(w: GuidedWorkspace): TaskView {
   const {
@@ -34,7 +36,9 @@ export function packageView(w: GuidedWorkspace): TaskView {
     copyTask,
     localOperation,
     stopOperation,
+    handoff,
   } = w;
+  const writing = handoff("walkthrough");
   let content: ReactNode;
   content = (
     <ReleaseContent
@@ -124,8 +128,20 @@ export function packageView(w: GuidedWorkspace): TaskView {
       }
       extras={
         <ActionRow
-          title="Player walkthrough"
-          description="Optional. Your coding assistant writes a portable walkthrough for players."
+          label={
+            <>
+              {writing.waiting ? (
+                <StatusHeading state="waiting" title="Player walkthrough" />
+              ) : (
+                <strong>Player walkthrough</strong>
+              )}
+              <small>
+                {writing.waiting
+                  ? `Expecting WALKTHROUGH.html in the game folder · ${sinceLabel(writing.since)}`
+                  : "Optional. Your coding assistant writes a portable walkthrough for players."}
+              </small>
+            </>
+          }
         >
           {copyTask("walkthrough", "Copy walkthrough task")}
         </ActionRow>

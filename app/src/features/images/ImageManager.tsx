@@ -51,6 +51,7 @@ import { useObserved } from "../../state/useObserved";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { AssistantTask } from "../../ui/AssistantTask";
+import { useHandoff } from "../assistant/useAssistantTasks";
 
 export interface ImageManagerProps {
   projectId: string;
@@ -416,12 +417,23 @@ function Manager({
     !!state.job &&
     ["pending", "running", "stopping"].includes(state.job.status);
   const lastReport = state.editing.lastReport || state.discovery.lastReport;
+  const editingTask = useHandoff("image_editing");
+  const discoveryTask = useHandoff("image_discovery");
+  // A report found on returning to the window and rejected says why first.
   const reportError =
-    state.editing.errors?.[0] || state.discovery.errors?.[0] || "";
+    state.editing.rejected ||
+    state.discovery.rejected ||
+    state.editing.errors?.[0] ||
+    state.discovery.errors?.[0] ||
+    "";
+  // A dismissed task no longer waits for its report.
+  const awaitingResults =
+    state.editing.status === "awaiting_results" && !editingTask.dismissed;
+  const awaitingFindings =
+    state.discovery.status === "awaiting_results" && !discoveryTask.dismissed;
   const copiedAt =
-    (state.editing.status === "awaiting_results" && state.editing.copiedAt) ||
-    (state.discovery.status === "awaiting_results" &&
-      state.discovery.copiedAt) ||
+    (awaitingResults && state.editing.copiedAt) ||
+    (awaitingFindings && state.discovery.copiedAt) ||
     "";
   const selectedApplied = draft.dirty ? 0 : counts.selectedApplied || 0;
   const allApplied =
@@ -433,10 +445,10 @@ function Manager({
       : selectedNotPrepared
         ? "prepare"
         : value.selection.length
-          ? state.editing.status === "awaiting_results"
+          ? awaitingResults
             ? "refresh_results"
             : "edit_task"
-          : state.discovery.status === "awaiting_results"
+          : awaitingFindings
             ? "refresh_findings"
             : "discovery_task";
   const reportIssues = [
@@ -460,8 +472,6 @@ function Manager({
     </Button>
   );
   // Refreshing reads a saved assistant report, so it leads only while one is due.
-  const awaitingResults = state.editing.status === "awaiting_results";
-  const awaitingFindings = state.discovery.status === "awaiting_results";
   const assistantState = reportError
     ? "attention"
     : awaitingResults || awaitingFindings

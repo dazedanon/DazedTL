@@ -1,6 +1,7 @@
 import { request } from "./transport";
 import { imagesApi } from "./images";
 import type {
+  AssistantTaskKind,
   ImageEditorSave,
   Screen,
   TranslationMethod,
@@ -169,6 +170,8 @@ export const api = {
 
   snapshot: () => request("workspace_snapshot", {}),
   recheck: (project_id: string) => request("workspace_recheck", { project_id }),
+  dismissAssistantTask: (project_id: string, kind: AssistantTaskKind) =>
+    request("assistant_task_dismiss", { project_id, kind }),
   open: (source: string) => request("open_project", { source }),
   select: (project_id: string) => request("select_project", { project_id }),
   navigate: (screen: Screen) => request("navigate", { screen }),

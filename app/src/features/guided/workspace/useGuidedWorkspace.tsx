@@ -2,6 +2,7 @@ import { FolderOpen } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../../api/client";
 import type {
+  AssistantTaskKind,
   GuidedForm,
   GuidedOptions,
   GuidedState,
@@ -39,6 +40,8 @@ import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks } from "../progress";
 import { applyOrder, type PendingPartId, pendingParts } from "../pending";
 import { usePendingChanges } from "./usePendingChanges";
+import { assistantWaiting } from "../../assistant/assistantTasks";
+import { useAssistantSources } from "../../assistant/useAssistantTasks";
 import { initialPosition, stagesFor } from "../workflow";
 
 /** The operations setting up a game runs, in order. */
@@ -937,10 +940,17 @@ export function useGuidedWorkspace({
   const resyncPending = ["ready", "running", "waiting"].includes(
     operationJob("refresh_sources")?.status || "",
   );
+  // Whether a copied task waits on the assistant, from the shared list.
+  const assistantSources = useAssistantSources();
+  const handoff = (kind: AssistantTaskKind) =>
+    assistantSources
+      ? assistantWaiting(kind, assistantSources)
+      : { waiting: false, dismissed: false, since: "" };
   const copyTask = (
     name: string,
     label: string,
     variant: "default" | "primary" | "quiet" | "link" = "default",
+    copied = "Task copied. Return to its saved results when your assistant finishes.",
   ) => (
     <ActionControl
       label={label}
@@ -963,7 +973,7 @@ export function useGuidedWorkspace({
           },
           name === "setup"
             ? "Task copied. Paste it into your assistant."
-            : "Task copied. Return to its saved results when your assistant finishes.",
+            : copied,
           "copy:" + name,
         )
       }
@@ -1453,6 +1463,7 @@ export function useGuidedWorkspace({
     translation,
     settings,
     openProject,
+    handoff,
     application,
     action,
     speakerAction,

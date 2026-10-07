@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
+  Bot,
   Gamepad2,
   Route,
   Settings2,
@@ -19,6 +20,8 @@ import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
 import ProjectPage, { type ProjectTab } from "../features/project/ProjectPage";
 import { MethodDialog } from "../features/project/MethodDialog";
+import { assistantTasksHeading } from "../features/assistant/AssistantTaskList";
+import { useAssistantTasks } from "../features/assistant/useAssistantTasks";
 import Translation from "../features/translation/Translation";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { PathText } from "../ui/PathText";
@@ -115,6 +118,19 @@ export default function App() {
       setHistoryQuery(query);
       application.navigate("project");
     });
+  // The top bar's count opens the Project page's list of copied tasks.
+  const assistantTasks = useAssistantTasks();
+  const openAssistantTasks = () =>
+    void action.run(async () => {
+      await flushDrafts();
+      setProjectTab("status");
+      application.navigate("project");
+      requestAnimationFrame(() =>
+        document
+          .getElementById(assistantTasksHeading)
+          ?.scrollIntoView({ block: "nearest" }),
+      );
+    });
   const openTask = (step: string, task: string) =>
     void action.run(async () => {
       await flushDrafts();
@@ -201,6 +217,28 @@ export default function App() {
             <MenuSeparator />
             <MenuItem onSelect={() => void open()}>Open a game…</MenuItem>
           </Menu>
+        )}
+        {project?.available && assistantTasks.length > 0 && (
+          <Button
+            variant="quiet"
+            className="assistant-count"
+            // Results to review stand out from tasks still with the assistant.
+            data-attention={
+              assistantTasks.some((task) => task.state !== "waiting") ||
+              undefined
+            }
+            disabled={action.busy}
+            onClick={openAssistantTasks}
+          >
+            <Bot size={16} aria-hidden="true" />
+            <span>
+              {assistantTasks.length}
+              <span className="assistant-count-label">
+                {" "}
+                assistant {assistantTasks.length === 1 ? "task" : "tasks"}
+              </span>
+            </span>
+          </Button>
         )}
         <span className="connection" title={connection}>
           <i className={application.stopped ? "disconnected" : ""} />

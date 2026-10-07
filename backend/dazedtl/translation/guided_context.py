@@ -31,8 +31,13 @@ class GuidedContext:
             "plugins",
             "walkthrough",
             "investigation",
+            "qa",
         }:
             raise ValueError("Choose a task-specific helper.")
+        root = Path(native["source"])
+        guided = root / ".dazedtl/guided"
+        if name == "qa":
+            return self.qa_task(project_id, native)
         if name == "advanced":
             request = self.guided.event_text.request(project_id, native)
             command = shlex.join(
@@ -47,8 +52,22 @@ class GuidedContext:
                     "event-text",
                 ]
             )
-            return {"text": self.guided.event_text.instructions(request, command)}
+            return {
+                "text": self.guided.event_text.instructions(request, command),
+                "handoff": {
+                    "kind": "event_text",
+                    "requestId": request["request_id"],
+                    "expects": [guided / "event-text-findings.json"],
+                },
+            }
         text = self.guided.backend.workflows.skill(native["id"], name)
+        handoff = None
+        if name == "walkthrough":
+            handoff = {
+                "kind": "walkthrough",
+                "requestId": "",
+                "expects": [root / "WALKTHROUGH.html"],
+            }
         if name == "setup":
             schema = self.guided.backend.workflows.state(native["id"])["engine_schema"]
             request = speaker_setup.request(
@@ -77,6 +96,19 @@ class GuidedContext:
             )
             context_command = command.removesuffix("speakers") + "context"
             text += context_setup.instructions(context_request, context_command)
+            documents = self.guided.backend.workflows.documents(native["id"])
+            handoff = {
+                "kind": "names",
+                "requestId": request["request_id"],
+                "expects": [
+                    guided / "speaker-findings.json",
+                    *(
+                        documents[key]["path"]
+                        for key in context_setup.CORE
+                        if key in documents
+                    ),
+                ],
+            }
             text = (
                 speaker_setup.instructions(request, command)
                 + reference_folders.instructions(
@@ -109,9 +141,36 @@ class GuidedContext:
                 ]
             )
             text += context_setup.layout_instructions(request, command)
+            handoff = {
+                "kind": "line_widths",
+                "requestId": request["request_id"],
+                "expects": [guided / "context-findings.json"],
+            }
         return {
             "text": f"Selected game: {project['source']}\n\nThis is one user-requested Guided Workflow task: {name}. Complete only this task, report what changed and what needs review, then stop. The user controls translation submission, export, versioning and packaging in DazedTL.\n\n"
-            + text
+            + text,
+            **({"handoff": handoff} if handoff else {}),
+        }
+
+    def qa_task(self, project_id, native):
+        """The prepared Text QA task for the saved focus, while it is current."""
+        from dazedtl.compatibility.text import qa_handoff
+
+        qa = self.guided.backend.guided_text_state(
+            native, self.guided.saved_form(project_id)["text"]["focus"]
+        )["qa"]
+        if not qa.get("task"):
+            raise ValueError("Prepare the text QA task first.")
+        if not qa["current"]:
+            raise ValueError(qa["message"])
+        task = Path(qa["task"])
+        return {
+            "text": qa_handoff(task),
+            "handoff": {
+                "kind": "qa",
+                "requestId": task.name,
+                "expects": [task / "findings.json", task / "correction-map.json"],
+            },
         }
 
     def event_text_request(self, project_id):

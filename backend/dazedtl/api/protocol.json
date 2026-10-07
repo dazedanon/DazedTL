@@ -1,11 +1,15 @@
 {
-  "version": "f3a5e0873a41883a",
+  "version": "60e22124cf41fd1e",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
       "duringClose": true
     },
     "workspace_recheck": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "assistant_task_dismiss": {
       "refresh": true,
       "duringClose": false
     },

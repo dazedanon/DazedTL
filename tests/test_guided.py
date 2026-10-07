@@ -93,6 +93,7 @@ class GuidedTests(unittest.TestCase):
             projects={"native": self.native},
             folder=lambda _: self.folder,
             state=lambda _: {"project": self.native, "manual_job": self.pending},
+            documents=lambda _: {},
             update=update,
             save=Mock(),
             phase=lambda owner, phase, sync: (

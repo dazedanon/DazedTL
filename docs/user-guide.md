@@ -26,6 +26,14 @@ Navigation never starts paid work.
 Every list uses the same words for where work stands: **Not started**, **Working**, **Waiting** (with your assistant), **Needs review**, **Ready to apply**, **Applied**, **Done** (finished work that does not change the game), **Outdated** (what it was based on changed), **Blocked** and **Skipped**.
 The detail beside each says why.
 
+### Assistant tasks
+
+Tasks you copy to a coding assistant, such as Names & glossary, Line widths, Other event text, Plugin files, Images, Text QA and the player walkthrough, are listed under **Assistant tasks** on the Project page, and the count in the top bar opens that list.
+Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed, or **Blocked** with the reason.
+Finished tasks leave the list; their results stay in their own task.
+**Dismiss** clears a task you abandoned, so its task reads **Not started** again; saved results are kept, and copying the task again brings it back.
+When you return to the DazedTL window, image results your assistant saved are imported and checked as **Refresh results** would; other tasks show their saved results as soon as they appear.
+
 ### Set up
 
 **Set up this game** asks for the game version and whether the game already contains translations.

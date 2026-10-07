@@ -19,6 +19,7 @@ import { actionKey, fileCount } from "../model";
 import { selectionNames } from "../../../../ui/displayText";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
+import { sinceLabel } from "../../../assistant/assistantTasks";
 import {
   AssistantTask,
   type AssistantTaskState,
@@ -318,7 +319,14 @@ export function auditView(w: GuidedWorkspace): TaskView {
     skipEventText,
     copyTask,
     fileSummary,
+    handoff,
   } = w;
+  const investigating = handoff("event_text");
+  // A dismissed task no longer waits for its findings.
+  const status =
+    investigating.dismissed && state.eventText.status === "waiting"
+      ? "missing"
+      : state.eventText.status;
   let content: ReactNode;
   content = (
     <>
@@ -334,12 +342,15 @@ export function auditView(w: GuidedWorkspace): TaskView {
             ready: "ready",
             stale: "attention",
             invalid: "attention",
-          }[state.eventText.status] as AssistantTaskState
+          }[status] as AssistantTaskState
+        }
+        progress={
+          status === "waiting" ? sinceLabel(investigating.since) : undefined
         }
         description={
-          state.eventText.status === "missing"
+          status === "missing"
             ? "Your assistant checks every affected use and internal reference, and returns the commands and argument keys it finds as evidence."
-            : state.eventText.status === "waiting"
+            : status === "waiting"
               ? "Findings appear here as your assistant saves them."
               : state.eventText.message
         }
@@ -360,7 +371,7 @@ export function auditView(w: GuidedWorkspace): TaskView {
                       stale: "outdated",
                       invalid: "blocked",
                     } as const
-                  )[state.eventText.status],
+                  )[status],
             detail:
               state.eventText.status === "ready"
                 ? "Coverage evidence for each source, ready to review."

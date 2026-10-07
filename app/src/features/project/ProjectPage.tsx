@@ -14,6 +14,8 @@ import { Section } from "../../ui/Section";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/Tabs";
 import { engineLabel, sentence } from "../../ui/displayText";
+import { AssistantTaskList } from "../assistant/AssistantTaskList";
+import { useAssistantTasks } from "../assistant/useAssistantTasks";
 import { ActivityHistory } from "../guided/ActivityHistory";
 import type { GuidedProgress, projectAmounts } from "../guided/progress";
 import { RunInspector } from "../guided/RunInspector";
@@ -188,6 +190,19 @@ function ProjectStatus({
   // One Continue: the next required task, or the last opened task once every
   // required task is done.
   const target = guided ? progress.next || progress.last : null;
+  const assistantTasks = useAssistantTasks();
+  const assistantList = project.available && (
+    <AssistantTaskList
+      projectId={project.id}
+      tasks={assistantTasks}
+      busy={busy}
+      open={(task) =>
+        project.method === "guided"
+          ? openTask(task.place.step, task.place.task)
+          : openTranslation()
+      }
+    />
+  );
   const primary = !project.available ? (
     <Button variant="primary" disabled={busy || state.running} onClick={open}>
       {project.next_label}
@@ -273,6 +288,7 @@ function ProjectStatus({
                 }
               />
             </ActionList>
+            {assistantList}
             {amounts && <ProjectAmounts amounts={amounts} />}
             <Section title="Tasks" className="project-tasks-section">
               <ol className="project-stages">
@@ -360,6 +376,7 @@ function ProjectStatus({
             />
           </ActionList>
         )}
+        {project.method && project.method !== "guided" && assistantList}
         {!active && operation && (
           <p className="project-activity">
             Last activity: {operation.label}

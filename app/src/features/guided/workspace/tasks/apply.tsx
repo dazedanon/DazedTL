@@ -15,6 +15,7 @@ import { Notice } from "../../../../ui/Notice";
 import { StatusHeading } from "../../../../ui/StatusMark";
 import { selectionNames } from "../../../../ui/displayText";
 import { type PendingPartId, pendingSummary } from "../../pending";
+import { sinceLabel } from "../../../assistant/assistantTasks";
 
 /** Where each pending part is worked on, for its row's link. */
 const partTasks: Record<PendingPartId, [string, string]> = {
@@ -495,7 +496,6 @@ export function fittingView(w: GuidedWorkspace): TaskView {
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
     state,
-    action,
     baseline,
     qaTask,
     qaJob,
@@ -504,17 +504,18 @@ export function qaView(w: GuidedWorkspace): TaskView {
     qaStatus,
     editText,
     disabled,
-    feedback,
     task,
     copyTask,
     inspect,
     reviewPending,
     advance,
     fields,
+    handoff,
   } = w;
   // The app prepares the task and its mechanical inventory itself; the
   // assistant has the task once it is copied or its screening has begun.
-  const qaCopied = action.key === "copy:qa" && !!action.notice;
+  const screening = handoff("qa");
+  const qaCopied = screening.waiting;
   // Applying corrections changes the text this task checked, which makes it
   // stale; that is the expected result of its own apply, not a problem.
   const latest = state.readiness.publications[0];
@@ -579,6 +580,11 @@ export function qaView(w: GuidedWorkspace): TaskView {
                 : qaCopied || qaStarted
                   ? "waiting"
                   : "idle"
+        }
+        progress={
+          qaCopied && !qa.findings.length
+            ? sinceLabel(screening.since)
+            : undefined
         }
         description={
           // Before any result exists, "saved results match" has nothing to
@@ -755,50 +761,41 @@ export function qaView(w: GuidedWorkspace): TaskView {
   );
   // The footer walks QA forward: prepare a task, copy it, then review the
   // corrections chosen from its findings.
-  const review = qaApplied ? (
-    task(
-      "qa_prepare",
-      "Prepare QA again",
-      { focus: fields.text.focus },
-      !baseline,
-    )
-  ) : qa.findings.length ? (
-    reviewPending({
-      only: "qa",
-      label: "Review chosen corrections",
-      blocked: !baseline
-        ? true
-        : !qa.current
-          ? qa.message
-          : !chosenFindings.length
-            ? choosable.length
-              ? "Choose corrections first."
-              : "No finding has a prepared correction yet."
-            : false,
-    })
-  ) : qaTask ? (
-    <ActionControl
-      label="Copy QA task"
-      variant="primary"
-      disabled={disabled}
-      {...feedback("copy:qa", "Copying…")}
-      onClick={() =>
-        action.run(
-          () => window.dazedtl.copyText(String(qaTask.result!.handoff)),
-          "QA task copied. Paste it into your coding assistant.",
-          "copy:qa",
-        )
-      }
-    />
-  ) : (
-    task(
-      "qa_prepare",
-      "Prepare text QA task",
-      { focus: fields.text.focus },
-      !baseline,
-      "primary",
-    )
-  );
+  const review = qaApplied
+    ? task(
+        "qa_prepare",
+        "Prepare QA again",
+        { focus: fields.text.focus },
+        !baseline,
+      )
+    : qa.findings.length
+      ? reviewPending({
+          only: "qa",
+          label: "Review chosen corrections",
+          blocked: !baseline
+            ? true
+            : !qa.current
+              ? qa.message
+              : !chosenFindings.length
+                ? choosable.length
+                  ? "Choose corrections first."
+                  : "No finding has a prepared correction yet."
+                : false,
+        })
+      : qaTask
+        ? copyTask(
+            "qa",
+            "Copy QA task",
+            "primary",
+            "QA task copied. Paste it into your coding assistant.",
+          )
+        : task(
+            "qa_prepare",
+            "Prepare text QA task",
+            { focus: fields.text.focus },
+            !baseline,
+            "primary",
+          );
   return {
     content,
     action: review,

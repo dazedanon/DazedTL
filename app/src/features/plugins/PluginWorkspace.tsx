@@ -12,6 +12,8 @@ import type {
 import { useAction } from "../../state/useAction";
 import { useDraft } from "../../state/useDraft";
 import { useObserved } from "../../state/useObserved";
+import { sinceLabel } from "../assistant/assistantTasks";
+import { useHandoff } from "../assistant/useAssistantTasks";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
 import { Button } from "../../ui/Button";
@@ -118,6 +120,7 @@ export function PluginWorkspace({
     } | null>(null),
     [reason, setReason] = useState("");
   const [recovery, setRecovery] = useState(false);
+  const handoff = useHandoff("plugins");
   const [inspecting, setInspecting] = useState(false),
     [showFiles, setShowFiles] = useState(false);
   const draft = useDraft<PluginView>("plugins-view:" + projectId, {
@@ -309,11 +312,13 @@ export function PluginWorkspace({
     edit({ currentFile: path });
     setInspecting(true);
   };
+  // A dismissed task no longer waits for its reports.
   const awaiting =
-    (state.activeRequest === state.requestPaths.investigation &&
+    !handoff.dismissed &&
+    ((state.activeRequest === state.requestPaths.investigation &&
       state.findings.status === "awaiting_report") ||
-    (state.activeRequest === state.requestPaths.translation &&
-      state.editing.status === "awaiting_report");
+      (state.activeRequest === state.requestPaths.translation &&
+        state.editing.status === "awaiting_report"));
   const taskState = counts.ready
     ? "ready"
     : counts.applied
@@ -338,7 +343,7 @@ export function PluginWorkspace({
         ? ("done" as const)
         : report.status === "partial"
           ? ("needs_review" as const)
-          : report.status === "awaiting_report"
+          : report.status === "awaiting_report" && !handoff.dismissed
             ? ("waiting" as const)
             : ("not_started" as const),
     detail:
@@ -367,6 +372,9 @@ export function PluginWorkspace({
     <section className="plugin-workspace" aria-label="Plugin files workspace">
       <AssistantTask
         state={taskState}
+        progress={
+          taskState === "waiting" ? sinceLabel(handoff.since) : undefined
+        }
         help="Keep DazedTL open while your assistant works. It continues through safe work automatically and asks only about unresolved choices."
         description={
           taskState === "ready"

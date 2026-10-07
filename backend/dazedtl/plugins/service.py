@@ -1004,6 +1004,16 @@ class PluginService:
                 return self.publish(project_id, value, action, options)
             else:
                 raise ValueError("Choose a supported Plugin workspace action.")
+            if action in {"investigate", "plugin_task", "translation_task"}:
+                # What the copied task expects back, for the assistant task list.
+                result = {
+                    **result,
+                    "handoff": {
+                        "kind": "plugins",
+                        "requestId": result["requestId"],
+                        "expects": [value["requests"][result["stage"]]["report"]],
+                    },
+                }
             self.save(project_id, value)
             return {**result, "state": self.state(project_id)}
 

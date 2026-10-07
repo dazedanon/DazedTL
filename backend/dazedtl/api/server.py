@@ -22,6 +22,7 @@ from dazedtl.plugins import PluginService
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
 from dazedtl.storage import WorkspaceLock
+from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.service import Translation
 
@@ -57,6 +58,7 @@ class Application:
             self.projects, self.translation, self.settings, self.backend
         )
         self.plugins = PluginService(self.projects, self.translation, self.backend)
+        self.assistant_tasks = AssistantTasks(self.workspace)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.legacy_actions = {
@@ -260,8 +262,15 @@ class Application:
                 plugins = self.plugins.state(project["id"])
             except (ValueError, OSError) as exc:
                 plugin_error = str(exc)
+        assistant_tasks = []
+        if project and project["available"]:
+            try:
+                assistant_tasks = self.assistant_tasks.view(project["id"])
+            except ValueError, OSError:
+                assistant_tasks = []
         return {
             "application": views.application(state),
+            "assistantTasks": assistant_tasks,
             "translation": current,
             "translationError": error,
             "guided": legacy,
@@ -277,6 +286,31 @@ class Application:
         if not project or project["id"] != project_id or not project["available"]:
             return {"checked": 0}
         return {"checked": self.images.recheck(project_id)}
+
+    def _handed_off(self, project_id, result):
+        """Records the task a copy handed to the assistant; the reply keeps
+        only what the renderer reads."""
+        handoff = result.pop("handoff", None)
+        if handoff:
+            self.assistant_tasks.copied(project_id, handoff)
+        return result
+
+    def guided_skill(self, project_id, name):
+        return self._handed_off(project_id, self.guided.skill(project_id, name))
+
+    def images_action(self, project_id, action, options=None):
+        return self._handed_off(
+            project_id, self.images.action(project_id, action, options)
+        )
+
+    def plugins_action(self, project_id, action, options=None):
+        return self._handed_off(
+            project_id, self.plugins.action(project_id, action, options)
+        )
+
+    def assistant_task_dismiss(self, project_id, kind):
+        self.projects.get(project_id)
+        return self.assistant_tasks.dismiss(project_id, kind)
 
     def open_project(self, source):
         root = Path(source).expanduser().resolve(strict=True)
@@ -523,7 +557,6 @@ def routes(app):
                 "options_draft",
                 "save_options",
                 "apply_speakers",
-                "skill",
                 "form",
                 "context_status",
                 "context_review",
@@ -536,6 +569,11 @@ def routes(app):
                 "comparisons_review",
             )
         },
+        "guided_skill": (app.guided_skill, lambda value, _params: value),
+        "assistant_task_dismiss": (
+            app.assistant_task_dismiss,
+            lambda value, _params: value,
+        ),
         "guided_draft": (app.guided.draft, lambda value, _params: value),
         "guided_save_document": (
             app.guided.save_document,
@@ -574,10 +612,11 @@ def routes(app):
             lambda value, _params: value,
         )
     methods["images_action"] = (
-        app.images.action,
+        app.images_action,
         lambda value, _params: views.image_action(value),
     )
-    for name in ("state", "list", "detail", "update", "action"):
+    methods["plugins_action"] = (app.plugins_action, lambda value, _params: value)
+    for name in ("state", "list", "detail", "update"):
         methods["plugins_" + name] = (
             getattr(app.plugins, name),
             lambda value, _params: value,

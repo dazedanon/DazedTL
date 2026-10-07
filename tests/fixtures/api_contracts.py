@@ -100,6 +100,7 @@ try:
     )
     call("guided_context_status", {"project_id": project_id})
     call("guided_skill", {"project_id": project_id, "name": "setup"})
+    call("assistant_task_dismiss", {"project_id": project_id, "kind": "names"})
     call("guided_draft", {"project_id": project_id, "documents": {}})
     name, document = next(iter(guided["documents"].items()))
     call(

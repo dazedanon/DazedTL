@@ -10,6 +10,8 @@ import { AssistantTask } from "../../ui/AssistantTask";
 import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
+import { withHandoff } from "../assistant/assistantTasks";
+import { useHandoff } from "../assistant/useAssistantTasks";
 
 const counted = (label: string, count: number) =>
   count ? `${label} (${count.toLocaleString()})` : label;
@@ -34,7 +36,8 @@ export function ContextWorkspace({
   const problem = results.find((row) =>
     ["failed", "unavailable"].includes(row.status),
   );
-  const taskState =
+  const handoff = useHandoff("names");
+  const taskState = withHandoff(
     saved === results.length
       ? "ready"
       : problem
@@ -42,7 +45,9 @@ export function ContextWorkspace({
         : saved ||
             results.some((row) => ["waiting", "working"].includes(row.status))
           ? "waiting"
-          : "idle";
+          : "idle",
+    handoff,
+  );
   return (
     <div className="context-columns">
       <AssistantTask
@@ -63,7 +68,8 @@ export function ContextWorkspace({
           state: (
             {
               saved: "done",
-              waiting: "waiting",
+              // A dismissed task no longer waits for its results.
+              waiting: handoff.dismissed ? "not_started" : "waiting",
               idle: "not_started",
               working: "working",
               failed: "blocked",

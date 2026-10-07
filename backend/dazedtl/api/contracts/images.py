@@ -125,6 +125,8 @@ class ImageReportState(TypedDict):
     scope: NotRequired[ImageDiscoveryScope]
     folders: NotRequired[list[str]]
     copiedAt: NotRequired[str]
+    # Why the last report found on returning to the window was not accepted.
+    rejected: NotRequired[str]
 
 
 class ImageReceiptAsset(TypedDict):

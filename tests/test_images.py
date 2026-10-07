@@ -225,6 +225,51 @@ class ImageTests(unittest.TestCase):
         self.assertIn("Copying this task did not start an agent", result["text"])
         with self.assertRaisesRegex(ValueError, "expired"):
             reopened.action(self.identity, "apply", {"token": "foreign"})
+        # The copy says what it expects back, for the assistant task list.
+        self.assertEqual(
+            result["handoff"],
+            {
+                "kind": "image_discovery",
+                "requestId": request["id"],
+                "expects": [request["report"]],
+            },
+        )
+        # Returning to the window picks up a saved report, validated as
+        # Refresh results does; a rejected one is reported once, not retried.
+        report = {
+            "version": 1,
+            "kind": "discovery",
+            "projectId": "another-project",
+            "requestId": request["id"],
+            "inventoryRevision": request["inventoryRevision"],
+            "complete": True,
+            "assets": [
+                {
+                    "id": "img/A.png",
+                    "sourceHash": request["assets"][0]["sourceHash"],
+                    "classification": "recommended",
+                    "method": "visual",
+                    "examined": True,
+                    "reason": "Japanese label",
+                    "evidence": "contact sheet 1, cell 1",
+                    "variants": [],
+                }
+            ],
+        }
+        write_json(request["report"], report)
+        reopened.recheck(self.identity)
+        rejected = reopened.state(self.identity)["discovery"]
+        self.assertEqual(rejected["status"], "awaiting_results")
+        self.assertIn("belongs to another", rejected["rejected"])
+        with patch.object(
+            reopened, "_refresh_report", side_effect=AssertionError("retried")
+        ):
+            reopened.recheck(self.identity)
+        write_json(request["report"], {**report, "projectId": self.identity})
+        reopened.recheck(self.identity)
+        imported = reopened.state(self.identity)["discovery"]
+        self.assertEqual(imported["status"], "complete")
+        self.assertNotIn("rejected", imported)
 
     def test_partial_reports_do_not_certify_detector_misses_or_replace_manual_exclusions(
         self,

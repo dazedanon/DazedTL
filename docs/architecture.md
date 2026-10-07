@@ -627,6 +627,11 @@ Prepared originals are summarized; recent activity holds saved history, while ac
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
 Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (Not started, Waiting, Needs review, Applied or Blocked), what comes back, and a row per expected result.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
+Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
+The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.
+The snapshot lists the records with the newest time an expected file was saved, read from file times only, and [assistantTasks.ts](../app/src/features/assistant/assistantTasks.ts) derives each task's display state from that and its feature's observed state, so the Project page list, the top-bar count and each feature's panel agree.
+Dismissing marks a record abandoned: the task leaves the list and its feature stops showing Waiting until the next copy, while saved requests and reports stay.
+Tasks copied before records existed list only while their feature still waits; the running-jokes investigation saves no checked result, so it is not tracked.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
@@ -697,6 +702,8 @@ They start from the observed state when the snapshot already has it, so revisiti
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
 Returning to the window rechecks outside edits through `workspace_recheck`, which reinspects the images being worked on (working copies, the selection and applied images) against their cached file signatures; as a mutation it is followed by a fresh observation, so every feature sees the result without its own refresh.
+It also imports a report saved for a copied image task, validated as Refresh results does; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
+Guided reports are read by the observer, and plugin reports are validated by the project helper's continue command the assistant runs.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.
 Do not add whole-game parsing or full request-history reconstruction to a polling snapshot.

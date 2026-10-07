@@ -42,6 +42,20 @@ def binding(plan):
     }
 
 
+def qa_handoff(task):
+    """The text a coding assistant receives for one prepared QA task."""
+    task = Path(task)
+    return (
+        "This is optional DazedTL text QA. Follow the task README for immutable inventory, screen and deep discovery, findings and correction-map validation only. "
+        "Do not run apply, editorial-apply, or any runtime publication command. Do not edit the game. "
+        "Stop after discovery and correction-map preparation. The user selects corrections and reviews Apply in DazedTL. "
+        "Never claim copying this task completes QA.\n\nTask: "
+        + str(task)
+        + "\nREADME: "
+        + str(task / "README.md")
+    )
+
+
 def qa_state(plan):
     from util import rpgmaker_qa as qa
 
@@ -156,15 +170,7 @@ def run_qa(plan, log):
             folder / ("text-qa-" + plan["options"]["focus"] + ".json"),
             {"task": str(task), "binding": binding(plan), "immutable": immutable},
         )
-        handoff = (
-            "This is optional DazedTL text QA. Follow the task README for immutable inventory, screen and deep discovery, findings and correction-map validation only. "
-            "Do not run apply, editorial-apply, or any runtime publication command. Do not edit the game. "
-            "Stop after discovery and correction-map preparation. The user selects corrections and reviews Apply in DazedTL. "
-            "Never claim copying this task completes QA.\n\nTask: "
-            + str(task)
-            + "\nREADME: "
-            + str(task / "README.md")
-        )
+        handoff = qa_handoff(task)
     else:
         handoff = None
     result = qa_state(plan)

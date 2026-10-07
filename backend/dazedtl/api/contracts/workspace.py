@@ -42,8 +42,32 @@ class AppState(TypedDict):
     observing: bool
 
 
+type AssistantTaskKind = Literal[
+    "names",
+    "line_widths",
+    "event_text",
+    "plugins",
+    "image_discovery",
+    "image_editing",
+    "qa",
+    "walkthrough",
+]
+
+
+class AssistantTaskRecord(TypedDict):
+    """A task copied to a coding assistant; each feature keeps its results."""
+
+    kind: AssistantTaskKind
+    requestId: str
+    copiedAt: str
+    # When a result the task expects was last saved, from file times.
+    resultAt: str | None
+    dismissed: bool
+
+
 class WorkspaceSnapshot(TypedDict):
     application: AppState
+    assistantTasks: list[AssistantTaskRecord]
     guided: GuidedState | None
     translation: TranslationState | None
     translationError: str

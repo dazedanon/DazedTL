@@ -10,6 +10,7 @@ import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
 import { GuidanceReview } from "../../GuidanceReview";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
+import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
 import type { TaskView } from "./view";
@@ -227,7 +228,9 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     feedback,
     copyTask,
     widths,
+    handoff,
   } = w;
+  const measuring = handoff("line_widths");
   let content: ReactNode;
   content = (
     <>
@@ -261,17 +264,26 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           {widths}
         </Section>
         <AssistantTask
-          state={discovery.layout ? "ready" : "idle"}
+          state={
+            measuring.waiting ? "waiting" : discovery.layout ? "ready" : "idle"
+          }
+          progress={sinceLabel(measuring.since)}
           description={
-            discovery.layout
-              ? "The measured widths are saved above. Remeasure only if the game's windows or fonts change."
-              : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
+            measuring.waiting
+              ? "Measured widths are saved automatically when your assistant reports them."
+              : discovery.layout
+                ? "The measured widths are saved above. Remeasure only if the game's windows or fonts change."
+                : "Optional. Your assistant measures the game's message windows and fonts; you can keep the current widths and continue."
           }
           results={[
             {
               id: "layout",
               title: "Measured widths",
-              state: discovery.layout ? "done" : "not_started",
+              state: measuring.waiting
+                ? "waiting"
+                : discovery.layout
+                  ? "done"
+                  : "not_started",
               detail:
                 "Dialogue, portrait, list and note widths from the game's own layout.",
               action: copyTask(

@@ -71,6 +71,18 @@
   align-items: center;
   gap: var(--space-2);
 }
+/* Copied assistant tasks, beside the status they share the corner with. */
+.assistant-count {
+  margin-left: auto;
+  font-size: var(--font-small);
+  color: var(--color-muted);
+}
+.assistant-count[data-attention] {
+  color: var(--color-accent);
+}
+.assistant-count + .connection {
+  margin-left: 0;
+}
 .connection i {
   width: 6px;
   height: 6px;
@@ -211,9 +223,11 @@ main > p {
     gap: var(--space-5);
   }
 }
-/* Narrow windows keep the status dot; its label stays readable to assistive tech. */
+/* Narrow windows keep the status dot and the task count; their labels stay
+   readable to assistive tech. */
 @media (max-width: 1000px) {
-  .connection-label {
+  .connection-label,
+  .assistant-count-label {
     position: absolute;
     width: 1px;
     height: 1px;

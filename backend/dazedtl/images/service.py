@@ -64,6 +64,7 @@ REPORT_KEYS = (
     "scope",
     "folders",
     "copiedAt",
+    "rejected",
 )
 
 
@@ -626,7 +627,34 @@ class ImageService:
             ]
             if identities:
                 self.refresh_assets(project_id, identities)
+            self._pickup(project_id)
             return len(identities)
+
+    def _pickup(self, project_id):
+        """Imports reports an assistant saved for a copied task, validated as
+        Refresh results does. A rejected report is remembered by its hash, so
+        it is reported once and not retried until the file changes."""
+        root = self.record(project_id)[1]
+        for kind in ("discovery", "editing"):
+            task = self._load(project_id)[kind]
+            if task.get("status") not in {"awaiting_results", "partial"}:
+                continue
+            if not task.get("requestId"):
+                continue
+            path = project_path(
+                root, WORK + "/reports/" + task["requestId"] + ".json", exists=False
+            )
+            if not path.is_file():
+                continue
+            saved = sha_file(path)
+            if saved in {task.get("reportHash"), task.get("rejectedHash")}:
+                continue
+            try:
+                self._refresh_report(project_id, kind)
+            except (ValueError, OSError) as exc:
+                value = self._load(project_id)
+                value[kind].update(rejected=str(exc), rejectedHash=saved)
+                self._save(project_id, value)
 
     def _touch(self, project_id):
         value = self._load(project_id)
@@ -1070,6 +1098,7 @@ class ImageService:
                 and previous.get("reviewVersion") == REVIEW_VERSION
             ):
                 value[kind]["copiedAt"] = now()
+                value[kind].pop("rejected", None)
                 self._save(project_id, value)
                 return {
                     "state": self.state(project_id),
@@ -1077,6 +1106,7 @@ class ImageService:
                     "requestId": previous_id,
                     "request": str(previous_path),
                     "report": previous["report"],
+                    "handoff": self._handoff(kind, previous_id, previous["report"]),
                 }
         identity = uuid.uuid4().hex
         report = project_path(
@@ -1139,6 +1169,8 @@ class ImageService:
             copiedAt=now(),
             scope=scope,
         )
+        value[kind].pop("rejected", None)
+        value[kind].pop("rejectedHash", None)
         self._save(project_id, value)
         return {
             "state": self.state(project_id),
@@ -1146,6 +1178,16 @@ class ImageService:
             "requestId": identity,
             "request": str(request_path),
             "report": str(report),
+            "handoff": self._handoff(kind, identity, report),
+        }
+
+    @staticmethod
+    def _handoff(kind, request_id, report):
+        """What a copied task hands to the assistant and expects back."""
+        return {
+            "kind": "image_" + kind,
+            "requestId": request_id,
+            "expects": [str(report)],
         }
 
     def _task_text(self, project_id, request, request_path):
@@ -1467,6 +1509,8 @@ class ImageService:
             requested=len(expected),
             reportHash=sha_file(path),
         )
+        value[kind].pop("rejected", None)
+        value[kind].pop("rejectedHash", None)
         self._save(project_id, value)
         return {"state": self.state(project_id)}
 

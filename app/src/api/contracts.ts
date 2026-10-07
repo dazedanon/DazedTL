@@ -1324,6 +1324,7 @@ export type ImageReportState = {
   scope?: ImageDiscoveryScope;
   folders?: string[];
   copiedAt?: string;
+  rejected?: string;
 };
 
 export type ImageReceiptAsset = {
@@ -1830,8 +1831,28 @@ export type AppState = {
   observing: boolean;
 };
 
+export type AssistantTaskKind =
+  | "names"
+  | "line_widths"
+  | "event_text"
+  | "plugins"
+  | "image_discovery"
+  | "image_editing"
+  | "qa"
+  | "walkthrough";
+
+/** A task copied to a coding assistant; each feature keeps its results. */
+export type AssistantTaskRecord = {
+  kind: AssistantTaskKind;
+  requestId: string;
+  copiedAt: string;
+  resultAt: string | null;
+  dismissed: boolean;
+};
+
 export type WorkspaceSnapshot = {
   application: AppState;
+  assistantTasks: AssistantTaskRecord[];
   guided: GuidedState | null;
   translation: TranslationState | null;
   translationError: string;
@@ -1843,6 +1864,15 @@ export type WorkspaceSnapshot = {
 
 export type ProjectRequest = {
   project_id: string;
+};
+
+export type AssistantTaskRequest = {
+  project_id: string;
+  kind: AssistantTaskKind;
+};
+
+export type AssistantTaskDismissed = {
+  kind: AssistantTaskKind;
 };
 
 export type PluginsListRequest = {
@@ -2256,6 +2286,10 @@ export type PreferencesRequest = {
 export type RpcContract = {
   workspace_snapshot: { request: NoParams; response: WorkspaceSnapshot };
   workspace_recheck: { request: ProjectRequest; response: Rechecked };
+  assistant_task_dismiss: {
+    request: AssistantTaskRequest;
+    response: AssistantTaskDismissed;
+  };
   open_project: { request: OpenProjectRequest; response: AppState };
   select_project: { request: ProjectRequest; response: AppState };
   navigate: { request: NavigateRequest; response: AppState };

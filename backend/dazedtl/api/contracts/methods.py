@@ -77,6 +77,7 @@ from dazedtl.api.contracts.translation import (
 )
 from dazedtl.api.contracts.workspace import (
     AppState,
+    AssistantTaskKind,
     Screen,
     TranslationMethod,
     WorkspaceSnapshot,
@@ -95,6 +96,15 @@ class Method:
 
 class ProjectRequest(TypedDict):
     project_id: str
+
+
+class AssistantTaskRequest(TypedDict):
+    project_id: str
+    kind: AssistantTaskKind
+
+
+class AssistantTaskDismissed(TypedDict):
+    kind: AssistantTaskKind
 
 
 class PluginsListRequest(TypedDict):
@@ -516,6 +526,8 @@ METHODS: dict[str, Method] = {
     ),
     # Rechecks outside edits when the window regains focus.
     "workspace_recheck": Method(ProjectRequest, Rechecked),
+    # Abandons a copied assistant task; its saved results stay.
+    "assistant_task_dismiss": Method(AssistantTaskRequest, AssistantTaskDismissed),
     "open_project": Method(OpenProjectRequest, AppState),
     "select_project": Method(ProjectRequest, AppState),
     "navigate": Method(NavigateRequest, AppState),
