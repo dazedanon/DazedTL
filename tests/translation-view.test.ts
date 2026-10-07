@@ -420,6 +420,11 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     },
   };
   assert.equal(fileStatus("Map001.json", partial).label, "Needs review");
+  // An unconfirmed submission must not read as rejected lines.
+  assert.notEqual(
+    fileStatus("Map001.json", partial).detail,
+    fileStatus("Map001.json", rejected).detail,
+  );
   // Legacy dismissal flags no longer hide the latest attempt.
   assert.equal(
     phaseRun(

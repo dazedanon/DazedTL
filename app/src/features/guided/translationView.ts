@@ -383,10 +383,6 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   // Saved output that is not in the game yet.
   const complete = fileState("ready");
   const progress = fileState("working");
-  const incomplete = fileState(
-    "needs_review",
-    "Some lines were rejected or not saved; Inspect shows which.",
-  );
   if (settled) return complete;
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
     return idle;
@@ -405,6 +401,14 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     run.process?.requests?.filter((row) => row.file === name) || [],
   );
   const states = rows.map((row) => row.state);
+  // A submission without a provider receipt may still be at the provider, so
+  // its reason is checking before sending again, not rejected lines.
+  const incomplete = fileState(
+    "needs_review",
+    states.includes("uncertain")
+      ? "Its submission could not be confirmed. Check Run history before sending it again."
+      : "Some lines were rejected or not saved; Inspect shows which.",
+  );
   const partial =
     run.partialOutputs?.includes(name) ||
     run.process?.validationIssues?.some((issue) => issue.file === name);

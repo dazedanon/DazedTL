@@ -12,6 +12,7 @@ import {
   activeRun,
   completeForSelection,
   estimateEmpty,
+  needsSubmissionReview,
   phaseRun,
   translationStopLabel,
   unsettledBatches,
@@ -211,13 +212,15 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 ["failed", "interrupted", "stopped"].includes(current.status)
               ? current.message ||
                 "Preparation did not finish. Click Translate to try again."
-              : pendingBatches.length
-                ? applyFiles.length
-                  ? "Earlier Batches are available in Run history. You can apply saved output."
-                  : "Earlier Batches are available in Run history. Translate starts a new estimate."
-                : noRemainingWork
-                  ? "Checked these files: no new API requests are needed."
-                  : "Translate prepares an estimate for your approval.";
+              : pendingBatches.some(needsSubmissionReview)
+                ? "The last Batch could not be confirmed as sent. Check it in Run history before translating these files again."
+                : pendingBatches.length
+                  ? applyFiles.length
+                    ? "Earlier Batches are available in Run history. You can apply saved output."
+                    : "Earlier Batches are available in Run history. Translate starts a new estimate."
+                  : noRemainingWork
+                    ? "Checked these files: no new API requests are needed."
+                    : "Translate prepares an estimate for your approval.";
   actionContext = (
     <div className="translation-action-scope">
       <strong>
