@@ -285,6 +285,27 @@ class ImageService:
             }
         )
 
+    @staticmethod
+    def _observation_revision(value):
+        """What scans, reports and actions changed. The user's own choices are
+        left to the preferences revision, so saving a selection or a scroll
+        position does not make the manager reload its images."""
+        discovery = {
+            key: item
+            for key, item in value["discovery"].items()
+            if key not in {"scope", "folders"}
+        }
+        return digest(
+            {
+                **{
+                    key: item
+                    for key, item in value.items()
+                    if key not in {"selection", "view", "profile"}
+                },
+                "discovery": discovery,
+            }
+        )
+
     def _index(self, project_id):
         if project_id not in self.indexes:
             self.indexes[project_id] = Index(
@@ -324,7 +345,7 @@ class ImageService:
                 "profile": profile,
                 "source": str(root),
                 "revision": self._preferences_revision(value),
-                "observationRevision": digest(value),
+                "observationRevision": self._observation_revision(value),
                 "inventoryRevision": value["inventoryRevision"],
                 "counts": index.counts(),
                 "folders": index.folders(),

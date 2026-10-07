@@ -10,51 +10,86 @@ import type {
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 8;
-type Grid = {
-  pages: Map<number, ImageAsset[]>;
+type Pages = Map<number, ImageAsset[]>;
+type Filters = {
+  projectId: string;
+  query: string;
+  folder: string;
+  filter: string;
+  selected_only: boolean;
+};
+type Scope = { filters: Filters; inventory: string; revision: number };
+type Loaded = {
+  scope: Scope;
+  pages: Pages;
+  /** The pages a refresh replaces, shown until each one reloads. */
+  stale: Pages;
   total: number;
-  selectedMatched: number;
   error: string;
 };
-type Loaded = Grid & { scope: object };
-const emptyGrid: Grid = {
-  pages: new Map(),
-  total: 0,
-  selectedMatched: 0,
-  error: "",
+const bounded = (pages: Pages) => {
+  while (pages.size > MAX_PAGES) pages.delete(pages.keys().next().value!);
+  return pages;
 };
+/**
+ * Where a scope's results start. A refresh of the same filters keeps showing
+ * the pages it replaces, so tiles update in place instead of blanking; other
+ * filters start empty.
+ */
+const begin = (previous: Loaded, scope: Scope): Loaded => ({
+  scope,
+  pages: new Map(),
+  ...(previous.scope.filters === scope.filters
+    ? {
+        stale: bounded(new Map([...previous.stale, ...previous.pages])),
+        total: previous.total,
+      }
+    : { stale: new Map(), total: 0 }),
+  error: "",
+});
+
+/**
+ * The page of images `start` to `end` of the view's matches. `revision`
+ * reloads them, while saving a different `selection` only recounts the
+ * selected matches, so choosing images never reloads the grid and the
+ * Selected only view keeps a tile its user just deselected.
+ */
 export function useImageGrid(
   projectId: string,
   view: ImageView,
   inventory: string,
-  selectionRevision: number,
+  revision: number,
+  selection: readonly string[],
   start: number,
   end: number,
 ) {
-  const scope = useMemo(
+  const filters = useMemo(
     () => ({
       projectId,
       query: view.query,
       folder: view.folder,
       filter: view.status,
       selected_only: view.showSelected,
-      inventory,
-      selectionRevision,
     }),
-    [
-      projectId,
-      view.query,
-      view.folder,
-      view.status,
-      view.showSelected,
-      inventory,
-      selectionRevision,
-    ],
+    [projectId, view.query, view.folder, view.status, view.showSelected],
   );
-  // Results are tagged with their scope, so a new scope starts empty without
+  const scope = useMemo(
+    () => ({ filters, inventory, revision }),
+    [filters, inventory, revision],
+  );
+  // Results are tagged with their scope, so a new scope starts without
   // resetting state inside an effect.
-  const [loaded, setLoaded] = useState<Loaded>({ scope, ...emptyGrid });
-  const grid = loaded.scope === scope ? loaded : emptyGrid;
+  const [loaded, setLoaded] = useState<Loaded>(() => ({
+    scope,
+    pages: new Map(),
+    stale: new Map(),
+    total: 0,
+    error: "",
+  }));
+  const grid = useMemo(
+    () => (loaded.scope === scope ? loaded : begin(loaded, scope)),
+    [loaded, scope],
+  );
   const cache = useRef(new Map<number, ImageAsset[]>());
   const pending = useRef(new Set<number>());
   const demand = useRef<number[]>([]);
@@ -71,38 +106,31 @@ export function useImageGrid(
         if (pending.current.has(offset) || cache.current.has(offset)) continue;
         pending.current.add(offset);
         active.current++;
+        const { projectId, ...options } = scope.filters;
         void imagesApi
           .list(
-            scope.projectId,
-            {
-              query: scope.query,
-              folder: scope.folder,
-              filter: scope.filter,
-              selected_only: scope.selected_only,
-              offset,
-              limit: PAGE_SIZE,
-            },
+            projectId,
+            { ...options, offset, limit: PAGE_SIZE },
             () => current,
           )
           .then((reply: ImageList) => {
             if (!current) return;
             cache.current.delete(offset);
             cache.current.set(offset, reply.items);
-            while (cache.current.size > MAX_PAGES)
-              cache.current.delete(cache.current.keys().next().value!);
-            setLoaded({
-              scope,
+            bounded(cache.current);
+            setLoaded((previous) => ({
+              ...(previous.scope === scope ? previous : begin(previous, scope)),
               pages: new Map(cache.current),
               total: reply.total,
-              selectedMatched: reply.selectedMatched,
               error: "",
-            });
+            }));
           })
           .catch((error: unknown) => {
             if (current)
               setLoaded((previous) => ({
-                ...(previous.scope === scope ? previous : emptyGrid),
-                scope,
+                ...(previous.scope === scope
+                  ? previous
+                  : begin(previous, scope)),
                 error: messageOf(error),
               }));
           })
@@ -140,15 +168,45 @@ export function useImageGrid(
   }, [missingKey, scope]);
   const items: { index: number; asset: ImageAsset }[] = [];
   for (let index = start; index < end; index++) {
-    const page = grid.pages.get(Math.floor(index / PAGE_SIZE) * PAGE_SIZE);
+    const offset = Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
+    const page = grid.pages.get(offset) ?? grid.stale.get(offset);
     const asset = page?.[index % PAGE_SIZE];
     if (asset) items.push({ index, asset });
   }
+  // Selected images the filters hide are counted apart from the pages, for
+  // the saved selection. Choosing a shown image leaves that number as it was,
+  // so it stays until the next count arrives; a reload or other filters wait
+  // for their own.
+  const saved = useMemo(() => selection.join("\n"), [selection]);
+  const chosen = selection.length;
+  const [counted, setCounted] = useState<{ scope: Scope; hidden: number }>();
+  useEffect(() => {
+    let current = true;
+    const { projectId, ...options } = scope.filters;
+    void imagesApi
+      .list(projectId, { ...options, offset: 0, limit: 1 }, () => current)
+      .then(
+        (reply: ImageList) => {
+          if (current)
+            setCounted({ scope, hidden: chosen - reply.selectedMatched });
+        },
+        // The page reads report the same failure; the count stays unknown.
+        () => {},
+      );
+    return () => {
+      current = false;
+    };
+  }, [scope, saved, chosen]);
   return {
     total: grid.total,
-    selectedMatched: grid.selectedMatched,
+    /** Selected images the filters hide; unknown until counted. */
+    hidden:
+      counted?.scope === scope
+        ? Math.max(0, Math.min(counted.hidden, chosen))
+        : null,
     items,
-    loading: !grid.error && missing.length > 0,
+    // Stale pages stand in while a refresh reloads them.
+    loading: !grid.error && missing.some((offset) => !grid.stale.has(offset)),
     error: grid.error,
   };
 }

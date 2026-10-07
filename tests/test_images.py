@@ -197,20 +197,25 @@ class ImageTests(unittest.TestCase):
         return candidate
 
     def test_selection_and_scoped_handoff_survive_filters_and_restart(self):
+        unselected = self.service.state(self.identity)["observationRevision"]
         self.choose(["img/A.png"])
         state = self.service.state(self.identity)
         self.scan()
-        self.assertEqual(
-            state["revision"], self.service.state(self.identity)["revision"]
-        )
+        scanned = self.service.state(self.identity)
+        self.assertEqual(state["revision"], scanned["revision"])
+        # A scan reloads the images; the user's own choices never do.
+        self.assertEqual(unselected, state["observationRevision"])
         self.assertNotEqual(
-            state["observationRevision"],
-            self.service.state(self.identity)["observationRevision"],
+            state["observationRevision"], scanned["observationRevision"]
         )
         self.service.update(
             self.identity,
             state["revision"],
             {"view": {"query": "B", "workflowMode": "manual", "scroll": 230}},
+        )
+        self.assertEqual(
+            scanned["observationRevision"],
+            self.service.state(self.identity)["observationRevision"],
         )
         self.assertEqual(
             self.service.list(self.identity, query="B")["selectedMatched"], 0

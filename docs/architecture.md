@@ -402,6 +402,7 @@ Plugin view revisions are independent of agent-updated scope, so incoming report
 
 The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
 Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
+The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.

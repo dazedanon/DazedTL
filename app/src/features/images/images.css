@@ -255,6 +255,7 @@ main > .image-manager {
   left: 0;
   right: 0;
 }
+/* The whole tile chooses its image, so it reads as one control. */
 .image-tile {
   position: relative;
   width: 100%;
@@ -267,6 +268,11 @@ main > .image-manager {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+.image-tile:hover {
+  border-color: var(--color-control-border);
 }
 .image-tile[data-selected="true"] {
   border-color: var(--color-accent);
@@ -288,9 +294,9 @@ main > .image-manager {
   flex: 1;
   min-height: 0;
   width: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background-color: var(--color-inset);
   background-image:
     linear-gradient(45deg, var(--color-canvas-tile-check) 25%, transparent 25%),
@@ -327,11 +333,32 @@ main > .image-manager {
 .image-tile-status[data-next] .status-icon {
   color: var(--color-accent);
 }
+.image-tile-footer {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+}
 .image-tile-name {
+  flex: 1;
   font-size: var(--font-small);
   line-height: 1.55;
   padding: var(--space-half) var(--space-1);
+}
+/* Fits inside the name's line, which the grid's row height allows for. */
+.image-tile-compare {
   flex-shrink: 0;
+  min-height: 0;
+  padding: var(--space-half);
+  margin-inline-end: var(--space-half);
+  color: var(--color-muted);
+}
+.image-tile-compare:hover:not(:disabled) {
+  color: var(--color-text);
+}
+/* The tile clips anything outside it, so the ring sits inside the button. */
+.image-tile-compare:focus-visible {
+  outline-offset: calc(-1 * var(--space-half));
 }
 .image-grid-loading {
   position: sticky;

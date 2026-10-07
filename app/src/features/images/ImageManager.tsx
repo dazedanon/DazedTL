@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  Eye,
   Image as ImageIcon,
   MoreHorizontal,
   Search,
@@ -220,7 +221,8 @@ function Tile({
   selected: boolean;
   size: number;
   queue: ThumbnailQueue;
-  onSelect: (checked: boolean) => void;
+  /** Sets the image's selection, or toggles it without `checked`. */
+  onSelect: (checked?: boolean) => void;
   onCompare: () => void;
 }) {
   const pixels = useThumbnail(queue, asset, size);
@@ -230,13 +232,19 @@ function Tile({
   const next =
     display === "not_started" &&
     (asset.classification === "recommended" || asset.editable);
+  // A click anywhere on the tile chooses the image, like its checkbox, which
+  // stays the control for keyboards; only the eye opens Compare.
   return (
     <article
       className="image-tile"
       data-selected={selected}
       data-state={asset.state}
+      onClick={() => onSelect()}
     >
-      <label className="image-tile-select">
+      <label
+        className="image-tile-select"
+        onClick={(event) => event.stopPropagation()}
+      >
         <input
           aria-label={`Select ${asset.filename}`}
           type="checkbox"
@@ -244,14 +252,11 @@ function Tile({
           onChange={(event) => onSelect(event.target.checked)}
         />
       </label>
-      <button
-        type="button"
+      <div
         className="image-tile-preview"
-        aria-label={`Compare ${asset.filename}`}
         // Encryption is supported throughout; it is noted, not marked, since a
         // game encrypts all of its images or none.
         title={`${asset.path}\n${imageStatus(asset)}${asset.encrypted ? " · Encrypted" : ""}`}
-        onClick={onCompare}
       >
         {pixels ? (
           <img
@@ -265,17 +270,32 @@ function Tile({
         )}
         <span
           className="image-tile-status"
+          role="img"
           data-next={next || undefined}
           aria-label={imageStatus(asset)}
         >
           <StatusIcon status={displayMarks[display]} size={14} />
         </span>
-      </button>
-      <FileName
-        className="image-tile-name"
-        name={asset.filename}
-        title={asset.path}
-      />
+      </div>
+      <div className="image-tile-footer">
+        <FileName
+          className="image-tile-name"
+          name={asset.filename}
+          title={asset.path}
+        />
+        <Button
+          variant="quiet"
+          className="image-tile-compare"
+          aria-label={`Compare ${asset.filename}`}
+          title={`Compare ${asset.filename}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCompare();
+          }}
+        >
+          <Eye size={14} aria-hidden="true" />
+        </Button>
+      </div>
     </article>
   );
 }
@@ -303,12 +323,12 @@ function Manager({
     autosave: true,
     initial: { saved: imageDraft(initial) },
     report: action.report,
+    // Saved choices leave the grid as it is; useImageGrid recounts the
+    // selected images its filters hide.
     persist: async (changes) => {
-      const current = images.latest();
-      const selectionChanged =
-        current.selection.join("\n") !== changes.selection.join("\n");
-      images.set(await imagesApi.update(projectId, current.revision, changes));
-      if (selectionChanged) setListRevision((value) => value + 1);
+      images.set(
+        await imagesApi.update(projectId, images.latest().revision, changes),
+      );
     },
   });
   const images = useObserved(
@@ -404,12 +424,22 @@ function Manager({
     value.view,
     state.inventoryRevision,
     listRevision,
+    state.selection,
     range.start,
     range.end,
   );
   useOnChange(grid.total, setTotal);
   const change = (patch: Partial<ImageDraft>) =>
     draft.session.edit((current) => ({ ...current, ...patch }));
+  const choose = (id: string, checked?: boolean) =>
+    draft.session.edit((current) => ({
+      ...current,
+      selection: toggleImage(
+        current.selection,
+        id,
+        checked ?? !current.selection.includes(id),
+      ),
+    }));
   const changeView = (patch: Partial<ImageDraft["view"]>, reset = false) => {
     if (reset) {
       setScroll(0);
@@ -498,7 +528,7 @@ function Manager({
     action.clear();
   };
   const counts = state.counts;
-  const hidden = Math.max(0, value.selection.length - grid.selectedMatched);
+  const hidden = grid.hidden ?? 0;
   const folderSearch = !!value.view.folder && !!value.view.query.trim();
   const selectedReady = draft.dirty ? 0 : counts.selectedReady || 0;
   const selectedBlocked = draft.dirty ? 0 : counts.selectedBlocked || 0;
@@ -1011,7 +1041,13 @@ function Manager({
           <MenuSeparator />
           <MenuItem
             disabled={!value.selection.length}
-            onSelect={() => change({ selection: [] })}
+            onSelect={() => {
+              change({ selection: [] });
+              // Selected only keeps deselected tiles in place; with nothing
+              // left selected, the full grid shows again.
+              if (value.view.showSelected)
+                changeView({ showSelected: false }, true);
+            }}
           >
             Clear selection
           </MenuItem>
@@ -1139,15 +1175,7 @@ function Manager({
                       selected={selection.has(asset.id)}
                       size={value.view.tileSize}
                       queue={queue}
-                      onSelect={(checked) =>
-                        change({
-                          selection: toggleImage(
-                            draft.session.getSnapshot().value!.selection,
-                            asset.id,
-                            checked,
-                          ),
-                        })
-                      }
+                      onSelect={(checked) => choose(asset.id, checked)}
                       onCompare={() => openCompare(asset)}
                     />
                   </div>
