@@ -1845,10 +1845,12 @@ class PluginService:
                 if item["path"] in value["files"]
             ]
         else:
+            # Files the game already carries are done, not left unchanged.
             rows = [
                 row
                 for row in value["files"].values()
                 if any(item["id"] in selected for item in row["occurrences"])
+                and self.row_status(value, row) != "applied"
             ]
             originals = self.current_originals(project_id, value)
         for row in rows:

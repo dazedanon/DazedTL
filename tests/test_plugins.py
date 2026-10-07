@@ -475,6 +475,9 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(result["state"]["counts"]["applied"], 2)
         with self.assertRaisesRegex(ValueError, "already used"):
             self.service.action(self.identity, "apply", {"token": preview["token"]})
+        # Applied files are done, not listed as left unchanged in a later review.
+        later = self.service.action(self.identity, "preview_apply")["preview"]
+        self.assertEqual((later["files"], later["blocked"]), ([], []))
         saved = self.service.load(self.identity)
         original_saved = deepcopy(saved)
         saved["receipts"][-1]["files"][0]["backup"] = saved["files"][path]["prepared"][
