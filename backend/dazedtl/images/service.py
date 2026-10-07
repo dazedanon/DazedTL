@@ -552,7 +552,7 @@ class ImageService:
         else:
             row["state"], row["blockedReason"] = (
                 "needs_review",
-                "Refresh saved AI review results or review this candidate.",
+                "Compare the edited copy, then mark it reviewed.",
             )
         return row
 
