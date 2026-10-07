@@ -770,6 +770,16 @@ export function useGuidedWorkspace({
       "rewrap_preview",
       "qa_prepare",
     ].includes(name);
+    // An update leaves the row's status as it was, so a tool change from
+    // this visit still confirms beside its button.
+    const toolDoneHere =
+      finishedHere &&
+      [
+        "inspector_install",
+        "forge_install",
+        "inspector_remove",
+        "forge_remove",
+      ].includes(name);
     const display =
       current?.status === "complete" &&
       (publicationReview ||
@@ -847,11 +857,20 @@ export function useGuidedWorkspace({
           ? { notice: "Saved translations applied." }
           : fittedHere
             ? { notice: "Text fitting applied. Restore it from Apply." }
-            : builtHere
+            : toolDoneHere
               ? {
-                  notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
+                  // Short, so the row's buttons stay side by side.
+                  notice: name.endsWith("_remove")
+                    ? "Removed."
+                    : label === "Update"
+                      ? "Updated."
+                      : "Installed.",
                 }
-              : {})}
+              : builtHere
+                ? {
+                    notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
+                  }
+                : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }
