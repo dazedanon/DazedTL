@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client";
 import { useAction } from "../../state/useAction";
 import { Button } from "../../ui/Button";
-import { ComboBox } from "../../ui/ComboBox";
 import { FieldRow } from "../../ui/FieldRow";
 
 type Host = { slug: string; name: string };
@@ -62,25 +61,26 @@ export function OpenRouterHost({
     >
       {(control) => (
         <>
-          <ComboBox
+          {/* A plain choice, drawn like the Provider field above it. */}
+          <select
             {...control}
-            readOnly
             value={value}
-            onChange={onChange}
+            onChange={(event) => onChange(event.target.value)}
             disabled={disabled || !model}
             title={selected?.name || value || "Automatic"}
-            options={[
-              { value: "", label: "Automatic" },
-              ...(hosts || []).map((host) => ({
-                value: host.slug,
-                label: host.name,
-              })),
-            ]}
-          />
+          >
+            <option value="">Automatic</option>
+            {value && !selected && <option value={value}>{value}</option>}
+            {(hosts || []).map((host) => (
+              <option key={host.slug} value={host.slug}>
+                {host.name}
+              </option>
+            ))}
+          </select>
           {model && (
             <div className="actions connection-host-actions">
               <Button
-                variant="quiet"
+                variant="link"
                 pending={action.busy}
                 disabled={disabled || !checksEnabled}
                 onClick={() => load("Hosts updated.")}

@@ -286,12 +286,28 @@ export default function Settings({
                   }
                   pending={action.busy && action.key === "check"}
                   pendingText="Checking connection…"
-                  error={action.key === "check" ? action.error : ""}
-                  notice={action.key === "check" ? action.notice : ""}
+                  error={
+                    action.key !== "check"
+                      ? ""
+                      : action.error ||
+                        (action.notice && !successful
+                          ? "Could not verify the connection. See the details above."
+                          : "")
+                  }
+                  // A finished check repeats the card's result beside its button.
+                  notice={
+                    action.key === "check" && action.notice
+                      ? successful
+                        ? checked?.status === "verified"
+                          ? "Authentication verified."
+                          : "Server reachable."
+                        : ""
+                      : ""
+                  }
                   onClick={() =>
                     action.run(
                       () => draft.checkConnection(current!.id),
-                      "",
+                      "checked",
                       "check",
                     )
                   }
