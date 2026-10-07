@@ -24,6 +24,7 @@ class ImageView(TypedDict):
     tileSize: int
     scroll: float
     currentImage: NotRequired[str]
+    viewedImage: NotRequired[str]
     workflowMode: NotRequired[ImageEntryMode]
 
 

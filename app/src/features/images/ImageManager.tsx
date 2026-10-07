@@ -56,6 +56,7 @@ import {
 } from "../../ui/selection";
 import { ThumbnailQueue, useImageGrid, useThumbnail } from "./useImageGrid";
 import { ImageCompare } from "./ImageCompare";
+import { ImageViewer } from "./ImageViewer";
 import { ImageApply } from "./ImageApply";
 import { ImageFolders } from "./ImageFolders";
 import { useObserved } from "../../state/useObserved";
@@ -468,6 +469,48 @@ function Manager({
   const anchor = useRef<{ id: string; index: number; view: string }>(null);
   const picks = useRef(0);
   const [pickNotice, setPickNotice] = useState("");
+  // The viewer shows the image last clicked or moved to. A drawn tile hands
+  // over its image; otherwise, and after each reload, it is read by its id.
+  const viewedId = value.view.viewedImage || "";
+  const [viewed, setViewed] = useState<{
+    id: string;
+    revision: number;
+    asset: ImageAsset | null;
+  }>();
+  useEffect(() => {
+    if (
+      !viewedId ||
+      (viewed?.id === viewedId && viewed.revision === listRevision)
+    )
+      return;
+    let alive = true;
+    void imagesApi
+      .list(projectId, { asset_id: viewedId, limit: 1 }, () => alive)
+      .then(
+        (result) => {
+          if (alive)
+            setViewed({
+              id: viewedId,
+              revision: listRevision,
+              asset: result.items[0] ?? null,
+            });
+        },
+        // The grid's own reads report a failing list.
+        () => {},
+      );
+    return () => {
+      alive = false;
+    };
+  }, [projectId, viewedId, listRevision, viewed]);
+  const viewedAsset =
+    (viewedId &&
+      (grid.items.find(({ asset }) => asset.id === viewedId)?.asset ??
+        (viewed?.id === viewedId ? viewed.asset : null))) ||
+    null;
+  const showInViewer = (index: number, id: string) => {
+    const asset = grid.items.find((item) => item.index === index)?.asset;
+    if (asset?.id === id) setViewed({ id, revision: listRevision, asset });
+  };
   /** Chooses the image at `index` the way the file selector chooses a file. */
   const pick = (index: number, event: Modifiers, checkbox = false) => {
     const gesture = selectionGesture(event, checkbox);
@@ -483,10 +526,12 @@ function Manager({
       if (ticket !== picks.current || !target) return;
       const start = from && ids.includes(from.id) ? from.id : null;
       anchor.current = start ? from : { id: target, index, view };
+      showInViewer(index, target);
       draft.session.edit((current) => ({
         ...current,
         selection: selectItem(current.selection, ids, target, gesture, start)
           .selected,
+        view: { ...current.view, viewedImage: target },
       }));
       setPickNotice(
         !start
@@ -538,6 +583,18 @@ function Manager({
     focusTile(next);
     // Ctrl/Cmd moves without choosing, so Space can add the image it reaches.
     if (!additive || event.shiftKey) pick(next, event);
+    else {
+      const ticket = ++picks.current;
+      const show = ([id]: string[]) => {
+        if (ticket !== picks.current || !id) return;
+        showInViewer(next, id);
+        changeView({ viewedImage: id });
+      };
+      const ids = grid.ids(next, next);
+      if (Array.isArray(ids)) show(ids);
+      // The grid's own reads report a failing list.
+      else void ids.then(show, () => {});
+    }
   };
   const changeView = (patch: Partial<ImageDraft["view"]>, reset = false) => {
     if (reset) {
@@ -943,226 +1000,238 @@ function Manager({
           </Button>
         </div>
       )}
-      <AssistantTask
-        state={assistantState}
-        progress={
-          assistantState === "waiting" && copiedAt
-            ? `since ${new Date(copiedAt).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}`
-            : undefined
-        }
-        description={
-          assistantState === "waiting"
-            ? "Results appear on the images as your assistant saves them."
-            : assistantState === "blocked"
-              ? reportError
-              : lastReport
-                ? `Last saved report ${new Date(lastReport).toLocaleString()}.`
-                : manual
-                  ? "Your assistant edits the selected copies; its results appear on their tiles."
-                  : "Your assistant examines the images in scope and recommends the ones whose text needs translating."
-        }
-      >
-        {!manual && (
-          <div className="image-discovery-actions">
-            <label>
-              Scope
-              <select
-                aria-label="Discovery scope"
-                value={value.discoveryScope}
-                onChange={(event) =>
-                  change({
-                    discoveryScope: event.target
-                      .value as ImageDraft["discoveryScope"],
-                  })
-                }
-              >
-                <option value="all">All images</option>
-                <option value="folders">Current folder</option>
-                <option value="selected">Selected images</option>
-              </select>
-            </label>
-            {/* Each discovery step reports its result beside itself. */}
-            <ActionControl
-              inline
-              label="Copy discovery task"
-              variant={
-                primaryAction === "discovery_task" ? "primary" : "default"
-              }
-              disabled={
-                action.busy || jobRunning || scopeMissing || !counts.indexed
-              }
-              {...step("discovery_task", "Copying…")}
-              onClick={() => void perform("discovery_task", scopeOptions)}
-            />
-            {awaitingFindings && (
+      {/* The viewer fills the space beside the assistant task and toolbar. */}
+      <div className="image-manager-top">
+        <AssistantTask
+          state={assistantState}
+          progress={
+            assistantState === "waiting" && copiedAt
+              ? `since ${new Date(copiedAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`
+              : undefined
+          }
+          description={
+            assistantState === "waiting"
+              ? "Results appear on the images as your assistant saves them."
+              : assistantState === "blocked"
+                ? reportError
+                : lastReport
+                  ? `Last saved report ${new Date(lastReport).toLocaleString()}.`
+                  : manual
+                    ? "Your assistant edits the selected copies; its results appear on their tiles."
+                    : "Your assistant examines the images in scope and recommends the ones whose text needs translating."
+          }
+        >
+          {!manual && (
+            <div className="image-discovery-actions">
+              <label>
+                Scope
+                <select
+                  aria-label="Discovery scope"
+                  value={value.discoveryScope}
+                  onChange={(event) =>
+                    change({
+                      discoveryScope: event.target
+                        .value as ImageDraft["discoveryScope"],
+                    })
+                  }
+                >
+                  <option value="all">All images</option>
+                  <option value="folders">Current folder</option>
+                  <option value="selected">Selected images</option>
+                </select>
+              </label>
+              {/* Each discovery step reports its result beside itself. */}
               <ActionControl
                 inline
-                label="Refresh findings"
+                label="Copy discovery task"
                 variant={
-                  primaryAction === "refresh_findings" ? "primary" : "default"
+                  primaryAction === "discovery_task" ? "primary" : "default"
                 }
-                disabled={action.busy || jobRunning}
-                {...step("refresh_findings", "Reading findings…")}
+                disabled={
+                  action.busy || jobRunning || scopeMissing || !counts.indexed
+                }
+                {...step("discovery_task", "Copying…")}
+                onClick={() => void perform("discovery_task", scopeOptions)}
               />
+              {awaitingFindings && (
+                <ActionControl
+                  inline
+                  label="Refresh findings"
+                  variant={
+                    primaryAction === "refresh_findings" ? "primary" : "default"
+                  }
+                  disabled={action.busy || jobRunning}
+                  {...step("refresh_findings", "Reading findings…")}
+                />
+              )}
+              {!!counts.recommended && (
+                <ActionControl
+                  inline
+                  label={`Use recommendations (${counts.recommended.toLocaleString()})`}
+                  disabled={action.busy || jobRunning}
+                  {...step("use_recommendations", "Selecting…")}
+                  onClick={() =>
+                    void perform("use_recommendations", { mode: "add" })
+                  }
+                />
+              )}
+              {value.discoveryScope === "folders" && (
+                <span className="image-scope-context">
+                  {value.view.folder || "Choose a folder in the browser."}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="image-discovery-counts">
+            {!!counts.examined && (
+              <span>{counts.examined.toLocaleString()} examined</span>
             )}
             {!!counts.recommended && (
-              <ActionControl
-                inline
-                label={`Use recommendations (${counts.recommended.toLocaleString()})`}
-                disabled={action.busy || jobRunning}
-                {...step("use_recommendations", "Selecting…")}
-                onClick={() =>
-                  void perform("use_recommendations", { mode: "add" })
-                }
-              />
+              <Button
+                variant="link"
+                onClick={() => changeView({ status: "recommended" }, true)}
+              >
+                {counts.recommended.toLocaleString()} recommended
+              </Button>
             )}
-            {value.discoveryScope === "folders" && (
-              <span className="image-scope-context">
-                {value.view.folder || "Choose a folder in the browser."}
-              </span>
+            {!!counts.uncertain && (
+              <Button
+                variant="link"
+                onClick={() => changeView({ status: "uncertain" }, true)}
+              >
+                {counts.uncertain.toLocaleString()} uncertain
+              </Button>
             )}
+            {!!counts.notExamined && (
+              <Button
+                variant="link"
+                onClick={() => changeView({ status: "not_examined" }, true)}
+              >
+                {counts.notExamined.toLocaleString()} not examined
+              </Button>
+            )}
+            {modeToggle}
           </div>
-        )}
-        <div className="image-discovery-counts">
-          {!!counts.examined && (
-            <span>{counts.examined.toLocaleString()} examined</span>
-          )}
-          {!!counts.recommended && (
-            <Button
-              variant="link"
-              onClick={() => changeView({ status: "recommended" }, true)}
-            >
-              {counts.recommended.toLocaleString()} recommended
-            </Button>
-          )}
-          {!!counts.uncertain && (
-            <Button
-              variant="link"
-              onClick={() => changeView({ status: "uncertain" }, true)}
-            >
-              {counts.uncertain.toLocaleString()} uncertain
-            </Button>
-          )}
-          {!!counts.notExamined && (
-            <Button
-              variant="link"
-              onClick={() => changeView({ status: "not_examined" }, true)}
-            >
-              {counts.notExamined.toLocaleString()} not examined
-            </Button>
-          )}
-          {modeToggle}
-        </div>
-      </AssistantTask>
-      <div className="image-browser-toolbar">
-        <div className="image-search">
-          <Search size={16} aria-hidden="true" />
-          <input
-            type="search"
-            aria-label="Search images"
-            placeholder="Search filenames or paths…"
-            maxLength={200}
-            value={value.view.query}
-            onChange={(event) =>
-              changeView({ query: event.target.value }, true)
-            }
-          />
-        </div>
-        {/* The same pressed toggle as the translation file list, so the
-            narrowed grid always shows why it is narrowed. */}
-        <Button
-          aria-pressed={value.view.showSelected}
-          disabled={!value.selection.length && !value.view.showSelected}
-          onClick={() =>
-            changeView({ showSelected: !value.view.showSelected }, true)
-          }
-        >
-          Selected only
-        </Button>
-        <select
-          aria-label="Image status"
-          value={value.view.status}
-          onChange={(event) => changeView({ status: event.target.value }, true)}
-        >
-          {[
-            ["all", "All images"],
-            ["recommended", "Recommended"],
-            ["uncertain", "Uncertain"],
-            ["no_text", "No text found"],
-            ["already_english", "Already English"],
-            ["not_examined", "Not examined"],
-            ["excluded", "Excluded"],
-            ["editable", "Editable"],
-            ["ready", "Ready to apply"],
-            ["blocked", "Blocked"],
-            ["applied", "Applied"],
-          ].map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <Menu
-          trigger={
-            value.selection.length ? (
-              <>
-                {value.selection.length.toLocaleString()} selected
-                <ChevronDown size={14} aria-hidden="true" />
-              </>
-            ) : (
-              "Select…"
-            )
-          }
-          label="Bulk image selection"
-          align="start"
-          disabled={action.busy}
-        >
-          <MenuItem onSelect={addMatching}>
-            Add matching ({grid.total.toLocaleString()})
-          </MenuItem>
-          <MenuItem
-            onSelect={() =>
-              perform("select_matching", {
-                query: "",
-                filter: "all",
-                folder: "",
-                mode: "add",
-              })
+        </AssistantTask>
+        <div className="image-browser-toolbar">
+          <div className="image-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              aria-label="Search images"
+              placeholder="Search filenames or paths…"
+              maxLength={200}
+              value={value.view.query}
+              onChange={(event) =>
+                changeView({ query: event.target.value }, true)
+              }
+            />
+          </div>
+          {/* The same pressed toggle as the translation file list, so the
+              narrowed grid always shows why it is narrowed. */}
+          <Button
+            aria-pressed={value.view.showSelected}
+            disabled={!value.selection.length && !value.view.showSelected}
+            onClick={() =>
+              changeView({ showSelected: !value.view.showSelected }, true)
             }
           >
-            Select all ({counts.indexed.toLocaleString()})
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem
-            disabled={!value.selection.length}
-            onSelect={() => {
-              change({ selection: [] });
-              // Selected only keeps deselected tiles in place; with nothing
-              // left selected, the full grid shows again.
-              if (value.view.showSelected)
-                changeView({ showSelected: false }, true);
-            }}
-          >
-            Clear selection
-          </MenuItem>
-        </Menu>
-        <label className="image-size-label">
-          Size
-          <input
-            aria-label="Thumbnail size"
-            type="range"
-            min={80}
-            max={176}
-            step={8}
-            value={value.view.tileSize}
+            Selected only
+          </Button>
+          <select
+            aria-label="Image status"
+            value={value.view.status}
             onChange={(event) =>
-              changeView({ tileSize: Number(event.target.value) })
+              changeView({ status: event.target.value }, true)
             }
-          />
-        </label>
+          >
+            {[
+              ["all", "All images"],
+              ["recommended", "Recommended"],
+              ["uncertain", "Uncertain"],
+              ["no_text", "No text found"],
+              ["already_english", "Already English"],
+              ["not_examined", "Not examined"],
+              ["excluded", "Excluded"],
+              ["editable", "Editable"],
+              ["ready", "Ready to apply"],
+              ["blocked", "Blocked"],
+              ["applied", "Applied"],
+            ].map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <Menu
+            trigger={
+              value.selection.length ? (
+                <>
+                  {value.selection.length.toLocaleString()} selected
+                  <ChevronDown size={14} aria-hidden="true" />
+                </>
+              ) : (
+                "Select…"
+              )
+            }
+            label="Bulk image selection"
+            align="start"
+            disabled={action.busy}
+          >
+            <MenuItem onSelect={addMatching}>
+              Add matching ({grid.total.toLocaleString()})
+            </MenuItem>
+            <MenuItem
+              onSelect={() =>
+                perform("select_matching", {
+                  query: "",
+                  filter: "all",
+                  folder: "",
+                  mode: "add",
+                })
+              }
+            >
+              Select all ({counts.indexed.toLocaleString()})
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              disabled={!value.selection.length}
+              onSelect={() => {
+                change({ selection: [] });
+                // Selected only keeps deselected tiles in place; with nothing
+                // left selected, the full grid shows again.
+                if (value.view.showSelected)
+                  changeView({ showSelected: false }, true);
+              }}
+            >
+              Clear selection
+            </MenuItem>
+          </Menu>
+          <label className="image-size-label">
+            Size
+            <input
+              aria-label="Thumbnail size"
+              type="range"
+              min={80}
+              max={176}
+              step={8}
+              value={value.view.tileSize}
+              onChange={(event) =>
+                changeView({ tileSize: Number(event.target.value) })
+              }
+            />
+          </label>
+        </div>
+        <ImageViewer
+          projectId={projectId}
+          asset={viewedAsset}
+          queue={queue}
+          tileSize={value.view.tileSize}
+          onCompare={openCompare}
+        />
       </div>
       {jobRunning && (
         <div className="image-index-progress" role="status">

@@ -112,6 +112,10 @@
   --short-control-width: 120px;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
+  /* Image Manager's viewer takes the width beside the assistant task and
+     toolbar; it matches their height and grows only on tall windows. */
+  --image-viewer-width: clamp(16rem, 32cqw, 36rem);
+  --image-viewer-height: clamp(10rem, 26vh, 26rem);
   /* Every page centers one content column; frame rows span the window and
      pad their content to that column, so edges match across screens. */
   --content-width: 82rem;

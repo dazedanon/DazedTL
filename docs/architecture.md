@@ -407,6 +407,7 @@ The [image service](../backend/dazedtl/images/service.py) owns a project-scoped 
 Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
 The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
 The grid chooses images with the file selector's [selection gestures](../app/src/ui/selection.ts); a Shift range that reaches past the loaded windows reads the images between in bounded runs.
+The [viewer](../app/src/features/images/ImageViewer.tsx) reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.

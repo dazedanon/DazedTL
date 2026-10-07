@@ -42,6 +42,7 @@ VIEW = {
     "tileSize": 112,
     "scroll": 0,
     "currentImage": "",
+    "viewedImage": "",
     "workflowMode": "discovery",
 }
 
@@ -483,6 +484,7 @@ class ImageService:
                         "status",
                         "folder",
                         "currentImage",
+                        "viewedImage",
                         "workflowMode",
                     }:
                         text(item, "Image view", 2000)

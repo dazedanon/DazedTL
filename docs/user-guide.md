@@ -124,7 +124,7 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 The Images task in Translate is the Image Manager, the same one Assistant-led shows in its **Images** tab.
 The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
 Images select like files in the file selector: a click selects only that image, Ctrl/Cmd-click or its checkbox adds or removes it, Shift-click selects a range, and the arrow keys, Space and Ctrl+A (Cmd+A) work from the keyboard.
-An image's eye button compares the original with the edited copy.
+The viewer beside the assistant task shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
 With **Selected only** on, an image you deselect stays in view until you change the filters, so you can select it again.
 The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.

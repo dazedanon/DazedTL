@@ -1236,6 +1236,7 @@ export type ImageView = {
   tileSize: number;
   scroll: number;
   currentImage?: string;
+  viewedImage?: string;
   workflowMode?: ImageEntryMode;
 };
 
