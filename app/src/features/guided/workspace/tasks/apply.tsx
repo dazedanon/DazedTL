@@ -11,6 +11,7 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { AssistantTask } from "../../../../ui/AssistantTask";
 import { HelpPopover } from "../../../../ui/HelpPopover";
+import { Notice } from "../../../../ui/Notice";
 
 export function applyView(w: GuidedWorkspace): TaskView {
   const {
@@ -195,9 +196,32 @@ export function fittingView(w: GuidedWorkspace): TaskView {
   const eligible = fitting
     ? fitting.changes_found - fitting.overflow_skipped
     : 0;
+  // Translated plugin command text (357) loses its line breaks, so a
+  // project that translates it needs 357 in fitting to wrap it again.
+  const fittingCodes = fields.text.codes
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map(Number);
+  const unwrapped357 =
+    values.engine_options.CODE357 === true && !fittingCodes.includes(357);
   let content: ReactNode;
   content = (
     <>
+      {unwrapped357 && (
+        <Notice tone="warning">
+          <span>
+            Translated plugin command text (357) loses its line breaks and is
+            not included in fitting.
+          </span>
+          <Button
+            variant="link"
+            disabled={disabled}
+            onClick={() => editText("codes", [...fittingCodes, 357].join(","))}
+          >
+            Include 357
+          </Button>
+        </Notice>
+      )}
       <ActionList>
         <ActionRow
           label={

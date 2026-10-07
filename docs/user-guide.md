@@ -96,6 +96,7 @@ Apply overwrites the checked game files that have saved output; it never merges 
 You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
 Rewrap needs a completed scan with the same files and settings.
+Translated plugin command text (357) loses its line breaks, so Fitting offers **Include 357** when that source is enabled but outside its event codes.
 Optional QA and game tools stay here, and **Tools** installs or updates TL Inspector and Forge for MV/MZ.
 Apply and playtest an early scene before expanding the scope.
 
