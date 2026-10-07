@@ -757,42 +757,42 @@ export function qaView(w: GuidedWorkspace): TaskView {
     </>
   );
   // The footer walks QA forward: prepare a task, copy it, then review the
-  // corrections chosen from its findings.
-  const review = qaApplied
-    ? task(
-        "qa_prepare",
-        "Prepare QA again",
-        { focus: fields.text.focus },
-        !baseline,
-      )
-    : qa.findings.length
-      ? reviewPending({
-          only: "qa",
-          label: "Review chosen corrections",
-          blocked: !baseline
-            ? true
-            : !qa.current
-              ? qa.message
+  // corrections chosen from its findings. Findings checked against text that
+  // has changed since lead back to preparing again.
+  const review =
+    qaApplied || (qa.findings.length && !qa.current)
+      ? task(
+          "qa_prepare",
+          "Prepare QA again",
+          { focus: fields.text.focus },
+          !baseline,
+        )
+      : qa.findings.length
+        ? reviewPending({
+            only: "qa",
+            label: "Review chosen corrections",
+            blocked: !baseline
+              ? true
               : !chosenFindings.length
                 ? choosable.length
                   ? "Choose corrections first."
                   : "No finding has a prepared correction yet."
                 : false,
-        })
-      : qaTask
-        ? copyTask(
-            "qa",
-            "Copy QA task",
-            "primary",
-            "QA task copied. Paste it into your coding assistant.",
-          )
-        : task(
-            "qa_prepare",
-            "Prepare text QA task",
-            { focus: fields.text.focus },
-            !baseline,
-            "primary",
-          );
+          })
+        : qaTask
+          ? copyTask(
+              "qa",
+              "Copy QA task",
+              "primary",
+              "QA task copied. Paste it into your coding assistant.",
+            )
+          : task(
+              "qa_prepare",
+              "Prepare text QA task",
+              { focus: fields.text.focus },
+              !baseline,
+              "primary",
+            );
   return {
     content,
     action: review,
