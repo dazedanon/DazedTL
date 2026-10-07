@@ -11,7 +11,7 @@ import { CheckField, FieldRow } from "../../../ui/FieldRow";
 import { JobStatus } from "../../../ui/JobStatus";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
-import { Tabs } from "../../../ui/Tabs";
+import { StackedTabPanels, Tabs } from "../../../ui/Tabs";
 import { SpeakerNames } from "../ContextWorkspace";
 import { EngineOptions } from "../EngineOptions";
 import { FileSelection } from "../FileSelection";
@@ -93,9 +93,9 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
             ? "Provider execution is off for this launch."
             : "";
   // Panels that edit the options draft say whether it is saved.
-  const draftPanel =
-    ["widths", "translation-context"].includes(panel) ||
-    (panel === "speakers" && speakerTab === "settings");
+  const draftPanel = ["speakers", "widths", "translation-context"].includes(
+    panel,
+  );
   const title =
     panel === "translation-context"
       ? `${phaseLabels[phase]} options`
@@ -202,26 +202,25 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
         )}
         {["speakers", "widths", "tools", "translation-context"].includes(
           panel,
-        ) &&
-          (panel !== "speakers" || speakerTab === "settings") && (
-            <>
-              {draft.dirty && (
-                <ActionControl
-                  label="Discard engine options"
-                  disabled={disabled}
-                  {...feedback("discard-options", "Discarding…")}
-                  onClick={() =>
-                    action.run(
-                      draft.discard,
-                      "Engine options restored.",
-                      "discard-options",
-                    )
-                  }
-                />
-              )}
-              {savePanel()}
-            </>
-          )}
+        ) && (
+          <>
+            {draft.dirty && (
+              <ActionControl
+                label="Discard engine options"
+                disabled={disabled}
+                {...feedback("discard-options", "Discarding…")}
+                onClick={() =>
+                  action.run(
+                    draft.discard,
+                    "Engine options restored.",
+                    "discard-options",
+                  )
+                }
+              />
+            )}
+            {savePanel()}
+          </>
+        )}
       </>
     );
   return (
@@ -273,76 +272,79 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                   ]}
                 />
               </div>
-              <div
-                role="tabpanel"
-                id={`detection-panel-${speakerTab}`}
-                aria-labelledby={`detection-tab-${speakerTab}`}
-              >
-                {speakerTab === "findings" ? (
-                  <>
-                    {findings.reportId ? (
-                      <SpeakerFindings
-                        findings={findings}
-                        values={values.engine_options}
-                      />
-                    ) : (
-                      <p className="muted">{findings.message}</p>
-                    )}
-                    {findings.status === "stale" && (
-                      <p className="muted">{findings.message}</p>
-                    )}
-                    {applySpeakerControl}
-                  </>
-                ) : (
-                  <>
-                    <div className="context-detection-settings">
-                      <CheckField
-                        id="guided-comment-text"
-                        label="Comment text"
-                        help={commentTextHelp}
-                        disabled={disabled}
-                        checked={values.phase1_comments}
-                        onChange={(checked) => edit("phase1_comments", checked)}
-                      />
-                      <EngineOptions
-                        state={state}
-                        values={values.engine_options}
-                        keys={speakers}
-                        descriptions={speakerOptions}
-                        disabled={disabled}
-                        change={(key, value) =>
-                          edit("engine_options", {
-                            ...values.engine_options,
-                            [key]: value,
-                          })
-                        }
-                      />
-                    </div>
-                    {!!findings.overrides.length && (
-                      <ActionControl
-                        label="Use investigation recommendations"
-                        disabled={
-                          disabled ||
-                          draft.dirty ||
-                          !!state.optionsDraft ||
-                          !["ready", "applied"].includes(findings.status)
-                        }
-                        pending={speakerAction.busy}
-                        pendingText="Applying rules…"
-                        error={speakerAction.error}
-                        notice={speakerAction.notice}
-                        onClick={() =>
-                          speakerAction.run(
-                            () => draft.applySpeakers(true),
-                            "Investigation recommendations restored.",
-                            "apply",
-                          )
-                        }
-                      />
-                    )}
-                  </>
-                )}
-              </div>
+              <StackedTabPanels
+                id="detection"
+                value={speakerTab}
+                panels={{
+                  findings: (
+                    <>
+                      {findings.reportId ? (
+                        <SpeakerFindings
+                          findings={findings}
+                          values={values.engine_options}
+                        />
+                      ) : (
+                        <p className="muted">{findings.message}</p>
+                      )}
+                      {findings.status === "stale" && (
+                        <p className="muted">{findings.message}</p>
+                      )}
+                      {applySpeakerControl}
+                    </>
+                  ),
+                  settings: (
+                    <>
+                      <div className="context-detection-settings">
+                        <CheckField
+                          id="guided-comment-text"
+                          label="Comment text"
+                          help={commentTextHelp}
+                          disabled={disabled}
+                          checked={values.phase1_comments}
+                          onChange={(checked) =>
+                            edit("phase1_comments", checked)
+                          }
+                        />
+                        <EngineOptions
+                          state={state}
+                          values={values.engine_options}
+                          keys={speakers}
+                          descriptions={speakerOptions}
+                          disabled={disabled}
+                          change={(key, value) =>
+                            edit("engine_options", {
+                              ...values.engine_options,
+                              [key]: value,
+                            })
+                          }
+                        />
+                      </div>
+                      {!!findings.overrides.length && (
+                        <ActionControl
+                          label="Use investigation recommendations"
+                          disabled={
+                            disabled ||
+                            draft.dirty ||
+                            !!state.optionsDraft ||
+                            !["ready", "applied"].includes(findings.status)
+                          }
+                          pending={speakerAction.busy}
+                          pendingText="Applying rules…"
+                          error={speakerAction.error}
+                          notice={speakerAction.notice}
+                          onClick={() =>
+                            speakerAction.run(
+                              () => draft.applySpeakers(true),
+                              "Investigation recommendations restored.",
+                              "apply",
+                            )
+                          }
+                        />
+                      )}
+                    </>
+                  ),
+                }}
+              />
             </>
           )}
           {panel === "speaker-names" && (

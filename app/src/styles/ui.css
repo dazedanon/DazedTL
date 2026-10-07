@@ -261,6 +261,17 @@ pre {
 .page-header h1 {
   font-size: var(--font-page-title);
 }
+/* Stacked tab panels share one grid cell, so the tallest sets the size. */
+.ui-tab-stack {
+  display: grid;
+}
+.ui-tab-stack > [role="tabpanel"] {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.ui-tab-stack > [data-active="false"] {
+  visibility: hidden;
+}
 .ui-tabs {
   display: flex;
   gap: var(--space-6);

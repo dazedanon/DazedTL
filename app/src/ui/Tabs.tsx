@@ -97,3 +97,33 @@ export function TabPanel({
     </div>
   );
 }
+/**
+ * Every tab's panel stacked in one cell, so switching tabs keeps the size
+ * of the tallest; the hidden panels stay laid out but invisible and inert.
+ */
+export function StackedTabPanels<T extends string>({
+  id,
+  value,
+  panels,
+}: {
+  id: string;
+  value: T;
+  panels: Record<T, ReactNode>;
+}) {
+  return (
+    <div className="ui-tab-stack">
+      {(Object.entries(panels) as [T, ReactNode][]).map(([key, panel]) => (
+        <div
+          key={key}
+          role="tabpanel"
+          id={`${id}-panel-${key}`}
+          aria-labelledby={`${id}-tab-${key}`}
+          inert={key !== value}
+          data-active={key === value}
+        >
+          {panel}
+        </div>
+      ))}
+    </div>
+  );
+}

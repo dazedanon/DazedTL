@@ -474,6 +474,7 @@ A dialog holds one decision or one focused edit and ends in an explicit choice; 
 A menu is a short list of choices that closes when you pick one.
 New pages start from one of three templates: the task page (stepper, task tabs, TaskHeader, the task's panels, its work area, footer), the project page (header, tabs, a body and footer per tab) and the decision dialog (the decision as its title, what will happen, explicit footer choices).
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
+A dialog whose tabs hold panels of different heights stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size.
 Settings, the Project page and [Len's method](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Len's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
 A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
