@@ -184,6 +184,8 @@ export function useGuidedWorkspace({
   const scan = state.speakerScan;
   const discovery = state.contextSetup;
   const investigation = investigationResults(state);
+  const investigationDone = investigation.every((row) => row.saved);
+  const [setupCopiedOpen, setSetupCopiedOpen] = useState(false);
   const scanOptionsDirty =
     JSON.stringify(values.engine_options) !==
       JSON.stringify(state.preferences.values.engine_options) ||
@@ -947,9 +949,15 @@ export function useGuidedWorkspace({
       variant={variant}
       disabled={disabled}
       {...feedback("copy:" + name, "Copying…")}
+      // When the results a copied task asked for arrive, "paste it into your
+      // assistant" no longer describes a next step.
+      {...(name === "setup" &&
+        setupCopiedOpen &&
+        investigationDone && { notice: "" })}
       onClick={() =>
         action.run(
           async () => {
+            if (name === "setup") setSetupCopiedOpen(!investigationDone);
             await save();
             await window.dazedtl.copyText(
               (await api.guided.skill(project.id, name)).text,
