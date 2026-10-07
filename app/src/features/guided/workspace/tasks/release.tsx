@@ -146,12 +146,14 @@ export function packageView(w: GuidedWorkspace): TaskView {
           !!state.readiness.unapplied.length,
     "primary",
   );
-  // Building with nothing applied packages the original text; say so once,
-  // unless the destination must be fixed first.
+  // Building with no text applied packages the original text, even with
+  // applied images; say so once, unless the destination must be fixed first.
   const actionContext = !destinationError &&
     !state.readiness.applied.length &&
     !state.readiness.unapplied.length && (
-      <span>Nothing applied yet: the ZIP keeps the original text.</span>
+      <span>
+        No translated text applied yet: the ZIP keeps the original text.
+      </span>
     );
   // A running build reports its progress beside its own button.
   const secondary = localOperation && (
