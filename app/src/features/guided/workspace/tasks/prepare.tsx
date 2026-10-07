@@ -386,11 +386,19 @@ export function baselineView(w: GuidedWorkspace): TaskView {
         original: fields.untranslated ? "" : fields.original,
         untranslated: fields.untranslated,
       },
-      !preserved ||
-        !preparationComplete ||
-        fields.untranslated === null ||
-        !fields.version.trim() ||
-        (!fields.untranslated && !fields.original.trim()),
+      !preserved
+        ? "Back up the original game first."
+        : !preparationComplete
+          ? "Prepare the game files first."
+          : !fields.version.trim() && fields.untranslated === null
+            ? "Enter the game version and choose its translation state."
+            : !fields.version.trim()
+              ? "Enter the game version."
+              : fields.untranslated === null
+                ? "Choose the game’s translation state."
+                : !fields.untranslated && !fields.original.trim()
+                  ? "Choose the matching original folder."
+                  : false,
       "primary",
     );
   const next = advance(undefined, undefined, baseline ? "primary" : "quiet");

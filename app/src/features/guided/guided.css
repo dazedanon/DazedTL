@@ -996,18 +996,27 @@
   gap: var(--space-2);
   margin-bottom: var(--space-5);
 }
+/* The translation state reads as one more field: its legend matches a field
+   label and sits as close to its choices as a label to its control. */
 .guided-workspace .guided-baseline-choice {
-  margin: var(--space-5) 0;
+  margin: var(--space-4) 0 0;
+}
+.guided-baseline-choice + .field-row {
+  margin-top: var(--space-4);
 }
 .guided-baseline-choice legend {
-  font-weight: var(--weight-semibold);
-  margin-bottom: var(--space-3);
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-size: var(--font-control);
+  font-weight: var(--weight-regular);
 }
 .guided-baseline-choice label {
   flex-direction: row;
   align-items: flex-start;
   gap: var(--space-2);
-  margin-top: var(--space-3);
+}
+.guided-baseline-choice label + label {
+  margin-top: var(--space-2);
 }
 .guided-baseline-choice input {
   accent-color: var(--color-accent);
