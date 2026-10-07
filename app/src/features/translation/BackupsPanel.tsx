@@ -343,10 +343,20 @@ export function BackupsPanel({
                 }
                 variant="primary"
                 disabled={disabled || !selected || !destination.trim()}
+                disabledReason={
+                  selected && !destination.trim()
+                    ? "Choose a new recovery folder first."
+                    : ""
+                }
                 pending={action.busy && action.key === "restore_backup"}
                 pendingText="Starting recovery…"
                 error={action.key === "restore_backup" ? action.error : ""}
-                job={selectedRestore}
+                // A finished recovery is reported below with its folder.
+                job={
+                  selectedRestore?.status === "complete"
+                    ? undefined
+                    : selectedRestore
+                }
                 onClick={() =>
                   operation("restore_backup", {
                     backup_id: identity,
