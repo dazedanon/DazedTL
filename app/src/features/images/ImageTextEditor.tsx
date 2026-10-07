@@ -1152,7 +1152,7 @@ function Editor({
                   </ActionRow>
                 </ActionList>
                 {!!runs.length && (
-                  <label>
+                  <label className="native-editor-run-picker">
                     Saved image run
                     <select
                       aria-label="Saved image run"
@@ -1181,7 +1181,9 @@ function Editor({
                               ? "Image text estimate"
                               : "Image text translation",
                           status: job.status,
-                          message: job.message,
+                          // A finished run's message is the engine's raw
+                          // token tally; its state says enough.
+                          message: job.status === "complete" ? "" : job.message,
                         }}
                       />
                       {["failed", "interrupted"].includes(job.status) &&
@@ -1229,6 +1231,7 @@ function Editor({
                       {job.status === "complete" && job.mode !== "estimate" && (
                         <div className="actions">
                           <Button
+                            variant={job.imported ? "default" : "primary"}
                             disabled={busy}
                             onClick={() => {
                               void nativeAction("import");

@@ -262,6 +262,14 @@
   align-items: flex-start;
   text-align: start;
 }
+.native-editor-native-translation > .native-editor-run-picker {
+  margin-block: var(--space-4) var(--space-2);
+}
+.native-editor-native-translation .actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
 .native-editor-native-translation pre {
   max-height: 10rem;
   white-space: pre-wrap;
