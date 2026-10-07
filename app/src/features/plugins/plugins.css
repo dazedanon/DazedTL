@@ -120,15 +120,9 @@
 .plugin-status {
   font-size: var(--font-small);
 }
-.plugin-status-ready,
-.plugin-status-applied,
-.plugin-status-not_needed,
 .plugin-success {
   color: var(--color-success);
 }
-.plugin-status-needs_revision,
-.plugin-status-unresolved,
-.plugin-status-stale,
 .plugin-table td > .plugin-warning {
   color: var(--color-warning);
 }

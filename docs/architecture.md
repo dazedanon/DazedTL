@@ -297,12 +297,12 @@ Translate embeds the existing [FileSelection](../app/src/features/guided/FileSel
 Its shared virtual list and selection logic retain Ctrl/Cmd toggles, Shift ranges and keyboard movement.
 A separate Inspect icon does not change scope; the open file is marked independently of selection.
 File status follows that file's request receipts and verified output independently of checkbox selection or the current attempt.
-The file list uses five labels: Not started, In progress, Incomplete, Complete and Applied.
-Untouched files show Not started; verified passes with no new requests show Complete.
-Preparation, queueing, provider work, cancellation, collection and saving share In progress; approval pauses its spinner.
-Incomplete covers partial, rejected, missing or unsaved results and never establishes completion.
-Complete requires verified full output or explicit evidence that no requests were needed; Applied requires verified saved output matching the game.
-Unavailable recorded output keeps its warning styling.
+The file list uses the shared display states.
+Untouched files show Not started; verified passes with no new requests show Ready to apply.
+Preparation, queueing, provider work, cancellation, collection and saving show Working; a pending cost approval shows Needs review without a spinner.
+Needs review also covers partial, rejected or unsaved results and never establishes completion.
+Ready to apply requires verified full output or explicit evidence that no requests were needed; Applied requires verified saved output matching the game.
+Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
 Detailed states and request counts belong in Inspect and the approval dialog.
 Run failures, collection errors and rejection details remain in the inspector and run views.
 The observed `workerStatus` retains the actual worker state separately from public monitoring activity.
@@ -512,7 +512,11 @@ Shortened file names use [FileName](../app/src/ui/FileName.tsx), which gives way
 Editable folder and file paths use [PathInput](../app/src/ui/PathInput.tsx), which shows a long path's end while it is not being edited.
 Read-only paths use [PathText](../app/src/ui/PathText.tsx): inside the home folder they start with `~` through [homeRelative](../app/src/ui/displayPath.ts), a long one gives way at the start, and hovering or copying it gives the full path; a review that confirms a destination wraps it instead.
 Electron passes the home folder to the sandboxed preload as a launch argument.
-Status marks come from [StatusIcon](../app/src/ui/StatusIcon.tsx) (done, running, partly done, not started, warning, failed) rather than text characters, so they keep their shape in every font.
+Status marks come from [StatusIcon](../app/src/ui/StatusIcon.tsx) rather than text characters, so they keep their shape in every font.
+Work items say where they stand in one vocabulary, the display states in [displayStatus.ts](../app/src/ui/displayStatus.ts): Not started, Working, Waiting, Needs review, Ready to apply, Applied, Done, Outdated, Blocked and Skipped, each with one mark.
+Each feature maps its own states there and keeps its specific reason in the item's detail; backend state machines are unchanged.
+Waiting means the work is with an assistant, never that the app is running something, and Done is finished work that never writes into the game.
+[StatusMark](../app/src/ui/StatusMark.tsx) shows a state on its own and StatusHeading leads a list row with it; other states, such as a connection check, may use a mark directly.
 Inline notes use [Notice](../app/src/ui/Notice.tsx): neutral notes, including empty states, read as plain secondary text, and warnings get the warning edge with their way forward beside them.
 Disclosures share the app's chevron marker and hold genuine advanced settings or long evidence, not status the task already needs.
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
@@ -621,7 +625,7 @@ Backup history is grouped by game versus project files and appears only after th
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
-Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (not copied, waiting, results ready, applied or needs attention), what comes back, and a row per expected result.
+Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands (Not started, Waiting, Needs review, Applied or Blocked), what comes back, and a row per expected result.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.

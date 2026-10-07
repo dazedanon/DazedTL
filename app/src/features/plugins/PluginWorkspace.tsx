@@ -24,6 +24,8 @@ import { Message } from "../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { selectionNames } from "../../ui/displayText";
+import { displayLabels, pluginDisplay } from "../../ui/displayStatus";
+import { StatusMark } from "../../ui/StatusMark";
 
 const fileCount = (count: number, noun = "file") =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -61,6 +63,17 @@ export const pluginStatus = (status: string) =>
     available: "Available",
     unchanged: "No changes",
   })[status] || status;
+/** A plugin file's shared state, with its own status when that says more. */
+function PluginState({ status, issue }: { status: string; issue?: string }) {
+  const state = pluginDisplay(status, issue);
+  const reason = pluginStatus(status);
+  return (
+    <>
+      <StatusMark state={state} />
+      {reason !== displayLabels[state] && <small>{reason}</small>}
+    </>
+  );
+}
 const checks: Record<string, string> = {
   boundaries: "Approved text locations only",
   protectedLookups: "Original lookup values protected",
@@ -316,20 +329,14 @@ export function PluginWorkspace({
   ) => ({
     id,
     title,
-    status:
+    state:
       report.status === "current"
         ? ("done" as const)
         : report.status === "partial"
-          ? ("partial" as const)
-          : ("idle" as const),
-    state:
-      report.status === "current"
-        ? "Saved"
-        : report.status === "partial"
-          ? "Partly saved"
+          ? ("needs_review" as const)
           : report.status === "awaiting_report"
-            ? "Awaiting results"
-            : "Not saved",
+            ? ("waiting" as const)
+            : ("not_started" as const),
     detail:
       report.errors[0] ||
       (report.expected
@@ -496,10 +503,8 @@ export function PluginWorkspace({
                             </small>
                           )}
                         </td>
-                        <td
-                          className={`plugin-status plugin-status-${row.status}`}
-                        >
-                          <span>{pluginStatus(row.status)}</span>
+                        <td className="plugin-status">
+                          <PluginState status={row.status} issue={row.issue} />
                           {row.manual > 0 && <small>Adjusted by you</small>}
                         </td>
                       </tr>
@@ -610,10 +615,8 @@ export function PluginWorkspace({
             ) : (
               <>
                 <div className="plugin-detail-status">
-                  <span
-                    className={`plugin-status plugin-status-${detail.status}`}
-                  >
-                    {pluginStatus(detail.status)}
+                  <span className="plugin-status">
+                    <PluginState status={detail.status} issue={detail.issue} />
                   </span>
                   <ActionControl
                     label={

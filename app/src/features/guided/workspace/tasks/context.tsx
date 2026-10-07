@@ -271,8 +271,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
             {
               id: "layout",
               title: "Measured widths",
-              status: discovery.layout ? "done" : "idle",
-              state: discovery.layout ? "Saved" : "Not measured",
+              state: discovery.layout ? "done" : "not_started",
               detail:
                 "Dialogue, portrait, list and note widths from the game's own layout.",
               action: copyTask(

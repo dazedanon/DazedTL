@@ -30,7 +30,7 @@ import { JobStatus } from "../../ui/JobStatus";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { AssistantTask } from "../../ui/AssistantTask";
-import { StatusIcon } from "../../ui/StatusIcon";
+import { StatusMark } from "../../ui/StatusMark";
 import { HelpPopover } from "../../ui/HelpPopover";
 
 type View = "progress" | "context" | "images";
@@ -333,20 +333,22 @@ function Workspace({
                     return (
                       <div key={key} data-state={phase}>
                         <span>{label}</span>
+                        {/* The assistant reports a phase as active; the
+                            app does not claim it is running. */}
                         <strong>
-                          <StatusIcon
-                            size={14}
-                            status={
+                          <StatusMark
+                            state={
                               phase === "complete"
                                 ? "done"
                                 : phase === "active"
-                                  ? "partial"
+                                  ? "waiting"
                                   : phase === "blocked"
-                                    ? "warning"
-                                    : "idle"
+                                    ? "blocked"
+                                    : phase === "out_of_scope"
+                                      ? "skipped"
+                                      : "not_started"
                             }
                           />
-                          {phase.replaceAll("_", " ")}
                         </strong>
                       </div>
                     );

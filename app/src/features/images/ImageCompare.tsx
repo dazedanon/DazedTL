@@ -8,7 +8,9 @@ import { Modal } from "../../ui/Modal";
 import { ActionBar } from "../../ui/ActionBar";
 import { Message } from "../../ui/Feedback";
 import { ExpandableText } from "../../ui/ExpandableText";
-import { imageClassificationLabels, imageStatus } from "./imageSelection";
+import { imageDisplay } from "../../ui/displayStatus";
+import { StatusMark } from "../../ui/StatusMark";
+import { imageClassificationLabels, imageReason } from "./imageSelection";
 import { useRead } from "../../state/useRead";
 
 export function ImageCompare({
@@ -58,6 +60,7 @@ export function ImageCompare({
   const [zoom, setZoom] = useState(0);
   const [background, setBackground] = useState("checker");
   const [comment, setComment] = useState("");
+  const blocking = asset.state === "blocked" || !!asset.sourceIssue;
   return (
     <Modal
       label={`Compare ${asset.filename}`}
@@ -73,7 +76,12 @@ export function ImageCompare({
         closeDisabled={busy}
       />
       <div className="image-compare-toolbar">
-        <span className="image-review-status">{imageStatus(asset)}</span>
+        {/* A blocking reason shows below the images, where it can be read
+            as an error; any other reason sits beside the state. */}
+        <span className="image-review-status">
+          <StatusMark state={imageDisplay(asset)} />
+          {!blocking && imageReason(asset) && <span>{imageReason(asset)}</span>}
+        </span>
         <label>
           Zoom
           <select
@@ -169,11 +177,9 @@ export function ImageCompare({
             </div>
           </figure>
         </div>
-        {asset.state === "blocked" || asset.sourceIssue ? (
+        {blocking && (
           <Message message={asset.blockedReason || asset.sourceIssue || ""} />
-        ) : asset.blockedReason ? (
-          <p className="muted">{asset.blockedReason}</p>
-        ) : null}
+        )}
         {(asset.reason || (asset.aiReviewed && asset.reviewEvidence)) && (
           <dl className="image-evidence">
             {asset.reason && (

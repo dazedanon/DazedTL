@@ -507,18 +507,19 @@ export function qaView(w: GuidedWorkspace): TaskView {
           {
             id: "qa",
             title: "QA findings",
-            status: qa.findings.length
-              ? "done"
-              : qaStatus.stage
-                ? "partial"
-                : "idle",
-            state: qa.findings.length
-              ? `${qa.findings.length} saved`
-              : qaTask
-                ? "Task prepared"
-                : "Not prepared",
+            state: qaApplied
+              ? "applied"
+              : qa.findings.length
+                ? qa.current
+                  ? "needs_review"
+                  : "outdated"
+                : qaStatus.stage
+                  ? "waiting"
+                  : "not_started",
             detail: (
               <>
+                {!!qa.findings.length &&
+                  `${qa.findings.length.toLocaleString()} saved · `}
                 {qaStatus.stage
                   ? (["mechanical", "screen", "deep"] as const)
                       .map((key) => {
@@ -566,10 +567,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
           {
             id: "investigation",
             title: "Running jokes and terms",
-            status: "idle",
-            state: "Optional",
+            state: "not_started",
             detail:
-              "An investigation of recurring jokes, callbacks and terminology.",
+              "Optional. An investigation of recurring jokes, callbacks and terminology.",
             action: copyTask("investigation", "Copy investigation task"),
           },
         ]}
@@ -723,7 +723,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     heading: {
       title: "Text QA",
       description:
-        "Optional. Prepare a QA task, copy it to your assistant, then review its saved findings.",
+        "Prepare a QA task, copy it to your assistant, then review its saved findings.",
     },
   };
 }

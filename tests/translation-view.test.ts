@@ -368,13 +368,14 @@ test("a later event-code task cannot inherit completion from map outputs or an o
   );
   assert.equal(
     fileStatus("Map001.json", phaseRun([maps], "dialogue")).label,
-    "Complete",
+    "Ready to apply",
   );
-  assert.equal(fileStatus("Map002.json", maps).label, "Incomplete");
+  // A recorded output that is missing cannot be applied.
+  assert.equal(fileStatus("Map002.json", maps).label, "Blocked");
   assert.equal(
     fileStatus("Map001.json", { ...maps, partialOutputs: ["Map001.json"] })
       .label,
-    "Incomplete",
+    "Needs review",
   );
   const rejected = {
     ...maps,
@@ -386,12 +387,12 @@ test("a later event-code task cannot inherit completion from map outputs or an o
       errors: [],
     },
   };
-  assert.equal(fileStatus("Map001.json", rejected).tone, "idle");
-  assert.equal(fileStatus("Map002.json", rejected).label, "Incomplete");
+  assert.equal(fileStatus("Map001.json", rejected).state, "needs_review");
+  assert.equal(fileStatus("Map002.json", rejected).label, "Blocked");
   assert.equal(
     fileStatus("Map001.json", { ...rejected, retiredFiles: ["Map001.json"] })
-      .tone,
-    "idle",
+      .state,
+    "not_started",
   );
   assert.equal(
     historyOutcome({ ...rejected, outputs: { "Map001.json": "hash" } }).kind,
@@ -418,7 +419,7 @@ test("a later event-code task cannot inherit completion from map outputs or an o
       errors: [],
     },
   };
-  assert.equal(fileStatus("Map001.json", partial).label, "Incomplete");
+  assert.equal(fileStatus("Map001.json", partial).label, "Needs review");
   // Legacy dismissal flags no longer hide the latest attempt.
   assert.equal(
     phaseRun(
@@ -580,7 +581,7 @@ test("main-text tasks combine verified files across runs independently of select
       undefined,
       settledWithoutRequests(settled, "database", "Armors.json"),
     ).label,
-    "Complete",
+    "Ready to apply",
   );
   const armors = { ...empty, id: "armors", process: { errors: [] } };
   for (const [created, status, complete] of [
@@ -927,7 +928,7 @@ test("new attempts supersede historical warnings without releasing submission pr
     phaseRun([{ ...next, keptForHistory: true }, old], "database")?.id,
     next.id,
   );
-  assert.equal(fileStatus("Items.json", old).label, "Incomplete");
+  assert.equal(fileStatus("Items.json", old).label, "Needs review");
   assert.equal(needsSubmissionReview(old), false);
   assert.equal(canResumeRun(old), false);
   assert.equal(
@@ -1325,7 +1326,7 @@ test("file status follows active and automatically monitored Batch work before r
     log: [],
     message: "",
   } as Job;
-  assert.equal(fileStatus("Items.json", checkpoint).label, "In progress");
+  assert.equal(fileStatus("Items.json", checkpoint).label, "Working");
   // Merging activity labels must not animate an approval wait as running work,
   // or hide provider activity just because the local worker has stopped.
   const approval: Job = {
@@ -1348,14 +1349,14 @@ test("file status follows active and automatically monitored Batch work before r
     files: ["Items.json", "Armors.json"],
     process: { ...checkpoint.process!, noRequestFiles: ["Armors.json"] },
   };
-  assert.equal(fileStatus("Armors.json", withSkipped).label, "Complete");
+  assert.equal(fileStatus("Armors.json", withSkipped).label, "Ready to apply");
   assert.equal(
     fileStatus("Armors.json", {
       ...withSkipped,
       temporary: true,
       status: "waiting",
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   assert.equal(
     fileStatus("Armors.json", {
@@ -1363,11 +1364,11 @@ test("file status follows active and automatically monitored Batch work before r
       status: "complete",
       availableOutputs: ["Armors.json"],
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   assert.notEqual(
     fileStatus("Armors.json", { ...withSkipped, mode: "translate" }).label,
-    "Complete",
+    "Ready to apply",
   );
   const received = {
     ...checkpoint,
@@ -1378,14 +1379,14 @@ test("file status follows active and automatically monitored Batch work before r
       ],
     },
   };
-  assert.equal(fileStatus("Items.json", received).label, "Incomplete");
+  assert.equal(fileStatus("Items.json", received).label, "Needs review");
   assert.equal(
     fileStatus("Items.json", { ...received, availableOutputs: [] }).label,
-    "Incomplete",
+    "Blocked",
   );
   assert.equal(
     fileStatus("Items.json", { ...received, phase: "consume" }).label,
-    "In progress",
+    "Working",
   );
   assert.equal(
     fileStatus("Items.json", {
@@ -1393,11 +1394,11 @@ test("file status follows active and automatically monitored Batch work before r
       phase: "consume",
       partialOutputs: [],
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   assert.equal(
     fileStatus("Items.json", { ...checkpoint, status: "stopped" }).label,
-    "In progress",
+    "Working",
   );
   assert.equal(
     fileStatus("Items.json", {
@@ -1405,15 +1406,15 @@ test("file status follows active and automatically monitored Batch work before r
       status: "complete",
       partialOutputs: [],
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   assert.equal(
     fileStatus("Items.json", { ...checkpoint, mode: "translate" }).label,
-    "In progress",
+    "Working",
   );
   assert.equal(
     fileStatus("Items.json", { ...checkpoint, process: { errors: [] } }).label,
-    "Incomplete",
+    "Needs review",
   );
   const completed = {
     ...checkpoint,
@@ -1489,7 +1490,7 @@ test("file status follows active and automatically monitored Batch work before r
       monitoring: { state: "collecting" as const, message: "" },
     },
   };
-  assert.equal(fileStatus("Items.json", monitoring).label, "In progress");
+  assert.equal(fileStatus("Items.json", monitoring).label, "Working");
   assert.equal(canResumeRun(monitoring), false);
   assert.equal(
     fileStatus("Items.json", {
@@ -1499,7 +1500,7 @@ test("file status follows active and automatically monitored Batch work before r
         monitoring: { state: "error", message: "Retrying" },
       },
     }).label,
-    "In progress",
+    "Working",
   );
   // A run-wide refresh must not turn saved, failed, untouched or unsent files
   // into provider work. Monitor failures likewise cannot mark each file broken.
@@ -1571,16 +1572,16 @@ test("file status follows active and automatically monitored Batch work before r
       );
   }
   assert.deepEqual(
-    expected.map((status) => [status.label, status.tone]),
+    expected.map((status) => status.state),
     [
-      ["In progress", "active"],
-      ["Complete", "success"],
-      ["Incomplete", "idle"],
-      ["Incomplete", "idle"],
-      ["In progress", "active"],
-      ["Complete", "success"],
-      ["Not started", "idle"],
-      ["Incomplete", "warning"],
+      "working",
+      "ready",
+      "needs_review",
+      "needs_review",
+      "working",
+      "ready",
+      "not_started",
+      "blocked",
     ],
   );
   // The observer can report monitor activity as a running run. It must not
@@ -1646,14 +1647,18 @@ test("file status follows active and automatically monitored Batch work before r
           monitoring: monitor,
         },
       };
-      assert.equal(fileStatus("Items.json", ended).label, "Incomplete", status);
+      assert.equal(
+        fileStatus("Items.json", ended).label,
+        "Needs review",
+        status,
+      );
       assert.equal(
         fileStatus("Items.json", {
           ...ended,
           outputs: {},
           availableOutputs: [],
         }).label,
-        "Incomplete",
+        "Needs review",
         status,
       );
       assert.equal(needsSubmissionReview(ended), true);
@@ -1669,7 +1674,7 @@ test("file status follows active and automatically monitored Batch work before r
         ...checkpoint,
         process: { ...checkpoint.process!, batches },
       }).label,
-      "Incomplete",
+      "Needs review",
     );
   }
   for (const status of [
@@ -1683,7 +1688,7 @@ test("file status follows active and automatically monitored Batch work before r
       ...stopped,
       process: { ...stopped.process!, batches: [{ ...provider, status }] },
     };
-    assert.equal(fileStatus("Items.json", current).label, "In progress");
+    assert.equal(fileStatus("Items.json", current).label, "Working");
   }
   const clarification = {
     ...provider,
@@ -1697,7 +1702,7 @@ test("file status follows active and automatically monitored Batch work before r
       ...stopped,
       process: { ...stopped.process!, batches: [original, clarification] },
     }).label,
-    "In progress",
+    "Working",
   );
   assert.equal(
     fileStatus("Items.json", {
@@ -1707,7 +1712,7 @@ test("file status follows active and automatically monitored Batch work before r
         batches: [original, { ...clarification, status: "cancelled" }],
       },
     }).label,
-    "Incomplete",
+    "Needs review",
   );
   // A grouped retry with its own index cannot borrow its parent's active receipt.
   const retried = {
@@ -1726,7 +1731,7 @@ test("file status follows active and automatically monitored Batch work before r
       ],
     },
   };
-  assert.equal(fileStatus("Items.json", retried).label, "Incomplete");
+  assert.equal(fileStatus("Items.json", retried).label, "Needs review");
   assert.equal(
     fileStatus("Items.json", {
       ...retried,
@@ -1735,7 +1740,7 @@ test("file status follows active and automatically monitored Batch work before r
         batches: [original, { ...clarification, requestIndices: [1] }],
       },
     }).label,
-    "In progress",
+    "Working",
   );
   const finished = {
     ...monitoring,
@@ -1748,20 +1753,20 @@ test("file status follows active and automatically monitored Batch work before r
       })),
     },
   };
-  assert.equal(fileStatus("Items.json", finished).label, "In progress");
+  assert.equal(fileStatus("Items.json", finished).label, "Working");
   assert.equal(
     fileStatus("Items.json", {
       ...finished,
       process: { ...finished.process, monitoring: undefined },
     }).label,
-    "In progress",
+    "Working",
   );
   assert.equal(
     fileStatus("Items.json", {
       ...finished,
       process: { ...finished.process, batches: [] },
     }).label,
-    "Incomplete",
+    "Needs review",
   );
 });
 
@@ -1784,7 +1789,7 @@ test("Live inspection and file progress follow current receipts without Batch co
       errors: [],
     },
   } as Job;
-  assert.equal(fileStatus("Items.json", live).label, "In progress");
+  assert.equal(fileStatus("Items.json", live).label, "Working");
   assert.equal(
     fileStatus("Items.json", {
       ...live,
@@ -1795,7 +1800,7 @@ test("Live inspection and file progress follow current receipts without Batch co
         ],
       },
     }).label,
-    "In progress",
+    "Working",
   );
   const rejected = {
     index: 1,
@@ -1811,7 +1816,7 @@ test("Live inspection and file progress follow current receipts without Batch co
         requests: [...live.process!.requests!, rejected],
       },
     }).label,
-    "In progress",
+    "Working",
   );
   // Before the first file finishes, only itemProgress identifies active parsing.
   // All receipts can be rejected while the worker continues to its next request.
@@ -1831,7 +1836,7 @@ test("Live inspection and file progress follow current receipts without Batch co
       availableOutputs: ["Items.json"],
       partialOutputs: ["Items.json"],
     }).label,
-    "In progress",
+    "Working",
   );
   for (const status of ["stopped", "failed", "complete"]) {
     assert.equal(
@@ -1840,7 +1845,7 @@ test("Live inspection and file progress follow current receipts without Batch co
     );
     assert.equal(
       fileStatus("Items.json", { ...betweenRequests, status }).label,
-      "Incomplete",
+      "Needs review",
     );
   }
   // Moving to another file must not revive the last completed file's activity.
@@ -1850,15 +1855,15 @@ test("Live inspection and file progress follow current receipts without Batch co
     progress: { file: "Items.json", current: 1, total: 2 },
     itemProgress: { file: "Armors.json", current: 0, total: 20 },
   };
-  assert.equal(fileStatus("Items.json", nextFile).label, "Incomplete");
-  assert.equal(fileStatus("Armors.json", nextFile).label, "In progress");
+  assert.equal(fileStatus("Items.json", nextFile).label, "Needs review");
+  assert.equal(fileStatus("Armors.json", nextFile).label, "Working");
   assert.equal(
     fileStatus("Items.json", {
       ...nextFile,
       availableOutputs: ["Items.json"],
       process: { errors: [] },
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   assert.equal(translationStopLabel(live), "Stop translation");
   assert.equal(
@@ -1868,11 +1873,11 @@ test("Live inspection and file progress follow current receipts without Batch co
       availableOutputs: ["Items.json"],
       partialOutputs: ["Items.json"],
     }).label,
-    "Incomplete",
+    "Needs review",
   );
   assert.equal(
     fileStatus("Items.json", { ...live, status: "failed" }).label,
-    "Incomplete",
+    "Needs review",
   );
   assert.equal(
     fileStatus("Items.json", {
@@ -1880,7 +1885,7 @@ test("Live inspection and file progress follow current receipts without Batch co
       status: "complete",
       availableOutputs: ["Items.json"],
     }).label,
-    "Complete",
+    "Ready to apply",
   );
   // A stopped/failed worker and an earlier rejected attempt must not hide the
   // file's saved progress or make the outcome depend on Live versus Batch.
@@ -1894,11 +1899,11 @@ test("Live inspection and file progress follow current receipts without Batch co
         partialOutputs: ["Items.json"],
         process: { errors: [], requests: [rejected] },
       };
-      assert.equal(fileStatus("Items.json", partial).label, "Incomplete");
-      assert.equal(fileStatus("Items.json", partial).tone, "idle");
+      assert.equal(fileStatus("Items.json", partial).label, "Needs review");
+      assert.equal(fileStatus("Items.json", partial).state, "needs_review");
       assert.equal(
         fileStatus("Items.json", { ...partial, availableOutputs: [] }).label,
-        "Incomplete",
+        "Needs review",
       );
     }
   const clarified = {
@@ -1911,7 +1916,7 @@ test("Live inspection and file progress follow current receipts without Batch co
       ],
     },
   };
-  assert.equal(fileStatus("Items.json", clarified).tone, "active");
+  assert.equal(fileStatus("Items.json", clarified).state, "working");
   const completed = {
     ...live,
     updated: "2026-10-04T10:00:01Z",

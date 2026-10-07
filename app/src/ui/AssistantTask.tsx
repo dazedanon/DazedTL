@@ -1,7 +1,8 @@
 import { useId, type ReactNode } from "react";
 import { ActionRow } from "./ActionList";
 import { HelpPopover } from "./HelpPopover";
-import { StatusIcon, type StatusKind } from "./StatusIcon";
+import { type DisplayState, assistantDisplay } from "./displayStatus";
+import { StatusHeading, StatusMark } from "./StatusMark";
 
 /** Where a copied task stands: never copied, copied and awaited, back, or applied. */
 export type AssistantTaskState =
@@ -10,20 +11,11 @@ export type AssistantTaskState =
 export interface AssistantResult {
   id: string;
   title: string;
-  status: StatusKind;
-  /** The result's state in a word or two, such as "Saved" or "Not saved". */
-  state: string;
+  /** Where the result stands, in the shared words; its detail says more. */
+  state: DisplayState;
   detail?: ReactNode;
   action?: ReactNode;
 }
-
-const stateLabels: Record<AssistantTaskState, string> = {
-  idle: "Not copied yet",
-  waiting: "Waiting for your assistant",
-  ready: "Results ready",
-  applied: "Applied",
-  attention: "Needs attention",
-};
 
 /**
  * The loop every assistant task shares: copy a task, let the assistant work,
@@ -60,8 +52,8 @@ export function AssistantTask({
           <h3 id={heading}>Assistant task</h3>
           {help && <HelpPopover label="Assistant task">{help}</HelpPopover>}
           <span className="assistant-task-state">
-            {stateLabels[state]}
-            {progress && ` · ${progress}`}
+            <StatusMark state={assistantDisplay[state]} />
+            {progress && <span>{progress}</span>}
           </span>
         </div>
         <p>{description}</p>
@@ -71,11 +63,7 @@ export function AssistantTask({
           key={row.id}
           label={
             <>
-              <span className="status-heading">
-                <StatusIcon status={row.status} />
-                <strong>{row.title}</strong>
-                <span className="status-heading-state">{row.state}</span>
-              </span>
+              <StatusHeading state={row.state} title={row.title} />
               {row.detail && <small>{row.detail}</small>}
             </>
           }

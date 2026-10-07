@@ -313,6 +313,7 @@ class ImageService:
         return {
             **{key: row.get(key, "") for key in keys},
             "editable": bool(row.get("hasEditable")),
+            "outdated": bool(row.get("outdated")),
             "finding": deepcopy(row.get("finding")),
             "checks": deepcopy(row.get("checks", {})),
             "reviewEvidence": (row.get("aiReview") or {}).get("evidence", ""),
@@ -486,14 +487,18 @@ class ImageService:
                 for key in ("dimensions", "mode", "transparency", "frames")
                 if not checks[key]
             ]
-        if (
+        source_changed = bool(
             row.get("originalRuntimeHash")
             and row.get("sourceHash") != row["originalRuntimeHash"]
             and row.get("sourceHash") != (row.get("applied") or {}).get("runtimeHash")
-        ):
+        )
+        if source_changed:
             issues.append(
                 "The runtime source changed after this working copy was prepared. Resolve the source conflict first."
             )
+        # A copy made from an older source is outdated rather than broken when
+        # nothing else blocks it.
+        row["outdated"] = source_changed and len(issues) == 1
         binding = {
             "sourceHash": row.get("sourceHash"),
             "candidateHash": row.get("candidateHash"),

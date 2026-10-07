@@ -23,6 +23,8 @@ Optional tasks say so on their tab.
 Existing projects reopen on the task that now holds their work.
 Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Line widths and Settings.
 Navigation never starts paid work.
+Every list uses the same words for where work stands: **Not started**, **Working**, **Waiting** (with your assistant), **Needs review**, **Ready to apply**, **Applied**, **Done** (finished work that does not change the game), **Outdated** (what it was based on changed), **Blocked** and **Skipped**.
+The detail beside each says why.
 
 ### Set up
 
@@ -117,7 +119,7 @@ Apply and playtest an early scene before expanding the scope.
 A patch build saves a translation version and a project backup first; a clean game ZIP leaves the working game untouched.
 Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
 With no translation applied yet, the footer notes that the ZIP keeps the original text.
-The last saved ZIP shows **Up to date** until the game's runtime files change or another image is applied; build again to include later changes.
+The last saved ZIP shows **Done** while it matches the game and **Outdated** once the game's runtime files change or another image is applied; build again to include later changes.
 A ZIP saved by an earlier DazedTL version is not compared until you build it again.
 The app checks the package contents and finished archive before offering its folder; these checks do not mean the game passed QA.
 GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the app never publishes or pushes.

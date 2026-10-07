@@ -5,7 +5,7 @@ import type {
   RunPayload,
   RunProcess,
 } from "../../api/contracts.ts";
-import type { StatusKind } from "../../ui/StatusIcon";
+import { type DisplayState, displayLabels } from "../../ui/displayStatus.ts";
 
 export const activeRun = (run?: Job | null) =>
   !!run && ["ready", "running", "waiting"].includes(run.status);
@@ -315,7 +315,7 @@ export function translationTaskComplete(
       )
         return false;
       return (
-        fileStatus(name, run).tone === "success" ||
+        ["ready", "applied"].includes(fileStatus(name, run).state) ||
         (run.mode === "batch" &&
           !run.outputs?.[name] &&
           !!run.process?.noRequestFiles?.includes(name))
@@ -370,32 +370,23 @@ export function unsettledBatches(runs: Job[], selected: readonly string[]) {
             run.process?.resultsCollected))),
   );
 }
+/** A file's state in the shared words, with the reason a word leaves out. */
+const fileState = (state: DisplayState, detail = "") => ({
+  state,
+  label: displayLabels[state],
+  detail,
+  pending: state === "working",
+});
 /** File receipts and verified output own the row; run diagnostics stay in Inspect. */
 export function fileStatus(name: string, run?: Job, settled = false) {
-  const idle = {
-    label: "Not started",
-    tone: "idle",
-    icon: "idle" as StatusKind,
-    pending: false,
-  };
-  const complete = {
-    label: "Complete",
-    tone: "success",
-    icon: "done" as StatusKind,
-    pending: false,
-  };
-  const progress = {
-    label: "In progress",
-    tone: "active",
-    icon: "active" as StatusKind,
-    pending: true,
-  };
-  const incomplete = {
-    label: "Incomplete",
-    tone: "idle",
-    icon: "partial" as StatusKind,
-    pending: false,
-  };
+  const idle = fileState("not_started");
+  // Saved output that is not in the game yet.
+  const complete = fileState("ready");
+  const progress = fileState("working");
+  const incomplete = fileState(
+    "needs_review",
+    "Some lines were rejected or not saved; Inspect shows which.",
+  );
   if (settled) return complete;
   if (!run || !run.files?.includes(name) || run.retiredFiles?.includes(name))
     return idle;
@@ -406,7 +397,7 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     run.mode === "batch" && run.process?.noRequestFiles?.includes(name);
   if (noRequests && !saved && !run.outputs?.[name]) return complete;
   // A prepared run waiting for cost approval has not started work.
-  const awaiting = { ...idle, label: "Awaiting approval" };
+  const awaiting = fileState("needs_review", "Awaiting your cost approval.");
   if (run.temporary) {
     return activeWorker(run) ? (run.approval ? awaiting : progress) : idle;
   }
@@ -470,11 +461,9 @@ export function fileStatus(name: string, run?: Job, settled = false) {
   }
   if (saved && partial) return incomplete;
   if (saved)
-    return run.appliedOutputs?.includes(name)
-      ? { ...complete, label: "Applied" }
-      : complete;
+    return run.appliedOutputs?.includes(name) ? fileState("applied") : complete;
   if (run.outputs?.[name])
-    return { ...incomplete, tone: "warning", icon: "warning" as StatusKind };
+    return fileState("blocked", "The saved output is missing or changed.");
   if (partial || states.length) return incomplete;
   if (working && run.mode !== "batch") return progress;
   return idle;

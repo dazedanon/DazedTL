@@ -1268,6 +1268,7 @@ export type ImageAsset = {
   sourceHash: string;
   sourcePngHash: string;
   editable: boolean;
+  outdated: boolean;
   candidateHash: string | null;
   state: string;
   classification: ImageClassification;

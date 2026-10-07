@@ -294,19 +294,7 @@
   font-size: var(--font-small);
   color: var(--color-muted);
 }
-.translation-file-status svg,
-.translation-file-status [aria-hidden="true"] {
-  flex-shrink: 0;
-}
-.translation-file-status.success {
-  color: var(--color-success);
-}
-.translation-file-status.warning {
-  color: var(--color-warning);
-}
-.translation-file-status.active {
-  color: var(--color-accent);
-}
+
 .translation-file-cost,
 .translation-file-time {
   text-align: right;

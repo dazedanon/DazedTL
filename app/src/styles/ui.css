@@ -1264,16 +1264,21 @@ pre {
   color: var(--color-success);
 }
 .status-icon--active,
+.status-icon--ready,
 .status-icon--partial {
   color: var(--color-accent);
 }
 .status-icon--active {
   animation: job-status-spin 1s linear infinite;
 }
-.status-icon--idle {
+.status-icon--idle,
+.status-icon--waiting,
+.status-icon--skipped {
   color: var(--color-muted);
 }
-.status-icon--warning {
+.status-icon--warning,
+.status-icon--review,
+.status-icon--outdated {
   color: var(--color-warning);
 }
 .status-icon--failed {
@@ -1346,19 +1351,15 @@ pre {
   font-size: var(--font-body);
 }
 .assistant-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-inline-start: auto;
   font-size: var(--font-control);
   color: var(--color-muted);
 }
-.assistant-task[data-state="waiting"] .assistant-task-state {
-  color: var(--color-accent);
-}
-.assistant-task:is([data-state="ready"], [data-state="applied"])
-  .assistant-task-state {
-  color: var(--color-success);
-}
-.assistant-task[data-state="attention"] .assistant-task-state {
-  color: var(--color-warning);
+.assistant-task-state > span + span::before {
+  content: "· ";
 }
 .assistant-task-header > p {
   margin: var(--space-1) 0 0;
@@ -1381,6 +1382,13 @@ pre {
 .status-heading-state {
   color: var(--color-muted);
   font-size: var(--font-small);
+}
+/* A state's mark and word together, where the state stands on its own. */
+.status-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
 }
 .action-row-label:has(> .status-heading) > small {
   padding-inline-start: calc(var(--icon-size) + var(--space-2));

@@ -348,20 +348,19 @@ export function auditView(w: GuidedWorkspace): TaskView {
           {
             id: "findings",
             title: "Source findings",
-            status:
-              state.eventText.status === "ready"
-                ? "done"
-                : ["stale", "invalid"].includes(state.eventText.status)
-                  ? "warning"
-                  : "idle",
+            // Saved findings wait for your source review until accepted.
             state:
-              state.eventText.status === "ready"
-                ? "Saved"
-                : state.eventText.status === "stale"
-                  ? "Out of date"
-                  : state.eventText.status === "invalid"
-                    ? "Unusable"
-                    : "Not saved",
+              state.eventText.status === "ready" && state.eventText.accepted
+                ? "done"
+                : (
+                    {
+                      missing: "not_started",
+                      waiting: "waiting",
+                      ready: "needs_review",
+                      stale: "outdated",
+                      invalid: "blocked",
+                    } as const
+                  )[state.eventText.status],
             detail:
               state.eventText.status === "ready"
                 ? "Coverage evidence for each source, ready to review."

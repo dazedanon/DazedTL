@@ -1,4 +1,5 @@
 import { PathText } from "../../ui/PathText";
+import { StatusHeading } from "../../ui/StatusMark";
 import { PathInput } from "../../ui/PathInput";
 import type { ReactNode } from "react";
 import type { GuidedForm, Preview, ReleaseArtifact } from "../../api/contracts";
@@ -209,24 +210,30 @@ export function ReleaseContent({
             <ActionRow
               label={
                 <>
-                  <strong>
-                    Last saved {kind === "game" ? "game" : "patch"} ZIP
-                  </strong>
+                  <StatusHeading
+                    title={`Last saved ${kind === "game" ? "game" : "patch"} ZIP`}
+                    state={
+                      !artifact.available
+                        ? "blocked"
+                        : artifact.current === false
+                          ? "outdated"
+                          : "done"
+                    }
+                  />
                   <small>
                     {artifact.size === null
                       ? "Size unavailable"
                       : size(artifact.size)}
                     {artifact.saved
                       ? ` · Saved ${new Date(artifact.saved).toLocaleString()}`
-                      : ""}{" "}
-                    ·{" "}
+                      : ""}
                     {!artifact.available
-                      ? "Unavailable or changed on disk"
-                      : artifact.current
-                        ? "Up to date"
-                        : artifact.current === false
-                          ? "Game files changed since this build"
-                          : "Available on disk"}
+                      ? " · Missing or changed on disk"
+                      : artifact.current === false
+                        ? " · Game files changed since this build"
+                        : artifact.current
+                          ? " · Matches the game"
+                          : ""}
                   </small>
                   <small>
                     <PathText path={artifact.path} />

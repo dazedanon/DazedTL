@@ -1,3 +1,4 @@
+import { displayLabels, imageDisplay } from "../../ui/displayStatus.ts";
 import type {
   ImageAsset,
   ImageDraft,
@@ -65,20 +66,6 @@ export function virtualRows(
   };
 }
 
-export const imageStateLabels: Record<string, string> = {
-  not_prepared: "Not prepared",
-  editable: "Editable",
-  editing: "Editing",
-  needs_review: "Needs review",
-  approved: "Ready",
-  ready: "Ready",
-  applied: "Applied",
-  skipped: "Skipped",
-  conflict: "Conflict",
-  missing_source: "Missing source",
-  error: "Error",
-  blocked: "Blocked",
-};
 export const imageClassificationLabels: Record<string, string> = {
   recommended: "Recommended",
   uncertain: "Uncertain",
@@ -87,21 +74,26 @@ export const imageClassificationLabels: Record<string, string> = {
   not_examined: "Not examined",
   excluded: "Excluded",
 };
-export function imageStatus(asset: ImageAsset) {
-  if (
+/** What the shared word for an image's state leaves out: what blocks it, who
+ * reviewed it, or what discovery found. */
+export function imageReason(asset: ImageAsset) {
+  const reason =
+    asset.blockedReason ||
     asset.sourceIssue ||
-    ["blocked", "conflict", "error", "missing_source"].includes(asset.state)
-  )
-    return asset.blockedReason || asset.sourceIssue || "Blocked";
-  if (asset.aiReviewed)
-    return asset.userReviewed ? "AI and user reviewed" : "AI reviewed";
-  if (asset.userReviewed) return "User reviewed";
-  // Before an image is made editable, what discovery found says more.
-  if (asset.state === "not_prepared" && asset.classification !== "not_examined")
-    return imageClassificationLabels[asset.classification] || asset.state;
-  return (
-    imageStateLabels[asset.state] ||
-    imageClassificationLabels[asset.classification] ||
-    asset.state
-  );
+    (asset.aiReviewed
+      ? asset.userReviewed
+        ? "AI and user reviewed"
+        : "AI reviewed"
+      : asset.userReviewed
+        ? "User reviewed"
+        : asset.editable && asset.state === "editable"
+          ? "Editable copy made"
+          : imageClassificationLabels[asset.classification] || "");
+  return reason === displayLabels[imageDisplay(asset)] ? "" : reason;
+}
+/** An image's state in the shared words, then its reason. */
+export function imageStatus(asset: ImageAsset) {
+  const state = displayLabels[imageDisplay(asset)];
+  const reason = imageReason(asset);
+  return reason ? `${state} · ${reason}` : state;
 }

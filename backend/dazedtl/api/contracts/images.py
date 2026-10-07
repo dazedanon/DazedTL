@@ -68,6 +68,8 @@ class ImageAsset(TypedDict):
     sourceHash: str
     sourcePngHash: str
     editable: bool
+    # Blocked only because the game's image changed after the copy was made.
+    outdated: bool
     candidateHash: str | None
     state: str
     classification: ImageClassification

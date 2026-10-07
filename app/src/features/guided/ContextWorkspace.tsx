@@ -60,24 +60,16 @@ export function ContextWorkspace({
         results={results.map((row) => ({
           id: row.id,
           title: row.title,
-          status:
-            row.status === "working"
-              ? "active"
-              : row.status === "failed"
-                ? "failed"
-                : row.status === "unavailable"
-                  ? "warning"
-                  : row.saved
-                    ? "done"
-                    : "idle",
-          state: {
-            saved: "Saved",
-            waiting: "Awaiting files",
-            idle: "Not saved",
-            working: "Scanning",
-            failed: "Scan failed",
-            unavailable: "Unavailable",
-          }[row.status],
+          state: (
+            {
+              saved: "done",
+              waiting: "waiting",
+              idle: "not_started",
+              working: "working",
+              failed: "blocked",
+              unavailable: "blocked",
+            } as const
+          )[row.status],
           detail: row.detail,
           action: actions[row.id],
         }))}

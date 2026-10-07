@@ -8,21 +8,22 @@ import { Button } from "../../../../ui/Button";
 import { FieldRow } from "../../../../ui/FieldRow";
 import { Notice } from "../../../../ui/Notice";
 import { PathInput } from "../../../../ui/PathInput";
-import { StatusIcon, type StatusKind } from "../../../../ui/StatusIcon";
+import type { DisplayState } from "../../../../ui/displayStatus";
+import { StatusHeading } from "../../../../ui/StatusMark";
 import type { GuidedWorkspace, SetupStep } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 
 const active = (job?: Job) =>
   !!job && ["ready", "running", "waiting"].includes(job.status);
 
-/** One setup step: its mark, its name, and what it did or is doing. */
+/** One setup step: its state, its name, and what it did or is doing. */
 function StepRow({
   status,
   title,
   detail,
   children,
 }: {
-  status: StatusKind;
+  status: DisplayState;
   title: string;
   detail?: ReactNode;
   children?: ReactNode;
@@ -31,10 +32,7 @@ function StepRow({
     <ActionRow
       label={
         <>
-          <span className="status-heading">
-            <StatusIcon status={status} />
-            <strong>{title}</strong>
-          </span>
+          <StatusHeading state={status} title={title} />
           {detail && <small>{detail}</small>}
         </>
       }
@@ -76,14 +74,14 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const done = preserved && gitConfigured;
   const setupRunning = setupAction.busy || setupWorking;
   // The step setup runs next shows why it stopped until a newer attempt starts.
-  const stepStatus = (name: SetupStep, complete: boolean): StatusKind =>
+  const stepStatus = (name: SetupStep, complete: boolean): DisplayState =>
     complete
       ? "done"
       : active(setupJobs[name])
-        ? "active"
+        ? "working"
         : setupStep === name && setupFailure
-          ? "failed"
-          : "idle";
+          ? "blocked"
+          : "not_started";
 
   const backup = stepStatus("backup_source", preserved);
   const backupDetail =
@@ -94,9 +92,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
           Backups
         </Button>
       </>
-    ) : backup === "active" ? (
+    ) : backup === "working" ? (
       setupJobs.backup_source!.message || "Backing up…"
-    ) : backup === "failed" ? undefined : sourceBackup ? (
+    ) : backup === "blocked" ? undefined : sourceBackup ? (
       <>
         {sourceBackup.issue ||
           "The original backup is unavailable. Setting up saves the current game instead; it cannot recover the missing original."}{" "}
@@ -114,9 +112,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
   );
   const prepare = stepStatus("prepare_game", prepared);
   const prepareDetail =
-    prepare === "active"
+    prepare === "working"
       ? `${runningStage?.label || "Preparing"}…`
-      : prepare === "idle"
+      : prepare === "not_started"
         ? `Formats game data${state.hasPlugins ? ", plugins.js" : ""} and adds GameUpdate files.`
         : undefined;
 
@@ -124,9 +122,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
   const versionDetail =
     version === "done"
       ? "Used to compare and merge later game updates."
-      : version === "active"
+      : version === "working"
         ? "Saving…"
-        : version === "idle"
+        : version === "not_started"
           ? "Records this version so later game updates can be merged."
           : undefined;
 
@@ -213,7 +211,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
         />
         {state.engine === "ACE" && (
           <StepRow
-            status={aceNeedsExport ? "idle" : "done"}
+            status={aceNeedsExport ? "not_started" : "done"}
             title="Convert Ace data"
             detail={
               aceNeedsExport

@@ -19,7 +19,7 @@ import {
 } from "./translationView";
 import type { RequestInspectionTarget } from "./ProcessPanel";
 import { retainOtherScope } from "./selection";
-import { StatusIcon } from "../../ui/StatusIcon";
+import { StatusMark } from "../../ui/StatusMark";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { ModelMenu } from "../settings/ModelMenu";
 
@@ -69,6 +69,7 @@ export function TranslateWorkspace({
     [state.files, phase],
   );
   const selected = new Set(values.selected);
+  const changedFiles = new Set(state.sourceStatus.changed);
   const scoped = rows.filter((row) => selected.has(row.name));
   const owner = (name: string) =>
     fileRun(state.runs, phase, name, state.sourceStatus.retired);
@@ -216,14 +217,24 @@ export function TranslateWorkspace({
                           ? `${lines.done.toLocaleString()} / ${lines.total.toLocaleString()}`
                           : "-"}
                     </span>
-                    <span className={`translation-file-status ${status.tone}`}>
-                      <StatusIcon
-                        status={status.pending ? "active" : status.icon}
+                    {/* A file changed in the game needs reloading before
+                        new work, whatever its last run left. */}
+                    <span
+                      className="translation-file-status"
+                      title={
+                        changedFiles.has(row.name) && !status.pending
+                          ? "Changed in the game since its working copy was made."
+                          : status.detail || undefined
+                      }
+                    >
+                      <StatusMark
+                        state={
+                          changedFiles.has(row.name) && !status.pending
+                            ? "outdated"
+                            : status.state
+                        }
                         size={14}
                       />
-                      <span className="translation-status-text">
-                        {status.label}
-                      </span>
                     </span>
                     <span
                       className="translation-file-cost"

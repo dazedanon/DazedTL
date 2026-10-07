@@ -1,18 +1,38 @@
 import {
   CircleAlert,
+  CircleArrowDown,
   CircleCheck,
   CircleDashed,
+  CircleMinus,
   CircleX,
   Contrast,
+  Eye,
+  Hourglass,
   LoaderCircle,
+  RotateCcw,
 } from "lucide-react";
 
 export type StatusKind =
-  "done" | "active" | "partial" | "idle" | "warning" | "failed";
+  | "done"
+  | "active"
+  | "waiting"
+  | "review"
+  | "ready"
+  | "outdated"
+  | "skipped"
+  | "partial"
+  | "idle"
+  | "warning"
+  | "failed";
 
 const icons = {
   done: CircleCheck,
   active: LoaderCircle,
+  waiting: Hourglass,
+  review: Eye,
+  ready: CircleArrowDown,
+  outdated: RotateCcw,
+  skipped: CircleMinus,
   partial: Contrast,
   idle: CircleDashed,
   warning: CircleAlert,
@@ -20,8 +40,9 @@ const icons = {
 };
 
 /**
- * The one set of status marks: done, running, partly done, not started,
- * warning and failed. Text beside the mark names the state; pass `label`
+ * The one set of status marks. Work items use them through StatusMark and
+ * the shared display states; other states, such as a connection check, may
+ * use a mark directly. Text beside the mark names the state; pass `label`
  * only when the mark stands alone.
  */
 export function StatusIcon({

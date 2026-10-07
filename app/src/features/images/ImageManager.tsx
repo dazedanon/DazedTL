@@ -10,17 +10,13 @@ import {
   type ReactNode,
 } from "react";
 import {
-  CheckCircle2,
   ChevronDown,
-  Circle,
-  CircleMinus,
   Image as ImageIcon,
   MoreHorizontal,
-  Pencil,
   Search,
-  Sparkles,
-  TriangleAlert,
 } from "lucide-react";
+import { displayMarks, imageDisplay } from "../../ui/displayStatus";
+import { StatusIcon } from "../../ui/StatusIcon";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import type {
@@ -120,20 +116,12 @@ function Tile({
   onCompare: () => void;
 }) {
   const pixels = useThumbnail(queue, asset, size);
-  const blocked =
-    !!asset.sourceIssue ||
-    ["blocked", "conflict", "error", "missing_source"].includes(asset.state);
-  const done =
-    asset.aiReviewed || asset.userReviewed || asset.state === "applied";
-  // Success colours only finished work; untouched images stay muted.
-  const tone =
-    blocked || asset.classification === "uncertain"
-      ? "warning"
-      : done
-        ? "done"
-        : asset.classification === "recommended" || asset.editable
-          ? "accent"
-          : "muted";
+  const display = imageDisplay(asset);
+  // Of the images not started, recommended ones and editable copies are the
+  // ones to work on next, so their mark takes the accent.
+  const next =
+    display === "not_started" &&
+    (asset.classification === "recommended" || asset.editable);
   return (
     <article
       className="image-tile"
@@ -169,26 +157,10 @@ function Tile({
         )}
         <span
           className="image-tile-status"
-          data-tone={tone}
+          data-next={next || undefined}
           aria-label={imageStatus(asset)}
         >
-          {tone === "warning" ? (
-            <TriangleAlert size={14} />
-          ) : done ? (
-            <CheckCircle2 size={14} />
-          ) : asset.classification === "recommended" ? (
-            <Sparkles size={13} />
-          ) : asset.editable ? (
-            <Pencil size={13} />
-          ) : ["no_text", "already_english", "excluded"].includes(
-              asset.classification,
-            ) ? (
-            // Examined with nothing to translate, unlike the plain ring of
-            // an image nobody has looked at.
-            <CircleMinus size={13} />
-          ) : (
-            <Circle size={12} />
-          )}
+          <StatusIcon status={displayMarks[display]} size={14} />
         </span>
       </button>
       <FileName
