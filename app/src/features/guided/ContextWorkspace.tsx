@@ -42,7 +42,8 @@ export function ContextWorkspace({
       ? "ready"
       : problem
         ? "attention"
-        : saved ||
+        : // Results saved earlier are not a task in progress; a copy is.
+          handoff.waiting ||
             results.some((row) => ["waiting", "working"].includes(row.status))
           ? "waiting"
           : "idle",

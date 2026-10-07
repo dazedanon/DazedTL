@@ -6,6 +6,7 @@ import type {
   ImageManagerState,
   ImageReportState,
   PluginState,
+  TranslationMethod,
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
@@ -59,6 +60,8 @@ interface Standing {
 
 export interface AssistantSources {
   records: AssistantTaskRecord[];
+  /** Assistant-led keeps images on its Translation page, not in stages. */
+  method?: TranslationMethod | null;
   guided?: GuidedState | null;
   images?: ImageManagerState | null;
   plugins?: PluginState | null;
@@ -144,7 +147,9 @@ function standing(
     const report: ImageReportState =
       kind === "image_discovery" ? images.discovery : images.editing;
     if (report.rejected) return { state: "blocked", detail: report.rejected };
-    if (report.status === "awaiting_results") return waiting();
+    // A copy can hand out the same request again; it waits for a newer report.
+    if (report.status === "awaiting_results" || (copied && !back))
+      return waiting();
     if (report.status === "partial") return waiting("Some results saved");
     if (report.status === "complete") {
       const review = kind === "image_editing" ? images.counts.needsReview : 0;
@@ -155,7 +160,7 @@ function standing(
           }
         : { state: "finished" };
     }
-    return copied && !back ? waiting() : { state: "idle" };
+    return { state: "idle" };
   }
   if (kind === "qa") {
     if (!guided || !copied) return { state: "idle" };
@@ -208,7 +213,10 @@ export function assistantTasks(sources: AssistantSources): AssistantTaskView[] {
       state: current.state,
       detail: current.detail || "",
       since: current.state === "waiting" ? copiedAt : "",
-      place: places[kind],
+      place:
+        sources.method === "len"
+          ? { ...places[kind], label: "Translation" }
+          : places[kind],
       copiedAt,
     });
   }

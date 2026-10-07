@@ -33,7 +33,8 @@ import { AssistantTask } from "../../ui/AssistantTask";
 import { StatusMark } from "../../ui/StatusMark";
 import { HelpPopover } from "../../ui/HelpPopover";
 
-type View = "progress" | "context" | "images";
+export type TranslationView = "progress" | "context" | "images";
+type View = TranslationView;
 const labels: Record<string, string> = {
   preparation: "Preparation",
   extraction: "Extraction",
@@ -47,11 +48,14 @@ export default function Translation({
   project,
   settings,
   openProject,
+  view,
 }: {
   project: Project;
   settings: () => void;
   /** History, game updates and backups live on the Project page. */
   openProject: ProjectLink;
+  /** The tab to open on, such as Images for a copied image task. */
+  view?: View;
 }) {
   const application = useApplication();
   const state = application.snapshot?.translation;
@@ -73,6 +77,7 @@ export default function Translation({
       state={state}
       settings={settings}
       openProject={openProject}
+      initialView={view}
     />
   );
 }
@@ -82,16 +87,18 @@ function Workspace({
   state,
   settings,
   openProject,
+  initialView = "progress",
 }: {
   project: Project;
   state: TranslationState;
   settings: () => void;
   openProject: ProjectLink;
+  initialView?: View;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
   const draft = useProjectOptions(state, action.report);
-  const [view, setView] = useState<View>("progress");
+  const [view, setView] = useState<View>(initialView);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
   const tabs: Tab<View>[] = [

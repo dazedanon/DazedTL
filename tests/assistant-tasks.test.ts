@@ -42,6 +42,29 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
     "waiting",
   );
 
+  // Copying an unchanged image task again reuses its request, so its report
+  // still reads complete; it waits until a newer report is saved.
+  const recopied = {
+    records: [
+      {
+        kind: "image_discovery",
+        requestId: "same",
+        copiedAt: "2026-10-07T10:00:00.000+00:00",
+        resultAt: "2026-10-07T09:00:00.000+00:00",
+        dismissed: false,
+      } as AssistantTaskRecord,
+    ],
+    images: {
+      discovery: { status: "complete" },
+      editing: { status: "idle" },
+      counts: { needsReview: 0 },
+    } as unknown as ImageManagerState,
+  };
+  assert.deepEqual(
+    assistantTasks(recopied).map((task) => task.state),
+    ["waiting"],
+  );
+
   // An image task copied before records existed still lists while it waits.
   const images = {
     discovery: { status: "awaiting_results", copiedAt: "2026-10-05T08:00:00Z" },

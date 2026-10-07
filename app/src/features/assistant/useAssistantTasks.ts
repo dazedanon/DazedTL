@@ -15,6 +15,7 @@ export function useAssistantSources(): AssistantSources | null {
     value && value.projectId === project.id ? value : null;
   return {
     records: snapshot.assistantTasks,
+    method: project.method,
     guided: own(snapshot.guided),
     images: own(snapshot.images),
     plugins: own(snapshot.plugins),

@@ -426,11 +426,15 @@ function Manager({
     state.editing.errors?.[0] ||
     state.discovery.errors?.[0] ||
     "";
-  // A dismissed task no longer waits for its report.
+  // A dismissed task no longer waits for its report, and a task copied again
+  // waits for a newer one.
   const awaitingResults =
-    state.editing.status === "awaiting_results" && !editingTask.dismissed;
+    (state.editing.status === "awaiting_results" && !editingTask.dismissed) ||
+    editingTask.waiting;
   const awaitingFindings =
-    state.discovery.status === "awaiting_results" && !discoveryTask.dismissed;
+    (state.discovery.status === "awaiting_results" &&
+      !discoveryTask.dismissed) ||
+    discoveryTask.waiting;
   const copiedAt =
     (awaitingResults && state.editing.copiedAt) ||
     (awaitingFindings && state.discovery.copiedAt) ||

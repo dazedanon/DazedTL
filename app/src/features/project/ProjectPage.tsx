@@ -62,7 +62,7 @@ export default function ProjectPage({
   /** A search the History tab opens with, such as one stage's runs. */
   historyQuery?: string;
   openTask: (step: string, task: string) => void;
-  openTranslation: () => void;
+  openTranslation: (view?: "images") => void;
   chooseMethod: () => void;
   settings: () => void;
   /** Opens Translation for a review that belongs to the Guided workspace. */
@@ -179,7 +179,7 @@ function ProjectStatus({
   progress: GuidedProgress | null;
   amounts: Amounts | null;
   openTask: (step: string, task: string) => void;
-  openTranslation: () => void;
+  openTranslation: (view?: "images") => void;
   chooseMethod: () => void;
   settings: () => void;
 }) {
@@ -199,7 +199,7 @@ function ProjectStatus({
       open={(task) =>
         project.method === "guided"
           ? openTask(task.place.step, task.place.task)
-          : openTranslation()
+          : openTranslation("images")
       }
     />
   );
@@ -227,7 +227,7 @@ function ProjectStatus({
       <ArrowRight size={15} aria-hidden="true" />
     </Button>
   ) : (
-    <Button variant="primary" disabled={busy} onClick={openTranslation}>
+    <Button variant="primary" disabled={busy} onClick={() => openTranslation()}>
       Open {methodLabels[project.method]}
       <ArrowRight size={15} aria-hidden="true" />
     </Button>

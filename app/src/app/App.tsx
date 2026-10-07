@@ -22,7 +22,9 @@ import ProjectPage, { type ProjectTab } from "../features/project/ProjectPage";
 import { MethodDialog } from "../features/project/MethodDialog";
 import { assistantTasksHeading } from "../features/assistant/AssistantTaskList";
 import { useAssistantTasks } from "../features/assistant/useAssistantTasks";
-import Translation from "../features/translation/Translation";
+import Translation, {
+  type TranslationView,
+} from "../features/translation/Translation";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu";
 import { PathText } from "../ui/PathText";
 import { Button } from "../ui/Button";
@@ -99,7 +101,9 @@ export default function App() {
       }
     });
   // The one Translation entry opens the method the game uses, or asks.
-  const openTranslation = () => {
+  const [translationView, setTranslationView] = useState<TranslationView>();
+  const openTranslation = (view?: TranslationView) => {
+    setTranslationView(view);
     if (!project?.method) setMethodOpen(true);
     else void navigate(project.method === "guided" ? "guided" : "translation");
   };
@@ -259,7 +263,7 @@ export default function App() {
               <Button
                 aria-current={workspace ? "page" : undefined}
                 disabled={action.busy || !project.available}
-                onClick={openTranslation}
+                onClick={() => openTranslation()}
               >
                 {project.method === "len" ? (
                   <Route size={18} />
@@ -337,6 +341,7 @@ export default function App() {
                 project={project}
                 settings={() => navigate("settings")}
                 openProject={openProject}
+                view={translationView}
               />
             ) : (
               <ProjectPage
