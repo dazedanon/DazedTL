@@ -927,7 +927,7 @@ class PluginService:
                 # The stored report also binds its request, which stays here.
                 "findings": report_view(value["findings"]),
                 "editing": report_view(value["editing"]),
-                "originalIssue": value.get("originalIssue", ""),
+                "originalIssue": self.original_issue(project_id, value),
                 "originalBackup": value["originals"].get("backupId", ""),
                 "receipts": [
                     receipt_view(row, value["files"]) for row in value["receipts"][-12:]
@@ -944,6 +944,20 @@ class PluginService:
                     key: request["path"] for key, request in value["requests"].items()
                 },
             }
+
+    def original_issue(self, project_id, value):
+        """Why the last scan had no original evidence, while that still holds."""
+        issue = value.get("originalIssue", "")
+        if issue and not value["originals"]:
+            try:
+                require_source_backup(
+                    self.record(project_id)[1],
+                    lifecycle(self.translation.workspace, project_id),
+                )
+            except OSError, ValueError:
+                return issue
+            return "The original backup is available now. Copy the plugin task again so its investigation can check the original text."
+        return issue
 
     def list(
         self,

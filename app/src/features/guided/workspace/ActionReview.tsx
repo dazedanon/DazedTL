@@ -24,6 +24,7 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
     previewRequest,
     inspectRelease,
     sourceBackup,
+    storedOriginal,
     enabledCodes,
     currentEstimate,
     disabled,
@@ -155,6 +156,16 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           sourceBackup?.available === false && (
             <p>
               This saves current files. It cannot recover the missing original.
+            </p>
+          )}
+        {preview.action === "backup_source" &&
+          !sourceBackup &&
+          storedOriginal && (
+            <p>
+              This game folder already holds a backup of the original from{" "}
+              {new Date(storedOriginal.created).toLocaleString()}. Backing up
+              now saves the current files as the original instead, including any
+              translations already in them.
             </p>
           )}
         {preview.action === "refresh_sources" && (

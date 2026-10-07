@@ -538,6 +538,45 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(len(list(archive.parent.iterdir())), 1)
 
+    def test_moved_game_takes_over_the_original_its_own_store_holds(self):
+        # A moved, copied or reinstalled game opens as a new project whose
+        # profile has no record of the original the game's store already holds.
+        original = lifecycle(self.profile, self.identity)["source_backup"]
+        write_json(self.game / "source.json", {"line": "Yes."})
+        snapshot(self.game, store_path(self.game), source_game=True)
+        moved = self.root / "moved"
+        self.game.rename(moved)
+        identity = self.projects.open({"source": str(moved), "engine": "MVMZ"})["id"]
+        self.engine.detect = lambda _source: "MVMZ"
+        self.engine.documents = lambda _source: {}
+        stored = self.service.state(identity)["storedOriginal"]
+        # The earliest game snapshot is the original, not a later backup.
+        self.assertEqual(stored["id"], original["id"])
+
+        def use(backup_id):
+            return execute(
+                self.engine,
+                self.profile,
+                {"project_id": identity},
+                {
+                    "source": str(moved),
+                    "options": DEFAULTS,
+                    "action": "use_source_backup",
+                    "arguments": {"backup_id": backup_id},
+                },
+                lambda: False,
+            )
+
+        with self.assertRaisesRegex(ValueError, "saved backups changed"):
+            use("0" * 32)
+        use(stored["id"])
+        state = self.service.state(identity)
+        self.assertEqual(state["lifecycle"]["source_backup"]["id"], original["id"])
+        self.assertTrue(state["lifecycle"]["source_backup"]["available"])
+        self.assertNotIn("storedOriginal", state)
+        with self.assertRaisesRegex(ValueError, "already has an original"):
+            use(stored["id"])
+
     def test_source_backup_preserves_existing_or_damaged_artifacts_and_prepared_baselines(
         self,
     ):

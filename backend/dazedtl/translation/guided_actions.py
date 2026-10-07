@@ -69,6 +69,7 @@ TOOL_ACTIONS = {
 }
 SHARED_ACTIONS = {
     "backup_source": "Back up original game",
+    "use_source_backup": "Use the game's saved original",
     "git_setup": "Save game version",
     "checkpoint": "Save translation version",
     "guided_review": "Record playtest review",
@@ -270,7 +271,7 @@ class GuidedActions:
             raise ValueError("Choose a supported guided action.")
         self.guided.settings.prepare_engine()
         value = self.guided.backend.workflows.state(native["id"])
-        if action != "backup_source":
+        if action not in {"backup_source", "use_source_backup"}:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,
@@ -437,14 +438,24 @@ class GuidedActions:
             if action == "guided_review"
             else {"output"}
             if action == "release_patch"
+            else {"backup_id"}
+            if action == "use_source_backup"
             else set()
         )
         if set(options) - allowed:
             raise ValueError("Unknown guided action option.")
-        if action == "backup_source":
+        if action in {"backup_source", "use_source_backup"}:
             saved = lifecycle(self.guided.translation.workspace, project_id).get(
                 "source_backup"
             )
+            # Saving the current files when the folder holds its original
+            # says so on the review's button.
+            if (
+                action == "backup_source"
+                and not saved
+                and backups.original(project["source"])
+            ):
+                label = "Back up current files"
             if (
                 saved
                 and backups.record_status(project["source"], saved, kind="source")[
@@ -453,6 +464,12 @@ class GuidedActions:
             ):
                 raise ValueError(
                     "The original is already preserved. Use workspace backups for later milestones."
+                )
+        if action == "use_source_backup":
+            stored = backups.original(project["source"])
+            if not stored or stored["id"] != options.get("backup_id"):
+                raise ValueError(
+                    "The game's saved backups changed. Review setup again before using one."
                 )
         if action == "refresh_sources":
             if (
@@ -665,7 +682,7 @@ class GuidedActions:
         }
         destination = (
             str(backups.store_path(project["source"]))
-            if action == "backup_source"
+            if action in {"backup_source", "use_source_backup"}
             else options["output"]
             if action == "release_patch"
             else project["source"]
@@ -692,12 +709,17 @@ class GuidedActions:
             if action == "start" and quote
             else None,
             "confirmation": (
+                # Replacing an original, or saving the current files when the
+                # game folder already holds one, keeps its review.
                 bool(
                     lifecycle(self.guided.translation.workspace, project_id).get(
                         "source_backup"
                     )
+                    or backups.original(project["source"])
                 )
                 if action == "backup_source"
+                else False
+                if action == "use_source_backup"
                 # Setup saves the version from the form it shows, right after
                 # backing up and preparing; execution rechecks the same scope.
                 else action != "git_setup"
@@ -754,7 +776,7 @@ class GuidedActions:
             self.guided.idle(
                 isolated_workers=action in {"export_selected", "refresh_sources"}
             )
-        if action != "backup_source":
+        if action not in {"backup_source", "use_source_backup"}:
             self.guided.source_preserved(project_id)
         self.require_ready(
             project_id,

@@ -165,6 +165,19 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         state["source_backup" if action == "backup_source" else "workspace_backup"] = (
             result
         )
+    elif action == "use_source_backup":
+        # A moved, copied or reinstalled game keeps its original in its own
+        # store; a project without one takes over the snapshot it showed.
+        if state.get("source_backup"):
+            raise ValueError("This project already has an original backup.")
+        saved = backups.original(source)
+        if not saved or saved["id"] != arguments["backup_id"]:
+            raise ValueError(
+                "The game's saved backups changed. Review setup again before using one."
+            )
+        backups.verify(saved["path"], source=source, full=False)
+        result = {key: value for key, value in saved.items() if key != "created"}
+        state["source_backup"] = result
     elif action == "rpgmaker_prepare":
         require_source_backup(source, state)
         data = (
@@ -486,7 +499,7 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
     else:
         raise ValueError("Unknown project operation.")
     write_json(lifecycle_path(workspace, job["project_id"]), state)
-    if action == "backup_source":
+    if action in {"backup_source", "use_source_backup"}:
         reconcile_source_backup(workspace, job["project_id"], source, state)
     return result
 

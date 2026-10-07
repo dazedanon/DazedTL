@@ -22,6 +22,7 @@ from .results import Results
 
 OPERATIONS = {
     "backup_source": ("Back up original game", set()),
+    "use_source_backup": ("Use the game's saved original", {"backup_id"}),
     "backup_workspace": ("Back up project files", set()),
     "restore_backup": (
         "Restore backup into a new folder",
@@ -73,6 +74,7 @@ class Translation:
         self.projects = projects
         self.settings = settings
         self.engine = engine
+        self.originals = {}
         self.jobs = jobs or Jobs(workspace, settings.adapter.allow_providers)
         # The API server installs handlers for the retained legacy run actions.
         self.legacy_actions: dict[str, Callable[..., Any]] = {}
@@ -235,6 +237,11 @@ class Translation:
         )
         engine = self.engine.detect(project.root)
         saved_lifecycle = lifecycle(self.workspace, project_id)
+        stored = (
+            None
+            if saved_lifecycle.get("source_backup")
+            else self.stored_original(project.root)
+        )
         for key, kind in (
             ("source_backup", "source"),
             ("prepared_source", "source"),
@@ -272,6 +279,23 @@ class Translation:
             "progress": progress,
             "git": git,
             "lifecycle": saved_lifecycle,
+            **(
+                {
+                    "storedOriginal": {
+                        key: stored[key]
+                        for key in (
+                            "id",
+                            "kind",
+                            "created",
+                            "files",
+                            "version",
+                            "bytes_total",
+                        )
+                    }
+                }
+                if stored
+                else {}
+            ),
             "jobs": [self.jobs.store.view(job) for job in saved_jobs],
             "active": self.jobs.running(project_id),
             "warnings": warnings,
@@ -383,6 +407,19 @@ Additional project instructions:
             handoff.encode("utf-8"),
         )
         return {"handoff": handoff, "path": str(handoff_path)}
+
+    def stored_original(self, root):
+        """The original backup a game folder already holds, for a project
+        without one; kept until the store's snapshots change."""
+        try:
+            signature = (backups.store_path(root) / "snapshots").stat().st_mtime_ns
+        except OSError, ValueError:
+            return None
+        saved = self.originals.get(str(root))
+        if not saved or saved[0] != signature:
+            saved = (signature, backups.original(root))
+            self.originals[str(root)] = saved
+        return saved[1]
 
     def backups(self, project_id):
         _record, project = self.project(project_id)
@@ -748,6 +785,7 @@ Additional project instructions:
         if not isinstance(arguments, dict) or set(arguments) - specification[1]:
             raise ValueError("Unknown operation or operation fields.")
         required = {
+            "use_source_backup": {"backup_id"},
             "restore_backup": {"backup_id", "destination"},
             "git_setup": {"version"},
             "write_rpgmaker": {"source", "translated", "output"},

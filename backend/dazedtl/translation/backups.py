@@ -550,6 +550,38 @@ def record_status(game, record, *, kind):
     return result
 
 
+def original(game):
+    """The earliest game snapshot in the game's own store, where setup saves
+    the original first. A project opened on a moved, copied or reinstalled
+    game can take it over instead of saving its current files as the original.
+    """
+    root = store_path(game) / "snapshots"
+    if _linked(root) or not root.is_dir():
+        return None
+    found = []
+    for folder in root.iterdir():
+        if not _ID.fullmatch(folder.name):
+            continue
+        try:
+            value = manifest(folder)
+        except OSError, ValueError, TypeError:
+            continue
+        if value["kind"] == "source" and value["version"] == 2:
+            found.append((value["created"], str(folder), value))
+    if not found:
+        return None
+    created, path, value = min(found)
+    return {
+        "id": value["id"],
+        "path": path,
+        "files": len(value["files"]),
+        "kind": "source",
+        "version": 2,
+        "bytes_total": sum(value["sizes"].values()),
+        "created": created,
+    }
+
+
 def catalog(game, legacy_root):
     rows, warnings = [], []
     for root in (store_path(game) / "snapshots", Path(legacy_root)):

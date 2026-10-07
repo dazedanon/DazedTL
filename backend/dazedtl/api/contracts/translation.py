@@ -233,6 +233,9 @@ class TranslationState(ProjectOptions):
     progress: TranslationProgress | None
     git: GitStatus | None
     lifecycle: Lifecycle
+    # The original backup the game folder already holds, offered to a project
+    # without one, such as after the game was moved or copied.
+    storedOriginal: NotRequired[BackupSnapshot]
     jobs: list[TranslationJob]
     active: bool
     warnings: list[str]

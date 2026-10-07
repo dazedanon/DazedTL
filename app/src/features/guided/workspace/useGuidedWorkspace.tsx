@@ -190,6 +190,9 @@ export function useGuidedWorkspace({
     action.busy || speakerAction.busy || draft.committing || context.committing;
   const sourceBackup = translation.lifecycle.source_backup;
   const preserved = !!sourceBackup && sourceBackup.available !== false;
+  // The original backup the game folder already holds, offered to a project
+  // without one, such as after the game was moved or copied.
+  const storedOriginal = translation.storedOriginal;
   const baseline = preserved && !!translation.git?.configured;
   const job = state.run;
   const findings = state.speakerSetup;
@@ -1189,6 +1192,7 @@ export function useGuidedWorkspace({
     taskId,
     // The backend starts the next step only once no worker is running.
     running,
+    storedOriginal: storedOriginal?.id,
     // Finished operations by id, with how they ended.
     finished: new Map(
       [...state.operations, ...translation.jobs]
@@ -1346,9 +1350,19 @@ export function useGuidedWorkspace({
                 "Setup stopped before this step finished.",
             );
           tried.add(step);
-          const options = step === "git_setup" ? setupOptions() : {};
-          const result = await preparePreview(step, options);
-          setPreviewRequest({ name: step, options });
+          // A game folder that already holds its original takes it over
+          // instead of saving its current files as the original.
+          const stored = latestObserved.current.storedOriginal;
+          const name =
+            step === "backup_source" && stored ? "use_source_backup" : step;
+          const options =
+            step === "git_setup"
+              ? setupOptions()
+              : stored && name === "use_source_backup"
+                ? { backup_id: stored }
+                : {};
+          const result = await preparePreview(name, options);
+          setPreviewRequest({ name, options });
           if (result.confirmation) {
             // A replacement backup keeps its review; the sequence continues
             // once the user approves it and ends if they cancel.
@@ -1525,6 +1539,7 @@ export function useGuidedWorkspace({
     reapplyRun,
     running,
     sourceBackup,
+    storedOriginal,
     preserved,
     baseline,
     job,

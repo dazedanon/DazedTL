@@ -22,6 +22,7 @@ Tasks copied in the other project are not accepted, so copy the task again to co
 Applied images stay restorable, and so do applied plugin files whose saved backups still match; an Apply or Restore that was interrupted can only be finished in the project it belongs to.
 **Start over** moves the saved work to `.dazedtl/archived` under a dated name and starts fresh.
 Applied files stay in the game but can no longer be restored from the task, and applied images leave patch ZIPs.
+Set up likewise reuses the backup of the original the game folder already holds instead of saving its current files, which may already contain translations; **Back up current files instead** saves them as the original after a review.
 
 ## Translation workflow
 

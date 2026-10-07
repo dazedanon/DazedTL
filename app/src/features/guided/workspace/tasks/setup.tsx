@@ -51,6 +51,7 @@ export function setupView(w: GuidedWorkspace): TaskView {
     openProject,
     setPanel,
     sourceBackup,
+    storedOriginal,
     preserved,
     gitConfigured,
     preparation,
@@ -93,7 +94,9 @@ export function setupView(w: GuidedWorkspace): TaskView {
       </>
     ) : backup === "working" ? (
       setupJobs.backup_source!.message || "Backing up…"
-    ) : backup === "blocked" ? undefined : sourceBackup ? (
+    ) : backup === "blocked" ? undefined : storedOriginal && !sourceBackup ? (
+      `This folder already holds a backup of the original from ${new Date(storedOriginal.created).toLocaleString()} (${storedOriginal.files.toLocaleString()} files), saved before it was moved, copied or opened in another profile. Setup uses it.`
+    ) : sourceBackup ? (
       <>
         {sourceBackup.issue ||
           "The original backup is unavailable. Setting up saves the current game instead; it cannot recover the missing original."}{" "}
@@ -215,7 +218,18 @@ export function setupView(w: GuidedWorkspace): TaskView {
           status={backup}
           title="Back up the original"
           detail={backupDetail}
-        />
+        >
+          {/* Its review says what saving the current files replaces. */}
+          {backup === "not_started" &&
+            storedOriginal &&
+            !sourceBackup &&
+            w.task(
+              "backup_source",
+              "Back up current files instead",
+              {},
+              disabled || setupRunning || running,
+            )}
+        </StepRow>
         {state.engine === "ACE" && (
           <StepRow status={ace} title="Convert Ace data" detail={aceDetail} />
         )}

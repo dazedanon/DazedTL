@@ -1020,6 +1020,7 @@ export type TranslationState = ProjectOptions & {
   progress: TranslationProgress | null;
   git: GitStatus | null;
   lifecycle: Lifecycle;
+  storedOriginal?: BackupSnapshot;
   jobs: TranslationJob[];
   active: boolean;
   warnings: string[];
