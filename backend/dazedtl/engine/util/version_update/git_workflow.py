@@ -1699,7 +1699,12 @@ def bootstrap_repository(
         translation_commit = _commit_tree(
             repo,
             translation_tree.tree,
-            _message(f"translation: record translated game {version}", version),
+            _message(
+                f"translation: start from original game {version}"
+                if original == translated
+                else f"translation: record translated game {version}",
+                version,
+            ),
             (original_commit,),
         )
         translation_tree = _TreeBuild(
