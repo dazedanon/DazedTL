@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
+import { idsBetween } from "./imageSelection";
 import type {
   ImageAsset,
   ImageList,
@@ -166,11 +167,15 @@ export function useImageGrid(
       );
     if (demand.current.length) pump.current();
   }, [missingKey, scope]);
+  const shown = (index: number) => {
+    const offset = Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
+    return (grid.pages.get(offset) ?? grid.stale.get(offset))?.[
+      index % PAGE_SIZE
+    ];
+  };
   const items: { index: number; asset: ImageAsset }[] = [];
   for (let index = start; index < end; index++) {
-    const offset = Math.floor(index / PAGE_SIZE) * PAGE_SIZE;
-    const page = grid.pages.get(offset) ?? grid.stale.get(offset);
-    const asset = page?.[index % PAGE_SIZE];
+    const asset = shown(index);
     if (asset) items.push({ index, asset });
   }
   // Selected images the filters hide are counted apart from the pages, for
@@ -208,6 +213,22 @@ export function useImageGrid(
     // Stale pages stand in while a refresh reloads them.
     loading: !grid.error && missing.some((offset) => !grid.stale.has(offset)),
     error: grid.error,
+    /** The ids of matches `first` to `last`, as shown or read for the view. */
+    ids: (first: number, last: number) =>
+      idsBetween(
+        first,
+        Math.min(last, grid.total - 1),
+        (index) => shown(index)?.id,
+        async (offset, limit) => {
+          const { projectId, ...options } = scope.filters;
+          const reply = await imagesApi.list(projectId, {
+            ...options,
+            offset,
+            limit,
+          });
+          return reply.items.map((item) => item.id);
+        },
+      ),
   };
 }
 

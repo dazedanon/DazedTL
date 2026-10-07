@@ -1,23 +1,34 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  toggleImage,
+  gridStep,
+  idsBetween,
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 
-test("image selection preserves hidden assets when visible selections change", () => {
-  const selected = ["img/system/menu.png", "img/pictures/hidden.png"];
-  assert.deepEqual(toggleImage(selected, "img/system/menu.png", false), [
-    "img/pictures/hidden.png",
-  ]);
+test("image Shift ranges read past the loaded pages within the list's read limit", async () => {
+  // Protect against a range stopping at the mounted tiles or asking the
+  // backend for more images than one read returns.
+  const ids = Array.from({ length: 1200 }, (_, index) => `img/${index}.png`);
+  const loaded = (index: number) =>
+    index < 100 || index >= 1100 ? ids[index] : undefined;
   assert.deepEqual(
-    toggleImage(selected, "img/system/menu.png", true),
-    selected,
+    idsBetween(10, 20, loaded, () => assert.fail()),
+    [...ids.slice(10, 21)],
   );
-  assert.deepEqual(selected, [
-    "img/system/menu.png",
-    "img/pictures/hidden.png",
+  const reads: [number, number][] = [];
+  const range = await idsBetween(50, 1150, loaded, async (offset, limit) => {
+    reads.push([offset, limit]);
+    return ids.slice(offset, offset + limit);
+  });
+  assert.deepEqual(range, ids.slice(50, 1151));
+  assert.deepEqual(reads, [
+    [100, 500],
+    [600, 500],
   ]);
+  // Images removed since the grid loaded end the range early.
+  const short = await idsBetween(90, 120, loaded, async () => ["img/new.png"]);
+  assert.deepEqual(short, [...ids.slice(90, 100), "img/new.png"]);
 });
 
 test("large image grids keep a bounded visible range and recover stale scroll positions", () => {
@@ -35,4 +46,11 @@ test("large image grids keep a bounded visible range and recover stale scroll po
     top: 0,
     height: 0,
   });
+  // Arrow keys stay in the grid: down into a shorter last row ends on its
+  // last tile, and up from the first row stays put.
+  assert.equal(gridStep("ArrowDown", 13, 12, 30), 25);
+  assert.equal(gridStep("ArrowDown", 23, 12, 30), 29);
+  assert.equal(gridStep("ArrowDown", 25, 12, 30), 25);
+  assert.equal(gridStep("ArrowUp", 5, 12, 30), 5);
+  assert.equal(gridStep("End", 5, 12, 30), 29);
 });

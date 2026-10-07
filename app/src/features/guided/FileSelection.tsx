@@ -13,12 +13,15 @@ import { VirtualList } from "../../ui/VirtualList";
 import {
   fileGroup,
   filterFiles,
-  selectFile,
   selectMatching,
   sortFiles,
   type FileGroup,
-  type SelectionGesture,
 } from "./selection";
+import {
+  selectItem,
+  selectionGesture,
+  type Modifiers,
+} from "../../ui/selection";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 
 const groups = [
@@ -36,15 +39,6 @@ const groupNouns: Record<string, readonly [string, string]> = {
 const groupCount = (group: string, count: number) =>
   `${count} ${groupNouns[group][count === 1 ? 0 : 1]}`;
 const keyOf = (file: GuidedFile) => file.name;
-type Modifiers = { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean };
-const gesture = (event: Modifiers, checkbox = false): SelectionGesture =>
-  event.shiftKey
-    ? event.ctrlKey || event.metaKey
-      ? "add-range"
-      : "range"
-    : checkbox || event.ctrlKey || event.metaKey
-      ? "toggle"
-      : "replace";
 
 export function FileSelection({
   state,
@@ -124,8 +118,8 @@ export function FileSelection({
   }, []);
   const choose = (name: string, event: Modifiers, checkbox = false) => {
     if (disabled) return;
-    const operation = gesture(event, checkbox);
-    const next = selectFile(selected, names, name, operation, anchor.current);
+    const operation = selectionGesture(event, checkbox);
+    const next = selectItem(selected, names, name, operation, anchor.current);
     anchor.current = next.anchor;
     apply(
       next.selected,

@@ -24,15 +24,84 @@ export function imageDraft(state: ImageManagerState): ImageDraft {
   };
 }
 
-export function toggleImage(
-  selection: readonly string[],
-  id: string,
-  checked: boolean,
+/** The most images one list read returns. */
+const READ_LIMIT = 500;
+/**
+ * The ids of images `first` to `last` in grid order, for a Shift range that
+ * reaches past the loaded pages. Loaded images answer at once; the rest are
+ * read in runs the list allows.
+ */
+export function idsBetween(
+  first: number,
+  last: number,
+  loaded: (index: number) => string | undefined,
+  read: (offset: number, limit: number) => Promise<string[]>,
+): string[] | Promise<string[]> {
+  const ids: string[] = [];
+  for (let index = first; index <= last; index++) {
+    const id = loaded(index);
+    if (id === undefined) return readFrom(ids, index, last, loaded, read);
+    ids.push(id);
+  }
+  return ids;
+}
+async function readFrom(
+  ids: string[],
+  index: number,
+  last: number,
+  loaded: (index: number) => string | undefined,
+  read: (offset: number, limit: number) => Promise<string[]>,
 ) {
-  const next = new Set(selection);
-  if (checked) next.add(id);
-  else next.delete(id);
-  return [...next];
+  while (index <= last) {
+    const id = loaded(index);
+    if (id !== undefined) {
+      ids.push(id);
+      index++;
+      continue;
+    }
+    let limit = 1;
+    while (
+      limit < READ_LIMIT &&
+      index + limit <= last &&
+      loaded(index + limit) === undefined
+    )
+      limit++;
+    const page = await read(index, limit);
+    ids.push(...page);
+    // A shorter list ends the range where the images end.
+    if (page.length < limit) break;
+    index += limit;
+  }
+  return ids;
+}
+
+/** The tile an arrow, Home or End key moves to, or null for other keys. */
+export function gridStep(
+  key: string,
+  index: number,
+  columns: number,
+  total: number,
+) {
+  const last = total - 1;
+  switch (key) {
+    case "ArrowLeft":
+      return Math.max(0, index - 1);
+    case "ArrowRight":
+      return Math.min(last, index + 1);
+    case "ArrowUp":
+      return index >= columns ? index - columns : index;
+    case "ArrowDown":
+      // From a full row into a shorter last one, the move ends on its last tile.
+      return Math.floor(index / columns) < Math.floor(last / columns)
+        ? Math.min(last, index + columns)
+        : index;
+    case "Home":
+      return 0;
+    case "End":
+      return last;
+    default:
+      return null;
+  }
 }
 
 export function virtualRows(

@@ -57,18 +57,21 @@ button:disabled {
   opacity: 0.45;
   cursor: default;
 }
-/* Keyboard focus is always visible; pointer focus adds no outline. Text
-   fields mark focus with their border, since they match :focus-visible on
-   click too. */
+/* Keyboard focus is always visible; pointer focus adds no outline, including
+   focus a list moves for a key or a click (focusItem). Text fields mark focus
+   with their border, since they match :focus-visible on click too. */
 :focus {
   outline: none;
 }
-:focus-visible:not(:is(input, select, textarea, [tabindex="-1"])),
+:focus-visible:not(
+  :is(input, select, textarea, [tabindex="-1"], [data-focus-by="pointer"])
+),
 :is(
-  input[type="checkbox"],
-  input[type="radio"],
-  input[type="range"]
-):focus-visible {
+    input[type="checkbox"],
+    input[type="radio"],
+    input[type="range"]
+  ):focus-visible:not([data-focus-by="pointer"]),
+[data-focus-by="key"]:focus {
   outline: var(--focus-ring);
   outline-offset: 2px;
 }

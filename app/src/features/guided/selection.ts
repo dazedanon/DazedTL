@@ -1,7 +1,6 @@
 import type { GuidedFile } from "../../api/contracts.ts";
 
 export type FileGroup = "all" | "database" | "maps" | "common";
-export type SelectionGesture = "toggle" | "replace" | "range" | "add-range";
 
 const collator = new Intl.Collator(undefined, {
   numeric: true,
@@ -57,33 +56,6 @@ export function retainOtherScope(
     ...selected.filter((name) => !scope.has(name)),
     ...names.filter((name) => scope.has(name)),
   ];
-}
-
-/** Checkmarks are the scope. Focus is never a second, highlight-only selection. */
-export function selectFile(
-  selected: readonly string[],
-  visible: readonly string[],
-  target: string,
-  gesture: SelectionGesture,
-  anchor: string | null,
-) {
-  const end = visible.indexOf(target);
-  if (end < 0) return { selected: [...selected], anchor };
-  const start = anchor === null ? -1 : visible.indexOf(anchor);
-  const range = gesture === "range" || gesture === "add-range";
-  const names =
-    range && start >= 0
-      ? visible.slice(Math.min(start, end), Math.max(start, end) + 1)
-      : [target];
-  const result = new Set(
-    gesture === "replace" || gesture === "range" ? [] : selected,
-  );
-  if (gesture === "toggle" && result.has(target)) result.delete(target);
-  else for (const name of names) result.add(name);
-  return {
-    selected: [...result],
-    anchor: range && start >= 0 ? anchor : target,
-  };
 }
 
 export function selectMatching(

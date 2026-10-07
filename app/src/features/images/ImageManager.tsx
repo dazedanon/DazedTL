@@ -7,6 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import {
@@ -41,11 +43,17 @@ import { Modal } from "../../ui/Modal";
 import { Message } from "../../ui/Feedback";
 import { ForeignWork } from "../../ui/ForeignWork";
 import {
+  gridStep,
   imageDraft,
   imageStatus,
-  toggleImage,
   virtualRows,
 } from "./imageSelection";
+import {
+  focusItem,
+  selectItem,
+  selectionGesture,
+  type Modifiers,
+} from "../../ui/selection";
 import { ThumbnailQueue, useImageGrid, useThumbnail } from "./useImageGrid";
 import { ImageCompare } from "./ImageCompare";
 import { ImageApply } from "./ImageApply";
@@ -214,15 +222,17 @@ function Tile({
   selected,
   size,
   queue,
-  onSelect,
+  onPick,
+  onKeyDown,
   onCompare,
 }: {
   asset: ImageAsset;
   selected: boolean;
   size: number;
   queue: ThumbnailQueue;
-  /** Sets the image's selection, or toggles it without `checked`. */
-  onSelect: (checked?: boolean) => void;
+  /** Chooses the image with the click's modifiers; `checkbox` toggles it. */
+  onPick: (event: Modifiers, checkbox?: boolean) => void;
+  onKeyDown: (event: KeyboardEvent) => void;
   onCompare: () => void;
 }) {
   const pixels = useThumbnail(queue, asset, size);
@@ -232,24 +242,40 @@ function Tile({
   const next =
     display === "not_started" &&
     (asset.classification === "recommended" || asset.editable);
-  // A click anywhere on the tile chooses the image, like its checkbox, which
-  // stays the control for keyboards; only the eye opens Compare.
+  // Keys continue from the image last clicked, Shift-clicked ones included.
+  const focus = (event: ReactMouseEvent<HTMLElement>) => {
+    const input = event.currentTarget.querySelector("input");
+    if (input) focusItem(input, "pointer");
+  };
+  // A click anywhere on the tile chooses the image as a file selector row
+  // does, and its checkbox toggles it and takes the keyboard from there; only
+  // the eye opens Compare.
   return (
     <article
       className="image-tile"
       data-selected={selected}
       data-state={asset.state}
-      onClick={() => onSelect()}
+      onMouseDown={(event) => {
+        if (event.shiftKey) event.preventDefault();
+      }}
+      onClick={(event) => {
+        focus(event);
+        onPick(event);
+      }}
+      onKeyDown={onKeyDown}
     >
       <label
         className="image-tile-select"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          focus(event);
+        }}
       >
         <input
           aria-label={`Select ${asset.filename}`}
           type="checkbox"
           checked={selected}
-          onChange={(event) => onSelect(event.target.checked)}
+          onChange={(event) => onPick(event.nativeEvent as MouseEvent, true)}
         />
       </label>
       <div
@@ -288,6 +314,7 @@ function Tile({
           className="image-tile-compare"
           aria-label={`Compare ${asset.filename}`}
           title={`Compare ${asset.filename}`}
+          onKeyDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
             onCompare();
@@ -431,15 +458,87 @@ function Manager({
   useOnChange(grid.total, setTotal);
   const change = (patch: Partial<ImageDraft>) =>
     draft.session.edit((current) => ({ ...current, ...patch }));
-  const choose = (id: string, checked?: boolean) =>
-    draft.session.edit((current) => ({
-      ...current,
-      selection: toggleImage(
-        current.selection,
-        id,
-        checked ?? !current.selection.includes(id),
-      ),
-    }));
+  // Shift ranges start from the last image chosen without Shift in this view.
+  const view = JSON.stringify([
+    value.view.query,
+    value.view.status,
+    value.view.folder,
+    value.view.showSelected,
+  ]);
+  const anchor = useRef<{ id: string; index: number; view: string }>(null);
+  const picks = useRef(0);
+  const [pickNotice, setPickNotice] = useState("");
+  /** Chooses the image at `index` the way the file selector chooses a file. */
+  const pick = (index: number, event: Modifiers, checkbox = false) => {
+    const gesture = selectionGesture(event, checkbox);
+    const from =
+      anchor.current?.view === view &&
+      (gesture === "range" || gesture === "add-range")
+        ? anchor.current
+        : null;
+    const first = Math.min(index, from?.index ?? index);
+    const ticket = ++picks.current;
+    const finish = (ids: string[]) => {
+      const target = ids[index - first];
+      if (ticket !== picks.current || !target) return;
+      const start = from && ids.includes(from.id) ? from.id : null;
+      anchor.current = start ? from : { id: target, index, view };
+      draft.session.edit((current) => ({
+        ...current,
+        selection: selectItem(current.selection, ids, target, gesture, start)
+          .selected,
+      }));
+      setPickNotice(
+        !start
+          ? ""
+          : gesture === "range"
+            ? "Selected this range."
+            : "Added this range to your selection.",
+      );
+    };
+    const ids = grid.ids(first, Math.max(index, from?.index ?? index));
+    if (Array.isArray(ids)) finish(ids);
+    else
+      void ids.then(finish, (error: unknown) => {
+        if (ticket === picks.current) action.report(error, "select-range");
+      });
+  };
+  // A key can move to a tile that is not drawn yet; it takes focus on arrival.
+  const pendingFocus = useRef<{ index: number; view: string }>(null);
+  const focusTile = (index: number) => {
+    const element = viewport.current;
+    if (!element) return;
+    const space = element.querySelector<HTMLElement>(".image-grid-space");
+    const top =
+      (space?.offsetTop ?? 0) + Math.floor(index / columns) * rowHeight;
+    if (top < element.scrollTop) element.scrollTop = top;
+    else if (top + rowHeight > element.scrollTop + element.clientHeight)
+      element.scrollTop = top + rowHeight - element.clientHeight;
+    const input = element.querySelector<HTMLInputElement>(
+      `[data-tile-index="${index}"] input`,
+    );
+    if (input) focusItem(input, "key");
+    pendingFocus.current = input ? null : { index, view };
+  };
+  const tileKeyDown = (event: KeyboardEvent, index: number) => {
+    const additive = event.ctrlKey || event.metaKey;
+    if (additive && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      addMatching();
+      return;
+    }
+    if (event.key === " ") {
+      event.preventDefault();
+      pick(index, event, true);
+      return;
+    }
+    const next = gridStep(event.key, index, columns, grid.total);
+    if (next === null) return;
+    event.preventDefault();
+    focusTile(next);
+    // Ctrl/Cmd moves without choosing, so Space can add the image it reaches.
+    if (!additive || event.shiftKey) pick(next, event);
+  };
   const changeView = (patch: Partial<ImageDraft["view"]>, reset = false) => {
     if (reset) {
       setScroll(0);
@@ -522,6 +621,14 @@ function Manager({
       "Image folder saved. Indexing loose PNGs.",
       "image-folder",
     );
+  const addMatching = () =>
+    void perform("select_matching", {
+      query: value.view.query,
+      filter: value.view.status,
+      folder: value.view.folder,
+      selected_only: value.view.showSelected,
+      mode: "add",
+    });
   const openCompare = (asset: ImageAsset) => {
     setCompare(asset);
     changeView({ currentImage: asset.id });
@@ -1013,17 +1120,7 @@ function Manager({
           align="start"
           disabled={action.busy}
         >
-          <MenuItem
-            onSelect={() =>
-              perform("select_matching", {
-                query: value.view.query,
-                filter: value.view.status,
-                folder: value.view.folder,
-                selected_only: value.view.showSelected,
-                mode: "add",
-              })
-            }
-          >
+          <MenuItem onSelect={addMatching}>
             Add matching ({grid.total.toLocaleString()})
           </MenuItem>
           <MenuItem
@@ -1163,6 +1260,16 @@ function Manager({
                 {grid.items.map(({ asset, index }) => (
                   <div
                     key={asset.id}
+                    data-tile-index={index}
+                    ref={(cell) => {
+                      const target = pendingFocus.current;
+                      if (cell && target?.index === index) {
+                        pendingFocus.current = null;
+                        const input = cell.querySelector("input");
+                        if (input && target.view === view)
+                          focusItem(input, "key");
+                      }
+                    }}
                     style={{
                       minWidth: 0,
                       display: "flex",
@@ -1175,7 +1282,8 @@ function Manager({
                       selected={selection.has(asset.id)}
                       size={value.view.tileSize}
                       queue={queue}
-                      onSelect={(checked) => choose(asset.id, checked)}
+                      onPick={(event, checkbox) => pick(index, event, checkbox)}
+                      onKeyDown={(event) => tileKeyDown(event, index)}
                       onCompare={() => openCompare(asset)}
                     />
                   </div>
@@ -1188,6 +1296,9 @@ function Manager({
               Loading visible images…
             </span>
           )}
+          <span className="sr-only" role="status">
+            {pickNotice}
+          </span>
         </div>
       </div>
       {/* Other results sit between the images and the footer. */}

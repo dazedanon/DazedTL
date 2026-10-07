@@ -3,11 +3,11 @@ import test from "node:test";
 import type { GuidedFile } from "../app/src/api/contracts.ts";
 import {
   filterFiles,
-  selectFile,
   selectMatching,
   sortFiles,
   retainOtherScope,
 } from "../app/src/features/guided/selection.ts";
+import { selectItem } from "../app/src/ui/selection.ts";
 
 test("large filtered scopes retain hidden checks and modifier ranges use the whole matching list", () => {
   // Protect against losing a different phase's selected files, and against
@@ -38,7 +38,7 @@ test("large filtered scopes retain hidden checks and modifier ranges use the who
     ["Map42.json"],
   );
   assert.equal(filterFiles(sorted, "maps", "25–10").length, 0);
-  const range = selectFile(
+  const range = selectItem(
     selected,
     maps,
     "Map500.json",
@@ -64,7 +64,7 @@ test("large filtered scopes retain hidden checks and modifier ranges use the who
     ),
     ["Map1.json"],
   );
-  const added = selectFile(
+  const added = selectItem(
     ["Actors.json", "Map1.json"],
     maps,
     "Map500.json",
@@ -73,17 +73,17 @@ test("large filtered scopes retain hidden checks and modifier ranges use the who
   );
   assert.equal(added.selected.length, 483);
   assert.equal(
-    selectFile(added.selected, maps, "Map500.json", "toggle", added.anchor)
+    selectItem(added.selected, maps, "Map500.json", "toggle", added.anchor)
       .selected.length,
     482,
   );
   assert.deepEqual(
-    selectFile(selected, matching, "Map25.json", "add-range", "Map1.json")
+    selectItem(selected, matching, "Map25.json", "add-range", "Map1.json")
       .selected,
     selected,
   );
   assert.deepEqual(
-    selectFile(selected, matching, "not-in-filter.json", "replace", null)
+    selectItem(selected, matching, "not-in-filter.json", "replace", null)
       .selected,
     selected,
   );

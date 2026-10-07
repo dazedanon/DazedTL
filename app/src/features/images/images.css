@@ -293,7 +293,7 @@ main > .image-manager {
   margin: 0;
 }
 /* The tile clips anything outside it, so the ring fills the label's padding. */
-.image-tile-select input:focus-visible {
+.image-tile-select input:is(:focus-visible, [data-focus-by="key"]) {
   outline-offset: 0;
 }
 .image-tile-preview {
