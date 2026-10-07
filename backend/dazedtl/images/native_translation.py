@@ -91,9 +91,7 @@ class ImageNativeTranslation:
                     or block.get("target") != region.get("target")
                     or block.get("skip")
                 ):
-                    raise ValueError(
-                        "Image editor text changed after export. Export a current exchange."
-                    )
+                    raise ValueError("Text changed after export. Export it again.")
         configuration = self.settings.guided_configuration("translate")
         if payload.get("language") != configuration["language"]:
             raise ValueError(

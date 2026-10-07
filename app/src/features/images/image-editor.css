@@ -277,6 +277,8 @@
   font-size: var(--font-small);
 }
 .native-editor-costs {
+  display: grid;
+  gap: var(--space-1);
   margin: var(--space-2) 0;
 }
 .native-editor-costs > div {

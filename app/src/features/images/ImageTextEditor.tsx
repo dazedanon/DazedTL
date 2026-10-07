@@ -507,15 +507,17 @@ function Editor({
   const checking = "Checking saved image work…";
   const translateBlocked = !nativeState
     ? checking
-    : !nativeState.quoteCurrent
-      ? nativeState?.quote
-        ? "Estimate again after these changes."
-        : "Estimate first."
-      : !nativeState.providerEnabled
-        ? "Provider execution is off for this launch."
-        : nativeState.activeId
-          ? runWaiting
-          : "";
+    : !nativeState.current
+      ? "Export confirmed text first."
+      : !nativeState.quoteCurrent
+        ? nativeState?.quote
+          ? "Estimate again after these changes."
+          : "Estimate first."
+        : !nativeState.providerEnabled
+          ? "Provider execution is off for this launch."
+          : nativeState.activeId
+            ? runWaiting
+            : "";
   const stepFeedback = (key: string, pendingText: string) => ({
     feedbackKey: key,
     pending: action.busy && action.key === key,
@@ -1100,7 +1102,7 @@ function Editor({
                     description={
                       nativeState?.quoteCurrent && nativeState.quote?.estimate
                         ? estimateSummary(nativeState.quote.estimate)
-                        : nativeState?.quote
+                        : nativeState?.quote && nativeState.current
                           ? "Estimate again after text, scope, guidance or settings changes."
                           : "A local estimate; nothing is sent."
                     }
@@ -1203,7 +1205,7 @@ function Editor({
                       {job.approval && (
                         <div className="native-editor-approval">
                           <strong>Review provider Batch submission</strong>
-                          <Costs value={job.approval.detail} />
+                          <Costs value={job.approval.detail} mode="batch" />
                           <Button
                             disabled={busy}
                             onClick={() => {
@@ -1391,7 +1393,7 @@ function Editor({
             }
             description={
               preview
-                ? `${preview.count} text regions · ${preview.assetIds.length} images · ${preview.mode === "batch" ? "Provider Batch" : "Live API"}`
+                ? `${preview.count} text ${preview.count === 1 ? "region" : "regions"} · ${preview.assetIds.length} ${preview.assetIds.length === 1 ? "image" : "images"} · ${preview.mode === "batch" ? "Provider Batch" : "Live API"}`
                 : "Continue using this run’s frozen scope and settings."
             }
           />
@@ -1401,14 +1403,12 @@ function Editor({
               {preview?.configuration.language ||
                 job?.imageConfiguration?.language}
             </p>
-            {(preview?.configuration.endpoint ||
-              job?.imageConfiguration?.endpoint) && (
-              <p className="path">
-                {preview?.configuration.endpoint ||
-                  job?.imageConfiguration?.endpoint}
-              </p>
-            )}
-            <Costs value={preview?.estimate || job?.estimate || {}} />
+            {/* Like the translation cost review, the price shown is the one
+                this mode pays; the saved connection names the provider. */}
+            <Costs
+              value={preview?.estimate || job?.estimate || {}}
+              mode={(preview?.mode ?? job?.mode) === "batch" ? "batch" : "live"}
+            />
             <p>
               Approval uses the saved provider and can incur charges. Applying
               images remains a separate reviewed action.
@@ -1471,9 +1471,20 @@ function estimateSummary(value: Record<string, unknown>) {
     .filter(Boolean)
     .join(" · ");
 }
-function Costs({ value }: { value: Record<string, unknown> }) {
+function Costs({
+  value,
+  mode,
+}: {
+  value: Record<string, unknown>;
+  /** A review for one mode shows only the price that mode pays. */
+  mode?: "live" | "batch";
+}) {
   // Cache variants only matter when they differ from each other.
   const sameBatch = value.batch_cached_cost === value.batch_nocache_cost;
+  const priced = (key: string) =>
+    !mode ||
+    !key.includes("cost") ||
+    (mode === "live" ? key === "live_cost" : key !== "live_cost");
   return (
     <dl className="native-editor-costs">
       {[
@@ -1489,6 +1500,7 @@ function Costs({ value }: { value: Record<string, unknown> }) {
         .filter(
           ([key]) =>
             typeof value[key] === "number" &&
+            priced(key) &&
             !(
               sameBatch &&
               ["batch_cached_cost", "batch_nocache_cost"].includes(key)
