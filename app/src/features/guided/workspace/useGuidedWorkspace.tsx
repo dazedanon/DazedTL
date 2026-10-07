@@ -598,25 +598,34 @@ export function useGuidedWorkspace({
     files?: string[],
     inspectOnly = false,
   ) =>
-    action.run(
-      async () => {
-        setInspectRelease(
-          inspectOnly && ["release", "release_patch"].includes(name),
-        );
-        const result = await preparePreview(name, options, files);
-        setPreviewRequest({
-          name,
-          options: { ...options },
-          files: files && [...files],
-        });
-        const prepareBatch = name === "start" && options.mode === "batch";
-        if ((!result.confirmation || prepareBatch) && !inspectOnly)
-          await execute(result);
-        else setPreview(result);
-      },
-      "",
-      actionKey(name, options),
-    );
+    action
+      .run(
+        async () => {
+          setInspectRelease(
+            inspectOnly && ["release", "release_patch"].includes(name),
+          );
+          const result = await preparePreview(name, options, files);
+          setPreviewRequest({
+            name,
+            options: { ...options },
+            files: files && [...files],
+          });
+          const prepareBatch = name === "start" && options.mode === "batch";
+          if ((!result.confirmation || prepareBatch) && !inspectOnly) {
+            await execute(result);
+            return null;
+          }
+          return result;
+        },
+        "",
+        actionKey(name, options),
+      )
+      // The review opens once the action and its refresh settle, so its
+      // buttons start ready; until then the clicked control shows the wait.
+      .then((outcome) => {
+        if (outcome.ok && outcome.value) setPreview(outcome.value);
+        return outcome;
+      });
   // Re-applying a saved run's output opens its Apply review.
   const reapplyRun = async (runId: string) => {
     const options = { run_id: runId };
