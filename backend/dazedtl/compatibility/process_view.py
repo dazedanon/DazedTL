@@ -1027,11 +1027,16 @@ def batch_payload(index, total, entry, custom_id, params, response, state, error
         if provider != "anthropic"
         else {"custom_id": custom_id, "params": params}
     )
-    if provider == "openrouter":
+    routing = params.get("provider")
+    # A Batch names no host or one exclusive host; Live routing preferences,
+    # such as require_parameters, belong to an ordinary chat completion.
+    if provider == "openrouter" and (
+        routing is None or (isinstance(routing, dict) and "only" in routing)
+    ):
         from .openrouter_batch import envelope
 
         params = dict(params)
-        routing = params.pop("provider", None)
+        params.pop("provider", None)
         exact = envelope(
             params.get("model"), [{"custom_id": custom_id, "body": params}], routing
         )

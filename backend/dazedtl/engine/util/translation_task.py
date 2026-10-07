@@ -1501,6 +1501,7 @@ class TranslationTaskCore:
                         "used by Batch Translate; nothing will be submitted."
                     )
                     estimate_started = time.monotonic()
+                    estimate_kept = False
                     try:
                         total_cost = self._run_files(
                             matching_files,
@@ -1523,8 +1524,13 @@ class TranslationTaskCore:
                             self.estimate_summary = estimate
                             self.estimate_ready_signal.emit(estimate)
                             total_cost = _format_estimate_total(estimate)
+                            estimate_kept = True
                     finally:
-                        clearEstimateRequests()
+                        # A finished estimate keeps its isolated queue so its
+                        # exact requests can be previewed and compared before
+                        # approval; the next estimate clears it first.
+                        if not estimate_kept:
+                            clearEstimateRequests()
                 else:
                     total_cost = self._run_files(matching_files, self.estimate_only)
             finally:

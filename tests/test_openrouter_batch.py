@@ -211,6 +211,26 @@ class OpenRouterBatchTests(unittest.TestCase):
                     client.submit([request()])
                 self.assertEqual(len(attempts), 1)
 
+    def test_openrouter_preview_shows_live_routing_as_a_chat_completion(self):
+        # A Live estimate's queue carries OpenRouter preferences such as
+        # require_parameters, which are not a Batch host; previewing it crashed.
+        from dazedtl.compatibility.process_view import batch_payload
+
+        entry = {"payload": '{"Line1":"薬"}', "provider": "openrouter"}
+        live = {
+            "model": "openai/gpt-6-luna",
+            "messages": [],
+            "extra_body": {"provider": {"require_parameters": True}},
+        }
+        exact = batch_payload(0, 1, entry, None, live, None, "")["exact"]
+        self.assertEqual(exact["url"], "/v1/chat/completions")
+        self.assertEqual(exact["body"]["provider"], {"require_parameters": True})
+        pinned = {"only": ["deepinfra"], "allow_fallbacks": False}
+        batch = {**live, "extra_body": {"provider": pinned}}
+        exact = batch_payload(0, 1, entry, "one", batch, None, "")["exact"]
+        self.assertEqual(exact["provider"], {"only": ["deepinfra"]})
+        self.assertNotIn("provider", exact["requests"][0]["body"])
+
     def test_unordered_inline_results_keep_original_bodies_refusals_and_billing_after_expiry(
         self,
     ):
