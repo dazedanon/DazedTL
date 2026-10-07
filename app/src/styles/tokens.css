@@ -70,9 +70,12 @@
   --shadow-popover: 0 var(--space-1) var(--space-4) #0006;
   --shadow-dialog: 0 var(--space-5) 80px #0008;
   /* The bundled Inter (base.css) renders the same widths on every platform;
-     the system fonts only supply scripts it does not cover, such as Japanese. */
+     the system fonts only supply scripts it does not cover. Japanese faces
+     come first so game text takes Japanese kanji forms and keeps its weights,
+     where a generic fallback may pick a Chinese face with one weight. */
   --font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    Inter, "Hiragino Sans", "Yu Gothic UI", "Meiryo UI", "Noto Sans CJK JP",
+    "Noto Sans JP", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   /* The rounded Fredoka, which echoes the cat's outline, sets only the
      wordmark and page titles; characters it lacks fall back to Inter. */
