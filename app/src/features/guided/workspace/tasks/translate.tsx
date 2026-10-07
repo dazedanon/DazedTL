@@ -350,19 +350,18 @@ export function auditView(w: GuidedWorkspace): TaskView {
     investigating.dismissed && state.eventText.status === "waiting"
       ? "missing"
       : state.eventText.status;
-  // Saved findings wait for your source review until accepted.
+  // Saved findings finish the assistant's part; the source review that
+  // follows belongs to Source choices.
   const reviewed = status === "ready" && state.eventText.accepted;
-  const taskState: AssistantTaskState = reviewed
-    ? "done"
-    : (
-        {
-          missing: "not_started",
-          waiting: "waiting",
-          ready: "needs_review",
-          stale: "outdated",
-          invalid: "blocked",
-        } as const
-      )[status];
+  const taskState: AssistantTaskState = (
+    {
+      missing: "not_started",
+      waiting: "waiting",
+      ready: "done",
+      stale: "outdated",
+      invalid: "blocked",
+    } as const
+  )[status];
   let content: ReactNode;
   content = (
     <>
@@ -382,7 +381,9 @@ export function auditView(w: GuidedWorkspace): TaskView {
               ? "Findings appear here as your assistant saves them."
               : reviewed
                 ? "Your source choices are saved for these findings."
-                : state.eventText.message
+                : status === "ready"
+                  ? "Review the findings in Source choices before translating."
+                  : state.eventText.message
         }
         help="The task only saves findings. It does not enable sources, edit engine code, start translation or call providers."
         results={[
@@ -390,10 +391,9 @@ export function auditView(w: GuidedWorkspace): TaskView {
             id: "findings",
             title: "Source findings",
             state: taskState,
-            detail: reviewed
-              ? "Coverage evidence for each source."
-              : status === "ready"
-                ? "Coverage evidence for each source, ready to review."
+            detail:
+              status === "ready"
+                ? "Coverage evidence for each source."
                 : "Which event codes, plugin commands and scripts carry player text.",
           },
         ]}

@@ -118,11 +118,8 @@ function standing(
       return { state: "outdated", detail: found.message };
     if (found.status === "waiting" || (copied && found.status === "missing"))
       return waiting();
-    if (found.status === "ready")
-      return found.accepted
-        ? { state: "finished" }
-        : { state: "needs_review", detail: "Findings are ready to review." };
-    return { state: "idle" };
+    // Saved findings finish the task; Source choices holds their review.
+    return found.status === "ready" ? { state: "finished" } : { state: "idle" };
   }
   if (kind === "plugins") {
     if (!plugins) return { state: "idle" };
