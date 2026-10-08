@@ -25,7 +25,8 @@ const after = args.indexOf("--after");
 const waitFor = after >= 0 ? Number(args[after + 1]) : 0;
 const forward = args.filter(
   (value, index) =>
-    value !== "--detach" && index !== after && index !== after + 1,
+    value !== "--detach" &&
+    (after < 0 || (index !== after && index !== after + 1)),
 );
 
 const alive = (pid) => {
