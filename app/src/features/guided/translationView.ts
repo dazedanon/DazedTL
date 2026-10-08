@@ -273,35 +273,50 @@ export function fileLines(
     return { done, total: null };
   return { done, total: rows.length ? sum(rows) : null };
 }
-/** Run-scoped tasks are also complete when every selected file needs nothing. */
-export function selectionSettled(
-  state: Pick<GuidedState, "runs" | "sourceStatus">,
+/**
+ * The files an event-code task covers: the selected event files and every
+ * file an earlier run of the task included, so clearing the selection keeps
+ * finished work while a newly selected file still needs its run.
+ */
+export function eventTaskFiles(
+  state: Pick<GuidedState, "files" | "runs">,
   phase: Phase,
-  names: readonly string[],
+  selected: readonly string[],
+) {
+  const attempted = new Set(
+    state.runs
+      .filter(
+        (run) =>
+          run.logicalPhase === phase &&
+          run.mode !== "estimate" &&
+          !run.temporary,
+      )
+      .flatMap((run) => run.files || []),
+  );
+  return state.files
+    .filter(
+      (file) =>
+        file.group === "dialogue" &&
+        (selected.includes(file.name) || attempted.has(file.name)),
+    )
+    .map((file) => file.name);
+}
+/**
+ * Task progress combines each file's latest run, so re-running some files
+ * keeps the rest. Database and map tasks cover their whole file group,
+ * independently of the next action's selection; event-code tasks cover
+ * eventTaskFiles.
+ */
+export function translationTaskComplete(
+  state: Pick<GuidedState, "files" | "runs" | "sourceStatus">,
+  phase: Phase,
+  names: readonly string[] = state.files
+    .filter((file) => file.group === phase)
+    .map((file) => file.name),
 ) {
   return (
     names.length > 0 &&
-    names.every(
-      (name) =>
-        !state.sourceStatus.changed.includes(name) &&
-        settledWithoutRequests(
-          state,
-          phase,
-          name,
-          fileRun(state.runs, phase, name, state.sourceStatus.retired),
-        ),
-    )
-  );
-}
-/** Task progress covers the whole file group, independently of the next action's selection. */
-export function translationTaskComplete(
-  state: Pick<GuidedState, "files" | "runs" | "sourceStatus">,
-  phase: "database" | "dialogue",
-) {
-  const files = state.files.filter((file) => file.group === phase);
-  return (
-    files.length > 0 &&
-    files.every(({ name }) => {
+    names.every((name) => {
       if (state.sourceStatus.changed.includes(name)) return false;
       const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
       if (settledWithoutRequests(state, phase, name, run)) return true;

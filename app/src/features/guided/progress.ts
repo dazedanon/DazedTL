@@ -12,9 +12,8 @@ import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import { pluginsComplete } from "../plugins/pluginTask.ts";
 import {
-  completeForSelection,
+  eventTaskFiles,
   fileLines,
-  selectionSettled,
   translationTaskComplete,
 } from "./translationView.ts";
 import { initialPosition, stageDone, stagesFor } from "./workflow.ts";
@@ -56,24 +55,20 @@ export function completedTasks(
   const preserved = !!sourceBackup && sourceBackup.available !== false;
   const baseline = preserved && !!translation.git?.configured;
   const selected = new Set(values.selected);
-  const eventFiles = state.files
-    .filter((file) => file.group === "dialogue" && selected.has(file.name))
-    .map((file) => file.name);
   const outputs = state.readiness.outputs.filter((name) => selected.has(name));
   const applied =
     outputs.length > 0 &&
     outputs.every((name) => state.readiness.applied.includes(name));
   const phaseComplete = (
     target: "database" | "dialogue" | "advanced" | "variables",
-  ) => {
-    if (target === "database" || target === "dialogue")
-      return translationTaskComplete(state, target);
-    const saved = state.phaseRuns[target];
-    return (
-      (!!saved && completeForSelection(saved, eventFiles)) ||
-      selectionSettled(state, target, eventFiles)
-    );
-  };
+  ) =>
+    target === "database" || target === "dialogue"
+      ? translationTaskComplete(state, target)
+      : translationTaskComplete(
+          state,
+          target,
+          eventTaskFiles(state, target, values.selected),
+        );
   const discovery = state.contextSetup;
   // Plugin files is done once every plugin's player text is translated with
   // nothing waiting to go into the game, and Images once its work reaches the

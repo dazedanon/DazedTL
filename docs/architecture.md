@@ -65,9 +65,9 @@ Preview request shows requests an estimate kept: estimates keep them on connecti
 Closing the preview returns to the same approval.
 Speaker interpretation stays with the user.
 Translate keeps its game text tasks below the shared phase navigation: Database files, Maps & events (including CommonEvents and Troops), and Other event text.
-Database and map task completion aggregates verified per-file progress across their full file groups, independent of checkbox selection.
-The current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
-Event-code and comparison completion retain their reviewed scope checks; current findings reviewed with no source enabled complete Other event text without a run, since nothing in it needs translating.
+Task completion aggregates verified per-file progress across runs through [translationTaskComplete](../app/src/features/guided/translationView.ts), so re-running some files keeps the rest: Database files and Maps & events over their full file groups, independent of checkbox selection, and event codes and comparisons over the selected event files plus every file an earlier run of that step included, so clearing the selection keeps finished work.
+Each file's current owning run must retain complete output or explicit evidence that no requests were needed; active work, partial or missing output, changed sources and retired runs cannot establish completion.
+Current findings reviewed with no source enabled complete Other event text without a run, since nothing in it needs translating.
 Translate is complete only when all its tasks are complete; action and cost reviews remain bound to the selected scope.
 Translate starts a local estimate and follows that exact job once into Live review or local Batch preparation.
 Failed, stopped and stale estimates stop preparation with feedback.

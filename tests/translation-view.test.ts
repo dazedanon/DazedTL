@@ -13,6 +13,7 @@ import {
 import {
   completeForSelection,
   estimateFollowup,
+  eventTaskFiles,
   preparationFollowup,
   estimateRequestCount,
   filePreviewRun,
@@ -719,6 +720,42 @@ test("main-text tasks combine verified files across runs independently of select
       },
       "dialogue",
     ),
+    false,
+  );
+  // Event-code tasks keep finished files when one is re-run or the selection
+  // is cleared, and a newly selected file still needs its run.
+  const events = {
+    ...maps,
+    id: "events",
+    logicalPhase: "advanced" as const,
+    files: ["Map001.json", "Map002.json"],
+    outputs: { "Map001.json": "hash", "Map002.json": "hash" },
+    availableOutputs: ["Map001.json", "Map002.json"],
+  };
+  const rerun = { ...maps, id: "rerun", logicalPhase: "advanced" as const };
+  const eventState = {
+    ...state,
+    files: [
+      ...state.files,
+      { name: "Map002.json", group: "dialogue" },
+      { name: "Map003.json", group: "dialogue" },
+    ],
+    runs: [rerun, events],
+  } as unknown as GuidedState;
+  const eventsDone = (selected: string[]) =>
+    translationTaskComplete(
+      eventState,
+      "advanced",
+      eventTaskFiles(eventState, "advanced", selected),
+    );
+  assert.equal(eventsDone(["Map001.json"]), true);
+  assert.equal(eventsDone([]), true);
+  assert.equal(eventsDone(["Map003.json"]), false);
+  assert.equal(
+    translationTaskComplete({ ...eventState, runs: [rerun] }, "advanced", [
+      "Map001.json",
+      "Map002.json",
+    ]),
     false,
   );
 });
