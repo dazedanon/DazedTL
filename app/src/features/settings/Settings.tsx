@@ -68,6 +68,8 @@ export default function Settings({
   const checked = current?.check;
   const successful =
     checked?.status === "verified" || checked?.status === "reachable";
+  const check = (id: string) =>
+    action.run(() => draft.checkConnection(id), "checked", "check");
   return (
     <PageLayout
       variant="editor"
@@ -137,8 +139,19 @@ export default function Settings({
               running={running}
               checksEnabled={config.checksEnabled}
               save={async (input) => {
-                await draft.saveConnection(input);
-                action.succeed("Connection saved.");
+                const { saved } = await draft.saveConnection(input);
+                const connection = saved.connections.find(
+                  (item) => item.id === saved.activeConnectionId,
+                );
+                // New or changed credentials are checked right away; the
+                // check button reports the result.
+                if (
+                  saved.checksEnabled &&
+                  connection?.check.status === "not_checked" &&
+                  !connection.needsSetup
+                )
+                  void check(connection.id);
+                else action.succeed("Connection saved.");
               }}
               cancel={
                 config.connections.length ? () => setEditor(null) : undefined
@@ -264,19 +277,20 @@ export default function Settings({
                         />
                       </DetailRow>
                     </dl>
-                    <div className="connection-panel-note">
-                      {current.needsSetup
-                        ? "Edit this connection to choose its provider."
-                        : checked?.status === "not_checked"
-                          ? "Check the connection when you are ready. Saving does not contact the provider."
+                    {(current.needsSetup ||
+                      current.check.status !== "not_checked") && (
+                      <div className="connection-panel-note">
+                        {current.needsSetup
+                          ? "Edit this connection to choose its provider."
                           : checked?.message}
-                      {checked?.checkedAt && (
-                        <small>
-                          Last checked{" "}
-                          {new Date(checked.checkedAt).toLocaleString()}
-                        </small>
-                      )}
-                    </div>
+                        {checked?.checkedAt && (
+                          <small>
+                            Last checked{" "}
+                            {new Date(checked.checkedAt).toLocaleString()}
+                          </small>
+                        )}
+                      </div>
+                    )}
                   </section>
                 )}
               </PageBody>
@@ -343,13 +357,7 @@ export default function Settings({
                         : ""
                       : ""
                   }
-                  onClick={() =>
-                    action.run(
-                      () => draft.checkConnection(current!.id),
-                      "checked",
-                      "check",
-                    )
-                  }
+                  onClick={() => check(current!.id)}
                 />
               </ActionBar>
             </>

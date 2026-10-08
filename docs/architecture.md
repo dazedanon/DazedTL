@@ -794,7 +794,7 @@ The Settings editor retains its session while hidden, so returning preserves its
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
 The public preference schema contains language, model, and per-model request/pricing options; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
-Connection checks are explicit model-list requests, with bounded reads, no redirects, and no generated text.
+Connection checks are model-list requests, with bounded reads, no redirects, and no generated text; Settings runs one after saving new or changed credentials, and again on request.
 Provider presets declare their transport protocol independently of their identity.
 OpenRouter keeps the OpenAI-compatible Live request format and has a distinct [Batch transport](../backend/dazedtl/compatibility/openrouter_batch.py), layered onto the engine's Batch provider points.
 Both Guided workers and compiled plans use that adapter, preserving request semantics.

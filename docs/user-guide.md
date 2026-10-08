@@ -165,7 +165,7 @@ Don't edit or delete files inside the backup store by hand; backups share files 
 ## API setup
 
 In **Settings**, choose a provider, paste its API key and save.
-**Check connection** lists the provider's models without generating any text, and **Model** picks one.
+Saving checks the connection by listing the provider's models, without generating any text; **Check again** repeats it, and **Model** picks one.
 **Translation defaults** holds the target language and the advanced options.
 Removing a connection stops its unfinished runs from resuming, so DazedTL tells you how many first.
 
@@ -178,7 +178,7 @@ Removing a connection stops its unfinished runs from resuming, so DazedTL tells 
 
 ### OpenRouter
 
-Save the key, check the connection, then choose or type the full model ID, such as `anthropic/claude-sonnet-4.5`.
+Save the key, then choose or type the full model ID, such as `anthropic/claude-sonnet-4.5`.
 To use one hosting provider, edit the connection and choose **Host**; a chosen host never falls back to another, and **Automatic** lets OpenRouter choose.
 OpenRouter Batches can take up to 24 hours and can't be cancelled once sent.
 **Stop queued work** holds back what hasn't been sent, and **Continue queued work** resumes it.
