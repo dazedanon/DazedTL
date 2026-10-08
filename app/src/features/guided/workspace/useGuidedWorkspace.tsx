@@ -168,6 +168,9 @@ export function useGuidedWorkspace({
     state.runs.find((run) => run.id === inspection?.id),
   );
   const [started, setStarted] = useState<Record<string, Job>>({});
+  // The files each apply from this visit wrote, by job: every translation task
+  // has its own Apply, and one confirms only the files it applied.
+  const [appliedFiles, setAppliedFiles] = useState<Record<string, string>>({});
   // The label each action had when clicked: an install turns its button into
   // Update, but its result still confirms the install.
   const [clickedLabels, setClickedLabels] = useState<Record<string, string>>(
@@ -579,6 +582,11 @@ export function useGuidedWorkspace({
       [actionKey(value.action, value.options)]: result,
     }));
     executed.current = { token: value.token, job: result };
+    if (value.action === "export_selected")
+      setAppliedFiles((previous) => ({
+        ...previous,
+        [result.id]: value.paths.join("\n"),
+      }));
     setPreview(null);
     leaveCheckpoint(value.action);
     if (value.action === "start") {
@@ -764,7 +772,10 @@ export function useGuidedWorkspace({
     const finishedHere =
       current?.status === "complete" &&
       current.id === started[actionKey(name, options)]?.id;
-    const appliedHere = name === "export_selected" && finishedHere;
+    const appliedHere =
+      name === "export_selected" &&
+      finishedHere &&
+      appliedFiles[current.id] === files?.join("\n");
     // Applying fitting closes its review and the page returns to scanning,
     // so the scan control confirms an apply from this visit.
     const fittingApplied = operationJob("rewrap_apply");

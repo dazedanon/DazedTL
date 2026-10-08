@@ -664,6 +664,9 @@ async function translateTask(page, task, check) {
   await page.click("Start Live translation", 5 * 60_000);
   await page.waitText("Run finished.", 5 * 60_000);
   await page.shot(`${task.toLowerCase().replace(/\W+/g, "-")}-translated`);
+  // Another task's apply must not confirm this one's.
+  if ((await page.text()).includes("Saved translations applied."))
+    throw new Error(`${task} reports applied translations before applying.`);
   await page.click(/^Apply \(\d+\)$/);
   await page.click("Apply reviewed files");
   await page.waitText("Saved translations applied.");
