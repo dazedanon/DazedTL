@@ -1,324 +1,204 @@
 # Using DazedTL
 
-This guide covers the app's workflows.
-For setup and current limitations, see the [README](../README.md).
+This guide explains how to translate a game with DazedTL.
+To install it, see the [README](../README.md).
 
-## Open a game
+## The basics
 
-Choose **Open a game** on the Project page and select the game folder.
-A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ace games, or [Assistant-led](#assistant-led) for any game.
-**Translation** in the sidebar then opens that method.
-**Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
-The Project page's **Status** shows the next unfinished task and every stage's tasks.
-**Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
-Optional tasks say **Optional** until they are done, and they never hold up the next step.
-Check and Release hold only optional tasks, so each stage counts as done once you open it after the required tasks.
-The Project page's **History**, **Game updates** and **Backups** tabs serve both methods.
-The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
+- **Projects.** Every game folder you open is a project.
+  Open one with **Open a game** on the Project page.
+- **Two methods.** A new game asks how to translate it: **Guided steps** for RPG Maker MV, MZ and VX Ace, or [Assistant-led](#assistant-led) for any game.
+  **Change method** on the Project page switches later and keeps the other method's work.
+- **Your assistant.** Many steps copy a task for your AI coding assistant, such as Claude Code or Codex.
+  Paste it into the assistant and keep DazedTL open; the results show up in DazedTL by themselves.
+  Copying a task only uses the clipboard and never starts paid work.
+- **Costs.** Anything that uses your API key shows a cost estimate first, and nothing is charged until you approve it.
 
-A project belongs to the game folder's location, so a moved or copied game, a new profile or a reinstall opens the folder as a new project.
-Plugin files and Images then show the work another project saved there and change nothing until you choose; until then the Project page and their tabs mark them **Needs review**.
-**Use saved progress** keeps findings, choices, working and edited copies, reviews and applied files.
-Tasks copied in the other project are not accepted, so copy the task again to continue; plugin translations that are not applied yet are checked again by that task.
-Applied images stay restorable, and so do applied plugin files whose saved backups still match; an Apply or Restore that was interrupted can only be finished in the project it belongs to.
-**Start over** moves the saved work to `.dazedtl/archived` under a dated name and starts fresh.
-Applied files stay in the game but can no longer be restored from the task, and applied images leave patch ZIPs.
-Set up likewise reuses the backup of the original the game folder already holds instead of saving its current files, which may already contain translations; **Back up current files instead** saves them as the original after a review.
+## The Project page
 
-## Translation workflow
+**Status** shows what comes next.
+**Continue** (**Start** for a new game) opens the next unfinished task, and **Last opened** returns to the one you left.
+Optional tasks say so and never hold up the next step.
+
+**Assistant tasks** lists the tasks you copied to your assistant and where each one stands; the count in the top bar opens it.
+**Dismiss** clears a task you gave up on, and copying it again brings it back.
+
+The other tabs are **History** (runs, estimates and other activity), **Game updates** and **Backups**.
+
+Lists everywhere use the same words:
+
+| Word | Meaning |
+| --- | --- |
+| **Waiting** | The task is with your assistant. |
+| **Needs review** | Results need your decision. |
+| **Ready to apply** | Results are ready to go into the game. |
+| **Applied** | The results are in the game. |
+| **Done** | Finished work that doesn't change the game. |
+| **Outdated** | Something it was based on changed; redo it. |
+| **Blocked** | It can't continue; the detail beside it says why. |
+
+A project belongs to its folder, so a moved or copied game opens as a new project.
+Plugin files and Images then offer **Use saved progress** to keep the earlier work, or **Start over**.
+
+## Guided steps
 
 Translation follows five stages: **Set up → Context → Translate → Check → Release**.
-Each stage opens one focused task, and you can move between tasks without finishing them.
-Optional tasks say so on their tab.
-Existing projects reopen on the task that now holds their work.
-Alt+Left and Alt+Right (Option on macOS) move to the previous or next task, and Ctrl+S (Cmd+S) saves Guidance, Line widths and Settings.
-Navigation never starts paid work.
-Every list uses the same words for where work stands: **Not started**, **Working**, **Waiting** (with your assistant), **Needs review**, **Ready to apply**, **Applied**, **Done** (finished work that does not change the game), **Outdated** (what it was based on changed), **Blocked** and **Skipped**.
-The detail beside each says why.
+You can move between tasks at any time; Alt+Left and Alt+Right (Option on macOS) step through them, and Ctrl+S (Cmd+S) saves Guidance, Line widths and Settings.
 
-### Assistant tasks
+### 1. Set up
 
-Tasks you copy to a coding assistant, such as Names & glossary, Line widths, Other event text, Plugin files, Images, Text QA and the player walkthrough, are listed under **Assistant tasks** on the Project page, and the count in the top bar opens that list.
-Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed before its results went into the game, or **Blocked** with the reason.
-Once a task's results are applied, later edits to the game, by hand or by other tasks, leave it as it was.
-Finished tasks leave the list; their results stay in their own task.
-**Dismiss** clears a task you abandoned, so its task reads **Not started** again; saved results are kept, and copying the task again brings it back.
-Image results your assistant saved are imported and checked when you return to the DazedTL window, and every few seconds while an image task waits; other tasks show their saved results as soon as they appear.
+**Set up this game** asks for the game's version and whether it already contains translations.
+It then backs up the original, prepares the game files and starts version tracking, so later game updates can be merged.
+If a step fails, the reason appears beside the button and **Finish setup** carries on.
+**Preparation tools** reruns a single step.
 
-### Set up
+### 2. Context
 
-**Set up this game** asks for the game version and whether the game already contains translations.
-Its one button backs up the original, prepares the game files (data, `plugins.js` and GameUpdate files) and saves the version, showing each step's progress.
-The saved version sets up Git so later game updates can be compared and merged.
-Changes to the game wait while its folder is on another Git branch or has an unfinished Git operation; every task names the problem until you switch back to the translation branch or finish the operation.
-If a step fails or you stop it, the reason appears beside the button, and **Finish setup** continues from that step.
-Replacing a missing backup still asks for your approval first.
-**Preparation tools** reruns a single preparation step.
+**Names & glossary**: copy the task to your assistant.
+It finds the speakers, lists the names with a free local scanner, and writes the glossary, character notes and game context.
+Edit what it wrote in **Guidance**.
+**Add game folder** lets an earlier game in a series supply terms; copy the task again afterwards.
 
-### Context
+**Line widths** fills in from your assistant's measurements, and you can change them.
 
-In **Names & glossary**, use **Copy names & glossary task** and paste it into your coding assistant.
-The assistant identifies speaker formats, runs the local name scanner, then investigates the glossary, characters, voice and game context.
-The scanner makes no API requests.
-**Add game folder** includes an earlier game as a read-only terminology reference in the next copied task.
-Re-copy the task after changing reference folders.
-**View names** opens the saved scan, and **Speaker detection** holds speaker rules and overrides.
-Optional **Translate names with API…** in the name scan opens the paid review directly, using the project's Batch or Live choice.
-Edit the resulting files in **Guidance**.
-Measured line widths are saved automatically when the assistant reports them; **Line widths** shows them and allows manual changes.
+### 3. Translate
 
-### Translate
+Translate has five tasks.
 
-Translate has five tasks: **Database files**, **Maps & events**, **Other event text**, **Plugin files** and **Images**.
-All supported files start selected.
-Translate database names first, then maps, CommonEvents and Troops; narrow the scope to test an early scene.
-The file selector supports search, groups, map names, Ctrl/Cmd toggles and Shift ranges, and filtering keeps checked files.
+**Database files** and **Maps & events** translate with your API key:
 
-The file list's **Lines** shows the lines saved of the lines the latest run prepared; while a Live run works it shows the lines saved so far.
-The Project page totals lines translated, files applied and the recorded cost.
-Each **Translate** click prepares a fresh local estimate and opens the cost review.
-Nothing is charged until you approve it, and declining discards the preparation.
-If the estimate finds no new API requests, the result says so and no charge occurs.
-Saved runs never block a new translation; the cost review warns about possible duplicate charges when earlier requests overlap.
+1. Pick the files; all of them start selected.
+   Translate the database first, and try a small early scene before the rest.
+2. Choose **Batch** (often half the price, but can take hours) or **Live** (results arrive as you watch), and the model.
+3. Click **Translate**, check the estimate and approve it.
+4. Click **Apply** to write the translations into the game.
 
-Batch work pauses for cost approval before submission.
-An approved, unchanged Batch queue continues after reopening the app or a dropped connection, skipping requests the provider already received.
-Cancellation and newer overlapping approvals stop automatic continuation.
-Files with active or unresolved Batch work are locked against source reloads.
+Approved Batch work carries on after DazedTL restarts.
+**Reload from game…** starts selected files over from the game's current text.
 
-**Other event text** investigates variables, plugin commands, scripts and labels before translation.
-Your assistant applies its findings itself: confirmed codes, variable IDs, plugin handlers and script patterns turn on, and uncertain or mixed coverage stays off.
-**Source choices** shows the result; change any source there, or choose **Use recommendations** to go back to the findings' choices.
-When the findings leave nothing to translate, the task is done.
-Applied findings stay current when the game or its plugins change later; selecting event files they did not cover reads **Outdated** until you copy a new investigation.
-Translate audited assignments first, then review and update comparisons from their saved mappings.
+**Other event text**: copy the investigation to your assistant.
+It finds which variables, plugin commands and scripts hold text players see and turns those on.
+Change any choice under **Source choices**, then translate like the other files.
 
-**Plugin files** is one assistant task: the assistant checks every plugin for text players see and translates it with the glossary, guidance, the game's translated text and any reference games.
-It keeps going through every plugin file on its own, and the task panel shows how many files are checked and translated.
-You don't review plugin files or strings; **Review & apply** shows what goes into the game.
-The task is done once every plugin's player text is translated with nothing waiting to apply.
-Copying the task again continues where the assistant stopped, and once everything is done it has the assistant recheck its decisions, for example after you find untranslated plugin text in the game.
-A plugin file edited after its translation is applied, or one with nothing to translate, keeps its state; a plugin that changes while its translation waits to be applied reads **Outdated** until you copy the task again.
-A plugin file the app can't read, such as one not saved as UTF-8, stays unchanged and keeps the task **Blocked** until you fix it or choose **Keep unchanged**.
+**Plugin files**: copy the task to your assistant, which finds and translates the player-visible text in every plugin.
+**Review & apply** shows what goes into the game.
+Copy the task again to continue, or to have it recheck after you spot untranslated plugin text.
 
-**Options** holds task settings and opens the translated folder.
-**Reload from game…** beside the file list replaces the checked working files with the current game files.
-Reloading archives previous working copies and their cached results.
+**Images** has four steps, and the filled button is always the next one:
 
-### Run history and inspection
+1. **Investigate**: copy the task; your assistant recommends the images with text players read.
+2. **Choose**: recommended images arrive ticked; untick any, or tick others under **Unsure** or **All images**.
+3. **Translate**: copy the translation task; your assistant edits copies of the ticked images.
+4. **Apply**: check the results, ask your assistant to redo any, then click **Apply to game**.
 
-The Project page's **History** lists approved runs, including failed and canceled ones, estimates and other project activity.
-**Run history** on a Translate task shows that stage's runs over the task; close it to return to your files.
-When the latest run failed, or a Batch could not be confirmed as sent, a banner above the files says why.
-Its close button hides it until that run reports a different reason; the run stays in history.
-**Inspect**, or a file's inspect icon, opens the request inspector.
-**Source** shows prepared text and matched context, **Response** shows the reply or error, and **Technical** shows token usage, the exact API payload and the run log.
-**File contents** shows the file's current text even when no request was prepared.
-A complete Live or Batch run can reapply its saved output to the game through the usual Apply review; Live runs offer **Reapply output** in the inspector header.
-The inspector also holds Batch controls: provider cancellation, queue continuation and collection recovery.
-Re-applying output or resuming a run from History opens its review in Translation.
-Finished responses, including partial results from canceled Batches, stay available for collection.
+Clicking an image only previews it; its tick box, Space or Ctrl-click ticks it, and **Compare** shows the original beside the edited copy.
 
-Files with validation problems show a warning.
-Open Inspect and choose **Review issues** to go to the request that needs attention: an unconfirmed submission first, then a rejected one with the provider's reply.
-Valid translations are kept, and rejected lines keep their original text until the next Translate.
-Older duplicate menu-choice responses appear under **Unused** when the app can show which response supplied the saved text.
+**When something fails.** A banner above the files explains a failed run, and **Run history** lists the task's runs.
+**Inspect** shows each request's text, the AI's reply and the technical details.
+Files with problems show a warning; **Review issues** jumps to them.
+Lines the AI got wrong keep their original text until you translate again.
 
-### Images
+### 4. Check
 
-The Images task in Translate is the Image Manager, the same one Assistant-led shows in its **Images** tab.
-It has four steps, shown in its **Image translation** panel, and the footer's filled button is always the next one:
+Both Check tasks are optional:
 
-1. **Investigate**: **Copy investigation task** and paste it into your coding assistant, which examines the images and recommends the ones with text players read.
-2. **Choose**: the recommended images arrive ticked, and **To translate** shows them; untick any to leave out, or tick others from **Unsure** or **All images**.
-3. **Translate**: **Copy translation task** makes the editable copies of the ticked images and copies the task; your assistant translates them.
-4. **Apply**: look the results over, and ask your assistant in its own chat for anything to redo; **Apply to game** reviews and writes the translated images in the list.
+- **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
+- **Text QA**: copy the task, and your assistant reviews the translated text.
 
-A click on an image only previews it, so looking never changes the list; its tick box, Ctrl/Cmd-click or Space ticks or unticks it, and Shift-click or Shift with the arrow keys ticks a range.
-**Select** ticks or unticks every image shown, as Ctrl+A (Cmd+A) ticks them.
-The folder list is a tree: choosing a folder shows all of its images, its subfolders' too, and its number counts them; the view numbers follow the chosen folder and search.
-In **To translate**, an image you untick stays in view until you change the view, so you can tick it again.
-The viewer beside the panel shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
-**More** holds investigating the images not yet examined, the text editor, scanning for new images and restoring originals.
-Copying a task only uses the clipboard; it does not start an assistant or provider work.
-An edited copy saved in another image editor is checked again when you return to DazedTL.
-The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
-The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
-Applied images stay marked **Applied**, and later investigations and translation tasks skip them unless the game's image changes.
-Images is done once its translated images are applied, or once an investigation leaves nothing ticked; an image still in the list, or one you tick later, can go through another round with **Copy translation task**.
+**Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
+Apply and playtest an early scene before translating everything.
 
-### Check
+Applying replaces the game's files with the translations.
+If you edit a file in the game afterwards, applying it again replaces your edits, and the review names those files.
+If applying stops midway, **Review restore** puts the files back.
 
-Check has two optional tasks: **Line width check** and **Text QA**.
-Each task applies its own work: **Apply** in a text task, **Review & apply** in Plugin files and Text QA, **Apply rewraps** in Line width check, and **Apply to game** in Images.
-A review that did not apply leaves the game unchanged, and **Review again** prepares a new one.
-If an apply stops midway, every task shows a notice whose **Review restore** puts back what was there before, unless the files changed since.
-Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
-A file stays **Applied** after you edit it in the game, by hand or through Line widths or QA fixes; applying it again replaces those edits, and the Apply review names such files.
-**Reload from game…** starts a file over from the game's version.
-You can apply saved partial translations while Batch work continues.
-Untranslated text stays as saved, and later results need another Apply.
-**Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.
-Its summary shows the widths, files and checked text, and **Edit settings** chooses the text areas, the event commands and whether fixed-size text, such as descriptions and profiles, is skipped when it would need more rows than its window shows.
-The check lists each rewrap with its text now and rewrapped, then any skipped text with the rows it would need.
-Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event commands.
-**Playtest tools** in the task header installs or updates TL Inspector and Forge for MV/MZ and holds their settings; for Ace, the header offers **Review native Ace packing** so the game reads the applied text.
-Apply and playtest an early scene before expanding the scope.
+### 5. Release
 
-### Release
-
-**Release** builds a clean game ZIP or a local patch ZIP.
+**Release** builds a clean game ZIP or a patch ZIP with only the changed files.
+Save it outside the game folder.
+Translations that aren't in the game yet need **Apply** first.
+The ZIP shows **Outdated** once the game changes; build it again to include the changes.
 **Player walkthrough** copies an optional task for your assistant to write a walkthrough for players.
-A patch build saves a translation version and a project backup first; a clean game ZIP leaves the working game untouched.
-Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
-With no translation applied yet, the footer notes that the ZIP keeps the original text.
-Selected files with saved output not yet in the game hold the build until **Apply** in Release writes them.
-The last saved ZIP shows **Done** while it matches the game and **Outdated** once the game's runtime files change or another image is applied; build again to include later changes.
-A ZIP saved by an earlier DazedTL version is not compared until you build it again.
-The app checks the package contents and finished archive before offering its folder; these checks do not mean the game passed QA.
-GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the app never publishes or pushes.
 
-### RPG Maker Ace
+### RPG Maker VX Ace
 
-Ace adds archive extraction, JSON conversion and native repacking around the same stages, built in on every platform.
-Set up's **Convert Ace data** step extracts an encrypted `Game.rgss3a` and converts `Data` to `ace_json` in Sinflower's RV2JSON format, with the equipment type names added for translation.
-**Review native Ace packing** in Check's header or in Release writes the translated JSON back into `Data`; the original stays in Set up's backup.
-Release verifies saved packing evidence against the current JSON and native files.
-
-An encrypted game reads only its archive while one sits beside `Game.exe`, so Set up moves `Game.rgss3a` into `.dazedtl/ace` once its files are extracted.
-The game in its folder then plays the translated files, and the clean game ZIP ships them unencrypted.
-A patch ZIP for an encrypted game carries `Game.rgss3a` rebuilt with the translated files, so players replace one archive.
-GameUpdate delivers loose files, which an encrypted game ignores, so share a new patch for each update instead.
+Set up's **Convert Ace data** unpacks an encrypted `Game.rgss3a` and converts the game data so it can be translated.
+**Review native Ace packing**, in Check or Release, writes the translations back.
+A patch ZIP for an encrypted game carries a rebuilt `Game.rgss3a`, so players replace one file.
+GameUpdate can't update an encrypted game, so share a new patch for each update instead.
 
 ## Assistant-led
 
-Assistant-led runs translation through a coding assistant using Len's game-translation skills bundled with the engine, with Agent, Live API and API Batch execution.
-Select a translation mode, set the image scope and project instructions, then copy the starting prompt into a coding assistant with access to the game and engine checkout.
-Keep DazedTL open: the prompt's project helper uses the running app to save state and control jobs.
-The same prompt resumes saved work.
-DazedTL shows the assistant's saved reports; it does not host or keep the assistant running.
+1. Choose a mode: **Agent Translation** (your assistant translates by itself), **Live API Translation** or **API Batch Translation** (your API key, with an estimate to approve).
+2. Set which images to include and any instructions for your assistant.
+3. **Copy starting prompt** and paste it into your assistant.
+   It needs access to the game folder and the DazedTL folder.
+4. Keep DazedTL open while it works.
+   The same prompt picks up saved work later.
 
-The helper preserves the selected source, sets up the original and translation Git branches, records the game version and prepares shared guidance before compiling requests.
-For engines other than RPG Maker, extraction, line fitting, native reconstruction and runtime QA remain the assistant's work through the bundled skills and tools.
-Guided steps work on the same game keeps its recovery path when you switch the method back.
-Resume an unfinished API run before starting another phase or estimate so its provider work stays attached.
-
-API runs require reviewing the complete request set and cost estimate.
-Inspect context, source text and accepted outputs in the Project page's **History**.
-Each line shows its text type and known or unknown speaker; source ambiguities appear as review notes beside the translation.
-Check those notes against the source before marking the request source-checked; a correction makes that review pending again.
-Pausing a Batch run stops local polling, and **Cancel provider batch** requests cancellation while keeping completed results.
-An uncertain submission is never retried automatically; reconcile its provider job or review the uncertain Live request before preparing another quote.
-Manual version and patch controls are under **Advanced setup & patch tools**.
+Follow progress and check the translations in the Project page's **History**.
+Notes beside a translation flag text the AI wasn't sure about; check them against the original.
 
 ## Game updates
 
-For a new official release, the Project page's **Game updates** stages a separate copy for comparison.
-Finish any engine-specific preparation of that copy, preview the changes, then apply the update.
-**Discard release** drops a staged release you decide against; its preserved copy stays in **Backups**.
-Each step appears under **History → Other activity**, where **Inspect** shows its saved result and log.
-**Backups & recovery** on that tab opens the **Backups** tab.
-Ordinary MV/MZ writes keep the existing Japanese in `_original`.
-Rebasing source metadata after an update requires the exact current original-branch bytes and commit.
-Native formats use their engine's source and injection sidecars.
-Keep the selected game available throughout the work.
+When a game gets a new official version, open **Game updates** on the Project page.
+It sets the new version up as a separate copy, previews the changes, then applies the update to your translation.
+**Discard release** drops an update you don't want.
 
 ## Backups and recovery
 
-DazedTL keeps two kinds of history: **Backups** are copies of the game or project files you can restore, and **Versions** are the Git history of the original game and the translation, used to merge game updates.
-Working records and guidance stay in the game's `.dazedtl` folder, which is kept out of Git and release packages.
-Git tracks the runtime patch and matching originals.
-Backups live in `.dazedtl/backups/v2`, where unchanged files are stored once.
-Keep that folder with the game when moving it.
-Older full-copy backups in the app workspace remain readable and are never deleted automatically.
+The Project page's **Backups** saves copies of the game and of your project files.
+**Recover files…** restores a copy into a new folder; it never overwrites anything.
+Backups live in the game's `.dazedtl` folder, so keep that folder with the game when you move it.
 
-The Project page's **Backups** saves game and project backups and opens their folders.
-The original backed up during setup stays the original; the **Game files** row shows the latest game backup.
-**Recover files…** restores a chosen copy into a new folder outside the game; existing folders are never overwritten.
-Game backups restore game files.
-Project backups restore the contents of `.dazedtl`, such as guidance, accepted translations, custom tools and image work, but not the backup store itself.
-Connections, app-owned runs and their provider state stay in the app profile.
-A deleted or unreadable backup shows as unavailable; saving a new one captures the current files and does not recover the original.
-After a successful game backup, references to deleted project backups and engine investigations are archived automatically.
-
-If the app profile is unavailable, inspect and restore the store from a DazedTL checkout:
+If DazedTL itself can't open, these commands, run from the DazedTL folder, list, check and restore backups; your coding assistant can run them for you.
+On Windows, use `.venv\Scripts\python` instead of `.venv/bin/python`.
 
 ```bash
-python scripts/backups.py --game "/path/to/game" list
-python scripts/backups.py --game "/path/to/game" verify --id SNAPSHOT_ID
-python scripts/backups.py --game "/path/to/game" restore --id SNAPSHOT_ID --destination "/path/to/new-recovery-folder"
+.venv/bin/python scripts/backups.py --game "/path/to/game" list
+.venv/bin/python scripts/backups.py --game "/path/to/game" verify --id SNAPSHOT_ID
+.venv/bin/python scripts/backups.py --game "/path/to/game" restore --id SNAPSHOT_ID --destination "/path/to/new-recovery-folder"
 ```
 
-Add `--legacy-backups "/path/to/old/workspace/backups/PROJECT_ID"` before the command to include older full-copy backups.
-Do not edit the store's objects or remove snapshot files manually; several backups can share the same content.
+Don't edit or delete files inside the backup store by hand; backups share files with each other.
 
 ## API setup
 
-In Settings, choose a provider, paste its API key and save the connection.
-**Check connection** requests the provider's model list without generating text.
-Choose the connection's model from **Model** on its Settings panel, on Translate or in Assistant-led; the menu lists the models the last check found and also accepts a typed model ID.
-**Translation defaults** holds the target language and the advanced model options.
-**Remove…** deletes the connection and its saved key, and another saved connection becomes active.
-Unfinished runs that used it can no longer resume or collect their Batches, so the confirmation counts them and asks you to remove it anyway.
+In **Settings**, choose a provider, paste its API key and save.
+**Check connection** lists the provider's models without generating any text, and **Model** picks one.
+**Translation defaults** holds the target language and the advanced options.
+Removing a connection stops its unfinished runs from resuming, so DazedTL tells you how many first.
 
-**Advanced model options** sets per-connection and per-model request options, and new runs keep the values they started with:
+**Advanced model options** apply to new estimates:
 
-- Requests start at 50 entries each, with a custom override.
-- **Output token allowance** defaults to 32,768 tokens per request, lowered to a known model or host limit.
-  It covers reasoning and visible output where the provider shares that budget, and it is a maximum, not a target.
-- For OpenAI, **Batch token allowance** caps estimated input tokens across active Guided Batches on the same connection and model.
-  Override its conservative default with the model's Batch queue limit from [OpenAI Limits](https://platform.openai.com/settings/organization/limits), and leave headroom for other jobs on the account.
-- Estimate rates are automatic when the catalog or built-in table knows the model.
-  Unknown prices need custom rates, and 0 is allowed for free models.
-
-Custom Batch rates can be set when needed; they do not make an unsupported model or host eligible.
-Saved runs keep their original options; prepare a fresh estimate to use new values.
-Settings carried over from the older app are backed up, and connections with an unknown provider need your review.
+- Requests send 50 lines each by default.
+- **Output token allowance** caps each reply at 32,768 tokens, or less when the model allows less.
+- For OpenAI, **Batch token allowance** caps how much Batch work runs at once; raise it to your account's limit from [OpenAI Limits](https://platform.openai.com/settings/organization/limits).
+- Prices come from the model catalog; models it doesn't know need your own rates, and 0 is fine for free models.
 
 ### OpenRouter
 
-Save an OpenRouter API key, check the connection, then choose or enter the full model ID (such as `anthropic/claude-sonnet-4.5`) from **Model** on the connection panel.
-Live prices load when you open model options or prepare an estimate, including the selected host's rates.
-**Check connection** caches your account's model catalog, and saving a different model or host checks its Batch endpoints and prices automatically.
-**Check again** refreshes the catalog or retries a failed check.
-
-To choose a hosting provider, choose the model first, then edit the connection and choose **Host**.
-**Refresh hosts** reloads the list.
-**Automatic** lets OpenRouter choose among compatible endpoints; a selected host is exclusive, so an unavailable host returns an error instead of falling back.
-The host list is public and does not override your account's privacy or routing restrictions.
-
-New runs request strict [Structured Outputs](https://openrouter.ai/docs/guides/features/structured-outputs), and incompatible endpoints fail instead of switching to plain JSON.
-OpenRouter's [Batch API](https://openrouter.ai/docs/batch-quickstart) uses a 24-hour window and cannot cancel submitted work.
-**Stop queued work** prevents further submissions while submitted work continues, and **Continue queued work** resumes the unchanged approved queue.
-Results missing from a finished or expired provider record stay blocked for inspection or **Retry collection**; they are never resubmitted automatically.
-Downloaded responses stay available locally after the provider's retention expires.
-**Technical** shows collected OpenRouter charges separately from any separately billed BYOK inference estimate.
+Save the key, check the connection, then choose or type the full model ID, such as `anthropic/claude-sonnet-4.5`.
+To use one hosting provider, edit the connection and choose **Host**; a chosen host never falls back to another, and **Automatic** lets OpenRouter choose.
+OpenRouter Batches can take up to 24 hours and can't be cancelled once sent.
+**Stop queued work** holds back what hasn't been sent, and **Continue queued work** resumes it.
+Results missing from a finished Batch wait for **Retry collection** and are never sent again automatically.
+Results DazedTL has downloaded stay available after OpenRouter deletes its copy.
 
 ## Updates
 
-DazedTL checks its download sites for a new release once a day and downloads it in the background.
-**Settings > Updates** shows the installed version and where updating stands, and Settings gets a dot when an update is ready.
-**Restart to update** saves your work, closes DazedTL and reopens it on the new version; an update also installs the next time DazedTL starts.
-It waits while a translation run is in progress.
-Projects, settings, credentials and runs are kept, and every file of an update is checked against the release's signature before anything changes.
-If an update cannot be installed, DazedTL puts the earlier files back, starts the version you had and says why under Updates.
+DazedTL checks for a new version once a day and downloads it in the background.
+When one is ready, Settings shows a dot; **Settings > Updates** has **Restart to update**, which waits while a translation is running.
+Projects, settings, API keys and runs are kept, and every file is checked against the release's signature first.
+If an update fails, DazedTL keeps the version you had and says why.
 
-**Go back to** restores the version before the last update when DazedTL restarts, and **Keep** cancels that.
-Automatic checks then skip the version you went back from until a newer one is released; **Check for updates** installs it again.
-The **Beta** channel also offers test releases before they reach everyone.
-A copy cloned with Git is updated through Git instead.
+**Go back to** returns to the previous version after a restart, and **Keep** cancels that.
+The **Beta** channel offers test versions early.
 
-## Diagnostics
+## When something goes wrong
 
-**Copy diagnostics** in the sidebar copies the app versions, the release or checkout revision, whether its files were changed, and recent unexpected failures, even when the backend cannot start.
-Errors the app explains on screen are not recorded, so include that message when reporting one.
-Diagnostic logs live in the profile's `diagnostics/` folder; the desktop and backend logs are each capped at three 64 KiB files.
-They exclude credentials, request bodies, game text and raw error output.
+**Copy diagnostics** in the sidebar copies the app's version and recent errors for a problem report.
+It never includes API keys, game text or what was sent to the AI.
+Errors explained on screen aren't recorded, so include that message too.
 
-If a view fails, its recovery panel offers **Try again**, **Copy diagnostics** and **Reload interface** while navigation stays available.
-Retry and reload save pending recovery drafts first; a failed save keeps the action blocked and retryable.
-If the interface freezes or exits, a dialog offers to wait, copy diagnostics or reload.
-Reloading keeps the backend and running jobs, and recovery never resubmits the failed action.
-
-Project-format upgrades keep the original `projects.json` in the workspace `backups/` folder.
-To restore one, close the app, keep the current file, and copy the chosen backup to `projects.json` using an app version that supports that format.
+If a page fails, its panel offers **Try again** and **Reload interface**; reloading keeps running translations going.
