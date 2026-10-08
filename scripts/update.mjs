@@ -622,8 +622,10 @@ if (import.meta.main) {
   const say = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
   try {
     if (command === "status") say(status());
-    else if (command === "seen") fs.rmSync(folders().result, { force: true });
-    else if (command === "check") {
+    else if (command === "seen") {
+      fs.rmSync(folders().result, { force: true });
+      say({ seen: true });
+    } else if (command === "check") {
       const found = await latest({
         channel: value === "beta" ? "beta" : "stable",
       });
