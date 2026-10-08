@@ -29,7 +29,7 @@ const parts: Record<
 > = {
   plugins: { title: "Plugin files", one: "plugin file" },
   images: { title: "Images", one: "image" },
-  rewraps: { title: "Rewrapped lines", one: "line rewrap" },
+  rewraps: { title: "Rewrapped lines", one: "rewrap" },
   qa: { title: "QA fixes", one: "QA fix", many: "QA fixes" },
 };
 

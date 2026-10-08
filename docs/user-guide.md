@@ -149,7 +149,7 @@ Images is done once its translated images are applied, or once an investigation 
 ### Check
 
 Check has two tasks: **Line width check** and the optional **Text QA**.
-Each task applies its own work: **Apply** in a text task, **Review & apply** in Plugin files, Line width check and Text QA, and **Apply to game** in Images.
+Each task applies its own work: **Apply** in a text task, **Review & apply** in Plugin files and Text QA, **Apply rewraps** in Line width check, and **Apply to game** in Images.
 A review that did not apply leaves the game unchanged, and **Review again** prepares a new one.
 If an apply stops midway, every task shows a notice whose **Review restore** puts back what was there before, unless the files changed since.
 Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
@@ -158,7 +158,9 @@ A file stays **Applied** after you edit it in the game, by hand or through Line 
 You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
 **Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.
-Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event codes.
+Its summary shows the widths, files and checked text, and **Edit settings** chooses the text areas, the event commands and whether fixed-size text, such as descriptions and profiles, is skipped when it would need more rows than its window shows.
+The check lists each rewrap with its text now and rewrapped, then any skipped text with the rows it would need.
+Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event commands.
 **Playtest tools** in the task header installs or updates TL Inspector and Forge for MV/MZ and holds their settings; for Ace, the header offers **Review native Ace packing** so the game reads the applied text.
 Apply and playtest an early scene before expanding the scope.
 

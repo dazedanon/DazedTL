@@ -1072,31 +1072,23 @@
   padding: 0;
   margin: var(--space-2) 0;
 }
-.text-fitting-settings {
-  display: grid;
-  gap: var(--space-3);
-  margin: var(--space-3) 0;
-}
-.text-fitting-settings label:not(.toggle) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
 .text-fit-results,
 .text-qa-results {
   margin-top: var(--space-5);
 }
-.text-qa-results-heading {
+/* A Check result's heading: its count, then its own controls at the end. */
+.check-results-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-2);
 }
-.text-qa-results-heading h3 {
+.check-results-heading h3 {
   margin: 0 auto 0 0;
 }
-.text-qa-findings {
+.text-qa-findings,
+.text-fit-changes {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1143,18 +1135,46 @@
   color: var(--color-muted);
   text-decoration: line-through;
 }
-.text-fit-results details {
-  margin: 0;
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border);
+/* Each rewrap names where it is and its rows, then shows the text now and
+   rewrapped; a skipped message keeps only its heading and reason. */
+.text-fit-changes > li {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
 }
-.text-fit-results pre {
+.text-fit-changes > li + li {
+  border-top: 1px solid var(--color-border);
+}
+.text-fit-change-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-control);
+}
+.text-fit-change-heading small {
+  color: var(--color-muted);
+  font-size: var(--font-small);
+}
+.text-fit-change {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
+.text-fit-change dt {
+  color: var(--color-muted);
+}
+.text-fit-change dd {
+  margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: inherit;
-  padding: var(--space-3);
-  background: var(--color-inset);
-  border-radius: var(--control-radius);
+}
+.text-fit-change dd:first-of-type {
+  color: var(--color-muted);
 }
 .guided-sheet small {
   overflow-wrap: anywhere;

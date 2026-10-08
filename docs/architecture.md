@@ -470,6 +470,7 @@ Headings and emphasis are semibold, row titles medium, and everything else regul
 Each region has one heading: a page title, then section or panel headings, never a stack of headings before content; headings inside a dialog body sit a step below the dialog title.
 Paragraphs and notes in page and dialog bodies stop at `--measure`, about 72 characters; tables, editors, grids and row labels keep the width their layout gives them.
 Form fields stack their label above the control; Settings and dialog forms, where many short fields line up, use a label column.
+Related checkboxes share one label in [CheckGroup](../app/src/ui/FieldRow.tsx) and line up in columns instead of stacking as separate fields; a count that completes a choice's sentence, such as a row limit, sits inline in it.
 Choices and short values are at most 24rem wide; paths, search and free text use the wide variant.
 Buttons, single-line inputs and selects share `--control-height` and `--control-radius`, so a field and its button line up; textareas keep their own height, and the shell's sidebar and project switcher size themselves as chrome.
 Spacing comes in the 4px `--space-*` steps: 8 inside a group, 16 between rows and 24 to 32 between sections; `--space-half` only nudges small marks into place, and 1px only aligns borders.

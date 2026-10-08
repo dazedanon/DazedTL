@@ -90,6 +90,43 @@ export function CheckField({
     </div>
   );
 }
+/**
+ * Related checkboxes under one label, laid out like a field row: the label
+ * above them on pages and in the label column in dialogs. Choices that read
+ * as one list wrap into columns; `stacked` keeps one choice per line.
+ */
+export function CheckGroup({
+  id,
+  label,
+  help,
+  stacked = false,
+  children,
+}: {
+  id: string;
+  label: string;
+  help?: string;
+  stacked?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="field-row"
+      role="group"
+      aria-labelledby={`${id}-label`}
+      aria-describedby={help ? `${id}-help` : undefined}
+    >
+      <span className="field-label" id={`${id}-label`}>
+        {label}
+      </span>
+      <div className="field-control">
+        <div className={`check-group${stacked ? " check-group--stacked" : ""}`}>
+          {children}
+        </div>
+        {help && <small id={`${id}-help`}>{help}</small>}
+      </div>
+    </div>
+  );
+}
 export function DetailRow({
   label,
   className = "",

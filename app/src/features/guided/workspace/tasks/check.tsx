@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { textLocation } from "../../textLocation";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
-import { CheckField, FieldRow } from "../../../../ui/FieldRow";
+import { FieldRow } from "../../../../ui/FieldRow";
 import { sentence } from "../../../../ui/displayText";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -12,6 +12,7 @@ import {
   type AssistantTaskState,
 } from "../../../../ui/AssistantTask";
 import { HelpPopover } from "../../../../ui/HelpPopover";
+import { fittingCodes, fittingSummary } from "../../FittingSettings";
 import { Notice } from "../../../../ui/Notice";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 
@@ -22,7 +23,6 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     setPanel,
     baseline,
     layoutFiles,
-    editForm,
     editText,
     disabled,
     task,
@@ -37,12 +37,15 @@ export function fittingView(w: GuidedWorkspace): TaskView {
   } = w;
   // Translated plugin command text (357) loses its line breaks, so a
   // project that translates it needs 357 in fitting to wrap it again.
-  const fittingCodes = fields.text.codes
-    .split(/[\s,]+/)
-    .filter(Boolean)
-    .map(Number);
+  const codes = fittingCodes(fields.text.codes);
   const unwrapped357 =
-    values.engine_options.CODE357 === true && !fittingCodes.includes(357);
+    values.engine_options.CODE357 === true && !codes.includes(357);
+  const [scope, rewrap] = fittingSummary(fields.text, fields.only_overflow);
+  const skipped = fitting?.overflow_skipped || 0;
+  // What would be rewrapped leads; skipped messages follow with why.
+  const changes = [...(fitting?.previews || [])].sort(
+    (a, b) => Number(!!a.overflow) - Number(!!b.overflow),
+  );
   let content: ReactNode;
   content = (
     <>
@@ -55,7 +58,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
           <Button
             variant="link"
             disabled={disabled}
-            onClick={() => editText("codes", [...fittingCodes, 357].join(","))}
+            onClick={() => editText("codes", [...codes, 357].join(","))}
           >
             Include 357
           </Button>
@@ -84,124 +87,82 @@ export function fittingView(w: GuidedWorkspace): TaskView {
             Edit line widths
           </Button>
         </ActionRow>
+        {fileRow(layoutFiles)}
         <ActionRow
           label={
-            <CheckField
-              id="fitting-only-overflow"
-              label="Only rewrap lines wider than their limit"
-              checked={fields.only_overflow}
-              disabled={disabled}
-              onChange={(checked) => editForm("only_overflow", checked)}
-            />
+            <>
+              <strong>Checked text</strong>
+              <small>{scope}</small>
+              <small>{rewrap}</small>
+            </>
           }
-        />
-        {fileRow(layoutFiles)}
+        >
+          <Button disabled={disabled} onClick={() => setPanel("fitting")}>
+            Edit settings
+          </Button>
+        </ActionRow>
       </ActionList>
-      <details>
-        <summary>Checked text and row protection</summary>
-        <fieldset disabled={disabled} className="text-fitting-settings">
-          <legend>Included text areas</legend>
-          {(
-            [
-              ["dialogue", "Dialogue"],
-              ["face_dialogue", "Dialogue with portrait"],
-              ["list", "List and help descriptions"],
-              ["notes", "Supported note patterns"],
-            ] as const
-          ).map(([key, label]) => (
-            <label className="toggle" key={key}>
-              <input
-                type="checkbox"
-                checked={fields.text.categories.includes(key)}
-                onChange={(event) =>
-                  editText(
-                    "categories",
-                    event.target.checked
-                      ? [...fields.text.categories, key]
-                      : fields.text.categories.filter((value) => value !== key),
-                  )
-                }
-              />
-              {label}
-            </label>
-          ))}
-          <label>
-            Event codes
-            <input
-              value={fields.text.codes}
-              onChange={(event) => editText("codes", event.target.value)}
-            />
-          </label>
-          <small>
-            Supported: 122, 324, 325, 357, 401, 405. Choices (102), custom
-            windows and arbitrary plugin text are outside this check.
-          </small>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={fields.text.protect_rows}
-              onChange={(event) =>
-                editText("protect_rows", event.target.checked)
-              }
-            />
-            Skip protected messages that exceed the row limit
-          </label>
-          <label>
-            Protected row limit
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={fields.text.max_rows}
-              onChange={(event) =>
-                editText("max_rows", Number(event.target.value))
-              }
-            />
-          </label>
-        </fieldset>
-      </details>
       {fitting && (
-        <section className="text-fit-results">
-          <h3>Last check</h3>
-          <ActionList>
-            <ActionRow
-              label={
-                <span>
-                  {eligible
-                    ? `${eligible} ${eligible === 1 ? "change" : "changes"} to review`
-                    : fitting.overflow_skipped
-                      ? "No changes to apply"
-                      : "No line is wider than these widths."}
-                  {!!fitting.overflow_skipped &&
-                    ` · ${fitting.overflow_skipped} protected ${fitting.overflow_skipped === 1 ? "overflow" : "overflows"} skipped`}
-                </span>
-              }
-            >
-              {/* With changes found the footer reviews them; scanning again
-                  stays beside the result. Otherwise the footer scans. */}
-              {eligible > 0 &&
-                task(
-                  "rewrap_preview",
-                  "Check again",
-                  layoutOptions,
-                  !baseline || !layoutFiles.length,
-                )}
-            </ActionRow>
-          </ActionList>
-          {fitting.previews.map((row, index) => (
-            <details key={index}>
-              <summary>
-                {row.file_name} · {textLocation(row.locator)}
-                {row.overflow && fields.text.protect_rows
-                  ? ` · Skipped: ${row.rows} rows exceed the protected limit`
-                  : ""}
-              </summary>
-              <strong>Current</strong>
-              <pre>{row.before}</pre>
-              <strong>Proposed</strong>
-              <pre>{row.after}</pre>
-            </details>
-          ))}
+        <section className="text-fit-results" aria-label="Last check">
+          <div className="check-results-heading">
+            <h3>
+              {eligible
+                ? `${eligible} ${eligible === 1 ? "rewrap" : "rewraps"} found`
+                : fields.only_overflow
+                  ? "No line is wider than these widths"
+                  : "Nothing to rewrap"}
+              {!!skipped && ` · ${skipped} skipped`}
+            </h3>
+            {!scanCurrent && (
+              <span className="muted">From before your setting changes</span>
+            )}
+            {/* With rewraps found the footer applies them; checking again
+                stays beside the result. Otherwise the footer checks. */}
+            {scanCurrent &&
+              eligible > 0 &&
+              task(
+                "rewrap_preview",
+                "Check again",
+                layoutOptions,
+                !baseline || !layoutFiles.length,
+                "link",
+              )}
+          </div>
+          {changes.length < fitting.changes_found && (
+            <p className="muted">
+              The first {changes.length.toLocaleString()} of{" "}
+              {fitting.changes_found.toLocaleString()} are listed; Apply covers
+              them all.
+            </p>
+          )}
+          {!!changes.length && (
+            <ul className="text-fit-changes">
+              {changes.map((row, index) => (
+                <li key={index}>
+                  <div className="text-fit-change-heading">
+                    <span>
+                      {row.file_name} · {textLocation(row.locator)}
+                    </span>
+                    {row.rows !== undefined && (
+                      <small>
+                        {row.overflow
+                          ? `Skipped · would need ${row.rows} rows`
+                          : `${row.rows} ${row.rows === 1 ? "row" : "rows"}`}
+                      </small>
+                    )}
+                  </div>
+                  {!row.overflow && (
+                    <dl className="text-fit-change">
+                      <dt>Now</dt>
+                      <dd>{row.before}</dd>
+                      <dt>Rewrapped</dt>
+                      <dd>{row.after}</dd>
+                    </dl>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
     </>
@@ -210,7 +171,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
     scanCurrent && eligible > 0
       ? reviewPending({
           only: "rewraps",
-          label: "Review & apply rewraps",
+          label: `Apply ${eligible} ${eligible === 1 ? "rewrap" : "rewraps"}`,
           blocked: !baseline || !layoutFiles.length,
         })
       : task(
@@ -412,7 +373,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         <section className="text-qa-results">
           {/* One row per finding: its change, evidence and, when it has a
               prepared correction, the choice to apply it. */}
-          <div className="text-qa-results-heading">
+          <div className="check-results-heading">
             <h3>Findings</h3>
             {!!choosable.length && !qaApplied && (
               <>

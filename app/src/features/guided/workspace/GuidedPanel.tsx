@@ -17,6 +17,7 @@ import { StatusIcon } from "../../../ui/StatusIcon";
 import { SpeakerNames } from "../ContextWorkspace";
 import { EngineOptions } from "../EngineOptions";
 import { FileSelection } from "../FileSelection";
+import { FittingSettings } from "../FittingSettings";
 import { SpeakerFindings } from "../SpeakerFindings";
 import { TranslationOptions } from "../TranslationOptions";
 import { retainOtherScope } from "../selection";
@@ -66,6 +67,9 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
     formatActions,
     applySpeakerControl,
     review,
+    fields,
+    editText,
+    editForm,
   } = w;
   const owned = useOwnedFeedback(action.key);
   // Only a scan started from this dialog confirms its result here.
@@ -225,6 +229,8 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
             />
           </>
         )}
+        {/* The form saves each check setting as it changes. */}
+        {panel === "fitting" && savePanel()}
         {["speakers", "widths", "tools", "translation-context"].includes(
           panel,
         ) && (
@@ -401,6 +407,15 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                 </ActionRow>
               </ActionList>
             </>
+          )}
+          {panel === "fitting" && (
+            <FittingSettings
+              text={fields.text}
+              onlyOverflow={fields.only_overflow}
+              disabled={disabled}
+              editText={editText}
+              editOnlyOverflow={(value) => editForm("only_overflow", value)}
+            />
           )}
           {panel === "preparation" && (
             <ActionList>

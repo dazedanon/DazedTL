@@ -477,6 +477,23 @@ pre {
   flex-shrink: 0;
   margin: 0;
 }
+/* A group's checkboxes line up in columns; each keeps the control height,
+   so rows sit as close as stacked check fields. */
+.check-group {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(100%, var(--check-column-width)), 1fr)
+  );
+  column-gap: var(--space-5);
+}
+.check-group--stacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* A count typed inside a check field's sentence. */
+.check-field > .inline-number {
+  width: var(--inline-number-width);
+}
 .field-row > label,
 .field-label {
   display: block;

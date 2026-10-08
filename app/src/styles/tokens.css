@@ -112,6 +112,10 @@
   --field-label-width: 155px;
   /* Short values such as counts and widths keep a compact field. */
   --short-control-width: 120px;
+  /* A checkbox group's column, wide enough for a short choice label. */
+  --check-column-width: 13rem;
+  /* A count typed inside a sentence, such as a row limit. */
+  --inline-number-width: 4.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
   /* Image Manager's preview column beside the task and grid; narrow
