@@ -417,7 +417,7 @@ Previews decode each image once and hold the service lock only for the inventory
 The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
 The selection is the list to translate, and the manager walks it through four steps derived in [imageFlow](../app/src/features/images/imageFlow.ts): the assistant investigates, the user chooses, the assistant translates, the user applies.
 A click only previews, so looking never changes the list; the tick box, Ctrl/Cmd and Space toggle an image and Shift only adds, with [selectItem](../app/src/ui/selection.ts), and a Shift range that reaches past the loaded windows reads the images between in bounded runs.
-The [viewer](../app/src/features/images/ImageViewer.tsx) reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
+The [viewer](../app/src/features/images/ImageViewer.tsx) fills a full-height column beside the task, toolbar and grid, because the preview is limited by height more than width; it reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
@@ -523,6 +523,7 @@ Layouts must remain readable and usable across displays ranging from small lapto
 Size and reflow content using the available window space and system display scaling; keep actions accessible on smaller displays and use larger displays without excessive stretching or gaps.
 The desktop window fits its display's work area in logical pixels.
 Every page centers one content column, `--content-width` in [tokens.css](../app/src/styles/tokens.css).
+A workspace whose grid and preview use every pixel, the Images task in Guided and Assistant-led, is a wide [PageLayout](../app/src/ui/PageLayout.tsx) instead: it spans the window inside the gutter, and its frame rows widen with it so their edges keep lining up.
 Frame rows (page headers, stage strip, task tabs, scrolling bodies and footers) span the window and pad their content to that column; rows that do not scroll reserve the body's scrollbar gutter, so every edge matches across screens and window sizes.
 Windows 720px tall or shorter compact the top bar and footers; fill editors and file lists keep a minimum height, and the body scrolls instead of collapsing them.
 One choice among a few, such as Batch or Live and the file-group filters, uses [SegmentedControl](../app/src/ui/SegmentedControl.tsx), so it reads as one choice rather than separate actions.

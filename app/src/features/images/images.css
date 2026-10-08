@@ -23,8 +23,8 @@ main > .image-manager {
   flex: 1;
   height: auto;
 }
-.image-manager
-  > :is(.image-profile-issue, .image-action-feedback, .image-index-progress) {
+.image-manager > .image-profile-issue,
+.image-manager-work > :is(.image-action-feedback, .image-index-progress) {
   padding-inline: 0;
 }
 .image-manager .image-folder-rail {
@@ -57,47 +57,41 @@ main > .image-manager {
   border-bottom: 1px solid var(--color-warning-border);
   font-size: var(--font-small);
 }
-/* Above the browser, the image viewer takes up to half the row and spans
-   the assistant task panel and the toolbar beside it; the task takes any
-   extra height. */
-.image-manager-top {
+/* The preview takes a full-height column beside the task, toolbar and
+   grid, so tall and wide images both get room; the grid gives up columns. */
+.image-manager-body {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(var(--image-task-width), 1fr) minmax(0, 1fr);
-  grid-template-rows: 1fr auto;
-  grid-template-areas:
-    "task viewer"
-    "tools viewer";
+  grid-template-columns: minmax(0, 1fr) var(--image-viewer-width);
   gap: var(--space-3);
-  flex-shrink: 0;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
 }
-.image-manager-top > .image-browser-toolbar {
-  grid-area: tools;
-  container: image-tools / inline-size;
-  padding: 0;
-  border-bottom: 0;
-}
-/* A taller viewer leaves the task's extra height below its controls. */
-.image-manager-top > .assistant-task {
-  grid-area: task;
-  grid-template-rows: auto 1fr;
+.image-manager-work {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+}
+.image-manager-work > .assistant-task {
+  flex-shrink: 0;
   margin: 0;
 }
-.image-manager-top > .assistant-task > .assistant-task-body {
+.image-manager-work > .assistant-task > .assistant-task-body {
   display: grid;
   align-content: start;
   gap: var(--space-2);
   padding-block: var(--space-2);
 }
+.image-manager-work > .image-browser-toolbar {
+  container: image-tools / inline-size;
+  padding-inline: 0;
+}
 .image-viewer {
-  grid-area: viewer;
   container: image-viewer / inline-size;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: var(--image-viewer-height);
+  min-height: 0;
   margin: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--panel-radius);
@@ -157,23 +151,10 @@ main > .image-manager {
     display: none;
   }
 }
-/* Narrower, the toolbar would wrap beside the viewer, so it spans the row
-   below and the viewer matches the task alone. */
-@container (width < 64rem) {
-  .image-manager-top {
-    grid-template-columns: minmax(0, 1fr) var(--image-viewer-width);
-    grid-template-areas:
-      "task viewer"
-      "tools tools";
-  }
-  .image-viewer {
-    min-height: 0;
-  }
-}
-/* Short windows keep the grid's height: the viewer matches the task. */
-@media (max-height: 720px) {
-  .image-viewer {
-    min-height: 0;
+/* Narrow windows keep the grid a few columns by narrowing the preview. */
+@container image-manager (width < 64rem) {
+  .image-manager-body {
+    grid-template-columns: minmax(0, 1fr) var(--image-viewer-narrow-width);
   }
 }
 /* A note under the steps, such as images changed after the assistant's

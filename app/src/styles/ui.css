@@ -365,6 +365,11 @@ pre {
 .page-layout :is(.page-body, .action-bar):not(dialog *) {
   padding-inline: var(--frame-inline);
 }
+/* A wide page spans the window: its rows keep only the gutter, so their
+   edges still line up with each other. */
+.page-layout--wide {
+  --frame-inline: var(--frame-gutter);
+}
 .frame-row,
 .page-layout--editor > .page-header,
 .page-layout .action-bar:not(dialog *) {

@@ -170,6 +170,7 @@ function Workspace({
   return (
     <PageLayout
       variant="editor"
+      wide={view === "images"}
       className="lens-method"
       aria-label="Assistant-led workspace"
     >

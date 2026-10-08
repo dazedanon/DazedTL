@@ -1038,116 +1038,315 @@ function Manager({
           </Button>
         </div>
       )}
-      {/* The viewer fills the space beside the task and toolbar. */}
-      <div className="image-manager-top">
-        <AssistantTask
-          title="Image translation"
-          state={cardState}
-          progress={
-            waiting && copiedAt
-              ? `since ${new Date(copiedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}`
-              : undefined
-          }
-          description={description}
-        >
-          <StepProgress
-            label="Image translation steps"
-            steps={imageSteps}
-            current={
-              flow.step === "done"
-                ? imageSteps.length
-                : imageSteps.findIndex((item) => item.id === flow.step)
+      {/* The preview fills a column beside the task, toolbar and grid. */}
+      <div className="image-manager-body">
+        <div className="image-manager-work">
+          <AssistantTask
+            title="Image translation"
+            state={cardState}
+            progress={
+              waiting && copiedAt
+                ? `since ${new Date(copiedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}`
+                : undefined
             }
-          />
-          {!!flow.review && (
-            <Button
-              variant="link"
-              className="image-task-note"
-              onClick={() =>
-                changeView({ status: "needs_review", showSelected: true }, true)
+            description={description}
+          >
+            <StepProgress
+              label="Image translation steps"
+              steps={imageSteps}
+              current={
+                flow.step === "done"
+                  ? imageSteps.length
+                  : imageSteps.findIndex((item) => item.id === flow.step)
               }
+            />
+            {!!flow.review && (
+              <Button
+                variant="link"
+                className="image-task-note"
+                onClick={() =>
+                  changeView(
+                    { status: "needs_review", showSelected: true },
+                    true,
+                  )
+                }
+              >
+                {imageCount(flow.review)} changed after your assistant checked{" "}
+                {flow.review === 1 ? "it" : "them"}
+              </Button>
+            )}
+          </AssistantTask>
+          <div className="image-browser-toolbar">
+            <div className="image-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="Search images"
+                placeholder="Search filenames or paths…"
+                maxLength={200}
+                value={value.view.query}
+                onChange={(event) =>
+                  changeView({ query: event.target.value }, true)
+                }
+              />
+            </div>
+            <Menu
+              trigger={
+                <>
+                  Select
+                  <ChevronDown size={14} aria-hidden="true" />
+                </>
+              }
+              label="Tick images"
+              align="start"
+              disabled={action.busy}
             >
-              {imageCount(flow.review)} changed after your assistant checked{" "}
-              {flow.review === 1 ? "it" : "them"}
-            </Button>
-          )}
-        </AssistantTask>
-        <div className="image-browser-toolbar">
-          <div className="image-search">
-            <Search size={16} aria-hidden="true" />
-            <input
-              type="search"
-              aria-label="Search images"
-              placeholder="Search filenames or paths…"
-              maxLength={200}
-              value={value.view.query}
-              onChange={(event) =>
-                changeView({ query: event.target.value }, true)
-              }
+              <MenuItem onSelect={() => tickShown("add")}>
+                Tick all shown ({grid.total.toLocaleString()})
+              </MenuItem>
+              <MenuItem
+                disabled={!value.selection.length}
+                onSelect={() => tickShown("remove")}
+              >
+                Untick all shown
+              </MenuItem>
+            </Menu>
+            <label className="image-size-label">
+              Size
+              <input
+                aria-label="Thumbnail size"
+                type="range"
+                min={80}
+                max={176}
+                step={8}
+                value={value.view.tileSize}
+                onChange={(event) =>
+                  changeView({ tileSize: Number(event.target.value) })
+                }
+              />
+            </label>
+            <SegmentedControl
+              label="Show images"
+              className="image-views"
+              value={shown}
+              options={viewOptions
+                .filter(
+                  (option) =>
+                    option.count ||
+                    option.value === shown ||
+                    option.value === "all",
+                )
+                .map((option) => ({
+                  value: option.value,
+                  label: (
+                    <>
+                      {option.label}
+                      <span className="image-view-count">
+                        {option.count.toLocaleString()}
+                      </span>
+                    </>
+                  ),
+                }))}
+              onChange={(next) => next && changeView(views[next], true)}
             />
           </div>
-          <Menu
-            trigger={
-              <>
-                Select
-                <ChevronDown size={14} aria-hidden="true" />
-              </>
-            }
-            label="Tick images"
-            align="start"
-            disabled={action.busy}
-          >
-            <MenuItem onSelect={() => tickShown("add")}>
-              Tick all shown ({grid.total.toLocaleString()})
-            </MenuItem>
-            <MenuItem
-              disabled={!value.selection.length}
-              onSelect={() => tickShown("remove")}
-            >
-              Untick all shown
-            </MenuItem>
-          </Menu>
-          <label className="image-size-label">
-            Size
-            <input
-              aria-label="Thumbnail size"
-              type="range"
-              min={80}
-              max={176}
-              step={8}
-              value={value.view.tileSize}
-              onChange={(event) =>
-                changeView({ tileSize: Number(event.target.value) })
+          {jobRunning && (
+            <div className="image-index-progress" role="status">
+              <span>{state.job?.message || "Indexing images…"}</span>
+              {state.job?.progress && (
+                <progress
+                  value={state.job.progress.current}
+                  max={state.job.progress.total || 1}
+                />
+              )}
+              <Button
+                disabled={action.busy}
+                onClick={() => perform("stop_scan")}
+              >
+                Stop indexing
+              </Button>
+            </div>
+          )}
+          <div className="image-browser">
+            <ImageFolders
+              folders={state.folders}
+              indexed={counts.indexed}
+              folder={value.view.folder}
+              onChoose={(folder) =>
+                changeView({ folder, showSelected: false }, true)
               }
             />
-          </label>
-          <SegmentedControl
-            label="Show images"
-            className="image-views"
-            value={shown}
-            options={viewOptions
-              .filter(
-                (option) =>
-                  option.count ||
-                  option.value === shown ||
-                  option.value === "all",
-              )
-              .map((option) => ({
-                value: option.value,
-                label: (
-                  <>
-                    {option.label}
-                    <span className="image-view-count">
-                      {option.count.toLocaleString()}
-                    </span>
-                  </>
-                ),
-              }))}
-            onChange={(next) => next && changeView(views[next], true)}
-          />
+            <div
+              className="image-grid-viewport"
+              ref={viewport}
+              onScroll={(event) => {
+                const next = event.currentTarget.scrollTop;
+                setScroll(next);
+                changeView({ scroll: next });
+              }}
+              aria-label="Image thumbnails"
+              tabIndex={0}
+            >
+              <Message message={grid.error} />
+              {!grid.total && !grid.loading ? (
+                <div className="image-grid-empty">
+                  <ImageIcon size={30} />
+                  <h3>
+                    {!counts.indexed
+                      ? "No images indexed"
+                      : folderSearch
+                        ? "No matches in this folder"
+                        : "No matching images"}
+                  </h3>
+                  {/* A search inside a folder looks only there, which the grid
+                  alone does not show. */}
+                  {(!counts.indexed || folderSearch || hidden > 0) && (
+                    <p>
+                      {!counts.indexed
+                        ? "Index the image library to begin discovery or choose images yourself."
+                        : folderSearch
+                          ? `The search looks only in ${value.view.folder}.`
+                          : `${hidden.toLocaleString()} selected ${hidden === 1 ? "image stays" : "images stay"} selected.`}
+                    </p>
+                  )}
+                  <Button
+                    onClick={() =>
+                      !counts.indexed
+                        ? perform("scan")
+                        : folderSearch
+                          ? changeView({ folder: "" }, true)
+                          : changeView(
+                              {
+                                query: "",
+                                status: "all",
+                                folder: "",
+                                showSelected: false,
+                              },
+                              true,
+                            )
+                    }
+                  >
+                    {!counts.indexed
+                      ? "Index images"
+                      : folderSearch
+                        ? "Search all folders"
+                        : "Clear filters"}
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  className="image-grid-space"
+                  style={{ height: range.height }}
+                >
+                  <div
+                    className="image-grid"
+                    style={{
+                      transform: `translateY(${range.top}px)`,
+                      gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                      gridAutoRows: rowHeight,
+                    }}
+                  >
+                    {grid.items.map(({ asset, index }) => (
+                      <div
+                        key={asset.id}
+                        data-tile-index={index}
+                        ref={(cell) => {
+                          const target = pendingFocus.current;
+                          if (cell && target?.index === index) {
+                            pendingFocus.current = null;
+                            const input = cell.querySelector("input");
+                            if (input && target.view === view)
+                              focusItem(input, "key");
+                          }
+                        }}
+                        style={{
+                          minWidth: 0,
+                          display: "flex",
+                          gridRow:
+                            Math.floor((index - range.start) / columns) + 1,
+                          gridColumn: ((index - range.start) % columns) + 1,
+                        }}
+                      >
+                        <Tile
+                          asset={asset}
+                          selected={selection.has(asset.id)}
+                          size={thumbnailSize}
+                          queue={queue}
+                          onPick={(event, checkbox) =>
+                            pick(index, event, checkbox)
+                          }
+                          onKeyDown={(event) => tileKeyDown(event, index)}
+                          onCompare={() => openCompare(asset)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {grid.loading && (
+                <span className="image-grid-loading" role="status">
+                  Loading visible images…
+                </span>
+              )}
+              <span className="sr-only" role="status">
+                {pickNotice}
+              </span>
+            </div>
+          </div>
+          {/* Other results sit between the images and the footer. */}
+          <div className="image-action-feedback">
+            <Message
+              message={owned ? "" : action.error}
+              onDismiss={action.clear}
+            />
+            {!!action.error && draft.dirty && (
+              <Button
+                pending={action.busy}
+                onClick={() =>
+                  action.run(
+                    async () => {
+                      images.set(await imagesApi.state(projectId));
+                      await draft.session.flush();
+                    },
+                    "Choices saved.",
+                    "retry-save",
+                  )
+                }
+              >
+                Retry saving choices
+              </Button>
+            )}
+            {action.notice && !owned && actedIn === flow.step && (
+              <span role="status">{action.notice}</span>
+            )}
+            {!!reportIssues.length && (
+              <details>
+                <summary>
+                  {reportIssues.length.toLocaleString()} image{" "}
+                  {reportIssues.length === 1 ? "issue" : "issues"}
+                </summary>
+                {reportIssues.slice(0, 50).map((warning, index) => (
+                  <p key={index}>{warning}</p>
+                ))}
+                {reportIssues.length > 50 && (
+                  <Button
+                    onClick={() =>
+                      void action.run(
+                        () => window.dazedtl.copyText(reportIssues.join("\n")),
+                        "Issue list copied.",
+                        "copy-issues",
+                      )
+                    }
+                  >
+                    Copy all {reportIssues.length} issues
+                  </Button>
+                )}
+              </details>
+            )}
+          </div>
         </div>
         <ImageViewer
           projectId={projectId}
@@ -1157,188 +1356,6 @@ function Manager({
           thumbnailSize={thumbnailSize}
           onCompare={openCompare}
         />
-      </div>
-      {jobRunning && (
-        <div className="image-index-progress" role="status">
-          <span>{state.job?.message || "Indexing images…"}</span>
-          {state.job?.progress && (
-            <progress
-              value={state.job.progress.current}
-              max={state.job.progress.total || 1}
-            />
-          )}
-          <Button disabled={action.busy} onClick={() => perform("stop_scan")}>
-            Stop indexing
-          </Button>
-        </div>
-      )}
-      <div className="image-browser">
-        <ImageFolders
-          folders={state.folders}
-          indexed={counts.indexed}
-          folder={value.view.folder}
-          onChoose={(folder) =>
-            changeView({ folder, showSelected: false }, true)
-          }
-        />
-        <div
-          className="image-grid-viewport"
-          ref={viewport}
-          onScroll={(event) => {
-            const next = event.currentTarget.scrollTop;
-            setScroll(next);
-            changeView({ scroll: next });
-          }}
-          aria-label="Image thumbnails"
-          tabIndex={0}
-        >
-          <Message message={grid.error} />
-          {!grid.total && !grid.loading ? (
-            <div className="image-grid-empty">
-              <ImageIcon size={30} />
-              <h3>
-                {!counts.indexed
-                  ? "No images indexed"
-                  : folderSearch
-                    ? "No matches in this folder"
-                    : "No matching images"}
-              </h3>
-              {/* A search inside a folder looks only there, which the grid
-                  alone does not show. */}
-              {(!counts.indexed || folderSearch || hidden > 0) && (
-                <p>
-                  {!counts.indexed
-                    ? "Index the image library to begin discovery or choose images yourself."
-                    : folderSearch
-                      ? `The search looks only in ${value.view.folder}.`
-                      : `${hidden.toLocaleString()} selected ${hidden === 1 ? "image stays" : "images stay"} selected.`}
-                </p>
-              )}
-              <Button
-                onClick={() =>
-                  !counts.indexed
-                    ? perform("scan")
-                    : folderSearch
-                      ? changeView({ folder: "" }, true)
-                      : changeView(
-                          {
-                            query: "",
-                            status: "all",
-                            folder: "",
-                            showSelected: false,
-                          },
-                          true,
-                        )
-                }
-              >
-                {!counts.indexed
-                  ? "Index images"
-                  : folderSearch
-                    ? "Search all folders"
-                    : "Clear filters"}
-              </Button>
-            </div>
-          ) : (
-            <div className="image-grid-space" style={{ height: range.height }}>
-              <div
-                className="image-grid"
-                style={{
-                  transform: `translateY(${range.top}px)`,
-                  gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-                  gridAutoRows: rowHeight,
-                }}
-              >
-                {grid.items.map(({ asset, index }) => (
-                  <div
-                    key={asset.id}
-                    data-tile-index={index}
-                    ref={(cell) => {
-                      const target = pendingFocus.current;
-                      if (cell && target?.index === index) {
-                        pendingFocus.current = null;
-                        const input = cell.querySelector("input");
-                        if (input && target.view === view)
-                          focusItem(input, "key");
-                      }
-                    }}
-                    style={{
-                      minWidth: 0,
-                      display: "flex",
-                      gridRow: Math.floor((index - range.start) / columns) + 1,
-                      gridColumn: ((index - range.start) % columns) + 1,
-                    }}
-                  >
-                    <Tile
-                      asset={asset}
-                      selected={selection.has(asset.id)}
-                      size={thumbnailSize}
-                      queue={queue}
-                      onPick={(event, checkbox) => pick(index, event, checkbox)}
-                      onKeyDown={(event) => tileKeyDown(event, index)}
-                      onCompare={() => openCompare(asset)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {grid.loading && (
-            <span className="image-grid-loading" role="status">
-              Loading visible images…
-            </span>
-          )}
-          <span className="sr-only" role="status">
-            {pickNotice}
-          </span>
-        </div>
-      </div>
-      {/* Other results sit between the images and the footer. */}
-      <div className="image-action-feedback">
-        <Message message={owned ? "" : action.error} onDismiss={action.clear} />
-        {!!action.error && draft.dirty && (
-          <Button
-            pending={action.busy}
-            onClick={() =>
-              action.run(
-                async () => {
-                  images.set(await imagesApi.state(projectId));
-                  await draft.session.flush();
-                },
-                "Choices saved.",
-                "retry-save",
-              )
-            }
-          >
-            Retry saving choices
-          </Button>
-        )}
-        {action.notice && !owned && actedIn === flow.step && (
-          <span role="status">{action.notice}</span>
-        )}
-        {!!reportIssues.length && (
-          <details>
-            <summary>
-              {reportIssues.length.toLocaleString()} image{" "}
-              {reportIssues.length === 1 ? "issue" : "issues"}
-            </summary>
-            {reportIssues.slice(0, 50).map((warning, index) => (
-              <p key={index}>{warning}</p>
-            ))}
-            {reportIssues.length > 50 && (
-              <Button
-                onClick={() =>
-                  void action.run(
-                    () => window.dazedtl.copyText(reportIssues.join("\n")),
-                    "Issue list copied.",
-                    "copy-issues",
-                  )
-                }
-              >
-                Copy all {reportIssues.length} issues
-              </Button>
-            )}
-          </details>
-        )}
       </div>
       <ActionSlot target={host.target}>{footer}</ActionSlot>
       {activeCompare && (

@@ -1,13 +1,19 @@
 import type { ComponentProps, ReactNode, Ref } from "react";
 export function PageLayout({
   variant = "document",
+  wide = false,
   className = "",
   ...props
-}: ComponentProps<"section"> & { variant?: "document" | "editor" }) {
+}: ComponentProps<"section"> & {
+  variant?: "document" | "editor";
+  /** Spans the window instead of the shared column, for a workspace such as
+   * Images whose grid and preview use every pixel. */
+  wide?: boolean;
+}) {
   return (
     <section
       {...props}
-      className={`page-layout page-layout--${variant} ${className}`}
+      className={`page-layout page-layout--${variant}${wide ? " page-layout--wide" : ""} ${className}`}
     />
   );
 }

@@ -140,6 +140,7 @@ function Workspace(
     <PageLayout
       ref={frame}
       variant="editor"
+      wide={taskId === "images"}
       className="guided-workspace"
       aria-label="Translation workspace"
     >
