@@ -25,7 +25,7 @@ import type { GuidedIntent } from "../guided/workspace/model";
 import { BackupsPanel } from "../translation/BackupsPanel";
 import { RequestsPanel } from "../translation/RequestsPanel";
 import { VersionsPanel } from "../translation/VersionsPanel";
-import { methodLabels } from "./MethodDialog";
+import { guidedEngines, methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
 type Amounts = ReturnType<typeof projectAmounts>;
@@ -91,7 +91,11 @@ export default function ProjectPage({
         }
         actions={
           <div className="actions">
-            {project.method && (
+            {/* Only RPG Maker MV/MZ and Ace games have another method to
+                switch to once Assistant-led is chosen. */}
+            {(project.method === "guided" ||
+              (project.method === "len" &&
+                guidedEngines.includes(project.engine))) && (
               <Button
                 variant="quiet"
                 disabled={busy || !available}
