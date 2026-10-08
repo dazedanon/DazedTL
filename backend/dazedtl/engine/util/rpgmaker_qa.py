@@ -1011,8 +1011,14 @@ def shell_argument(value: str | Path) -> str:
 
 
 def runtime_command(script: str | Path) -> str:
-    """Use the running managed interpreter, even with no Python on PATH."""
-    return ('& ' if os.name == 'nt' else '') + shell_argument(sys.executable) + ' ' + shell_argument(script)
+    """Use the running managed interpreter, even with no Python on PATH.
+
+    Windows pipes use the ANSI code page, which cannot hold Japanese game text,
+    so Python writes UTF-8 and PowerShell decodes it; the app's
+    dazedtl.translation.helper_command follows the same form.
+    """
+    prefix = '[Console]::OutputEncoding = [Text.Encoding]::UTF8; & ' if os.name == 'nt' else ''
+    return prefix + shell_argument(sys.executable) + ' -X utf8 ' + shell_argument(script)
 
 
 def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:

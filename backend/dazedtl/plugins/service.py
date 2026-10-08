@@ -1,10 +1,7 @@
 """Retained assistant investigation, exact text edits and reviewed runtime publication."""
 
 import json
-import os
 import re
-import shlex
-import sys
 import threading
 import uuid
 from collections import Counter
@@ -17,6 +14,7 @@ from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation import backups, reference_folders
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
+from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.operations import (
     lifecycle,
     lifecycle_path,
@@ -1272,33 +1270,16 @@ class PluginService:
             + json.dumps(schema, ensure_ascii=False, indent=2)
             + "\n"
         )
-        helper = Path(__file__).resolve().parents[3] / "scripts/project.py"
-        arguments = [
-            sys.executable,
-            "-B",
-            str(helper),
-            "--workspace",
-            str(self.translation.workspace),
-            "--project",
-            project_id,
-            "plugins",
-        ]
-
-        def command(arguments):
-            return (
-                "& "
-                + " ".join("'" + item.replace("'", "''") + "'" for item in arguments)
-                if os.name == "nt"
-                else shlex.join(arguments)
-            )
-
+        workspace = self.translation.workspace
         text += (
             "\nAfter saving the report, run:\n"
-            + command([*arguments, "--continue-request", identity])
+            + helper_command(
+                workspace, project_id, "plugins", "--continue-request", identity
+            )
             + "\nIt checks the report and returns the next request with its instructions, or the final state. "
             "Working copies are prepared automatically, and runtime Apply stays in the app: this helper cannot approve or publish game files.\n"
             "If loopback access is sandboxed, use your normal permission flow and retry this read-only status command first:\n"
-            + command(arguments)
+            + helper_command(workspace, project_id, "plugins")
             + "\nA lost response may follow a completed action. Read the activeRequest path from that status and follow its saved instructions; "
             "do not restart the task or blindly retry a step. Never expose the local connection token. "
             "If permitted access still fails, save your work and report the connection blocker.\n"

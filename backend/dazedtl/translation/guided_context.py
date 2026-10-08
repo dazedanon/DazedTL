@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import shlex
-import sys
 from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,6 +10,7 @@ from dazedtl.storage import write_json
 
 from . import context_setup, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
+from .helper_command import helper_command
 
 if TYPE_CHECKING:
     from .guided import Guided
@@ -40,17 +39,8 @@ class GuidedContext:
             return self.qa_task(project_id, native)
         if name == "advanced":
             request = self.guided.event_text.request(project_id, native)
-            command = shlex.join(
-                [
-                    sys.executable,
-                    "-B",
-                    str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
-                    "--workspace",
-                    str(self.guided.translation.workspace),
-                    "--project",
-                    project_id,
-                    "event-text",
-                ]
+            command = helper_command(
+                self.guided.translation.workspace, project_id, "event-text"
             )
             return {
                 "text": self.guided.event_text.instructions(request, command),
@@ -76,17 +66,8 @@ class GuidedContext:
                 native,
                 schema,
             )
-            command = shlex.join(
-                [
-                    sys.executable,
-                    "-B",
-                    str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
-                    "--workspace",
-                    str(self.guided.translation.workspace),
-                    "--project",
-                    project_id,
-                    "speakers",
-                ]
+            command = helper_command(
+                self.guided.translation.workspace, project_id, "speakers"
             )
             context_request = context_setup.request(
                 self.guided.path(project_id, "context-request"),
@@ -94,7 +75,9 @@ class GuidedContext:
                 request,
                 native["widths"],
             )
-            context_command = command.removesuffix("speakers") + "context"
+            context_command = helper_command(
+                self.guided.translation.workspace, project_id, "context"
+            )
             text += context_setup.instructions(context_request, context_command)
             documents = self.guided.backend.workflows.documents(native["id"])
             handoff = {
@@ -132,17 +115,8 @@ class GuidedContext:
                 },
                 native["widths"],
             )
-            command = shlex.join(
-                [
-                    sys.executable,
-                    "-B",
-                    str(Path(__file__).resolve().parents[3] / "scripts/project.py"),
-                    "--workspace",
-                    str(self.guided.translation.workspace),
-                    "--project",
-                    project_id,
-                    "context",
-                ]
+            command = helper_command(
+                self.guided.translation.workspace, project_id, "context"
             )
             text += context_setup.layout_instructions(request, command)
             handoff = {

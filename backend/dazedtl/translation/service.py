@@ -1,9 +1,6 @@
 """One project service shared by the Electron UI and the external agent helper."""
 
 import json
-import os
-import shlex
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -14,6 +11,7 @@ from dazedtl.storage import write_bytes, write_json
 from . import backups, delivery
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
+from .helper_command import helper_command
 from .jobs import Jobs
 from .operations import checkout_issue, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, options, scope
@@ -343,23 +341,7 @@ class Translation:
         if not selected["initialized"]:
             selected = project.save(selected["revision"], selected["options"])
         setup = self.engine.prepare(project.root, selected["options"])
-        helper = Path(__file__).resolve().parents[3] / "scripts/project.py"
-        arguments = [
-            sys.executable,
-            str(helper),
-            "--workspace",
-            str(self.workspace),
-            "--project",
-            project_id,
-        ]
-        command = (
-            "& "
-            + " ".join(
-                "'" + argument.replace("'", "''") + "'" for argument in arguments
-            )
-            if os.name == "nt"
-            else shlex.join(arguments)
-        )
+        command = helper_command(self.workspace, project_id)
         mode = {
             "agent": "Agent Translation",
             "live": "Live API Translation",

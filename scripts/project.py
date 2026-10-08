@@ -2,6 +2,7 @@
 """Operate one DazedTL project through the running app; no credentials are exported."""
 
 import argparse
+import io
 import json
 import sys
 import urllib.error
@@ -65,6 +66,11 @@ def call(workspace, method, params):
 
 
 def main():
+    # Assistants read this through a pipe, which Windows encodes in the ANSI
+    # code page; game names and text need UTF-8 however the helper is started.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--project", required=True)
