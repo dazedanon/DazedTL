@@ -1,96 +1,44 @@
 # DazedTL
 
-DazedTL is a desktop app for translating games with its bundled translation engine.
-RPG Maker MV/MZ and Ace games use a guided five-stage workflow, and Assistant-led, built on Len's game-translation skills, lets a coding assistant translate any game through the running app.
-The [user guide](docs/user-guide.md) covers both workflows.
+DazedTL translates games with AI.
+You don't need to know how to program: the app walks you through each step, and you bring an API key from an AI provider.
+
+- **RPG Maker MV, MZ and VX Ace** games get a guided, step-by-step translation.
+- **Any other game** can be translated by an AI coding assistant, such as Claude Code or Codex, while DazedTL keeps track of the work.
+- Works with OpenAI, Anthropic, Google Gemini, Mistral, OpenRouter or a local model.
 
 ## Install
 
-1. Download the ZIP of the latest release from [GitHub](https://github.com/dazedanon/DazedTL), [GitGud](https://gitgud.io/DazedAnon/DazedTL) or [git.dazedtl.dev](https://git.dazedtl.dev/dazed/DazedTL), and unpack it into its own folder.
-2. Run `START.bat` on Windows or `START.sh` on Linux; macOS has `START.command`.
+1. Download the ZIP from [GitGud](https://gitgud.io/DazedAnon/dazedtl/-/archive/main/dazedtl-main.zip) or [git.dazedtl.dev](https://git.dazedtl.dev/dazed/DazedTL/archive/main.zip).
+2. Unzip it somewhere easy to find, such as `C:\DazedTL`.
+   Avoid OneDrive folders.
+3. Open the folder and double-click **START.bat** on Windows, or run **START.sh** on Linux.
+   If Windows says it protected your PC, click **More info**, then **Run anyway**.
 
-Nothing needs to be installed first.
-The first start downloads about 300 MB, the pinned Node and Python, the locked Python and Node packages and Electron, and takes a few minutes.
-Everything installs inside the DazedTL folder, and the first start adds DazedTL to the Start menu and desktop on Windows, or to the application menu on Linux.
-The console shows progress and closes once the app opens; later starts open the app directly.
-A moved folder repairs its Python environment and shortcuts on its next start.
-DazedTL then [updates itself](docs/user-guide.md#updates).
+There is nothing else to install.
+The first start downloads what DazedTL needs, about 300 MB, and takes a few minutes.
+After that, open DazedTL from the Start menu or desktop shortcut, or your Linux application menu.
 
-On Ubuntu 24.04 and later, the first start prints a one-time `sudo` command that lets the app use its browser sandbox; run it, then start again.
+## Get started
 
-Projects, credentials and runs live outside the DazedTL folder, in the `DazedTL2` profile in the system's application data folder (`%APPDATA%` on Windows, `~/.config` on Linux), separate from DazedMTLTool.
-An existing pre-release `DazedTLNext` profile keeps being used.
+1. Open **Settings**, choose your AI provider and paste its API key.
+2. Open **Project**, click **Open a game** and pick the game's folder.
+3. Follow the steps.
+   Nothing that costs money starts without showing you the estimate first.
 
-## Current limitations
+The [user guide](docs/user-guide.md) explains every step.
 
-- WOLF's guided workflow is deferred; other engines are supported only through Assistant-led.
-- Real provider billing and native game playtesting still need validation.
-- The Windows and macOS launchers and Windows shortcuts have not been run on those systems yet.
+## Updates
 
-## Development
+DazedTL updates itself.
+When a new version is ready, **Settings** shows a dot: open its **Updates** tab and click **Restart to update**.
+Your projects, settings and API keys are kept.
 
-The checkout includes its engine code, worker helpers, tokenizers, native tools and translation toolkit; no DazedMTLTool installation or sibling engine checkout is required.
-See [resource ownership](docs/architecture.md#ownership) for the engine and shared prompt locations, saved-run compatibility and override behavior.
+## Good to know
 
-```sh
-node scripts/setup.mjs
-node scripts/build.mjs
-node scripts/start.mjs
-```
+- WOLF RPG games don't have a guided translation yet; use an AI coding assistant for them.
+- On Ubuntu 24.04 and newer, the first start shows a one-time command to run in a terminal before DazedTL can open.
+- macOS has a **START.command** launcher, but it hasn't been tested yet.
+- If something goes wrong, click **Copy diagnostics** in the sidebar and include it when you report the problem.
 
-Setup installs the pinned Python from [.python-version](.python-version), the locked packages including the formatting, lint and type-check tools, and Electron into `.runtime`, `.venv` and `app/node_modules`.
-It runs npm from the pinned Node in [.node-version](.node-version), downloading it on Linux and macOS; on Windows it uses the Node that runs it until `START.bat` has installed the pinned one.
-The scripts run on any Node release within the pinned major version.
-After changing either version file, run `node scripts/runtimes.mjs` to pin the new downloads in [runtimes.lock](scripts/runtimes.lock).
-
-`node scripts/start.mjs` keeps the app attached to the terminal; `START` launchers detach it.
-Both repeat a setup step only when its inputs change and rebuild a stale interface.
-Use `node scripts/start.mjs --offline` to inspect the UI with provider execution disabled.
-
-| Optional environment variable | Purpose |
-| --- | --- |
-| `DAZEDTL_PYTHON` | Python executable with backend dependencies; setup creates `.venv` from it instead of the pinned Python |
-| `DAZEDTL_PROFILE` | Electron profile location |
-| `DAZEDTL_WORKSPACE` | Project and run storage location |
-
-## Branches and releases
-
-Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
-From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
-A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, and `--local` stops before pushing.
-The [updater](docs/architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
-
-The mirrors are listed in [release/mirrors.json](release/mirrors.json); the release pushes to all of them through one remote:
-
-```sh
-git remote add all git@github.com:dazedanon/DazedTL.git
-git remote set-url --add --push all git@github.com:dazedanon/DazedTL.git
-git remote set-url --add --push all git@ssh.gitgud.io:DazedAnon/DazedTL.git
-git remote set-url --add --push all git@git-ssh.dazedtl.dev:dazed/DazedTL.git
-```
-
-Releases are signed with a key kept outside the checkout.
-Create it once with `node scripts/release.mjs key`, commit the public key it adds to `release/keys`, and back up the private key: installs reject releases signed by any key they do not trust.
-Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
-
-## Development checks
-
-Run the full behavior suite from this checkout with `node scripts/test.mjs` (or `npm test` from `app`).
-It uses the local Python environment and Node's built-in test runner, with one enforced wall-clock budget including startup, fixtures, and teardown.
-The runner reports the five slowest Python tests to make runtime regressions visible.
-Tests use temporary workspaces and controlled API responses; no provider, game folder, credentials, or sibling checkout is needed.
-
-For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
-Run `node scripts/build.mjs` separately for static checks and the renderer build.
-It checks formatting, that stylesheets use the [design tokens](docs/architecture.md#visual-design) that the [generated API contracts](docs/architecture.md#api-changes) are current and that tracked paths fit the [Windows path budget](docs/architecture.md#distribution-and-updates), lints with type-aware [Oxlint](.oxlintrc.json) (including the React hooks rules) and [Ruff](ruff.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](pyrightconfig.json).
-Launching builds a missing renderer without these checks.
-Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
-To skip the one-time formatting commit in local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
-
-## Documentation
-
-- The [user guide](docs/user-guide.md) explains the app's workflows, API setup, backups and diagnostics.
-- [Architecture](docs/architecture.md) covers code ownership, boundaries and design decisions.
-- The [translation contract](docs/translation-contract.md) is for engine adapter authors and assistant integrations.
-- [AGENTS.md](AGENTS.md) holds contribution rules.
-- The [migration record](docs/migration.md) keeps historical provenance.
+Working on DazedTL itself? See the [development guide](docs/development.md).
