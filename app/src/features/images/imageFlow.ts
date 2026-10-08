@@ -41,26 +41,20 @@ export function imageFlow(
   const toTranslate = listed - applied - (counts.selectedSkipped || 0);
   const investigated =
     counts.examined > 0 || state.discovery.status === "complete";
-  // A finished investigation that found no text closes Images, as does
-  // applied work the list no longer holds.
-  const settled =
-    counts.applied > 0 ||
-    (state.discovery.status === "complete" &&
-      !counts.recommended &&
-      !counts.uncertain);
+  // Applying what was translated finishes Images; an image the list still
+  // holds untranslated, or one ticked later, can start another round without
+  // reopening it. An investigation that leaves nothing ticked finishes too.
   const step: ImageStep = waiting.investigation
     ? "investigate"
     : waiting.translation
       ? "translate"
       : !listed
-        ? !investigated
-          ? "investigate"
-          : settled
-            ? "done"
-            : "choose"
+        ? investigated || counts.applied
+          ? "done"
+          : "investigate"
         : ready || review
           ? "apply"
-          : !toTranslate
+          : !toTranslate || applied
             ? "done"
             : state.editing.status === "idle"
               ? "choose"

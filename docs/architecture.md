@@ -503,7 +503,7 @@ Status shows where a Guided project stands from the observed snapshot through [g
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
-Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once every image in its list is in the game, or a complete investigation leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; optional Release never blocks the next required task.
+Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once the translated images in its list are applied, or an investigation leaves nothing ticked, and Release while a saved ZIP still matches the game; optional Release never blocks the next required task.
 Pending changes completes once translated text has been applied and no selected output still waits, so clearing the selection keeps it done.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
@@ -743,7 +743,7 @@ They start from the observed state when the snapshot already has it, so revisiti
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
 Returning to the window rechecks outside edits through `workspace_recheck`, which reinspects the images being worked on (working copies, the selection and applied images) against their cached file signatures; as a mutation it is followed by a fresh observation, so every feature sees the result without its own refresh.
-It also imports a report saved for a copied image task, validated as Check for results does, including a finished task's report the assistant saves again for the user's redo requests; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
+It also imports a report saved for a copied image task, including a finished task's report the assistant saves again for the user's redo requests, and the Image Manager runs the same import every few seconds while a task waits, so results arrive while DazedTL keeps the focus; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
 Guided reports are read by the observer, and plugin reports are validated by the project helper's continue command the assistant runs.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.

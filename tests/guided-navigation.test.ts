@@ -264,18 +264,18 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
   Object.assign(images.counts, { selected: 1, selectedNeedsReview: 0 });
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
-  // A game with nothing to translate closes Images after a complete
-  // investigation leaves nothing recommended or uncertain, and Other event
-  // text once current findings are applied with no source enabled.
+  // An investigation that leaves nothing to translate closes Images, until
+  // a later investigation waits on the assistant, and Other event text closes
+  // once current findings are applied with no source enabled.
   Object.assign(images.counts, {
     applied: 0,
     recommended: 0,
-    uncertain: 1,
     selected: 0,
     selectedApplied: 0,
   });
+  images.discovery.status = "awaiting_results";
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
-  images.counts.uncertain = 0;
+  images.discovery.status = "complete";
   state.eventText.status = "ready";
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
   state.eventText.applied = true;

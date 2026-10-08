@@ -41,7 +41,7 @@ Tasks you copy to a coding assistant, such as Names & glossary, Line widths, Oth
 Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed, or **Blocked** with the reason.
 Finished tasks leave the list; their results stay in their own task.
 **Dismiss** clears a task you abandoned, so its task reads **Not started** again; saved results are kept, and copying the task again brings it back.
-When you return to the DazedTL window, image results your assistant saved are imported and checked; other tasks show their saved results as soon as they appear.
+Image results your assistant saved are imported and checked when you return to the DazedTL window, and every few seconds while an image task waits; other tasks show their saved results as soon as they appear.
 
 ### Set up
 
@@ -135,13 +135,13 @@ A click on an image only previews it, so looking never changes the list; its tic
 The folder list is a tree: choosing a folder shows all of its images, its subfolders' too, and its number counts them; the view numbers follow the chosen folder and search.
 In **To translate**, an image you untick stays in view until you change the view, so you can tick it again.
 The viewer beside the panel shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
-**More** holds investigating a folder or the images not yet examined, checking for results, the text editor, restore and exclusions.
+**More** holds investigating the images not yet examined, the text editor, scanning for new images and restoring originals.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
 An edited copy saved in another image editor is checked again when you return to DazedTL.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
 Applied images stay marked **Applied**, and later investigations and translation tasks skip them unless the game's image changes.
-Images is done once every image in the list is in the game, or once a finished investigation leaves no recommended or uncertain image; **Exclude ticked images** records images you leave untranslated.
+Images is done once its translated images are applied, or once an investigation leaves nothing ticked; an image still in the list, or one you tick later, can go through another round with **Copy translation task**.
 
 ### Check
 

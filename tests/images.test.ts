@@ -106,8 +106,8 @@ test("thumbnails on screen load ahead of the view's planned ones, one read each"
 
 test("Images leads with the step its saved work reaches", () => {
   // Protect the one leading button: an answered investigation moves on to
-  // choosing, partial translations still offer Apply, and a list left
-  // untranslated after earlier work goes back to the translation task.
+  // choosing, partial translations still offer Apply, and applying finishes
+  // Images even while the list holds an image to translate in a later round.
   const at = (
     counts: Partial<ImageCounts>,
     discovery = "idle",
@@ -135,23 +135,19 @@ test("Images leads with the step its saved work reaches", () => {
     "apply",
   );
   assert.equal(
-    at(
-      { examined: 2, selected: 2, selectedApplied: 1 },
-      "complete",
-      "complete",
-    ),
+    at({ examined: 2, selected: 2 }, "complete", "complete"),
     "translate",
   );
   assert.equal(
     at(
-      { examined: 2, applied: 2, selected: 2, selectedApplied: 2 },
+      { examined: 2, applied: 1, selected: 2, selectedApplied: 1 },
       "complete",
       "complete",
     ),
     "done",
   );
-  // An investigation that found no image text closes Images.
-  assert.equal(at({ examined: 2 }, "complete"), "done");
+  // An investigation that leaves nothing ticked finishes Images.
+  assert.equal(at({ examined: 2, uncertain: 1 }, "complete"), "done");
 });
 
 test("the folder list counts what choosing a folder shows", () => {

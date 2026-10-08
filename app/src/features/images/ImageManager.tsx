@@ -64,6 +64,9 @@ import { StepProgress } from "../../ui/StepProgress";
 import { imageFlow, imageSteps } from "./imageFlow";
 import { useHandoff } from "../assistant/useAssistantTasks";
 
+/** How often a waiting task's report is looked for. */
+const REPORT_CHECK_MS = 5000;
+
 export interface ImageManagerProps {
   projectId: string;
   onOpenEditor: (assetIds: string[]) => void;
@@ -742,6 +745,22 @@ function Manager({
     !!state.job &&
     ["pending", "running", "stopping"].includes(state.job.status);
   const waiting = flow.waiting.investigation || flow.waiting.translation;
+  // While a copied task waits, its report is looked for every few seconds,
+  // so results arrive even while DazedTL keeps the focus.
+  const pickUp = useEffectEvent(async () => {
+    if (action.busy || draft.dirty) return;
+    try {
+      images.set((await imagesApi.action(projectId, "pickup")).state);
+    } catch {
+      // Returning to the window checks again; a rejected report shows on the
+      // task panel.
+    }
+  });
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = setInterval(() => void pickUp(), REPORT_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [waiting]);
   const copiedAt =
     (flow.waiting.translation && state.editing.copiedAt) ||
     (flow.waiting.investigation && state.discovery.copiedAt) ||
@@ -775,13 +794,19 @@ function Manager({
           : "Tick the images to translate, then copy the translation task."
         : flow.step === "translate"
           ? flow.waiting.translation
-            ? `Your assistant is translating ${imageCount(flow.toTranslate)}. Results appear on them as it saves them.`
+            ? `Your assistant is translating ${imageCount(flow.toTranslate)}. Results appear on ${flow.toTranslate === 1 ? "it" : "them"} as it saves them.`
             : `${imageCount(flow.untranslated)} in your list ${flow.untranslated === 1 ? "isn't" : "aren't"} translated yet. Copy the translation task to continue.`
           : flow.step === "apply"
-            ? `${flow.ready ? `${imageCount(flow.ready)} translated. ` : ""}Look them over, Compare shows before and after, and tell your assistant about anything to redo.`
+            ? `${flow.ready ? `${imageCount(flow.ready)} translated. ` : ""}Look ${flow.ready + flow.review === 1 ? "it" : "them"} over, Compare shows before and after, and tell your assistant about anything to redo.`
             : counts.applied
-              ? `${imageCount(counts.applied)} ${counts.applied === 1 ? "is" : "are"} in the game. Later tasks skip them unless the game's image changes.`
-              : "Your assistant found no image text players read.";
+              ? `${imageCount(counts.applied)} ${counts.applied === 1 ? "is" : "are"} in the game. ${
+                  flow.untranslated > 0
+                    ? `${flow.untranslated.toLocaleString()} more ${flow.untranslated === 1 ? "image in your list isn't" : "images in your list aren't"} translated; copy the translation task to translate ${flow.untranslated === 1 ? "it" : "them"} too.`
+                    : "Later tasks skip them unless the game's image changes."
+                }`
+              : counts.recommended || counts.uncertain
+                ? "Nothing is ticked to translate. Tick images to translate them."
+                : "Your assistant found no image text players read.";
   const reportIssues = [
     ...(state.discovery.errors || []),
     ...(state.editing.errors || []),
@@ -914,36 +939,10 @@ function Manager({
           Investigate the {imageCount(counts.notExamined)} not examined
         </MenuItem>
       )}
-      <MenuItem
-        disabled={jobRunning || !value.view.folder}
-        onSelect={() =>
-          void perform("discovery_task", {
-            scope: "folders",
-            folders: [value.view.folder],
-          })
-        }
-      >
-        Investigate this folder
-      </MenuItem>
-      <MenuItem
-        disabled={
-          jobRunning ||
-          (state.discovery.status === "idle" && state.editing.status === "idle")
-        }
-        onSelect={() =>
-          void perform(
-            state.editing.status === "idle" || flow.step === "investigate"
-              ? "refresh_findings"
-              : "refresh_results",
-          )
-        }
-      >
-        Check for results
-      </MenuItem>
       <MenuItem disabled={!value.selection.length} onSelect={editText}>
         Edit text…
       </MenuItem>
-      <MenuItem onSelect={() => perform("scan")}>Refresh inventory</MenuItem>
+      <MenuItem onSelect={() => perform("scan")}>Scan for new images</MenuItem>
       {state.profile.id === "generic" && (
         <MenuItem
           onSelect={() => {
@@ -956,27 +955,10 @@ function Manager({
       )}
       <MenuSeparator />
       <MenuItem
-        disabled={!value.selection.length}
+        disabled={!flow.applied}
         onSelect={() => perform("preview_restore")}
       >
         Restore originals…
-      </MenuItem>
-      <MenuItem
-        disabled={!value.selection.length}
-        onSelect={() =>
-          perform("exclude", {
-            asset_ids: value.selection,
-            reason: "Excluded from this image translation scope.",
-          })
-        }
-      >
-        Exclude ticked images
-      </MenuItem>
-      <MenuItem
-        disabled={!value.selection.length}
-        onSelect={() => perform("include", { asset_ids: value.selection })}
-      >
-        Include ticked images again
       </MenuItem>
     </Menu>
   );
@@ -984,7 +966,7 @@ function Manager({
   const translating =
     flow.step === "choose" ||
     flow.step === "translate" ||
-    (flow.step === "apply" && flow.untranslated > 0);
+    ((flow.step === "apply" || flow.step === "done") && flow.untranslated > 0);
   const footer = (
     <ActionBar
       feedback={
@@ -1238,7 +1220,7 @@ function Manager({
                         ? "Index the image library to begin discovery or choose images yourself."
                         : folderSearch
                           ? `The search looks only in ${value.view.folder}.`
-                          : `${hidden.toLocaleString()} selected ${hidden === 1 ? "image stays" : "images stay"} selected.`}
+                          : `${hidden.toLocaleString()} ${hidden === 1 ? "image in your list is" : "images in your list are"} outside this view.`}
                     </p>
                   )}
                   <Button

@@ -1154,6 +1154,10 @@ class ImageService:
                 self._save(project_id, value)
                 self._index(project_id).selected(selected)
                 return {"state": self.state(project_id)}
+            # While a copied task waits, the manager looks for its report.
+            if action == "pickup":
+                self._pickup(project_id)
+                return {"state": self.state(project_id)}
             self._idle(project_id)
             if action in {"discovery_task", "edit_task", "revision_task"}:
                 return self._task(project_id, action, options)
