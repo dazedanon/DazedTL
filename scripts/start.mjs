@@ -184,7 +184,14 @@ function alert(message) {
     if (spawnSync(command, values, { stdio: "ignore" }).status === 0) return;
 }
 
+// On Windows this names the console window, which otherwise reads cmd.exe and
+// keeps npm's title after setup runs it.
+const title = () => {
+  if (process.platform === "win32") process.title = "DazedTL";
+};
+
 async function launch() {
+  title();
   if (waitFor) {
     // The app that asked for this restart must be gone before files change.
     for (let tries = 0; tries < 300 && alive(waitFor); tries++)
@@ -213,6 +220,7 @@ async function launch() {
     mode:
       state.mode || (fs.existsSync(path.join(root, ".git")) ? "dev" : "user"),
   });
+  title();
   if (rendererStale()) {
     console.log("Building the interface…");
     const { buildRenderer } = await import("./build.mjs");
