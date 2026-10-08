@@ -310,6 +310,11 @@ function userEnvironment() {
   return env;
 }
 
+const startFailed = ({ code, output }) =>
+  new Error(
+    `START exited with ${code}:\n${output.trim().split(/\r?\n/).slice(-20).join("\n")}`,
+  );
+
 /** Runs START as a user's double-click does and waits for it to finish. */
 async function runStart(label, args, timeout) {
   const log = fs.createWriteStream(path.join(logs, `${label}.log`));
@@ -708,7 +713,7 @@ try {
       execFileSync("sh", ["-c", fix], { stdio: "inherit" });
       result = await runStart("start-1b", debug, 10 * 60_000);
     }
-    if (result.code !== 0) throw new Error(`START exited with ${result.code}.`);
+    if (result.code !== 0) throw startFailed(result);
     if (!fs.existsSync(shortcut))
       throw new Error(`Setup added no shortcut at ${shortcut}.`);
     if (
@@ -849,7 +854,7 @@ try {
 
   await step("Second START opens the same project without setup", async () => {
     const result = await runStart("start-2", debug, 5 * 60_000);
-    if (result.code !== 0) throw new Error(`START exited with ${result.code}.`);
+    if (result.code !== 0) throw startFailed(result);
     const repeated = /^(Downloading|Installing|Creating|Building).*$/m.exec(
       result.output,
     );
@@ -864,6 +869,13 @@ try {
   });
 } catch (error) {
   failures.push(`${current}: ${message(error)}`);
+  // Annotations show on the run page without signing in, unlike logs.
+  if (process.env.GITHUB_ACTIONS) {
+    const escape = (value) =>
+      value.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+    const title = escape(current).replace(/:/g, "%3A").replace(/,/g, "%2C");
+    console.log(`::error title=${title}::${escape(message(error))}`);
+  }
   console.error(
     `\n✖ ${current}\n${(error instanceof Error && error.stack) || message(error)}`,
   );
