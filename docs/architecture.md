@@ -357,6 +357,7 @@ Missing or changed historical files cannot be reapplied.
 Publication uses the same reviewed overwrite and restore receipts as ordinary Apply.
 An older Apply receipt does not establish that the current game still matches a run’s output.
 Explicit text Apply is a full overwrite: it binds the frozen candidate and destination scope while accepting intervening game-data edits.
+Its review names the files edited in the game since their last Apply, whose edits it replaces.
 Its one-use confirmation retains the reviewed file list for execution guards.
 A failed confirmation keeps its error visible and offers Refresh preview; it cannot resend the consumed token or automatically execute the replacement review.
 Apply captures the actual overwritten bytes for rollback at execution.

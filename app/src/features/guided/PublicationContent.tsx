@@ -1,4 +1,5 @@
 import type { Preview } from "../../api/contracts";
+import { Notice } from "../../ui/Notice";
 import { PathText } from "../../ui/PathText";
 import { TextDiff } from "../../ui/TextDiff";
 import { VirtualList } from "../../ui/VirtualList";
@@ -22,6 +23,11 @@ export function PublicationContent({ preview }: { preview: Preview }) {
   const applying = preview.rewrap
     ? preview.rewrap.changes_found - preview.rewrap.overflow_skipped
     : 0;
+  // Files changed in the game since their last Apply, such as hand fixes,
+  // which a full overwrite replaces.
+  const edited = (preview.publication || [])
+    .filter((row) => row.later_edits)
+    .map((row) => row.path.split("/").pop());
   return (
     <>
       <p className="path">
@@ -39,6 +45,14 @@ export function PublicationContent({ preview }: { preview: Preview }) {
               Uses the saved files from this run. Reapplying makes no API
               requests.
             </p>
+          )}
+          {!!edited.length && (
+            <Notice tone="warning">
+              {edited.slice(0, 3).join(", ")}
+              {edited.length > 3 && ` and ${edited.length - 3} more`}
+              {edited.length === 1 ? " was" : " were"} edited in the game after
+              the last Apply. Applying replaces those edits.
+            </Notice>
           )}
           {!!preview.paths.length && (
             <>
@@ -93,10 +107,7 @@ export function PublicationContent({ preview }: { preview: Preview }) {
               <details className="text-publication" key={row.path}>
                 {/* The text comparison is what the user reviews; the frozen
                     plan keeps the hashes it checks. */}
-                <summary>
-                  {row.path}
-                  {row.later_edits ? " · Replaces later game edits" : ""}
-                </summary>
+                <summary>{row.path}</summary>
                 <strong>
                   Changes
                   {row.truncated ? " (first 16,000 characters)" : ""}
