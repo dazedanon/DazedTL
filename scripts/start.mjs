@@ -94,26 +94,6 @@ function restart() {
   return 0;
 }
 
-// Rebuild when renderer inputs changed since the last build, such as after an
-// update; the backend refuses a renderer built from older contracts.
-function rendererStale() {
-  const built = fs.statSync(path.join(app, "dist/index.html"), {
-    throwIfNoEntry: false,
-  })?.mtimeMs;
-  const inputs = [
-    ...fs.globSync("app/src/**", { cwd: root }),
-    "app/index.html",
-    "app/package-lock.json",
-    "app/tsconfig.json",
-    "app/vite.config.ts",
-    "backend/dazedtl/api/protocol.json",
-  ];
-  return (
-    built === undefined ||
-    inputs.some((file) => fs.statSync(path.join(root, file)).mtimeMs > built)
-  );
-}
-
 /**
  * Ubuntu 24.04 and later block the browser sandbox of apps without an AppArmor
  * profile, so Electron would exit at once. Returns the one-time fix, if needed.
@@ -230,9 +210,11 @@ async function launch() {
       state.mode || (fs.existsSync(path.join(root, ".git")) ? "dev" : "user"),
   });
   title();
+  // The backend refuses a renderer built from older contracts, so an update
+  // or a changed source rebuilds it. build.mjs needs the installed packages.
+  const { rendererStale, buildRenderer } = await import("./build.mjs");
   if (rendererStale()) {
     console.log("Building the interface…");
-    const { buildRenderer } = await import("./build.mjs");
     buildRenderer();
   }
   const current = readState();

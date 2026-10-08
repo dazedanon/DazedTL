@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { app, root, dependencies } from "./dependencies.mjs";
 const modules = dependencies();
@@ -49,9 +51,46 @@ function run(steps) {
       throw new Error("The build could not finish. Check the output above.");
   }
 }
+// What the renderer build reads. Its digest, not file times, decides whether a
+// build is current: a ZIP unpacked over an install keeps the archive's older
+// timestamps, and clocks can move backwards.
+const rendererInputs = [
+  "app/src/**",
+  "app/index.html",
+  "app/package-lock.json",
+  "app/tsconfig.json",
+  "app/vite.config.ts",
+  "backend/dazedtl/api/protocol.json",
+];
+const stamp = path.join(app, "dist/.inputs");
+function rendererDigest() {
+  const hash = crypto.createHash("sha256");
+  const files = fs
+    .globSync(rendererInputs, { cwd: root })
+    .filter((file) => fs.statSync(path.join(root, file)).isFile())
+    .map((file) => file.replaceAll("\\", "/"))
+    .sort();
+  for (const file of files)
+    hash
+      .update(file)
+      .update("\0")
+      .update(fs.readFileSync(path.join(root, file)))
+      .update("\0");
+  return hash.digest("hex");
+}
+/** Whether the built renderer was made from other inputs than the current ones. */
+export function rendererStale() {
+  try {
+    return fs.readFileSync(stamp, "utf8") !== rendererDigest();
+  } catch {
+    return true;
+  }
+}
 /** Builds the renderer; launching uses this without the development checks. */
 export function buildRenderer() {
+  const digest = rendererDigest();
   run([node("vite/bin/vite.js", ["build"], { cwd: app })]);
+  fs.writeFileSync(stamp, digest);
 }
 if (import.meta.main) {
   try {
