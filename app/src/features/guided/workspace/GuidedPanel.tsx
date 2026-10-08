@@ -453,7 +453,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                       "TL Inspector",
                       "Shows a line's source and context in the game.",
                     ],
-                    ["forge", "Forge", "Edits text with an in-game overlay."],
+                    [
+                      "forge",
+                      "Forge",
+                      "Teleports and edits switches, variables and items in the game.",
+                    ],
                   ] as const
                 ).map(([key, label, description]) => (
                   <ActionRow
