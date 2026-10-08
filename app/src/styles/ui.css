@@ -1054,8 +1054,9 @@ pre {
   font-size: var(--font-control);
   line-height: 1.5;
 }
-/* Buttons share a top edge; one control's feedback hangs below it without
-   moving its neighbours. */
+/* Buttons share a top edge and stay side by side; a control's feedback
+   takes its own line below them, so a long result never splits the buttons
+   or sits between two of them. */
 .action-row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1072,9 +1073,25 @@ pre {
 .action-row-actions > .action-control > .ui-button:not(.link-button, .quiet) {
   min-width: 8rem;
 }
-.action-row-actions > .action-control {
-  align-items: flex-end;
+.action-row-actions > .action-control:not(.action-control--inline) {
+  display: contents;
   text-align: end;
+}
+.action-row-actions
+  > .action-control:not(.action-control--inline)
+  > .action-control-feedback {
+  order: 1;
+  flex-basis: 100%;
+  margin-top: 0;
+}
+.action-row-actions
+  > .action-control:not(.action-control--inline)
+  > .action-control-feedback:empty {
+  display: none;
+}
+/* Feedback lengthens the actions, so the label keeps the buttons' top edge. */
+.action-row:has(> .action-row-actions .action-control-feedback:not(:empty)) {
+  align-items: start;
 }
 /* Right-aligned feedback flows as one paragraph led by its status icon, so a
    wrapped result keeps the icon beside its first line instead of at the
@@ -1119,7 +1136,6 @@ pre {
     max-width: 100%;
   }
   .action-row-actions > .action-control {
-    align-items: flex-start;
     text-align: start;
   }
 }
@@ -1141,9 +1157,6 @@ pre {
 .action-list--compact .action-row-actions > .ui-button,
 .action-list--compact .action-row-actions > .action-control > .ui-button {
   min-width: 0;
-}
-.action-list--compact > .action-row:has(.action-control-feedback:not(:empty)) {
-  align-items: start;
 }
 @container (max-width: 36rem) {
   .action-list--compact

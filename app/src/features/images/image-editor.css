@@ -259,7 +259,6 @@
   max-width: 100%;
 }
 .native-editor-native-translation .action-row-actions > .action-control {
-  align-items: flex-start;
   text-align: start;
 }
 .native-editor-native-translation > .native-editor-run-picker {
