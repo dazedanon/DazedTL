@@ -11,7 +11,7 @@ import {
 import { Message } from "../../../../ui/Feedback";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
-import { GuidanceReview } from "../../GuidanceReview";
+import { GuidanceEditor } from "../../GuidanceEditor";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
@@ -168,7 +168,7 @@ export function guidanceView(w: GuidedWorkspace): TaskView {
   let content: ReactNode;
   content = (
     <>
-      <GuidanceReview
+      <GuidanceEditor
         documents={state.documents}
         context={context}
         setup={discovery}

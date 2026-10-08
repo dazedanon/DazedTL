@@ -979,3 +979,6 @@ The backup also serves "Go back"; automatic checks skip the version the user wen
 Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
 Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.
 The budget leaves room for an install folder like `C:\Users\<26 characters>\Downloads\DazedTL-2.0.0\DazedTL-2.0.0\`.
+The same check rejects paths, and module names without their import extension, that differ only in letter case.
+Windows treats such names as one file, so an import of `./GuidanceReview` loaded `guidanceReview.ts` instead of `GuidanceReview.tsx` and broke the renderer build.
+When a clash needs a rename, rename the file whose old copy would be harmless, because a ZIP unpacked over an older install keeps files the release dropped.

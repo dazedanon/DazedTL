@@ -4,7 +4,7 @@ import { DocumentEditor } from "../../ui/DocumentEditor";
 import { HelpPopover } from "../../ui/HelpPopover";
 import type { useContextDraft } from "./useContextDraft";
 
-export function GuidanceReview({
+export function GuidanceEditor({
   documents,
   context,
   setup,
