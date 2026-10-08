@@ -8,17 +8,12 @@ from util.version_update import (
     GitWorkflowError, bootstrap_repository, inspect_repository,
     record_version_metadata, register_translation_branch,
 )
-from util.version_update.git_workflow import _preserve_game_files, _run_git
+from util.version_update.git_workflow import _git_paths, _preserve_game_files, _run_git
 
 
 def _pending_operations(repo: Path) -> list[str]:
-    pending = []
-    for name in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_LOG"):
-        value = _run_git(repo, "rev-parse", "--git-path", name).stdout.strip()
-        path = Path(value)
-        if (path if path.is_absolute() else repo / path).exists():
-            pending.append(name)
-    return pending
+    paths = _git_paths(repo, "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "BISECT_LOG")
+    return [name for name, path in paths.items() if path.exists()]
 
 
 def git_status(project: LenProject) -> dict:

@@ -12,6 +12,7 @@ from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
+from dazedtl.translation.git_status_cache import RepositoryStatusCache
 from dazedtl.translation.requests import output_schema
 
 from . import request_parameters
@@ -47,6 +48,7 @@ class TranslationEngine:
 
         self.source = activate()
         self.profile = Path(profile).resolve()
+        self.repository_status = RepositoryStatusCache()
 
     @contextmanager
     def context(self):
@@ -372,7 +374,14 @@ class TranslationEngine:
     def git_status(self, source, options):
         from util.len_git import git_status
 
-        return git_status(self.project(source, options))
+        # The UI polls status twice a second while work runs; a full inspection
+        # launches a dozen Git processes, which Windows starts slowly.
+        project = self.project(source, options)
+        return self.repository_status.get(
+            (str(project.game_root), digest(options)),
+            project.game_root,
+            lambda: git_status(project),
+        )
 
     def source_bindings(self, source, paths):
         """Tracked source inputs follow original, so normal English injection is not source drift."""

@@ -10,6 +10,7 @@ No game file is parsed or reconstructed.
 from __future__ import annotations
 
 import os
+import functools
 import hashlib
 import json
 import re
@@ -479,10 +480,20 @@ def _repository_for(selected: Path) -> tuple[Path, str] | None:
     return repo, prefix
 
 
+def _git_paths(repo: Path, *names: str) -> dict[str, Path]:
+    """Resolve repository-internal paths with one Git call; each launch is costly on Windows."""
+    arguments = [argument for name in names for argument in ("--git-path", name)]
+    lines = _run_git(repo, "rev-parse", *arguments).stdout.splitlines()
+    if len(lines) != len(names):
+        raise GitWorkflowError("Git did not resolve every repository path")
+    return {
+        name: (path if path.is_absolute() else repo / path)
+        for name, path in zip(names, map(Path, lines))
+    }
+
+
 def _cherry_pick_path(repo: Path) -> Path:
-    result = _run_git(repo, "rev-parse", "--git-path", "CHERRY_PICK_HEAD")
-    path = Path(result.stdout.strip())
-    return path if path.is_absolute() else repo / path
+    return _git_paths(repo, "CHERRY_PICK_HEAD")["CHERRY_PICK_HEAD"]
 
 
 def inspect_repository(game_root: str | Path) -> RepositoryStatus:
@@ -698,7 +709,9 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+@functools.lru_cache(maxsize=64)
 def _git_common_dir(repo: Path) -> Path:
+    """The common directory is a fixed property of a repository root; status checks ask for it repeatedly."""
     common_text = _run_git(repo, "rev-parse", "--git-common-dir").stdout.strip()
     common = Path(common_text)
     if not common.is_absolute():
