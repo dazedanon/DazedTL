@@ -2,7 +2,7 @@
 
 **Indicators:** SRPG Studio `game.exe` (imagebase `0x400000`), a single large `data.dts` archive (~500 MB) holding database + code + graphics + audio + fonts. Fire-Emblem-style tactical RPGs.
 
-**Reference implementation:** `tools/Game Translation/Reference Pipelines/SRPG Studio (Belphegor)/` - the **gold-standard translation pipeline in this whole corpus**, especially its text-wrapping/layout code. Read `.\docs\01-architecture.md` through `08-changing-the-database.md`. Tooling: `.\tl.py` + `.\srpgtl\` package + `.\loosekit\make_folder.py` + `.\jstools\` + `.\typeset_*.py`. Glossary/bible at `.\tl\`.
+**Reference implementation:** `tools/Reference Pipelines/SRPG Studio (Belphegor)/` - the **gold-standard translation pipeline in this whole corpus**, especially its text-wrapping/layout code. Read `.\docs\01-architecture.md` through `08-changing-the-database.md`. Tooling: `.\tl.py` + `.\srpgtl\` package + `.\loosekit\make_folder.py` + `.\jstools\` + `.\typeset_*.py`. Glossary/bible at `.\tl\`.
 
 ## Delivery: patched exe + loose-file override (no repack)
 

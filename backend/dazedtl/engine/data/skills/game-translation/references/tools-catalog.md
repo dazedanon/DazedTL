@@ -2,13 +2,13 @@
 
 Everything bundled with this skill, by job. All paths are relative to the skill folder: `tools/` sits next to `SKILL.md`. **Copy from these - don't reinvent.** Third-party binaries are not bundled; `tools/THIRD-PARTY.md` says where each one goes.
 
-There are **two** stable homes, not one. `tools/Game Translation/Reference Pipelines/` holds
-the finished pipelines ranked below. `tools/Game Translation/Active Projects/` holds code-only snapshots (taken 2026-09-07: scripts, docs, glossaries, prompts; no game data, work trees or builds) of the three
+There are **two** stable homes, not one. `tools/Reference Pipelines/` holds
+the finished pipelines ranked below. `tools/Active Projects/` holds code-only snapshots (taken 2026-09-07: scripts, docs, glossaries, prompts; no game data, work trees or builds) of the three
 still moving - `Artesia (Bakin)/`, `Dress Quest (RPG Maker VX Ace)/`, `Mineria EroTrapDungeon
 (RPG Maker MV)`. The deepest Bakin pipeline is an Active Project and is not in the ranked list,
 so read the Bakin section at the bottom of this file before adapting anything Bakin.
 
-## Reusable translation tooling - `tools/Game Translation/`
+## Reusable translation tooling - `tools/`
 
 | Folder | What | Engine |
 |---|---|---|
@@ -124,7 +124,7 @@ first and go to the source for detail.
 - **LLM local:** llama.cpp (CPU or Vulkan build) - offline models if needed.
 - **w64devkit** - GCC toolchain for building the Rust/C tools.
 
-## Reference pipelines - `tools/Game Translation/Reference Pipelines/`
+## Reference pipelines - `tools/Reference Pipelines/`
 
 Complete per-engine pipelines (scripts + glossaries + prompts + docs + mod source), copied out of volatile game folders into this stable location. Read the folder's README first, then copy and adapt. **Do NOT reference the original game-folder copies - they get deleted.** This is one of the two stable locations. `Active Projects/` is the other, and the list below does not include it.
 

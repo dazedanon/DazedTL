@@ -2,7 +2,7 @@
 
 **Indicators:** `Engine/` folder, `<Game>/Content/Paks/*.pak` (UE4) or `*.utoc` + `*.ucas` + `*.pak` (UE5 IoStore), a `<Game>.exe` + `<Game>/Binaries/`. Rare for indie JP games but happens (e.g. FortuneBride).
 
-**Reference implementation:** `tools/Game Translation/Reference Pipelines/Unreal (FortuneBride)/` - full IoStore→legacy→JSON→translate→repack pipeline (`config.json`, PowerShell scripts `00-06` + `scripts/mistral_translate.py`, `scripts/text_json.py`, `scripts/build_translation_master.py`, `tl/` glossary+prompt, `README.md`/`TRANSLATE_README.md`). The UE binaries (retoc, repak, UAssetGUI, oodle, FModel) are not bundled - download them into `tools/C++/Unreal/` (`retoc/`, `repak/`, `UAssetGUI/`) and `tools/C++/FModel/` as listed in `tools/THIRD-PARTY.md`. Read `tools/C++/Unreal/README.md`.
+**Reference implementation:** `tools/Reference Pipelines/Unreal (FortuneBride)/` - full IoStore→legacy→JSON→translate→repack pipeline (`config.json`, PowerShell scripts `00-06` + `scripts/mistral_translate.py`, `scripts/text_json.py`, `scripts/build_translation_master.py`, `tl/` glossary+prompt, `README.md`/`TRANSLATE_README.md`). The UE binaries (retoc, repak, UAssetGUI, oodle, FModel) are not bundled - download them into `tools/C++/Unreal/` (`retoc/`, `repak/`, `UAssetGUI/`) and `tools/C++/FModel/` as listed in `tools/THIRD-PARTY.md`. Read `tools/C++/Unreal/README.md`.
 
 ## Toolchain
 

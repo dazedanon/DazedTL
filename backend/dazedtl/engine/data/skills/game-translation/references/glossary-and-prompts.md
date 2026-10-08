@@ -4,7 +4,7 @@ The glossary is the **contract** that keeps names and terms from drifting.
 In DazedTL, `.dazedtl/glossary.txt`, `.dazedtl/skills/game.md`, `.dazedtl/skills/quirks.md` and custom skills own those decisions. The live shared context compiler assembles them for every request. Preserve hand-edited guidance. Historical JSON and bible examples below explain the source pipelines; adapt them to the shared ownership contract.
 This is the single highest-leverage part of a good translation.
 
-Reference examples on disk (copy the closest genre), all under `tools/Game Translation/Reference Pipelines/` (= `RP/`):
+Reference examples on disk (copy the closest genre), all under `tools/Reference Pipelines/` (= `RP/`):
 - `RP/SRPG Studio (Belphegor)/tl/` - gold standard, 500+ char cast, gender corrections, alias merges, SRPG terms.
 - `RP/Unreal (FortuneBride)/tl/` - mid cast, mental-state system, adult eroge register.
 - `RP/Unity Mono (NTR Soccer)/tl/` - small slice-of-life cast, keeps honorifics.
@@ -109,7 +109,7 @@ Both names stay distinct rows and neither may be normalised into the other.
 A glossary that merges aliases by default spoils the reveal in the first scene the jester speaks.
 Any alias-merge automation needs an explicit `do_not_merge` list, and the bible repeats it in prose under Name-box notes.
 
-Auto-seed genders and roles with `tools/Game Translation/Text QA and Glossary/autofill_glossary.py` (speaker-name keyword heuristics: 兵士=Soldier/Male, 王女=Princess/Female, plus dialogue gender markers - male 俺/僕/だぜ/お前/てめえ, female あたし/わよ/だわ/かしら/のよ), **then hand-correct**.
+Auto-seed genders and roles with `tools/Text QA and Glossary/autofill_glossary.py` (speaker-name keyword heuristics: 兵士=Soldier/Male, 王女=Princess/Female, plus dialogue gender markers - male 俺/僕/だぜ/お前/てめえ, female あたし/わよ/だわ/かしら/のよ), **then hand-correct**.
 Heuristics are a starting point, not truth, and Louis above is exactly what they get wrong.
 
 ### Nameplate lookup keys: NFKC, OCR lookalikes, and a honorific whitelist

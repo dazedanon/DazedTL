@@ -12,7 +12,7 @@ parser=argparse.ArgumentParser()
 parser.add_argument('archive',type=Path,nargs='?',default=ROOT/'release/data.win')
 args=parser.parse_args()
 
-decompiled=HERE/'tooltip-decompiled/CodeEntries/gml_Object_obj_talent_Draw_0.gml'
+decompiled=HERE/'decompiled/CodeEntries/gml_Object_obj_talent_Draw_0.gml'
 source=decompiled.read_text(encoding='utf-8')
 start=source.index('if (geo_now != -1 && geo_mouse_x > 0 && geo_mouse_y > 0')
 end=source.rindex('draw_set_alpha(1);')

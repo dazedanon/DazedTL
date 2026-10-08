@@ -15,7 +15,7 @@ Related: `text-fitting.md`, because a layout pass that adds or drops a line brea
 the usual thing that moves the index described below, and `version-updates.md`, which
 faces the same identity problem across game versions rather than across patches.
 
-**Working implementations to copy from**, all under `tools/Game Translation/Reference Pipelines/`:
+**Working implementations to copy from**, all under `tools/Reference Pipelines/`:
 
 | Engine | What exists | Where |
 |---|---|---|

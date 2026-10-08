@@ -1,7 +1,7 @@
 # RPG Maker MZ: completed manual translation and native QA
 
 Measured on Tropical Chase, MZ 1.9.0, 2026-09-07. Stable reference:
-`tools/Game Translation/Reference Pipelines/RPG Maker MZ (Tropical Chase)/PIPELINE.md`.
+`tools/Reference Pipelines/RPG Maker MZ (Tropical Chase)/PIPELINE.md`.
 The adapter contains no translation API; game-specific inputs are documented,
 not silently assumed available. The offline regression suite needs only Python
 and Node; fresh native QA needs the actual game and isolated fixture saves.

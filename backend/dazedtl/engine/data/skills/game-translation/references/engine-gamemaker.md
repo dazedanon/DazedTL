@@ -1,12 +1,12 @@
 # GameMaker: translation, UI repair and archive patching
 
-Stable toolkit: `tools/Game Translation/GameMaker`. Run `python bootstrap.py` there once to fetch the pinned UTMT CLI into `vendor/utmt` (not bundled, 129 MB).
+Stable toolkit: `tools/GameMaker`. Run `python bootstrap.py` there once to fetch the pinned UTMT CLI into `vendor/utmt` (not bundled, 129 MB).
 Read its `README.md` for CLI/schema and `CASE-NIGHTFALL.md` for measured evidence.
 Use the bundled UndertaleModTool CLI for GML decompilation and archive writing;
 do not build a new general GameMaker serializer.
 
 For the completed manual translation and companion layout/image scripts, read
-`tools/Game Translation/Active Projects/Nightfall Princess (GameMaker)/manual-translation/README.md`.
+`tools/Active Projects/Nightfall Princess (GameMaker)/manual-translation/README.md`.
 Those adapters are per-game examples, not additional `gmtt.py` commands. Reuse
 their checks and re-measure each game's constants. The APIs below were tested
 against the bundled UTMT **0.9.2.0**, not every UTMT version.
@@ -182,7 +182,7 @@ the old crop. The second check caught it. Keep both and then inspect the game.
 
 For hard-to-reach tooltip states, first freshly decompile the archive being
 tested. The companion `qa/build_tooltip_canary.py` reads that exported GML under
-`qa/tooltip-decompiled/CodeEntries/`; it does not refresh the export itself.
+`qa/decompiled/CodeEntries/`; it does not refresh the export itself.
 Bind the decompile to the test archive so an old file cannot supply a stale draw
 block. The fixture extracts the real block and exercises it in a title-only
 test copy. This proved the five corrected headings had 15-17px of

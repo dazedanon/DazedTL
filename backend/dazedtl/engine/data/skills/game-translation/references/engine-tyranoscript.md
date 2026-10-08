@@ -4,7 +4,7 @@
 `data/scenario/*.ks`, `tyrano/`, `index.html`, `main.js`. Chromium DLLs
 (`libEGL.dll`, `ffmpeg.dll`, `chrome_*.pak`). `data/system/Config.tjs`.
 
-Three reusable projects under `tools/Game Translation/`:
+Three reusable projects under `tools/`:
 
 | Project | Evidence and scope |
 |---|---|

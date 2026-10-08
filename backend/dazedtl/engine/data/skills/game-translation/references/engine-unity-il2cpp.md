@@ -3,10 +3,10 @@
 **Indicators:** `GameAssembly.dll` + `<Game>_Data/il2cpp_data/Metadata/global-metadata.dat`. Code is compiled to native - no readable managed DLLs. Needs dumping to recover types, and BepInEx **6** (IL2CPP build) with Il2CppInterop for plugins.
 
 **Reference implementations:**
-- `tools/Game Translation/Reference Pipelines/Unity IL2CPP (Hitonatsu)/` - **the complete pipeline** (extract → Mistral → QA → build → plugin → package). Read its `PIPELINE.md` first; it is the only end-to-end IL2CPP reference here.
-- `tools/Game Translation/Unity BepInEx Translation Plugin Template/SheepClickerTL/` - the canonical runtime dictionary plugin (copy this).
-- `tools/Game Translation/Unity Text Extraction Pipeline/LoserLife/LoserLifeATest/` - a **second** BepInEx 6 IL2CPP plugin, and the better one to copy patch *registration* from: `AccessTools`-resolved optional targets, `RuntimeTextHarvester.cs`, `TextSweepBehaviour.cs`. The SheepClicker template has none of those.
-- `tools/Game Translation/Unity IL2CPP Text Tools/` - extraction scripts + `find_bubble`/`Il2CppStringDump` C# CLIs.
+- `tools/Reference Pipelines/Unity IL2CPP (Hitonatsu)/` - **the complete pipeline** (extract → Mistral → QA → build → plugin → package). Read its `PIPELINE.md` first; it is the only end-to-end IL2CPP reference here.
+- `tools/Unity BepInEx Translation Plugin Template/SheepClickerTL/` - the canonical runtime dictionary plugin (copy this).
+- `tools/Unity Text Extraction Pipeline/LoserLife/LoserLifeATest/` - a **second** BepInEx 6 IL2CPP plugin, and the better one to copy patch *registration* from: `AccessTools`-resolved optional targets, `RuntimeTextHarvester.cs`, `TextSweepBehaviour.cs`. The SheepClicker template has none of those.
+- `tools/Unity IL2CPP Text Tools/` - extraction scripts + `find_bubble`/`Il2CppStringDump` C# CLIs.
 - Finished mod projects (goblin-toybox: BepInEx 6 + bundled .NET runtime + Doorstop, the shipping layout to copy; ntrmeishi: BepInEx 5 Mono, only its negative lessons) are not bundled.
 
 For dumping/reversing a **protected** binary, or building a native trainer instead of a managed plugin, use the **il2cpp-game-modding** skill. This file is the translation path.
@@ -180,6 +180,6 @@ Bake the covered codepoint set into a QA gate: any character in a translation ou
 ## Coverage, layout, release
 
 - A-test plugin: replace every known extracted string with `"A"` at runtime; anything still Japanese on screen is unextracted.
-- Layout: `tools/Game Translation/Unity BepInEx Text Layout Plugin/VBV` - postfix `GenerateTextMesh` for auto-sizing. Its `References/` DLLs are not bundled: copy them from the game's `Managed/` and BepInEx `core/` before building. Enable auto-sizing but **do not set `overflowMode = Ellipsis` globally**: right for a button, wrong for a subtitle, where it silently drops words.
+- Layout: `tools/Unity BepInEx Text Layout Plugin/VBV` - postfix `GenerateTextMesh` for auto-sizing. Its `References/` DLLs are not bundled: copy them from the game's `Managed/` and BepInEx `core/` before building. Enable auto-sizing but **do not set `overflowMode = Ellipsis` globally**: right for a button, wrong for a subtitle, where it silently drops words.
 - Report expansion (JP→EN runs ~2.1x here) as a **box-fit** signal only. A per-line threshold below ~3x flags most of the corpus and is measuring how dense Japanese is, not how good the translation is.
 - Release: ship `winhttp.dll`, `.doorstop_version`, `doorstop_config.ini`, `dotnet/` (the bundled runtime is why no .NET install is needed), `BepInEx/core`, `BepInEx/config/BepInEx.cfg`, `BepInEx/plugins/<Name>/`. **Exclude** `BepInEx/interop/` (~100 MB, regenerated on first launch - that IS the 30-90s first start), `BepInEx/cache/*.dat`, all `*.log`, `untranslated.txt`, `*.pdb`, and the plugin's own `.cfg`.

@@ -13,18 +13,18 @@ TOOLS = SKILL / "tools"
 DAZEDTL_ROOT = SKILL.parents[2]
 
 BUNDLED = [
-    "Game Translation/GameMaker/gmtt.py",
-    "Game Translation/Image Translation/imgtl.py",
-    "Game Translation/Text Fitting/layout.py",
-    "Game Translation/Text Fitting/panel_bounds.cjs",
-    "Game Translation/Text QA and Glossary/autofill_glossary.py",
-    "Game Translation/Electron Text Tooling/goborin_text_tool.py",
-    "Game Translation/Unity BepInEx Translation Plugin Template/SheepClickerTL",
-    "Game Translation/Unity BepInEx Text Layout Plugin/VBV",
-    "Game Translation/Unity IL2CPP Text Tools",
-    "Game Translation/Unity Text Extraction Pipeline/LoserLife",
-    "Game Translation/Reference Pipelines",
-    "Game Translation/Active Projects/Artesia (Bakin)/ENGINE-CODES.md",
+    "GameMaker/gmtt.py",
+    "Image Translation/imgtl.py",
+    "Text Fitting/layout.py",
+    "Text Fitting/panel_bounds.cjs",
+    "Text QA and Glossary/autofill_glossary.py",
+    "Electron Text Tooling/goborin_text_tool.py",
+    "Unity BepInEx Translation Plugin Template/SheepClickerTL",
+    "Unity BepInEx Text Layout Plugin/VBV",
+    "Unity IL2CPP Text Tools",
+    "Unity Text Extraction Pipeline/LoserLife",
+    "Reference Pipelines",
+    "Active Projects/Artesia (Bakin)/ENGINE-CODES.md",
     "Game Archives/RPG Maker RGSSAD/install-template.ps1",
     "Game Archives/RPG Maker MZ/decrypt_rpgmz_data.js",
     "C++/Godot",
@@ -40,7 +40,7 @@ BUNDLED = [
 
 # Locations the references expect once the download in THIRD-PARTY.md is done.
 THIRD_PARTY = [
-    ("UndertaleModTool CLI (run GameMaker/bootstrap.py)", "Game Translation/GameMaker/vendor/utmt"),
+    ("UndertaleModTool CLI (run GameMaker/bootstrap.py)", "GameMaker/vendor/utmt"),
     ("AssetRipper", ".NET/AssetRipper/AssetRipper.GUI.Free.exe"),
     ("Il2CppDumper 6.7.46", ".NET/Il2CppDumper-win-v6.7.46/Il2CppDumper.exe"),
     ("Il2CppDumper-ManualReg build", ".NET/Il2CppDumper-ManualReg/Il2CppDumper/bin/Release/net8.0/Il2CppDumper.exe"),
@@ -51,7 +51,7 @@ THIRD_PARTY = [
     ("repak", "C++/Unreal/repak/repak.exe"),
     ("UAssetGUI", "C++/Unreal/UAssetGUI/UAssetGUI.exe"),
     ("FModel", "C++/FModel/FModel.exe"),
-    ("VBV reference DLLs", "Game Translation/Unity BepInEx Text Layout Plugin/VBV/References/UnityEngine.dll"),
+    ("VBV reference DLLs", "Unity BepInEx Text Layout Plugin/VBV/References/UnityEngine.dll"),
     ("WolfDawn wolf CLI", "DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe"),
 ]
 

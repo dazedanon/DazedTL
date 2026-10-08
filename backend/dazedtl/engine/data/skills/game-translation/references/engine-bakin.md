@@ -5,9 +5,9 @@ runtime is managed .NET over a native `kmyCore` layer.
 
 **Two complete pipelines exist. Read the one whose BUILD matches your game.**
 
-- `tools/Game Translation/Reference Pipelines/Bakin (Miyutsure)/` - build
+- `tools/Reference Pipelines/Bakin (Miyutsure)/` - build
   **r73294** (2026). `ENGINE-BAKIN.md` then `BUILD.md`.
-- `tools/Game Translation/Active Projects/Artesia (Bakin)/` - build **r64268**
+- `tools/Active Projects/Artesia (Bakin)/` - build **r64268**
   (2024-07). `PIPELINE.md`, then `ENGINE-CODES.md` for the decompiled
   control-code reference. Adds the Claude batch+live translation driver, which
   the Miyutsure pipeline does not have.

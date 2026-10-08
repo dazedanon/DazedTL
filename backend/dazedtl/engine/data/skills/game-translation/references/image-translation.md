@@ -16,7 +16,7 @@ Where the game already uses bilingual labels, preserve or match that established
 convention when it fits the requested scope. Respect an explicit keep list;
 avoid adding a new subtitle band merely to hide difficult lettering.
 
-**Toolkit:** `tools/Game Translation/Image Translation/imgtl.py`.
+**Toolkit:** `tools/Image Translation/imgtl.py`.
 Read its adjacent `README.md`, then copy the helper beside the per-game recipes.
 It provides probes, erasers, masks and styled text with Pillow/NumPy; some helpers
 also need SciPy or OpenCV. Inspect the actual function signature before adapting
@@ -44,7 +44,7 @@ for the text pipeline too and the game bible must say so.
 
 ## Reusable manual pipeline: Musi Dream
 
-Stable project: `tools/Game Translation/Active Projects/Musi Dream (TyranoScript)/`.
+Stable project: `tools/Active Projects/Musi Dream (TyranoScript)/`.
 Read `images/README.md` and `images/PROMPT.md` first. This is a completed manual
 example: 517 archive image entries / 448 distinct hashes, 28 rendered outputs
 plus two exact-duplicate copies, and one explicitly excluded asset. Preserve the

@@ -24,7 +24,7 @@ Grouped because each is a smaller, archive-centric pipeline: **unpack archive â†
 summary below is only enough to recognise the engine.
 
 - **Indicators:** `resources/app.asar` (or loose `resources/app/`) holding `data/scenario/*.ks` + `tyrano/`, `data/system/Config.tjs`, Chrome/Electron DLLs (`libEGL.dll`, `ffmpeg.dll`, `chrome_*.pak`).
-- **Tools:** `tools/Game Archives/Electron ASAR/unpack_asar.py`, and the full pipeline in `Reference Pipelines/TyranoScript (AjinSyoujyo)/`. `tools/Game Translation/Electron Text Tooling/goborin_text_tool.py` is the older, simpler extractor (dialogue as `[Speaker]: line`, KAG tags preserved) - fine for a small game, but it does not see `exp=`/`[iscript]` string literals, which is where a chunk of the UI text lives.
+- **Tools:** `tools/Game Archives/Electron ASAR/unpack_asar.py`, and the full pipeline in `Reference Pipelines/TyranoScript (AjinSyoujyo)/`. `tools/Electron Text Tooling/goborin_text_tool.py` is the older, simpler extractor (dialogue as `[Speaker]: line`, KAG tags preserved) - fine for a small game, but it does not see `exp=`/`[iscript]` string literals, which is where a chunk of the UI text lives.
 - **Delivery:** Electron checks `resources/app` **before** `app.asar`, so a ~2 MB loose folder with a loader shim beats repacking a 745 MB archive. Do **not** use the built-in `.tpatch` auto-updater on an asar build. Its asar branch races two un-awaited async calls at the archive and then deletes the patch.
 - **Gotchas that cost time:** `exp=`/`cond=`/`[iscript]` hold display strings. Labels and jump targets must never be translated. `.ks` line endings are mixed per file. `[ptext]` does not wrap.
 

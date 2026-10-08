@@ -1,6 +1,6 @@
 # LLM Translation Pipeline (Mistral & Claude)
 
-Two proven drivers are preserved under `tools/Game Translation/Reference Pipelines/`. **Mistral** (`/v1/chat/completions`, free-tier friendly) and **Claude** (Message Batches API, cheapest at scale with prompt caching). Copy the closest one, don't rewrite from scratch. (`RP/` below = `tools/Game Translation/Reference Pipelines/`.)
+Two proven drivers are preserved under `tools/Reference Pipelines/`. **Mistral** (`/v1/chat/completions`, free-tier friendly) and **Claude** (Message Batches API, cheapest at scale with prompt caching). Copy the closest one, don't rewrite from scratch. (`RP/` below = `tools/Reference Pipelines/`.)
 
 - Mistral reference impls: `RP/Unreal (FortuneBride)/scripts/mistral_translate.py`, `RP/Unity Mono (NTR Soccer)/scripts/mistral_translate.py`, `RP/Unity Utage (Goblin Sword)/translate_mistral.py`, `RP/Wolf RPG (Pachimon)/translate_mistral.py`.
 - Claude batch reference impl: `RP/RPG Maker MVMZ (BroodGeneral)/` (`tl.py`, `batches.py`, `rpgmvtl/`) and `RP/SRPG Studio (Belphegor)/` (`tl.py`, `srpgtl/`).
@@ -428,7 +428,7 @@ def estimate_tokens(text):
 
 **A single tokens-per-character ratio over a mixed prompt is badly wrong.** The old `len(text)*1.1` proxy is right for Japanese and about 4x too heavy for English, so an English rules-and-bible prefix estimated at **11,509 tokens against 4,261 real**. Count the two scripts separately, as above.
 
-`tools/Game Translation/Text QA and Glossary/count_tokens.py` gives real `tiktoken` counts (cl100k + o200k) per script.
+`tools/Text QA and Glossary/count_tokens.py` gives real `tiktoken` counts (cl100k + o200k) per script.
 For an exact Claude count use `client.messages.count_tokens` (free, no generation) - reserve the char-ratio proxy for bulk pre-flight where a per-request API call is impractical. `tl.py dryrun --show-sample` prints scope, cost and a sample prompt with no API call.
 Always dryrun before spending.
 

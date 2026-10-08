@@ -21,6 +21,7 @@ const checks = [
   { command: process.execPath, args: ["scripts/format.mjs", "--check"] },
   { command: process.execPath, args: ["scripts/contracts.mjs", "--check"] },
   { command: process.execPath, args: ["scripts/styles.mjs"] },
+  { command: process.execPath, args: ["scripts/paths.mjs"] },
   node(
     "oxlint/bin/oxlint",
     [

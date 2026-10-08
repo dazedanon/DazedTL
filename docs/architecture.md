@@ -948,3 +948,9 @@ No expanded cache is retained.
 Restore verifies into a staging directory before publishing a new destination, refuses existing or overlapping targets, and reconstructs empty directories and file modes.
 The independent scripts/backups.py reader can recover a moved game without its former app profile.
 Restoring a workspace does not transplant connections, paid-job ownership or spending authorizations from another app profile.
+
+## Distribution and updates
+
+Users install by unpacking a source ZIP, so every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
+Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.
+The budget leaves room for an install folder like `C:\Users\<26 characters>\Downloads\DazedTL-2.0.0\DazedTL-2.0.0\`.

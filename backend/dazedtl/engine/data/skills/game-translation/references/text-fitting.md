@@ -321,7 +321,7 @@ There are two ways to write this DP and only one of them can make that mistake:
 | minimise over **free line count**, cost = slack per line | free by default | **can orphan.** Weight the tail at ~0.6 - at 0.0 you get the orphan, at 1.0 it splits a short one-line unit in two to "balance" it |
 | minimise for a **fixed `n_lines`**, cost = deviation from `total / n_lines` | charged inherently | **immune.** Every line including the last is measured against the same ideal |
 
-`tools/Game Translation/Text Fitting/layout.py` is the second kind and gets that
+`tools/Text Fitting/layout.py` is the second kind and gets that
 string right unmodified. If you hand-roll the first kind - as a from-scratch
 pipeline did, and paid for - the tail weight is not optional. Copy `layout.py`
 unless you need something it does not do (it is not aware of masked control-code
@@ -693,7 +693,7 @@ everything already fit. Derive it once, import it everywhere.
 
 ## Reference implementation
 
-`tools/Game Translation/Text Fitting/layout.py` - atomiser, DP wrapper with the
+`tools/Text Fitting/layout.py` - atomiser, DP wrapper with the
 overflow penalty, `fit_box`, `restore_indent`, cell-width function. Engine-agnostic,
 its only assumption is the 2:1 full-width/Latin cell metric. Tests alongside it in
 `test_layout.py`. Driven end-to-end from
@@ -961,7 +961,7 @@ delta 0). Keep derived bitmaps owned by the sprite, dispose them on replacement
 and destruction, and leave shared ImageManager assets and saved picture
 coordinates alone. Check the actual consumer after a render update.
 
-Reusable pure pixel/geometry tool: `tools/Game Translation/Text Fitting/panel_bounds.cjs`.
+Reusable pure pixel/geometry tool: `tools/Text Fitting/panel_bounds.cjs`.
 Its CLI recalculates margins from recorded native observations and ignores their
 stored `pass` flags. It rejects empty bounds, invalid numbers, duplicate cases,
 missing engine-health observations and unsupported rotation/skew. Replay is

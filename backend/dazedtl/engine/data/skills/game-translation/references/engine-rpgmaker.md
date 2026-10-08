@@ -12,7 +12,7 @@
 
 Text is human-editable JSON on MV/MZ - no repack, loose-file override. Decrypt encrypted variants first.
 
-**Reference implementations** (`RP/` = `tools/Game Translation/Reference Pipelines/`):
+**Reference implementations** (`RP/` = `tools/Reference Pipelines/`):
 - `RP/RPG Maker MV (Mineria)/` - **start here, and read its `PIPELINE.md` first.** A finished MV translation (2,866 units, 100%, $1.15 on Sonnet 5). `mvtl/` package: config/codes/measure/wrap/store/fileio/extract/inject/prompts/requests/parse/validate/client/driver/estimate/plugins_js/qa, plus `tools/` (`verify_structure.py` the save-safety proof, `trace_parser.py` the engine-parser harness, `seed_stock_ui.py`, `translate_save.py`, `build_release.py`, `tag_evidence.py`, `forum_post.py`), `tests/`, `docs/CENSUS.md`, and an image redraw in `images/title.py`. Font-exact widths, command-count-preserving injection, batch **and** live off one request builder.
 - `RP/RPG Maker MZ (Gakuen)/` - **the MZ reference, and the one to read for
   everything OUTSIDE `data/`.** 10,665 units, 100%, $3.32 on Sonnet 5 batch.

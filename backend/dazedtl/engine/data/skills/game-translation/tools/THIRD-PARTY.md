@@ -10,8 +10,8 @@ build output are excluded; see the skill's `README.md` before adapting a referen
 
 | Tool | Location under `tools/` | How to get it |
 |---|---|---|
-| UndertaleModTool CLI 0.9.2.0 (GPL-3.0) | `Game Translation/GameMaker/vendor/utmt/` | `python "Game Translation/GameMaker/bootstrap.py"`. Pinned version and SHA-256 are in `vendor/manifest.json`. Release: https://github.com/UnderminersTeam/UndertaleModTool |
-| retoc, repak, UAssetGUI for the FortuneBride pipeline | `.translation_tooling/tools/` inside the game folder | `01_bootstrap_tools.ps1` in `Game Translation/Reference Pipelines/Unreal (FortuneBride)/`. See its `README.md`. |
+| UndertaleModTool CLI 0.9.2.0 (GPL-3.0) | `GameMaker/vendor/utmt/` | `python "GameMaker/bootstrap.py"`. Pinned version and SHA-256 are in `vendor/manifest.json`. Release: https://github.com/UnderminersTeam/UndertaleModTool |
+| retoc, repak, UAssetGUI for the FortuneBride pipeline | `.translation_tooling/tools/` inside the game folder | `01_bootstrap_tools.ps1` in `Reference Pipelines/Unreal (FortuneBride)/`. See its `README.md`. |
 
 ## Build from bundled source
 
@@ -41,7 +41,7 @@ build output are excluded; see the skill's `README.md` before adapting a referen
 | repak | `C++/Unreal/repak/repak.exe` | https://github.com/trumank/repak |
 | UAssetGUI | `C++/Unreal/UAssetGUI/UAssetGUI.exe` | https://github.com/atenfyr/UAssetGUI |
 | FModel | `C++/FModel/FModel.exe` | https://github.com/4sval/FModel |
-| Unity and BepInEx reference assemblies for VBV (`UnityEngine*.dll`, `Unity.TextMeshPro.dll`, `BepInEx.dll`, `0Harmony.dll`) | `Game Translation/Unity BepInEx Text Layout Plugin/VBV/References/` | copy from the target game's `*_Data/Managed/` and your BepInEx `core/` folder |
+| Unity and BepInEx reference assemblies for VBV (`UnityEngine*.dll`, `Unity.TextMeshPro.dll`, `BepInEx.dll`, `0Harmony.dll`) | `Unity BepInEx Text Layout Plugin/VBV/References/` | copy from the target game's `*_Data/Managed/` and your BepInEx `core/` folder |
 | WolfDawn `wolf` CLI | `DAZEDTL_ROOT/util/wolfdawn/bin/windows/wolf.exe` | build from https://gitgud.io/zero64801/wolfdawn at the tag in `PROVENANCE.md` next to it |
 | Ghidra | anywhere on PATH | https://github.com/NationalSecurityAgency/ghidra |
 | IDA Pro | anywhere | commercial, https://hex-rays.com |

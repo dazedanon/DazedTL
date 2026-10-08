@@ -6,7 +6,7 @@
 - `RP/Unity Mono (NTR Soccer)/` - Unity 2022.3, BepInEx 5.4.23, Pixel Crushers Dialogue System. The **official-localization-locked-to-ja** case (step 3). Mod at `.\mod\NTRSoccerEnglish\`.
 - `RP/Unity Mono PlayMaker (CoinPussy)/` - Unity 2022.3, BepInEx 5.4.23, **no localization system and no strings in Assembly-CSharp at all**: everything is PlayMaker FSMs plus CSV TextAssets. Claude batch + live drivers, box-fitting (`reflow`/`shorten`), sha1-keyed CSV swap. See "PlayMaker games" below.
 
-(`RP/` = `tools/Game Translation/Reference Pipelines/`.)
+(`RP/` = `tools/Reference Pipelines/`.)
 
 ## Step 1 - extract with AssetRipper
 
@@ -27,7 +27,7 @@ localization asset, the game is almost certainly FSM-driven. Do not conclude the
 text is encrypted - look at PlayMaker and TextAssets before reaching for a runtime
 harvest.
 
-Robust YAML field extraction: parse `- title: X` / `value: Y` pairs, join Unity's wrapped multi-line scalars (folds line-wraps as single spaces), handle single-quote `''` escaping. See `tools/Game Translation/Reference Pipelines/Unity Mono (NTR Soccer)/scripts/extract_text.py`.
+Robust YAML field extraction: parse `- title: X` / `value: Y` pairs, join Unity's wrapped multi-line scalars (folds line-wraps as single spaces), handle single-quote `''` escaping. See `tools/Reference Pipelines/Unity Mono (NTR Soccer)/scripts/extract_text.py`.
 
 ## Step 3 - CHECK FOR AN OFFICIAL LOCALIZATION FIRST
 
@@ -121,7 +121,7 @@ game parses - that is how you catch one the extractor missed after an update.
 ## Step 4 - dictionary hook (when text is genuinely Japanese)
 
 Build a BepInEx 5 plugin that hooks text setters and swaps JP→EN from a bundled JSON dict.
-Reference: `tools/Game Translation/Reference Pipelines/Unity Mono (NTR Soccer)/mod/NTRSoccerEnglish/` (ported from `tools/Game Translation/Unity BepInEx Translation Plugin Template/SheepClickerTL/`, which is IL2CPP - for Mono, target `BaseUnityPlugin`/`Awake` not `BasePlugin`/`Load`, and reference the real `TMP_Text`/`Text` types directly).
+Reference: `tools/Reference Pipelines/Unity Mono (NTR Soccer)/mod/NTRSoccerEnglish/` (ported from `tools/Unity BepInEx Translation Plugin Template/SheepClickerTL/`, which is IL2CPP - for Mono, target `BaseUnityPlugin`/`Awake` not `BasePlugin`/`Load`, and reference the real `TMP_Text`/`Text` types directly).
 
 Hooks (two coverage layers):
 ```
@@ -172,8 +172,8 @@ or you will chase phantom misses. That same diff is what surfaced the U+FEFF bug
 TMP renders CJK already, so EN needs no font work - but it will overflow boxes
 authored for full-width glyphs, and **matching the source's line count does not
 prevent it**. Measure the box and wrap to it: `references/text-fitting.md`, toolkit
-at `tools/Game Translation/Text Fitting/layout.py`. Auto-sizing
-(`tools/Game Translation/Unity BepInEx Text Layout Plugin`) is the fallback for the
+at `tools/Text Fitting/layout.py`. Auto-sizing
+(`tools/Unity BepInEx Text Layout Plugin`) is the fallback for the
 long tail of individually-sized widgets, not the fix for dialogue.
 
 ## Step 8 - ship it: a build for players, not for you
