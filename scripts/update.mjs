@@ -6,6 +6,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import http from "node:http";
+import https from "node:https";
 import { root as checkout } from "./dependencies.mjs";
 import { entries, relative } from "./tar.mjs";
 
@@ -131,25 +133,71 @@ export function mirrors(root = checkout) {
   );
 }
 
-async function get(url, { limit, timeout, progress }) {
-  const response = await fetch(url, {
-    headers: { "User-Agent": "DazedTL" },
-    signal: AbortSignal.timeout(timeout),
+/**
+ * Downloads a URL into memory, following redirects. Node's fetch always sends
+ * the browser header "Sec-Fetch-Mode: cors", which GitLab answers with 406 for
+ * archives, so this uses the plain HTTP client instead.
+ * @param {string} url
+ * @param {{ limit: number, timeout: number, progress?: (received: number, total: number) => void }} options
+ * @returns {Promise<Buffer>}
+ */
+function get(url, options, redirects = 0) {
+  const { limit, timeout, progress } = options;
+  const { host, protocol } = new URL(url);
+  return new Promise((resolve, reject) => {
+    const client = protocol === "http:" ? http : https;
+    const request = client.get(
+      url,
+      { headers: { "User-Agent": "DazedTL", Accept: "*/*" }, timeout: 60_000 },
+      (response) => {
+        const status = response.statusCode ?? 0;
+        const location = response.headers.location;
+        if (status >= 300 && status < 400 && location) {
+          response.resume();
+          clearTimeout(deadline);
+          if (redirects >= 5)
+            reject(new Error(`${host} redirected too often.`));
+          else
+            resolve(get(new URL(location, url).href, options, redirects + 1));
+          return;
+        }
+        if (status !== 200) {
+          response.resume();
+          clearTimeout(deadline);
+          reject(new Error(`${host} answered ${status}.`));
+          return;
+        }
+        const total = Number(response.headers["content-length"]) || 0;
+        const chunks = [];
+        let received = 0;
+        response.on("data", (chunk) => {
+          received += chunk.length;
+          if (Math.max(total, received) > limit)
+            request.destroy(new Error("The download is larger than expected."));
+          chunks.push(chunk);
+          progress?.(received, total);
+        });
+        response.on("end", () => {
+          clearTimeout(deadline);
+          if (total && received !== total)
+            reject(new Error(`The download from ${host} was cut off.`));
+          else resolve(Buffer.concat(chunks));
+        });
+        response.on("error", reject);
+      },
+    );
+    const deadline = setTimeout(
+      () => request.destroy(new Error(`${host} took too long to answer.`)),
+      timeout,
+    );
+    request.on("timeout", () =>
+      request.destroy(new Error(`${host} stopped answering.`)),
+    );
+    request.on("error", (error) => {
+      clearTimeout(deadline);
+      reject(error);
+    });
   });
-  if (!response.ok || !response.body)
-    throw new Error(`${new URL(url).host} answered ${response.status}.`);
-  const total = Number(response.headers.get("content-length")) || 0;
-  if (total > limit) throw new Error("The download is larger than expected.");
-  const chunks = [];
-  let received = 0;
-  for await (const chunk of response.body) {
-    received += chunk.length;
-    if (received > limit)
-      throw new Error("The download is larger than expected.");
-    chunks.push(chunk);
-    progress?.(received, total);
-  }
-  return Buffer.concat(chunks);
 }
 
 /** Reads the release versions from a Git smart HTTP ref advertisement. */
