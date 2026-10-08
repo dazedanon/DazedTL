@@ -125,12 +125,14 @@ export function ReleaseContent({
               label={
                 <>
                   <strong>
-                    {unapplied.length.toLocaleString()} selected{" "}
-                    {unapplied.length === 1 ? "output needs" : "outputs need"}{" "}
-                    Apply
+                    {unapplied.length.toLocaleString()} saved{" "}
+                    {unapplied.length === 1
+                      ? "output is not in the game"
+                      : "outputs are not in the game"}
                   </strong>
                   <small>
-                    Apply these saved outputs to the game before building a ZIP.
+                    A ZIP built now would leave{" "}
+                    {unapplied.length === 1 ? "it" : "them"} out.
                   </small>
                 </>
               }

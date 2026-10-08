@@ -97,8 +97,8 @@ export function PublicationContent({ preview }: { preview: Preview }) {
         <>
           {preview.action !== "runtime_restore" && (
             <p>
-              Each file is checked again first, and a backup is saved so you can
-              restore it later.
+              Each file is checked again first, and a backup is saved for
+              recovery.
             </p>
           )}
           {/* Fitting lists each change below; the file diff repeats it. */}

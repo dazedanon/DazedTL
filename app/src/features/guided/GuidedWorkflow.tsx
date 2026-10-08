@@ -13,6 +13,7 @@ import { PageBody, PageLayout } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { Tabs } from "../../ui/Tabs";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
+import { selectionNames } from "../../ui/displayText";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
 import { runPhase, taskForStage } from "./workflow";
@@ -81,6 +82,7 @@ function Workspace(
     bodyRef,
     headingRef,
     preserved,
+    baseline,
     changed,
     activeOperation,
     localOperation,
@@ -204,6 +206,10 @@ function Workspace(
             ) &&
             !(
               taskId === "names" && activeOperation.action === "speaker_scan"
+            ) &&
+            !(
+              ["check", "release"].includes(position.step) &&
+              activeOperation.action === "ace_pack"
             ) && (
               <div className="guided-operation frame-row">
                 <JobStatus
@@ -258,7 +264,8 @@ function Workspace(
               actions={
                 <>
                   {heading?.actions}
-                  {/* Playtesting checks the applied text in the game. */}
+                  {/* Playtesting checks the applied text in the game; an Ace
+                      game reads it once packed into native data. */}
                   {position.step === "check" && state.engine === "MVMZ" && (
                     <Button
                       variant="quiet"
@@ -268,6 +275,17 @@ function Workspace(
                       Playtest tools
                     </Button>
                   )}
+                  {position.step === "check" &&
+                    state.engine === "ACE" &&
+                    task(
+                      "ace_pack",
+                      state.acePacking.current
+                        ? "Review native packing again"
+                        : "Review native Ace packing",
+                      {},
+                      !baseline || !state.files.length,
+                      "quiet",
+                    )}
                 </>
               }
             />
@@ -291,6 +309,36 @@ function Workspace(
                 <span>{warning}</span>
               </Notice>
             ))}
+            {/* An apply that stopped midway may leave part of it in the
+                game until it is restored. */}
+            {state.readiness.publications
+              .filter((row) =>
+                ["publishing", "recovery_needed"].includes(row.state),
+              )
+              .map((row) => (
+                <Notice key={row.id} tone="warning">
+                  <span>
+                    {row.kind === "runtime_restore"
+                      ? "A restore of "
+                      : "An apply to "}
+                    {selectionNames(row.files)}
+                    {row.state === "publishing"
+                      ? " was interrupted and may be partly in the game."
+                      : " failed, and undoing it could not finish."}{" "}
+                    Restore puts back what was there before, unless the files
+                    changed since.
+                    {row.recovery_errors.length > 0 &&
+                      ` Last error: ${row.recovery_errors.at(-1)}`}
+                  </span>
+                  {task(
+                    "runtime_restore",
+                    "Review restore",
+                    { publication: row.id },
+                    !baseline,
+                    "link",
+                  )}
+                </Notice>
+              ))}
             {changed.length > 0 &&
               ["translate", "check", "release"].includes(position.step) &&
               !hostedFooter && (

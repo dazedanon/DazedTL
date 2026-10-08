@@ -250,7 +250,7 @@ test("workflow views persist per project and storage failures leave the previous
   store.navigateGuided("one", { step: "translate", task: "dialogue" });
   fail = true;
   assert.throws(
-    () => store.navigateGuided("one", { step: "check", task: "apply" }),
+    () => store.navigateGuided("one", { step: "check", task: "fitting" }),
     /Storage unavailable/,
   );
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "dialogue");
@@ -260,7 +260,7 @@ test("workflow views persist per project and storage failures leave the previous
   assert.equal(store.getSnapshot().snapshot?.application.screen, "project");
   assert.equal(store.getSnapshot().snapshot?.guided?.task, "guidance");
   assert.throws(
-    () => store.navigateGuided("one", { task: "apply" }),
+    () => store.navigateGuided("one", { task: "fitting" }),
     /workspace first/,
   );
   store.stop();

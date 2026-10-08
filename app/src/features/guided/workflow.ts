@@ -97,11 +97,6 @@ export const workflow: WorkflowStage[] = [
     short: "Check",
     tasks: [
       {
-        id: "apply",
-        title: "Pending changes",
-        description: "Everything reviewed and waiting to go into the game.",
-      },
-      {
         id: "fitting",
         optional: true,
         title: "Line width check",

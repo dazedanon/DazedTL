@@ -597,6 +597,17 @@
   font-size: var(--font-heading);
   line-height: 1.5;
 }
+/* A header action's result sits under its quiet label's right edge. */
+.task-header > .actions > .action-control {
+  align-items: flex-end;
+  text-align: end;
+}
+.task-header
+  > .actions
+  > .action-control
+  > .action-control-feedback:not(:empty) {
+  padding-inline-end: var(--space-3);
+}
 .task-header p {
   margin: 0;
   color: var(--color-muted);

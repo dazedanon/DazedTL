@@ -49,23 +49,6 @@ export const jobTime = (job: { updated?: string; created?: string }) =>
 export const fileCount = (count: number) =>
   `${count} ${count === 1 ? "file" : "files"}`;
 export const pathKey = (name: string) => name;
-export const publicationLabels: Record<string, string> = {
-  rewrap_apply: "Rewrapped lines",
-  qa_apply: "QA corrections",
-  runtime_restore: "Text restore",
-  export_selected: "Translations",
-};
-/** A saved text batch in words: what it was and what became of it. */
-export const publicationTitle = (row: { kind: string; state: string }) =>
-  row.kind === "runtime_restore" && row.state === "complete"
-    ? "Text restored"
-    : `${publicationLabels[row.kind] || "Text"} · ${
-        row.state === "restored"
-          ? "undone by a restore"
-          : row.state === "complete"
-            ? "applied"
-            : row.state.replaceAll("_", " ")
-      }`;
 export type Panel =
   | "files"
   | "speakers"

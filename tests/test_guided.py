@@ -43,12 +43,15 @@ class RetainedPositionTests(unittest.TestCase):
             {
                 "setup": "setup",
                 "translate": "dialogue",
-                "check": "apply",
+                "check": "fitting",
                 "release": "package",
             },
         )
         value = retained_position({"step": "images", "task": "image-manager"})
         self.assertEqual((value["step"], value["task"]), ("translate", "images"))
+        # The removed Pending changes task opens its stage's first task.
+        value = retained_position({"step": "check", "task": "apply"})
+        self.assertEqual((value["step"], value["task"]), ("check", "fitting"))
         self.assertNotIn("step", retained_position({"positions": {}}))
 
 

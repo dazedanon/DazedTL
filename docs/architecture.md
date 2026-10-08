@@ -423,7 +423,7 @@ Unexamined, failed, unreadable and changed sources remain unresolved; detector m
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
 An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
 The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.
-Apply to game and Check's Pending changes apply the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
+Apply to game applies the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
 Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
 Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
@@ -504,7 +504,6 @@ Its one Continue opens the next required task, and the saved workspace position 
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
 Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once the translated images in its list are applied, or an investigation leaves nothing ticked, and Release while a saved ZIP still matches the game; optional Release never blocks the next required task.
-Pending changes completes once translated text has been applied and no selected output still waits, so clearing the selection keeps it done.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
 Reviews that belong to the Guided workspace (re-applying or resuming a run, the update checkpoint) open there when the Project page asks for them.
@@ -680,15 +679,15 @@ Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.
 Release plans bind the profile's working-source index and original blobs; refreshing or expanding a source pass invalidates pending package plans without rewriting old runs.
 
-Check's Pending changes, Line width check and Text QA tasks share retained file choices and check settings.
-Pending changes lists every part waiting to go into the game from observed state through [pending.ts](../app/src/features/guided/pending.ts) and reviews them in one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx), whose sections reuse each part's own review content.
-Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares each part's own preview and applies the parts in order (plugin files, images, text, then rewraps and QA fixes) under one action key, so a repeated click cannot start it twice.
-Image and plugin parts execute their own one-use tokens; the Guided review keeps one preview at a time, so text, rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
-A text part waits for its operation and an idle backend before the next part; a failed part leaves independent parts going and reports beside itself, and Review again prepares fresh previews of the parts that did not apply.
-Rewraps wait while text is applied in the same review, and QA fixes wait while text, rewraps or plugin files are, because the line width check binds the game text and the QA task binds the game text and plugin files.
-The Review & apply buttons in Plugin files, Line width check and Text QA, and Images' Apply to game, open the same review limited to their part; Assistant-led's Image Manager keeps its own review.
-Restores stay with each part: text batches in Pending changes, images in the Image Manager and plugin files in their workspace.
-TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested; it reuses the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
+Check's Line width check and Text QA tasks share retained file choices and check settings.
+Each task applies its own work and shows what it has not applied; no cross-task list reminds the user of skipped work, because the stages and tasks already show it.
+Text tasks and Release apply saved output through the Guided action review.
+The Review & apply buttons in Plugin files, Line width check and Text QA, and Images' Apply to game, open one [PendingReview](../app/src/features/guided/workspace/PendingReview.tsx) of their part, whose content reuses that part's own review; Assistant-led's Image Manager keeps its own review.
+Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares the part's preview from observed state through [pending.ts](../app/src/features/guided/pending.ts) and applies it under one action key, so a repeated click cannot start it twice.
+Image and plugin parts execute their own one-use tokens; the Guided review keeps one preview at a time, so rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
+Images restore in the Image Manager and plugin files in their workspace; applied text batches have no restore of their own, since Git version tracking and Backups undo them.
+A text batch whose publication was interrupted or could not roll back raises a notice on every Guided task with its Review restore, because part of it may be in the game.
+TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested, and an Ace game's native packing sits in the same header; both reuse the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
 The player walkthrough task sits with Release, since it produces player documentation.
 The [text publication journal](../backend/dazedtl/translation/publication.py) freezes reviewed destinations and both byte versions before any runtime replacement.
 The compatibility worker reuses the engine fitter on disposable copies, then preflights and publishes the whole batch with verified backups and rollback attempts.

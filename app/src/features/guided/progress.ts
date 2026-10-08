@@ -55,13 +55,6 @@ export function completedTasks(
   const sourceBackup = translation.lifecycle.source_backup;
   const preserved = !!sourceBackup && sourceBackup.available !== false;
   const baseline = preserved && !!translation.git?.configured;
-  const selected = new Set(values.selected);
-  // Clearing the selection keeps applied work done, while a selected output
-  // still waiting to go into the game reopens Pending changes.
-  const outputs = state.readiness.outputs.filter((name) => selected.has(name));
-  const applied =
-    (outputs.length > 0 || state.readiness.applied.length > 0) &&
-    outputs.every((name) => state.readiness.applied.includes(name));
   const phaseComplete = (
     target: "database" | "dialogue" | "advanced" | "variables",
   ) =>
@@ -83,7 +76,6 @@ export function completedTasks(
     images && images.projectId === state.projectId ? images : null;
   return new Set<string>([
     ...(baseline ? ["setup"] : []),
-    ...(applied ? ["apply"] : []),
     ...(phaseComplete("database") ? ["database"] : []),
     ...(phaseComplete("dialogue") ? ["dialogue"] : []),
     ...((nothingToTranslate(state.eventText, values.engine_options) ||

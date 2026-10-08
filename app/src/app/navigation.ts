@@ -32,8 +32,10 @@ const legacyTasks: Record<string, string> = {
   baseline: "setup",
   "image-text": "images",
   "image-manager": "images",
-  playtest: "apply",
-  tools: "apply",
+  playtest: "fitting",
+  tools: "fitting",
+  // Check's Pending changes task was removed; its stage opens on fitting.
+  apply: "fitting",
 };
 /**
  * Preferences saved by earlier stage layouts, in the current stages. Apply &
@@ -44,7 +46,7 @@ function migrate(value: unknown): unknown {
   const { textView, ...saved } = value as Record<string, unknown>;
   const view = ["fitting", "qa"].includes(String(textView))
     ? String(textView)
-    : "apply";
+    : "fitting";
   const task = (step: unknown, name: unknown) =>
     step === "apply" && name === "apply"
       ? view
@@ -52,10 +54,9 @@ function migrate(value: unknown): unknown {
         ? legacyTasks[name] || name
         : name;
   const result: Record<string, unknown> = { ...saved };
-  if (typeof saved.step === "string" && saved.step in legacySteps) {
+  if (typeof saved.step === "string" && saved.step in legacySteps)
     result.step = legacySteps[saved.step];
-    result.task = task(saved.step, saved.task);
-  }
+  if ("task" in saved) result.task = task(saved.step, saved.task);
   if (saved.positions && typeof saved.positions === "object") {
     const positions: Record<string, unknown> = {};
     for (const [step, name] of Object.entries(saved.positions)) {

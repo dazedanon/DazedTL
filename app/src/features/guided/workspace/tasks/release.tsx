@@ -29,7 +29,7 @@ export function packageView(w: GuidedWorkspace): TaskView {
     artifact,
     save,
     disabled,
-    navigate,
+    changed,
     feedback,
     task,
     chooseFolder,
@@ -47,16 +47,16 @@ export function packageView(w: GuidedWorkspace): TaskView {
       disabled={disabled}
       artifact={artifact}
       unapplied={state.readiness.unapplied}
-      apply={
-        <ActionControl
-          label="Open Pending changes"
-          disabled={disabled}
-          {...feedback("release:apply", "Opening Pending changes…")}
-          onClick={() =>
-            action.run(() => navigate("check", "apply"), "", "release:apply")
-          }
-        />
-      }
+      apply={task(
+        "export_selected",
+        `Apply (${state.readiness.unapplied.length.toLocaleString()})`,
+        {},
+        !baseline ||
+          !!state.collectionError ||
+          state.readiness.unapplied.some((name) => changed.includes(name)),
+        "default",
+        state.readiness.unapplied,
+      )}
       edit={(change) =>
         form.session.edit((current) => ({
           ...current,

@@ -26,7 +26,7 @@ export function imagesView(w: GuidedWorkspace): TaskView {
           next: (variant) => advance(undefined, undefined, variant),
         }}
         onOpenEditor={setEditorAssets}
-        // Applying goes through the same review as Check's pending changes.
+        // Applying goes through the shared review of a task's ready work.
         applyControl={(apply) =>
           reviewPending({
             only: "images",

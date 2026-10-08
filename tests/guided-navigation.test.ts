@@ -15,11 +15,7 @@ import {
   unfinishedRun,
 } from "../app/src/features/guided/workflow.ts";
 import { guidedProgress } from "../app/src/features/guided/progress.ts";
-import {
-  pendingParts,
-  pendingSummary,
-  reviewSignature,
-} from "../app/src/features/guided/pending.ts";
+import { reviewSignature } from "../app/src/features/guided/pending.ts";
 
 test("saved runs choose their owning task instead of native progress labels", () => {
   const translation = {
@@ -100,7 +96,7 @@ test("saved runs choose their owning task instead of native progress labels", ()
     ["package"],
   );
   // Five stages: Plugin files and Images are Translate tasks, and Check
-  // holds Apply, the line width check and Text QA.
+  // holds the line width check and Text QA.
   assert.deepEqual(
     stagesFor("MVMZ").map((stage) => stage.id),
     ["setup", "context", "translate", "check", "release"],
@@ -113,7 +109,7 @@ test("saved runs choose their owning task instead of native progress labels", ()
       task,
     });
   }
-  for (const task of ["apply", "fitting", "qa"]) {
+  for (const task of ["fitting", "qa"]) {
     state.step = "check";
     state.task = task;
     assert.deepEqual(initialPosition(state, translation), {
@@ -228,18 +224,12 @@ test("the Project page continues with the next step and keeps a later saved posi
   progress = guidedProgress(state, translation);
   assert.equal(progress.next?.task, "names");
   assert.equal(progress.last, null);
-  // Apply counts as done once outputs are applied, with earlier work open.
-  state.step = "check";
-  state.task = "apply";
-  state.preferences.values.selected = ["Map001.json"];
-  state.readiness.outputs = state.readiness.applied = ["Map001.json"];
-  progress = guidedProgress(state, translation);
-  assert.ok(
-    progress.stages.some((stage) => stage.id === "check" && stage.complete),
-  );
   // A later saved position stays reachable beside the next step.
+  state.step = "check";
+  state.task = "fitting";
+  progress = guidedProgress(state, translation);
   assert.equal(progress.next?.task, "names");
-  assert.equal(progress.last?.task, "apply");
+  assert.equal(progress.last?.task, "fitting");
   // Images finishes once every image in its list is in the game: an edited
   // image in the list that changed after the assistant's check keeps it open.
   state.artifacts = [{ current: true }] as GuidedState["artifacts"];
@@ -261,9 +251,9 @@ test("the Project page continues with the next step and keeps a later saved posi
     guidedProgress(state, translation, { images }).stages.flatMap((stage) =>
       stage.tasks.filter((task) => task.done).map((task) => task.id),
     );
-  assert.deepEqual(finished(), ["setup", "apply", "package"]);
+  assert.deepEqual(finished(), ["setup", "package"]);
   Object.assign(images.counts, { selected: 1, selectedNeedsReview: 0 });
-  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
+  assert.deepEqual(finished(), ["setup", "images", "package"]);
   // An investigation that leaves nothing to translate closes Images, until
   // a later investigation waits on the assistant, and Other event text closes
   // once current findings are applied with no source enabled.
@@ -274,53 +264,20 @@ test("the Project page continues with the next step and keeps a later saved posi
     selectedApplied: 0,
   });
   images.discovery.status = "awaiting_results";
-  assert.deepEqual(finished(), ["setup", "apply", "package"]);
+  assert.deepEqual(finished(), ["setup", "package"]);
   images.discovery.status = "complete";
   state.eventText.status = "ready";
-  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
+  assert.deepEqual(finished(), ["setup", "images", "package"]);
   state.eventText.applied = true;
   assert.deepEqual(finished(), [
     "setup",
     "other-event-text",
     "images",
-    "apply",
     "package",
   ]);
   // A source turned on since the findings were applied reopens the task.
   state.preferences.values.engine_options.CODE356 = true;
-  assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
-});
-
-test("pending changes hold rewraps and QA fixes back until the parts they were checked against apply", () => {
-  const input = {
-    unapplied: ["Map001.json"],
-    plugins: 0,
-    images: 1,
-    rewraps: { changes: 7, files: ["Map001.json"] },
-    qa: { fixes: 3, files: ["Items.json"] },
-  };
-  const held = (parts: ReturnType<typeof pendingParts>) =>
-    parts.filter((part) => part.held).map((part) => part.id);
-  // Both were checked against the text the text apply replaces.
-  assert.deepEqual(held(pendingParts(input)), ["rewraps", "qa"]);
-  // Rewraps change the text QA checked, as plugin files change what it
-  // read; images change neither.
-  assert.deepEqual(
-    held(pendingParts({ ...input, excluded: new Set(["text"] as const) })),
-    ["qa"],
-  );
-  assert.deepEqual(
-    held(pendingParts({ ...input, unapplied: [], rewraps: null, plugins: 2 })),
-    ["qa"],
-  );
-  assert.deepEqual(
-    held(pendingParts({ ...input, unapplied: [], rewraps: null })),
-    [],
-  );
-  assert.equal(
-    pendingSummary(pendingParts({ ...input, unapplied: [] })),
-    "1 image, 7 line rewraps, 3 QA fixes",
-  );
+  assert.deepEqual(finished(), ["setup", "images", "package"]);
 });
 
 test("a text review re-checked before Apply notices changes past the visible diff", () => {

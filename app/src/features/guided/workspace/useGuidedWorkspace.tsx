@@ -37,7 +37,7 @@ import { useContextDraft } from "../useContextDraft";
 import { useGuidedWorkflow } from "../useGuidedWorkflow";
 import { useTranslationFlow } from "../useTranslationFlow";
 import { completedTasks, reviewTasks } from "../progress";
-import { applyOrder, type PendingPartId, pendingParts } from "../pending";
+import { type PendingPartId, pendingPart } from "../pending";
 import { usePendingChanges } from "./usePendingChanges";
 import { assistantWaiting, noHandoff } from "../../assistant/assistantTasks";
 import { useAssistantSources } from "../../assistant/useAssistantTasks";
@@ -218,9 +218,6 @@ export function useGuidedWorkspace({
   );
   const databaseFiles = state.files.filter(
     (file) => file.group === "database" && selectedFiles.has(file.name),
-  );
-  const outputFiles = state.readiness.outputs.filter((name) =>
-    selectedFiles.has(name),
   );
   const layoutFiles = state.files
     .filter((file) => selectedFiles.has(file.name))
@@ -743,7 +740,7 @@ export function useGuidedWorkspace({
     options: Record<string, unknown> = {},
     /** True, or the reason shown beside the disabled control. */
     blocked: boolean | string = false,
-    variant: "default" | "primary" = "default",
+    variant: "default" | "primary" | "quiet" | "link" = "default",
     files?: string[],
   ) => {
     const blockedReason = typeof blocked === "string" ? blocked : "";
@@ -818,12 +815,16 @@ export function useGuidedWorkspace({
     // An update leaves the row's status as it was, so a tool change from
     // this visit still confirms beside its button.
     const toolDoneHere = finishedHere && !!toolCounterpart && !superseded;
+    // Packing's label says whether the native data is current; a pack from
+    // this visit also confirms beside its button.
+    const packedHere = name === "ace_pack" && finishedHere;
     const display =
       superseded ||
       (current?.status === "complete" &&
         (publicationReview ||
           releaseBuild ||
           toolChange ||
+          name === "ace_pack" ||
           (qaOperation && (!qa.current || current.result?.task !== qa.task))))
         ? undefined
         : current;
@@ -879,8 +880,7 @@ export function useGuidedWorkspace({
           ? { notice: "Saved translations applied." }
           : fittedHere
             ? {
-                notice:
-                  "Rewrapped lines applied. Restore them from Pending changes.",
+                notice: "Rewrapped lines applied.",
               }
             : toolDoneHere
               ? {
@@ -891,18 +891,20 @@ export function useGuidedWorkspace({
                       ? "Updated."
                       : "Installed.",
                 }
-              : builtHere
-                ? {
-                    notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
-                  }
-                : preparationTool && finishedHere
+              : packedHere
+                ? { notice: "Native data packed." }
+                : builtHere
                   ? {
-                      notice:
-                        name === "gameupdate"
-                          ? "GameUpdate files created."
-                          : "Formatted.",
+                      notice: `${name === "release" ? "Game" : "Patch"} ZIP saved.`,
                     }
-                  : {})}
+                  : preparationTool && finishedHere
+                    ? {
+                        notice:
+                          name === "gameupdate"
+                            ? "GameUpdate files created."
+                            : "Formatted.",
+                      }
+                    : {})}
         pending={
           (action.busy && action.key === actionKey(name, options)) || !!active
         }
@@ -1228,84 +1230,47 @@ export function useGuidedWorkspace({
     await whenObserved((value) => !value.running && value.finished.has(id));
     return latestObserved.current.finished.get(id)!;
   };
-  // Everything reviewed and waiting to go into the game.
-  const [pendingExcluded, setPendingExcluded] = useState<
-    ReadonlySet<PendingPartId>
-  >(new Set());
   const ownState = <T extends { projectId: string }>(value?: T | null) =>
     value && value.projectId === project.id ? value : null;
-  const chosenFixes = qa.corrections.filter((change) =>
-    chosenFindings.includes(change.finding_id),
-  );
+  // What each task has reviewed and ready to go into the game.
   const pendingInput = {
-    unapplied: state.readiness.unapplied,
     plugins: ownState(application.snapshot?.plugins)?.counts.ready || 0,
     images: ownState(application.snapshot?.images)?.counts.selectedReady || 0,
-    rewraps:
-      fittingCurrent && fittingEligible > 0
-        ? {
-            changes: fittingEligible,
-            files: [
-              ...new Set(
-                fitting.previews
-                  .filter((row) => !(row.overflow && fitting.overflow_skipped))
-                  .map((row) => row.file_name),
-              ),
-            ],
-          }
-        : null,
-    qa:
-      qa.current && chosenFindings.length
-        ? {
-            fixes: chosenFindings.length,
-            files: [...new Set(chosenFixes.map((change) => change.file))],
-          }
-        : null,
+    rewraps: fittingCurrent ? fittingEligible : 0,
+    qa: qa.current ? chosenFindings.length : 0,
   };
-  const pendingList = pendingParts({
-    ...pendingInput,
-    excluded: pendingExcluded,
-  });
   const pending = usePendingChanges({
     projectId: project.id,
     settle: application.settle,
     guided: (part) =>
-      part.id === "text"
-        ? { name: "export_selected", options: {}, files: part.files }
-        : part.id === "rewraps"
-          ? { name: "rewrap_apply", options: layoutOptions }
-          : {
-              name: "qa_apply",
-              options: {
-                focus: fields.text.focus,
-                task: fields.text.findings_task,
-                findings: chosenFindings,
-              },
+      part.id === "rewraps"
+        ? { name: "rewrap_apply", options: layoutOptions }
+        : {
+            name: "qa_apply",
+            options: {
+              focus: fields.text.focus,
+              task: fields.text.findings_task,
+              findings: chosenFindings,
             },
+          },
     preparePreview,
     execute,
     lastExecuted,
     whenFinished,
   });
   /**
-   * Opens the review of every included part, or of one part from its own
-   * task; Images passes its count of translated images, and Apply again
-   * passes the saved text it re-applies.
+   * Opens the review of one task's ready work; Images passes its count of
+   * translated images.
    */
   const openPending = (
-    only?: PendingPartId,
-    choice: { images?: number; text?: string[] } = {},
-    from: string = only ?? "all",
+    only: PendingPartId,
+    choice: { images?: number } = {},
   ) => {
-    const parts = only
-      ? pendingParts({
-          ...pendingInput,
-          unapplied: choice.text ?? pendingInput.unapplied,
-          images: choice.images ?? pendingInput.images,
-          excluded: new Set(applyOrder.filter((id) => id !== only)),
-        }).filter((part) => part.id === only)
-      : pendingList.filter((part) => !pendingExcluded.has(part.id));
-    return pending.open(parts, from);
+    const part = pendingPart(only, {
+      ...pendingInput,
+      images: choice.images ?? pendingInput.images,
+    });
+    return part && pending.open(part, only);
   };
   /** A task's Review & apply, opening the pending review for its part. */
   const reviewPending = ({
@@ -1545,7 +1510,6 @@ export function useGuidedWorkspace({
     widthsDirty,
     changed,
     eventFiles,
-    outputFiles,
     layoutFiles,
     enabledCodes,
     advancedReady,
@@ -1626,9 +1590,6 @@ export function useGuidedWorkspace({
     setupWorking,
     startSetup,
     pending,
-    pendingList,
-    pendingExcluded,
-    setPendingExcluded,
     openPending,
     reviewPending,
     fittingCurrent,

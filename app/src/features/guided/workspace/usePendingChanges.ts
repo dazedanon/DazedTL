@@ -9,33 +9,23 @@ import type {
   Preview,
 } from "../../../api/contracts";
 import { useAction } from "../../../state/useAction";
-import type { DisplayState } from "../../../ui/displayStatus";
-import {
-  applyOrder,
-  type PendingPart,
-  type PendingPartId,
-  pendingSummary,
-  reviewSignature,
-} from "../pending";
+import { type PendingPart, reviewSignature } from "../pending";
 
-/** A part of an open pending changes review, and how its apply went. */
+/** The part an open review applies, and why its last Apply failed. */
 export type PartReview = PendingPart & {
-  preview?: Preview | ImagePreview | PluginPreview;
-  state: DisplayState;
-  message: string;
+  preview: Preview | ImagePreview | PluginPreview;
+  failure: string;
 };
 
-/** What a Guided text part previews: its action, options and files. */
+/** What a Guided part previews: its action and options. */
 export type GuidedRequest = {
   name: string;
   options: Record<string, unknown>;
-  files?: string[];
 };
 
 /**
- * One review and one Apply for everything waiting to go into the game. Each
- * part keeps its own preview, validation and receipts; Apply runs the parts
- * in order and reports each one.
+ * One task's review and Apply of the work it has ready. Each part keeps its
+ * own preview, validation and receipts.
  */
 export function usePendingChanges({
   projectId,
@@ -48,29 +38,20 @@ export function usePendingChanges({
 }: {
   projectId: string;
   settle: () => Promise<unknown>;
-  /** The Guided preview each text part makes. */
+  /** The Guided preview a rewrap or QA part makes. */
   guided: (part: PendingPart) => GuidedRequest;
   preparePreview: (
     name: string,
     options: Record<string, unknown>,
-    files?: string[],
   ) => Promise<Preview>;
   execute: (preview: Preview) => Promise<void>;
   lastExecuted: () => { token: string; job: Job } | null;
   whenFinished: (id: string) => Promise<{ status: string; message: string }>;
 }) {
   const action = useAction({ after: settle });
-  const [review, setReview] = useState<PartReview[] | null>(null);
-  // Whether Apply ran on this review, which then reports its outcome.
-  const [attempted, setAttempted] = useState(false);
+  const [review, setReview] = useState<PartReview | null>(null);
   // The control that opened the review, the one that reports beside itself.
   const [origin, setOrigin] = useState("");
-  const update = (id: PendingPartId, patch: Partial<PartReview>) =>
-    setReview(
-      (current) =>
-        current &&
-        current.map((part) => (part.id === id ? { ...part, ...patch } : part)),
-    );
   // The translated images in the list to translate; one the user took out
   // of the list stays out of the game.
   const readyImages = async () => {
@@ -98,7 +79,7 @@ export function usePendingChanges({
         })
       ).preview;
     const request = guided(part);
-    return preparePreview(request.name, request.options, request.files);
+    return preparePreview(request.name, request.options);
   };
   const applyPart = async (part: PartReview) => {
     if (part.id === "plugins") {
@@ -114,15 +95,11 @@ export function usePendingChanges({
       return;
     }
     const request = guided(part);
-    // Text, rewraps and QA fixes share the Guided review, which keeps one
-    // preview at a time, so each is previewed again just before it runs and
-    // must match what was reviewed. Images and plugin files keep their own
+    // Rewraps and QA fixes share the Guided review, which keeps one preview
+    // at a time, so each is previewed again just before it runs and must
+    // match what was reviewed. Images and plugin files keep their own
     // one-use tokens.
-    const fresh = await preparePreview(
-      request.name,
-      request.options,
-      request.files,
-    );
+    const fresh = await preparePreview(request.name, request.options);
     if (reviewSignature(fresh) !== reviewSignature(part.preview as Preview))
       throw new Error(
         `${part.title} changed since you reviewed it. Review it again.`,
@@ -133,75 +110,42 @@ export function usePendingChanges({
       throw new Error(ended.message || `${part.title} did not finish.`);
   };
   /**
-   * Prepares every part's review, in apply order. It opens once the action
-   * and its refresh settle, so Apply all starts ready instead of meeting the
-   * duplicate-submission guard; until then the clicked control shows the wait.
+   * Prepares the part's review; a failure reports beside the control that
+   * asked. The review opens once the action and its refresh settle, so Apply
+   * starts ready instead of meeting the duplicate-submission guard; until
+   * then the clicked control shows the wait.
    */
-  const open = (parts: PendingPart[], from = origin) => {
+  const open = (part: PendingPart, from = origin) => {
     setOrigin(from);
     return action
       .run(
-        async () => {
-          const reviewed: PartReview[] = [];
-          for (const id of applyOrder) {
-            const part = parts.find((item) => item.id === id);
-            if (!part) continue;
-            if (part.held) {
-              reviewed.push({ ...part, state: "skipped", message: part.held });
-              continue;
-            }
-            try {
-              reviewed.push({
-                ...part,
-                preview: await prepare(part),
-                state: "ready",
-                message: "",
-              });
-            } catch (error) {
-              reviewed.push({
-                ...part,
-                state: "blocked",
-                message: messageOf(error),
-              });
-            }
-          }
-          return reviewed;
+        async (): Promise<PartReview> => {
+          const preview = await prepare(part);
+          if (!preview) throw new Error(`${part.title} has nothing to apply.`);
+          return { ...part, preview, failure: "" };
         },
         "",
         "pending:review",
       )
       .then((outcome) => {
-        if (outcome.ok) {
-          setAttempted(false);
-          setReview(outcome.value);
-        }
+        if (outcome.ok) setReview(outcome.value);
         return outcome;
       });
   };
-  /** Applies the ready parts in order; a failed part leaves the rest going. */
+  /** Applies the reviewed part; a failure keeps the review open to retry. */
   const apply = () =>
     action
       .run(
         async () => {
-          const parts = (review || []).filter((part) => part.state === "ready");
-          const done: PartReview[] = [];
-          setAttempted(true);
-          for (const part of parts) {
-            update(part.id, { state: "working", message: "" });
-            try {
-              await applyPart(part);
-              update(part.id, { state: "applied", message: "" });
-              done.push(part);
-            } catch (error) {
-              update(part.id, { state: "blocked", message: messageOf(error) });
-            }
+          if (!review || review.failure) return "";
+          try {
+            await applyPart(review);
+          } catch (error) {
+            setReview({ ...review, failure: messageOf(error) });
+            return "";
           }
-          // Everything applied: the review closes and says so once.
-          if (done.length === parts.length) {
-            setReview(null);
-            return `${pendingSummary(done)} applied.`;
-          }
-          return "";
+          setReview(null);
+          return `${review.summary} applied.`;
         },
         "",
         "pending:apply",
@@ -211,28 +155,16 @@ export function usePendingChanges({
           action.succeed(outcome.value, "pending:apply");
         return outcome;
       });
-  /**
-   * The parts a new review would retry: those not applied, except rewraps
-   * and QA fixes held for parts that went in, which need a new check.
-   */
-  const applied = (review || []).some((part) => part.state === "applied");
-  const remaining = (review || [])
-    .filter((part) => part.state !== "applied")
-    .filter((part) => !part.held || !applied);
   return {
     review,
-    attempted,
     open,
     apply,
-    remaining: remaining.length,
-    /** Prepares a new review of the parts that did not apply. */
-    retry: () =>
-      open(
-        remaining.map(
-          ({ preview: _preview, state: _state, message: _message, ...part }) =>
-            part,
-        ),
-      ),
+    /** Prepares a new review of a part that did not apply. */
+    retry: () => {
+      if (!review) return;
+      const { id, title, summary } = review;
+      return open({ id, title, summary });
+    },
     close: () => {
       setReview(null);
       action.clear();
@@ -240,18 +172,13 @@ export function usePendingChanges({
     busy: action.busy,
     key: action.key,
     error: action.error,
-    notice: action.notice,
     /** Pending, failure and success for the control `from` that opened it. */
     feedback: (from: string) => {
       const own = origin === from;
       return {
         pending: own && action.busy && action.key === "pending:review",
         error:
-          own &&
-          (action.key === "pending:review" ||
-            (action.key === "pending:apply" && !review))
-            ? action.error
-            : "",
+          own && action.key === "pending:review" && !review ? action.error : "",
         notice: own && action.key === "pending:apply" ? action.notice : "",
       };
     },

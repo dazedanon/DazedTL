@@ -37,8 +37,10 @@ LEGACY_TASKS = {
     "baseline": "setup",
     "image-text": "images",
     "image-manager": "images",
-    "playtest": "apply",
-    "tools": "apply",
+    "playtest": "fitting",
+    "tools": "fitting",
+    # Check's Pending changes task was removed; its stage opens on fitting.
+    "apply": "fitting",
 }
 
 
@@ -52,7 +54,7 @@ def retained_position(value):
         value["step"] = LEGACY_STEPS.get(value["step"], value["step"])
     if value.get("task") in {"plugins", "images"}:
         value["step"] = "translate"
-    elif value.get("task") in {"apply", "fitting", "qa"}:
+    elif value.get("task") in {"fitting", "qa"}:
         value["step"] = "check"
     saved = value.get("positions")
     positions = {}

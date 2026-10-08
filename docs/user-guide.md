@@ -148,12 +148,10 @@ Images is done once its translated images are applied, or once an investigation 
 
 ### Check
 
-Check has three tasks: **Pending changes**, **Line width check** and the optional **Text QA**.
-**Pending changes** lists everything reviewed and waiting to go into the game: translated text files, plugin files, images, line rewraps and QA fixes.
-**Review & apply** opens one review of every part, and **Apply all** applies them in order, with each part's result beside it; **Leave out** keeps a part for later.
-A part that did not apply leaves the game unchanged, and **Review again** prepares a new review of the parts left.
-Line rewraps wait while translated text is applied with them, and QA fixes wait while text, rewraps or plugin files are applied with them, because each was checked against the game files those parts change; check line widths or prepare QA again afterwards.
-The Review & apply buttons in Plugin files, Line width check and Text QA, and Images' **Apply to game**, open the same review for their own part.
+Check has two tasks: **Line width check** and the optional **Text QA**.
+Each task applies its own work: **Apply** in a text task, **Review & apply** in Plugin files, Line width check and Text QA, and **Apply to game** in Images.
+A review that did not apply leaves the game unchanged, and **Review again** prepares a new one.
+If an apply stops midway, every task shows a notice whose **Review restore** puts back what was there before, unless the files changed since.
 Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
 A file stays **Applied** after you edit it in the game, by hand or through Line widths or QA fixes; applying it again replaces those edits, and the Apply review names such files.
 **Reload from game…** starts a file over from the game's version.
@@ -161,7 +159,7 @@ You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
 **Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.
 Translated plugin command text (357) loses its line breaks, so the check offers **Include 357** when that source is enabled but outside its event codes.
-**Playtest tools** in the task header installs or updates TL Inspector and Forge for MV/MZ and holds their settings.
+**Playtest tools** in the task header installs or updates TL Inspector and Forge for MV/MZ and holds their settings; for Ace, the header offers **Review native Ace packing** so the game reads the applied text.
 Apply and playtest an early scene before expanding the scope.
 
 ### Release
@@ -171,6 +169,7 @@ Apply and playtest an early scene before expanding the scope.
 A patch build saves a translation version and a project backup first; a clean game ZIP leaves the working game untouched.
 Destinations must be outside the game, the app workspace and the engine; the fields say so as you type, and replacing an existing archive needs approval.
 With no translation applied yet, the footer notes that the ZIP keeps the original text.
+Selected files with saved output not yet in the game hold the build until **Apply** in Release writes them.
 The last saved ZIP shows **Done** while it matches the game and **Outdated** once the game's runtime files change or another image is applied; build again to include later changes.
 A ZIP saved by an earlier DazedTL version is not compared until you build it again.
 The app checks the package contents and finished archive before offering its folder; these checks do not mean the game passed QA.
@@ -180,7 +179,7 @@ GameUpdate metadata keeps the engine's clean-commit and upstream checks, and the
 
 Ace adds archive extraction, JSON conversion and native repacking around the same stages, built in on every platform.
 Set up's **Convert Ace data** step extracts an encrypted `Game.rgss3a` and converts `Data` to `ace_json` in Sinflower's RV2JSON format, with the equipment type names added for translation.
-**Review native Ace packing** in Release writes the translated JSON back into `Data`; the original stays in Set up's backup.
+**Review native Ace packing** in Check's header or in Release writes the translated JSON back into `Data`; the original stays in Set up's backup.
 Release verifies saved packing evidence against the current JSON and native files.
 
 An encrypted game reads only its archive while one sits beside `Game.exe`, so Set up moves `Game.rgss3a` into `.dazedtl/ace` once its files are extracted.
