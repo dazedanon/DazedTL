@@ -18,6 +18,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { FieldRow } from "../../ui/FieldRow";
 import { ActionSlot } from "../../ui/ActionSlot";
+import { childPath } from "../../ui/displayPath";
 
 const bytes = (value: number) =>
   value < 1024
@@ -326,11 +327,13 @@ export function BackupsPanel({
                           const parent = await window.dazedtl.chooseFolder();
                           if (parent)
                             setDestination(
-                              parent.replace(/[\\/]+$/, "") +
-                                "/DazedTL-recovered-" +
-                                kind +
-                                "-" +
-                                identity.slice(0, 8),
+                              childPath(
+                                parent,
+                                "DazedTL-recovered-" +
+                                  kind +
+                                  "-" +
+                                  identity.slice(0, 8),
+                              ),
                             );
                         },
                         "",

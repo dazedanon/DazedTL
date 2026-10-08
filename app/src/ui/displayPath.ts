@@ -17,5 +17,11 @@ export function homeRelative(path: string, home = currentHome()) {
     : path;
 }
 
+/** A file or folder inside `parent`, written with the parent's own separator. */
+export function childPath(parent: string, name: string) {
+  const separator = parent.includes("\\") ? "\\" : "/";
+  return parent.replace(/[\\/]+$/, "") + separator + name;
+}
+
 const currentHome = () =>
   typeof window === "undefined" ? "" : window.dazedtl?.home || "";

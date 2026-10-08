@@ -61,6 +61,7 @@ import {
   jobTime,
 } from "./model";
 import { selectionNames } from "../../../ui/displayText";
+import { childPath } from "../../../ui/displayPath";
 
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({
@@ -304,8 +305,7 @@ export function useGuidedWorkspace({
   const qaStatus = qa.status;
   const release = fields.release;
   const releaseAction = release.kind === "game" ? "release" : "release_patch";
-  const releasePath =
-    release.directory.replace(/[\\/]+$/, "") + "/" + release.name;
+  const releasePath = childPath(release.directory, release.name);
   const artifact = state.artifacts.find((item) => item.kind === release.kind);
   // Release checks its destination while it is typed, so Build never learns of
   // a rejected folder late; the name's own separator rule needs no read.
