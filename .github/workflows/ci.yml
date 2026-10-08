@@ -1,0 +1,72 @@
+# Runs the build checks and behavior tests, then installs DazedTL the way a
+# downloaded ZIP is installed and drives it through a translation, on Windows
+# and Linux. See "Live test" in docs/development.md.
+name: CI
+
+on:
+  # Every branch, so work can be checked on Windows before it reaches dev.
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so changed runner images and pinned downloads show up even
+    # without new commits.
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    steps:
+      # Downloaded ZIPs hold the committed line endings.
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - run: node scripts/setup.mjs
+      - run: node scripts/build.mjs
+      - run: node scripts/test.mjs
+
+  live:
+    name: Live test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04]
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      # Runs the test driver only; START gets a PATH without this Node.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Live test
+        if: runner.os == 'Windows'
+        run: node scripts/e2e.mjs --work "$env:RUNNER_TEMP\e2e"
+      - name: Live test
+        if: runner.os == 'Linux'
+        run: >-
+          xvfb-run --auto-servernum --server-args="-screen 0 1600x1000x24"
+          node scripts/e2e.mjs --work "$RUNNER_TEMP/e2e"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: live-test-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e/logs
+          if-no-files-found: ignore

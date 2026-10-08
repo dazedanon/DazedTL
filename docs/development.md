@@ -47,6 +47,19 @@ It lints with type-aware [Oxlint](../.oxlintrc.json) (including the React hooks 
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 
+## Live test
+
+`node scripts/e2e.mjs` installs the checkout the way a user's downloaded ZIP is installed and drives the running app through a translation.
+It copies the files Git would commit, including uncommitted changes, into a doubled `DazedTL-main (1)` folder and runs START with a PATH that has no Node or Python, and on Windows no Git.
+The profile and a copy of the [fixture game](../tests/fixtures/mz-game) sit in folders with spaces and Japanese names.
+Through the window it opens the game, runs Set up, translates and applies the database and the maps with Live translation against a local stand-in provider, and builds a patch ZIP.
+It then closes the window and expects every app process to exit with no failures in the app's diagnostics, and starts again to check that setup does not repeat.
+Logs, screenshots and the app's diagnostics land in `logs` inside the work folder; `--work <empty folder>` chooses it.
+On Linux the app needs a display, such as `xvfb-run -a node scripts/e2e.mjs`.
+
+[CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
+GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
+
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.

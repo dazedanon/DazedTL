@@ -5,3 +5,5 @@ backend/dazedtl/engine/
 *.json
 # Agent worktrees are separate checkouts with their own formatting state.
 .claude/
+# Fixture games keep RPG Maker's own formatting.
+tests/fixtures/mz-game/

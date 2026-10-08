@@ -1,0 +1,1 @@
+[null,{"id":1,"name":"ポーション","description":"HPを50回復する。","note":"","iconIndex":176,"price":50,"consumable":true,"itypeId":1,"effects":[],"scope":7,"occasion":0,"animationId":0,"damage":{"critical":false,"elementId":0,"formula":"0","type":0,"variance":20},"hitType":0,"repeats":1,"speed":0,"successRate":100,"tpGain":0}]
