@@ -27,7 +27,14 @@ try {
     $archive = Join-Path $runtime "$name.zip"
     Write-Host "Downloading Node $version..."
     Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
-    if ((Get-FileHash -Algorithm SHA256 $archive).Hash -ne $hash) {
+    # .NET instead of Get-FileHash and Expand-Archive: started from a
+    # PowerShell 7 terminal, Windows PowerShell inherits a module path whose
+    # modules it cannot load.
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead($archive)
+    try { $actual = ([BitConverter]::ToString($sha256.ComputeHash($stream)) -replace '-').ToLowerInvariant() }
+    finally { $stream.Dispose() }
+    if ($actual -ne $hash) {
       Remove-Item -Force $archive
       Fail 'the Node download did not match its pinned checksum. Try again.'
     }
@@ -38,7 +45,8 @@ try {
     $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
     if ($tar) { & $tar.Source -xf $archive -C $staging }
     if (-not $tar -or $LASTEXITCODE -ne 0) {
-      Expand-Archive -Path $archive -DestinationPath $staging -Force
+      Add-Type -AssemblyName System.IO.Compression.FileSystem
+      [IO.Compression.ZipFile]::ExtractToDirectory($archive, $staging)
     }
     Move-Item (Join-Path $staging $name) (Join-Path $runtime $name)
     Remove-Item -Recurse -Force $staging, $archive
