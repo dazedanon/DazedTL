@@ -1437,7 +1437,7 @@ class GuidedTests(unittest.TestCase):
             self.guided.context_status(self.identity)["layoutApplication"], "pending"
         )
         self.backend.running = lambda: False
-        pending = self.guided.preferences(self.native)
+        pending = self.edited(self.guided.preferences(self.native))
         self.guided.options_draft(self.identity, pending)
         self.assertEqual(
             self.guided.context_status(self.identity)["layoutApplication"], "pending"
@@ -1632,6 +1632,15 @@ class GuidedTests(unittest.TestCase):
         self.seed_estimate()
         return self.guided.preview(self.identity, "start", options={"mode": "batch"})
 
+    @staticmethod
+    def edited(preferences):
+        """An options draft with an unsaved edit."""
+        values = preferences["values"]
+        return {
+            **preferences,
+            "values": {**values, "phase1_comments": not values["phase1_comments"]},
+        }
+
     def speaker_report(self):
         schema = [
             {"key": key, "label": key, "type": "boolean"}
@@ -1734,7 +1743,7 @@ class GuidedTests(unittest.TestCase):
             decision="enable", confidence="medium"
         )
         write_json(path, report)
-        draft = self.guided.preferences(self.native)
+        draft = self.edited(self.guided.preferences(self.native))
         self.guided.options_draft(self.identity, draft)
         with self.assertRaises(ValueError):
             self.guided.apply_speakers(self.identity, 0, digest(report))
@@ -1978,7 +1987,10 @@ class GuidedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.guided.preview(self.identity, "import", files=["Unsupported.json"])
         preferences = self.guided.preferences(self.native)
+        # Choosing the method already saved leaves no edit to hold work up.
         self.guided.options_draft(self.identity, preferences)
+        self.assertIsNotNone(self.preview()["token"])
+        self.guided.options_draft(self.identity, self.edited(preferences))
         with self.assertRaises(ValueError):
             self.preview()
         self.guided.save_options(
@@ -2783,7 +2795,9 @@ class GuidedTests(unittest.TestCase):
             findings["recommended"]["ENABLED_PLUGINS_357"], ["TextPicture"]
         )
         self.assertEqual(findings["recommended"]["ENABLED_PATTERNS_355655"], [])
-        self.guided.options_draft(self.identity, self.guided.preferences(self.native))
+        self.guided.options_draft(
+            self.identity, self.edited(self.guided.preferences(self.native))
+        )
         with self.assertRaises(ValueError):
             self.guided.event_text_request(self.identity, apply=True)
         self.guided.options_draft(self.identity, None)
@@ -3040,7 +3054,7 @@ class GuidedTests(unittest.TestCase):
     def test_reopening_refreshes_inventory_without_losing_options_or_run_ownership(
         self,
     ):
-        pending = self.guided.preferences(self.native)
+        pending = self.edited(self.guided.preferences(self.native))
         self.guided.options_draft(self.identity, pending)
         self.native["manual_job"] = "saved-batch"
         self.backend.describe = lambda _: {

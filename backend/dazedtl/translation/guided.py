@@ -546,6 +546,11 @@ class Guided:
         if value is not None:
             self.validate_options(value["values"])
             value = context_setup.rebase_layout_draft(native, value)
+            # A draft matching the saved options, such as after choosing the
+            # method already in use, holds no edit to save, so it must not
+            # hold up the next action.
+            if value == self.preferences(native):
+                value = None
         write_json(self.path(project_id, "draft"), value)
         return {"saved": True}
 
