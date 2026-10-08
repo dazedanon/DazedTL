@@ -268,7 +268,9 @@ class Updates {
               "/d",
               "/s",
               "/c",
-              `"start "DazedTL" /d "${this.root}" "${path.join(this.root, "START.bat")}" --after ${process.pid} ${args.join(" ")}"`,
+              // start opens a batch file with cmd /K, which leaves the
+              // console open after START exits; cmd /c closes it.
+              `"start "DazedTL" /d "${this.root}" "${process.env.ComSpec || "cmd.exe"}" /d /c START.bat --after ${process.pid} ${args.join(" ")}"`,
             ],
             { ...options, windowsVerbatimArguments: true, windowsHide: true },
           )
