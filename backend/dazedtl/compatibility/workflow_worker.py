@@ -6,6 +6,11 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from dazedtl.stdio import private_stdin
+
+# The stop command arrives on standard input while this action runs Git and
+# other tools; they must not inherit that pipe.
+sys.stdin = private_stdin()
 from dazedtl.compatibility.runtime import activate
 
 source = activate()
