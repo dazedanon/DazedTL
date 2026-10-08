@@ -546,12 +546,39 @@ def require_baseline(engine, source, options, state, *, allow_pending=False):
         raise ValueError(
             "Establish the original and translation branches with a source version first."
         )
-    if (
-        status.get("current_branch") != status.get("translation_branch")
-        or not allow_pending
-        and (status.get("pending_operations") or status.get("asset_sync_pending"))
-    ):
-        raise ValueError(
-            "Finish pending Git work and select the translation branch before continuing."
-        )
+    issue = checkout_issue(status, allow_pending=allow_pending)
+    if issue:
+        raise ValueError(issue)
     return status
+
+
+# Git's marker for each unfinished operation, as the user knows it.
+PENDING_GIT = {
+    "MERGE_HEAD": "merge",
+    "CHERRY_PICK_HEAD": "cherry-pick",
+    "REVERT_HEAD": "revert",
+    "rebase-merge": "rebase",
+    "rebase-apply": "rebase",
+    "sequencer": "cherry-pick",
+    "BISECT_LOG": "bisect",
+}
+
+
+def checkout_issue(status, *, allow_pending=False):
+    """Why the game's Git checkout cannot take translation work, or ""."""
+    pending = status.get("pending_operations") or []
+    if not allow_pending and pending:
+        return (
+            f"The game folder has an unfinished Git {PENDING_GIT.get(pending[0], 'operation')}. "
+            "Finish or cancel it under Game updates, or in Git, to continue."
+        )
+    if not allow_pending and status.get("asset_sync_pending"):
+        return "The last game update has not finished restoring game assets. Finish it under Game updates to continue."
+    current, branch = status.get("current_branch"), status.get("translation_branch")
+    if current != branch:
+        return (
+            f"The game folder is on Git branch “{current}”"
+            if current
+            else "The game folder is not on a Git branch"
+        ) + f". Switch it back to the translation branch “{branch}” to continue."
+    return ""

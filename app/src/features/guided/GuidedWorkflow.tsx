@@ -61,6 +61,7 @@ function Workspace(
   const {
     project,
     state,
+    translation,
     application,
     action,
     draft,
@@ -283,6 +284,13 @@ function Workspace(
               onDismiss={action.clear}
             />
             <Message message={state.collectionError} />
+            {/* Problems that refuse work on every task, such as a game
+                folder checked out off its translation branch. */}
+            {translation.warnings.map((warning) => (
+              <Notice key={warning} tone="warning">
+                <span>{warning}</span>
+              </Notice>
+            ))}
             {changed.length > 0 &&
               ["translate", "check", "release"].includes(position.step) &&
               !hostedFooter && (

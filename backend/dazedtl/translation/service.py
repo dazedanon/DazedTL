@@ -15,7 +15,7 @@ from . import backups, delivery
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .jobs import Jobs
-from .operations import lifecycle, require_baseline
+from .operations import checkout_issue, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, options, scope
 from .requests import plan_input, quote
 from .results import Results
@@ -227,6 +227,9 @@ class Translation:
             warnings.append(
                 "Git status is unavailable. Git must be installed and this game's baselines verified before translation."
             )
+        # The checkout problem that would refuse every change to the game.
+        if git and git.get("configured") and (issue := checkout_issue(git)):
+            warnings.append(issue)
         self.jobs.reconcile()
         saved_jobs = self.jobs.store.list(project_id)[:30]
         warnings.extend(self.jobs.store.warnings)

@@ -34,6 +34,7 @@ class Engine:
         self.source = source
         self.reports = []
         self.pending = []
+        self.branch = "main"
 
     def git_status(self, source, *_args):
         return {
@@ -41,7 +42,7 @@ class Engine:
             "configured": True,
             "original_version": "1.0",
             "translation_version": "1.0",
-            "current_branch": "main",
+            "current_branch": self.branch,
             "translation_branch": "main",
             "pending_operations": self.pending,
             "asset_sync_pending": False,
@@ -72,6 +73,12 @@ class Engine:
             "model": configuration["model"],
             "messages": [{"role": "user", "content": request["context"]["user"]}],
         }
+
+    def detect(self, _source):
+        return "MVMZ"
+
+    def documents(self, _source):
+        return {}
 
     def progress(self, _source, _options, report=None, **_kwargs):
         if report is not None:
@@ -368,6 +375,14 @@ class WorkflowTests(unittest.TestCase):
             )["configured"]
         )
         self.engine.pending = []
+        self.engine.branch = "side"
+        with self.assertRaises(ValueError) as refused:
+            require_baseline(self.engine, self.game, DEFAULTS, state)
+        # The workspace states the same reason before any action is refused.
+        self.assertIn(
+            str(refused.exception), self.service.state(self.identity)["warnings"]
+        )
+        self.engine.branch = "main"
         (Path(state["source_backup"]["path"]) / "manifest.json").unlink()
         with self.assertRaises(ValueError):
             self.service.compile(self.identity, self.plan_path)
@@ -519,8 +534,6 @@ class WorkflowTests(unittest.TestCase):
             saved_run,
         )
         # State no longer promotes these retired references to Overview warnings.
-        self.engine.detect = lambda _source: "MVMZ"
-        self.engine.documents = lambda _source: {}
         current = self.service.state(self.identity)
         self.assertEqual(current["warnings"], [])
         self.assertTrue(current["lifecycle"]["source_backup"]["available"])
