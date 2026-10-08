@@ -553,6 +553,7 @@ Disclosures share the app's chevron marker and hold genuine advanced settings or
 Saved results, worker logs, frozen scope and record identifiers belong to the inspector's Technical view rather than routine run views.
 Action controls pair the shared pending button and status feedback with `useAction`'s guarded action key.
 Toolbar controls use its inline presentation: pending text replaces the label, and result feedback appears once beside the action.
+A row of related inline steps, such as Image Manager's discovery steps, shows their one result after its last control, so a result never moves the button just clicked.
 Inside action bars a control's result or disabled reason sits just left of its own button, so buttons keep their place and the bar keeps its height.
 A long error shows a short excerpt with Show more, and the expanded text scrolls within a bounded height instead of growing past the page.
 Successful operations that finished before the interface loaded stay in History rather than beside their control; failures remain until a newer attempt replaces them.

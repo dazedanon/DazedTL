@@ -40,7 +40,7 @@ import { useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
-import { Message } from "../../ui/Feedback";
+import { Feedback, Message } from "../../ui/Feedback";
 import { ForeignWork } from "../../ui/ForeignWork";
 import {
   gridStep,
@@ -830,6 +830,13 @@ function Manager({
     notice: action.key === key ? action.notice : "",
     onClick: () => void perform(key),
   });
+  // Discovery steps share one result after the row's last control.
+  const unreported = { error: "", notice: "" };
+  const discoveryResult =
+    (action.key === "discovery_task" ||
+      (action.key === "refresh_findings" && awaitingFindings) ||
+      (action.key === "use_recommendations" && !!counts.recommended)) &&
+    !!(action.error || action.notice);
   // One slot walks the selection from editable copies to the image task; it
   // follows the saved counts so the label holds while choices save.
   const prepareFirst = !!counts.selectedNotPrepared;
@@ -1072,7 +1079,8 @@ function Manager({
                   <option value="selected">Selected images</option>
                 </select>
               </label>
-              {/* Each discovery step reports its result beside itself. */}
+              {/* The steps report after the last of them, so a result never
+                  moves the button just clicked. */}
               <ActionControl
                 inline
                 label="Copy discovery task"
@@ -1083,6 +1091,7 @@ function Manager({
                   action.busy || jobRunning || scopeMissing || !counts.indexed
                 }
                 {...step("discovery_task", "Copying…")}
+                {...unreported}
                 onClick={() => void perform("discovery_task", scopeOptions)}
               />
               {awaitingFindings && (
@@ -1094,6 +1103,7 @@ function Manager({
                   }
                   disabled={action.busy || jobRunning}
                   {...step("refresh_findings", "Reading findings…")}
+                  {...unreported}
                 />
               )}
               {!!counts.recommended && (
@@ -1102,6 +1112,7 @@ function Manager({
                   label={`Use recommendations (${counts.recommended.toLocaleString()})`}
                   disabled={action.busy || jobRunning}
                   {...step("use_recommendations", "Selecting…")}
+                  {...unreported}
                   onClick={() =>
                     void perform("use_recommendations", { mode: "add" })
                   }
@@ -1111,6 +1122,9 @@ function Manager({
                 <span className="image-scope-context">
                   {value.view.folder || "Choose a folder in the browser."}
                 </span>
+              )}
+              {discoveryResult && !action.busy && (
+                <Feedback error={action.error} notice={action.notice} />
               )}
             </div>
           )}
@@ -1422,7 +1436,7 @@ function Manager({
             Retry saving choices
           </Button>
         )}
-        {action.notice && !stepKey && (
+        {action.notice && !stepKey && !owned && (
           <span role="status">{action.notice}</span>
         )}
         {!!reportIssues.length && (
