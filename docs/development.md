@@ -42,7 +42,7 @@ Tests use temporary workspaces and controlled API responses; no provider, game f
 For focused iteration, use `.venv/bin/python -I -B -m unittest discover -s tests -t . -p test_projects.py` or `node --test --test-isolation=none tests/application.test.ts` from the root.
 Run `node scripts/build.mjs` separately for static checks and the renderer build.
 It checks formatting, that stylesheets use the [design tokens](architecture.md#visual-design), that the [generated API contracts](architecture.md#api-changes) are current and that tracked paths fit the [Windows path budget](architecture.md#distribution-and-updates).
-It lints with type-aware [Oxlint](../.oxlintrc.json) (including the React hooks rules) and [Ruff](../ruff.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](../pyrightconfig.json).
+It lints with type-aware [Oxlint](../.oxlintrc.json) (including the React hooks rules) and [Ruff](../pyproject.toml), and type-checks the renderer, the Electron main process and DazedTL-owned Python with [Pyright](../pyproject.toml).
 Launching builds a missing renderer without these checks.
 Format with `node scripts/format.mjs`; it applies Prettier and Ruff defaults and leaves the bundled engine, Markdown and JSON unchanged.
 
