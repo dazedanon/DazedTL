@@ -311,9 +311,12 @@ def check(connection):
             "The connection timed out. Check the server address and network, then try again.",
         )
     except httpx.HTTPError:
+        # Plain HTTP servers, often local ones, have no certificate to check.
         return result(
             "unavailable",
-            "The server could not be reached securely. Check the address, network, and certificate.",
+            "The server could not be reached. Check the address, network, and certificate."
+            if url.startswith("https:")
+            else "The server could not be reached. Check the address and network.",
         )
     except ValueError, UnicodeError:
         return result(
