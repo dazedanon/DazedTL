@@ -167,6 +167,11 @@ export function useGuidedWorkspace({
     state.runs.find((run) => run.id === inspection?.id),
   );
   const [started, setStarted] = useState<Record<string, Job>>({});
+  // The label each action had when clicked: an install turns its button into
+  // Update, but its result still confirms the install.
+  const [clickedLabels, setClickedLabels] = useState<Record<string, string>>(
+    {},
+  );
 
   const documentName = state.contextDocument;
   const setDocumentName = (name: string) => {
@@ -796,22 +801,30 @@ export function useGuidedWorkspace({
         "rewrap_preview",
         "qa_prepare",
       ].includes(name);
+    // A tool row reports only its latest change, so installing again
+    // replaces the earlier removal's result.
+    const toolCounterpart = (
+      {
+        inspector_install: "inspector_remove",
+        inspector_remove: "inspector_install",
+        forge_install: "forge_remove",
+        forge_remove: "forge_install",
+      } as Record<string, string>
+    )[name];
+    const superseded =
+      !!toolCounterpart &&
+      !!current &&
+      jobTime(operationJob(toolCounterpart) || {}) > jobTime(current);
     // An update leaves the row's status as it was, so a tool change from
     // this visit still confirms beside its button.
-    const toolDoneHere =
-      finishedHere &&
-      [
-        "inspector_install",
-        "forge_install",
-        "inspector_remove",
-        "forge_remove",
-      ].includes(name);
+    const toolDoneHere = finishedHere && !!toolCounterpart && !superseded;
     const display =
-      current?.status === "complete" &&
-      (publicationReview ||
-        releaseBuild ||
-        toolChange ||
-        (qaOperation && (!qa.current || current.result?.task !== qa.task)))
+      superseded ||
+      (current?.status === "complete" &&
+        (publicationReview ||
+          releaseBuild ||
+          toolChange ||
+          (qaOperation && (!qa.current || current.result?.task !== qa.task))))
         ? undefined
         : current;
     if (name === "refresh_sources")
@@ -874,7 +887,7 @@ export function useGuidedWorkspace({
                   // Short, so the row's buttons stay side by side.
                   notice: name.endsWith("_remove")
                     ? "Removed."
-                    : label === "Update"
+                    : clickedLabels[name] === "Update"
                       ? "Updated."
                       : "Installed.",
                 }
@@ -900,7 +913,10 @@ export function useGuidedWorkspace({
             ? display
             : undefined
         }
-        onClick={() => review(name, options, files)}
+        onClick={() => {
+          setClickedLabels((previous) => ({ ...previous, [name]: label }));
+          void review(name, options, files);
+        }}
       />
     );
   };
