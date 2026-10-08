@@ -231,6 +231,10 @@ class ImageTests(unittest.TestCase):
         request, result = self.request("discovery_task")
         self.assertEqual([row["id"] for row in request["assets"]], ["img/A.png"])
         self.assertIn("Copying this task did not start an agent", result["text"])
+        # Refreshing before the assistant saves a report leaves the task waiting.
+        early = reopened.action(self.identity, "refresh_findings")["state"]
+        self.assertEqual(early["discovery"]["status"], "awaiting_results")
+        self.assertEqual(early["discovery"]["errors"], [])
         with self.assertRaisesRegex(ValueError, "expired"):
             reopened.action(self.identity, "apply", {"token": "foreign"})
         # The copy says what it expects back, for the assistant task list.

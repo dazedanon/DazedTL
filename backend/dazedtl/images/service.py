@@ -158,6 +158,17 @@ class ImageService:
                     "Image work in this game folder was saved by another project or app version. Its files were kept; choose how to continue in Images.",
                     self._foreign_summary(project_id, root, path, value),
                 )
+            # Earlier versions saved a refresh before any report as an error.
+            for kind in ("discovery", "editing"):
+                task = value.get(kind) or {}
+                if isinstance(task.get("errors"), list):
+                    task["errors"] = [
+                        error
+                        for error in task["errors"]
+                        if not str(error).startswith(
+                            "No saved report is available yet."
+                        )
+                    ]
             return value
         return {
             "version": 1,
@@ -1463,15 +1474,12 @@ class ImageService:
         path = project_path(
             root, WORK + "/reports/" + request["id"] + ".json", exists=False
         )
+        # Nothing saved yet is the assistant still working, not a task problem.
         if not path.exists():
-            value[kind].update(
-                status="awaiting_results",
-                errors=[
-                    "No saved report is available yet. Paste the copied task into your coding assistant, then refresh."
-                ],
-            )
-            self._save(project_id, value)
-            return {"state": self.state(project_id)}
+            return {
+                "state": self.state(project_id),
+                "message": "No results saved yet.",
+            }
         report = read_json(path, limit=48_000_000)
         if (
             not isinstance(report, dict)

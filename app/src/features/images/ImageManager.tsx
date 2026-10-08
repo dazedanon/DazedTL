@@ -642,6 +642,7 @@ function Manager({
   ) => {
     // Only a task that reached the clipboard says it was copied.
     let copied = false;
+    let message = "";
     const result = await action.run(
       async () => {
         await draft.session.commit(async () => {
@@ -652,6 +653,7 @@ function Manager({
           );
           images.set(reply.state);
           setListRevision((value) => value + 1);
+          message = reply.message || "";
           if (reply.text) {
             await window.dazedtl.copyText(reply.text);
             copied = true;
@@ -669,6 +671,7 @@ function Manager({
         "Task copied. Paste into your coding assistant to begin or resume.",
         name,
       );
+    else if (result.ok && message) action.succeed(message, name);
   };
   // A project's first visit indexes its images once. What opened the
   // manager, such as setting earlier work aside, reports as its result.
@@ -1441,7 +1444,10 @@ function Manager({
         )}
         {!!reportIssues.length && (
           <details>
-            <summary>{reportIssues.length} image issues</summary>
+            <summary>
+              {reportIssues.length.toLocaleString()} image{" "}
+              {reportIssues.length === 1 ? "issue" : "issues"}
+            </summary>
             {reportIssues.slice(0, 50).map((warning, index) => (
               <p key={index}>{warning}</p>
             ))}
