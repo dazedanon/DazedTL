@@ -70,8 +70,7 @@ def main() -> int:
         print(f"  MISSING  tools/{rel}")
     shared = {rel: DAZEDTL_ROOT / rel for rel in (
         "util/len_translation.py", "util/len_git.py", "util/skills/system.py", "scripts/len_translation.py",
-        "util/ace/rv2json.py", "util/ace/rgssad.py")}
-    shared["../data/skills/project_setup.md"] = DAZEDTL_ROOT.parent / "data/skills/project_setup.md"
+        "util/ace/rv2json.py", "util/ace/rgssad.py", "data/skills/project_setup.md")}
     missing_shared = [rel for rel, path in shared.items() if not path.is_file()]
     print(f"shared     : {len(shared) - len(missing_shared)}/{len(shared)} present")
     for rel in missing_shared:
