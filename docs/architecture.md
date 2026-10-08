@@ -958,7 +958,9 @@ Electron's binary is downloaded with its package's checksums but unpacked by [zi
 Each step records its inputs in `.runtime/state.json` and reruns only when they change, so an update that changes a lockfile, a version file or the folder location repairs the install on the next start.
 User installs omit the development tools; a Git checkout defaults to the development set.
 npm comes from the pinned Node whenever it is installed, because the system Node may have none or a different version.
-The launcher puts its Node first on the app's `PATH`, since the backend validates plugin scripts with `node`.
+Translation projects are Git repositories, and Windows ships no Git, so setup installs Git for Windows' portable MinGit there, pinned in the same lock; other systems must provide `git`, and setup stops with the install command when they do not.
+MinGit's system config sets `core.autocrlf=true` as a Git for Windows install does, which the engine's repo-local line-ending settings already override.
+The launcher puts its Node and, on Windows, that Git first on the app's `PATH`, since the backend validates plugin scripts with `node` and runs `git`.
 Detached launches log Electron's output to a temporary file and wait for its "shown" line, so the console stays open with the error when the app fails to start.
 Shortcuts are written once per folder location, and a deleted desktop shortcut stays deleted.
 Ubuntu's AppArmor rules block the Chromium sandbox of unregistered binaries, so the launcher stops with a one-time profile command instead of letting Electron exit silently.

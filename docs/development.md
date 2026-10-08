@@ -16,8 +16,9 @@ node scripts/start.mjs
 
 Setup installs the pinned Python from [.python-version](../.python-version), the locked packages including the formatting, lint and type-check tools, and Electron into `.runtime`, `.venv` and `app/node_modules`.
 It runs npm from the pinned Node in [.node-version](../.node-version), downloading it on Linux and macOS; on Windows it uses the Node that runs it until `START.bat` has installed the pinned one.
+On Windows it also installs Git for Windows' portable MinGit from [.mingit-version](../.mingit-version); other systems need their own `git`.
 The scripts run on any Node release within the pinned major version.
-After changing either version file, run `node scripts/runtimes.mjs` to pin the new downloads in [runtimes.lock](../scripts/runtimes.lock).
+After changing a version file, run `node scripts/runtimes.mjs` to pin the new downloads in [runtimes.lock](../scripts/runtimes.lock).
 
 `node scripts/start.mjs` keeps the app attached to the terminal; `START` launchers detach it.
 Both repeat a setup step only when its inputs change and rebuild a stale interface.

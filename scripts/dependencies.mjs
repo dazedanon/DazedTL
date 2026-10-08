@@ -29,6 +29,18 @@ export const platforms = {
     python: "aarch64-apple-darwin",
   },
 };
+/**
+ * The Git that setup installs on Windows, which ships without one; other
+ * systems use their own Git. Null outside Windows.
+ */
+export function bundledGit() {
+  if (process.platform !== "win32") return null;
+  const version = fs
+    .readFileSync(path.join(root, ".mingit-version"), "utf8")
+    .trim();
+  const folder = path.join(runtime, `mingit-${version}`);
+  return { folder, bin: path.join(folder, "cmd") };
+}
 // Windows on Arm runs the x64 runtimes, which every Python wheel supports.
 export const platform =
   process.platform === "win32"

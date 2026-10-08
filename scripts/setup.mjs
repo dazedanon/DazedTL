@@ -15,6 +15,7 @@ import {
   platform,
   platforms,
   requireNode,
+  bundledGit,
 } from "./dependencies.mjs";
 import { extract } from "./tar.mjs";
 import { extract as unzip } from "./zip.mjs";
@@ -325,6 +326,26 @@ export async function ensureSetup({ mode }) {
     console.log("Installing Electron…");
     await installElectron(electron);
   }
+  // Translation projects are Git repositories.
+  const git = bundledGit();
+  if (git) {
+    if (!fs.existsSync(path.join(git.bin, "git.exe"))) {
+      const archive = await download(
+        pinned((file) => /^MinGit-[\d.]+-64-bit\.zip$/.test(file)),
+        "Git",
+      );
+      const staging = `${git.folder}.partial`;
+      fs.rmSync(staging, { recursive: true, force: true });
+      unzip(archive, staging);
+      fs.renameSync(staging, git.folder);
+    }
+    removeOld("mingit-", path.basename(git.folder));
+  } else if (spawnSync("git", ["--version"], { stdio: "ignore" }).status !== 0)
+    throw new Error(
+      process.platform === "darwin"
+        ? "DazedTL needs Git. Run xcode-select --install in Terminal, then start DazedTL again."
+        : "DazedTL needs Git. Install the git package with your system's package manager, then start DazedTL again.",
+    );
   state.mode = mode;
   writeState(state);
   if (state.venv === "managed" && !process.env.DAZEDTL_PYTHON)

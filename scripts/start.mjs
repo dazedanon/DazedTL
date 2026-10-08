@@ -8,7 +8,13 @@ import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { setTimeout as delay } from "node:timers/promises";
-import { app, root, runtime, dependencies } from "./dependencies.mjs";
+import {
+  app,
+  root,
+  runtime,
+  dependencies,
+  bundledGit,
+} from "./dependencies.mjs";
 import { ensureSetup, readState, writeState } from "./setup.mjs";
 import { shortcuts, desktopEntry } from "./shortcuts.mjs";
 import { applyPending } from "./update.mjs";
@@ -226,11 +232,12 @@ async function launch() {
   if (fix) throw new Error(fix);
   const env = { ...process.env, CHROME_DESKTOP: desktopEntry };
   delete env.ELECTRON_RUN_AS_NODE;
-  // The backend validates plugin scripts with Node; the launcher's Node is
-  // there even when the system has none.
+  // The backend validates plugin scripts with Node and keeps projects in Git;
+  // the launcher's Node and the bundled Git are there even when the system has
+  // neither.
   const key =
     Object.keys(env).find((name) => name.toUpperCase() === "PATH") || "PATH";
-  env[key] = [path.dirname(process.execPath), env[key]]
+  env[key] = [path.dirname(process.execPath), bundledGit()?.bin, env[key]]
     .filter(Boolean)
     .join(path.delimiter);
   if (!detach) {
