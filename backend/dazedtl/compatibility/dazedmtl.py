@@ -433,6 +433,7 @@ class ExistingBackend:
         ]
         qa = {
             "current": False,
+            "applied": False,
             "status": {},
             "findings": [],
             "corrections": [],
@@ -451,6 +452,7 @@ class ExistingBackend:
         except (ValueError, OSError, KeyError) as exc:
             qa = {
                 "current": False,
+                "applied": False,
                 "status": {},
                 "findings": [],
                 "corrections": [],

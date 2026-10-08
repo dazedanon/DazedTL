@@ -2768,6 +2768,13 @@ class GuidedTests(unittest.TestCase):
         findings = self.guided.event_text.status(self.identity, self.native)
         self.assertEqual(findings["status"], "ready")
         self.assertFalse(findings["applied"])
+        # Findings not applied yet go out of date when their sources change.
+        events = (self.source / "Map001.json").read_bytes()
+        write_json(self.source / "Map001.json", {"list": []})
+        self.assertEqual(
+            self.guided.event_text.status(self.identity, self.native)["status"], "stale"
+        )
+        (self.source / "Map001.json").write_bytes(events)
         self.assertEqual(self.native["engine_options"], {})
         self.assertEqual(
             findings["recommended"]["ENABLED_PLUGINS_357"], ["TextPicture"]
@@ -2805,11 +2812,20 @@ class GuidedTests(unittest.TestCase):
             self.guided.execute(self.identity, quote["token"])
         self.assertEqual(self.started, [])
         self.catalog["fingerprint"] = "fixture-definitions"
+        # Applied findings stay through later game edits, but not past the
+        # event files they covered.
         write_json(self.source / "Map001.json", {"list": []})
+        findings = self.guided.event_text.status(self.identity, self.native)
+        self.assertEqual((findings["status"], findings["applied"]), ("ready", True))
+        self.assertEqual(self.native["selected"], ["Items.json", "Map001.json"])
+        write_json(self.source / "Map002.json", {"list": []})
+        self.backend.phase_files = lambda _native, phase: (
+            ["Items.json"] if phase == "database" else ["Map001.json", "Map002.json"]
+        )
+        self.native["selected"].append("Map002.json")
         self.assertEqual(
             self.guided.event_text.status(self.identity, self.native)["status"], "stale"
         )
-        self.assertEqual(self.native["selected"], ["Items.json", "Map001.json"])
         plugin = self.source / "js/plugins/Display.js"
         plugin.parent.mkdir(parents=True)
         plugin.write_text("original display implementation")

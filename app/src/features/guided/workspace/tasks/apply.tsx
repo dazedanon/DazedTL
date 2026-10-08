@@ -494,7 +494,6 @@ export function fittingView(w: GuidedWorkspace): TaskView {
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
-    state,
     baseline,
     qaTask,
     qaJob,
@@ -516,13 +515,8 @@ export function qaView(w: GuidedWorkspace): TaskView {
   const screening = handoff("qa");
   const qaCopied = screening.waiting;
   // Applying corrections changes the text this task checked, which makes it
-  // stale; that is the expected result of its own apply, not a problem.
-  const latest = state.readiness.publications[0];
-  const qaApplied =
-    !qa.current &&
-    !!qa.findings.length &&
-    latest?.kind === "qa_apply" &&
-    latest.state === "complete";
+  // stale; that and later edits are expected, not a problem.
+  const qaApplied = qa.applied;
   // A finding can be chosen once its assistant prepared a correction for it.
   const operations = new Map<string, typeof qa.corrections>();
   for (const change of qa.corrections)

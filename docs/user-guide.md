@@ -38,7 +38,8 @@ The detail beside each says why.
 ### Assistant tasks
 
 Tasks you copy to a coding assistant, such as Names & glossary, Line widths, Other event text, Plugin files, Images, Text QA and the player walkthrough, are listed under **Assistant tasks** on the Project page, and the count in the top bar opens that list.
-Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed, or **Blocked** with the reason.
+Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed before its results went into the game, or **Blocked** with the reason.
+Once a task's results are applied, later edits to the game, by hand or by other tasks, leave it as it was.
 Finished tasks leave the list; their results stay in their own task.
 **Dismiss** clears a task you abandoned, so its task reads **Not started** again; saved results are kept, and copying the task again brings it back.
 Image results your assistant saved are imported and checked when you return to the DazedTL window, and every few seconds while an image task waits; other tasks show their saved results as soon as they appear.
@@ -87,6 +88,7 @@ Files with active or unresolved Batch work are locked against source reloads.
 Your assistant applies its findings itself: confirmed codes, variable IDs, plugin handlers and script patterns turn on, and uncertain or mixed coverage stays off.
 **Source choices** shows the result; change any source there, or choose **Use recommendations** to go back to the findings' choices.
 When the findings leave nothing to translate, the task is done.
+Applied findings stay current when the game or its plugins change later; selecting event files they did not cover reads **Outdated** until you copy a new investigation.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
 
 **Plugin files** is one assistant task: the assistant checks every plugin for text players see and translates it with the glossary, guidance, the game's translated text and any reference games.
@@ -94,7 +96,7 @@ It keeps going through every plugin file on its own, and the task panel shows ho
 You don't review plugin files or strings; **Review & apply** shows what goes into the game.
 The task is done once every plugin's player text is translated with nothing waiting to apply.
 Copying the task again continues where the assistant stopped, and once everything is done it has the assistant recheck its decisions, for example after you find untranslated plugin text in the game.
-A plugin that changes after the assistant finished reads **Outdated** until you copy the task again.
+A plugin file edited after its translation is applied, or one with nothing to translate, keeps its state; a plugin that changes while its translation waits to be applied reads **Outdated** until you copy the task again.
 A plugin file the app can't read, such as one not saved as UTF-8, stays unchanged and keeps the task **Blocked** until you fix it or choose **Keep unchanged**.
 
 **Options** holds task settings and opens the translated folder.

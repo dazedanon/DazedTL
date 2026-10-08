@@ -225,7 +225,11 @@ class PublicationTests(unittest.TestCase):
             "screen-index.json",
         ):
             write_json(task_dir / name, {})
-        task = {"game_root": str(self.root), "data_root": str(self.root / "data")}
+        task = {
+            "game_root": str(self.root),
+            "data_root": str(self.root / "data"),
+            "created_at": "2026-10-07T10:00:00+00:00",
+        }
         engine = ModuleType("util.rpgmaker_qa")
         engine._load_task = lambda path: (Path(path), task, {"stage": "complete"})
         engine.FINDINGS_SCHEMA = "findings"
@@ -301,3 +305,19 @@ class PublicationTests(unittest.TestCase):
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
         self.assertEqual(state["corrections"][0]["replacement"], "Arjilee Plateau")
+        # Corrections applied from this task, and only this task, stay applied
+        # once something else is applied later.
+        applied = []
+        for task_path, candidates, kind in (
+            ("another-task", self.after, "qa_apply"),
+            (str(task_dir), self.before, "qa_apply"),
+            (None, self.after, "export_selected"),
+        ):
+            p.publish(
+                self.folder,
+                self.root,
+                p.freeze(self.folder, self.root, candidates, kind, task=task_path),
+            )
+            with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+                applied.append(text.qa_state(plan)["applied"])
+        self.assertEqual(applied, [False, True, True])

@@ -181,12 +181,12 @@ function standing(
     if (!guided || !copied) return { state: "idle" };
     const qa = guided.readiness.qa;
     if (!qa.task) return { state: "idle" };
-    if (!qa.current) {
-      const latest = guided.readiness.publications[0];
-      return latest?.kind === "qa_apply" && latest.state === "complete"
+    // Applied corrections change the text the task checked, and later edits
+    // are expected; only findings not applied yet go out of date.
+    if (!qa.current)
+      return qa.applied
         ? { state: "finished" }
         : { state: "outdated", detail: qa.message };
-    }
     if (qa.findings.length)
       return {
         state: "needs_review",

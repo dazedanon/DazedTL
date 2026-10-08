@@ -432,6 +432,13 @@ class PluginTests(unittest.TestCase):
         )
         before = {path: (self.game / path).read_bytes() for path in paths}
         self.assertEqual(self.service.state(self.identity)["counts"]["ready"], 2)
+        # A game edit under a translation not applied yet goes back to the
+        # assistant; once applied, later edits are expected.
+        edited = before[paths[0]] + b"\n// edited"
+        write_bytes(self.game / paths[0], edited)
+        counts = self.service.state(self.identity)["counts"]
+        self.assertLess(counts["investigated"], counts["files"])
+        write_bytes(self.game / paths[0], before[paths[0]])
         canceled = self.service.action(self.identity, "preview_apply")["preview"]
         self.assertTrue(
             all((self.game / path).read_bytes() == raw for path, raw in before.items())
@@ -478,6 +485,13 @@ class PluginTests(unittest.TestCase):
         # Applied files are done, not listed as left unchanged in a later review.
         later = self.service.action(self.identity, "preview_apply")["preview"]
         self.assertEqual((later["files"], later["blocked"]), ([], []))
+        applied = (self.game / paths[0]).read_bytes()
+        write_bytes(self.game / paths[0], applied + b"\n// edited")
+        counts = self.service.state(self.identity)["counts"]
+        self.assertEqual(
+            (counts["applied"], counts["investigated"]), (2, counts["files"])
+        )
+        write_bytes(self.game / paths[0], applied)
         saved = self.service.load(self.identity)
         original_saved = deepcopy(saved)
         saved["receipts"][-1]["files"][0]["backup"] = saved["files"][path]["prepared"][

@@ -308,6 +308,8 @@ class QaCorrection(TypedDict):
 
 class QaState(TypedDict):
     current: bool
+    # Corrections chosen from this task were applied and not restored.
+    applied: bool
     task: NotRequired[str]
     status: dict[str, object]
     message: str

@@ -34,6 +34,9 @@ SCAN_RULES = 2
 # with the assistant.
 DECIDED = {"visible", "latent", "protected", "editor_only", "non_visible"}
 DISPOSITIONS = DECIDED | {"unresolved"}
+# File states with nothing left to apply: the game holds the translation, or
+# the file has nothing to translate.
+SETTLED = {"applied", "translated", "none"}
 DATABASE_JSON = {
     "Actors.json",
     "Classes.json",
@@ -810,14 +813,18 @@ class PluginService:
 
         for row in value["files"].values():
             try:
+                # Edits after a file is settled are expected, so it keeps its
+                # state; copying the task again rescans every file.
+                settled = self.row_status(value, row) in SETTLED
                 if not project_path(root, row["path"], exists=False).exists():
                     # A removed plugin has nothing to translate; the next scan
                     # drops it.
-                    row.update(stale=True, issue="")
+                    if not settled:
+                        row.update(stale=True, issue="")
                     continue
                 result = row.get("result", {})
                 expected = row.get("applied", {}).get("afterHash") or row["sourceHash"]
-                if fingerprint(row["path"]) != expected:
+                if not settled and fingerprint(row["path"]) != expected:
                     row["stale"] = True
                     # A file the last scan could not read reads now; the
                     # assistant has to look at it.

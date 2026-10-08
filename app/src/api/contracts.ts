@@ -591,6 +591,7 @@ export type QaCorrection = {
 
 export type QaState = {
   current: boolean;
+  applied: boolean;
   task?: string;
   status: Record<string, unknown>;
   message: string;

@@ -49,9 +49,18 @@ def json_hash(value):
 
 
 def freeze(
-    folder, root, candidates, kind, *, outputs=None, restore=None, overwrite=False
+    folder,
+    root,
+    candidates,
+    kind,
+    *,
+    outputs=None,
+    restore=None,
+    overwrite=False,
+    task=None,
 ):
-    """Freeze both sides before the user reviews an exact destination batch."""
+    """Freeze both sides before the user reviews an exact destination batch.
+    `task` names the QA task whose corrections the batch applies."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     identity = uuid.uuid4().hex
@@ -90,6 +99,7 @@ def freeze(
         "next_outputs": following,
         "outputs_hash": receipt_hash(folder),
         "restores": restore["id"] if restore else None,
+        "task": task,
     }
     index = Path(folder) / "source-inputs.json"
     record["source_inputs"] = digest(index.read_bytes()) if index.exists() else None

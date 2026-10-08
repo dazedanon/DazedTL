@@ -3,6 +3,7 @@
 import difflib
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from dazedtl.storage import write_json
@@ -65,6 +66,7 @@ def qa_state(plan):
     if not pointer.exists():
         return {
             "current": False,
+            "applied": False,
             "status": {},
             "findings": [],
             "corrections": [],
@@ -123,8 +125,19 @@ def qa_state(plan):
             {key: row[key] for key in CORRECTION_FIELDS}
             for row in document.get("operations", [])
         ]
+    # Corrections chosen from this task stay applied when the text changes
+    # later; records saved before they named their task count when made after
+    # it was prepared.
+    prepared = datetime.fromisoformat(task["created_at"]).timestamp()
+    applied = any(
+        row["kind"] == "qa_apply"
+        and row["state"] == "complete"
+        and (row["task"] == str(root) if "task" in row else row["created"] >= prepared)
+        for row in publication.history(plan["folder"])
+    )
     return {
         "current": current,
+        "applied": applied,
         "task": str(root),
         "status": qa.status(root),
         "findings": findings,
@@ -319,6 +332,7 @@ def prepare_publication(plan):
         outputs=outputs,
         restore=restored,
         overwrite=action == "export_selected",
+        task=options["task"] if action == "qa_apply" else None,
     )
     if action == "export_selected":
         plan["overwrite_runtime"] = True

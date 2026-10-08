@@ -256,20 +256,36 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
         try:
             request = read_json(path, limit=4_000_000)
             result["requestId"] = request["request_id"]
-            if request.get("fingerprint") != context["fingerprint"]:
+            report_path = project_path(native["source"], REPORT, exists=False)
+            report = (
+                read_json(report_path, limit=4_000_000)
+                if report_path.exists()
+                else None
+            )
+            # Applied findings keep describing the files they covered, since
+            # later edits to the game and its plugins are expected. Selecting
+            # files they did not cover, or a change to the installed parser
+            # definitions, still needs a new investigation.
+            basis = (
+                request
+                if report is not None
+                and native.get(RECEIPT, {}).get("reportId") == digest(report)
+                and set(context["files"]) <= set(request["files"])
+                and context["definitions"] == request["definitions"]
+                else context
+            )
+            if request.get("fingerprint") != basis["fingerprint"]:
                 return {
                     **result,
                     "status": "stale",
                     "message": "The event scope, source dependencies or installed handlers changed. Copy a refreshed investigation task.",
                 }
-            report_path = project_path(native["source"], REPORT, exists=False)
-            if not report_path.exists():
+            if report is None:
                 return {
                     **result,
                     "status": "waiting",
                     "message": "Waiting for this investigation's saved findings.",
                 }
-            report = read_json(report_path, limit=4_000_000)
             identity = {
                 key: request[key]
                 for key in (
@@ -353,8 +369,8 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     if (
                         not isinstance(ref, dict)
                         or set(ref) != {"file", "sha256", "location"}
-                        or ref["file"] not in context["dependencies"]
-                        or ref["sha256"] != context["dependencies"][ref["file"]]
+                        or ref["file"] not in basis["dependencies"]
+                        or ref["sha256"] != basis["dependencies"][ref["file"]]
                         or not isinstance(ref["location"], str)
                         or not 1 <= len(ref["location"].strip()) <= 1000
                     ):
@@ -377,7 +393,7 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                     and finding["coverage"] == "safe"
                 ):
                     defaults.update(proposed)
-            errors = self.structural(defaults, catalog, context)
+            errors = self.structural(defaults, catalog, basis)
             if errors:
                 raise ValueError("Unsupported recommendation: " + " ".join(errors))
             return {
