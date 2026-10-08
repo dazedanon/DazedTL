@@ -952,6 +952,15 @@ try:
         from dazedtl.compatibility.run_evidence import Evidence
         from dazedtl.settings.preferences import GENERATION_PARAMETERS
 
+        # MV/MZ counts U+3007 as Japanese, so English keeping the source's 〇
+        # censor mask was retried and then left untranslated. A mask the
+        # author did not write still fails.
+        assert translation.validate_translation_content(
+            ["うん〇だ！", "うんこだ！"],
+            ["Sh〇t!", "Sh〇t!"],
+            parser.LANGREGEX,
+            "English",
+        )[1] == [1]
         live_root = temporary / "live"
         live_root.mkdir()
         os.chdir(live_root)

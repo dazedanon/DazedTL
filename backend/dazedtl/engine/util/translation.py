@@ -547,9 +547,13 @@ def validate_translation_content(
             # Also ignore CJK quotation marks: engines whose langRegex includes
             # the U+300C-U+303F block would otherwise reject English that keeps
             # stylistic wrappers such as 〝loanword〟 or leftover 「」.
+            # A source 〇 is an author's censor mask that the translation keeps
+            # (うん〇 -> sh〇t); a retry can only reproduce it.
             residue_text = _strip_source_preserved_kaomoji_flourishes(
                 orig_str, trans_str, langRegex
             )
+            if "〇" in orig_str:
+                residue_text = residue_text.replace("〇", "")
             residue_text = (
                 residue_text.replace("\u3000", "")
                 .replace("「", "")
