@@ -36,17 +36,29 @@ const checks = [
   { command: ruff, args: ["check", "--quiet", "."] },
   node("pyright/index.js", []),
   node("typescript/bin/tsc", ["-p", "app/electron"]),
-];
-const build = [
   node("typescript/bin/tsc", ["--noEmit"], { cwd: app }),
-  node("vite/bin/vite.js", ["build"], { cwd: app }),
 ];
-// Launching builds a missing renderer without requiring clean static checks.
-for (const step of [...(import.meta.main ? checks : []), ...build]) {
-  const result = spawnSync(step.command, step.args, {
-    cwd: step.cwd || root,
-    env: { ...process.env, ...step.env },
-    stdio: "inherit",
-  });
-  if (result.status !== 0) process.exit(result.status || 1);
+function run(steps) {
+  for (const step of steps) {
+    const result = spawnSync(step.command, step.args, {
+      cwd: step.cwd || root,
+      env: { ...process.env, ...step.env },
+      stdio: "inherit",
+    });
+    if (result.status !== 0)
+      throw new Error("The build could not finish. Check the output above.");
+  }
+}
+/** Builds the renderer; launching uses this without the development checks. */
+export function buildRenderer() {
+  run([node("vite/bin/vite.js", ["build"], { cwd: app })]);
+}
+if (import.meta.main) {
+  try {
+    run(checks);
+    buildRenderer();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }
 }

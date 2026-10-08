@@ -1,3 +1,1 @@
-@echo off
-cd /d "%~dp0"
-node scripts\start.mjs %*
+@powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\bootstrap.ps1" %* & exit /b

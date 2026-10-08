@@ -951,6 +951,17 @@ Restoring a workspace does not transplant connections, paid-job ownership or spe
 
 ## Distribution and updates
 
-Users install by unpacking a source ZIP, so every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
+Users download the repository as a ZIP and run a START launcher; there is no installer or build pipeline.
+The launchers only fetch the Node pinned in [runtimes.lock](../scripts/runtimes.lock) and checked against its published checksum, then hand over to [start.mjs](../scripts/start.mjs).
+[setup.mjs](../scripts/setup.mjs) installs the pinned standalone Python the same way, creates `.venv` from it and installs the hash-locked packages and Electron.
+Each step records its inputs in `.runtime/state.json` and reruns only when they change, so an update that changes a lockfile, a version file or the folder location repairs the install on the next start.
+User installs omit the development tools; a Git checkout defaults to the development set.
+npm comes from the pinned Node whenever it is installed, because the system Node may have none or a different version.
+The launcher puts its Node first on the app's `PATH`, since the backend validates plugin scripts with `node`.
+Detached launches log Electron's output to a temporary file and wait for its "shown" line, so the console stays open with the error when the app fails to start.
+Shortcuts are written once per folder location, and a deleted desktop shortcut stays deleted.
+Ubuntu's AppArmor rules block the Chromium sandbox of unregistered binaries, so the launcher stops with a one-time profile command instead of letting Electron exit silently.
+
+Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
 Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.
 The budget leaves room for an install folder like `C:\Users\<26 characters>\Downloads\DazedTL-2.0.0\DazedTL-2.0.0\`.

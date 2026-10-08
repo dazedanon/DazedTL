@@ -1,4 +1,2 @@
 #!/usr/bin/env bash
-set -euo pipefail
-cd "$(dirname "$0")"
-exec node scripts/start.mjs "$@"
+exec "$(dirname "$0")/START.sh" "$@"

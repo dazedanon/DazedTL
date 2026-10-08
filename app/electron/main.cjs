@@ -16,6 +16,7 @@ const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
 
 app.setName("DazedTL");
+if (process.platform === "win32") app.setAppUserModelId("dev.dazedtl.app");
 // The retired Electron preview of DazedMTLTool owns the "DazedTL" folder. Saved
 // runs hold absolute profile paths, so a pre-release "DazedTLNext" profile
 // stays where it is instead of moving to the released name.
@@ -155,7 +156,19 @@ app
       fitMinimumSize();
       window.maximize();
       window.show();
+      // The launcher closes its console once the window is open.
+      if (process.env.DAZEDTL_LAUNCH_SIGNAL)
+        process.stdout.write("dazedtl:shown\n");
     });
+    // A window pinned to the taskbar starts DazedTL the way its shortcut does,
+    // rather than as a bare Electron.
+    if (process.platform === "win32")
+      window.setAppDetails({
+        appId: "dev.dazedtl.app",
+        appIconPath: path.join(root, "resources/icon.ico"),
+        relaunchCommand: `"${path.join(root, "START.bat")}"`,
+        relaunchDisplayName: "DazedTL",
+      });
     backend = new Backend(
       root,
       app.getPath("userData"),

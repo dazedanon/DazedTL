@@ -7,6 +7,33 @@ export const root = path.resolve(
   "..",
 );
 export const app = path.join(root, "app");
+/** Downloads, runtimes and update staging live here, outside version control. */
+export const runtime = path.join(root, ".runtime");
+/** The checkout's Python environment, created by setup. */
+export const python = path.join(
+  root,
+  ".venv",
+  process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+);
+/** Download names of the pinned runtimes for each supported system. */
+export const platforms = {
+  "win32-x64": { node: "win-x64.zip", python: "x86_64-pc-windows-msvc" },
+  "linux-x64": { node: "linux-x64.tar.gz", python: "x86_64-unknown-linux-gnu" },
+  "linux-arm64": {
+    node: "linux-arm64.tar.gz",
+    python: "aarch64-unknown-linux-gnu",
+  },
+  "darwin-x64": { node: "darwin-x64.tar.gz", python: "x86_64-apple-darwin" },
+  "darwin-arm64": {
+    node: "darwin-arm64.tar.gz",
+    python: "aarch64-apple-darwin",
+  },
+};
+// Windows on Arm runs the x64 runtimes, which every Python wheel supports.
+export const platform =
+  process.platform === "win32"
+    ? "win32-x64"
+    : `${process.platform}-${process.arch}`;
 export function requireNode({ exact = false } = {}) {
   const expected = fs
     .readFileSync(path.join(root, ".node-version"), "utf8")
