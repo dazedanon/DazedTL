@@ -29,19 +29,22 @@ _CONFIG_FILENAME_RE = re.compile(r"`forge-config\.json`")
 _CONFIG_PATH_EXPRESSION = (
     "window.__dazedForgeConfigPath || `.dazedtl/forge-config.json`"
 )
-_STORAGE_FS_ACCESS = (
-    "let e=window.require;if(typeof e!=`function`)return;"
-    "let t=e(`fs`);if(!t)return;"
+# The minifier renames identifiers between upstream builds, so the anchors
+# below capture names from stable code shapes instead of pinning them.
+_ID = r"[A-Za-z_$][\w$]*"
+_STORAGE_INIT_RE = re.compile(
+    rf"if\((?P<path>{_ID})===null\)try\{{let (?P<require>{_ID})={_ID}\(\);"
+    rf"if\(!(?P=require)\)return;let (?P<fs>{_ID})=(?P=require)\(`fs`\);"
+    rf"if\(!(?P=fs)\)return;(?P<store>{_ID})=(?P=fs);"
+    rf"(?P<body>.*?)\}}catch\((?P<error>{_ID})\)\{{(?P<warn>{_ID})\((?P=error)\),"
+    rf"(?P=path)=(?P<name>{_ID})\}}"
 )
-_KEYS_TAB_KEYDOWN_GUARD = (
-    "!$._isFocusedOnInput()&&!$._hasSelection()"
-    "&&!(Q.visible&&Q.activeTab===ml.Shortcuts)"
+_KEYS_TAB_KEYDOWN_GUARD_RE = re.compile(
+    rf"!(?P<shortcuts>{_ID})\._isFocusedOnInput\(\)&&!(?P=shortcuts)\._hasSelection\(\)"
+    rf"&&!\((?P<ui>{_ID})\.visible&&(?P=ui)\.activeTab===(?P<tabs>{_ID})\.Shortcuts\)"
 )
-_KEYS_TAB_KEYUP_GUARD = (
-    "$._isFocusedOnInput()||Q.visible&&Q.activeTab===ml.Shortcuts||"
-)
-_SHORTCUT_TRANSITION_FILTER = (
-    "for(let e of $.shortcuts)if(!(!e.enabled||!e.keyStr))try{"
+_CURRENT_KEY_RE = re.compile(
+    rf"(?P<shortcuts>{_ID})\.currentKey\.(?P<method>add|remove)\((?P<event>{_ID})\.keyCode\)"
 )
 
 
@@ -65,13 +68,11 @@ def forge_key_str(hotkey: str) -> str:
     return " ".join(out) or "f10"
 
 
-def _bootstrap_js(hotkey: str, ui_scale: str) -> str:
+def _bootstrap_js(hotkey: str) -> str:
     key_str = json.dumps(forge_key_str(hotkey))
-    scale = json.dumps(str(ui_scale or "auto").strip() or "auto")
     return f"""{_BOOTSTRAP_START}
 (function () {{
   var toggleKey = {key_str};
-  var uiScale = {scale};
   // Forge persists settings through NW.js. Resolve the file from the loaded
   // game rather than process.cwd(), which depends on how the executable was
   // launched. Keep it with DazedTL's other ignored per-game metadata.
@@ -150,10 +151,11 @@ def _bootstrap_js(hotkey: str, ui_scale: str) -> str:
       window.__dazedForgeConfigPath = forgeConfig;
       if (!forgeFs.existsSync(forgeDir)) forgeFs.mkdirSync(forgeDir);
 
-      // Preserve settings from both the upstream root-level location and the
-      // old relative-path patch (which could land under www for MV games).
+      // Preserve settings from the upstream root-level and www locations and
+      // the old relative-path patch (which could land under www for MV games).
       var legacyForgeConfigs = [
         forgePath.join(gameRoot, "forge-config.json"),
+        forgePath.join(gameRoot, "www", "forge-config.json"),
         forgePath.resolve("forge-config.json")
       ];
       if (pageDir) {{
@@ -224,6 +226,14 @@ def _bootstrap_js(hotkey: str, ui_scale: str) -> str:
       }} catch (fallbackError) {{
         throw nativeError || fallbackError;
       }}
+    }},
+    // Forge rereads its settings when the file's modification time changes.
+    // The browser fallback has no file, so it reports a fixed time.
+    statSync: function (file) {{
+      if (forgeFallbackRead() === null && forgeNativeExists(file)) {{
+        return forgeNativeFs.statSync(file);
+      }}
+      return {{ mtimeMs: 0, mtime: new Date(0) }};
     }}
   }};
   // Seed the consolidated store on boot and migrate every legacy forge:* key.
@@ -321,45 +331,6 @@ def _bootstrap_js(hotkey: str, ui_scale: str) -> str:
     if (dm) return 48 + parseInt(dm[1], 10);
     return 0;
   }};
-  function resolveUiScale(v) {{
-    if (v !== "auto" && v != null && String(v).trim() !== "") {{
-      var n = parseFloat(v);
-      if (!isNaN(n) && n > 0) return Math.max(0.75, Math.min(3, n));
-    }}
-    var base = 816;
-    var gameW = (typeof Graphics !== "undefined" && Graphics.width) ? Graphics.width : 0;
-    var viewW = window.innerWidth || document.documentElement.clientWidth || base;
-    var w = Math.max(gameW || base, viewW);
-    var scale = w / base;
-    var dpr = window.devicePixelRatio || 1;
-    if (dpr > 1.15) scale *= Math.min(2, 0.75 + dpr * 0.35);
-    return Math.max(1, Math.min(2.75, scale));
-  }}
-  function applyUiScale() {{
-    var host = document.getElementById("forge-mvmz-host");
-    if (!host) return;
-    var fx = resolveUiScale(uiScale);
-    var changed = host.style.zoom !== String(fx);
-    host.style.zoom = String(fx);
-    host.style.width = window.innerWidth / fx + "px";
-    host.style.height = window.innerHeight / fx + "px";
-    if (changed) window.dispatchEvent(new Event("dazedtl:forge-scale"));
-  }}
-  // CSS zoom changes layout units, but mouse events and innerWidth/Height
-  // still use viewport pixels. Keep Forge's layout and input in local units.
-  window.__dazedForgeViewport = {{
-    local: function (value) {{ return value / resolveUiScale(uiScale); }},
-    width: function () {{ return this.local(window.innerWidth); }},
-    height: function () {{ return this.local(window.innerHeight); }}
-  }};
-  if (!window.__dazedForgeUiScaleHook) {{
-    window.__dazedForgeUiScaleHook = true;
-    var observer = new MutationObserver(applyUiScale);
-    observer.observe(document.documentElement, {{ childList: true, subtree: true }});
-    window.addEventListener("resize", applyUiScale);
-    setInterval(applyUiScale, 500);
-  }}
-  applyUiScale();
 }})();
 {_BOOTSTRAP_END}"""
 
@@ -404,28 +375,55 @@ def _relocate_config_file(text: str) -> str:
 
 
 def _patch_storage_adapter(text: str) -> str:
-    """Route Forge persistence through the filesystem/localStorage adapter."""
-    if text.count(_STORAGE_FS_ACCESS) != 1:
+    """Load Forge settings from the bootstrap's file/localStorage adapter.
+
+    Upstream resolves its own game root and migrates a www/ copy; the
+    bootstrap already resolved the metadata path and migrated older copies.
+    """
+    def patch(match: re.Match) -> str:
+        path, store = match.group("path"), match.group("store")
+        reader = re.search(
+            rf"{re.escape(store)}\.existsSync\({re.escape(path)}\)\)"
+            rf"(?P<read>{_ID})\({re.escape(path)}\)",
+            match.group("body"),
+        )
+        if not reader:
+            raise ValueError("Could not find modern Forge's settings reader")
+        fs = match.group("fs")
+        return (
+            f"if({path}===null)try{{let {fs}=window.__dazedForgeFs;"
+            f"if(!{fs})return;{store}={fs};{path}=window.__dazedForgeConfigPath;"
+            f"{store}.existsSync({path})&&{reader.group('read')}({path})"
+            f"}}catch({match.group('error')}){{{match.group('warn')}"
+            f"({match.group('error')}),{path}={match.group('name')}}}"
+        )
+
+    text, count = _STORAGE_INIT_RE.subn(patch, text)
+    if count != 1:
         raise ValueError("Could not patch modern Forge settings storage")
-    return text.replace(
-        _STORAGE_FS_ACCESS,
-        "let t=window.__dazedForgeFs;if(!t)return;",
-        1,
-    )
+    return text
 
 
 def _keep_toggle_ui_active_on_keys_tab(text: str) -> str:
     """Keep the required panel toggle active while other keys are disabled."""
+    match = _KEYS_TAB_KEYDOWN_GUARD_RE.search(text)
+    if not match:
+        raise ValueError("Could not keep Forge's UI toggle active on Keys tab")
+    shortcuts, ui, tabs = match.group("shortcuts", "ui", "tabs")
+    keys_tab = f"{ui}.visible&&{ui}.activeTab==={tabs}.Shortcuts"
     replacements = (
         (
-            _KEYS_TAB_KEYDOWN_GUARD,
-            "!$._isFocusedOnInput()&&!$._hasSelection()",
+            match.group(0),
+            f"!{shortcuts}._isFocusedOnInput()&&!{shortcuts}._hasSelection()",
         ),
-        (_KEYS_TAB_KEYUP_GUARD, "$._isFocusedOnInput()||"),
         (
-            _SHORTCUT_TRANSITION_FILTER,
-            "for(let e of $.shortcuts)if(!(!e.enabled||!e.keyStr||"
-            "Q.visible&&Q.activeTab===ml.Shortcuts&&e.id!==`toggle_ui`))try{",
+            f"{shortcuts}._isFocusedOnInput()||{keys_tab}||",
+            f"{shortcuts}._isFocusedOnInput()||",
+        ),
+        (
+            f"for(let e of {shortcuts}.shortcuts)if(!(!e.enabled||!e.keyStr))try{{",
+            f"for(let e of {shortcuts}.shortcuts)if(!(!e.enabled||!e.keyStr||"
+            f"{keys_tab}&&e.id!==`toggle_ui`))try{{",
         ),
     )
     for old, new in replacements:
@@ -437,25 +435,19 @@ def _keep_toggle_ui_active_on_keys_tab(text: str) -> str:
 
 def _patch_keycode_reads(text: str) -> str:
     """Route Forge shortcut key reads through the keyCode polyfill."""
-    replacements = [
-        (
-            "$.currentKey.add(e.keyCode)",
-            "$.currentKey.add(window.__dazedKeyCode(e))",
-        ),
-        (
-            "$.currentKey.remove(e.keyCode)",
-            "$.currentKey.remove(window.__dazedKeyCode(e))",
-        ),
-    ]
-    for old, new in replacements:
-        if old not in text:
-            raise ValueError(f"Could not patch Forge keyCode read: missing {old!r}")
-        text = text.replace(old, new, 1)
+    methods = [match.group("method") for match in _CURRENT_KEY_RE.finditer(text)]
+    if sorted(methods) != ["add", "remove"]:
+        raise ValueError(
+            "Could not patch Forge keyCode reads: expected one add and one "
+            f"remove, found {methods}"
+        )
+    text = _CURRENT_KEY_RE.sub(
+        r"\g<shortcuts>.currentKey.\g<method>(window.__dazedKeyCode(\g<event>))",
+        text,
+    )
 
-    # The minifier changes the key-set and class identifiers between upstream
-    # builds, so patch the stable method shape instead of pinning those names.
     from_event = re.compile(
-        r"static fromEvent\((?P<event>[A-Za-z_$][\w$]*)\)\{return "
+        rf"static fromEvent\((?P<event>{_ID})\)\{{return "
         r"(?P<body>[^{}]+)\}(?=static _fromCombiningAloneEvent)"
     )
 
@@ -479,68 +471,8 @@ def _patch_keycode_reads(text: str) -> str:
     return text
 
 
-def _patch_scaled_interactions(text: str) -> str:
-    """Keep window bounds and map/panel input in the zoomed host's units.
-
-    These counts deliberately fail on upstream changes so a refreshed bundle
-    cannot silently ship with only some of its coordinate conversions applied.
-    Actor reordering compares clientY against a DOM rect and stays in pixels.
-    """
-    def replace(old: str, new: str, count: int) -> None:
-        nonlocal text
-        if text.count(old) != count:
-            raise ValueError(f"Could not patch Forge scaled interaction: {old}")
-        text = text.replace(old, new)
-
-    # A hard minimum outside the viewport clamp can push the resize handle
-    # offscreen again. Smaller viewports also need room to shrink the panel.
-    for size, dimension, position, initial in (
-        (560, "Width", "r", "x"),
-        (360, "Height", "i", "S"),
-    ):
-        axis = "X" if dimension == "Width" else "Y"
-        origin = "p" if dimension == "Width" else "m"
-        delta = f"V({initial})+e.client{axis}-V({origin})"
-        replace(
-            f"Math.max({size},Math.min(window.inner{dimension}-V({position}),{delta}))",
-            f"Math.min(window.inner{dimension}-V({position}),"
-            f"Math.max(Math.min({size},window.inner{dimension}*.75),{delta}))",
-            1,
-        )
-
-    for axis, edge in (("X", "left"), ("Y", "top")):
-        # Convert panel/launcher/map drag coordinates, leaving canvas-relative
-        # input and the actor list's rect comparisons for their own handling.
-        pattern = rf"e\.client{axis}(?!-t\.{edge}|[<>])"
-        text, count = re.subn(
-            pattern, rf"window.__dazedForgeViewport.local(e.client{axis})", text
-        )
-        if count != 9:
-            raise ValueError(f"Could not patch Forge scaled mouse {axis}")
-        replace(
-            f"e.client{axis}-t.{edge}",
-            f"window.__dazedForgeViewport.local(e.client{axis}-t.{edge})",
-            3,
-        )
-
-    for dimension in ("Width", "Height"):
-        replace(
-            f"window.inner{dimension}",
-            f"window.__dazedForgeViewport.{dimension.lower()}()",
-            13,
-        )
-    for handler in ("l", "u"):
-        original = f"window.addEventListener(`resize`,{handler})"
-        replace(
-            original,
-            original + f",window.addEventListener(`dazedtl:forge-scale`,{handler})",
-            1,
-        )
-    return text
-
-
-def apply_modern_forge_patches(text: str, hotkey: str, ui_scale: str) -> str:
-    """Inject Dazed hotkey / UI-scale bootstrap and harden shortcut handling."""
+def apply_modern_forge_patches(text: str, hotkey: str) -> str:
+    """Inject the Dazed hotkey and settings bootstrap and harden shortcuts."""
     text = _strip_existing_bootstrap(text)
     text = _patch_toggle_ui_default(text, hotkey)
     text = _disable_launcher_default(text)
@@ -548,8 +480,7 @@ def apply_modern_forge_patches(text: str, hotkey: str, ui_scale: str) -> str:
     text = _patch_storage_adapter(text)
     text = _keep_toggle_ui_active_on_keys_tab(text)
     text = _patch_keycode_reads(text)
-    text = _patch_scaled_interactions(text)
-    bootstrap = _bootstrap_js(hotkey, ui_scale)
+    bootstrap = _bootstrap_js(hotkey)
     match = re.search(r"\*/\s*\n", text)
     if not match:
         return bootstrap + "\n" + text

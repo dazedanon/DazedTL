@@ -513,7 +513,11 @@ export function GuidedPanel({ w }: { w: GuidedWorkspace }) {
                     )}
                   </FieldRow>
                 ))}
-                <FieldRow id="guided-tool-scale" label="Overlay scale">
+                <FieldRow
+                  id="guided-tool-scale"
+                  label="TL Inspector scale"
+                  help="Forge sets its own scale in its Settings tab."
+                >
                   {(props) => (
                     <select
                       {...props}

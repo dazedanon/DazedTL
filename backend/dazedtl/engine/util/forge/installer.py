@@ -133,12 +133,11 @@ def install(game_root: Path, source_js: Path | None = None, cfg: dict | None = N
 
     target = plugins_dir / f"{plugin_name}.js"
     hotkey = (cfg or {}).get("forgeHotkey", "F10")
-    ui_scale = (cfg or {}).get("uiScale", "auto")
     try:
         content, nl = _read_plugins_js(plugins_js)
         source_text = source.read_text(encoding="utf-8")
         modern = not is_legacy_forge_plugin(source_text)
-        entry = plugin_entry(engine, hotkey, ui_scale, modern=modern)
+        entry = plugin_entry(engine, hotkey, modern=modern)
         registry_content = update_plugin_entry(
             content,
             plugin_name,

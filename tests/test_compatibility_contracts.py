@@ -33,7 +33,7 @@ from dazedtl.storage import write_json
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest
 
-from tests.engine import engine_module, point
+from tests.engine import ENGINE, engine_module, point
 
 
 class CompatibilityContracts(unittest.TestCase):
@@ -1310,3 +1310,13 @@ class ManualJobs:
         self.assertNotIn("fixture-private-key", str(raised.exception))
         self.assertNotIn("private request body", str(raised.exception))
         self.assertIsNone(raised.exception.status_code)
+
+    def test_bundled_forge_accepts_the_install_patches(self):
+        # Upstream refreshes rename Forge's minified identifiers; patches pinned
+        # to the old names made every Forge install fail.
+        patches = engine_module("util/forge/modern_patches.py")
+        bundle = ENGINE / "util/forge/upstream/Forge_MZ.js"
+        text = patches.apply_modern_forge_patches(
+            bundle.read_text(encoding="utf-8"), "Ctrl+F9"
+        )
+        self.assertIn("keyStr:`ctrl f9`", text)

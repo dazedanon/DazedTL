@@ -60,7 +60,7 @@ FIELDS = (
     field("tlEditorCmd", "Playtest editor", "Playtest", "auto"),
     field("tlHotkey", "TL Inspector hotkey", "Playtest", "F9"),
     field("forgeHotkey", "Forge hotkey", "Playtest", "F10"),
-    field("playtestUiScale", "Playtest overlay scale", "Playtest", "auto"),
+    field("playtestUiScale", "TL Inspector scale", "Playtest", "auto"),
 )
 
 
