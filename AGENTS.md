@@ -24,7 +24,6 @@
 - Update affected documentation in the same change; remove obsolete guidance.
 - Add a document only for a distinct reader need that existing documentation cannot serve concisely.
 - Prefer working code examples over copied snippets; avoid feature inventories, function catalogs, and progress diaries.
-- Keep `docs/migration.md` as historical reference, not a second source of current status.
 
 ## Testing
 
