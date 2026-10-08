@@ -129,17 +129,38 @@ export const workflow: WorkflowStage[] = [
 ];
 
 /**
- * A stage is done once its required tasks are; a stage of optional tasks
- * only, such as Release, once all of them are.
+ * The stages that are done: a stage once its required tasks are; a stage of
+ * optional tasks only, such as Check and Release, once all of them are or once
+ * it has been opened with every required task before it done.
  */
-export function stageDone(
-  stage: WorkflowStage,
+export function doneStages(
+  stages: WorkflowStage[],
   completed: ReadonlySet<string>,
+  opened: ReadonlySet<GuidedStep>,
 ) {
-  const required = stage.tasks.filter((task) => !task.optional);
-  return (required.length ? required : stage.tasks).every((task) =>
-    completed.has(task.id),
-  );
+  const done = new Set<GuidedStep>();
+  let earlierDone = true;
+  for (const stage of stages) {
+    const required = stage.tasks.filter((task) => !task.optional);
+    const requiredDone = required.every((task) => completed.has(task.id));
+    if (
+      required.length
+        ? requiredDone
+        : stage.tasks.every((task) => completed.has(task.id)) ||
+          (earlierDone && opened.has(stage.id))
+    )
+      done.add(stage.id);
+    earlierDone &&= requiredDone;
+  }
+  return done;
+}
+
+/** Stages the user has opened: navigation saves a position for each one. */
+export function openedStages(state: GuidedState) {
+  return new Set([
+    state.step,
+    ...(Object.keys(state.positions ?? {}) as GuidedStep[]),
+  ]);
 }
 
 export function stagesFor(engine: GuidedState["engine"]) {

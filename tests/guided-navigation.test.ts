@@ -7,6 +7,7 @@ import type {
   TranslationState,
 } from "../app/src/api/contracts.ts";
 import {
+  doneStages,
   initialPosition,
   runPhase,
   runStage,
@@ -230,6 +231,20 @@ test("the Project page continues with the next step and keeps a later saved posi
   progress = guidedProgress(state, translation);
   assert.equal(progress.next?.task, "names");
   assert.equal(progress.last?.task, "fitting");
+  // Opening Check completes it, since all of its tasks are optional, but only
+  // once the required tasks before it are done; Release waits to be opened.
+  assert.deepEqual(
+    progress.stages.filter((stage) => stage.complete).map((stage) => stage.id),
+    ["setup"],
+  );
+  const stages = stagesFor("MVMZ");
+  const required = stages.flatMap((stage) =>
+    stage.tasks.filter((task) => !task.optional).map((task) => task.id),
+  );
+  assert.deepEqual(
+    [...doneStages(stages, new Set(required), new Set(["check"] as const))],
+    ["setup", "context", "translate", "check"],
+  );
   // Images finishes once every image in its list is in the game: an edited
   // image in the list that changed after the assistant's check keeps it open.
   state.artifacts = [{ current: true }] as GuidedState["artifacts"];

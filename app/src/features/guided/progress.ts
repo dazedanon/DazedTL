@@ -17,7 +17,12 @@ import {
   fileLines,
   translationTaskComplete,
 } from "./translationView.ts";
-import { initialPosition, stageDone, stagesFor } from "./workflow.ts";
+import {
+  doneStages,
+  initialPosition,
+  openedStages,
+  stagesFor,
+} from "./workflow.ts";
 
 type Values = GuidedState["preferences"]["values"];
 
@@ -154,6 +159,7 @@ export function guidedProgress(
   const stages = stagesFor(state.engine);
   const done = completedTasks(state, translation, observed);
   const review = reviewTasks(observed);
+  const finished = doneStages(stages, done, openedStages(state));
   const order = stages.flatMap((stage) =>
     stage.tasks.map((task) => ({ stage, task })),
   );
@@ -180,7 +186,7 @@ export function guidedProgress(
       id: stage.id,
       short: stage.short,
       title: stage.title,
-      complete: stageDone(stage, done),
+      complete: finished.has(stage.id),
       done: stage.tasks.filter((task) => !task.optional && done.has(task.id))
         .length,
       total: stage.tasks.filter((task) => !task.optional).length,

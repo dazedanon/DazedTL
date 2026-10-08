@@ -11,8 +11,9 @@ A new game asks how to translate it: **Guided steps** for RPG Maker MV/MZ and Ac
 **Change method** on the Project page switches later; the other method's saved work stays and returns if you switch back.
 The Project page's **Status** shows the next unfinished task and every stage's tasks.
 **Continue** (**Start** for a new game) opens that next task, and **Last opened** beside it returns to the task you left; once every required task is done, **Resume** returns there instead.
-Optional tasks say **Optional** until they are done, and they never hold up the next step; Release counts as done while its last ZIP is up to date.
-Its **History**, **Game updates** and **Backups** tabs serve both methods.
+Optional tasks say **Optional** until they are done, and they never hold up the next step.
+Check and Release hold only optional tasks, so each stage counts as done once you open it after the required tasks.
+The Project page's **History**, **Game updates** and **Backups** tabs serve both methods.
 The app prepares working copies of the selected files automatically, and reopening a project restores them with its saved translation progress.
 
 A project belongs to the game folder's location, so a moved or copied game, a new profile or a reinstall opens the folder as a new project.
@@ -148,7 +149,7 @@ Images is done once its translated images are applied, or once an investigation 
 
 ### Check
 
-Check has two tasks: **Line width check** and the optional **Text QA**.
+Check has two optional tasks: **Line width check** and **Text QA**.
 Each task applies its own work: **Apply** in a text task, **Review & apply** in Plugin files and Text QA, **Apply rewraps** in Line width check, and **Apply to game** in Images.
 A review that did not apply leaves the game unchanged, and **Review again** prepares a new one.
 If an apply stops midway, every task shows a notice whose **Review restore** puts back what was there before, unless the files changed since.

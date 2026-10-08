@@ -16,7 +16,7 @@ import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { selectionNames } from "../../ui/displayText";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { WorkflowNavigation } from "./WorkflowNavigation";
-import { runPhase, taskForStage } from "./workflow";
+import { openedStages, runPhase, taskForStage } from "./workflow";
 import { ActionReview } from "./workspace/ActionReview";
 import { PendingReview } from "./workspace/PendingReview";
 import { GuidedDialogs } from "./workspace/GuidedDialogs";
@@ -153,6 +153,7 @@ function Workspace(
           stages={stages}
           step={position.step}
           completed={completed}
+          opened={openedStages(state)}
           disabled={disabled}
           move={move}
           taskFor={(stage) => taskForStage(state, stage)}

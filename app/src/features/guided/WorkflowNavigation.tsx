@@ -1,12 +1,13 @@
 import type { GuidedStep } from "../../api/contracts";
 import { Check } from "lucide-react";
 import { Button } from "../../ui/Button";
-import { stageDone, type WorkflowStage } from "./workflow";
+import { doneStages, type WorkflowStage } from "./workflow";
 
 export function WorkflowNavigation({
   stages,
   step,
   completed,
+  opened,
   disabled,
   move,
   taskFor,
@@ -14,14 +15,16 @@ export function WorkflowNavigation({
   stages: WorkflowStage[];
   step: GuidedStep;
   completed: ReadonlySet<string>;
+  opened: ReadonlySet<GuidedStep>;
   disabled: boolean;
   move: (step: GuidedStep, task: string) => void;
   taskFor: (stage: WorkflowStage) => string;
 }) {
+  const finished = doneStages(stages, completed, opened);
   return (
     <nav className="guided-phase-nav frame-row" aria-label="Translation stages">
       {stages.map((stage, index) => {
-        const done = stageDone(stage, completed);
+        const done = finished.has(stage.id);
         const started =
           !done && stage.tasks.some((item) => completed.has(item.id));
         return (
@@ -32,7 +35,7 @@ export function WorkflowNavigation({
             aria-current={stage.id === step ? "step" : undefined}
             onClick={() => move(stage.id, taskFor(stage))}
           >
-            {/* A stepper: the number becomes a check once every task is done. */}
+            {/* A stepper: the number becomes a check once the stage is done. */}
             <span
               className="guided-stage-marker"
               data-state={done ? "done" : started ? "started" : undefined}
@@ -46,7 +49,7 @@ export function WorkflowNavigation({
             {stage.short}
             {(done || started) && (
               <span className="sr-only">
-                {done ? "Tasks completed" : "In progress"}
+                {done ? "Completed" : "In progress"}
               </span>
             )}
           </Button>
