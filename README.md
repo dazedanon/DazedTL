@@ -21,7 +21,7 @@ You don't need to know how to program: DazedTL walks you through each step, and 
 2. Unzip it somewhere easy to find, such as `C:\DazedTL`.
    Avoid OneDrive folders.
 3. Open the folder and double-click **START.bat** on Windows, or run **START.sh** on Linux.
-   If Windows says it protected your PC, click **More info**, then **Run anyway**.
+   If Windows warns that the publisher could not be verified, click **Run**; if it says it protected your PC, click **More info**, then **Run anyway**.
 
 There is nothing else to install.
 The first start downloads what DazedTL needs, about 300 MB, and takes a few minutes.
