@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import {
   app,
@@ -16,6 +17,7 @@ import {
   requireNode,
 } from "./dependencies.mjs";
 import { extract } from "./tar.mjs";
+import { extract as unzip } from "./zip.mjs";
 
 const stateFile = path.join(runtime, "state.json");
 
@@ -201,6 +203,39 @@ async function npm() {
 }
 
 /**
+ * Installs Electron's binary into its package the way its install.js does,
+ * except that the archive is unpacked here: install.js unpacks with a native
+ * module that needs the Visual C++ runtime, which a fresh Windows lacks.
+ * @param {string} electron the node_modules/electron folder
+ */
+export async function installElectron(electron) {
+  const require = createRequire(path.join(electron, "install.js"));
+  const executable = {
+    darwin: "Electron.app/Contents/MacOS/Electron",
+    linux: "electron",
+    win32: "electron.exe",
+  }[process.platform];
+  if (!executable)
+    throw new Error(`Electron has no build for ${process.platform}.`);
+  const { downloadArtifact } = require("@electron/get");
+  const archive = await downloadArtifact({
+    version: require("./package.json").version,
+    artifactName: "electron",
+    platform: process.platform,
+    arch: process.arch,
+    checksums: require("./checksums.json"),
+  });
+  const dist = path.join(electron, "dist");
+  fs.rmSync(dist, { recursive: true, force: true });
+  unzip(fs.readFileSync(archive), dist);
+  // install.js keeps the type definitions beside the package's own.
+  const types = path.join(dist, "electron.d.ts");
+  if (fs.existsSync(types))
+    fs.renameSync(types, path.join(electron, "electron.d.ts"));
+  fs.writeFileSync(path.join(electron, "path.txt"), executable);
+}
+
+/**
  * Brings the install up to date. Users get the packages DazedTL runs with;
  * development adds the formatters, linters and type checkers.
  * @param {{ mode: "user" | "dev" }} options
@@ -288,7 +323,7 @@ export async function ensureSetup({ mode }) {
   }
   if (!fs.existsSync(path.join(electron, "path.txt"))) {
     console.log("Installing Electron…");
-    run(process.execPath, [path.join(electron, "install.js")]);
+    await installElectron(electron);
   }
   state.mode = mode;
   writeState(state);

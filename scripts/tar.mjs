@@ -110,11 +110,22 @@ export function relative(name, strip) {
  * @param {string} destination
  * @param {{ strip?: number }} [options]
  */
-export function extract(archive, destination, { strip = 0 } = {}) {
+export function extract(archive, destination, options) {
+  unpack(entries(archive), destination, options);
+}
+
+/**
+ * Writes archive entries into a new folder, keeping file modes and links that
+ * stay inside it.
+ * @param {Iterable<{ path: string, type: "file" | "directory" | "symlink", mode: number, link: string, data: Buffer }>} items
+ * @param {string} destination
+ * @param {{ strip?: number }} [options]
+ */
+export function unpack(items, destination, { strip = 0 } = {}) {
   fs.mkdirSync(destination, { recursive: true });
   const base = path.resolve(destination);
   const links = [];
-  for (const entry of entries(archive)) {
+  for (const entry of items) {
     const name = relative(entry.path, strip);
     if (!name) continue;
     const target = path.join(base, ...name.split("/"));

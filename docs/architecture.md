@@ -954,6 +954,7 @@ Restoring a workspace does not transplant connections, paid-job ownership or spe
 Users download the repository as a ZIP and run a START launcher; there is no installer or build pipeline.
 The launchers only fetch the Node pinned in [runtimes.lock](../scripts/runtimes.lock) and checked against its published checksum, then hand over to [start.mjs](../scripts/start.mjs).
 [setup.mjs](../scripts/setup.mjs) installs the pinned standalone Python the same way, creates `.venv` from it and installs the hash-locked packages and Electron.
+Electron's binary is downloaded with its package's checksums but unpacked by [zip.mjs](../scripts/zip.mjs), because Electron's own installer extracts with a native module that needs the Visual C++ runtime, which a fresh Windows lacks.
 Each step records its inputs in `.runtime/state.json` and reruns only when they change, so an update that changes a lockfile, a version file or the folder location repairs the install on the next start.
 User installs omit the development tools; a Git checkout defaults to the development set.
 npm comes from the pinned Node whenever it is installed, because the system Node may have none or a different version.
