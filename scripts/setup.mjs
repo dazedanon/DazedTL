@@ -279,6 +279,7 @@ export async function ensureSetup({ mode }) {
         "--ignore-scripts",
         "--no-audit",
         "--no-fund",
+        "--no-update-notifier",
         ...(mode === "user" ? ["--omit=dev"] : []),
       ],
       { cwd: app },
