@@ -154,7 +154,7 @@ Packaging reuses matching saved content.
 Use backups to list local restore points and older profile backups. restore_backup takes backup_id and destination, which must name a new directory outside the game.
 It verifies content and never overwrites existing files.
 Snapshot IDs remain valid after moving the entire store with the game; engine source readers use temporary verified materialization.
-Standalone recovery without an app profile is documented in README.
+Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-and-recovery).
 Package requires current reported QA and creates a local patch from reviewed Git files.
 It does not create remotes, push, or upload.
 The existing GameUpdate checks govern public commit stamping.
