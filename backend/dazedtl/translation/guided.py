@@ -379,6 +379,59 @@ class Guided:
             for job in self.backend.operations.jobs.values()
         )
 
+    def applied_versions(self, native):
+        """Each file's output hashes that went into the game.
+
+        The latest Apply stays applied after Line widths, QA fixes or hand
+        edits change the game file; only a later Apply or a restore replaces
+        it. The outputs a run was built from count with it, so an earlier
+        phase stays applied once a later phase's output goes in.
+        """
+
+        def read():
+            receipt = (
+                self.backend.workflows.folder(native["id"]) / "applied-outputs.json"
+            )
+            recorded = read_json(receipt).get("files", {}) if receipt.exists() else {}
+            jobs = getattr(getattr(self.backend, "manual", None), "jobs", {})
+            built_from = {}
+            for identity in self.owned_runs(native):
+                job = jobs.get(identity)
+                if not job or job.get("mode") == "estimate":
+                    continue
+                try:
+                    plan = self.run_configuration(identity)
+                except OSError, ValueError, KeyError:
+                    continue
+                inputs = {
+                    row["name"]: row["sha256"]
+                    for row in plan.get("files", [])
+                    if isinstance(row, dict)
+                    and isinstance(row.get("name"), str)
+                    and isinstance(row.get("sha256"), str)
+                }
+                for name, output in job.get("outputs", {}).items():
+                    if inputs.get(name) not in {None, output}:
+                        built_from.setdefault((name, output), set()).add(inputs[name])
+            versions = {}
+            for name in {name for name, _ in built_from} | set(recorded):
+                found = {recorded[name]} if name in recorded else set()
+                try:
+                    found.add(self.observed_digest(project_path(native["data"], name)))
+                except OSError, ValueError:
+                    pass
+                pending = list(found)
+                while pending:
+                    for earlier in built_from.get((name, pending.pop()), ()):
+                        if earlier not in found:
+                            found.add(earlier)
+                            pending.append(earlier)
+                versions[name] = found
+            return versions
+
+        with self.observations.read():
+            return self.observations.once(("applied", native["id"]), read)
+
     def readiness(self, project_id, native, value, source_status=None):
         folder = self.backend.workflows.folder(native["id"])
         outputs = [
@@ -388,10 +441,7 @@ class Guided:
         ]
         applied = []
         edited = []
-        receipt = folder / "applied-outputs.json"
-        applied_outputs = (
-            read_json(receipt).get("files", {}) if receipt.exists() else {}
-        )
+        versions = self.applied_versions(native)
         for name in outputs:
             source = project_path(
                 native["source"],
@@ -399,7 +449,7 @@ class Guided:
             )
             output_hash = self.observed_digest(folder / "translated" / name)
             matches = self.observed_digest(source) == output_hash
-            if matches or applied_outputs.get(name) == output_hash:
+            if matches or output_hash in versions.get(name, ()):
                 applied.append(name)
                 if not matches:
                     edited.append(name)

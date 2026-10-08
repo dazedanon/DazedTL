@@ -305,7 +305,9 @@ The file list uses the shared display states.
 Untouched files show Not started, including files whose requests all failed without returning lines, with that reason in the detail; verified passes with no new requests show Ready to apply.
 Preparation, queueing, provider work, cancellation, collection and saving show Working; a pending cost approval shows Needs review without a spinner.
 Needs review also covers partial, rejected or unsaved results and never establishes completion.
-Ready to apply requires verified full output or explicit evidence that no requests were needed; Applied requires verified saved output matching the game.
+Ready to apply requires verified full output or explicit evidence that no requests were needed.
+Applied means the game matches the saved output, or the latest Apply receipt holds it or an output a later run built from it, through [applied_versions](../backend/dazedtl/translation/guided.py).
+Hand fixes, Line widths and QA fixes in the game therefore leave it Applied, as does a later phase's Apply; another Apply or a restore replaces the receipt, and Reload from game retires the file's runs.
 Recorded output that is missing or changed shows Blocked, and a file changed in the game since its working copy was made shows Outdated.
 Detailed states and request counts belong in Inspect and the approval dialog.
 The latest run's failure, or a Batch that could not be confirmed as sent, shows on its task with the reason instead of a finished notice; collection errors and rejection details remain in the inspector and run views.
@@ -342,7 +344,7 @@ Raw worker logs are not a separate content view: Technical ends with the retaine
 Other-activity records open with their status, saved result and log in the same presentation.
 Request selection and tabs persist locally without storing payloads in browser preferences.
 The inspector has no separate provider-check control or transient remote status overlay; tab changes never contact the provider.
-Saved translated output and currently verified runtime files are separate counts.
+Saved translated output and applied files are separate counts.
 Active per-file request states take precedence over retained checkpoints; a resumed worker takes ownership of its rows even when a newer completed attempt exists.
 Live rows also retain the worker's current filename from `itemProgress` between requests, including after rejected replies.
 The completed-file counter identifies the last finished file and cannot establish current activity; native command totals are not translation percentages.

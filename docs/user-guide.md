@@ -143,6 +143,7 @@ A part that did not apply leaves the game unchanged, and **Review again** prepar
 Line rewraps wait while translated text is applied with them, and QA fixes wait while text, rewraps or plugin files are applied with them, because each was checked against the game files those parts change; check line widths or prepare QA again afterwards.
 The Review & apply buttons in Images, Plugin files, Line width check and Text QA open the same review for their own part.
 Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
+A file stays **Applied** after you edit it in the game, by hand or through Line widths or QA fixes, so applying it again would replace those edits; **Reload from game…** starts it over from the game's version.
 You can apply saved partial translations while Batch work continues.
 Untranslated text stays as saved, and later results need another Apply.
 **Line width check** finds applied lines wider than the saved line widths and rewraps them; applying the rewraps needs a completed check with the same files and settings.

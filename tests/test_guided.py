@@ -716,16 +716,55 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertNotIn("dialogue", status["phase_runs"])
         self.assertEqual(status["phase_runs"]["database"]["appliedOutputs"], [])
-        write_json(
-            self.folder / "applied-outputs.json", {"files": {"Items.json": expected}}
-        )
-        self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
         write_json(self.source / "Items.json", output)
         self.assertEqual(
             self.guided.run_view(identity)["appliedOutputs"], ["Items.json"]
         )
+        # Hand fixes, Line widths and QA fixes in the game keep the last Apply.
+        write_json(
+            self.folder / "applied-outputs.json", {"files": {"Items.json": expected}}
+        )
         write_json(self.source / "Items.json", [{"name": "Manual game edit"}])
+        self.assertEqual(
+            self.guided.run_view(identity)["appliedOutputs"], ["Items.json"]
+        )
+        # A later phase's output built from this one carries it into the game.
+        later = "completed-event-codes"
+        write_json(
+            self.backend.manual.folder(later) / "translated/Items.json",
+            [{"name": "Fixture term", "note": "Event codes"}],
+        )
+        later_output = digest(
+            (self.backend.manual.folder(later) / "translated/Items.json").read_bytes()
+        )
+        self.backend.manual.jobs[later] = {
+            **job,
+            "id": later,
+            "mode": "translate",
+            "outputs": {"Items.json": later_output},
+        }
+        plans = {
+            identity: plan,
+            later: {
+                "workflow": {"id": "native", "phase": "advanced"},
+                "files": [{"name": "Items.json", "sha256": expected}],
+            },
+        }
+        self.backend.saved_run_configuration = lambda run: plans[run]
+        write_json(
+            self.folder / "applied-outputs.json",
+            {"files": {"Items.json": later_output}},
+        )
+        self.assertEqual(
+            self.guided.run_view(identity)["appliedOutputs"], ["Items.json"]
+        )
+        # Another output applied over it does replace it.
+        write_json(
+            self.folder / "applied-outputs.json",
+            {"files": {"Items.json": digest(b"another output")}},
+        )
         self.assertEqual(self.guided.run_view(identity)["appliedOutputs"], [])
+        self.backend.saved_run_configuration = lambda _: plan
         write_json(
             self.backend.manual.folder(identity) / "translated/Items.json",
             [{"name": "Changed output"}],

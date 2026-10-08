@@ -118,10 +118,12 @@ class RunInspection:
                     if versions.get(name, "")
                     != plan.get("dazedtl_source_versions", {}).get(name, "")
                 ]
+                applied = self.guided.applied_versions(native)
                 job["appliedOutputs"] = [
                     name
                     for name, expected in job.get("outputs", {}).items()
-                    if self.guided.observed_digest(project_path(native["data"], name))
+                    if expected in applied.get(name, ())
+                    or self.guided.observed_digest(project_path(native["data"], name))
                     == expected
                 ]
         except OSError, ValueError, KeyError:
