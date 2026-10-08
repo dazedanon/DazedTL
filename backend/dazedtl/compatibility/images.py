@@ -313,7 +313,9 @@ class ImageCompatibility:
             "{{GAME_ROOT}}": str(root),
             "{{EDITABLE_IMAGES_FOLDER}}": str(folder),
             "{{VOCAB_FILE}}": glossary,
-            "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).resolve()),
+            # Keep a venv interpreter's own path: resolving its symlink selects the
+            # base Python, which lacks the packages installed in the venv.
+            "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
             "{{IMAGE_INPAINT_CLI}}": str(source / "scripts/image_inpaint.py"),
         }
         for name, replacement in replacements.items():

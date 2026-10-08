@@ -737,7 +737,9 @@ def build_translation_handoff(game_root: str | Path, engine_id: str, image_root:
         "{{GAME_ROOT}}": str(root),
         "{{EDITABLE_IMAGES_FOLDER}}": str(images),
         "{{VOCAB_FILE}}": str(prepare_game_translation_context(root)),
-        "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).resolve()),
+        # Keep a venv interpreter's own path: resolving its symlink selects the
+        # base Python, which lacks the packages installed in the venv.
+        "{{IMAGE_TOOL_PYTHON}}": str(Path(sys.executable).absolute()),
         "{{IMAGE_INPAINT_CLI}}": str((PROJECT_ROOT / "scripts" / "image_inpaint.py").resolve()),
     }
     prompt = load_clipboard_skill("image_translation.md")
