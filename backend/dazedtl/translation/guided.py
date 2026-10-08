@@ -118,7 +118,7 @@ class Guided:
         self.context = GuidedContext(self)
         self.skill = self.context.skill
         self.event_text_request = self.context.event_text_request
-        self.event_text_review = self.context.event_text_review
+        self.event_text_apply = self.context.event_text_apply
         self.event_text_view = self.context.event_text_view
         self.event_text_picker = self.context.event_text_picker
         self.comparisons_review = self.context.comparisons_review

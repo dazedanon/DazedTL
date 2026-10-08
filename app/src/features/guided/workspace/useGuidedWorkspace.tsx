@@ -23,7 +23,6 @@ import { ActionControl } from "../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../ui/ActionList";
 import { Button } from "../../../ui/Button";
 import { projectActivity } from "../ActivityHistory";
-import type { SourceReview } from "../EventTextReview";
 import type { RequestInspectionTarget } from "../ProcessPanel";
 import { investigationResults } from "../contextView";
 import {
@@ -57,7 +56,6 @@ import {
   type GuidedProps,
   type Panel,
   actionKey,
-  advanced,
   advancedCodes,
   fileCount,
   jobTime,
@@ -157,7 +155,6 @@ export function useGuidedWorkspace({
   const [submission, setSubmission] = useState<Job | null>(null);
   const seenApprovals = useRef(new Set<string>());
   const [resume, setResume] = useState<Job | null>(null);
-  const [sourceReview, setSourceReview] = useState<SourceReview | null>(null);
   const [comparisonReview, setComparisonReview] = useState(false);
   const [comparisonsAccepted, setComparisonsAccepted] = useState(false);
   const [inspection, setInspected] = useState<Job | null>(null);
@@ -229,16 +226,10 @@ export function useGuidedWorkspace({
   const enabledCodes = advancedCodes.filter(
     (key) => values.engine_options[key] === true,
   );
-  const sourceChoicesSaved = [...advanced, "AUTONAMEPOPUP101"].every(
-    (key) =>
-      JSON.stringify(values.engine_options[key]) ===
-      JSON.stringify(state.preferences.values.engine_options[key]),
-  );
+  // Translate saves edited source choices before it prepares an estimate.
   const advancedReady =
     enabledCodes.length > 0 &&
-    !sourceErrors(state.eventText, values.engine_options).length &&
-    state.eventText.accepted &&
-    sourceChoicesSaved;
+    !sourceErrors(state.eventText, values.engine_options).length;
   const mode = values.mode;
   const paidModeReady = mode !== "batch" || state.provider.batchSupported;
   const pickerFiles = state.files.filter(
@@ -454,47 +445,24 @@ export function useGuidedWorkspace({
     await draft.save();
     await api.guided.eventTextPicker(project.id, null);
   };
-  const reviewSources = () =>
+  /** The current findings' recommendations replace the source choices. */
+  const applyRecommendations = () =>
     action.run(
       async () => {
         await save();
-        const current = await api.guided.eventTextRequest(project.id);
-        const saved = draft.session.getSnapshot().value!;
-        setSourceReview({
-          state: current.findings,
-          revision: saved.revision,
-          values: saved.values.engine_options,
-        });
+        await draft.applyEventText();
       },
-      "",
-      "event-text:review",
-    );
-  /** Current findings reviewed with no source enabled close the task. */
-  const confirmNoEventText = () =>
-    action.run(
-      async () => {
-        await save();
-        const { findings } = await api.guided.eventTextRequest(project.id);
-        if (findings.status !== "ready" || findings.enabled.length)
-          throw new Error(
-            "The findings or source choices changed. Review them again.",
-          );
-        await api.guided.eventTextReview(
-          project.id,
-          draft.session.getSnapshot().value!.revision,
-          findings.binding,
-          findings.reportId,
-          "",
-          false,
-        );
-      },
-      "Nothing to translate.",
-      "event-text:none",
+      "Source choices updated.",
+      "event-text:recommendations",
     );
   const skipEventText = () =>
     stepTask(
       state.comparisons.status !== "not_needed" ? "variables" : "plugins",
     );
+  /** Source choices save as the user moves on from them. */
+  const saveSources = async (task: string) => {
+    if ((await action.run(save, "", "event-text:save")).ok) stepTask(task);
+  };
   const next = () => {
     if (taskIndex < 0) return stage.tasks[0];
     return (
@@ -1538,8 +1506,6 @@ export function useGuidedWorkspace({
     setSubmission,
     resume,
     setResume,
-    sourceReview,
-    setSourceReview,
     comparisonReview,
     setComparisonReview,
     comparisonsAccepted,
@@ -1610,8 +1576,8 @@ export function useGuidedWorkspace({
     stepTask,
     openSourcePicker,
     saveSourcePicker,
-    reviewSources,
-    confirmNoEventText,
+    applyRecommendations,
+    saveSources,
     skipEventText,
     advance,
     back,

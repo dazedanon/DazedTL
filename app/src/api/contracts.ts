@@ -493,16 +493,12 @@ export type EventTextState = {
   reportId: string | null;
   fingerprint: string | null;
   requestId: string | null;
-  binding: string | null;
   recommended: Record<string, EngineValue>;
   rows: EventTextRow[];
   builtinHits: Record<string, string[]>;
-  accepted: boolean;
+  applied: boolean;
   errors: string[];
   enabled: string[];
-  manual: string[];
-  manualReason: string;
-  previousManualReason: string;
   view: "audit" | "sources" | "advanced-run" | "variables";
   picker: EventTextPicker | null;
 };
@@ -2097,13 +2093,15 @@ export type GuidedOptionsDraftRequest = {
   value: GuidedPreferences | null;
 };
 
-export type GuidedEventTextReviewRequest = {
+export type GuidedEventTextRequestRequest = {
+  project_id: string;
+  apply?: boolean;
+};
+
+export type GuidedEventTextApplyRequest = {
   project_id: string;
   revision: number;
-  binding: string | null;
-  report_id: string | null;
-  manual_reason: string;
-  risk_accepted: boolean;
+  report_id: string;
 };
 
 export type GuidedEventTextViewRequest = {
@@ -2294,12 +2292,12 @@ export type RpcContract = {
     response: ReferenceFolder[];
   };
   guided_event_text_request: {
-    request: ProjectRequest;
+    request: GuidedEventTextRequestRequest;
     response: EventTextRequest;
   };
-  guided_event_text_review: {
-    request: GuidedEventTextReviewRequest;
-    response: Saved;
+  guided_event_text_apply: {
+    request: GuidedEventTextApplyRequest;
+    response: GuidedPreferences;
   };
   guided_event_text_view: {
     request: GuidedEventTextViewRequest;

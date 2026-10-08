@@ -6,6 +6,7 @@ import {
   mergeInvestigationSettings,
   onlyInvestigationSettingsChanged,
 } from "./speakerSetup";
+import { advanced } from "./workspace/model";
 
 export function useGuidedWorkflow(
   state: GuidedState,
@@ -29,11 +30,10 @@ export function useGuidedWorkflow(
     } else if (draft.value?.revision === saved.revision)
       observed.current = saved;
     else if (
-      onlyInvestigationSettingsChanged(
-        before,
-        saved,
-        state.speakerSetup.rules.map((rule) => rule.key),
-      )
+      onlyInvestigationSettingsChanged(before, saved, [
+        ...state.speakerSetup.rules.map((rule) => rule.key),
+        ...advanced,
+      ])
     ) {
       observed.current = saved;
       // The investigation may save settings while a just-typed edit is
@@ -99,11 +99,32 @@ export function useGuidedWorkflow(
       (before, current, result) =>
         mergeInvestigationSettings(before, current, result.saved),
     );
+  const applyEventText = () =>
+    draft.session.commit(
+      async (value) => {
+        if (draft.session.getSnapshot().dirty)
+          throw new Error(
+            "Save or discard your option edits before applying event text findings.",
+          );
+        if (!state.eventText.reportId)
+          throw new Error("Wait for the investigation's findings.");
+        return {
+          saved: await api.guided.eventTextApply(
+            state.projectId,
+            value.revision,
+            state.eventText.reportId,
+          ),
+        };
+      },
+      (before, current, result) =>
+        mergeInvestigationSettings(before, current, result.saved),
+    );
   return {
     ...draft,
     value: draft.value || saved,
     save,
     discard,
     applySpeakers,
+    applyEventText,
   };
 }

@@ -167,7 +167,9 @@ def phased_workflows(workspace, lock, operations, manual):
                 return self.operations.start(plan)
             return super().execute(token)
 
-        def apply_speaker_settings(self, identity, revision, options, receipt):
+        def apply_investigation_settings(
+            self, identity, revision, options, receipt_key, receipt
+        ):
             from util.engine_options import validate_engine_options
 
             project = self.projects[identity]
@@ -182,7 +184,7 @@ def phased_workflows(workspace, lock, operations, manual):
                 **project,
                 "engine_options": {**project["engine_options"], **validated},
                 "revision": revision + 1,
-                "guided_speakers": receipt,
+                receipt_key: receipt,
             }
             # Preferences and the consumed report travel in one atomic write.
             self.save(updated)

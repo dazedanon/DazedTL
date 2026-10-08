@@ -91,10 +91,11 @@ def main():
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
     )
     speakers.add_argument("--scan", action="store_true")
-    commands.add_parser(
+    event_text = commands.add_parser(
         "event-text",
-        help="Read the current Other event text investigation request and validated findings",
+        help="Read the current Other event text investigation request and validated findings; --apply saves their recommendations as source choices",
     )
+    event_text.add_argument("--apply", action="store_true")
     commands.add_parser(
         "context",
         help="Read verified context investigation results and current document revisions",
@@ -225,6 +226,7 @@ def main():
                 params.update(engine=args.engine, evidence_file=args.evidence)
             if args.command == "event-text":
                 method = "guided_event_text_request"
+                params["apply"] = args.apply
             if args.command == "context":
                 method = "guided_context_status"
             if args.command == "speakers":

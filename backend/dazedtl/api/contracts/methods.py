@@ -395,13 +395,16 @@ class GuidedOptionsDraftRequest(TypedDict):
     value: GuidedPreferences | None
 
 
-class GuidedEventTextReviewRequest(TypedDict):
+class GuidedEventTextRequestRequest(TypedDict):
+    project_id: str
+    # The assistant saves its findings' recommendations as source choices.
+    apply: NotRequired[bool]
+
+
+class GuidedEventTextApplyRequest(TypedDict):
     project_id: str
     revision: int
-    binding: str | None
-    report_id: str | None
-    manual_reason: str
-    risk_accepted: bool
+    report_id: str
 
 
 class GuidedEventTextViewRequest(TypedDict):
@@ -559,9 +562,9 @@ METHODS: dict[str, Method] = {
         GuidedReferenceRemoveRequest, list[ReferenceFolder]
     ),
     "guided_event_text_request": Method(
-        ProjectRequest, EventTextRequest, refresh=False
+        GuidedEventTextRequestRequest, EventTextRequest, refresh=False
     ),
-    "guided_event_text_review": Method(GuidedEventTextReviewRequest, Saved),
+    "guided_event_text_apply": Method(GuidedEventTextApplyRequest, GuidedPreferences),
     "guided_event_text_view": Method(GuidedEventTextViewRequest, Saved),
     "guided_event_text_picker": Method(
         GuidedEventTextPickerRequest, Saved, during_close=True

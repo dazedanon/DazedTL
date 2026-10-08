@@ -247,29 +247,6 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
             )}
           </>
         )}
-        {paid && preview.options.phase === "advanced" && (
-          <>
-            <p>
-              {state.eventText.manual.length
-                ? "Manual overrides: " +
-                  state.eventText.manual.join(", ") +
-                  ". Reason: " +
-                  state.eventText.manualReason
-                : "Source choices match reviewed investigation recommendations."}
-            </p>
-            {state.eventText.rows
-              .filter((row) => values.engine_options[row.key])
-              .map((row) => (
-                <details key={row.key}>
-                  <summary>{row.label} · Actual coverage</summary>
-                  <p>{row.coverage}</p>
-                  {!!row.builtins.length && (
-                    <p>Built-ins also enabled: {row.builtins.join(", ")}</p>
-                  )}
-                </details>
-              ))}
-          </>
-        )}
         {paid &&
           preview.options.phase === "advanced" &&
           values.engine_options.AUTONAMEPOPUP101 === true && (

@@ -206,7 +206,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     comparisons: { status: "not_needed" },
     eventText: {
       status: "missing",
-      accepted: false,
+      applied: false,
       enabled: [],
       rows: [{ key: "CODE356" }],
     },
@@ -264,14 +264,14 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
   // A game with nothing to translate closes Images after a complete
   // discovery leaves nothing recommended or uncertain, and Other event text
-  // once current findings are reviewed with no source enabled.
+  // once current findings are applied with no source enabled.
   Object.assign(images.counts, { applied: 0, recommended: 0, uncertain: 1 });
   images.discovery.status = "complete";
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
   images.counts.uncertain = 0;
   state.eventText.status = "ready";
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
-  state.eventText.accepted = true;
+  state.eventText.applied = true;
   assert.deepEqual(finished(), [
     "setup",
     "other-event-text",
@@ -279,7 +279,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     "apply",
     "package",
   ]);
-  // A source turned on since that review reopens the task.
+  // A source turned on since the findings were applied reopens the task.
   state.preferences.values.engine_options.CODE356 = true;
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
 });

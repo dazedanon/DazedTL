@@ -20,16 +20,16 @@ export interface SourcePickerDraft {
 }
 
 /**
- * Current findings reviewed with every source off, saved and in the draft
+ * Current findings applied with every source off, saved and in the draft
  * `values`: the selected event files have no other event text to translate,
  * so the task needs no run.
  */
 export const nothingToTranslate = (
-  state: Pick<EventTextState, "status" | "accepted" | "enabled" | "rows">,
+  state: Pick<EventTextState, "status" | "applied" | "enabled" | "rows">,
   values: Record<string, EngineValue>,
 ) =>
   state.status === "ready" &&
-  state.accepted &&
+  state.applied &&
   !state.enabled.length &&
   !state.rows.some((row) => values[row.key] === true);
 
@@ -115,29 +115,4 @@ export function sourceErrors(
       );
   }
   return errors;
-}
-
-export function manualSources(
-  state: EventTextState,
-  values: Record<string, EngineValue>,
-) {
-  return state.rows
-    .filter((row) => {
-      if (!values[row.key]) return false;
-      const keys =
-        row.key === "CODE122"
-          ? [row.key, "CODE122_VAR_RANGES"]
-          : row.selector
-            ? [row.key, row.selector]
-            : [row.key];
-      return (
-        state.status !== "ready" ||
-        keys.some(
-          (key) =>
-            JSON.stringify(values[key]) !==
-            JSON.stringify(state.recommended[key]),
-        )
-      );
-    })
-    .map((row) => row.key);
 }

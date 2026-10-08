@@ -1,4 +1,7 @@
-"""Retained investigation and explicit review around the preserved event-text phases."""
+"""Retained investigation around the preserved event-text phases.
+
+Saved findings apply their recommendations as the project's source choices.
+"""
 
 import json
 import uuid
@@ -23,6 +26,8 @@ CODES = (
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
 FIELDS = (*CODES, "CODE122_VAR_RANGES", *SELECTORS.values())
 REPORT = ".dazedtl/guided/event-text-findings.json"
+# The project record key naming the report whose recommendations were applied.
+RECEIPT = "guided_event_text"
 VIEWS = {"audit", "sources", "advanced-run", "variables"}
 
 
@@ -204,14 +209,14 @@ For 122, check the entire start/end assignment range, operation and expression, 
 For 357, report actual installed plugin names, commands and argument keys. Registered selections use fixed keys and substring header matches, plus the built-ins listed in the request. For 355/655, report capture boundaries and multiline behavior, plus every built-in match. Its variable-writing patterns are not protected by 122 IDs.
 For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values, 108 supported notetags, and 320/324/325 display changes against actual actor context.
 Only recommend enable/high/safe when every occurrence affected by the proposed supported settings is verified player-visible and safe, including built-ins and overlapping registry matches. Otherwise report review or skip with mixed/uncertain coverage. Explicitly list excluded internal/logic uses and unsupported finer filtering. Do not claim an exclusion is enforced when it shares enabled coverage. Keep uncertain sources off. Report missing glossary evidence for review; retain existing selective glossary/context behavior.
-Do not modify engine code, settings, game text, scripts, glossary, or profiles. Do not run translation, estimation, providers, or a paid service. Write only a complete evidence report `{REPORT}` inside this game, atomically, then stop. The user reviews recommendations and controls translation and Apply in DazedTL.
+Do not modify engine code, settings files, game text, scripts, glossary, or profiles. Do not run translation, estimation, providers, or a paid service. Write only a complete evidence report `{REPORT}` inside this game, atomically, apply it as described below, then stop. The user controls translation and Apply in DazedTL.
 
 Report schema (replace every example; do not publish a template):
 ```json
 {json.dumps(report, ensure_ascii=False, indent=2)}
 ```
 Preserve all identity fields exactly and cover every listed source, with no extra settings. decision is enable/skip/review; confidence high/medium/low; coverage safe/mixed/uncertain/none. targets is compact variable IDs/ranges for 122, exact registered IDs for 357 and 355/655, and [] for coarse switches. observations and exclusions are lists of concise strings describing actual IDs, plugins, commands, keys, captures and exclusions with locations. Each source requires a reason and 1-50 evidence references {{"file":"game-relative JSON/JS/Ruby source", "sha256":"hash from request dependencies", "location":"precise event/page/command or plugin line"}}. Cite inspected dependencies only. New handlers or regexes belong in exclusions as unsupported work, never in targets.
-After saving, run `{command}` to read validation status. A stale, foreign or invalid report cannot configure the app. Do not apply the recommendations yourself.
+After saving, run `{command} --apply`. It validates the report and saves its recommendations as this game's source choices: sources reported enable/high/safe turn on with their targets, and every other source turns off. A stale, foreign or invalid report is rejected with the reason; fix the report and run the command again. If it reports a running action or unsaved guided options, ask the user to let the action finish or to save or discard the options in DazedTL, then run it again.
 """
 
     def inspect(self, project_id, native):
@@ -226,7 +231,7 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
                 row,
                 decision="review",
                 confidence="low",
-                reason="Awaiting investigation or explicit manual review.",
+                reason="Awaiting investigation.",
                 coverageStatus="uncertain",
                 targets="" if row["key"] == "CODE122" else [],
                 observations=[],
@@ -237,7 +242,7 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
         ]
         result = {
             "status": "missing",
-            "message": "Investigate the selected event text, or review supported controls manually.",
+            "message": "Investigate the selected event text, or choose sources manually.",
             "reportId": None,
             "fingerprint": context["fingerprint"],
             "recommended": defaults,
@@ -378,7 +383,7 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
             return {
                 **result,
                 "status": "ready",
-                "message": "Investigation findings are ready for review.",
+                "message": "Investigation findings are saved.",
                 "reportId": digest(report),
             }
         except (OSError, ValueError, UnicodeError, KeyError, TypeError) as exc:
@@ -414,18 +419,6 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
                 )
         return errors
 
-    def binding(self, native, findings):
-        return digest(
-            {
-                "source": findings["fingerprint"],
-                "report": findings["reportId"],
-                "settings": self.options(native),
-                "autoNamePopup": native["engine_options"].get(
-                    "AUTONAMEPOPUP101", False
-                ),
-            }
-        )
-
     def status(self, project_id, native):
         try:
             findings = self.inspect(project_id, native)
@@ -445,14 +438,8 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
             errors = self.structural(
                 options, self.catalog(), {"builtins": findings["builtinHits"]}
             )
-            binding = (
-                self.binding(native, findings) if findings["fingerprint"] else None
-            )
         except (ValueError, TypeError) as exc:
-            options, errors, binding = {}, [str(exc)], None
-        receipt_path = self.guided.path(project_id, "event-text-review")
-        receipt = read_json(receipt_path) if receipt_path.exists() else {}
-        accepted = bool(binding and receipt.get("binding") == binding)
+            options, errors = {}, [str(exc)]
         picker_path = self.guided.path(project_id, "event-text-picker")
         view_path = self.guided.path(project_id, "event-text-view")
         position_path = self.guided.path(project_id, "position")
@@ -468,81 +455,47 @@ After saving, run `{command}` to read validation status. A stale, foreign or inv
         )
         return {
             **findings,
-            "binding": binding,
-            "accepted": accepted,
+            "applied": findings["status"] == "ready"
+            and native.get(RECEIPT, {}).get("reportId") == findings["reportId"],
             "errors": errors,
             "enabled": [key for key in CODES if options.get(key)],
-            "manual": receipt.get("manual", []) if accepted else [],
-            "manualReason": receipt.get("reason", "") if accepted else "",
-            "previousManualReason": receipt.get("reason", ""),
             "view": view,
             "picker": read_json(picker_path) if picker_path.exists() else None,
         }
 
-    def review(
-        self, project_id, revision, binding, report_id, manual_reason, risk_accepted
-    ):
+    def apply(self, project_id, revision, report_id):
+        """Save current findings' recommendations as the source choices."""
         self.guided.idle()
+        self.guided.clean_options(project_id)
         _, native = self.guided.record(project_id)
-        current = self.status(project_id, native)
-        if (
-            native["revision"] != revision
-            or current["binding"] != binding
-            or current["reportId"] != report_id
-        ):
+        if type(revision) is not int or native["revision"] != revision:
             raise ValueError(
-                "The source, choices or findings changed. Review them again."
+                "The guided project changed. Reload before applying event text findings."
             )
-        if current["errors"]:
-            raise ValueError(" ".join(current["errors"]))
-        options = self.options(native)
-        manual = []
-        for code in current["enabled"]:
-            relevant = (
-                [code, "CODE122_VAR_RANGES"]
-                if code == "CODE122"
-                else [code, SELECTORS[code]]
-                if code in SELECTORS
-                else [code]
-            )
-            if current["status"] != "ready" or any(
-                options[key] != current["recommended"][key] for key in relevant
-            ):
-                manual.append(code)
-        if manual and (
-            risk_accepted is not True
-            or not isinstance(manual_reason, str)
-            or not 1 <= len(manual_reason.strip()) <= 2000
-        ):
-            raise ValueError(
-                "Confirm the actual enabled coverage and give a reason for manual overrides; translating internal keys or logic strings can break the game."
-            )
-        write_json(
-            self.guided.path(project_id, "event-text-review"),
-            {
-                "binding": binding,
-                "reportId": report_id,
-                "fingerprint": current["fingerprint"],
-                "settings": options,
-                "manual": manual,
-                "reason": manual_reason.strip() if manual else "",
-            },
+        findings = self.inspect(project_id, native)
+        if findings["status"] != "ready":
+            raise ValueError(findings["message"])
+        if findings["reportId"] != report_id:
+            raise ValueError("The findings changed. Reload them before applying.")
+        updated = self.guided.backend.workflows.apply_investigation_settings(
+            native["id"],
+            revision,
+            findings["recommended"],
+            RECEIPT,
+            {"reportId": report_id},
         )
-        return {"saved": True}
+        return self.guided.preferences(updated)
 
     def require(self, project_id, native):
         current = self.status(project_id, native)
-        if current["errors"] or not current["enabled"] or not current["accepted"]:
+        if current["errors"] or not current["enabled"]:
             raise ValueError(
-                "Review current Other event text choices before this run. "
-                + " ".join(current["errors"])
+                " ".join(current["errors"])
+                or "Enable an event text source before translating event codes."
             )
         return {
-            "binding": current["binding"],
             "reportId": current["reportId"],
             "fingerprint": current["fingerprint"],
-            "manual": current["manual"],
-            "reason": current["manualReason"],
             "settings": self.options(native),
         }
 

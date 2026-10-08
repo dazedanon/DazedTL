@@ -205,16 +205,13 @@ class EventTextState(TypedDict):
     reportId: str | None
     fingerprint: str | None
     requestId: str | None
-    binding: str | None
     recommended: dict[str, EngineValue]
     rows: list[EventTextRow]
     builtinHits: dict[str, list[str]]
-    accepted: bool
+    # The current findings' recommendations were saved as source choices.
+    applied: bool
     errors: list[str]
     enabled: list[str]
-    manual: list[str]
-    manualReason: str
-    previousManualReason: str
     view: Literal["audit", "sources", "advanced-run", "variables"]
     picker: EventTextPicker | None
 

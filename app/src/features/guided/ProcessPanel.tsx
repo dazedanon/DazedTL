@@ -328,6 +328,11 @@ function RequestProcess({
     </table>
   );
   const selectedFile = selected ? selected.file : unlinkedFile;
+  // The run's frozen event text sources, or the comparison review it used.
+  const sourcesLabel =
+    job.logicalPhase === "variables"
+      ? "Comparison review"
+      : "Event text sources";
   const contentTabs =
     projectId && selectedFile
       ? [...tabs, { id: "file" as const, label: "File contents" }]
@@ -725,10 +730,10 @@ function RequestProcess({
                   )}
                   {job.eventTextReview && (
                     <section>
-                      <h3>Event text review</h3>
+                      <h3>{sourcesLabel}</h3>
                       <ExpandableText
                         text={formatted(job.eventTextReview)}
-                        label="Event text review"
+                        label={sourcesLabel}
                       />
                     </section>
                   )}

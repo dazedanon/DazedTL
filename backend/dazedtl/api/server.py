@@ -605,7 +605,7 @@ def routes(app):
                 "reference_add",
                 "reference_remove",
                 "event_text_request",
-                "event_text_review",
+                "event_text_apply",
                 "event_text_view",
                 "event_text_picker",
                 "comparisons_review",

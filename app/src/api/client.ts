@@ -192,24 +192,8 @@ export const api = {
       request("guided_output_folder", { project_id }),
     releaseDestination: (project_id: string, output: string) =>
       request("guided_release_destination", { project_id, output }),
-    eventTextRequest: (project_id: string) =>
-      request("guided_event_text_request", { project_id }),
-    eventTextReview: (
-      project_id: string,
-      revision: number,
-      binding: string | null,
-      report_id: string | null,
-      manual_reason: string,
-      risk_accepted: boolean,
-    ) =>
-      request("guided_event_text_review", {
-        project_id,
-        revision,
-        binding,
-        report_id,
-        manual_reason,
-        risk_accepted,
-      }),
+    eventTextApply: (project_id: string, revision: number, report_id: string) =>
+      request("guided_event_text_apply", { project_id, revision, report_id }),
     eventTextView: (
       project_id: string,
       view: import("./contracts").EventTextState["view"],

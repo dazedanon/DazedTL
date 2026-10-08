@@ -89,12 +89,23 @@ class GuidedTests(unittest.TestCase):
             self.native["revision"] += 1
             return {"project": self.native}
 
+        def apply_settings(_identity, revision, options, key, receipt):
+            if revision != self.native["revision"]:
+                raise ValueError("Changed")
+            self.native["engine_options"] = {
+                **self.native["engine_options"],
+                **options,
+            }
+            self.native.update({key: receipt, "revision": revision + 1})
+            return self.native
+
         workflows = SimpleNamespace(
             projects={"native": self.native},
             folder=lambda _: self.folder,
             state=lambda _: {"project": self.native, "manual_job": self.pending},
             documents=lambda _: {},
             update=update,
+            apply_investigation_settings=apply_settings,
             save=Mock(),
             phase=lambda owner, phase, sync: (
                 self.started.append((owner, phase, sync)) or {"id": "paid-run"}
@@ -1591,14 +1602,16 @@ class GuidedTests(unittest.TestCase):
         }
         self.backend.workflows.skill = lambda *_: "Investigate this game."
 
-        def apply(_identity, revision, options, receipt):
-            self.assertEqual(revision, self.native["revision"])
+        def apply(_identity, revision, options, key, receipt):
+            self.assertEqual(
+                (revision, key), (self.native["revision"], "guided_speakers")
+            )
             self.native.update(
                 engine_options=options, guided_speakers=receipt, revision=revision + 1
             )
             return self.native
 
-        self.backend.workflows.apply_speaker_settings = Mock(side_effect=apply)
+        self.backend.workflows.apply_investigation_settings = Mock(side_effect=apply)
         self.guided.skill(self.identity, "setup")
         request = read_json(self.guided.path(self.identity, "speaker-request"))
         report = {
@@ -1671,7 +1684,7 @@ class GuidedTests(unittest.TestCase):
                     self.guided.apply_speakers(
                         self.identity, self.native["revision"], digest(value)
                     )
-        self.backend.workflows.apply_speaker_settings.assert_not_called()
+        self.backend.workflows.apply_investigation_settings.assert_not_called()
         report["rules"]["INLINE401SPEAKERS"].update(
             decision="enable", confidence="high"
         )
@@ -1827,7 +1840,9 @@ class GuidedTests(unittest.TestCase):
         # Repeated observation/application cannot reset a subsequent manual edit.
         self.guided.apply_speakers(self.identity, 1, digest(report))
         self.assertFalse(self.native["engine_options"]["INLINE401SPEAKERS"])
-        self.assertEqual(self.backend.workflows.apply_speaker_settings.call_count, 1)
+        self.assertEqual(
+            self.backend.workflows.apply_investigation_settings.call_count, 1
+        )
         report = self.speaker_report()
         report["rules"]["INLINE401SPEAKERS"].update(
             decision="enable", confidence="high"
@@ -2648,19 +2663,6 @@ class GuidedTests(unittest.TestCase):
             {"CODE357": True, "ENABLED_PLUGINS_357": ["TextPicture"]},
         ):
             self.native["engine_options"] = options
-            current = self.guided.event_text.status(self.identity, self.native)
-            with self.assertRaises(ValueError):
-                self.guided.event_text_review(
-                    self.identity, self.native["revision"], current["binding"], None
-                )
-            self.guided.event_text_review(
-                self.identity,
-                self.native["revision"],
-                current["binding"],
-                None,
-                "Explicit fixture-only coverage review",
-                True,
-            )
             preview = self.preview()
             self.guided.execute(self.identity, preview["token"])
         self.assertEqual(self.started, [("native", "advanced", True)] * 2)
@@ -2713,11 +2715,12 @@ class GuidedTests(unittest.TestCase):
         write_json(self.source / event_text.REPORT, report)
         return request, report
 
-    def test_event_findings_stage_exact_selectors_and_bind_review_to_sources_and_definitions(
+    def test_event_findings_apply_exact_selectors_once_and_bind_runs_to_sources_and_definitions(
         self,
     ):
-        # Prevent recommendations silently enabling settings, selector swaps,
-        # stale source approvals, and old reports configuring a new request.
+        # Saved findings configure only through the assistant's apply, which
+        # waits for pending option edits and rejects a report for another
+        # request; selector swaps and old reports must not configure a run.
         request, _report = self.event_report()
         self.assertEqual(
             self.guided.event_text.request(self.identity, self.native)["request_id"],
@@ -2725,25 +2728,34 @@ class GuidedTests(unittest.TestCase):
         )
         findings = self.guided.event_text.status(self.identity, self.native)
         self.assertEqual(findings["status"], "ready")
+        self.assertFalse(findings["applied"])
         self.assertEqual(self.native["engine_options"], {})
         self.assertEqual(
             findings["recommended"]["ENABLED_PLUGINS_357"], ["TextPicture"]
         )
         self.assertEqual(findings["recommended"]["ENABLED_PATTERNS_355655"], [])
-        self.native["engine_options"] = findings["recommended"]
-        findings = self.guided.event_text.status(self.identity, self.native)
-        self.guided.event_text_review(
-            self.identity, 0, findings["binding"], findings["reportId"]
+        self.guided.options_draft(self.identity, self.guided.preferences(self.native))
+        with self.assertRaises(ValueError):
+            self.guided.event_text_request(self.identity, apply=True)
+        self.guided.options_draft(self.identity, None)
+        with self.assertRaises(ValueError):
+            self.guided.event_text_apply(self.identity, 0, "another-report")
+        self.assertEqual(self.native["engine_options"], {})
+        applied = self.guided.event_text_request(self.identity, apply=True)
+        self.assertTrue(applied["findings"]["applied"])
+        self.assertEqual(applied["findings"]["enabled"], ["CODE357"])
+        self.assertEqual(
+            self.native["engine_options"]["ENABLED_PLUGINS_357"], ["TextPicture"]
         )
         review = self.guided.event_text.require(self.identity, self.native)
+        self.assertEqual(review["reportId"], findings["reportId"])
         self.assertEqual(review["settings"]["ENABLED_PLUGINS_357"], ["TextPicture"])
-        self.native["engine_options"]["AUTONAMEPOPUP101"] = True
-        with self.assertRaises(ValueError):
-            self.guided.event_text.require(self.identity, self.native)
-        self.native["engine_options"].pop("AUTONAMEPOPUP101")
+        # Later edits are the user's own choices for these same findings.
+        self.native["engine_options"]["CODE356"] = True
         self.assertTrue(
-            self.guided.event_text.status(self.identity, self.native)["accepted"]
+            self.guided.event_text.status(self.identity, self.native)["applied"]
         )
+        self.native["engine_options"]["CODE356"] = False
         self.projects.get(self.identity)["phase"] = "advanced"
         quote = self.preview()
         self.catalog["fingerprint"] = "changed-installed-parser"
@@ -2812,31 +2824,15 @@ class GuidedTests(unittest.TestCase):
             "CODE357": True,
             "ENABLED_PLUGINS_357": ["TextPicture"],
         }
-        current = self.guided.event_text.status(self.identity, self.native)
-        with self.assertRaises(ValueError):
-            self.guided.event_text_review(
-                self.identity, 0, current["binding"], current["reportId"]
-            )
-        self.guided.event_text_review(
-            self.identity,
-            0,
-            current["binding"],
-            current["reportId"],
-            "User-reviewed mixed fixture coverage",
-            True,
-        )
         self.assertEqual(
-            self.guided.event_text.require(self.identity, self.native)["manual"],
-            ["CODE357"],
-        )
-        reopened = Guided(self.backend, self.projects, self.settings, self.translation)
-        self.assertEqual(
-            reopened.event_text.status(self.identity, self.native)["manualReason"],
-            "User-reviewed mixed fixture coverage",
+            self.guided.event_text.require(self.identity, self.native)["settings"][
+                "ENABLED_PLUGINS_357"
+            ],
+            ["TextPicture"],
         )
         self.native["engine_options"]["ENABLED_PLUGINS_357"] = ["not-installed"]
         with self.assertRaises(ValueError):
-            reopened.event_text.require(self.identity, self.native)
+            self.guided.event_text.require(self.identity, self.native)
 
     def test_empty_registry_selection_needs_effective_builtin_coverage_and_picker_is_project_owned(
         self,
@@ -2848,14 +2844,7 @@ class GuidedTests(unittest.TestCase):
         findings = self.guided.event_text.status(self.identity, self.native)
         self.assertTrue(findings["errors"])
         with self.assertRaises(ValueError):
-            self.guided.event_text_review(
-                self.identity,
-                0,
-                findings["binding"],
-                findings["reportId"],
-                "Manual",
-                True,
-            )
+            self.guided.event_text.require(self.identity, self.native)
         write_json(
             self.source / "Map001.json",
             {

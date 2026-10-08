@@ -177,26 +177,25 @@ class GuidedContext:
             },
         }
 
-    def event_text_request(self, project_id):
+    def event_text_request(self, project_id, apply=False):
+        """The assistant's view of its request; `apply` saves its findings."""
+        if type(apply) is not bool:
+            raise ValueError("Choose whether to apply the event text findings.")
         _, native = self.guided.record(project_id)
+        if apply:
+            findings = self.guided.event_text.inspect(project_id, native)
+            self.guided.event_text.apply(
+                project_id, native["revision"], findings["reportId"]
+            )
+            _, native = self.guided.record(project_id)
         path = self.guided.path(project_id, "event-text-request")
         return {
             "request": read_json(path) if path.exists() else None,
             "findings": self.guided.event_text.status(project_id, native),
         }
 
-    def event_text_review(
-        self,
-        project_id,
-        revision,
-        binding,
-        report_id=None,
-        manual_reason="",
-        risk_accepted=False,
-    ):
-        return self.guided.event_text.review(
-            project_id, revision, binding, report_id, manual_reason, risk_accepted
-        )
+    def event_text_apply(self, project_id, revision, report_id):
+        return self.guided.event_text.apply(project_id, revision, report_id)
 
     def event_text_view(self, project_id, view):
         return self.guided.event_text.view(project_id, view)
@@ -355,8 +354,8 @@ class GuidedContext:
             findings,
             reset=reset,
         )
-        updated = self.guided.backend.workflows.apply_speaker_settings(
-            native["id"], revision, options, receipt
+        updated = self.guided.backend.workflows.apply_investigation_settings(
+            native["id"], revision, options, "guided_speakers", receipt
         )
         return self.guided.preferences(updated)
 

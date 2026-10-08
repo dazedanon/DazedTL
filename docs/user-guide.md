@@ -84,8 +84,9 @@ Cancellation and newer overlapping approvals stop automatic continuation.
 Files with active or unresolved Batch work are locked against source reloads.
 
 **Other event text** investigates variables, plugin commands, scripts and labels before translation.
-Enable only the investigation's confirmed codes, variable IDs, plugin handlers and script patterns.
-When the findings leave nothing to enable, **Confirm nothing to translate** in **Source choices** finishes the task.
+Your assistant applies its findings itself: confirmed codes, variable IDs, plugin handlers and script patterns turn on, and uncertain or mixed coverage stays off.
+**Source choices** shows the result; change any source there, or choose **Use recommendations** to go back to the findings' choices.
+When the findings leave nothing to translate, the task is done.
 Translate audited assignments first, then review and update comparisons from their saved mappings.
 
 **Plugin files** is one assistant task: the assistant checks every plugin for text players see and translates it with the glossary, guidance, the game's translated text and any reference games.

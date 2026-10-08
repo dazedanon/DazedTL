@@ -12,6 +12,8 @@ class Progress(TypedDict):
 
 
 class EventTextReview(TypedDict):
+    # Runs saved before source choices applied automatically also recorded
+    # the user's review receipt.
     manual: NotRequired[list[str]]
     reason: NotRequired[str]
     binding: NotRequired[str]

@@ -1,8 +1,6 @@
 /** Translate: phased runs, event text investigation and source choices. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
-import { flushDrafts } from "../../../../state/leaveGuards";
-import { ActionControl } from "../../../../ui/ActionControl";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
 import { EventTextSources } from "../../EventTextSources";
@@ -182,16 +180,16 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {phase === "advanced" && (
         <>
           <p>
-            {enabledCodes.length}{" "}
-            {enabledCodes.length === 1 ? "source" : "sources"} enabled ·{" "}
-            {advancedReady ? "Coverage reviewed" : "Source review needed"}
+            {!enabledCodes.length
+              ? "No source enabled"
+              : `${enabledCodes.length} ${enabledCodes.length === 1 ? "source" : "sources"} enabled${advancedReady ? "" : " · Source choices need fixes"}`}
           </p>
           <Button
             variant="link"
             disabled={disabled || locked}
             onClick={() => stepTask("sources")}
           >
-            Review source choices
+            Edit source choices
           </Button>
         </>
       )}
@@ -336,6 +334,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
 export function auditView(w: GuidedWorkspace): TaskView {
   const {
     state,
+    values,
     eventFiles,
     disabled,
     stepTask,
@@ -350,9 +349,8 @@ export function auditView(w: GuidedWorkspace): TaskView {
     investigating.dismissed && state.eventText.status === "waiting"
       ? "missing"
       : state.eventText.status;
-  // Saved findings finish the assistant's part; the source review that
-  // follows belongs to Source choices.
-  const reviewed = status === "ready" && state.eventText.accepted;
+  const applied = status === "ready" && state.eventText.applied;
+  const enabled = state.eventText.enabled.length;
   const taskState: AssistantTaskState = (
     {
       missing: "not_started",
@@ -379,13 +377,15 @@ export function auditView(w: GuidedWorkspace): TaskView {
             ? "Your assistant checks every affected use and internal reference, and returns the commands and argument keys it finds as evidence."
             : status === "waiting"
               ? "Findings appear here as your assistant saves them."
-              : reviewed
-                ? "Your source choices are saved for these findings."
+              : applied
+                ? enabled
+                  ? `Recommendations applied · ${enabled} ${enabled === 1 ? "source" : "sources"} enabled.`
+                  : "Every source is off · nothing to translate."
                 : status === "ready"
-                  ? "Review the findings in Source choices before translating."
+                  ? "Findings saved. Use recommendations in Source choices to apply them."
                   : state.eventText.message
         }
-        help="The task only saves findings. It does not enable sources, edit engine code, start translation or call providers."
+        help="Your assistant saves findings and applies their recommendations as source choices. It does not edit engine code, start translation or call providers."
         results={[
           {
             id: "findings",
@@ -400,27 +400,43 @@ export function auditView(w: GuidedWorkspace): TaskView {
       />
     </>
   );
-  // Investigating comes first; manual review and skipping stay available.
+  // Investigating comes first; choosing sources by hand and skipping stay
+  // available.
   const ready = state.eventText.status === "ready";
+  const nothing = nothingToTranslate(state.eventText, values.engine_options);
   return {
     content,
-    secondary: (
+    secondary: !nothing && (
       <Button variant="quiet" disabled={disabled} onClick={skipEventText}>
         Skip event codes
       </Button>
     ),
     action:
       !ready && copyTask("advanced", "Copy investigation task", "primary"),
-    // The source choices come next, with findings or reviewed by hand.
-    next: (
-      <Button
-        variant={ready ? "primary" : "quiet"}
-        disabled={disabled}
-        onClick={() => stepTask("sources")}
-      >
-        {ready ? "Review findings & source choices" : "Review sources manually"}
-      </Button>
-    ),
+    // Applied findings lead on to translation, or past it when they leave
+    // nothing to translate; otherwise the sources are chosen next.
+    next:
+      applied && nothing ? (
+        <Button variant="primary" disabled={disabled} onClick={skipEventText}>
+          {onwardLabel(w)}
+        </Button>
+      ) : applied && enabled ? (
+        <Button
+          variant="primary"
+          disabled={disabled}
+          onClick={() => stepTask("advanced-run")}
+        >
+          Continue to translation
+        </Button>
+      ) : (
+        <Button
+          variant={ready ? "primary" : "quiet"}
+          disabled={disabled}
+          onClick={() => stepTask("sources")}
+        >
+          {ready ? "Choose sources" : "Choose sources manually"}
+        </Button>
+      ),
     heading: {
       title: "Investigate sources",
       description:
@@ -428,6 +444,12 @@ export function auditView(w: GuidedWorkspace): TaskView {
     },
   };
 }
+
+/** Where Other event text leads once no event code needs translating. */
+const onwardLabel = (w: GuidedWorkspace) =>
+  w.state.comparisons.status !== "not_needed"
+    ? "Review comparisons"
+    : "Continue to plugin files";
 
 export function sourcesView(w: GuidedWorkspace): TaskView {
   const {
@@ -438,16 +460,13 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
     enabledCodes,
     edit,
     disabled,
-    stepTask,
     openSourcePicker,
-    reviewSources,
-    confirmNoEventText,
-    skipEventText,
+    applyRecommendations,
+    saveSources,
     chooseFiles,
     feedback,
   } = w;
-  let content: ReactNode;
-  content = (
+  const content = (
     <>
       <div className="translation-source-toolbar">
         <span>
@@ -472,76 +491,43 @@ export function sourcesView(w: GuidedWorkspace): TaskView {
         }
         openPicker={openSourcePicker}
         recommendationFeedback={feedback("event-text:recommendations")}
-        recommendations={() =>
-          action.run(
-            async () => {
-              edit("engine_options", {
-                ...values.engine_options,
-                ...state.eventText.recommended,
-              });
-              await flushDrafts();
-            },
-            "Recommendations staged.",
-            "event-text:recommendations",
-          )
-        }
+        recommendations={applyRecommendations}
       />
     </>
   );
-  const review = !!enabledCodes.length && (
-    <Button
-      variant="primary"
-      pending={action.busy && action.key === "event-text:review"}
-      disabled={
-        disabled ||
-        !!sourceErrors(state.eventText, values.engine_options).length ||
-        !eventFiles.length
-      }
-      onClick={reviewSources}
-    >
-      Review source choices
-    </Button>
-  );
-  const findingsReady = state.eventText.status === "ready";
-  const nothing = nothingToTranslate(state.eventText, values.engine_options);
+  // Moving on saves the choices, so the task's state follows them.
   return {
     content,
-    action: enabledCodes.length
-      ? review
-      : findingsReady &&
-        !nothing && (
-          <ActionControl
-            variant="primary"
-            label="Confirm nothing to translate"
-            disabled={disabled}
-            {...feedback("event-text:none", "Saving…")}
-            onClick={confirmNoEventText}
-          />
-        ),
-    next: enabledCodes.length ? (
+    next: (
       <Button
-        variant="quiet"
-        disabled={disabled}
-        onClick={() => stepTask("advanced-run")}
+        variant="primary"
+        pending={action.busy && action.key === "event-text:save"}
+        disabled={
+          disabled ||
+          (!!enabledCodes.length &&
+            !!sourceErrors(state.eventText, values.engine_options).length)
+        }
+        onClick={() =>
+          void saveSources(
+            enabledCodes.length
+              ? "advanced-run"
+              : state.comparisons.status !== "not_needed"
+                ? "variables"
+                : "plugins",
+          )
+        }
       >
-        Continue to translation
+        {enabledCodes.length
+          ? "Continue to translation"
+          : state.eventText.status === "ready"
+            ? onwardLabel(w)
+            : "Skip event codes"}
       </Button>
-    ) : nothing ? (
-      <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-        {state.comparisons.status !== "not_needed"
-          ? "Review comparisons"
-          : "Continue to plugin files"}
-      </Button>
-    ) : (
-      !findingsReady && (
-        <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-          Skip event codes
-        </Button>
-      )
     ),
     heading: {
       title: "Source choices",
-      description: "Enable only the sources the investigation confirmed.",
+      description:
+        "The event codes, plugin commands and scripts Translate covers.",
     },
   };
 }

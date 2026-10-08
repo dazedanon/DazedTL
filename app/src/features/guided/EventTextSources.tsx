@@ -6,7 +6,6 @@ import { Button } from "../../ui/Button";
 import { FieldRow } from "../../ui/FieldRow";
 import { Message } from "../../ui/Feedback";
 import {
-  manualSources,
   nothingToTranslate,
   sourceErrors,
   type SelectorKey,
@@ -27,10 +26,10 @@ export function EventTextSources({
   change: (key: string, value: EngineValue) => void;
   openPicker: (key: SelectorKey) => void;
   recommendations: () => void;
-  /** The staged-recommendations result, reported beside its button. */
+  /** The applied-recommendations result, reported beside its button. */
   recommendationFeedback?: Partial<ComponentProps<typeof ActionControl>>;
 }) {
-  const manual = manualSources(state, values);
+  const nothing = nothingToTranslate(state, values);
   const [selected, setSelected] = useState(state.rows[0]?.key || "");
   const row = state.rows.find((item) => item.key === selected) || state.rows[0];
   return (
@@ -40,18 +39,22 @@ export function EventTextSources({
           label={
             <>
               <strong>
-                {nothingToTranslate(state, values)
+                {nothing
                   ? "Nothing to translate"
-                  : state.status === "ready"
-                    ? "Findings ready"
-                    : "Manual source choices"}
+                  : state.status !== "ready"
+                    ? "Manual source choices"
+                    : state.applied
+                      ? "Recommendations applied"
+                      : "Findings ready"}
               </strong>
               <small>
-                {nothingToTranslate(state, values)
-                  ? "You confirmed these findings with every source off."
-                  : state.status === "ready"
-                    ? "Review coverage before enabling sources."
-                    : "No source is investigated yet. Review coverage before enabling any."}
+                {nothing
+                  ? "Every source is off, so these files need no event text run."
+                  : state.status !== "ready"
+                    ? state.message
+                    : state.applied
+                      ? "Uncertain or mixed coverage stays off. Translate uses the choices below."
+                      : "Use recommendations to turn on the sources they confirm."}
               </small>
             </>
           }
@@ -72,8 +75,7 @@ export function EventTextSources({
       {values.AUTONAMEPOPUP101 === true && (
         <p className="muted">
           Saved AutoNamePopup speaker handling also processes supported
-          actor-name changes, even with source 320 off. Review that inherited
-          coverage with the actor context.
+          actor-name changes, even with source 320 off.
         </p>
       )}
       <div className="translation-sources-grid">
@@ -110,20 +112,17 @@ export function EventTextSources({
                   );
                 })()}
                 <small>
-                  {manual.includes(item.key)
-                    ? "Manual choice · coverage confirmation needed"
-                    : state.status === "ready"
-                      ? item.decision === "enable" &&
+                  {state.status !== "ready"
+                    ? ""
+                    : item.decision === "enable" &&
                         item.confidence === "high" &&
                         item.coverageStatus === "safe"
-                        ? "Recommended"
-                        : item.decision === "review" ||
-                            item.decision === "enable"
-                          ? "Review needed"
-                          : item.coverageStatus === "none"
-                            ? "Keep off · no player text"
-                            : "Keep off"
-                      : ""}
+                      ? "Recommended"
+                      : item.coverageStatus === "none"
+                        ? "Keep off · no player text"
+                        : item.decision === "skip"
+                          ? "Keep off"
+                          : "Keep off · uncertain coverage"}
                 </small>
               </button>
             </div>
@@ -133,11 +132,6 @@ export function EventTextSources({
           <section className="translation-source-detail" aria-label={row.label}>
             <h3>{row.label}</h3>
             <p className="muted">{row.reason}</p>
-            <p className="muted">
-              {state.message} Recommendations are staged for review; uncertain
-              or mixed coverage stays off, and manual choices need coverage
-              confirmation.
-            </p>
             {row.key === "CODE122" && (
               <FieldRow id="event-text-variable-ids" label="Variable IDs">
                 {(props) => (
@@ -212,7 +206,7 @@ export function EventTextSources({
                   <p>
                     Listed exclusions are evidence. If they share enabled
                     handler coverage, the engine cannot isolate them; keep that
-                    coverage off or review an explicit manual override.
+                    coverage off.
                   </p>
                 </>
               )}

@@ -597,10 +597,10 @@ Reference game folders are retained per project by [reference_folders.py](../bac
 Adding a folder only registers its path; it does not parse, convert or index the game.
 Missing references remain listed so they can be removed or replaced.
 Earlier native reference imports and their translation matching remain intact.
-Translate task 3, Other event text, retains investigation, source review, translation and comparison views within one task.
+Translate task 3, Other event text, retains investigation, source choice, translation and comparison views within one task.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
-Findings stage recommendations; applying supported settings and reviewing their actual coverage remain explicit user actions.
-Mixed or uncertain recommendations stay off; manual overrides require a reason and material-risk confirmation retained with each frozen run.
+The assistant applies a current report through the project helper's `event-text --apply`, and Use recommendations does the same in Source choices; either saves the recommendations and the consumed report ID in one write, and running work or a pending option draft refuses it, as for speaker findings.
+Mixed or uncertain recommendations stay off; source choices need no separate review, and each frozen run records its source settings and report.
 Code 122 requires explicit starting IDs, registered 357 and 355/655 selectors use exact installed identifiers, and 356 remains a single coarse switch.
 The compact selectors retain searchable, grouped drafts separately from saved engine settings and preserve hidden selections.
 The comparison cache is literal-based and requires a matching coverage review; missing, malformed and nonmatching caches expose distinct continuation or recovery states.
@@ -655,7 +655,7 @@ Prepared originals are summarized; recent activity holds saved history, while ac
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
 Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands, in the shared display states, what comes back, and a row per expected result.
 The panel reads Needs review only while a result waits for the user's decision in that panel; a result that saved itself reads Done, or Applied once in the game, and one waiting only to go into the game reads Ready to apply.
-Findings that inform a later step read Done once saved, and that step holds their review, as Other event text's Source choices do.
+Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Other event text's Source choices do.
 The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.

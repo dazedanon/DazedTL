@@ -6,7 +6,6 @@ import { Message } from "../../../ui/Feedback";
 import { DialogBody, DialogHeader } from "../../../ui/Dialog";
 import { Modal } from "../../../ui/Modal";
 import { EventTextPicker } from "../EventTextPicker";
-import { EventTextReview } from "../EventTextReview";
 import { RunHistorySheet } from "../RunHistorySheet";
 import { RunInspector } from "../RunInspector";
 import { TranslationFlowDialog } from "../TranslationFlowDialog";
@@ -15,7 +14,7 @@ import { canResumeRun } from "../translationView";
 import { actionKey, fileCount } from "./model";
 import type { GuidedWorkspace } from "./useGuidedWorkspace";
 
-/** History, inspection, source and comparison reviews, approvals and resume. */
+/** History, inspection, comparison review, approvals and resume. */
 export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
   const {
     project,
@@ -26,8 +25,6 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
     setSubmission,
     resume,
     setResume,
-    sourceReview,
-    setSourceReview,
     comparisonReview,
     setComparisonReview,
     comparisonsAccepted,
@@ -128,34 +125,6 @@ export function GuidedDialogs({ w }: { w: GuidedWorkspace }) {
           initial={state.eventText.picker}
           save={saveSourcePicker}
           refresh={application.refresh}
-        />
-      )}
-      {sourceReview && (
-        <EventTextReview
-          review={sourceReview}
-          busy={action.busy}
-          error={action.error}
-          cancel={() => setSourceReview(null)}
-          accept={(reason, accepted) =>
-            action.run(
-              async () => {
-                await api.guided.eventTextReview(
-                  project.id,
-                  sourceReview.revision,
-                  sourceReview.state.binding,
-                  sourceReview.state.reportId,
-                  reason,
-                  accepted,
-                );
-                setSourceReview(null);
-                application.navigateGuided(project.id, {
-                  eventView: "advanced-run",
-                });
-              },
-              "Source choices reviewed. Estimate this scope before paid review.",
-              "event-text:confirm",
-            )
-          }
         />
       )}
       {comparisonReview && (
