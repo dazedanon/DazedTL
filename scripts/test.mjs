@@ -3,8 +3,9 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { root, requireNode } from "./dependencies.mjs";
 
-// One deadline covers discovery, both runtimes, fixtures, and teardown.
-const budget = 10_000;
+// One deadline covers discovery, both runtimes, fixtures, and teardown. CI's
+// slower runners set their own in DAZEDTL_TEST_BUDGET, in seconds.
+const budget = Number(process.env.DAZEDTL_TEST_BUDGET || 10) * 1000;
 const elapsed = () => process.uptime() * 1000;
 requireNode();
 const python = path.join(

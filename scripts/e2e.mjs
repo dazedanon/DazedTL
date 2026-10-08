@@ -271,6 +271,8 @@ function userEnvironment() {
     )
       delete env[name];
   if (windows) {
+    // PSModulePath stays: under CI it is PowerShell 7's, as when a user starts
+    // START from a PowerShell 7 terminal.
     const system = process.env.SystemRoot || "C:\\Windows";
     env.Path = [
       `${system}\\system32`,
@@ -380,6 +382,20 @@ function killTree(pid) {
     }
 }
 
+/**
+ * Runs Windows PowerShell for the test itself. A PowerShell 7 parent's module
+ * path stops it from loading modules such as CimCmdlets, so it gets its own.
+ */
+function powershell(command) {
+  const env = { ...process.env };
+  delete env.PSModulePath;
+  return execFileSync(
+    "powershell.exe",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+    { encoding: "utf8", env, windowsHide: true },
+  );
+}
+
 /** Processes whose executable lives in the install, such as Electron and Python. */
 function appProcesses() {
   const inside = (file) =>
@@ -388,16 +404,8 @@ function appProcesses() {
       (windows ? install.toLowerCase() : install) + path.sep,
     );
   if (windows) {
-    const output = execFileSync(
-      "powershell.exe",
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
-      ],
-      { encoding: "utf8", windowsHide: true },
+    const output = powershell(
+      "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | Select-Object ProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
     );
     return JSON.parse(output || "[]")
       .filter((item) => inside(item.ExecutablePath))
@@ -436,18 +444,10 @@ async function closeApp() {
   const main = appProcesses().find(isMain);
   if (!main) throw new Error("The app is not running.");
   if (windows) {
-    const result = spawnSync(
-      "powershell.exe",
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        `(Get-Process -Id ${main.pid}).CloseMainWindow()`,
-      ],
-      { encoding: "utf8", windowsHide: true },
+    const closed = powershell(
+      `(Get-Process -Id ${main.pid}).CloseMainWindow()`,
     );
-    if (result.stdout.trim() !== "True")
+    if (closed.trim() !== "True")
       throw new Error("The window did not accept the close request.");
   } else process.kill(main.pid, "SIGTERM");
   try {
