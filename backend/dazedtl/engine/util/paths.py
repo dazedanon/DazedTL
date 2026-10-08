@@ -28,7 +28,6 @@ HELP_DIR = DATA_DIR / "help"
 # Runtime translation system skill (formerly data/prompt.txt).
 PROMPT_PATH = SKILLS_DIR / "system.md"
 LEGACY_PROMPT_PATH = DATA_DIR / "prompt.txt"
-LAST_UPDATE_SHA_PATH = DATA_DIR / "last_update_sha.txt"
 ENV_PATH = PROJECT_ROOT / ".env"
 ICON_PATH = PROJECT_ROOT / "assets" / "icon.png"
 TRANSLATION_CONTEXTS_PATH = DATA_DIR / "translation_contexts.json"
