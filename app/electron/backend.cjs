@@ -14,7 +14,7 @@ class Backend {
         process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
       );
     this.workspace = path.resolve(
-      process.env.DAZEDTL_NEXT_WORKSPACE || path.join(profile, "workspace"),
+      process.env.DAZEDTL_WORKSPACE || path.join(profile, "workspace"),
     );
     fs.mkdirSync(this.workspace, { recursive: true });
     this.pending = new Map();

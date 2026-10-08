@@ -28,14 +28,14 @@ node scripts/start.mjs
 `START.sh`, `START.command`, and `START.bat` use the same launcher.
 Use `node scripts/start.mjs --offline` to inspect the UI with provider execution disabled.
 
-The default profile is `DazedTLNext`, separate from the existing app.
+The default profile is the `DazedTL2` folder in the system's application data folder, separate from DazedMTLTool; an existing pre-release `DazedTLNext` profile keeps being used.
 Projects, credentials, and runs live in its workspace outside this checkout.
 
 | Optional environment variable | Purpose |
 | --- | --- |
 | `DAZEDTL_PYTHON` | Python executable with backend dependencies |
-| `DAZEDTL_NEXT_PROFILE` | Electron profile location |
-| `DAZEDTL_NEXT_WORKSPACE` | Project and run storage location |
+| `DAZEDTL_PROFILE` | Electron profile location |
+| `DAZEDTL_WORKSPACE` | Project and run storage location |
 
 ## Development checks
 

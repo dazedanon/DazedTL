@@ -15,9 +15,21 @@ const { Diagnostics } = require("./diagnostics.cjs");
 const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
 
-app.setName("DazedTLNext");
-if (process.env.DAZEDTL_NEXT_PROFILE)
-  app.setPath("userData", path.resolve(process.env.DAZEDTL_NEXT_PROFILE));
+app.setName("DazedTL");
+// The retired Electron preview of DazedMTLTool owns the "DazedTL" folder. Saved
+// runs hold absolute profile paths, so a pre-release "DazedTLNext" profile
+// stays where it is instead of moving to the released name.
+const profiles = app.getPath("appData");
+const released = path.join(profiles, "DazedTL2");
+const prerelease = path.join(profiles, "DazedTLNext");
+app.setPath(
+  "userData",
+  process.env.DAZEDTL_PROFILE
+    ? path.resolve(process.env.DAZEDTL_PROFILE)
+    : !fs.existsSync(released) && fs.existsSync(prerelease)
+      ? prerelease
+      : released,
+);
 const protocol = require("../../backend/dazedtl/api/protocol.json");
 const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
