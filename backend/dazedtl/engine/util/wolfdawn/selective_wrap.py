@@ -188,7 +188,7 @@ def wrap_db_translated_dir(
         if w:
             path.write_text(
                 json.dumps(doc, ensure_ascii=False, indent=4) + "\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="\n",
             )
             result.files_touched += 1
             result.lines_wrapped += w

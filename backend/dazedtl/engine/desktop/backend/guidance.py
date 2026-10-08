@@ -51,7 +51,7 @@ def document_save(root, name, revision, text):
         path = custom_skill_path_for_game(root, name.removeprefix("custom:")) if name.startswith("custom:") else (game_skill_path_for_game if name == "game" else quirks_path_for_game)(root)
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".desktop-tmp")
-        regular(root, temporary).write_text(text, encoding="utf-8")
+        regular(root, temporary).write_text(text, encoding="utf-8", newline="\n")
         temporary.replace(path)
     return documents(root)
 

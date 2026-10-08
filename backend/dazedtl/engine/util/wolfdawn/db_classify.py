@@ -407,7 +407,7 @@ def load_db_profile(work_dir: str | Path) -> dict[str, Any]:
 def save_db_profile(work_dir: str | Path, profile: dict[str, Any]) -> None:
     path = db_profile_path(work_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(profile, ensure_ascii=False, indent=4) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(profile, ensure_ascii=False, indent=4) + "\n", encoding="utf-8", newline="\n")
 
 
 def merge_profile_with_groups(

@@ -1538,7 +1538,7 @@ def create(
             text = generate(to_tree(value))
         except ConversionError as exc:
             raise ConversionError(path.name + ": " + str(exc)) from None
-        (out / (name + ".json")).write_text(text, encoding="utf-8")
+        (out / (name + ".json")).write_text(text, encoding="utf-8", newline="\n")
     scripts = load_data(data_path(folder, "Scripts"))
     if isinstance(scripts, list):
         target = out / "scripts"

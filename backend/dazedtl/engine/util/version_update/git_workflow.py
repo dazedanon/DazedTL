@@ -736,7 +736,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
         prefix=f".{path.name}.", dir=path.parent
     )
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
             handle.write("\n")
         os.replace(temporary_name, path)

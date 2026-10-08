@@ -228,7 +228,7 @@ class ImageStore:
             raise ValueError("The stored original changed before rendering.")
         operation_dir.mkdir(parents=True, exist_ok=True)
         atomic_json(operation_dir / "request.json", {**data, "source_path": str(source), 'layer_folder': str(folder)})
-        with (operation_dir / "renderer.log").open("w", encoding="utf-8") as log:
+        with (operation_dir / "renderer.log").open("w", encoding="utf-8", newline="\n") as log:
             env = {key: value for key, value in os.environ.items() if key in {
                 "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "HOME", "USERPROFILE", "LOCALAPPDATA", "FONTCONFIG_PATH"
             }}

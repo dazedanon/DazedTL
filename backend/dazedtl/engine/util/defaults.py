@@ -54,7 +54,7 @@ def set_defaults(file_path):
         value_str = 'True' if value else 'False'
         content = re.sub(rf'{re.escape(key)}\s*=\s*.*', f'{key} = {value_str}', content)
 
-    with open(file_path, 'w', encoding='utf-8') as file:
+    with open(file_path, 'w', encoding='utf-8', newline="\n") as file:
         file.write(content)
 
 

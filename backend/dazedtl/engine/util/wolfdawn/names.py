@@ -374,7 +374,7 @@ def upsert_name_wrap_role(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
+        encoding="utf-8", newline="\n",
     )
     return path
 
@@ -605,6 +605,6 @@ def reconcile_translated_dir(
             path = base / name
             path.write_text(
                 json.dumps(extract_docs[name], ensure_ascii=False, indent=4) + "\n",
-                encoding="utf-8",
+                encoding="utf-8", newline="\n",
             )
     return report

@@ -6751,7 +6751,7 @@ def finalizeSpeakerParse():
         )
 
         tmp_path = vocab_path.with_suffix(vocab_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp")
-        tmp_path.write_text(new_content, encoding="utf-8")
+        tmp_path.write_text(new_content, encoding="utf-8", newline="\n")
         try:
             os.replace(tmp_path, vocab_path)
         except Exception:

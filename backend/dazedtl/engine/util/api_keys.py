@@ -94,7 +94,7 @@ def save_vault(vault: dict[str, Any], path: Path | None = None) -> None:
         "keys": keys_out,
     }
     tmp = vault_path.with_suffix(vault_path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     try:
         os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
     except OSError:

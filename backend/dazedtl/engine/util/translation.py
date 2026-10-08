@@ -285,7 +285,7 @@ def _save_estimate_written_sizes():
         tmp = _ESTIMATE_SIZES_FILE.with_name(
             f"{_ESTIMATE_SIZES_FILE.name}.{os.getpid()}.{threading.get_ident()}.tmp"
         )
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             json.dump(list(_estimate_written_sizes), f)
         os.replace(tmp, _ESTIMATE_SIZES_FILE)
     except Exception:
@@ -350,7 +350,7 @@ def _estimate_static_token_count(static_system, model):
             )
             tmp.write_text(
                 json.dumps(cache, ensure_ascii=False, separators=(",", ":")),
-                encoding="utf-8",
+                encoding="utf-8", newline="\n",
             )
             os.replace(tmp, _ESTIMATE_STATIC_TOKENS_FILE)
         except Exception:
@@ -1398,7 +1398,7 @@ def _save_var_map():
         disk_map.update(_var_map)
         _var_map = disk_map
         tmp_file = VAR_MAP_FILE.with_suffix(".tmp")
-        with open(tmp_file, "w", encoding="utf-8") as f:
+        with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
             json.dump(_var_map, f, ensure_ascii=False, indent=2)
         tmp_file.replace(VAR_MAP_FILE)
     except Exception:
@@ -1583,7 +1583,7 @@ def _write_batch_file(path, data):
     """Atomically write a batch JSON file (no indent — queues can be large)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_file = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-    with open(tmp_file, "w", encoding="utf-8") as f:
+    with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False)
     tmp_file.replace(path)
 
@@ -3477,7 +3477,7 @@ def _load_litellm_pricing() -> dict | None:
                 _PRICING_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
                 _PRICING_CACHE_FILE.write_text(
                     json.dumps({"fetched_at": now, "prices": data}),
-                    encoding="utf-8",
+                    encoding="utf-8", newline="\n",
                 )
             except Exception:
                 pass

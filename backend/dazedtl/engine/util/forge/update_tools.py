@@ -52,7 +52,7 @@ def _load_versions() -> dict:
 
 
 def _save_versions(data: dict) -> None:
-    VERSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    VERSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8", newline="\n")
 
 
 def _api_json(url: str) -> dict | list:

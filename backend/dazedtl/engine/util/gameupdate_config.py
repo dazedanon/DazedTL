@@ -126,7 +126,7 @@ def write_patch_config(
     )
     try:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        dest.write_text(body, encoding="utf-8")
+        dest.write_text(body, encoding="utf-8", newline="\n")
     except Exception as exc:
         return False, f"could not write {dest}: {exc}"
     return True, str(dest)

@@ -177,7 +177,7 @@ def run_action(plan, log):
     if action in {"prepare", "format_data", "format_plugins", "gameupdate"}:
         from util.project_preparation import (prepare_rpgmaker, format_plugins_js, copy_files, write_gameupdate_config,
                                              install_startup_check, RPG_GAMEUPDATE_COPY_SKIP_NAMES, GAMEUPDATE_COPY_SKIP_NAMES, GAMEUPDATE_PRESERVE_EXISTING)
-        regular(folder, folder / "public-settings.env").write_text("\n".join(f"{key}={json.dumps(value)}" for key, value in options.get("public_settings", {}).items()), encoding="utf-8")
+        regular(folder, folder / "public-settings.env").write_text("\n".join(f"{key}={json.dumps(value)}" for key, value in options.get("public_settings", {}).items()), encoding="utf-8", newline="\n")
         if action == "prepare":
             return prepare_rpgmaker(root, data_path=data, env_path=folder / "public-settings.env", log=log)
         if action == "format_data":

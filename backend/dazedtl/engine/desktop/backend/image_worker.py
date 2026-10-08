@@ -64,10 +64,10 @@ def main():
         render.save_rgba(result.base, folder / "base.png")
         render.save_rgba(result.overlay, folder / "overlay.png")
         notes = [{"block_id": note.block_id, "ok": note.ok, "message": note.message, "tight": note.tight} for note in result.notes]
-        (folder / "result.json").write_text(json.dumps({"notes": notes, "blocks": [desktop_block(block.to_dict()) for block in entry.blocks]}, ensure_ascii=False), encoding="utf-8")
+        (folder / "result.json").write_text(json.dumps({"notes": notes, "blocks": [desktop_block(block.to_dict()) for block in entry.blocks]}, ensure_ascii=False), encoding="utf-8", newline="\n")
         return 0
     except Exception as exc:
-        (folder / "result.json").write_text(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), encoding="utf-8")
+        (folder / "result.json").write_text(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), encoding="utf-8", newline="\n")
         return 1
 
 

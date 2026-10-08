@@ -277,7 +277,7 @@ class Job:
         # Write beside the target and replace, so a crash mid-write cannot
         # leave a truncated job file - it is the only copy of the review work.
         temporary = target.with_name(target.name + ".tmp")
-        temporary.write_text(payload, encoding="utf-8")
+        temporary.write_text(payload, encoding="utf-8", newline="\n")
         temporary.replace(target)
         return target
 

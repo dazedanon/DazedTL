@@ -402,7 +402,7 @@ def save_config(config: dict) -> None:
     """Persist the WOLF speaker-format config (only known keys are written)."""
     out = {key: bool(config.get(key, DEFAULT_CONFIG[key])) for key in DEFAULT_CONFIG}
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(out, indent=4), encoding="utf-8")
+    CONFIG_PATH.write_text(json.dumps(out, indent=4), encoding="utf-8", newline="\n")
 
 
 def is_firstline_enabled(speaker_src: str, config: dict | None = None) -> bool:

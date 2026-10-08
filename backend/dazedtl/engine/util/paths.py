@@ -266,7 +266,7 @@ def ensure_game_tool_gitignore(game_root: str | Path) -> bool:
     original_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
     try:
         with os.fdopen(
-            descriptor, "w", encoding="utf-8", errors="surrogateescape"
+            descriptor, "w", encoding="utf-8", errors="surrogateescape", newline="\n"
         ) as handle:
             handle.write(updated)
             handle.flush()
@@ -520,7 +520,7 @@ def ensure_game_glossary(game_root: str | Path | None) -> Path:
     )
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(_seed_game_glossary_text())
             handle.flush()
             os.fsync(handle.fileno())

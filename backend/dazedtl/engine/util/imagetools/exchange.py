@@ -139,7 +139,7 @@ def write(job: Job, path: Path | None = None) -> tuple[Path, Path | None]:
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(build(job), ensure_ascii=False, indent=2)
     temporary = target.with_name(target.name + ".tmp")
-    temporary.write_text(payload, encoding="utf-8")
+    temporary.write_text(payload, encoding="utf-8", newline="\n")
     temporary.replace(target)
 
     mirror = None
@@ -148,7 +148,7 @@ def write(job: Job, path: Path | None = None) -> tuple[Path, Path | None]:
         if candidate is not None:
             try:
                 candidate.parent.mkdir(parents=True, exist_ok=True)
-                candidate.write_text(payload, encoding="utf-8")
+                candidate.write_text(payload, encoding="utf-8", newline="\n")
                 mirror = candidate
             except OSError:
                 mirror = None

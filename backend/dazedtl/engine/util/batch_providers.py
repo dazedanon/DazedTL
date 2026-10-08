@@ -154,7 +154,7 @@ def _google_client(api_key: str | None = None):
 
 def _write_jsonl(requests: Iterable[dict]) -> Path:
     handle = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", suffix=".jsonl", delete=False
+        mode="w", encoding="utf-8", suffix=".jsonl", delete=False, newline="\n"
     )
     path = Path(handle.name)
     try:

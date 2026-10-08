@@ -32,7 +32,7 @@ class ConfigIntegration:
             updated_content = self._update_config_values(content, config)
 
             # Write back to file
-            with open(module_path, 'w', encoding='utf-8') as f:
+            with open(module_path, 'w', encoding='utf-8', newline="\n") as f:
                 f.write(updated_content)
 
             # The GUI may already have imported the engine for evaluation or a
@@ -216,7 +216,7 @@ class ConfigIntegration:
                     content,
                     flags=re.MULTILINE | re.DOTALL,
                 )
-            with open(module_path, "w", encoding="utf-8") as f:
+            with open(module_path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(content)
             return True
         except Exception as e:

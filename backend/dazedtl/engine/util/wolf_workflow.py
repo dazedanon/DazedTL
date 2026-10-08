@@ -496,7 +496,7 @@ class WolfWorkflowCore:
             "entries": manifest_entries,
         }
         (work_dir / MANIFEST_NAME).write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n"
         )
         snapshot_entries = new_entries if supplement_maps else manifest_entries
         self._snapshot_originals(snapshot_entries, Path(data_dir), log)

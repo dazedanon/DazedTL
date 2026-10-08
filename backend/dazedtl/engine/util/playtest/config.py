@@ -56,4 +56,4 @@ def save_config(cfg: dict, env_path: Path | None = None) -> None:
             text = text.rstrip("\n") + f"\n{key}={quoted}\n"
     if not path.exists():
         path.touch()
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")

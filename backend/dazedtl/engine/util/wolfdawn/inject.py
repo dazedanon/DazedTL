@@ -128,7 +128,7 @@ def repair_inject_json(src: Path) -> tuple[Path, bool]:
     if repairs:
         src.write_text(
             json.dumps(data, ensure_ascii=False, indent=4) + "\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
     safe_code_drift = (
         (
@@ -200,7 +200,7 @@ def rebase_json_sources(edited_path: Path, pristine_path: Path) -> tuple[int, st
     if changed:
         edited_path.write_text(
             json.dumps(edited, ensure_ascii=False, indent=4) + "\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
     return changed, None
 

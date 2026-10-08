@@ -88,7 +88,7 @@ def write_sidecar(project_path: str | Path, sidecar_path: str | Path, log_fn=Non
         }
         sidecar.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
+            encoding="utf-8", newline="\n",
         )
         return True
     except (OSError, ValueError, TypeError):

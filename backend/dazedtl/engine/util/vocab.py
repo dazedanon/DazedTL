@@ -73,7 +73,7 @@ def write_batch_glossary_freeze(text: str) -> Path:
         BATCH_GLOSSARY_FREEZE_FILE.suffix
         + f".{os.getpid()}.{threading.get_ident()}.tmp"
     )
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     os.replace(tmp, BATCH_GLOSSARY_FREEZE_FILE)
     return BATCH_GLOSSARY_FREEZE_FILE
 
@@ -174,7 +174,7 @@ def write_game_vocab(game_text: str, game_root=None) -> None:
         base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
     )
     combined = game_text + "\n\n" + BASE_SEPARATOR + base_text
-    _path(game_root).write_text(combined, encoding="utf-8")
+    _path(game_root).write_text(combined, encoding="utf-8", newline="\n")
 
 
 def _norm(s: str) -> str:
@@ -331,7 +331,7 @@ def update_vocab_section(
         tmp_path = glossary_path.with_suffix(
             glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
         )
-        tmp_path.write_text(combined, encoding="utf-8")
+        tmp_path.write_text(combined, encoding="utf-8", newline="\n")
         os.replace(tmp_path, glossary_path)
 
 
@@ -412,5 +412,5 @@ def remove_vocab_section(category: str, *, game_root=None) -> None:
         tmp_path = glossary_path.with_suffix(
             glossary_path.suffix + f".{os.getpid()}.{threading.get_ident()}.tmp"
         )
-        tmp_path.write_text(combined, encoding="utf-8")
+        tmp_path.write_text(combined, encoding="utf-8", newline="\n")
         os.replace(tmp_path, glossary_path)

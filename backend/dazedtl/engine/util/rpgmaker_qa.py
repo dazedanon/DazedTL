@@ -307,7 +307,7 @@ def _atomic_write_json(path: Path, value: Any) -> None:
 def _atomic_write_text(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(value.rstrip() + "\n", encoding="utf-8")
+    temporary.write_text(value.rstrip() + "\n", encoding="utf-8", newline="\n")
     temporary.replace(path)
 
 

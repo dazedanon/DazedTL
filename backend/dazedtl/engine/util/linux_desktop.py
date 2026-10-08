@@ -58,7 +58,7 @@ def ensure_linux_desktop_entry() -> None:
         if desktop_path.is_file() and desktop_path.read_text(encoding="utf-8") == content:
             return
         desktop_path.parent.mkdir(parents=True, exist_ok=True)
-        desktop_path.write_text(content, encoding="utf-8")
+        desktop_path.write_text(content, encoding="utf-8", newline="\n")
         desktop_path.chmod(0o755)
     except OSError as exc:
         print(f"Warning: could not install Linux desktop entry ({exc})")

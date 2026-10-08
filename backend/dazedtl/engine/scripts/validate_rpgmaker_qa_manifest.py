@@ -44,7 +44,7 @@ def main() -> int:
         destination = args.report.expanduser().resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(destination.name + ".tmp")
-        temporary.write_text(rendered, encoding="utf-8")
+        temporary.write_text(rendered, encoding="utf-8", newline="\n")
         temporary.replace(destination)
     print(rendered, end="")
     return 0 if report["valid"] else 1
