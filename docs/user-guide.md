@@ -294,9 +294,23 @@ Results missing from a finished or expired provider record stay blocked for insp
 Downloaded responses stay available locally after the provider's retention expires.
 **Technical** shows collected OpenRouter charges separately from any separately billed BYOK inference estimate.
 
+## Updates
+
+DazedTL checks its download sites for a new release once a day and downloads it in the background.
+**Settings > Updates** shows the installed version and where updating stands, and Settings gets a dot when an update is ready.
+**Restart to update** saves your work, closes DazedTL and reopens it on the new version; an update also installs the next time DazedTL starts.
+It waits while a translation run is in progress.
+Projects, settings, credentials and runs are kept, and every file of an update is checked against the release's signature before anything changes.
+If an update cannot be installed, DazedTL puts the earlier files back, starts the version you had and says why under Updates.
+
+**Go back to** restores the version before the last update when DazedTL restarts, and **Keep** cancels that.
+Automatic checks then skip the version you went back from until a newer one is released; **Check for updates** installs it again.
+The **Beta** channel also offers test releases before they reach everyone.
+A copy cloned with Git is updated through Git instead.
+
 ## Diagnostics
 
-**Copy diagnostics** in the sidebar copies the app versions, checkout revision and recent unexpected failures, even when the backend cannot start.
+**Copy diagnostics** in the sidebar copies the app versions, the release or checkout revision, whether its files were changed, and recent unexpected failures, even when the backend cannot start.
 Errors the app explains on screen are not recorded, so include that message when reporting one.
 Diagnostic logs live in the profile's `diagnostics/` folder; the desktop and backend logs are each capped at three 64 KiB files.
 They exclude credentials, request bodies, game text and raw error output.

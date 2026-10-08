@@ -624,12 +624,17 @@ pre {
   flex: 1;
   min-width: 0;
 }
-.unsaved-dot {
+.unsaved-dot,
+.update-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--color-warning);
   flex-shrink: 0;
+}
+/* An update is ready to install, or installing one failed. */
+.update-dot {
+  background: var(--color-accent);
 }
 @media (max-width: 1050px) {
   :is(.settings-page, dialog) .field-row {

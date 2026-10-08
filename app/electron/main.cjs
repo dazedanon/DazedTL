@@ -14,6 +14,7 @@ const { Backend } = require("./backend.cjs");
 const { Diagnostics } = require("./diagnostics.cjs");
 const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
+const { Updates } = require("./updates.cjs");
 
 app.setName("DazedTL");
 if (process.platform === "win32") app.setAppUserModelId("dev.dazedtl.app");
@@ -38,6 +39,12 @@ const backupFolders = new Set();
 let window,
   backend,
   diagnostics,
+  updates,
+  running = false,
+  // "Restart to update" closes through the usual save handshake; the close
+  // token it started marks the close that relaunches.
+  restartPending = false,
+  restartFor = 0,
   closing = false,
   quit = false,
   currentSource = "",
@@ -55,10 +62,18 @@ function trusted(event) {
 async function finishClose() {
   if (quit) return;
   quit = true;
+  const restart = restartFor !== 0 && restartFor === closeToken;
   closeToken = 0;
   clearTimeout(closeTimer);
   if (window && !window.isDestroyed()) window.hide();
   if (backend) await backend.close();
+  if (restart)
+    try {
+      updates.relaunch();
+    } catch (error) {
+      // The launcher still applies the update on the next start.
+      diagnostics?.failure("desktop.error", error, { operation: "native" });
+    }
   app.exit(0);
 }
 async function closeProblem(message, token) {
@@ -206,6 +221,8 @@ app
       if (closing) return;
       closing = true;
       const token = (closeToken = ++closeSerial);
+      restartFor = restartPending ? token : 0;
+      restartPending = false;
       if (recovery.failed()) {
         void closeProblem(
           "The interface cannot save changes right now. Keep it open to recover, or discard unsaved changes and close.",
@@ -290,6 +307,8 @@ app
             ? result?.application?.project
             : result?.project;
         if (selected?.source) currentSource = selected.source;
+        if (method === "workspace_snapshot")
+          running = !!result?.application?.running;
         if (method === "guided_export" || method === "guided_output_folder")
           outputs.add(result.path);
         if (method === "workspace_snapshot") {
@@ -344,6 +363,45 @@ app
             : { code: "internal", message: "The operation could not finish." },
         };
       }
+    });
+
+    updates = new Updates(root, app.getPath("userData"), (state) => {
+      if (window && !window.isDestroyed())
+        window.webContents.send("dazedtl:update-state", state);
+    });
+    void updates.start();
+    ipcMain.handle("dazedtl:updates", (event) => {
+      trusted(event);
+      return updates.state;
+    });
+    ipcMain.handle("dazedtl:update-check", (event) => {
+      trusted(event);
+      return updates.check(true);
+    });
+    ipcMain.handle("dazedtl:update-channel", (event, channel) => {
+      trusted(event);
+      return updates.channel(channel);
+    });
+    ipcMain.handle("dazedtl:update-revert", (event) => {
+      trusted(event);
+      return updates.revert();
+    });
+    ipcMain.handle("dazedtl:update-keep", (event) => {
+      trusted(event);
+      return updates.keep();
+    });
+    ipcMain.handle("dazedtl:update-restart", (event) => {
+      trusted(event);
+      if (!updates.state.staged && !updates.state.revert)
+        throw new Error("No update is ready to install.");
+      if (running)
+        throw new Error(
+          "Finish the current run first; updating restarts DazedTL.",
+        );
+      if (closing || quit)
+        throw new Error("Wait for the close request to finish.");
+      restartPending = true;
+      window.close();
     });
 
     ipcMain.handle("dazedtl:choose-folder", async (event) => {

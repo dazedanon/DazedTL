@@ -54,6 +54,19 @@ contextBridge.exposeInMainWorld("dazedtl", {
       ipcRenderer.removeListener("dazedtl:close-cancelled", cancelListener);
     };
   },
+  updates: {
+    state: () => invoke("dazedtl:updates"),
+    check: () => invoke("dazedtl:update-check"),
+    channel: (channel) => invoke("dazedtl:update-channel", channel),
+    revert: () => invoke("dazedtl:update-revert"),
+    keep: () => invoke("dazedtl:update-keep"),
+    restart: () => invoke("dazedtl:update-restart"),
+    onState: (handler) => {
+      const listener = (_event, state) => handler(state);
+      ipcRenderer.on("dazedtl:update-state", listener);
+      return () => ipcRenderer.removeListener("dazedtl:update-state", listener);
+    },
+  },
   onStopped: (handler) => {
     const listener = (_event, message) => handler(message);
     ipcRenderer.on("dazedtl:stopped", listener);

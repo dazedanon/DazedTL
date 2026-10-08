@@ -1,4 +1,5 @@
 const { execFile } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const { SourceMap } = require("node:module");
 const path = require("node:path");
@@ -73,8 +74,37 @@ function safeRecord(record) {
   return safe;
 }
 
+/** A downloaded install names its signed release and whether files differ. */
+async function release(root) {
+  try {
+    const manifest = JSON.parse(
+      await fs.promises.readFile(
+        path.join(root, "release/manifest.json"),
+        "utf8",
+      ),
+    );
+    let modified = false;
+    for (const [name, hash] of Object.entries(manifest.files)) {
+      const data = await fs.promises
+        .readFile(path.join(root, name))
+        .catch(() => null);
+      if (
+        !data ||
+        crypto.createHash("sha256").update(data).digest("hex") !== hash
+      ) {
+        modified = true;
+        break;
+      }
+    }
+    return { revision: `release ${manifest.version}`, modified };
+  } catch {
+    return { revision: "unknown" };
+  }
+}
+
 /** Code locations are only meaningful against the checkout's exact revision. */
 function revision(root) {
+  if (!fs.existsSync(path.join(root, ".git"))) return release(root);
   return new Promise((resolve) =>
     execFile(
       "git",

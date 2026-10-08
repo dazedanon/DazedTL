@@ -20,6 +20,35 @@ type Envelope =
       ok: false;
       error: { code: ErrorCode; message: string; details?: unknown };
     };
+/** What the update controller in the main process reports. */
+export type UpdateState = {
+  /** A Git checkout updates through Git, never through the app. */
+  git: boolean;
+  version: string;
+  channel: "stable" | "beta";
+  status: "idle" | "checking" | "downloading" | "ready" | "error";
+  /** Download progress in percent, or -1 while the size is unknown. */
+  progress: number;
+  /** The newest release newer than this install, if a check found one. */
+  latest: string;
+  /** A downloaded release the next start installs. */
+  staged: string;
+  /** "Go back" was requested; the next start restores `previous`. */
+  revert: boolean;
+  /** The version before the last update, which "Go back" restores. */
+  previous: string;
+  /** A version the user went back from; automatic checks leave it alone. */
+  skipped: string;
+  checkedAt: string;
+  error: string;
+  /** How the last install at startup went, reported once. */
+  outcome: {
+    ok: boolean;
+    version: string;
+    from: string;
+    message: string;
+  } | null;
+};
 declare global {
   interface Window {
     dazedtl: {
@@ -40,6 +69,15 @@ declare global {
       ): Promise<void>;
       onClose(handler: () => Promise<void>, cancelled: () => void): () => void;
       onStopped(handler: (message: string) => void): () => void;
+      updates: {
+        state(): Promise<UpdateState>;
+        check(): Promise<UpdateState>;
+        channel(channel: UpdateState["channel"]): Promise<UpdateState>;
+        revert(): Promise<UpdateState>;
+        keep(): Promise<UpdateState>;
+        restart(): Promise<void>;
+        onState(handler: (state: UpdateState) => void): () => void;
+      };
     };
   }
 }

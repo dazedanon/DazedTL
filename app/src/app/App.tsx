@@ -31,6 +31,7 @@ import { Button } from "../ui/Button";
 import { Message } from "../ui/Feedback";
 import { DiagnosticsAction } from "./DiagnosticsAction";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { updateAttention, useUpdates } from "./updates";
 
 const workspaces: readonly Screen[] = ["guided", "manual", "translation"];
 
@@ -174,6 +175,7 @@ export default function App() {
       ? "App ready"
       : "Starting…";
   const workspace = !!state && workspaces.includes(state.screen);
+  const updates = useUpdates();
   return (
     <div className="app">
       <header className="topbar">
@@ -284,12 +286,25 @@ export default function App() {
             >
               <Settings2 size={18} />
               Settings
-              {settingsDirty && state?.screen !== "settings" && (
+              {settingsDirty && state?.screen !== "settings" ? (
                 <span
                   className="unsaved-dot"
                   role="img"
                   aria-label="Unsaved changes"
                 />
+              ) : (
+                updateAttention(updates) &&
+                state?.screen !== "settings" && (
+                  <span
+                    className="update-dot"
+                    role="img"
+                    aria-label={
+                      updates?.status === "ready"
+                        ? "Update ready"
+                        : "Update failed"
+                    }
+                  />
+                )
               )}
             </Button>
           </div>

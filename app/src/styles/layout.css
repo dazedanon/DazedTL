@@ -208,7 +208,7 @@ main > p {
   .sidebar button {
     position: relative;
   }
-  .sidebar button > .unsaved-dot {
+  .sidebar button > :is(.unsaved-dot, .update-dot) {
     position: absolute;
     top: var(--space-2);
     right: calc(50% - var(--space-4));

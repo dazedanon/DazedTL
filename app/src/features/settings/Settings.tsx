@@ -8,6 +8,8 @@ import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
 import { ModelMenu } from "./ModelMenu";
 import TranslationDefaults from "./TranslationDefaults";
+import Updates from "./Updates";
+import { updateAttention, useUpdates } from "../../app/updates";
 import { RemoveConnection } from "./RemoveConnection";
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
 import { StatusIcon } from "../../ui/StatusIcon";
@@ -21,6 +23,7 @@ import { Message } from "../../ui/Feedback";
 const sections = [
   { id: "api", label: "API connections" },
   { id: "preferences", label: "Translation defaults" },
+  { id: "updates", label: "Updates" },
 ] as const;
 type SectionId = (typeof sections)[number]["id"];
 
@@ -36,6 +39,7 @@ export default function Settings({
   useEffect(() => onDirty?.(draft.dirty), [onDirty, draft.dirty]);
   const { config } = draft;
   const [section, setSection] = useState<SectionId>("api");
+  const attention = updateAttention(useUpdates());
   const busy = action.busy || draft.committing;
   const running = !!application.snapshot?.application.running;
   const current = config?.connections.find(
@@ -75,7 +79,20 @@ export default function Settings({
         <Tabs
           id="settings"
           label="Settings sections"
-          items={sections}
+          items={sections.map((item) =>
+            item.id === "updates" && attention
+              ? {
+                  ...item,
+                  status: (
+                    <span
+                      className="update-dot"
+                      role="img"
+                      aria-label="Needs attention"
+                    />
+                  ),
+                }
+              : item,
+          )}
           value={section}
           disabled={busy}
           onChange={move}
@@ -84,7 +101,11 @@ export default function Settings({
       {action.error && action.key !== "check" && section === "api" && (
         <Message message={action.error} onDismiss={action.clear} />
       )}
-      {!config ? (
+      {section === "updates" ? (
+        <TabPanel id="settings" value={section}>
+          <Updates running={running} />
+        </TabPanel>
+      ) : !config ? (
         <PageBody>
           <p className="muted" role="status">
             Loading settings…

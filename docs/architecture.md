@@ -9,7 +9,7 @@
 | [app/src/ui](../app/src/ui), [styles](../app/src/styles) | Shared presentation, design tokens, and layout |
 | [app/src/state](../app/src/state) | Action feedback, serialized drafts, and leave guards |
 | [app/src/api](../app/src/api) | Typed contracts, transport, and named application operations |
-| [app/electron](../app/electron) | Native dialogs, approved folder opening, close handshake, and Python process |
+| [app/electron](../app/electron) | Native dialogs, approved folder opening, close handshake, Python process and update controller |
 | [backend/dazedtl](../backend/dazedtl) | Project identity, settings, workflow actions, and run ownership |
 | [compatibility](../backend/dazedtl/compatibility) | The only boundary allowed to import the bundled engine |
 | [engine](../backend/dazedtl/engine) | Preserved parsers, worker implementation, native tools and translation toolkit |
@@ -961,6 +961,18 @@ The launcher puts its Node first on the app's `PATH`, since the backend validate
 Detached launches log Electron's output to a temporary file and wait for its "shown" line, so the console stays open with the error when the app fails to start.
 Shortcuts are written once per folder location, and a deleted desktop shortcut stays deleted.
 Ubuntu's AppArmor rules block the Chromium sandbox of unregistered binaries, so the launcher stops with a one-time profile command instead of letting Electron exit silently.
+
+A release is a `v` tag on every mirror in [mirrors.json](../release/mirrors.json), whose commit carries `release/manifest.json`, the SHA-256 of every tracked file, signed with Ed25519 in `release/manifest.sig`.
+[update.mjs](../scripts/update.mjs) lists tags through each mirror's Git smart HTTP ref advertisement, which every forge serves the same way and without API rate limits, and takes the newest version any reachable mirror has.
+An archive is accepted only when the signature verifies with a key from the installed `release/keys` and its files match the manifest exactly, so a compromised or stale mirror can withhold releases but never alter one.
+The manifest hashes committed blobs, which is what forges archive; [release.mjs](../scripts/release.mjs) proves each tag against its own `git archive` before pushing.
+The [update controller](../app/electron/updates.cjs) runs the updater in Electron's Node as a child process, so verifying an archive never blocks the window, and stages the files in `.runtime/update/next`.
+The launcher applies a staged update before setup and before anything loads the files it replaces.
+It backs up every file the swap touches to `.runtime/update/previous`, journals the swap, replaces changed files by atomic rename and removes files the release dropped, writing the manifest last.
+A swap stopped by a crash finishes on the next start; a failed one restores the backup; Settings reports the outcome once.
+Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
+"Restart to update" closes through the usual save handshake, refuses while a run is active, and relaunches through START with the app's switches, which waits for the old process to exit.
+The backup also serves "Go back"; automatic checks skip the version the user went back from.
 
 Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
 Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.
