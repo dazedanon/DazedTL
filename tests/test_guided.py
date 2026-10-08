@@ -2852,6 +2852,8 @@ class GuidedTests(unittest.TestCase):
         _, report = self.event_report()
         for mutate, status in (
             (lambda r: r.update(project_id="foreign"), "stale"),
+            # Findings for an earlier request wait for the refreshed task's.
+            (lambda r: r.update(request_id="earlier"), "waiting"),
             (lambda r: r["sources"].pop("CODE356"), "invalid"),
             (
                 lambda r: r["sources"]["CODE357"].update(targets=["mock-placeholder"]),

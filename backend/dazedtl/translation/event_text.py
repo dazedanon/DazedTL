@@ -304,10 +304,21 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
                 report[key] != value or type(report[key]) is not type(value)
                 for key, value in identity.items()
             ):
+                # Findings for this project's earlier request wait for the
+                # current one's, as after copying a refreshed task.
+                if report["request_id"] != request["request_id"] and all(
+                    report[key] == identity[key]
+                    for key in ("version", "project_id", "engine")
+                ):
+                    return {
+                        **result,
+                        "status": "waiting",
+                        "message": "Waiting for this investigation's saved findings.",
+                    }
                 return {
                     **result,
                     "status": "stale",
-                    "message": "Findings belong to another project, event scope or investigation request.",
+                    "message": "Findings belong to another project or investigation request.",
                 }
             if not isinstance(report["sources"], dict) or set(report["sources"]) != set(
                 CODES
