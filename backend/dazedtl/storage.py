@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from copy import deepcopy
 from pathlib import Path
 
@@ -29,9 +30,21 @@ def write_bytes(path, content):
             stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        _replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def _replace(temporary, path):
+    """Replace atomically; on Windows a reader briefly blocks the replacement."""
+    for attempt in range(40):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if os.name != "nt" or attempt == 39:
+                raise
+            time.sleep(0.025)
 
 
 def read_versioned_json(path, default, upgrades, validate):
