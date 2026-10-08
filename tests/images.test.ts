@@ -5,6 +5,8 @@ import {
   idsBetween,
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
+import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
+import type { ImageAsset, ImagePixels } from "../app/src/api/contracts.ts";
 
 test("image Shift ranges read past the loaded pages within the list's read limit", async () => {
   // Protect against a range stopping at the mounted tiles or asking the
@@ -53,4 +55,45 @@ test("large image grids keep a bounded visible range and recover stale scroll po
   assert.equal(gridStep("ArrowDown", 25, 12, 30), 25);
   assert.equal(gridStep("ArrowUp", 5, 12, 30), 5);
   assert.equal(gridStep("End", 5, 12, 30), 29);
+});
+
+test("thumbnails on screen load ahead of the view's planned ones, one read each", async () => {
+  // Protect against loading the whole view ahead making the tiles on screen
+  // wait, the viewer and a tile reading one image twice, and an image planned
+  // ahead being dropped when its tile scrolls away before it loads.
+  const reads: string[] = [];
+  const replies = new Map<string, () => void>();
+  const pixels = { url: "data:image/webp;base64," } as ImagePixels;
+  const queue = new ThumbnailQueue(
+    (asset) =>
+      new Promise((resolve) => {
+        reads.push(asset.id);
+        replies.set(asset.id, () => resolve(pixels));
+      }),
+  );
+  const image = (index: number) =>
+    ({ id: `img/${index}.png`, sourceHash: String(index) }) as ImageAsset;
+  const settle = async (index: number) => {
+    replies.get(`img/${index}.png`)!();
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  queue.prefetch(
+    Array.from({ length: 8 }, (_, index) => image(index)),
+    64,
+  );
+  assert.deepEqual(reads, ["img/0.png", "img/1.png", "img/2.png", "img/3.png"]);
+  const shown: unknown[] = [];
+  queue.get(image(7), 64, (value) => shown.push(value));
+  queue.get(image(7), 64, (value) => shown.push(value));
+  queue.get(image(5), 64, () => assert.fail("The tile left."))();
+  await settle(0);
+  await settle(1);
+  assert.deepEqual(reads.slice(4), ["img/7.png", "img/5.png"]);
+  await settle(7);
+  assert.deepEqual(shown, [pixels, pixels]);
+  // Loaded images show at once, without another read.
+  assert.equal(queue.peek(image(0), 64), pixels);
+  queue.get(image(0), 64, (value) => shown.push(value));
+  assert.equal(shown.length, 3);
+  assert.equal(reads.filter((id) => id === "img/0.png").length, 1);
 });

@@ -2,15 +2,11 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { idsBetween } from "./imageSelection";
-import type {
-  ImageAsset,
-  ImageList,
-  ImagePixels,
-  ImageView,
-} from "../../api/contracts";
+import type { ImageAsset, ImageList, ImageView } from "../../api/contracts";
 
 const PAGE_SIZE = 100;
-const MAX_PAGES = 8;
+/** Pages kept per view; a view up to this many pages lists all of its images. */
+const MAX_PAGES = 50;
 type Pages = Map<number, ImageAsset[]>;
 type Filters = {
   projectId: string;
@@ -49,8 +45,19 @@ const begin = (previous: Loaded, scope: Scope): Loaded => ({
   error: "",
 });
 
+/** The view's pages, nearest to `from` first, as many as are kept. */
+const nearestPages = (from: number, total: number) =>
+  Array.from({ length: Math.ceil(total / PAGE_SIZE) }, (_, page) => ({
+    offset: page * PAGE_SIZE,
+    distance: Math.abs(page * PAGE_SIZE - from),
+  }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, MAX_PAGES)
+    .map(({ offset }) => offset);
+
 /**
- * The page of images `start` to `end` of the view's matches. `revision`
+ * The page of images `start` to `end` of the view's matches, with the rest of
+ * the view read after it so scrolling finds its images listed. `revision`
  * reloads them, while saving a different `selection` only recounts the
  * selected matches, so choosing images never reloads the grid and the
  * Selected only view keeps a tile its user just deselected.
@@ -94,16 +101,23 @@ export function useImageGrid(
   const cache = useRef(new Map<number, ImageAsset[]>());
   const pending = useRef(new Set<number>());
   const demand = useRef<number[]>([]);
+  const ahead = useRef<number[]>([]);
   const active = useRef(0);
   const pump = useRef<() => void>(() => {});
+  const shownFrom = useEffectEvent(() => start);
   useEffect(() => {
     let current = true;
+    let planned = false;
     cache.current = new Map();
     pending.current = new Set();
     demand.current = [0];
+    ahead.current = [];
     pump.current = () => {
-      while (active.current < 2 && demand.current.length) {
-        const offset = demand.current.shift()!;
+      while (active.current < 2) {
+        // Pages on screen come first; the rest of the view follows,
+        // nearest first, once the first reply gives its size.
+        const offset = demand.current.shift() ?? ahead.current.shift();
+        if (offset === undefined) break;
         if (pending.current.has(offset) || cache.current.has(offset)) continue;
         pending.current.add(offset);
         active.current++;
@@ -116,6 +130,10 @@ export function useImageGrid(
           )
           .then((reply: ImageList) => {
             if (!current) return;
+            if (!planned) {
+              planned = true;
+              ahead.current = nearestPages(shownFrom(), reply.total);
+            }
             cache.current.delete(offset);
             cache.current.set(offset, reply.items);
             bounded(cache.current);
@@ -146,6 +164,7 @@ export function useImageGrid(
     return () => {
       current = false;
       demand.current = [];
+      ahead.current = [];
     };
   }, [scope]);
   const needed: number[] = [];
@@ -178,6 +197,13 @@ export function useImageGrid(
     const asset = shown(index);
     if (asset) items.push({ index, asset });
   }
+  const listed = useMemo(
+    () =>
+      [...grid.pages].flatMap(([offset, assets]) =>
+        assets.map((asset, at) => ({ index: offset + at, asset })),
+      ),
+    [grid.pages],
+  );
   // Selected images the filters hide are counted apart from the pages, for
   // the saved selection. Choosing a shown image leaves that number as it was,
   // so it stays until the next count arrives; a reload or other filters wait
@@ -210,6 +236,8 @@ export function useImageGrid(
         ? Math.max(0, Math.min(counted.hidden, chosen))
         : null,
     items,
+    /** Every image of the view read so far, on screen or not. */
+    listed,
     // Stale pages stand in while a refresh reloads them.
     loading: !grid.error && missing.some((offset) => !grid.stale.has(offset)),
     error: grid.error,
@@ -230,109 +258,4 @@ export function useImageGrid(
         },
       ),
   };
-}
-
-/** A project-local queue with bounded outstanding reads and decoded image cache. */
-export class ThumbnailQueue {
-  private cache = new Map<string, ImagePixels>();
-  private queue: {
-    key: string;
-    load: () => Promise<ImagePixels>;
-    done: (value: ImagePixels | null) => void;
-  }[] = [];
-  private active = 0;
-  private closed = false;
-  private generation = 0;
-  constructor(private projectId: string) {}
-  get(
-    asset: ImageAsset,
-    size: number,
-    done: (value: ImagePixels | null) => void,
-  ) {
-    const variant = asset.candidateHash ? "candidate" : "source";
-    const key =
-      asset.id + ":" + (asset.candidateHash || asset.sourceHash) + ":" + size;
-    const existing = this.cache.get(key);
-    if (existing) {
-      this.cache.delete(key);
-      this.cache.set(key, existing);
-      done(existing);
-      return () => {};
-    }
-    let cancelled = false;
-    const entry = {
-      key,
-      load: () =>
-        imagesApi.pixels(
-          this.projectId,
-          asset.id,
-          variant,
-          size,
-          () => !this.closed && !cancelled,
-        ),
-      done,
-    };
-    this.queue.push(entry);
-    this.pump();
-    return () => {
-      cancelled = true;
-      this.queue = this.queue.filter((value) => value !== entry);
-      entry.done = () => {};
-    };
-  }
-  cancelQueued() {
-    this.queue = [];
-    this.generation++;
-  }
-  dispose() {
-    this.closed = true;
-    this.queue = [];
-    this.cache.clear();
-    this.generation++;
-  }
-  private pump() {
-    while (!this.closed && this.active < 4 && this.queue.length) {
-      const entry = this.queue.shift()!;
-      const generation = this.generation;
-      this.active++;
-      void entry
-        .load()
-        .then((value) => {
-          if (this.closed || generation !== this.generation) return;
-          this.cache.delete(entry.key);
-          this.cache.set(entry.key, value);
-          while (this.cache.size > 160)
-            this.cache.delete(this.cache.keys().next().value!);
-          entry.done(value);
-        })
-        .catch(() => {
-          if (!this.closed && generation === this.generation) entry.done(null);
-        })
-        .finally(() => {
-          this.active--;
-          this.pump();
-        });
-    }
-  }
-}
-
-export function useThumbnail(
-  queue: ThumbnailQueue,
-  asset: ImageAsset,
-  size: number,
-) {
-  const key = [asset.id, asset.sourceHash, asset.candidateHash, size].join(":");
-  const [loaded, setLoaded] = useState<{
-    key: string;
-    pixels: ImagePixels | null;
-  } | null>(null);
-  // Asset objects are recreated by list reads; the key names the image itself.
-  const subscribe = useEffectEvent(
-    (done: (value: ImagePixels | null) => void) => queue.get(asset, size, done),
-  );
-  useEffect(
-    () => subscribe((pixels) => setLoaded({ key, pixels })),
-    [queue, key],
-  );
-  return loaded?.key === key ? loaded.pixels : null;
 }

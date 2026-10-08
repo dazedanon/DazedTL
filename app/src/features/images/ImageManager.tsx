@@ -54,7 +54,8 @@ import {
   selectionGesture,
   type Modifiers,
 } from "../../ui/selection";
-import { ThumbnailQueue, useImageGrid, useThumbnail } from "./useImageGrid";
+import { useImageGrid } from "./useImageGrid";
+import { ThumbnailQueue, useThumbnail } from "./thumbnails";
 import { ImageCompare } from "./ImageCompare";
 import { ImageViewer } from "./ImageViewer";
 import { ImageApply } from "./ImageApply";
@@ -415,7 +416,19 @@ function Manager({
     };
   }, [projectId, value.view.currentImage, listRevision]);
   const selection = useMemo(() => new Set(value.selection), [value.selection]);
-  const queue = useMemo(() => new ThumbnailQueue(projectId), [projectId]);
+  const queue = useMemo(
+    () =>
+      new ThumbnailQueue((asset, size, current) =>
+        imagesApi.pixels(
+          projectId,
+          asset.id,
+          asset.candidateHash ? "candidate" : "source",
+          size,
+          current,
+        ),
+      ),
+    [projectId],
+  );
   useEffect(() => () => queue.dispose(), [queue]);
   const viewport = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 1000, height: 600 });
@@ -461,6 +474,18 @@ function Manager({
     range.end,
   );
   useOnChange(grid.total, setTotal);
+  // The view's other thumbnails load while nothing on screen waits, nearest
+  // first, so scrolling and the viewer find them ready.
+  const middle = useEffectEvent(() => (range.start + range.end) / 2);
+  useEffect(() => {
+    const from = middle();
+    queue.prefetch(
+      [...grid.listed]
+        .sort((a, b) => Math.abs(a.index - from) - Math.abs(b.index - from))
+        .map(({ asset }) => asset),
+      thumbnailSize,
+    );
+  }, [queue, grid.listed, thumbnailSize]);
   const change = (patch: Partial<ImageDraft>) =>
     draft.session.edit((current) => ({ ...current, ...patch }));
   // Shift ranges start from the last image chosen without Shift in this view.

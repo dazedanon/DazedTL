@@ -9,7 +9,7 @@ import { FileName } from "../../ui/FileName";
 import { StatusMark } from "../../ui/StatusMark";
 import { imageDisplay } from "../../ui/displayStatus";
 import { imageStatus } from "./imageSelection";
-import { type ThumbnailQueue, useThumbnail } from "./useImageGrid";
+import { type ThumbnailQueue, useThumbnail } from "./thumbnails";
 
 /** The largest size the backend scales to; larger images are read at it. */
 const LARGEST_SCALED = 2048;

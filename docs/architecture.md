@@ -410,7 +410,8 @@ Once nothing is left, a copy asks the assistant to recheck every decision with i
 Apply and restore reviews omit hashes, working-copy and backup paths; execution rechecks the exact reviewed files.
 
 The [image service](../backend/dazedtl/images/service.py) owns a project-scoped SQLite inventory, retained selection, discovery and editing contracts, saved reports, and runtime application receipts shared by Guided and Image Manager.
-Indexing runs incrementally with cancellation; the renderer requests bounded metadata windows and uses a bounded thumbnail queue and cache.
+Indexing runs incrementally with cancellation; the renderer reads metadata in bounded windows and thumbnails through a [queue](../app/src/features/images/thumbnails.ts) with a cache bounded by size.
+Windows and thumbnails on screen load first, and the rest of the view follows, nearest first, so scrolling finds its images ready.
 Thumbnails are WebP at the screen's pixel density.
 Previews decode each image once and hold the service lock only for the inventory lookup; the [server](../backend/dazedtl/api/server.py) answers them on a few workers outside the engine context, which redirects stdout process-wide, while every other request still runs in turn.
 The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
