@@ -19,6 +19,8 @@ const result = spawnSync(
   python,
   [
     "-I",
+    "-X",
+    "utf8",
     "-B",
     "-c",
     "import sys; sys.path.insert(0, 'backend'); from dazedtl.api.contracts.typescript import main; main()",

@@ -19,6 +19,8 @@ const commands = [
     python,
     [
       "-I",
+      "-X",
+      "utf8",
       "-B",
       "-m",
       "unittest",

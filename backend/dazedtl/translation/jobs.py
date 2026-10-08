@@ -447,6 +447,8 @@ class Jobs:
         arguments = [
             sys.executable,
             "-I",
+            "-X",
+            "utf8",
             "-B",
             str(Path(__file__).with_name("worker.py")),
             "--workspace",

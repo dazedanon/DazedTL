@@ -34,6 +34,8 @@ class Backend {
     delete env.PYTHONHOME;
     const args = [
       "-I",
+      "-X",
+      "utf8",
       "-B",
       "-u",
       path.join(root, "backend/dazedtl/api/server.py"),
