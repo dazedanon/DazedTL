@@ -36,7 +36,7 @@ main > .image-manager {
   height: 100%;
   min-height: 0;
   min-width: 0;
-  container-type: inline-size;
+  container: image-manager / inline-size;
   font-size: var(--font-body);
 }
 .image-manager-loading > p,
@@ -57,11 +57,12 @@ main > .image-manager {
   border-bottom: 1px solid var(--color-warning-border);
   font-size: var(--font-small);
 }
-/* Above the browser, the image viewer spans the assistant task panel and
-   the toolbar beside it; the task takes any extra height. */
+/* Above the browser, the image viewer takes up to half the row and spans
+   the assistant task panel and the toolbar beside it; the task takes any
+   extra height. */
 .image-manager-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--image-viewer-width);
+  grid-template-columns: minmax(var(--image-task-width), 1fr) minmax(0, 1fr);
   grid-template-rows: 1fr auto;
   grid-template-areas:
     "task viewer"
@@ -73,6 +74,7 @@ main > .image-manager {
 }
 .image-manager-top > .image-browser-toolbar {
   grid-area: tools;
+  container: image-tools / inline-size;
   padding: 0;
   border-bottom: 0;
 }
@@ -159,6 +161,7 @@ main > .image-manager {
    below and the viewer matches the task alone. */
 @container (width < 64rem) {
   .image-manager-top {
+    grid-template-columns: minmax(0, 1fr) var(--image-viewer-width);
     grid-template-areas:
       "task viewer"
       "tools tools";
@@ -231,6 +234,13 @@ main > .image-manager {
 .image-search svg {
   flex-shrink: 0;
   color: var(--color-muted);
+}
+/* Too narrow for one line, the search takes the first and the filters and
+   size the second, so no control wraps alone. */
+@container image-tools (width < 48rem) {
+  .image-search {
+    flex-basis: 100%;
+  }
 }
 .image-size-label {
   flex-direction: row;
@@ -677,7 +687,7 @@ main > .image-manager {
     grid-template-columns: 9em minmax(0, 1fr);
   }
 }
-@container (max-width: 650px) {
+@container image-manager (max-width: 650px) {
   .image-browser {
     grid-template-columns: 7.5em minmax(0, 1fr);
   }
