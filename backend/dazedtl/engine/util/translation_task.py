@@ -536,7 +536,9 @@ class TranslationTaskCore:
                     filename_arg,
                     str(estimate_only)
                 ],
-                stdin=subprocess.PIPE if multi_file else None,
+                # A child inheriting the coordinator's command pipe blocks
+                # during startup on Windows.
+                stdin=subprocess.PIPE if multi_file else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

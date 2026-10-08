@@ -24,6 +24,7 @@ from dazedtl.images.native_translation import ImageNativeTranslation
 from dazedtl.plugins import PluginService
 from dazedtl.projects.store import Projects
 from dazedtl.settings.store import Settings
+from dazedtl.stdio import private_stdin
 from dazedtl.storage import WorkspaceLock
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
@@ -819,6 +820,8 @@ def serve(args, diagnostics):
 
 
 def main():
+    # Requests arrive on standard input; children must not inherit that pipe.
+    sys.stdin = private_stdin()
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True, type=Path)
     parser.add_argument("--diagnostics-directory", type=Path)

@@ -6,6 +6,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 if __name__ == "__main__":
+    from dazedtl.stdio import private_stdin
+
+    # Stop and approval commands arrive on standard input while the per-file
+    # workers start; they must not inherit that pipe.
+    sys.stdin = private_stdin()
     from dazedtl.compatibility.runtime import activate
 
     activate()
