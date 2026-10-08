@@ -9,8 +9,9 @@ export default defineConfig({
     sourcemap: "hidden",
     rolldownOptions: {
       // React Server Component directives such as "use client" have no
-      // meaning in this single-page renderer.
-      checks: { moduleLevelDirective: false },
+      // meaning in this single-page renderer. Users build on first start, and
+      // a slow PC would otherwise see a plugin timing report meant for us.
+      checks: { moduleLevelDirective: false, bundlerTimings: false },
     },
   },
 });
