@@ -49,6 +49,7 @@ Image results your assistant saved are imported and checked when you return to t
 **Set up this game** asks for the game version and whether the game already contains translations.
 Its one button backs up the original, prepares the game files (data, `plugins.js` and GameUpdate files) and saves the version, showing each step's progress.
 The saved version sets up Git so later game updates can be compared and merged.
+Changes to the game wait while its folder is on another Git branch or has an unfinished Git operation; every task names the problem until you switch back to the translation branch or finish the operation.
 If a step fails or you stop it, the reason appears beside the button, and **Finish setup** continues from that step.
 Replacing a missing backup still asks for your approval first.
 **Preparation tools** reruns a single preparation step.

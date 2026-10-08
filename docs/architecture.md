@@ -898,6 +898,7 @@ Workers hold per-run locks and stop issuing work after losing their owning proce
 Closing or pausing cannot undo an already submitted provider request.
 
 Git baselines and backup records gate new translation work.
+A checkout off the translation branch, or with an unfinished Git operation or asset sync, refuses every change to the game; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and a translation warning that every Guided task shows.
 Reviewed runtime manifests control patch scope; all .dazedtl work stays outside both branches.
 The MV/MZ writer retains source metadata on ordinary corrections.
 The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
