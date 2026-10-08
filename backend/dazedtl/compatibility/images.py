@@ -291,7 +291,9 @@ class ImageCompatibility:
     def _result(root, result):
         value = asdict(result)
         for key in ("patch_files", "gitignore_files"):
-            value[key] = [str(Path(path).relative_to(root)) for path in value[key]]
+            value[key] = [
+                Path(path).relative_to(root).as_posix() for path in value[key]
+            ]
         return value
 
     def skill(self, root, profile):

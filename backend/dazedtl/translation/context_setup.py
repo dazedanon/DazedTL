@@ -91,7 +91,7 @@ def inspect(
     for name, document in documents.items():
         path = project_path(
             native["source"],
-            str(Path(document["path"]).relative_to(native["source"])),
+            Path(document["path"]).relative_to(native["source"]).as_posix(),
             exists=False,
         )
         # Keep the legacy response fields for older clients without retaining
