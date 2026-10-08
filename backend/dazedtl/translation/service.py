@@ -11,7 +11,7 @@ from dazedtl.storage import write_bytes, write_json
 from . import backups, delivery
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
-from .helper_command import helper_command
+from .helper_command import git_note, helper_command
 from .jobs import Jobs
 from .operations import checkout_issue, lifecycle, require_baseline
 from .project import WORK, ProjectWorkspace, options, scope
@@ -363,7 +363,7 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 {command} state
 {command} --help
 
-The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). A coding assistant's network sandbox can block that connection even while DazedTL is open. If loopback access is restricted, use the assistant's normal permission/escalation flow for this helper before running state (in Codex, sandbox_permissions="require_escalated" when required). Reuse valid permission already granted. A failed sandboxed connection does not mean the app is closed: retry the read-only state command with permitted access before asking the user to reopen DazedTL. If permission is denied or unavailable, report that restriction as the blocker.
+{git_note()}The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). A coding assistant's network sandbox can block that connection even while DazedTL is open. If loopback access is restricted, use the assistant's normal permission/escalation flow for this helper before running state (in Codex, sandbox_permissions="require_escalated" when required). Reuse valid permission already granted. A failed sandboxed connection does not mean the app is closed: retry the read-only state command with permitted access before asking the user to reopen DazedTL. If permission is denied or unavailable, report that restriction as the blocker.
 
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 

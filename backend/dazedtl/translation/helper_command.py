@@ -2,6 +2,7 @@
 
 import os
 import shlex
+import shutil
 import sys
 from pathlib import Path
 
@@ -37,4 +38,21 @@ def helper_command(workspace, project_id, *operation):
             project_id,
             *operation,
         ]
+    )
+
+
+def git_note():
+    """Names DazedTL's bundled Git, which a fresh Windows has on no other PATH.
+
+    The engine's version_update.handoff adds the same note to its prompt.
+    """
+    git = shutil.which("git")
+    if os.name != "nt" or not git:
+        return ""
+    if not any(part.startswith("mingit-") for part in Path(git).parts):
+        return ""
+    path = str(Path(git)).replace("'", "''")
+    return (
+        "Git here is DazedTL's bundled copy and may not be on your PATH;"
+        f" in PowerShell run it as `& '{path}'`.\n"
     )

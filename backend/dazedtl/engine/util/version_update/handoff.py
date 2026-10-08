@@ -1,4 +1,6 @@
 """The game-scoped post-update translation handoff shared by both interfaces."""
+import os
+import shutil
 from pathlib import Path
 from util.skills import load_clipboard_skill
 from .git_workflow import inspect_repository
@@ -41,4 +43,21 @@ def post_update_handoff(selected):
     for token, value in replacements.items():
         prompt = prompt.replace(token, value)
 
-    return {"version": version, "prompt": prompt}
+    return {"version": version, "prompt": prompt + _git_note()}
+
+
+def _git_note() -> str:
+    """Names DazedTL's bundled Git, which a fresh Windows has on no other PATH.
+
+    dazedtl.translation.helper_command.git_note words the same note for the app.
+    """
+    git = shutil.which("git")
+    if os.name != "nt" or not git:
+        return ""
+    if not any(part.startswith("mingit-") for part in Path(git).parts):
+        return ""
+    path = str(Path(git)).replace("'", "''")
+    return (
+        "\nGit here is DazedTL's bundled copy and may not be on your PATH;"
+        f" in PowerShell run it as `& '{path}'`.\n"
+    )

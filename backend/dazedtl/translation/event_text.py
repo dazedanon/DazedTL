@@ -11,6 +11,7 @@ from typing import Any
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
+from .helper_command import git_note
 
 CODES = (
     "CODE122",
@@ -204,7 +205,7 @@ class EventText:
         return f"""Investigate Other event text for this selected game and event scope only.
 Read this request first: `{command}`. It returns the exact event files, dependencies, original-source hashes/blobs, installed parser path, registry identifiers, fixed argument keys, patterns, and built-in coverage.
 Read immutable original game bytes when an original blob is supplied (`git cat-file blob <blob>` in the game folder); ordinary translated runtime files are not untranslated evidence. Compare plugin/script runtime bytes against their runtime_dependencies hashes and original bindings; account for changes in effective logic without editing them.
-Inspect all matching occurrences in selected event files. Read the wider event corpus, Actors/System, enabled plugins and their implementations as dependencies to check internal references. These reads do not expand the files selected for translation.
+{git_note()}Inspect all matching occurrences in selected event files. Read the wider event corpus, Actors/System, enabled plugins and their implementations as dependencies to check internal references. These reads do not expand the files selected for translation.
 For 122, check the entire start/end assignment range, operation and expression, all variable uses, comparisons, internal keys, IDs, filenames, and plugin/script consumers. The parser checks only the starting ID and replaces the expression; keep mixed, unproven or internally used assignments off.
 For 357, report actual installed plugin names, commands and argument keys. Registered selections use fixed keys and substring header matches, plus the built-ins listed in the request. For 355/655, report capture boundaries and multiline behavior, plus every built-in match. Its variable-writing patterns are not protected by 122 IDs.
 For 356, one switch enables every built-in handler; found command names are evidence, not individual configurable filters. Check 657 message values, 108 supported notetags, and 320/324/325 display changes against actual actor context.
