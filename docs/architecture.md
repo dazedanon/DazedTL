@@ -970,6 +970,8 @@ The [update controller](../app/electron/updates.cjs) runs the updater in Electro
 The launcher applies a staged update before setup and before anything loads the files it replaces.
 It backs up every file the swap touches to `.runtime/update/previous`, journals the swap, replaces changed files by atomic rename and removes files the release dropped, writing the manifest last.
 A swap stopped by a crash finishes on the next start; a failed one restores the backup; Settings reports the outcome once.
+After a successful swap the old launcher hands over to the new START launcher, so a release's own setup code and runtime pins apply from its first start.
+Releases still keep `.node-version`, `.python-version` and the other files 2.0.0's launcher reads after its swap, since that launcher continues in place.
 Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
 "Restart to update" closes through the usual save handshake, refuses while a run is active, and relaunches through START with the app's switches, which waits for the old process to exit.
 The backup also serves "Go back"; automatic checks skip the version the user went back from.

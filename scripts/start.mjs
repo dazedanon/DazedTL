@@ -31,22 +31,60 @@ const alive = (pid) => {
   }
 };
 
-/** One launcher works on this folder at a time; a dead holder's lock is stale. */
+/**
+ * One launcher works on this folder at a time; a dead holder's lock is stale.
+ * Returns the function that releases the lock, or null when another holds it.
+ */
 function lock() {
   const file = path.join(runtime, "launcher.lock");
   fs.mkdirSync(runtime, { recursive: true });
+  // Only this launcher's own lock is removed, never the next launcher's.
+  const release = () => {
+    try {
+      if (fs.readFileSync(file, "utf8") === String(process.pid))
+        fs.rmSync(file, { force: true });
+    } catch {
+      // Already released.
+    }
+  };
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       fs.writeFileSync(file, String(process.pid), { flag: "wx" });
-      process.on("exit", () => fs.rmSync(file, { force: true }));
-      return true;
+      process.on("exit", release);
+      return release;
     } catch {
       const holder = Number(fs.readFileSync(file, "utf8")) || 0;
-      if (holder && alive(holder)) return false;
+      if (holder && alive(holder)) return null;
       fs.rmSync(file, { force: true });
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Hands over to the START launcher that an update just installed, so a
+ * release's own setup and runtime pins apply from its first start.
+ */
+function restart() {
+  const result =
+    process.platform === "win32"
+      ? spawnSync(
+          process.env.ComSpec || "cmd.exe",
+          [
+            "/d",
+            "/s",
+            "/c",
+            `""${path.join(root, "START.bat")}" ${forward.join(" ")}"`,
+          ],
+          { cwd: root, stdio: "inherit", windowsVerbatimArguments: true },
+        )
+      : spawnSync("bash", [path.join(root, "START.sh"), ...forward], {
+          cwd: root,
+          stdio: "inherit",
+        });
+  if (result.error) throw result.error;
+  // The new launcher has already shown any failure and waited for the user.
+  return 0;
 }
 
 // Rebuild when renderer inputs changed since the last build, such as after an
@@ -146,15 +184,21 @@ async function launch() {
     for (let tries = 0; tries < 300 && alive(waitFor); tries++)
       await delay(200);
   }
-  if (!lock()) {
+  const release = lock();
+  if (!release) {
     console.log("DazedTL is already starting.");
     return 0;
   }
-  // Updates swap files before setup reads the new lockfiles; the app reports
-  // the outcome.
+  // Updates swap files before anything reads them; the app reports the
+  // outcome. This launcher is the old version's code, so the new one takes
+  // over from here.
   const swap = applyPending();
-  if (swap?.ok) console.log(`DazedTL is now version ${swap.version}.`);
-  else if (swap)
+  if (swap?.ok) {
+    console.log(`DazedTL is now version ${swap.version}.`);
+    release();
+    return restart();
+  }
+  if (swap)
     console.error(
       `The update to ${swap.version} could not be installed: ${swap.message}`,
     );
