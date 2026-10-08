@@ -6,7 +6,12 @@ import {
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
-import type { ImageAsset, ImagePixels } from "../app/src/api/contracts.ts";
+import { imageFlow } from "../app/src/features/images/imageFlow.ts";
+import type {
+  ImageAsset,
+  ImageCounts,
+  ImagePixels,
+} from "../app/src/api/contracts.ts";
 
 test("image Shift ranges read past the loaded pages within the list's read limit", async () => {
   // Protect against a range stopping at the mounted tiles or asking the
@@ -96,4 +101,54 @@ test("thumbnails on screen load ahead of the view's planned ones, one read each"
   queue.get(image(0), 64, (value) => shown.push(value));
   assert.equal(shown.length, 3);
   assert.equal(reads.filter((id) => id === "img/0.png").length, 1);
+});
+
+test("Images leads with the step its saved work reaches", () => {
+  // Protect the one leading button: an answered investigation moves on to
+  // choosing, partial translations still offer Apply, and a list left
+  // untranslated after earlier work goes back to the translation task.
+  const at = (
+    counts: Partial<ImageCounts>,
+    discovery = "idle",
+    editing = "idle",
+  ) =>
+    imageFlow({
+      counts: {
+        examined: 0,
+        applied: 0,
+        selected: 0,
+        ...counts,
+      } as ImageCounts,
+      discovery: { status: discovery },
+      editing: { status: editing },
+    }).step;
+  assert.equal(at({}), "investigate");
+  assert.equal(at({ examined: 1 }, "partial"), "investigate");
+  assert.equal(at({ examined: 2, selected: 1 }, "complete"), "choose");
+  assert.equal(
+    at({ examined: 2, selected: 1 }, "complete", "awaiting_results"),
+    "translate",
+  );
+  assert.equal(
+    at({ examined: 2, selected: 2, selectedReady: 1 }, "complete", "complete"),
+    "apply",
+  );
+  assert.equal(
+    at(
+      { examined: 2, selected: 2, selectedApplied: 1 },
+      "complete",
+      "complete",
+    ),
+    "translate",
+  );
+  assert.equal(
+    at(
+      { examined: 2, applied: 2, selected: 2, selectedApplied: 2 },
+      "complete",
+      "complete",
+    ),
+    "done",
+  );
+  // An investigation that found no image text closes Images.
+  assert.equal(at({ examined: 2 }, "complete"), "done");
 });

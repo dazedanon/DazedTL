@@ -5,7 +5,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from dazedtl.api.contracts.common import ForeignWork
 from dazedtl.api.contracts.runs import Job
 
-type ImageDiscoveryScope = Literal["all", "folders", "selected"]
+type ImageDiscoveryScope = Literal["remaining", "all", "folders", "selected"]
 
 
 type ImageEntryMode = Literal["discovery", "manual", "findings", "review"]
@@ -113,6 +113,8 @@ class ImageCounts(TypedDict):
     selectedBlocked: int
     selectedNotPrepared: int
     selectedApplied: int
+    selectedSkipped: int
+    selectedNeedsReview: int
     selectedEditable: int
     missing: int
 

@@ -36,11 +36,11 @@ import { Button } from "../../ui/Button";
 import { Menu, MenuItem, MenuSeparator } from "../../ui/Menu";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
-import { useOwnedFeedback } from "../../ui/FeedbackOwners";
+import { FeedbackOwners, useOwnedFeedback } from "../../ui/FeedbackOwners";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
-import { Feedback, Message } from "../../ui/Feedback";
+import { Message } from "../../ui/Feedback";
 import { ForeignWork } from "../../ui/ForeignWork";
 import {
   gridStep,
@@ -48,12 +48,7 @@ import {
   imageStatus,
   virtualRows,
 } from "./imageSelection";
-import {
-  focusItem,
-  selectItem,
-  selectionGesture,
-  type Modifiers,
-} from "../../ui/selection";
+import { focusItem, selectItem, type Modifiers } from "../../ui/selection";
 import { useImageGrid } from "./useImageGrid";
 import { ThumbnailQueue, useThumbnail } from "./thumbnails";
 import { ImageCompare } from "./ImageCompare";
@@ -63,7 +58,10 @@ import { ImageFolders } from "./ImageFolders";
 import { useObserved } from "../../state/useObserved";
 import { useOnChange } from "../../state/useOnChange";
 import { useRead } from "../../state/useRead";
-import { AssistantTask } from "../../ui/AssistantTask";
+import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
+import { SegmentedControl } from "../../ui/SegmentedControl";
+import { StepProgress } from "../../ui/StepProgress";
+import { imageFlow, imageSteps } from "./imageFlow";
 import { useHandoff } from "../assistant/useAssistantTasks";
 
 export interface ImageManagerProps {
@@ -73,11 +71,10 @@ export interface ImageManagerProps {
   /** Image work this game folder holds for another project. */
   foreign?: ImageForeignWork;
   /**
-   * Replaces Review & apply with the host's own review, such as Guided's
-   * pending changes, given the selection it would apply.
+   * Replaces Apply to game with the host's own review, such as Guided's
+   * pending changes, of the list's translated images.
    */
-  applyControl?: (selection: {
-    ids: string[];
+  applyControl?: (apply: {
     ready: number;
     primary: boolean;
     blocked: boolean;
@@ -150,12 +147,14 @@ export function ImageManager(props: ImageManagerProps) {
       </section>
     );
   return (
-    <Manager
-      key={props.projectId}
-      {...props}
-      initial={initial}
-      notice={settled.notice}
-    />
+    <FeedbackOwners>
+      <Manager
+        key={props.projectId}
+        {...props}
+        initial={initial}
+        notice={settled.notice}
+      />
+    </FeedbackOwners>
   );
 }
 
@@ -238,7 +237,7 @@ function Tile({
   onCompare: () => void;
 }) {
   const pixels = useThumbnail(queue, asset, size);
-  const display = imageDisplay(asset);
+  const display = imageDisplay(asset, selected);
   // Of the images not started, recommended ones and editable copies are the
   // ones to work on next, so their mark takes the accent.
   const next =
@@ -284,7 +283,7 @@ function Tile({
         className="image-tile-preview"
         // Encryption is supported throughout; it is noted, not marked, since a
         // game encrypts all of its images or none.
-        title={`${asset.path}\n${imageStatus(asset)}${asset.encrypted ? " · Encrypted" : ""}`}
+        title={`${asset.path}\n${imageStatus(asset, selected)}${asset.encrypted ? " · Encrypted" : ""}`}
       >
         {pixels ? (
           <img
@@ -300,7 +299,7 @@ function Tile({
           className="image-tile-status"
           role="img"
           data-next={next || undefined}
-          aria-label={imageStatus(asset)}
+          aria-label={imageStatus(asset, selected)}
         >
           <StatusIcon status={displayMarks[display]} size={14} />
         </span>
@@ -380,6 +379,22 @@ function Manager({
     },
   );
   const state = images.value;
+  const editingTask = useHandoff("image_editing");
+  const discoveryTask = useHandoff("image_discovery");
+  // A dismissed task no longer waits for its report, and a task copied again
+  // waits for a newer one.
+  const flow = imageFlow(state, {
+    investigation:
+      (state.discovery.status === "awaiting_results" &&
+        !discoveryTask.dismissed) ||
+      discoveryTask.waiting,
+    translation:
+      (state.editing.status === "awaiting_results" && !editingTask.dismissed) ||
+      editingTask.waiting,
+  });
+  // A step's result stays with its step: a notice from a step that has
+  // passed is not shown under the grid.
+  const [actedIn, setActedIn] = useState(flow.step);
   // Inventory and report changes reload the visible page and comparison.
   useOnChange(
     JSON.stringify([
@@ -392,7 +407,6 @@ function Manager({
     () => setListRevision((value) => value + 1),
   );
   const value = draft.value || imageDraft(state);
-  const manual = value.view.workflowMode === "manual";
   const reportCompare = useEffectEvent((error: unknown) =>
     action.report(error, "compare"),
   );
@@ -486,9 +500,7 @@ function Manager({
       thumbnailSize,
     );
   }, [queue, grid.listed, thumbnailSize]);
-  const change = (patch: Partial<ImageDraft>) =>
-    draft.session.edit((current) => ({ ...current, ...patch }));
-  // Shift ranges start from the last image chosen without Shift in this view.
+  // Shift ranges start from the last image clicked without Shift in this view.
   const view = JSON.stringify([
     value.view.query,
     value.view.status,
@@ -540,12 +552,19 @@ function Manager({
     const asset = grid.items.find((item) => item.index === index)?.asset;
     if (asset?.id === id) setViewed({ id, revision: listRevision, asset });
   };
-  /** Chooses the image at `index` the way the file selector chooses a file. */
+  /**
+   * A click previews its image. The tick box, Ctrl/Cmd-click and Space tick
+   * or untick it, and Shift adds the run from the image last clicked, so
+   * looking at an image never changes the list to translate.
+   */
   const pick = (index: number, event: Modifiers, checkbox = false) => {
-    const gesture = selectionGesture(event, checkbox);
+    const gesture = event.shiftKey
+      ? "add-range"
+      : checkbox || event.ctrlKey || event.metaKey
+        ? "toggle"
+        : null;
     const from =
-      anchor.current?.view === view &&
-      (gesture === "range" || gesture === "add-range")
+      anchor.current?.view === view && gesture === "add-range"
         ? anchor.current
         : null;
     const first = Math.min(index, from?.index ?? index);
@@ -558,17 +577,13 @@ function Manager({
       showInViewer(index, target);
       draft.session.edit((current) => ({
         ...current,
-        selection: selectItem(current.selection, ids, target, gesture, start)
-          .selected,
+        ...(gesture && {
+          selection: selectItem(current.selection, ids, target, gesture, start)
+            .selected,
+        }),
         view: { ...current.view, viewedImage: target },
       }));
-      setPickNotice(
-        !start
-          ? ""
-          : gesture === "range"
-            ? "Selected this range."
-            : "Added this range to your selection.",
-      );
+      setPickNotice(start ? "Ticked these images to translate." : "");
     };
     const ids = grid.ids(first, Math.max(index, from?.index ?? index));
     if (Array.isArray(ids)) finish(ids);
@@ -610,20 +625,13 @@ function Manager({
     if (next === null) return;
     event.preventDefault();
     focusTile(next);
-    // Ctrl/Cmd moves without choosing, so Space can add the image it reaches.
-    if (!additive || event.shiftKey) pick(next, event);
-    else {
-      const ticket = ++picks.current;
-      const show = ([id]: string[]) => {
-        if (ticket !== picks.current || !id) return;
-        showInViewer(next, id);
-        changeView({ viewedImage: id });
-      };
-      const ids = grid.ids(next, next);
-      if (Array.isArray(ids)) show(ids);
-      // The grid's own reads report a failing list.
-      else void ids.then(show, () => {});
-    }
+    // Arrows move the preview; Shift ticks the images they pass.
+    pick(
+      next,
+      event.shiftKey
+        ? event
+        : { shiftKey: false, ctrlKey: false, metaKey: false },
+    );
   };
   const changeView = (patch: Partial<ImageDraft["view"]>, reset = false) => {
     if (reset) {
@@ -640,6 +648,7 @@ function Manager({
     options: Record<string, unknown> = {},
     notice = "",
   ) => {
+    setActedIn(flow.step);
     // Only a task that reached the clipboard says it was copied.
     let copied = false;
     let message = "";
@@ -668,7 +677,7 @@ function Manager({
     );
     if (result.ok && copied)
       action.succeed(
-        "Task copied. Paste into your coding assistant to begin or resume.",
+        `Copied. Paste it into your coding assistant.${message ? ` ${message}` : ""}`,
         name,
       );
     else if (result.ok && message) action.succeed(message, name);
@@ -710,14 +719,16 @@ function Manager({
       "Image folder saved. Indexing loose PNGs.",
       "image-folder",
     );
-  const addMatching = () =>
+  // Ctrl+A and Select tick or untick every image the view shows.
+  const tickShown = (mode: "add" | "remove") =>
     void perform("select_matching", {
       query: value.view.query,
       filter: value.view.status,
       folder: value.view.folder,
       selected_only: value.view.showSelected,
-      mode: "add",
+      mode,
     });
+  const addMatching = () => tickShown("add");
   const openCompare = (asset: ImageAsset) => {
     setCompare(asset);
     changeView({ currentImage: asset.id });
@@ -726,65 +737,51 @@ function Manager({
   const counts = state.counts;
   const hidden = grid.hidden ?? 0;
   const folderSearch = !!value.view.folder && !!value.view.query.trim();
-  const selectedReady = draft.dirty ? 0 : counts.selectedReady || 0;
   const selectedBlocked = draft.dirty ? 0 : counts.selectedBlocked || 0;
-  const selectedNotPrepared = draft.dirty ? 0 : counts.selectedNotPrepared || 0;
-  const scopeOptions = {
-    scope: value.discoveryScope,
-    folders:
-      value.discoveryScope === "folders" && value.view.folder
-        ? [value.view.folder]
-        : [],
-    ...(value.discoveryScope === "selected"
-      ? { asset_ids: value.selection }
-      : {}),
-  };
-  const scopeMissing =
-    value.discoveryScope === "selected"
-      ? !value.selection.length
-      : value.discoveryScope === "folders" && !value.view.folder;
   const jobRunning =
     !!state.job &&
     ["pending", "running", "stopping"].includes(state.job.status);
-  const lastReport = state.editing.lastReport || state.discovery.lastReport;
-  const editingTask = useHandoff("image_editing");
-  const discoveryTask = useHandoff("image_discovery");
-  // A report found on returning to the window and rejected says why first.
-  const reportError =
-    state.editing.rejected ||
-    state.discovery.rejected ||
-    state.editing.errors?.[0] ||
-    state.discovery.errors?.[0] ||
-    "";
-  // A dismissed task no longer waits for its report, and a task copied again
-  // waits for a newer one.
-  const awaitingResults =
-    (state.editing.status === "awaiting_results" && !editingTask.dismissed) ||
-    editingTask.waiting;
-  const awaitingFindings =
-    (state.discovery.status === "awaiting_results" &&
-      !discoveryTask.dismissed) ||
-    discoveryTask.waiting;
+  const waiting = flow.waiting.investigation || flow.waiting.translation;
   const copiedAt =
-    (awaitingResults && state.editing.copiedAt) ||
-    (awaitingFindings && state.discovery.copiedAt) ||
+    (flow.waiting.translation && state.editing.copiedAt) ||
+    (flow.waiting.investigation && state.discovery.copiedAt) ||
     "";
-  const selectedApplied = draft.dirty ? 0 : counts.selectedApplied || 0;
-  const allApplied =
-    !!value.selection.length && selectedApplied === value.selection.length;
-  const primaryAction = allApplied
-    ? "next"
-    : selectedReady
-      ? "preview_apply"
-      : selectedNotPrepared
-        ? "prepare"
-        : value.selection.length
-          ? awaitingResults
-            ? "refresh_results"
-            : "edit_task"
-          : awaitingFindings
-            ? "refresh_findings"
-            : "discovery_task";
+  // A report found on returning to the window and rejected says why first.
+  const rejected = state.editing.rejected || state.discovery.rejected || "";
+  const imageCount = (count: number) =>
+    `${count.toLocaleString()} ${count === 1 ? "image" : "images"}`;
+  const cardState: AssistantTaskState = rejected
+    ? "blocked"
+    : waiting
+      ? "waiting"
+      : flow.step === "choose"
+        ? "needs_review"
+        : flow.step === "apply"
+          ? "ready"
+          : flow.step === "done"
+            ? counts.applied
+              ? "applied"
+              : "done"
+            : "not_started";
+  const description = rejected
+    ? rejected
+    : flow.step === "investigate"
+      ? flow.waiting.investigation
+        ? "Your assistant is examining the images. The ones it recommends are ticked to translate as it saves them."
+        : "Your assistant examines the game's images and recommends the ones with text players read."
+      : flow.step === "choose"
+        ? flow.listed
+          ? `${imageCount(flow.listed)} to translate. Untick any to leave out, or tick other images to add them.`
+          : "Tick the images to translate, then copy the translation task."
+        : flow.step === "translate"
+          ? flow.waiting.translation
+            ? `Your assistant is translating ${imageCount(flow.toTranslate)}. Results appear on them as it saves them.`
+            : `${imageCount(flow.untranslated)} in your list ${flow.untranslated === 1 ? "isn't" : "aren't"} translated yet. Copy the translation task to continue.`
+          : flow.step === "apply"
+            ? `${flow.ready ? `${imageCount(flow.ready)} translated. ` : ""}Look them over, Compare shows before and after, and tell your assistant about anything to redo.`
+            : counts.applied
+              ? `${imageCount(counts.applied)} ${counts.applied === 1 ? "is" : "are"} in the game. Later tasks skip them unless the game's image changes.`
+              : "Your assistant found no image text players read.";
   const reportIssues = [
     ...(state.discovery.errors || []),
     ...(state.editing.errors || []),
@@ -793,37 +790,6 @@ function Manager({
   const activeCompare =
     compare &&
     (grid.items.find(({ asset }) => asset.id === compare.id)?.asset || compare);
-  const modeToggle = (
-    <Button
-      variant="link"
-      className="image-mode-toggle"
-      disabled={action.busy}
-      onClick={() =>
-        changeView({ workflowMode: manual ? "discovery" : "manual" })
-      }
-    >
-      {manual ? "Use AI discovery" : "Choose images myself"}
-    </Button>
-  );
-  // Refreshing reads a saved assistant report, so it leads only while one is due.
-  // A saved report needs review only while edited images wait for a check.
-  const assistantState = reportError
-    ? "blocked"
-    : awaitingResults || awaitingFindings
-      ? "waiting"
-      : !lastReport
-        ? "not_started"
-        : counts.needsReview
-          ? "needs_review"
-          : counts.ready
-            ? "ready"
-            : counts.applied
-              ? "applied"
-              : "done";
-  // The selected batch moves through these steps; each reports beside itself.
-  const stepKey =
-    ["prepare", "edit_task", "preview_apply"].includes(action.key) ||
-    (action.key === "refresh_results" && awaitingResults);
   const owned = useOwnedFeedback(action.key);
   const step = (key: string, pendingText: string) => ({
     feedbackKey: key,
@@ -833,17 +799,66 @@ function Manager({
     notice: action.key === key ? action.notice : "",
     onClick: () => void perform(key),
   });
-  // Discovery steps share one result after the row's last control.
-  const unreported = { error: "", notice: "" };
-  const discoveryResult =
-    (action.key === "discovery_task" ||
-      (action.key === "refresh_findings" && awaitingFindings) ||
-      (action.key === "use_recommendations" && !!counts.recommended)) &&
-    !!(action.error || action.notice);
-  // One slot walks the selection from editable copies to the image task; it
-  // follows the saved counts so the label holds while choices save.
-  const prepareFirst = !!counts.selectedNotPrepared;
-  const editKey = action.key === "prepare" || action.key === "edit_task";
+  const busy = action.busy || jobRunning;
+  // The grid's views, from the list to translate to every image.
+  const views = {
+    list: { showSelected: true, status: "all" },
+    uncertain: { showSelected: false, status: "uncertain" },
+    ready: { showSelected: false, status: "ready" },
+    applied: { showSelected: false, status: "applied" },
+    all: { showSelected: false, status: "all" },
+  } as const;
+  type GridView = keyof typeof views | "";
+  const shown: GridView = value.view.showSelected
+    ? value.view.status === "all"
+      ? "list"
+      : ""
+    : (["uncertain", "ready", "applied", "all"] as const).find(
+        (key) => key === value.view.status,
+      ) || "";
+  const viewOptions: { value: GridView; label: string; count: number }[] = [
+    { value: "list", label: "To translate", count: value.selection.length },
+    { value: "uncertain", label: "Unsure", count: counts.uncertain },
+    { value: "ready", label: "Translated", count: counts.ready },
+    { value: "applied", label: "Applied", count: counts.applied },
+    { value: "all", label: "All images", count: counts.indexed },
+  ];
+  const editText = () =>
+    void action.run(
+      async () => {
+        await draft.session.flush();
+        // The editor works on editable copies; images in the list without
+        // one get it first, as the translation task does.
+        const listed = async () => {
+          const rows: ImageAsset[] = [];
+          for (let offset = 0, total = 1; offset < total; offset += 500) {
+            const page = await imagesApi.list(projectId, {
+              selected_only: true,
+              offset,
+              limit: 500,
+            });
+            total = page.total;
+            rows.push(...page.items);
+          }
+          return rows;
+        };
+        let rows = await listed();
+        const missing = rows.filter((row) => !row.editable);
+        if (missing.length) {
+          const reply = await imagesApi.action(projectId, "prepare", {
+            asset_ids: missing.map((row) => row.id),
+          });
+          images.set(reply.state);
+          rows = await listed();
+        }
+        const editable = rows.filter((row) => row.editable);
+        if (!editable.length)
+          throw new Error("These images can't be edited; Blocked lists why.");
+        onOpenEditor(editable.map((row) => row.id));
+      },
+      "",
+      "edit_text",
+    );
   const moreMenu = (
     <Menu
       trigger={
@@ -856,52 +871,45 @@ function Manager({
       aria-label="Image tools and recovery"
       disabled={action.busy}
     >
+      {flow.step !== "investigate" && !!counts.notExamined && (
+        <MenuItem
+          disabled={jobRunning}
+          onSelect={() =>
+            void perform("discovery_task", { scope: "remaining" })
+          }
+        >
+          Investigate the {imageCount(counts.notExamined)} not examined
+        </MenuItem>
+      )}
       <MenuItem
-        disabled={!value.selection.length}
-        onSelect={() => {
-          void action.run(
-            async () => {
-              await draft.session.flush();
-              // The editor works on editable copies; images still to be made
-              // editable stay selected for Make editable.
-              const editable: string[] = [];
-              for (let offset = 0, total = 1; offset < total; offset += 500) {
-                const page = await imagesApi.list(projectId, {
-                  selected_only: true,
-                  offset,
-                  limit: 500,
-                });
-                total = page.total;
-                for (const item of page.items)
-                  if (item.editable) editable.push(item.id);
-              }
-              if (!editable.length)
-                throw new Error("Make the selected images editable first.");
-              onOpenEditor(editable);
-            },
-            "",
-            "edit_text",
-          );
-        }}
+        disabled={jobRunning || !value.view.folder}
+        onSelect={() =>
+          void perform("discovery_task", {
+            scope: "folders",
+            folders: [value.view.folder],
+          })
+        }
       >
+        Investigate this folder
+      </MenuItem>
+      <MenuItem
+        disabled={
+          jobRunning ||
+          (state.discovery.status === "idle" && state.editing.status === "idle")
+        }
+        onSelect={() =>
+          void perform(
+            state.editing.status === "idle" || flow.step === "investigate"
+              ? "refresh_findings"
+              : "refresh_results",
+          )
+        }
+      >
+        Check for results
+      </MenuItem>
+      <MenuItem disabled={!value.selection.length} onSelect={editText}>
         Edit text…
       </MenuItem>
-      {!awaitingFindings && (
-        <MenuItem
-          disabled={jobRunning || state.discovery.status === "idle"}
-          onSelect={() => void perform("refresh_findings")}
-        >
-          Refresh findings
-        </MenuItem>
-      )}
-      {!awaitingResults && (
-        <MenuItem
-          disabled={jobRunning || state.editing.status === "idle"}
-          onSelect={() => void perform("refresh_results")}
-        >
-          Refresh results
-        </MenuItem>
-      )}
       <MenuItem onSelect={() => perform("scan")}>Refresh inventory</MenuItem>
       {state.profile.id === "generic" && (
         <MenuItem
@@ -918,7 +926,7 @@ function Manager({
         disabled={!value.selection.length}
         onSelect={() => perform("preview_restore")}
       >
-        Review restore originals…
+        Restore originals…
       </MenuItem>
       <MenuItem
         disabled={!value.selection.length}
@@ -929,28 +937,27 @@ function Manager({
           })
         }
       >
-        Exclude selected
+        Exclude ticked images
       </MenuItem>
       <MenuItem
         disabled={!value.selection.length}
         onSelect={() => perform("include", { asset_ids: value.selection })}
       >
-        Include selected again
+        Include ticked images again
       </MenuItem>
     </Menu>
   );
+  // One button leads: the current step's, or Continue once Images is done.
+  const translating =
+    flow.step === "choose" ||
+    flow.step === "translate" ||
+    (flow.step === "apply" && flow.untranslated > 0);
   const footer = (
     <ActionBar
       feedback={
         <div className="image-footer-context">
           {host.back}
-          {draft.dirty ? (
-            <span>Saving choices…</span>
-          ) : (
-            !!hidden && (
-              <span>{hidden.toLocaleString()} selected hidden by filters</span>
-            )
-          )}
+          {draft.dirty && <span>Saving choices…</span>}
           {!draft.dirty && !!selectedBlocked && (
             <Button
               variant="link"
@@ -965,60 +972,52 @@ function Manager({
       }
     >
       {moreMenu}
-      <ActionControl
-        label={
-          prepareFirst
-            ? `Make editable (${(counts.selectedNotPrepared || 0).toLocaleString()})`
-            : "Copy image task"
-        }
-        variant={
-          primaryAction === (prepareFirst ? "prepare" : "edit_task")
-            ? "primary"
-            : "default"
-        }
-        disabled={
-          action.busy ||
-          jobRunning ||
-          !value.selection.length ||
-          (!prepareFirst && draft.dirty)
-        }
-        disabledReason={value.selection.length ? "" : "Select images first."}
-        {...step(
-          prepareFirst ? "prepare" : "edit_task",
-          prepareFirst ? "Making editable…" : "Copying task…",
-        )}
-        error={editKey ? action.error : ""}
-        notice={editKey ? action.notice : ""}
-      />
-      {awaitingResults && (
+      {flow.step === "investigate" && (
         <ActionControl
-          label="Refresh results"
-          variant={primaryAction === "refresh_results" ? "primary" : "default"}
-          disabled={action.busy || jobRunning}
-          {...step("refresh_results", "Reading results…")}
+          label="Copy investigation task"
+          variant={flow.waiting.investigation ? "default" : "primary"}
+          disabled={busy || !counts.indexed}
+          disabledReason={counts.indexed ? "" : "Index the images first."}
+          {...step("discovery_task", "Copying…")}
+          onClick={() => void perform("discovery_task", { scope: "remaining" })}
         />
       )}
-      {applyControl ? (
-        applyControl({
-          ids: value.selection,
-          ready: selectedReady,
-          primary: primaryAction === "preview_apply",
-          blocked: action.busy || jobRunning,
-        })
-      ) : (
+      {translating && (
         <ActionControl
-          label={`Review & apply${selectedReady ? ` (${selectedReady.toLocaleString()})` : ""}`}
-          variant={primaryAction === "preview_apply" ? "primary" : "default"}
-          disabled={action.busy || jobRunning || !selectedReady}
-          disabledReason={
-            value.selection.length && !selectedReady
-              ? "No selected image is ready."
-              : ""
+          label={`Copy translation task${flow.toTranslate ? ` (${flow.toTranslate.toLocaleString()})` : ""}`}
+          variant={
+            flow.step === "choose" ||
+            (flow.step === "translate" && !flow.waiting.translation)
+              ? "primary"
+              : "default"
           }
-          {...step("preview_apply", "Preparing review…")}
+          disabled={busy || draft.dirty || !flow.toTranslate}
+          disabledReason={
+            flow.toTranslate ? "" : "Tick the images to translate first."
+          }
+          {...step("edit_task", "Copying…")}
         />
       )}
-      {host.next(allApplied ? "primary" : "quiet")}
+      {(flow.ready > 0 || flow.step === "apply") &&
+        (applyControl ? (
+          applyControl({
+            ready: flow.ready,
+            primary: flow.step === "apply",
+            blocked: busy || draft.dirty,
+          })
+        ) : (
+          <ActionControl
+            label={`Apply to game${flow.ready ? ` (${flow.ready.toLocaleString()})` : ""}`}
+            variant={flow.step === "apply" ? "primary" : "default"}
+            disabled={busy || draft.dirty || !flow.ready}
+            disabledReason={
+              flow.ready ? "" : "No image in your list is translated yet."
+            }
+            {...step("preview_apply", "Preparing review…")}
+            onClick={() => void perform("preview_apply", { ready_only: true })}
+          />
+        ))}
+      {host.next(flow.step === "done" ? "primary" : "quiet")}
     </ActionBar>
   );
   return (
@@ -1039,128 +1038,42 @@ function Manager({
           </Button>
         </div>
       )}
-      {/* The viewer fills the space beside the assistant task and toolbar. */}
+      {/* The viewer fills the space beside the task and toolbar. */}
       <div className="image-manager-top">
         <AssistantTask
-          state={assistantState}
+          title="Image translation"
+          state={cardState}
           progress={
-            assistantState === "waiting" && copiedAt
+            waiting && copiedAt
               ? `since ${new Date(copiedAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}`
               : undefined
           }
-          description={
-            assistantState === "waiting"
-              ? "Results appear on the images as your assistant saves them."
-              : assistantState === "blocked"
-                ? reportError
-                : lastReport
-                  ? `Last saved report ${new Date(lastReport).toLocaleString()}.`
-                  : manual
-                    ? "Your assistant edits the selected copies; its results appear on their tiles."
-                    : "Your assistant examines the images in scope and recommends the ones whose text needs translating."
-          }
+          description={description}
         >
-          {!manual && (
-            <div className="image-discovery-actions">
-              <label>
-                Scope
-                <select
-                  aria-label="Discovery scope"
-                  value={value.discoveryScope}
-                  onChange={(event) =>
-                    change({
-                      discoveryScope: event.target
-                        .value as ImageDraft["discoveryScope"],
-                    })
-                  }
-                >
-                  <option value="all">All images</option>
-                  <option value="folders">Current folder</option>
-                  <option value="selected">Selected images</option>
-                </select>
-              </label>
-              {/* The steps report after the last of them, so a result never
-                  moves the button just clicked. */}
-              <ActionControl
-                inline
-                label="Copy discovery task"
-                variant={
-                  primaryAction === "discovery_task" ? "primary" : "default"
-                }
-                disabled={
-                  action.busy || jobRunning || scopeMissing || !counts.indexed
-                }
-                {...step("discovery_task", "Copying…")}
-                {...unreported}
-                onClick={() => void perform("discovery_task", scopeOptions)}
-              />
-              {awaitingFindings && (
-                <ActionControl
-                  inline
-                  label="Refresh findings"
-                  variant={
-                    primaryAction === "refresh_findings" ? "primary" : "default"
-                  }
-                  disabled={action.busy || jobRunning}
-                  {...step("refresh_findings", "Reading findings…")}
-                  {...unreported}
-                />
-              )}
-              {!!counts.recommended && (
-                <ActionControl
-                  inline
-                  label={`Use recommendations (${counts.recommended.toLocaleString()})`}
-                  disabled={action.busy || jobRunning}
-                  {...step("use_recommendations", "Selecting…")}
-                  {...unreported}
-                  onClick={() =>
-                    void perform("use_recommendations", { mode: "add" })
-                  }
-                />
-              )}
-              {value.discoveryScope === "folders" && (
-                <span className="image-scope-context">
-                  {value.view.folder || "Choose a folder in the browser."}
-                </span>
-              )}
-              {discoveryResult && !action.busy && (
-                <Feedback error={action.error} notice={action.notice} />
-              )}
-            </div>
+          <StepProgress
+            label="Image translation steps"
+            steps={imageSteps}
+            current={
+              flow.step === "done"
+                ? imageSteps.length
+                : imageSteps.findIndex((item) => item.id === flow.step)
+            }
+          />
+          {!!flow.review && (
+            <Button
+              variant="link"
+              className="image-task-note"
+              onClick={() =>
+                changeView({ status: "needs_review", showSelected: true }, true)
+              }
+            >
+              {imageCount(flow.review)} changed after your assistant checked{" "}
+              {flow.review === 1 ? "it" : "them"}
+            </Button>
           )}
-          <div className="image-discovery-counts">
-            {!!counts.examined && (
-              <span>{counts.examined.toLocaleString()} examined</span>
-            )}
-            {!!counts.recommended && (
-              <Button
-                variant="link"
-                onClick={() => changeView({ status: "recommended" }, true)}
-              >
-                {counts.recommended.toLocaleString()} recommended
-              </Button>
-            )}
-            {!!counts.uncertain && (
-              <Button
-                variant="link"
-                onClick={() => changeView({ status: "uncertain" }, true)}
-              >
-                {counts.uncertain.toLocaleString()} uncertain
-              </Button>
-            )}
-            {!!counts.notExamined && (
-              <Button
-                variant="link"
-                onClick={() => changeView({ status: "not_examined" }, true)}
-              >
-                {counts.notExamined.toLocaleString()} not examined
-              </Button>
-            )}
-            {modeToggle}
-          </div>
         </AssistantTask>
         <div className="image-browser-toolbar">
           <div className="image-search">
@@ -1176,84 +1089,25 @@ function Manager({
               }
             />
           </div>
-          {/* The same pressed toggle as the translation file list, so the
-              narrowed grid always shows why it is narrowed. */}
-          <Button
-            aria-pressed={value.view.showSelected}
-            disabled={!value.selection.length && !value.view.showSelected}
-            onClick={() =>
-              changeView({ showSelected: !value.view.showSelected }, true)
-            }
-          >
-            Selected only
-          </Button>
-          <select
-            aria-label="Image status"
-            value={value.view.status}
-            onChange={(event) =>
-              changeView({ status: event.target.value }, true)
-            }
-          >
-            {[
-              ["all", "All images"],
-              ["recommended", "Recommended"],
-              ["uncertain", "Uncertain"],
-              ["no_text", "No text found"],
-              ["already_english", "Already English"],
-              ["not_examined", "Not examined"],
-              ["excluded", "Excluded"],
-              ["editable", "Editable"],
-              ["ready", "Ready to apply"],
-              ["blocked", "Blocked"],
-              ["applied", "Applied"],
-            ].map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
           <Menu
             trigger={
-              value.selection.length ? (
-                <>
-                  {value.selection.length.toLocaleString()} selected
-                  <ChevronDown size={14} aria-hidden="true" />
-                </>
-              ) : (
-                "Select…"
-              )
+              <>
+                Select
+                <ChevronDown size={14} aria-hidden="true" />
+              </>
             }
-            label="Bulk image selection"
+            label="Tick images"
             align="start"
             disabled={action.busy}
           >
-            <MenuItem onSelect={addMatching}>
-              Add matching ({grid.total.toLocaleString()})
+            <MenuItem onSelect={() => tickShown("add")}>
+              Tick all shown ({grid.total.toLocaleString()})
             </MenuItem>
-            <MenuItem
-              onSelect={() =>
-                perform("select_matching", {
-                  query: "",
-                  filter: "all",
-                  folder: "",
-                  mode: "add",
-                })
-              }
-            >
-              Select all ({counts.indexed.toLocaleString()})
-            </MenuItem>
-            <MenuSeparator />
             <MenuItem
               disabled={!value.selection.length}
-              onSelect={() => {
-                change({ selection: [] });
-                // Selected only keeps deselected tiles in place; with nothing
-                // left selected, the full grid shows again.
-                if (value.view.showSelected)
-                  changeView({ showSelected: false }, true);
-              }}
+              onSelect={() => tickShown("remove")}
             >
-              Clear selection
+              Untick all shown
             </MenuItem>
           </Menu>
           <label className="image-size-label">
@@ -1270,10 +1124,35 @@ function Manager({
               }
             />
           </label>
+          <SegmentedControl
+            label="Show images"
+            className="image-views"
+            value={shown}
+            options={viewOptions
+              .filter(
+                (option) =>
+                  option.count ||
+                  option.value === shown ||
+                  option.value === "all",
+              )
+              .map((option) => ({
+                value: option.value,
+                label: (
+                  <>
+                    {option.label}
+                    <span className="image-view-count">
+                      {option.count.toLocaleString()}
+                    </span>
+                  </>
+                ),
+              }))}
+            onChange={(next) => next && changeView(views[next], true)}
+          />
         </div>
         <ImageViewer
           projectId={projectId}
           asset={viewedAsset}
+          listed={!!viewedAsset && selection.has(viewedAsset.id)}
           queue={queue}
           thumbnailSize={thumbnailSize}
           onCompare={openCompare}
@@ -1298,12 +1177,9 @@ function Manager({
           folders={state.folders}
           indexed={counts.indexed}
           folder={value.view.folder}
-          ready={counts.ready || 0}
-          onChoose={(folder) => {
-            change({ folders: folder ? [folder] : [] });
-            changeView({ folder, showSelected: false }, true);
-          }}
-          onStatus={(status) => changeView({ status }, true)}
+          onChoose={(folder) =>
+            changeView({ folder, showSelected: false }, true)
+          }
         />
         <div
           className="image-grid-viewport"
@@ -1418,10 +1294,7 @@ function Manager({
       </div>
       {/* Other results sit between the images and the footer. */}
       <div className="image-action-feedback">
-        <Message
-          message={stepKey || owned ? "" : action.error}
-          onDismiss={action.clear}
-        />
+        <Message message={owned ? "" : action.error} onDismiss={action.clear} />
         {!!action.error && draft.dirty && (
           <Button
             pending={action.busy}
@@ -1439,7 +1312,7 @@ function Manager({
             Retry saving choices
           </Button>
         )}
-        {action.notice && !stepKey && !owned && (
+        {action.notice && !owned && actedIn === flow.step && (
           <span role="status">{action.notice}</span>
         )}
         {!!reportIssues.length && (
@@ -1472,6 +1345,7 @@ function Manager({
         <ImageCompare
           projectId={projectId}
           asset={activeCompare}
+          listed={selection.has(activeCompare.id)}
           busy={action.busy}
           error={action.error}
           notice={action.notice}

@@ -39,6 +39,7 @@ export interface AssistantResult {
  * panel shows where the task stands and each result it should return.
  */
 export function AssistantTask({
+  title = "Assistant task",
   state,
   progress,
   description,
@@ -46,6 +47,8 @@ export function AssistantTask({
   results = [],
   children,
 }: {
+  /** A flow that also holds the user's own steps names itself instead. */
+  title?: string;
   state: AssistantTaskState;
   /** A short count beside the state, such as "1 of 3 saved". */
   progress?: string;
@@ -65,8 +68,8 @@ export function AssistantTask({
     >
       <div className="assistant-task-header panel-header">
         <div className="assistant-task-title">
-          <h3 id={heading}>Assistant task</h3>
-          {help && <HelpPopover label="Assistant task">{help}</HelpPopover>}
+          <h3 id={heading}>{title}</h3>
+          {help && <HelpPopover label={title}>{help}</HelpPopover>}
           <span className="assistant-task-state">
             <StatusMark state={state} />
             {progress && <span>{progress}</span>}

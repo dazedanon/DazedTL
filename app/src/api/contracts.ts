@@ -1213,7 +1213,7 @@ export type ConnectionUsage = {
   unfinished: number;
 };
 
-export type ImageDiscoveryScope = "all" | "folders" | "selected";
+export type ImageDiscoveryScope = "remaining" | "all" | "folders" | "selected";
 
 export type ImageEntryMode = "discovery" | "manual" | "findings" | "review";
 
@@ -1320,6 +1320,8 @@ export type ImageCounts = {
   selectedBlocked: number;
   selectedNotPrepared: number;
   selectedApplied: number;
+  selectedSkipped: number;
+  selectedNeedsReview: number;
   selectedEditable: number;
   missing: number;
 };

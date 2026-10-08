@@ -59,8 +59,8 @@ const nearestPages = (from: number, total: number) =>
  * The page of images `start` to `end` of the view's matches, with the rest of
  * the view read after it so scrolling finds its images listed. `revision`
  * reloads them, while saving a different `selection` only recounts the
- * selected matches, so choosing images never reloads the grid and the
- * Selected only view keeps a tile its user just deselected.
+ * selected matches, so ticking images never reloads the grid and the
+ * To translate view keeps a tile its user just unticked.
  */
 export function useImageGrid(
   projectId: string,

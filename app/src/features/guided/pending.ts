@@ -14,8 +14,6 @@ export interface PendingPart {
   files: string[];
   /** Why the part waits for another part of the same apply, or "". */
   held: string;
-  /** The images an Image Manager review chose; all ready images otherwise. */
-  assetIds?: string[];
 }
 
 /**

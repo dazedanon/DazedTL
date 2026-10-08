@@ -415,11 +415,15 @@ Windows and thumbnails on screen load first, and the rest of the view follows, n
 Thumbnails are WebP at the screen's pixel density.
 Previews decode each image once and hold the service lock only for the inventory lookup; the [server](../backend/dazedtl/api/server.py) answers them on a few workers outside the engine context, which redirects stdout process-wide, while every other request still runs in turn.
 The observation revision leaves out the user's choices, so saving the selection or scroll position reloads no window; the selected images the filters hide are counted on their own, and a reload keeps each window on screen until it is replaced.
-The grid chooses images with the file selector's [selection gestures](../app/src/ui/selection.ts); a Shift range that reaches past the loaded windows reads the images between in bounded runs.
+The selection is the list to translate, and the manager walks it through four steps derived in [imageFlow](../app/src/features/images/imageFlow.ts): the assistant investigates, the user chooses, the assistant translates, the user applies.
+A click only previews, so looking never changes the list; the tick box, Ctrl/Cmd and Space toggle an image and Shift only adds, with [selectItem](../app/src/ui/selection.ts), and a Shift range that reaches past the loaded windows reads the images between in bounded runs.
 The [viewer](../app/src/features/images/ImageViewer.tsx) reads the last clicked image at full size, unscaled when it fits the backend's largest preview, while its tile's thumbnail stands in; the saved view remembers which image it shows, as it does Compare's.
 Discovery reports bind project, inventory revision, exact scope and source hashes, with per-image examination evidence.
 Unexamined, failed, unreadable and changed sources remain unresolved; detector misses alone cannot certify no text.
 Manual choices survive recommendations and filtering, and only byte-identical sources can reuse discovery evidence.
+An investigation report ticks each image it newly recommends once and opens the grid on the list, so an image the user took out stays out when the same request saves again; a report whose every image has a result completes the request even without its flag.
+The translation task covers the list's images not yet in the game and makes their editable copies first, leaving out images that cannot be edited.
+Apply to game and Check's Pending changes apply the list's translated images; a list that a click replaced in earlier versions gets its copied translation task's images back once.
 Editing reports bind original and candidate hashes and a review version; changing either invalidates review.
 Compare shows the discovery finding and current AI-review evidence; hashes and backup paths stay out of reviews because Apply rechecks the exact reviewed bytes.
 Apply freezes the included batch and blocked reasons in a one-use preview, preflights every included asset before publication, and attempts runtime and metadata rollback on publication failure.
@@ -499,7 +503,7 @@ Status shows where a Guided project stands from the observed snapshot through [g
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
 Plugin files and Images say Needs review instead, on the Project page and their tabs, while work another project saved waits for the user's choice.
-Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once applied work leaves nothing selected or edited waiting, or a complete discovery leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; optional Release never blocks the next required task.
+Plugin files completes from the same snapshot once every plugin's player text is translated with nothing waiting to apply and every unreadable file is kept unchanged, Images once every image in its list is in the game, or a complete investigation leaves nothing recommended or uncertain, and Release while a saved ZIP still matches the game; optional Release never blocks the next required task.
 Pending changes completes once translated text has been applied and no selected output still waits, so clearing the selection keeps it done.
 Translate's Run history opens that stage's runs and estimates in a sheet over the task, with Inspect stacked on top, so closing returns to the task; Project › History lists every run.
 Setup's backup link opens the Project page's Backups tab, and the Translation entry returns to the same task.
@@ -679,7 +683,7 @@ Its [hook](../app/src/features/guided/workspace/usePendingChanges.ts) prepares e
 Image and plugin parts execute their own one-use tokens; the Guided review keeps one preview at a time, so text, rewraps and QA fixes are previewed again just before they execute and refuse to run if the bytes they would write, compared by hash, differ from what was reviewed.
 A text part waits for its operation and an idle backend before the next part; a failed part leaves independent parts going and reports beside itself, and Review again prepares fresh previews of the parts that did not apply.
 Rewraps wait while text is applied in the same review, and QA fixes wait while text, rewraps or plugin files are, because the line width check binds the game text and the QA task binds the game text and plugin files.
-The Review & apply buttons in Images, Plugin files, Line width check and Text QA open the same review limited to their part; Assistant-led's Image Manager keeps its own review.
+The Review & apply buttons in Plugin files, Line width check and Text QA, and Images' Apply to game, open the same review limited to their part; Assistant-led's Image Manager keeps its own review.
 Restores stay with each part: text batches in Pending changes, images in the Image Manager and plugin files in their workspace.
 TL Inspector and Forge install from a Playtest tools sheet in Check's task header, where applied text is playtested; it reuses the Guided action reviews and operation tracking, and the Project page stays about status, history, updates and backups.
 The player walkthrough task sits with Release, since it produces player documentation.
@@ -738,7 +742,7 @@ They start from the observed state when the snapshot already has it, so revisiti
 Do not attach an unconditional whole-project refresh to every button.
 An open project stays observable while no app worker is active so external assistant reports become visible.
 Returning to the window rechecks outside edits through `workspace_recheck`, which reinspects the images being worked on (working copies, the selection and applied images) against their cached file signatures; as a mutation it is followed by a fresh observation, so every feature sees the result without its own refresh.
-It also imports a report saved for a copied image task, validated as Refresh results does; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
+It also imports a report saved for a copied image task, validated as Check for results does, including a finished task's report the assistant saves again for the user's redo requests; a rejected report is remembered by its hash, so it is reported once and retried only after the file changes.
 Guided reports are read by the observer, and plugin reports are validated by the project helper's continue command the assistant runs.
 Saved run indexes keep these observations small; full request bodies are checked at execution/inspection boundaries.
 New observation work must use bounded summaries or cached derivations with explicit invalidation.

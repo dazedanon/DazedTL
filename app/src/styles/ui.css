@@ -1429,6 +1429,43 @@ pre {
 .assistant-task-body {
   padding: var(--space-3) var(--space-4);
 }
+/* A task's steps as one row of bars under their names. */
+.step-progress {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-small);
+  color: var(--color-muted);
+}
+.step-progress > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.step-progress > li::before {
+  content: "";
+  block-size: var(--step-bar-height);
+  border-radius: var(--control-radius);
+  background: var(--color-border);
+}
+.step-progress > li[data-state="done"] {
+  color: var(--color-label);
+}
+.step-progress > li[data-state="done"]::before {
+  background: var(--color-accent-strong);
+}
+.step-progress > li[data-state="current"] {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+}
+.step-progress > li[data-state="current"]::before {
+  background: var(--color-accent);
+}
 /* Described choices: each option is a card, the chosen one accent-subtle. */
 .option-cards {
   display: grid;

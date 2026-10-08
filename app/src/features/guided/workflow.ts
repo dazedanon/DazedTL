@@ -87,8 +87,7 @@ export const workflow: WorkflowStage[] = [
       {
         id: "images",
         title: "Images",
-        description:
-          "Find relevant images, edit selected copies, and apply reviewed results.",
+        description: "Translate the text in the game's images.",
       },
     ],
   },

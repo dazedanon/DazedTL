@@ -38,7 +38,7 @@ CLASSIFICATIONS = {
     "excluded",
 }
 EXAMINATION_METHODS = {"visual", "ocr", "local_ocr", "visual+ocr", "visual+local_ocr"}
-SCOPES = {"all", "folders", "selected"}
+SCOPES = {"remaining", "all", "folders", "selected"}
 REVIEW_VERSION = 1
 VIEW = {
     "query": "",
@@ -169,10 +169,24 @@ class ImageService:
                             "No saved report is available yet."
                         )
                     ]
+            # Earlier versions let a click replace the list after a translation
+            # task was copied; that task's images join the list again, once,
+            # and the grid opens on the list instead of a retired filter.
+            if value.get("listVersion") != 2:
+                value["selection"] = list(
+                    dict.fromkeys(value["selection"] + self._requested(root, value))
+                )
+                if value["selection"]:
+                    value["view"].update(
+                        showSelected=True, status="all", folder="", query=""
+                    )
+                value["listVersion"] = 2
+                self._save(project_id, value)
             return value
         return {
             "version": 1,
             "projectId": project_id,
+            "listVersion": 2,
             "selection": [],
             "view": dict(VIEW),
             "inventoryRevision": "",
@@ -189,6 +203,18 @@ class ImageService:
             "receipts": [],
             "warnings": [],
         }
+
+    @staticmethod
+    def _requested(root, value):
+        """The images the latest copied translation task covers."""
+        entry = value["requests"].get(value["editing"].get("requestId") or "")
+        if not entry:
+            return []
+        try:
+            request = read_json(project_path(root, entry["path"]), limit=48_000_000)
+            return [row["id"] for row in request["assets"]]
+        except KeyError, OSError, TypeError, ValueError:
+            return []
 
     def _save(self, project_id, value):
         write_json(self.workspace(project_id) / "state.json", value)
@@ -563,7 +589,7 @@ class ImageService:
         identities = list(dict.fromkeys(identities))
         if not identities and not allow_empty:
             raise ValueError(
-                "Select at least one image. An empty selection never applies all images."
+                "Tick at least one image first. An empty list never applies all images."
             )
         index = self._index(project_id)
         with index.connection() as db:
@@ -778,13 +804,15 @@ class ImageService:
 
     def _pickup(self, project_id):
         """Imports reports an assistant saved for a copied task, validated as
-        Refresh results does. A rejected report is remembered by its hash, so
-        it is reported once and not retried until the file changes."""
+        Check for results does. A finished task's report is read again when
+        the assistant saves it again, as it does for the user's redo requests.
+        A rejected report is remembered by its hash, so it is reported once and
+        not retried until the file changes."""
         root = self.record(project_id)[1]
         for kind in ("discovery", "editing"):
             value = self._load(project_id)
             task = value[kind]
-            if task.get("status") not in {"awaiting_results", "partial"}:
+            if task.get("status") not in {"awaiting_results", "partial", "complete"}:
                 continue
             entry = value["requests"].get(task.get("requestId"))
             # Another project's task reports only after it is copied again here.
@@ -1108,30 +1136,26 @@ class ImageService:
                 }
                 ids = [row["id"] for row in self._index(project_id).rows(**filters)]
                 value = self._load(project_id)
-                selected = (
-                    list(dict.fromkeys(value["selection"] + ids))
-                    if options.get("mode") == "add"
-                    else ids
-                )
+                mode = options.get("mode")
+                if mode == "remove":
+                    removed = set(ids)
+                    selected = [
+                        identity
+                        for identity in value["selection"]
+                        if identity not in removed
+                    ]
+                else:
+                    selected = (
+                        list(dict.fromkeys(value["selection"] + ids))
+                        if mode == "add"
+                        else ids
+                    )
                 value["selection"] = selected
                 self._save(project_id, value)
                 self._index(project_id).selected(selected)
                 return {"state": self.state(project_id)}
             self._idle(project_id)
-            if action == "use_recommendations":
-                value = self._load(project_id)
-                recommendations = [
-                    row["id"]
-                    for row in self._index(project_id).rows(filter="recommended")
-                    if not row.get("sourceIssue")
-                    and not row.get("manualOverride", {}).get("excluded")
-                ]
-                value["selection"] = list(
-                    dict.fromkeys(value["selection"] + recommendations)
-                )
-                self._save(project_id, value)
-                self._index(project_id).selected(value["selection"])
-            elif action in {"discovery_task", "edit_task", "revision_task"}:
+            if action in {"discovery_task", "edit_task", "revision_task"}:
                 return self._task(project_id, action, options)
             elif action in {"refresh_findings", "refresh_results"}:
                 return self._refresh_report(
@@ -1160,6 +1184,18 @@ class ImageService:
             raise ValueError("Choose All images, Current folders, or Selected images.")
         if scope == "selected":
             return scope, self._chosen(project_id, options)
+        # Images not yet examined; applied and excluded ones are settled.
+        if scope == "remaining":
+            identities = [
+                row["id"]
+                for row in self._index(project_id).rows()
+                if not (row.get("finding") or {}).get("examined")
+                and row["state"] != "applied"
+                and row["classification"] != "excluded"
+            ]
+            if not identities:
+                raise ValueError("Every image has been investigated.")
+            return scope, self._ids(project_id, identities)
         folders = options.get("folders", value["discovery"].get("folders", []))
         if scope == "folders" and not folders:
             raise ValueError("Choose at least one discovery folder.")
@@ -1207,18 +1243,41 @@ class ImageService:
         self.refresh_assets(project_id, identities)
         value = self._load(project_id)
         rows = [self._index(project_id).get(identity) for identity in identities]
+        message = ""
         if kind == "editing":
-            blocked = [
+            # The list's images not yet in the game. Their editable copies are
+            # made here, so copying the task is the user's only step.
+            rows = [row for row in rows if row["state"] not in {"applied", "skipped"}]
+            if not rows:
+                raise ValueError("Every image in your list is already in the game.")
+            unprepared = [
                 row["id"]
+                for row in rows
+                if not row.get("hasEditable")
+                and not row.get("sourceIssue")
+                and not row.get("originalIssue")
+            ]
+            if unprepared:
+                self._prepare(project_id, {"asset_ids": unprepared})
+                value = self._load(project_id)
+                rows = [self._index(project_id).get(row["id"]) for row in rows]
+            blocked = [
+                row
                 for row in rows
                 if not row.get("hasEditable")
                 or row.get("sourceIssue")
                 or row.get("originalIssue")
             ]
-            if blocked:
+            rows = [row for row in rows if row not in blocked]
+            if not rows:
                 raise ValueError(
-                    "Prepare or resolve these selected images before copying an editing task: "
-                    + ", ".join(blocked[:6])
+                    "These images can't be edited: "
+                    + (blocked[0].get("blockedReason") or blocked[0]["id"])
+                )
+            if blocked:
+                message = (
+                    f"Left out {len(blocked)} image{'' if len(blocked) == 1 else 's'}"
+                    " that can't be edited; Blocked lists why."
                 )
         _project, root = self.record(project_id)
         comments = text(
@@ -1252,6 +1311,7 @@ class ImageService:
                 self._save(project_id, value)
                 return {
                     "state": self.state(project_id),
+                    **({"message": message} if message else {}),
                     "text": self._task_text(project_id, previous, previous_path),
                     "requestId": previous_id,
                     "request": str(previous_path),
@@ -1262,6 +1322,8 @@ class ImageService:
         report = project_path(
             root, WORK + "/reports/" + identity + ".json", exists=False
         )
+        # The assistant saves its report there.
+        report.parent.mkdir(parents=True, exist_ok=True)
         assets = [
             {
                 key: row.get(key)
@@ -1324,6 +1386,7 @@ class ImageService:
         self._save(project_id, value)
         return {
             "state": self.state(project_id),
+            **({"message": message} if message else {}),
             "text": self._task_text(project_id, request, request_path),
             "requestId": identity,
             "request": str(request_path),
@@ -1382,6 +1445,7 @@ class ImageService:
             ]
             instructions = (
                 "Investigate which requested images need translation. This is discovery only; do not edit images or game files. "
+                "Recommend the images with text players read: the app ticks your recommendations for the user to review before a separate translation task. "
                 "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
                 "Process bounded batches, cache results by source hash, resume unchanged work and record coverage honestly. "
                 "Use Len's image census methodology as a reference, not its whole-game authorization. "
@@ -1420,7 +1484,8 @@ class ImageService:
                 "Record edited/unchanged/skipped/needs_review/error for each asset and bind review to exact source and candidate hashes. "
                 "Review original/candidate appearance, alpha, protected artwork and runtime layout. Do not assert checks you have not performed. "
                 "Retain image_translation_log.md and reusable layout/resource records outside the editable tree. "
-                "Write the structured report below atomically, with partial updates for resume. The app, not the assistant, applies reviewed runtime images."
+                "Write the structured report below atomically, with partial updates for resume. The app, not the assistant, applies reviewed runtime images. "
+                "When the user later asks for changes, edit the same working copies and save this report again with their new candidate hashes and review; the app reads it again."
             )
         return (
             "Perform this single user-authorized Guided image task using request "
@@ -1500,7 +1565,7 @@ class ImageService:
                     "Saved guidance changed after this task. Copy a new task before accepting these results."
                 )
         expected = {row["id"]: row for row in request["assets"]}
-        identities, updates, errors = set(), [], []
+        identities, updates, errors, recommended = set(), [], [], set()
         index = self._index(project_id)
         key = self.adapter.key(root, self._profile(project_id))
         for result in report["assets"]:
@@ -1579,6 +1644,14 @@ class ImageService:
                     "classification", classification
                 )
                 row.pop("staleReason", None)
+                # A recommendation joins the list once, so an image the user
+                # took out stays out when the same request saves again.
+                earlier = old.get("finding") or {}
+                if row["classification"] == "recommended" and not (
+                    earlier.get("requestId") == request["id"]
+                    and earlier.get("classification") == "recommended"
+                ):
+                    recommended.add(identity)
             else:
                 if result.get("status") not in {
                     "edited",
@@ -1639,7 +1712,23 @@ class ImageService:
         with index.connection() as db:
             for row in updates:
                 index.put(db, row, row.get("generation", ""))
-        # Completion is accumulated across partial saves of this exact request, never inferred from its flag alone.
+        # New recommendations are ticked to translate, and the grid opens on
+        # the list so the user reviews it next.
+        listed = [
+            row["id"]
+            for row in updates
+            if row["id"] in recommended
+            and row["state"] not in {"applied", "skipped", "blocked"}
+        ]
+        if listed:
+            value["selection"] = list(dict.fromkeys(value["selection"] + listed))
+            value["view"].update(
+                showSelected=True, status="all", folder="", query="", scroll=0
+            )
+            index.selected(value["selection"])
+        # Completion is accumulated across partial saves of this exact request:
+        # a request whose every image has a result is answered, flag or not, so
+        # a forgotten flag never leaves the task waiting.
         accounted = 0
         for identity in expected:
             row = index.get(identity)
@@ -1648,7 +1737,7 @@ class ImageService:
                 accounted += 1
         value[kind].update(
             status="complete"
-            if report["complete"] and accounted == len(expected) and not errors
+            if accounted == len(expected) and not errors
             else "partial",
             lastReport=now(),
             reportPath=str(path.relative_to(root)),
@@ -1811,6 +1900,16 @@ class ImageService:
         self.refresh_assets(project_id, identities)
         root, index = self.record(project_id)[1], self._index(project_id)
         require_source_backup(root, lifecycle(self.translation.workspace, project_id))
+        # Apply to game takes the list's translated images and leaves the rest
+        # of the list, still being translated, out of the review.
+        if action == "apply" and options.get("ready_only"):
+            identities = [
+                identity
+                for identity in identities
+                if index.get(identity)["state"] == "ready"
+            ]
+            if not identities:
+                raise ValueError("No image in your list is translated yet.")
         included, blocked, unchanged = [], [], 0
         for identity in identities:
             row = index.get(identity)

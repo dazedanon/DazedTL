@@ -5,16 +5,12 @@ export function ImageFolders({
   folders,
   indexed,
   folder,
-  ready,
   onChoose,
-  onStatus,
 }: {
   folders: { path: string; count: number }[];
   indexed: number;
   folder: string;
-  ready: number;
   onChoose: (path: string) => void;
-  onStatus: (status: string) => void;
 }) {
   const viewport = useRef<HTMLDivElement>(null);
   const sample = useRef<HTMLDivElement>(null);
@@ -107,11 +103,6 @@ export function ImageFolders({
             ))}
           </div>
         </div>
-      </div>
-      <div className="image-folder-views">
-        <Button variant="quiet" onClick={() => onStatus("ready")}>
-          Ready to apply {!!ready && <span>{ready.toLocaleString()}</span>}
-        </Button>
       </div>
     </aside>
   );

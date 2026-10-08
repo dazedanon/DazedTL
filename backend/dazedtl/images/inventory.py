@@ -235,6 +235,8 @@ class Index:
                 "selectedBlocked": selected.get("blocked", 0),
                 "selectedNotPrepared": selected.get("not_prepared", 0),
                 "selectedApplied": selected.get("applied", 0),
+                "selectedSkipped": selected.get("skipped", 0),
+                "selectedNeedsReview": selected.get("needs_review", 0),
                 "selectedEditable": sum(selected.values())
                 - selected.get("not_prepared", 0),
                 "missing": db.execute(

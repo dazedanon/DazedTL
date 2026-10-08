@@ -37,9 +37,14 @@ class OwnerStore {
 
 const Owners = createContext<OwnerStore | null>(null);
 
-/** Lets a fallback message skip errors that their control already reports. */
+/**
+ * Lets a fallback message skip errors that their control already reports. A
+ * scope inside another shares it, so a component can bring its own scope
+ * and still report to its host's.
+ */
 export function FeedbackOwners({ children }: { children: ReactNode }) {
-  const [store] = useState(() => new OwnerStore());
+  const parent = useContext(Owners);
+  const [store] = useState(() => parent ?? new OwnerStore());
   return <Owners.Provider value={store}>{children}</Owners.Provider>;
 }
 

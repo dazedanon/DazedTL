@@ -240,19 +240,21 @@ test("the Project page continues with the next step and keeps a later saved posi
   // A later saved position stays reachable beside the next step.
   assert.equal(progress.next?.task, "names");
   assert.equal(progress.last?.task, "apply");
-  // Images finishes once its work reaches the game with nothing waiting: an
-  // edited image awaiting review keeps it open.
+  // Images finishes once every image in its list is in the game: an edited
+  // image in the list that changed after the assistant's check keeps it open.
   state.artifacts = [{ current: true }] as GuidedState["artifacts"];
   const images = {
     projectId: state.projectId,
-    discovery: { status: "partial" },
+    discovery: { status: "complete" },
+    editing: { status: "complete" },
     counts: {
+      examined: 2,
       applied: 1,
-      ready: 0,
-      needsReview: 1,
-      blocked: 0,
       recommended: 1,
       uncertain: 0,
+      selected: 2,
+      selectedApplied: 1,
+      selectedNeedsReview: 1,
     },
   } as unknown as ImageManagerState;
   const finished = () =>
@@ -260,13 +262,18 @@ test("the Project page continues with the next step and keeps a later saved posi
       stage.tasks.filter((task) => task.done).map((task) => task.id),
     );
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
-  images.counts.needsReview = 0;
+  Object.assign(images.counts, { selected: 1, selectedNeedsReview: 0 });
   assert.deepEqual(finished(), ["setup", "images", "apply", "package"]);
   // A game with nothing to translate closes Images after a complete
-  // discovery leaves nothing recommended or uncertain, and Other event text
-  // once current findings are applied with no source enabled.
-  Object.assign(images.counts, { applied: 0, recommended: 0, uncertain: 1 });
-  images.discovery.status = "complete";
+  // investigation leaves nothing recommended or uncertain, and Other event
+  // text once current findings are applied with no source enabled.
+  Object.assign(images.counts, {
+    applied: 0,
+    recommended: 0,
+    uncertain: 1,
+    selected: 0,
+    selectedApplied: 0,
+  });
   assert.deepEqual(finished(), ["setup", "apply", "package"]);
   images.counts.uncertain = 0;
   state.eventText.status = "ready";

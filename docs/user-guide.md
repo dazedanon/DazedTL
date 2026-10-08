@@ -41,7 +41,7 @@ Tasks you copy to a coding assistant, such as Names & glossary, Line widths, Oth
 Each shows **Waiting** with when it was copied until a result comes back, **Needs review** when results need your decision, **Outdated** when what the task was based on changed, or **Blocked** with the reason.
 Finished tasks leave the list; their results stay in their own task.
 **Dismiss** clears a task you abandoned, so its task reads **Not started** again; saved results are kept, and copying the task again brings it back.
-When you return to the DazedTL window, image results your assistant saved are imported and checked as **Refresh results** would; other tasks show their saved results as soon as they appear.
+When you return to the DazedTL window, image results your assistant saved are imported and checked; other tasks show their saved results as soon as they appear.
 
 ### Set up
 
@@ -123,16 +123,24 @@ Older duplicate menu-choice responses appear under **Unused** when the app can s
 ### Images
 
 The Images task in Translate is the Image Manager, the same one Assistant-led shows in its **Images** tab.
-The assistant finds images that contain text before copies are made editable; **Choose images myself** skips discovery.
-Images select like files in the file selector: a click selects only that image, Ctrl/Cmd-click or its checkbox adds or removes it, Shift-click selects a range, and the arrow keys, Space and Ctrl+A (Cmd+A) work from the keyboard.
-The viewer beside the assistant task shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
-With **Selected only** on, an image you deselect stays in view until you change the filters, so you can select it again.
-The footer walks the selected images through **Make editable**, **Copy image task**, **Refresh results** once a task is copied, and **Review & apply**; **More** holds the text editor, refreshes and recovery.
+It has four steps, shown in its **Image translation** panel, and the footer's filled button is always the next one:
+
+1. **Investigate**: **Copy investigation task** and paste it into your coding assistant, which examines the images and recommends the ones with text players read.
+2. **Choose**: the recommended images arrive ticked, and **To translate** shows them; untick any to leave out, or tick others from **Unsure** or **All images**.
+3. **Translate**: **Copy translation task** makes the editable copies of the ticked images and copies the task; your assistant translates them.
+4. **Apply**: look the results over, and ask your assistant in its own chat for anything to redo; **Apply to game** reviews and writes the translated images in the list.
+
+A click on an image only previews it, so looking never changes the list; its tick box, Ctrl/Cmd-click or Space ticks or unticks it, and Shift-click or Shift with the arrow keys ticks a range.
+**Select** ticks or unticks every image shown, as Ctrl+A (Cmd+A) ticks them.
+In **To translate**, an image you untick stays in view until you change the view, so you can tick it again.
+The viewer beside the panel shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
+**More** holds investigating a folder or the images not yet examined, checking for results, the text editor, restore and exclusions.
 Copying a task only uses the clipboard; it does not start an assistant or provider work.
 An edited copy saved in another image editor is checked again when you return to DazedTL.
 The manager supports MV/MZ encrypted images and loose PNG files, with batch review, guarded application and restore of preserved originals.
 The optional text editor keeps boxes, source text and translations, supports installed local OCR, and uses the same estimate and approval as other API work.
-Images is done once applied images have nothing left waiting, or once a complete discovery leaves no recommended or uncertain image; **Exclude selected** records images you leave untranslated.
+Applied images stay marked **Applied**, and later investigations and translation tasks skip them unless the game's image changes.
+Images is done once every image in the list is in the game, or once a finished investigation leaves no recommended or uncertain image; **Exclude ticked images** records images you leave untranslated.
 
 ### Check
 
@@ -141,7 +149,7 @@ Check has three tasks: **Pending changes**, **Line width check** and the optiona
 **Review & apply** opens one review of every part, and **Apply all** applies them in order, with each part's result beside it; **Leave out** keeps a part for later.
 A part that did not apply leaves the game unchanged, and **Review again** prepares a new review of the parts left.
 Line rewraps wait while translated text is applied with them, and QA fixes wait while text, rewraps or plugin files are applied with them, because each was checked against the game files those parts change; check line widths or prepare QA again afterwards.
-The Review & apply buttons in Images, Plugin files, Line width check and Text QA open the same review for their own part.
+The Review & apply buttons in Plugin files, Line width check and Text QA, and Images' **Apply to game**, open the same review for their own part.
 Applying text overwrites the checked game files that have saved output; it never merges or synchronizes automatically.
 A file stays **Applied** after you edit it in the game, by hand or through Line widths or QA fixes; applying it again replaces those edits, and the Apply review names such files.
 **Reload from game…** starts a file over from the game's version.

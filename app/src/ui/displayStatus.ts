@@ -47,13 +47,16 @@ export const displayMarks: Record<DisplayState, StatusKind> = {
 /**
  * An Image Manager asset. Discovery findings stay a filter, except that an
  * image found to have nothing to translate is skipped and an uncertain one
- * needs a decision.
+ * needs a decision, until the user lists the image to translate.
  */
-export function imageDisplay(asset: {
-  state: string;
-  classification: string;
-  outdated?: boolean;
-}): DisplayState {
+export function imageDisplay(
+  asset: {
+    state: string;
+    classification: string;
+    outdated?: boolean;
+  },
+  listed = false,
+): DisplayState {
   if (asset.outdated) return "outdated";
   switch (asset.state) {
     case "editing":
@@ -73,6 +76,7 @@ export function imageDisplay(asset: {
     case "error":
       return "blocked";
   }
+  if (listed && asset.classification !== "excluded") return "not_started";
   if (["no_text", "already_english", "excluded"].includes(asset.classification))
     return "skipped";
   return asset.classification === "uncertain" ? "needs_review" : "not_started";

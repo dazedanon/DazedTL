@@ -1224,7 +1224,7 @@ export function useGuidedWorkspace({
   const pendingInput = {
     unapplied: state.readiness.unapplied,
     plugins: ownState(application.snapshot?.plugins)?.counts.ready || 0,
-    images: ownState(application.snapshot?.images)?.counts.ready || 0,
+    images: ownState(application.snapshot?.images)?.counts.selectedReady || 0,
     rewraps:
       fittingCurrent && fittingEligible > 0
         ? {
@@ -1273,27 +1273,21 @@ export function useGuidedWorkspace({
   });
   /**
    * Opens the review of every included part, or of one part from its own
-   * task; Images passes the images its selection chose, and Apply again
+   * task; Images passes its count of translated images, and Apply again
    * passes the saved text it re-applies.
    */
   const openPending = (
     only?: PendingPartId,
-    choice: { images?: { ids: string[]; count: number }; text?: string[] } = {},
+    choice: { images?: number; text?: string[] } = {},
     from: string = only ?? "all",
   ) => {
     const parts = only
       ? pendingParts({
           ...pendingInput,
           unapplied: choice.text ?? pendingInput.unapplied,
-          images: choice.images?.count ?? pendingInput.images,
+          images: choice.images ?? pendingInput.images,
           excluded: new Set(applyOrder.filter((id) => id !== only)),
-        })
-          .filter((part) => part.id === only)
-          .map((part) =>
-            part.id === "images" && choice.images
-              ? { ...part, assetIds: choice.images.ids }
-              : part,
-          )
+        }).filter((part) => part.id === only)
       : pendingList.filter((part) => !pendingExcluded.has(part.id));
     return pending.open(parts, from);
   };

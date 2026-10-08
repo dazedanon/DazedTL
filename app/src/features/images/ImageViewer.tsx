@@ -18,12 +18,15 @@ const LARGEST_SCALED = 2048;
 export function ImageViewer({
   projectId,
   asset,
+  listed,
   queue,
   thumbnailSize,
   onCompare,
 }: {
   projectId: string;
   asset: ImageAsset | null;
+  /** Whether the image is in the list to translate. */
+  listed: boolean;
   queue: ThumbnailQueue;
   thumbnailSize: number;
   onCompare: (asset: ImageAsset) => void;
@@ -35,6 +38,7 @@ export function ImageViewer({
           key={asset.id}
           projectId={projectId}
           asset={asset}
+          listed={listed}
           queue={queue}
           thumbnailSize={thumbnailSize}
           onCompare={() => onCompare(asset)}
@@ -52,12 +56,14 @@ export function ImageViewer({
 function Viewer({
   projectId,
   asset,
+  listed,
   queue,
   thumbnailSize,
   onCompare,
 }: {
   projectId: string;
   asset: ImageAsset;
+  listed: boolean;
   queue: ThumbnailQueue;
   thumbnailSize: number;
   onCompare: () => void;
@@ -130,8 +136,8 @@ function Viewer({
             {width} × {height}
           </span>
         )}
-        <span className="image-viewer-state" title={imageStatus(asset)}>
-          <StatusMark state={imageDisplay(asset)} />
+        <span className="image-viewer-state" title={imageStatus(asset, listed)}>
+          <StatusMark state={imageDisplay(asset, listed)} />
         </span>
         <Button variant="quiet" onClick={onCompare}>
           Compare

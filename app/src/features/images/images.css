@@ -170,39 +170,27 @@ main > .image-manager {
     min-height: 0;
   }
 }
-/* Short windows keep the grid's height: the panel keeps its state and
-   counts and drops the one-line explanation, and the viewer matches it. */
+/* Short windows keep the grid's height: the viewer matches the task. */
 @media (max-height: 720px) {
-  .image-manager-top > .assistant-task .assistant-task-header > p {
-    display: none;
-  }
   .image-viewer {
     min-height: 0;
   }
 }
-.image-discovery-actions,
-.image-discovery-counts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-}
-.image-discovery-actions label {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-}
-.image-discovery-counts {
-  font-size: var(--font-small);
-  color: var(--color-muted);
-}
-.image-discovery-counts .link-button {
+/* A note under the steps, such as images changed after the assistant's
+   check, reads as part of the task. */
+.image-task-note.link-button {
+  justify-self: start;
   padding: 0;
-  font-size: inherit;
+  font-size: var(--font-small);
 }
-.image-discovery-counts > span:last-child {
-  overflow-wrap: anywhere;
+/* Each view names how many images it holds, quieter than its name. */
+.image-view-count {
+  margin-inline-start: var(--space-2);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.image-views > .ui-button[aria-pressed="true"] .image-view-count {
+  color: inherit;
 }
 .image-browser-toolbar {
   display: flex;
@@ -235,12 +223,10 @@ main > .image-manager {
   flex-shrink: 0;
   color: var(--color-muted);
 }
-/* Too narrow for one line, the search takes the first and the filters and
-   size the second, so no control wraps alone. */
-@container image-tools (width < 48rem) {
-  .image-search {
-    flex-basis: 100%;
-  }
+/* The views take their own row under the search, Select and Size, so a
+   view added as work progresses never pushes a control onto a row alone. */
+.image-views {
+  flex-basis: 100%;
 }
 .image-size-label {
   flex-direction: row;
@@ -270,7 +256,7 @@ main > .image-manager {
   min-height: 0;
 }
 /* Scrolled folders clip at a divider, so a half-hidden row cannot read as
-   part of All images; the views below have the same divider. */
+   part of All images. */
 .image-folder-scroll {
   flex: 1;
   min-height: 0;
@@ -320,8 +306,7 @@ main > .image-manager {
   color: inherit;
   white-space: nowrap;
 }
-.image-folder-rail > button,
-.image-folder-views > button {
+.image-folder-rail > button {
   justify-content: space-between;
   text-align: left;
   align-items: flex-start;
@@ -337,13 +322,6 @@ main > .image-manager {
 .image-folder-rail button[aria-pressed="true"] {
   background: var(--color-accent-subtle);
   color: var(--color-accent);
-}
-.image-folder-views {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--color-border);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
 }
 .image-grid-viewport {
   overflow: auto;
@@ -709,7 +687,4 @@ main > .image-manager {
   .image-comparison figcaption {
     font-size: var(--font-small);
   }
-}
-.image-mode-toggle {
-  margin-left: auto;
 }

@@ -71,11 +71,14 @@ export function usePendingChanges({
         current &&
         current.map((part) => (part.id === id ? { ...part, ...patch } : part)),
     );
+  // The translated images in the list to translate; one the user took out
+  // of the list stays out of the game.
   const readyImages = async () => {
     const ids: string[] = [];
     for (let total = 1; ids.length < total;) {
       const page = await imagesApi.list(projectId, {
         filter: "ready",
+        selected_only: true,
         offset: ids.length,
         limit: 500,
       });
@@ -91,7 +94,7 @@ export function usePendingChanges({
     if (part.id === "images")
       return (
         await imagesApi.action(projectId, "preview_apply", {
-          asset_ids: part.assetIds ?? (await readyImages()),
+          asset_ids: await readyImages(),
         })
       ).preview;
     const request = guided(part);

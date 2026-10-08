@@ -27,18 +27,15 @@ export function imagesView(w: GuidedWorkspace): TaskView {
         }}
         onOpenEditor={setEditorAssets}
         // Applying goes through the same review as Check's pending changes.
-        applyControl={(selection) =>
+        applyControl={(apply) =>
           reviewPending({
             only: "images",
-            label: `Review & apply${selection.ready ? ` (${selection.ready.toLocaleString()})` : ""}`,
-            variant: selection.primary ? "primary" : "default",
+            label: `Apply to game${apply.ready ? ` (${apply.ready.toLocaleString()})` : ""}`,
+            variant: apply.primary ? "primary" : "default",
             blocked:
-              selection.blocked ||
-              (!selection.ready &&
-                (selection.ids.length ? "No selected image is ready." : true)),
-            choice: {
-              images: { ids: selection.ids, count: selection.ready },
-            },
+              apply.blocked ||
+              (!apply.ready && "No image in your list is translated yet."),
+            choice: { images: apply.ready },
           })
         }
       />

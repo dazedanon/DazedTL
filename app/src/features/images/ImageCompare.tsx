@@ -16,6 +16,7 @@ import { useRead } from "../../state/useRead";
 export function ImageCompare({
   projectId,
   asset,
+  listed,
   busy,
   error,
   notice,
@@ -24,6 +25,8 @@ export function ImageCompare({
 }: {
   projectId: string;
   asset: ImageAsset;
+  /** Whether the image is in the list to translate. */
+  listed: boolean;
   busy: boolean;
   error: string;
   notice: string;
@@ -79,8 +82,10 @@ export function ImageCompare({
         {/* A blocking reason shows below the images, where it can be read
             as an error; any other reason sits beside the state. */}
         <span className="image-review-status">
-          <StatusMark state={imageDisplay(asset)} />
-          {!blocking && imageReason(asset) && <span>{imageReason(asset)}</span>}
+          <StatusMark state={imageDisplay(asset, listed)} />
+          {!blocking && imageReason(asset, listed) && (
+            <span>{imageReason(asset, listed)}</span>
+          )}
         </span>
         <label>
           Zoom

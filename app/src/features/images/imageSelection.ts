@@ -145,7 +145,7 @@ export const imageClassificationLabels: Record<string, string> = {
 };
 /** What the shared word for an image's state leaves out: what blocks it, who
  * reviewed it, or what discovery found. */
-export function imageReason(asset: ImageAsset) {
+export function imageReason(asset: ImageAsset, listed = false) {
   const reason =
     asset.blockedReason ||
     asset.sourceIssue ||
@@ -158,11 +158,11 @@ export function imageReason(asset: ImageAsset) {
         : asset.editable && asset.state === "editable"
           ? "Editable copy made"
           : imageClassificationLabels[asset.classification] || "");
-  return reason === displayLabels[imageDisplay(asset)] ? "" : reason;
+  return reason === displayLabels[imageDisplay(asset, listed)] ? "" : reason;
 }
 /** An image's state in the shared words, then its reason. */
-export function imageStatus(asset: ImageAsset) {
-  const state = displayLabels[imageDisplay(asset)];
-  const reason = imageReason(asset);
+export function imageStatus(asset: ImageAsset, listed = false) {
+  const state = displayLabels[imageDisplay(asset, listed)];
+  const reason = imageReason(asset, listed);
   return reason ? `${state} · ${reason}` : state;
 }

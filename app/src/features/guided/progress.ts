@@ -11,6 +11,7 @@ import { investigationResults } from "./contextView.ts";
 import { nothingToTranslate } from "./eventTextSelection.ts";
 import { guidanceAvailability } from "./guidanceReview.ts";
 import { pluginsComplete } from "../plugins/pluginTask.ts";
+import { imageFlow } from "../images/imageFlow.ts";
 import {
   eventTaskFiles,
   fileLines,
@@ -73,20 +74,13 @@ export function completedTasks(
         );
   const discovery = state.contextSetup;
   // Plugin files is done once every plugin's player text is translated with
-  // nothing waiting to go into the game, and Images once its work reaches the
-  // game with nothing left waiting. Release is done while a saved ZIP still
-  // matches the game. A complete image discovery that left nothing
-  // recommended or uncertain also closes Images: the game has no image text
-  // to translate.
+  // nothing waiting to go into the game, and Images once every image in its
+  // list is in the game or a finished investigation found no image text.
+  // Release is done while a saved ZIP still matches the game.
   const ownPlugins =
     plugins && plugins.projectId === state.projectId ? plugins : null;
   const ownImages =
     images && images.projectId === state.projectId ? images : null;
-  const imageCounts = ownImages?.counts;
-  const noImageText =
-    ownImages?.discovery.status === "complete" &&
-    !ownImages.counts.recommended &&
-    !ownImages.counts.uncertain;
   return new Set<string>([
     ...(baseline ? ["setup"] : []),
     ...(applied ? ["apply"] : []),
@@ -102,13 +96,7 @@ export function completedTasks(
     ...(guidanceAvailability(discovery.documents).complete ? ["guidance"] : []),
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
     ...(ownPlugins && pluginsComplete(ownPlugins) ? ["plugins"] : []),
-    ...(imageCounts &&
-    (imageCounts.applied || noImageText) &&
-    !imageCounts.ready &&
-    !imageCounts.needsReview &&
-    !imageCounts.blocked
-      ? ["images"]
-      : []),
+    ...(ownImages && imageFlow(ownImages).step === "done" ? ["images"] : []),
     ...(state.artifacts.some((artifact) => artifact.current)
       ? ["package"]
       : []),

@@ -36,8 +36,8 @@ export const assistantTaskTitles: Record<AssistantTaskKind, string> = {
   line_widths: "Line widths",
   event_text: "Other event text",
   plugins: "Plugin files",
-  image_discovery: "Image discovery",
-  image_editing: "Image editing",
+  image_discovery: "Image investigation",
+  image_editing: "Image translation",
   qa: "Text QA",
   walkthrough: "Player walkthrough",
 };

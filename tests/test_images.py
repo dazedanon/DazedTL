@@ -283,6 +283,80 @@ class ImageTests(unittest.TestCase):
         self.assertEqual(imported["status"], "complete")
         self.assertNotIn("rejected", imported)
 
+    def test_investigation_ticks_recommendations_and_translation_makes_its_copies(
+        self,
+    ):
+        # Protect the four steps: recommendations arrive ticked once, the
+        # translation task needs no separate copy step, and Apply takes only
+        # the list's translated images.
+        result = self.service.action(
+            self.identity, "discovery_task", {"scope": "remaining"}
+        )
+        request = read_json(Path(result["request"]))
+        hashes = {row["id"]: row["sourceHash"] for row in request["assets"]}
+        found = [
+            {
+                "id": identity,
+                "sourceHash": hashes[identity],
+                "classification": classification,
+                "method": "visual",
+                "examined": True,
+                "reason": "",
+                "evidence": "contact sheet 1",
+                "variants": [],
+            }
+            for identity, classification in (
+                ("img/A.png", "recommended"),
+                ("img/B.png", "no_text"),
+            )
+        ]
+        # A report that answers every image completes without its flag.
+        state = self.report(request, found)["state"]
+        self.assertEqual(state["discovery"]["status"], "complete")
+        self.assertEqual(state["selection"], ["img/A.png"])
+        self.assertTrue(state["view"]["showSelected"])
+        # An image the user took out stays out when the report saves again.
+        self.choose([])
+        found[0]["reason"] = "Japanese title"
+        write_json(request["report"], {**read_json(request["report"]), "assets": found})
+        self.service.recheck(self.identity)
+        self.assertEqual(self.service.state(self.identity)["selection"], [])
+        with self.assertRaisesRegex(ValueError, "Every image has been investigated"):
+            self.service.action(self.identity, "discovery_task", {"scope": "remaining"})
+        self.choose(["img/A.png"])
+        editing, _ = self.request("edit_task")
+        self.assertTrue((self.game / ".dazedtl/images/img/A.png").is_file())
+        # A list a click replaced in earlier versions gets the copied
+        # translation task's images back once.
+        saved = self.game / ".dazedtl/image_manager/guided/state.json"
+        legacy = read_json(saved)
+        del legacy["listVersion"]
+        write_json(saved, {**legacy, "selection": ["img/B.png"]})
+        self.assertEqual(
+            ImageService(
+                self.projects,
+                self.translation,
+                None,
+                self.backend,
+                adapter=self.adapter,
+            ).state(self.identity)["selection"],
+            ["img/B.png", "img/A.png"],
+        )
+        self.reviewed_candidate()
+        self.choose(["img/A.png", "img/B.png"])
+        preview = self.service.action(
+            self.identity, "preview_apply", {"ready_only": True}
+        )["preview"]
+        self.assertEqual(
+            ([row["id"] for row in preview["assets"]], preview["blocked"]),
+            (["img/A.png"], []),
+        )
+        self.service.action(self.identity, "apply", {"token": preview["token"]})
+        self.choose(["img/A.png"])
+        with self.assertRaisesRegex(ValueError, "already in the game"):
+            self.service.action(self.identity, "edit_task")
+        self.assertEqual(editing["assets"][0]["id"], "img/A.png")
+
     def test_partial_reports_do_not_certify_detector_misses_or_replace_manual_exclusions(
         self,
     ):
