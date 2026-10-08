@@ -1115,6 +1115,17 @@ try:
         )
     )
     assert refusal["refusal"] and refusal["prompt_tokens"] == 5
+    # A run reads as finished only once its worker has exited and its outputs
+    # are recorded; an Apply review taken earlier freezes files still changing.
+    with app.backend.context():
+        from desktop.backend.manual import ManualJobs
+
+        runs = ManualJobs(temporary / "runs", threading.RLock())
+        run = runs.jobs["finishing"] = {"id": "finishing", "status": "running"}
+        run.update(mode="translate", phase="translate", log=[])
+        runs.folder(run["id"]).mkdir(parents=True)
+        outcome = runs._event(run, {"event": "finished", "args": [True, "Done"]})
+        assert run["status"] == "running" and outcome["status"] == "complete"
     for module_name, module in list(sys.modules.items()):
         if module_name.startswith(
             ("util.", "modules.", "desktop.backend.")

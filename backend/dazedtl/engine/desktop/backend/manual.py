@@ -380,14 +380,20 @@ class ManualJobs:
                     self.process = process
                     if self.stopping.is_set():
                         self._send({"command": "stop"})
+                outcome = None
                 for line in process.stdout:
                     try:
                         event = json.loads(line)
                     except ValueError:
                         continue
-                    self._event(job, event)
+                    outcome = self._event(job, event) or outcome
                 process.wait()
             with self.lock:
+                # The run ends once its worker has exited and its outputs are
+                # recorded; until then its files can still change, so nothing
+                # may review them as a finished run's.
+                if outcome:
+                    job.update(outcome)
                 if job["status"] in {"running", "waiting"}:
                     job.update(status="stopped" if self.stopping.is_set() else "failed", approval=None,
                                message="Run stopped. Saved work is available to resume." if self.stopping.is_set() else "The worker exited before completion. See the run log.")
@@ -406,8 +412,11 @@ class ManualJobs:
                 self.active = ""
 
     def _event(self, job, event):
+        """Records a worker event; returns the run's final status, which `_run`
+        applies once the worker has exited."""
         with self.lock:
             from util.translation_task import _strip_ansi
+            outcome = None
             kind, args = event.get("event"), event.get("args", [])
             args = [_strip_ansi(value) if isinstance(value, str) else value for value in args]
             if kind == "log":
@@ -433,11 +442,12 @@ class ManualJobs:
             elif kind == "speaker_confirmation":
                 job.update(status="waiting", approval={"token": uuid.uuid4().hex, "kind": "speakers", "detail": args[0]})
             elif kind == "finished":
-                job.update(status="stopped" if self.stopping.is_set() else "canceled" if job["phase"] == "canceled" else "complete" if args[0] else "failed",
-                           approval=None, message=str(args[1]))
+                outcome = dict(status="stopped" if self.stopping.is_set() else "canceled" if job["phase"] == "canceled" else "complete" if args[0] else "failed",
+                               approval=None, message=str(args[1]))
             if self.stopping.is_set() and kind in {"speaker_confirmation", "batch_phase"}:
                 self._send({"command": "stop"})
             self.save(job)
+            return outcome
 
     def _send(self, message):
         if self.process and self.process.poll() is None:
