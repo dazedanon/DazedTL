@@ -816,12 +816,45 @@ function Manager({
     : (["uncertain", "ready", "applied", "all"] as const).find(
         (key) => key === value.view.status,
       ) || "";
-  const viewOptions: { value: GridView; label: string; count: number }[] = [
-    { value: "list", label: "To translate", count: value.selection.length },
-    { value: "uncertain", label: "Unsure", count: counts.uncertain },
-    { value: "ready", label: "Translated", count: counts.ready },
-    { value: "applied", label: "Applied", count: counts.applied },
-    { value: "all", label: "All images", count: counts.indexed },
+  // Which views show follows the whole game, so the switch keeps its shape;
+  // their numbers follow the folder and search, as the grid does.
+  const scoped = grid.views;
+  const viewOptions: {
+    value: GridView;
+    label: string;
+    shown: boolean;
+    count: number;
+  }[] = [
+    {
+      value: "list",
+      label: "To translate",
+      shown: !!value.selection.length,
+      count: scoped?.list ?? value.selection.length,
+    },
+    {
+      value: "uncertain",
+      label: "Unsure",
+      shown: !!counts.uncertain,
+      count: scoped?.uncertain ?? counts.uncertain,
+    },
+    {
+      value: "ready",
+      label: "Translated",
+      shown: !!counts.ready,
+      count: scoped?.ready ?? counts.ready,
+    },
+    {
+      value: "applied",
+      label: "Applied",
+      shown: !!counts.applied,
+      count: scoped?.applied ?? counts.applied,
+    },
+    {
+      value: "all",
+      label: "All images",
+      shown: true,
+      count: scoped?.all ?? counts.indexed,
+    },
   ];
   const editText = () =>
     void action.run(
@@ -1133,12 +1166,7 @@ function Manager({
               className="image-views"
               value={shown}
               options={viewOptions
-                .filter(
-                  (option) =>
-                    option.count ||
-                    option.value === shown ||
-                    option.value === "all",
-                )
+                .filter((option) => option.shown || option.value === shown)
                 .map((option) => ({
                   value: option.value,
                   label: (
@@ -1175,8 +1203,9 @@ function Manager({
               folders={state.folders}
               indexed={counts.indexed}
               folder={value.view.folder}
+              // A folder shows all of its images, as its count says.
               onChoose={(folder) =>
-                changeView({ folder, showSelected: false }, true)
+                changeView({ folder, showSelected: false, status: "all" }, true)
               }
             />
             <div

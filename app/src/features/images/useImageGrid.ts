@@ -2,7 +2,12 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { imagesApi } from "../../api/images";
 import { messageOf } from "../../api/errors";
 import { idsBetween } from "./imageSelection";
-import type { ImageAsset, ImageList, ImageView } from "../../api/contracts";
+import type {
+  ImageAsset,
+  ImageList,
+  ImageView,
+  ImageViewCounts,
+} from "../../api/contracts";
 
 const PAGE_SIZE = 100;
 /** Pages kept per view; a view up to this many pages lists all of its images. */
@@ -210,7 +215,11 @@ export function useImageGrid(
   // for their own.
   const saved = useMemo(() => selection.join("\n"), [selection]);
   const chosen = selection.length;
-  const [counted, setCounted] = useState<{ scope: Scope; hidden: number }>();
+  const [counted, setCounted] = useState<{
+    scope: Scope;
+    hidden: number;
+    views?: ImageViewCounts;
+  }>();
   useEffect(() => {
     let current = true;
     const { projectId, ...options } = scope.filters;
@@ -219,7 +228,11 @@ export function useImageGrid(
       .then(
         (reply: ImageList) => {
           if (current)
-            setCounted({ scope, hidden: chosen - reply.selectedMatched });
+            setCounted({
+              scope,
+              hidden: chosen - reply.selectedMatched,
+              views: reply.views,
+            });
         },
         // The page reads report the same failure; the count stays unknown.
         () => {},
@@ -235,6 +248,11 @@ export function useImageGrid(
       counted?.scope === scope
         ? Math.max(0, Math.min(counted.hidden, chosen))
         : null,
+    /**
+     * How many images each view lists in this folder and search; the last
+     * count stands in while a new one is read.
+     */
+    views: counted?.views,
     items,
     /** Every image of the view read so far, on screen or not. */
     listed,

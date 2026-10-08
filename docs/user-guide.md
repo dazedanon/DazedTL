@@ -132,6 +132,7 @@ It has four steps, shown in its **Image translation** panel, and the footer's fi
 
 A click on an image only previews it, so looking never changes the list; its tick box, Ctrl/Cmd-click or Space ticks or unticks it, and Shift-click or Shift with the arrow keys ticks a range.
 **Select** ticks or unticks every image shown, as Ctrl+A (Cmd+A) ticks them.
+The folder list is a tree: choosing a folder shows all of its images, its subfolders' too, and its number counts them; the view numbers follow the chosen folder and search.
 In **To translate**, an image you untick stays in view until you change the view, so you can tick it again.
 The viewer beside the panel shows the image you last clicked or moved to, as large as it fits; its **Compare**, like an image's eye button, compares the original with the edited copy.
 **More** holds investigating a folder or the images not yet examined, checking for results, the text editor, restore and exclusions.

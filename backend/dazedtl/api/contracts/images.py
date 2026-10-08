@@ -218,12 +218,23 @@ class ImageDraft(TypedDict):
     imageRoot: NotRequired[str]
 
 
+class ImageViewCounts(TypedDict):
+    """How many images each view lists within the same folder and search."""
+
+    all: int
+    list: int
+    uncertain: int
+    ready: int
+    applied: int
+
+
 class ImageList(TypedDict):
     items: list[ImageAsset]
     total: int
     selectedMatched: int
     offset: NotRequired[int]
     limit: int
+    views: NotRequired[ImageViewCounts]
 
 
 class ImagePreviewAsset(TypedDict):

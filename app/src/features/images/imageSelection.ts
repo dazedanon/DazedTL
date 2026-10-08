@@ -166,3 +166,74 @@ export function imageStatus(asset: ImageAsset, listed = false) {
   const reason = imageReason(asset, listed);
   return reason ? `${state} · ${reason}` : state;
 }
+
+export interface FolderRow {
+  /** The folder's path from the image root, as the grid filters by it. */
+  path: string;
+  name: string;
+  /** How far it sits under the folders the list starts from. */
+  depth: number;
+  /** Its images and its subfolders', as choosing it lists them. */
+  count: number;
+}
+
+const segments = (path: string) => path.split("/");
+/** Folder paths in tree order: each folder before its subfolders, by name. */
+const treeOrder = (a: string, b: string) => {
+  const left = segments(a);
+  const right = segments(b);
+  for (let index = 0; index < Math.min(left.length, right.length); index++) {
+    const order = left[index].localeCompare(right[index], undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+    if (order) return order;
+  }
+  return left.length - right.length;
+};
+
+/**
+ * The image folders as an indented tree. Each folder counts its subfolders'
+ * images, and folders that every image sits under without images of their
+ * own, such as img, are left out, so the list starts where folders differ.
+ */
+export function folderTree(
+  folders: readonly { path: string; count: number }[],
+): FolderRow[] {
+  const counts = new Map<string, number>();
+  for (const { path, count } of folders) {
+    const parts = path === "." ? ["."] : segments(path);
+    for (let end = 1; end <= parts.length; end++) {
+      const key = parts.slice(0, end).join("/");
+      counts.set(key, (counts.get(key) || 0) + count);
+    }
+  }
+  const direct = new Set(folders.map((folder) => folder.path));
+  const children = (parent: string) =>
+    [...counts.keys()].filter((path) =>
+      parent
+        ? path.startsWith(parent + "/") &&
+          !path.slice(parent.length + 1).includes("/")
+        : path !== "." && !path.includes("/"),
+    );
+  let shared = "";
+  if (!direct.has(".")) {
+    for (;;) {
+      const next = children(shared);
+      if (next.length !== 1 || direct.has(next[0])) break;
+      shared = next[0];
+    }
+  }
+  const base = shared ? segments(shared).length : 0;
+  return [...counts]
+    .filter(
+      ([path]) => path === "." || !shared || path.startsWith(shared + "/"),
+    )
+    .sort(([a], [b]) => (a === "." ? -1 : b === "." ? 1 : treeOrder(a, b)))
+    .map(([path, count]) => ({
+      path,
+      name: path === "." ? "Root images" : segments(path).at(-1)!,
+      depth: path === "." ? 0 : segments(path).length - base - 1,
+      count,
+    }));
+}

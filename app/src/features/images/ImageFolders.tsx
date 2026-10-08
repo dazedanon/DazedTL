@@ -1,5 +1,12 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Button } from "../../ui/Button";
+import { folderTree } from "./imageSelection";
 
 export function ImageFolders({
   folders,
@@ -12,14 +19,15 @@ export function ImageFolders({
   folder: string;
   onChoose: (path: string) => void;
 }) {
+  const rows = useMemo(() => folderTree(folders), [folders]);
   const viewport = useRef<HTMLDivElement>(null);
   const sample = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(500);
-  const [rowHeight, setRowHeight] = useState(34);
+  const [rowHeight, setRowHeight] = useState(30);
   const [scroll, setScroll] = useState(0);
   const first = Math.max(0, Math.floor(scroll / rowHeight) - 2);
   const last = Math.min(
-    folders.length,
+    rows.length,
     Math.ceil((scroll + height) / rowHeight) + 2,
   );
   useLayoutEffect(() => {
@@ -33,25 +41,31 @@ export function ImageFolders({
   useLayoutEffect(() => {
     if (!sample.current) return;
     const observer = new ResizeObserver(([entry]) =>
-      setRowHeight(Math.max(28, Math.ceil(entry.contentRect.height))),
+      setRowHeight(Math.max(24, Math.ceil(entry.contentRect.height))),
     );
     observer.observe(sample.current);
     return () => observer.disconnect();
-  }, [folders.length, first]);
+  }, [rows.length, first]);
   // The list renders only nearby rows, so a saved or chosen folder further
-  // down would be neither visible nor marked; bring it into view when the
-  // selection or list changes, and again once rows are measured.
+  // down would be neither visible nor marked; it comes into view when the
+  // choice changes, never while the user scrolls the list.
+  const revealed = useRef<string | null>(null);
   useLayoutEffect(() => {
     const element = viewport.current;
-    const index = folders.findIndex((item) => item.path === folder);
-    if (!element || index < 0) return;
+    const index = rows.findIndex((item) => item.path === folder);
+    if (!element || revealed.current === folder) return;
+    if (index < 0) {
+      if (!folder) revealed.current = folder;
+      return;
+    }
+    revealed.current = folder;
     const top = index * rowHeight;
     if (
       top < element.scrollTop ||
       top + rowHeight > element.scrollTop + element.clientHeight
     )
       element.scrollTop = Math.max(0, top - element.clientHeight / 2);
-  }, [folder, folders, rowHeight]);
+  }, [folder, rows, rowHeight]);
   return (
     <aside className="image-folder-rail" aria-label="Image folders">
       <Button
@@ -60,7 +74,7 @@ export function ImageFolders({
         aria-pressed={!folder}
         onClick={() => onChoose("")}
       >
-        <span className="image-folder-name">All images</span>
+        <span className="image-folder-name">All folders</span>
         <span>{indexed.toLocaleString()}</span>
       </Button>
       <div
@@ -70,33 +84,23 @@ export function ImageFolders({
       >
         <div
           className="image-folder-space"
-          style={{ height: folders.length * rowHeight }}
+          style={{ height: rows.length * rowHeight }}
         >
           <div
             className="image-folder-window"
             style={{ transform: `translateY(${first * rowHeight}px)` }}
           >
-            {folders.slice(first, last).map((item, index) => (
+            {rows.slice(first, last).map((item, index) => (
               <div key={item.path} ref={index === 0 ? sample : undefined}>
                 <Button
                   variant="quiet"
-                  aria-label={item.path}
+                  aria-label={item.path === "." ? item.name : item.path}
                   aria-pressed={folder === item.path}
-                  title={item.path}
+                  title={item.path === "." ? item.name : item.path}
+                  style={{ "--folder-depth": item.depth } as CSSProperties}
                   onClick={() => onChoose(item.path)}
                 >
-                  <span className="image-folder-name">
-                    <strong>
-                      {item.path === "."
-                        ? "Root images"
-                        : item.path.split("/").at(-1)}
-                    </strong>
-                    <small>
-                      {item.path.includes("/")
-                        ? item.path.slice(0, item.path.lastIndexOf("/"))
-                        : "Game root"}
-                    </small>
-                  </span>
+                  <span className="image-folder-name">{item.name}</span>
                   <span>{item.count.toLocaleString()}</span>
                 </Button>
               </div>

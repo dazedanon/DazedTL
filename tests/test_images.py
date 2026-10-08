@@ -219,9 +219,14 @@ class ImageTests(unittest.TestCase):
             scanned["observationRevision"],
             self.service.state(self.identity)["observationRevision"],
         )
+        searched = self.service.list(self.identity, query="B")
+        self.assertEqual(searched["selectedMatched"], 0)
+        # The view switch counts each view within the same search.
         self.assertEqual(
-            self.service.list(self.identity, query="B")["selectedMatched"], 0
+            searched["views"],
+            {"all": 1, "list": 0, "uncertain": 0, "ready": 0, "applied": 0},
         )
+        self.assertEqual(self.service.list(self.identity)["views"]["list"], 1)
         reopened = ImageService(
             self.projects, self.translation, None, self.backend, adapter=self.adapter
         )

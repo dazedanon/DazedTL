@@ -193,13 +193,34 @@ class Index:
                 + " ORDER BY id COLLATE NOCASE LIMIT ? OFFSET ?",
                 (*parameters, limit, offset),
             )
-            return {
+            result = {
                 "items": [json.loads(row[0]) for row in rows],
                 "total": total,
                 "selectedMatched": selected,
                 "offset": offset,
                 "limit": limit,
             }
+            # The first page counts each view within the same folder and
+            # search, so the view switch shows what each view would list.
+            if offset == 0:
+                scope, values = self.where(
+                    query=filters.get("query", ""), folder=filters.get("folder", "")
+                )
+                views = db.execute(
+                    "SELECT count(*), total(selected=1),"
+                    " total(classification='uncertain' OR state='uncertain'),"
+                    " total(classification='ready' OR state='ready'),"
+                    " total(classification='applied' OR state='applied')"
+                    " FROM assets" + scope,
+                    values,
+                ).fetchone()
+                result["views"] = dict(
+                    zip(
+                        ("all", "list", "uncertain", "ready", "applied"),
+                        (int(count) for count in views),
+                    )
+                )
+            return result
 
     def counts(self):
         with self.connection() as db:

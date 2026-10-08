@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  folderTree,
   gridStep,
   idsBetween,
   virtualRows,
@@ -151,4 +152,38 @@ test("Images leads with the step its saved work reaches", () => {
   );
   // An investigation that found no image text closes Images.
   assert.equal(at({ examined: 2 }, "complete"), "done");
+});
+
+test("the folder list counts what choosing a folder shows", () => {
+  // Protect against a folder's number leaving out its subfolders, which its
+  // grid includes, and against rows that name only a shared parent path.
+  const rows = folderTree([
+    { path: "img/faces", count: 2 },
+    { path: "img/pictures/10 Ending", count: 1 },
+    { path: "img/pictures/2 Scene", count: 6 },
+    { path: "img/pictures/2 Scene/Clothed", count: 4 },
+    { path: "img/pictures/2 Scene/No background", count: 3 },
+  ]);
+  assert.deepEqual(
+    rows.map((row) => [row.name, row.depth, row.count]),
+    [
+      ["faces", 0, 2],
+      ["pictures", 0, 14],
+      ["2 Scene", 1, 13],
+      ["Clothed", 2, 4],
+      ["No background", 2, 3],
+      ["10 Ending", 1, 1],
+    ],
+  );
+  // A folder every image sits under is left out until folders differ.
+  assert.deepEqual(
+    folderTree([
+      { path: "img/pictures/a", count: 1 },
+      { path: "img/pictures/b", count: 2 },
+    ]).map((row) => [row.path, row.depth]),
+    [
+      ["img/pictures/a", 0],
+      ["img/pictures/b", 0],
+    ],
+  );
 });

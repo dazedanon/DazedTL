@@ -1423,12 +1423,22 @@ export type ImageDraft = {
   imageRoot?: string;
 };
 
+/** How many images each view lists within the same folder and search. */
+export type ImageViewCounts = {
+  all: number;
+  list: number;
+  uncertain: number;
+  ready: number;
+  applied: number;
+};
+
 export type ImageList = {
   items: ImageAsset[];
   total: number;
   selectedMatched: number;
   offset?: number;
   limit: number;
+  views?: ImageViewCounts;
 };
 
 export type ImagePreviewAsset = {
