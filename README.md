@@ -14,6 +14,7 @@ The first start downloads about 300 MB, the pinned Node and Python, the locked P
 Everything installs inside the DazedTL folder, and the first start adds DazedTL to the Start menu and desktop on Windows, or to the application menu on Linux.
 The console shows progress and closes once the app opens; later starts open the app directly.
 A moved folder repairs its Python environment and shortcuts on its next start.
+DazedTL then [updates itself](docs/user-guide.md#updates).
 
 On Ubuntu 24.04 and later, the first start prints a one-time `sudo` command that lets the app use its browser sandbox; run it, then start again.
 
@@ -51,6 +52,26 @@ Use `node scripts/start.mjs --offline` to inspect the UI with provider execution
 | `DAZEDTL_PYTHON` | Python executable with backend dependencies; setup creates `.venv` from it instead of the pinned Python |
 | `DAZEDTL_PROFILE` | Electron profile location |
 | `DAZEDTL_WORKSPACE` | Project and run storage location |
+
+## Branches and releases
+
+Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
+From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
+A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, and `--local` stops before pushing.
+The [updater](docs/architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
+
+The mirrors are listed in [release/mirrors.json](release/mirrors.json); the release pushes to all of them through one remote:
+
+```sh
+git remote add all git@github.com:dazedanon/DazedTL.git
+git remote set-url --add --push all git@github.com:dazedanon/DazedTL.git
+git remote set-url --add --push all git@ssh.gitgud.io:DazedAnon/DazedTL.git
+git remote set-url --add --push all git@git-ssh.dazedtl.dev:dazed/DazedTL.git
+```
+
+Releases are signed with a key kept outside the checkout.
+Create it once with `node scripts/release.mjs key`, commit the public key it adds to `release/keys`, and back up the private key: installs reject releases signed by any key they do not trust.
+Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
 
 ## Development checks
 

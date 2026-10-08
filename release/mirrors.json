@@ -1,0 +1,17 @@
+[
+  {
+    "name": "GitHub",
+    "type": "github",
+    "url": "https://github.com/dazedanon/DazedTL"
+  },
+  {
+    "name": "GitGud",
+    "type": "gitlab",
+    "url": "https://gitgud.io/DazedAnon/DazedTL"
+  },
+  {
+    "name": "git.dazedtl.dev",
+    "type": "forgejo",
+    "url": "https://git.dazedtl.dev/dazed/DazedTL"
+  }
+]

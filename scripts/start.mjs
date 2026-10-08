@@ -11,6 +11,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { app, root, runtime, dependencies } from "./dependencies.mjs";
 import { ensureSetup, readState, writeState } from "./setup.mjs";
 import { shortcuts, desktopEntry } from "./shortcuts.mjs";
+import { applyPending } from "./update.mjs";
 
 const args = process.argv.slice(2);
 const detach = args.includes("--detach");
@@ -149,6 +150,14 @@ async function launch() {
     console.log("DazedTL is already starting.");
     return 0;
   }
+  // Updates swap files before setup reads the new lockfiles; the app reports
+  // the outcome.
+  const swap = applyPending();
+  if (swap?.ok) console.log(`DazedTL is now version ${swap.version}.`);
+  else if (swap)
+    console.error(
+      `The update to ${swap.version} could not be installed: ${swap.message}`,
+    );
   const state = readState();
   await ensureSetup({
     mode:

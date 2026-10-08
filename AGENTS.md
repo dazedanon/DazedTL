@@ -3,6 +3,7 @@
 ## Changes
 
 - Preserve existing user changes and the sibling DazedMTLTool repository.
+- Work on the `dev` branch; `main` changes only through `node scripts/release.mjs`.
 - Keep changes focused; preserve engine parsing, context, and translation behavior.
 - Follow the ownership boundaries in [architecture](docs/architecture.md) and reuse its shared UI and state mechanisms.
 - Follow the [navigation and responsiveness boundary](docs/architecture.md#navigation-and-responsiveness) when adding screens, tabs, action handlers, or observed state.
