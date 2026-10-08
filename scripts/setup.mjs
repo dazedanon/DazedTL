@@ -299,7 +299,12 @@ export async function ensureSetup({ mode }) {
   const modules = path.join(app, "node_modules");
   if (fs.lstatSync(modules, { throwIfNoEntry: false })?.isSymbolicLink())
     fs.unlinkSync(modules);
-  const npmKey = digest(mode, read("app/package-lock.json"));
+  // Every release bumps the app's own version in the lock; only the
+  // dependencies decide whether packages need installing again.
+  const lock = JSON.parse(read("app/package-lock.json").toString());
+  delete lock.version;
+  delete lock.packages?.[""]?.version;
+  const npmKey = digest(mode, JSON.stringify(lock));
   const electron = path.join(modules, "electron");
   if (
     state.npm !== npmKey ||
