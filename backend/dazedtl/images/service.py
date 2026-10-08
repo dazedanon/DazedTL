@@ -1224,7 +1224,7 @@ class ImageService:
         ]
         if hasattr(self.translation, "documents"):
             names = [
-                str(Path(row["path"]).relative_to(root))
+                Path(row["path"]).relative_to(root).as_posix()
                 for row in self.translation.documents(project_id).values()
             ]
         result = {}
@@ -1374,7 +1374,7 @@ class ImageService:
         write_json(request_path, request)
         value["requests"][identity] = {
             "kind": kind,
-            "path": str(request_path.relative_to(root)),
+            "path": request_path.relative_to(root).as_posix(),
             "hash": digest(request),
         }
         value[kind].update(
@@ -1744,7 +1744,7 @@ class ImageService:
             if accounted == len(expected) and not errors
             else "partial",
             lastReport=now(),
-            reportPath=str(path.relative_to(root)),
+            reportPath=path.relative_to(root).as_posix(),
             errors=errors,
             accounted=accounted,
             requested=len(expected),
