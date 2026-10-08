@@ -17,7 +17,7 @@ You don't need to know how to program: DazedTL walks you through each step, and 
 
 ## Install
 
-1. Download the ZIP from [GitGud](https://gitgud.io/DazedAnon/dazedtl/-/archive/main/dazedtl-main.zip) or [git.dazedtl.dev](https://git.dazedtl.dev/dazed/DazedTL/archive/main.zip).
+1. Download the ZIP from [GitHub](https://github.com/dazedanon/DazedTL/archive/refs/heads/main.zip), [GitGud](https://gitgud.io/DazedAnon/dazedtl/-/archive/main/dazedtl-main.zip) or [git.dazedtl.dev](https://git.dazedtl.dev/dazed/DazedTL/archive/main.zip).
 2. Unzip it somewhere easy to find, such as `C:\DazedTL`.
    Avoid OneDrive folders.
 3. Open the folder and double-click **START.bat** on Windows, or run **START.sh** on Linux.
