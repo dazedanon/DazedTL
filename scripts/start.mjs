@@ -192,6 +192,14 @@ const title = () => {
 
 async function launch() {
   title();
+  if (process.platform === "win32")
+    // Extracting a downloaded ZIP marks every file as from the internet, so
+    // Windows would ask "The publisher could not be verified" before each
+    // start, including shortcuts and update restarts. Running START once is
+    // the user's answer, so only its own mark is removed.
+    fs.rmSync(path.join(root, "START.bat") + ":Zone.Identifier", {
+      force: true,
+    });
   if (waitFor) {
     // The app that asked for this restart must be gone before files change.
     for (let tries = 0; tries < 300 && alive(waitFor); tries++)
