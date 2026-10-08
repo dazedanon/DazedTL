@@ -217,9 +217,6 @@ export function useGuidedWorkspace({
   const outputFiles = state.readiness.outputs.filter((name) =>
     selectedFiles.has(name),
   );
-  const applied =
-    outputFiles.length > 0 &&
-    outputFiles.every((name) => state.readiness.applied.includes(name));
   const layoutFiles = state.files
     .filter((file) => selectedFiles.has(file.name))
     .map((file) => file.name);
@@ -1539,7 +1536,6 @@ export function useGuidedWorkspace({
     changed,
     eventFiles,
     outputFiles,
-    applied,
     layoutFiles,
     enabledCodes,
     advancedReady,
