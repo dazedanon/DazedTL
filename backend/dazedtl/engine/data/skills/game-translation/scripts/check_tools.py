@@ -30,6 +30,7 @@ BUNDLED = [
     "C++/Godot",
     "C++/Trois/dxa_unpack.py",
     "C++/Yuris/patch_locale.py",
+    "C++/Yuris/yuris_text.py",
     "C++/Unreal/README.md",
     "C++/Wolf/wolf_rpg_decode/target/release/wolf_rpg_decode.exe",
     "C++/Wolf/wolf_unpack/target/release/wolf_unpack.exe",

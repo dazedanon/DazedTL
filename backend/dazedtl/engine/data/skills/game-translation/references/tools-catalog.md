@@ -49,7 +49,7 @@ so read the Bakin section at the bottom of this file before adapting anything Ba
 | `Unreal` | `README.md`, `scripts/`, `python/` bundled. `retoc.exe` (IoStore), `repak.exe` (pak), `UAssetGUI.exe` (JSON) are downloads placed in `retoc/`, `repak/`, `UAssetGUI/` | Unreal 4/5 |
 | `FModel` | `FModel.exe` (download) | Unreal asset browser |
 | `Wolf` | `wolf_rpg_decode` and `wolf_unpack` (Rust sources plus prebuilt `target/release/*.exe`), `parse_ce.py`/`analyze.py`, `RE/` notes. The IDA `.i64` databases are not bundled | Wolf RPG |
-| `Yuris` | `ypf/ystb` extract/repack + patch suite (locale, font, nameplate, inpaint) | YU-RIS |
+| `Yuris` | `yuris_text.py` (key, unpack, text and literal units, patch, pack for YPF 200-500 / YSTB through 555) over `yuris_decompiler`, plus a patch suite (locale, font, nameplate, inpaint) | YU-RIS |
 | `Trois` | `dxa_unpack.py`, `find_text_images.py` (OCR), `script_tl.py`, `patch_*.py` | Trois DXA |
 | `Godot` | PCK extract/repack, scene/script patch, vertical-text, save unlock | Godot |
 | `RPGM random obf\Namaiki` | RPGM randomized-obfuscation research | RPG Maker (obfuscated) |
@@ -61,7 +61,7 @@ so read the Bakin section at the bottom of this file before adapting anything Ba
 | `RPG Maker MZ` | `decrypt_rpgmz_data.js`, `decrypt_rpgmz_audio.js`, `run_runtime_image_dump.js` | encrypted MZ |
 | `KiriKiri XP3` | `unpack_xp3.py` | `.xp3` |
 | `Siglus G00-ScenePCK` | `unpack_g00.py`/`pack_g00.py`, `scene_pck.py`, `extract_scene_text.py`, `dazed_scene_text_bridge.py` | Siglus |
-| `YU-RIS YPF-YSTB` | `ypf/ystb_extract.py` + `_repack.py` | YU-RIS |
+| `YU-RIS YPF-YSTB` | `ypf/ystb_extract.py` + `_repack.py`, Elfhime only (YPF 0x1E7) | YU-RIS |
 | `RPG Maker RGSSAD` | `rgssad.py` (v1/v2/v3 extract + list), `install-template.ps1`/`.bat` (a PLAYER-facing installer: unpacks the archive with an embedded C# routine, lays the patch over it, moves the archive aside, `-Uninstall` reverses it). **Read its README**: RGSS3 serves `Data\*.rvdata2` from the archive whenever it is present and ignores a loose file beside it, so a patch dropped in next to `Game.rgss3a` does nothing, silently. | `.rgssad` XP, `.rgss2a` VX, `.rgss3a` Ace |
 | `Electron ASAR` | `unpack_asar.py` | `.asar` |
 | `LiveMaker` | not bundled (a 144 MB per-game working tree built on pylivemaker's `lm*` CLIs) | LiveMaker |

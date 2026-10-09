@@ -8,7 +8,7 @@ from murmurhash2 import murmurhash2 as _mmh2
 from collections import defaultdict as defdict
 from typing import Callable, BinaryIO, TextIO, Literal, Any
 from zlib import crc32 as _crc32, adler32 as _adl32, decompress
-Vmi, Vma = 200, 501  # supports Vmi=..<Vma
+Vmi, Vma = 200, 600  # supports Vmi=..<Vma; 555 scripts parse like 500 (淫獣監獄RE)
 def goodver(v: int): return Vmi <= v < Vma
 def nohash(b: bytes, e: int): return False
 def crc32(b: bytes, e: int): return a if (a := _crc32(b)) != e else False
@@ -29,9 +29,9 @@ def swap_trans(*args: tuple[int, int]):
 def decode(b: bytes, e: str):
     try:
         return b.decode(e)
-    except UnicodeDecodeError as x:
-        x.add_note(f'bytes={b}')
-        raise
+    except UnicodeDecodeError:
+        # Some games ship a string cut mid-character; keep the readable part.
+        return b.decode(e, 'replace')
 
 
 LE = 'little'
