@@ -15,6 +15,8 @@ import { useAction } from "../state/useAction";
 import type { GuidedStep, Screen, TranslationMethod } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
 import Settings from "../features/settings/Settings";
+import Updates from "../features/settings/Updates";
+import { PageHeader, PageLayout } from "../ui/PageLayout";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
 import { guidedProgress, projectAmounts } from "../features/guided/progress";
 import type { GuidedIntent } from "../features/guided/workspace/model";
@@ -169,11 +171,15 @@ export default function App() {
   const error = application.stopped
     ? application.error
     : action.error || application.error;
+  // The workspace never opening is not still starting.
+  const unopened = !state && !!application.error;
   const connection = application.stopped
     ? "App unavailable"
     : state
       ? "App ready"
-      : "Starting…";
+      : unopened
+        ? "Workspace unavailable"
+        : "Starting…";
   const workspace = !!state && workspaces.includes(state.screen);
   const updates = useUpdates();
   return (
@@ -249,7 +255,9 @@ export default function App() {
           </Button>
         )}
         <span className="connection" title={connection}>
-          <i className={application.stopped ? "disconnected" : ""} />
+          <i
+            className={application.stopped || unopened ? "disconnected" : ""}
+          />
           <span className="connection-label">{connection}</span>
         </span>
       </header>
@@ -336,11 +344,19 @@ export default function App() {
             label="This view"
           >
             {!state ? (
-              <p className="muted">
-                {error
-                  ? "Your workspace could not be opened."
-                  : "Opening your workspace…"}
-              </p>
+              error ? (
+                // An update is the way out of a workspace this version cannot
+                // open, so the updates stay reachable without it.
+                <PageLayout variant="editor" aria-label="Workspace unavailable">
+                  <PageHeader
+                    title="Workspace unavailable"
+                    description="Your workspace could not be opened. A newer version of DazedTL may fix this."
+                  />
+                  <Updates running={false} />
+                </PageLayout>
+              ) : (
+                <p className="muted">Opening your workspace…</p>
+              )
             ) : state.screen === "settings" ? null : workspace &&
               project?.method === "guided" ? (
               <GuidedWorkflow
