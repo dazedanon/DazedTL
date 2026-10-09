@@ -67,6 +67,7 @@ class TranslationEngine:
         self.source = activate()
         self.profile = Path(profile).resolve()
         self.repository_status = RepositoryStatusCache()
+        self.original_trees = RepositoryStatusCache()
 
     @contextmanager
     def context(self):
@@ -433,24 +434,31 @@ class TranslationEngine:
         """Tracked source inputs follow original, so normal English injection is not source drift."""
         from util.version_update.git_workflow import _run_git
 
-        result = {}
-        tree = _run_git(Path(source), "ls-tree", "-r", "-z", "original", check=False)
-        if tree.returncode:
-            return result
+        def listing():
+            tree = _run_git(
+                Path(source), "ls-tree", "-r", "-z", "original", check=False
+            )
+            blobs = {}
+            if tree.returncode:
+                return blobs
+            for entry in tree.stdout.split("\0"):
+                header, separator, relative = entry.partition("\t")
+                fields = header.split()
+                if (
+                    separator
+                    and not relative.startswith(".dazedtl/")
+                    and len(fields) == 3
+                    and fields[1] == "blob"
+                    and fields[0] != "120000"
+                ):
+                    blobs[relative] = fields[2]
+            return blobs
+
+        # Each poll reads these several times; the listing changes only when
+        # the original branch moves, which changes the repository signature.
+        blobs = self.original_trees.get(str(source), Path(source), listing)
         wanted = set(paths)
-        for entry in tree.stdout.split("\0"):
-            header, separator, relative = entry.partition("\t")
-            fields = header.split()
-            if (
-                separator
-                and relative in wanted
-                and not relative.startswith(".dazedtl/")
-                and len(fields) == 3
-                and fields[1] == "blob"
-                and fields[0] != "120000"
-            ):
-                result[relative] = fields[2]
-        return result
+        return {path: blob for path, blob in blobs.items() if path in wanted}
 
     def verify_bindings(self, source, bindings):
         if self.source_bindings(source, list(bindings)) != bindings:
