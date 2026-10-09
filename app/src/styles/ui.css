@@ -684,6 +684,9 @@ pre {
   flex: 1 1 20rem;
   min-width: 0;
   overflow-wrap: anywhere;
+  /* As tall as a header action, so one appearing never moves the page. */
+  min-height: var(--control-height);
+  align-content: center;
 }
 .ui-section + .ui-section {
   border-top: 1px solid var(--color-border);
