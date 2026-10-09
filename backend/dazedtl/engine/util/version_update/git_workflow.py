@@ -334,8 +334,12 @@ def _run_git(
         )
     except FileNotFoundError as exc:
         raise GitWorkflowError("Git is not installed or is not available on PATH") from exc
+    # The exceptions' own text is a Python command list; say which Git command.
+    except subprocess.TimeoutExpired as exc:
+        raise GitWorkflowError(f"git {args[0]} did not finish within {timeout} seconds.") from exc
     except (OSError, subprocess.SubprocessError) as exc:
-        raise GitWorkflowError(f"Git operation failed: {exc}") from exc
+        reason = getattr(exc, "strerror", None) or type(exc).__name__
+        raise GitWorkflowError(f"git {args[0]} could not run: {reason}") from exc
     result = subprocess.CompletedProcess(
         raw.args,
         raw.returncode,
