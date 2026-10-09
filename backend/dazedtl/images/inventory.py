@@ -97,19 +97,35 @@ def describe_png(image):
 class Index:
     def __init__(self, path):
         self.path = path
+        self._prepare()
+
+    def _prepare(self):
+        """Create the parent folder, the sqlite file and the assets schema.
+        Idempotent, so the connection path can call it to recover when the
+        inventory file or its folder is deleted while the app runs."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connection() as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, folder TEXT, name TEXT, "
-                "classification TEXT, state TEXT, selected INTEGER DEFAULT 0, examined INTEGER DEFAULT 0, generation TEXT, data TEXT)"
-            )
-            db.execute("CREATE INDEX IF NOT EXISTS image_folder ON assets(folder)")
-            db.execute(
-                "CREATE INDEX IF NOT EXISTS image_state ON assets(state,classification)"
-            )
+        db = sqlite3.connect(self.path, timeout=10)
+        try:
+            with db:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY, folder TEXT, name TEXT, "
+                    "classification TEXT, state TEXT, selected INTEGER DEFAULT 0, examined INTEGER DEFAULT 0, generation TEXT, data TEXT)"
+                )
+                db.execute("CREATE INDEX IF NOT EXISTS image_folder ON assets(folder)")
+                db.execute(
+                    "CREATE INDEX IF NOT EXISTS image_state ON assets(state,classification)"
+                )
+        finally:
+            db.close()
 
     @contextmanager
     def connection(self):
+        # The inventory can disappear under us when the user deletes the game's
+        # work folder outside the app, or restores the whole game folder from a
+        # backup. Rebuild an empty one so the Image Manager stays open and the
+        # next scan refills it, instead of failing the whole workspace snapshot.
+        if not self.path.exists():
+            self._prepare()
         db = sqlite3.connect(self.path, timeout=10)
         try:
             with db:

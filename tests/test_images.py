@@ -1,5 +1,6 @@
 """Protect scoped handoff, stale reviews and all-or-nothing image application."""
 
+import shutil
 import time
 import unittest
 from base64 import b64decode
@@ -579,3 +580,13 @@ class ImageTests(unittest.TestCase):
         [archived] = (self.game / ".dazedtl/archived").iterdir()
         self.assertTrue((archived / "inventory.sqlite3").is_file())
         self.assertEqual(service.state(identity)["inventoryRevision"], "")
+
+    def test_deleted_inventory_rebuilds_empty_instead_of_failing_the_snapshot(self):
+        # If the game's work folder is deleted while the Image Manager holds a
+        # cached Index, state() must not raise sqlite3.OperationalError and
+        # take the whole workspace snapshot down with it.
+        self.assertEqual(self.service.state(self.identity)["counts"]["indexed"], 2)
+        shutil.rmtree(self.game / ".dazedtl")
+        state = self.service.state(self.identity)
+        self.assertEqual(state["counts"]["indexed"], 0)
+        self.assertEqual(state["folders"], [])
