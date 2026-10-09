@@ -52,7 +52,7 @@ export function AssistantTask({
   state: AssistantTaskState;
   /** A short count beside the state, such as "1 of 3 saved". */
   progress?: string;
-  description: ReactNode;
+  description?: ReactNode;
   /** Background on what the task does and does not do. */
   help?: ReactNode;
   results?: AssistantResult[];

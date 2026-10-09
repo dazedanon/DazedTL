@@ -130,9 +130,12 @@ export function ProgressPanel({
         description={
           progress?.blocker ||
           progress?.next_action ||
-          (!reported && activity
-            ? "Your assistant has started preparing the game. Its first report will appear here."
-            : "Copy the starting prompt into your coding assistant. It backs up the game, extracts and translates the text and builds a patch on its own; its reports appear here.")
+          // A report without a next step leaves the phases to speak.
+          (reported
+            ? undefined
+            : activity
+              ? "Your assistant has started preparing the game. Its first report will appear here."
+              : "Copy the starting prompt into your coding assistant. It backs up the game, extracts and translates the text and builds a patch on its own; its reports appear here.")
         }
         help="These are your assistant's saved reports and the last time it used DazedTL. Neither shows that its session is still running, and finished text doesn't mean the game has been checked."
       >
