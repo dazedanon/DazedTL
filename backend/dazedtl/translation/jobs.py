@@ -115,6 +115,9 @@ class RunStore:
             "status": "ready",
             "message": "Ready",
             "plan_sha256": digest(plan),
+            "configuration_sha256": digest(plan["configuration"])
+            if "configuration" in plan
+            else None,
             "states": states,
             "mode": plan.get("configuration", {}).get("mode"),
             "action": plan.get("action") if plan["kind"] == "operation" else None,

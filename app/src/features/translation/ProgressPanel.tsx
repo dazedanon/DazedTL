@@ -27,6 +27,7 @@ import {
   approvalUntold,
   attemptJobs,
   awaitingQuote,
+  estimateOutdated,
   latestApiRun,
 } from "./apiRun";
 import { modeLabels } from "./OptionsPanel";
@@ -99,10 +100,11 @@ export function ProgressPanel({
   const attempt = attemptJobs(state);
   const run = latestApiRun(attempt);
   const untold = approvalUntold(run, state.assistantSeenAt);
-  // The API run's approval reminder already says to paste the prompt.
+  // The API run's reminders already say to paste the prompt.
   const quiet =
     status === "waiting" &&
     !untold &&
+    !estimateOutdated(run) &&
     now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
   const operation = attempt.find(
     (job) =>
@@ -284,6 +286,7 @@ function ApiRun({
   const mode = run.mode === "live" ? "live" : "batch";
   const charged = run.usage.openrouter_cost;
   const quote = awaitingQuote(run);
+  const outdated = estimateOutdated(run);
   const reminder = ["running", "waiting"].includes(run.status)
     ? "tell your assistant you approved this run here, so it waits for the results and carries on."
     : run.status === "complete"
@@ -308,16 +311,35 @@ function ApiRun({
   return (
     <StatusPanel
       title="API run"
-      state={quote ? "needs_review" : runStates[run.status] || "blocked"}
+      state={
+        outdated
+          ? "outdated"
+          : quote
+            ? "needs_review"
+            : runStates[run.status] || "blocked"
+      }
       progress={modeLabels[mode]}
       description={
-        quote
-          ? "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
-          : run.message
+        outdated
+          ? "API settings or the translation mode changed after this estimate, so it can no longer be approved."
+          : quote
+            ? "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
+            : run.message
       }
     >
       <div className="status-panel-body">
-        {quote ? (
+        {outdated ? (
+          <>
+            <Notice tone="warning">
+              <span>
+                <strong>Needs you:</strong> ask your assistant for a new
+                estimate. If its session has ended, paste the prompt into a new
+                one.
+              </span>
+            </Notice>
+            {resume}
+          </>
+        ) : quote ? (
           <>
             <TranslationCost
               value={{

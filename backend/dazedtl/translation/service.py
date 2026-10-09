@@ -385,7 +385,7 @@ class Translation:
                 if stored
                 else {}
             ),
-            "jobs": [self.jobs.store.view(job) for job in saved_jobs],
+            "jobs": self.job_views(saved_jobs, selected["options"]["mode"]),
             "active": self.jobs.running(project_id),
             "warnings": warnings,
             "statusText": status.read_text(encoding="utf-8")[:250_000]
@@ -521,6 +521,33 @@ Additional project instructions:
         )
         return {"handoff": handoff, "path": str(handoff_path)}
 
+    def job_views(self, jobs, mode):
+        """Saved runs as pages show them; an estimate waiting for approval
+        notes when the settings it priced have changed since."""
+        current = None
+        views = []
+        for job in jobs:
+            view = self.jobs.store.view(job)
+            frozen = job.get("configuration_sha256")
+            if (
+                frozen
+                and view["status"] == "ready"
+                and view["quote"]
+                and not view["approved"]
+            ):
+                if current is None:
+                    # Cached prices only, so a snapshot never waits on a
+                    # pricing lookup; approval itself checks fully.
+                    try:
+                        current = digest(
+                            self.api_configuration(mode, cached_only=True)[0]
+                        )
+                    except ValueError:
+                        current = ""
+                view["settings_changed"] = bool(current) and current != frozen
+            views.append(view)
+        return views
+
     def stored_original(self, root):
         """The original backup a game folder already holds, for a project
         without one; kept until the store's snapshots change."""
@@ -557,7 +584,7 @@ Additional project instructions:
         )
         raw_path = project.artifact(input_path)
         raw = plan_input(read_json(raw_path))
-        cfg = configuration(self.settings, selected["mode"])
+        cfg, batch_provider = self.api_configuration(selected["mode"])
         if cfg["mode"] != "agent" and not raw["complete"]:
             raise ValueError(
                 "API cost review requires the complete independently audited request corpus."
@@ -590,10 +617,6 @@ Additional project instructions:
         )
         limits = None
         if cfg["mode"] != "agent":
-            batch_provider = self.engine.batch_supported(cfg)
-            cfg["rates"]["batch_factor"] = (
-                0.5 if batch_provider and batch_provider != "openrouter" else None
-            )
             if cfg["mode"] == "batch" and not batch_provider:
                 raise ValueError(
                     "This route does not support Batch execution. Choose a supported connection or explicitly select Live."
@@ -630,6 +653,18 @@ Additional project instructions:
         job = self.jobs.store.create(project_id, plan, estimate)
         self.refresh_progress(project_id, plan)
         return self.jobs.store.view(job)
+
+    def api_configuration(self, mode, *, cached_only=False):
+        """The settings a run compiled now would freeze, with the Batch route
+        that sets its price factor."""
+        cfg = configuration(self.settings, mode, cached_only=cached_only)
+        batch_provider = None
+        if cfg["mode"] != "agent":
+            batch_provider = self.engine.batch_supported(cfg)
+            cfg["rates"]["batch_factor"] = (
+                0.5 if batch_provider and batch_provider != "openrouter" else None
+            )
+        return cfg, batch_provider
 
     def guidance_inputs(self, source):
         root = Path(source)
@@ -701,6 +736,16 @@ Additional project instructions:
             if not approval_token or approval_token != job["approval_token"]:
                 raise ValueError(
                     "Review and approve this exact quote before submitting."
+                )
+            # The quote priced the settings the run froze; approving it after
+            # they change would approve a cost the user no longer sees.
+            _record, project = self.project(project_id)
+            current, _provider = self.api_configuration(
+                project.read()["options"]["mode"]
+            )
+            if digest(current) != digest(plan["configuration"]):
+                raise ValueError(
+                    "API settings or the translation mode changed after this estimate. Compile and review a new plan."
                 )
             self.validate_current(project_id, plan)
             self.jobs.store.authorize(job, in_app=not assistant_request.get())

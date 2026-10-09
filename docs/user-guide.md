@@ -146,6 +146,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
    When your assistant asks you to approve an API estimate, answer it or use the approve button on **Progress**.
    If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
+   Changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
 5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
    It puts back the original game files and moves the attempt to `.dazedtl/archived`; backups, save games, Image Manager work and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.

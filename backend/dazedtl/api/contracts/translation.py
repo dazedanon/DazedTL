@@ -78,6 +78,8 @@ class TranslationJob(TypedDict):
     approval_token: str
     approved: bool
     app_approved_at: str | None
+    # Only on an estimate waiting for approval in a project's state.
+    settings_changed: NotRequired[bool]
     result: dict[str, object] | None
     usage: dict[str, float]
     counts: dict[str, int]

@@ -207,8 +207,12 @@ class Application:
                     ):
                         # A prepared run is not working; it waits for the user.
                         project.update(
-                            status="Estimate needs your approval",
-                            detail="Approve it on Progress, or answer your assistant.",
+                            status="Estimate is out of date"
+                            if job.get("settings_changed")
+                            else "Estimate needs your approval",
+                            detail="Ask your assistant for a new estimate."
+                            if job.get("settings_changed")
+                            else "Approve it on Progress, or answer your assistant.",
                         )
                     else:
                         project.update(

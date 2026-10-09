@@ -25,7 +25,12 @@ import type { ProjectLink } from "../guided/workspace/model";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { OptionsPanel } from "./OptionsPanel";
-import { attemptJobs, awaitingQuote, latestApiRun } from "./apiRun";
+import {
+  attemptJobs,
+  awaitingQuote,
+  estimateOutdated,
+  latestApiRun,
+} from "./apiRun";
 import { ProgressPanel } from "./ProgressPanel";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
@@ -145,6 +150,7 @@ function Workspace({
       job.kind === "operation" && ["running", "waiting"].includes(job.status),
   );
   const copyDisabled = operating || action.busy || draft.committing;
+  const run = latestApiRun(attemptJobs(state));
   // The page's main action ends every tab's footer. A second copy, such as
   // the API run's reminder, reports under its own key beside itself.
   const copyControl = (
@@ -241,9 +247,9 @@ function Workspace({
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
-              {/* An estimate waiting for approval holds the one primary. */}
+              {/* An estimate the user can approve holds the one primary. */}
               {copyControl(
-                awaitingQuote(latestApiRun(attemptJobs(state)))
+                awaitingQuote(run) && !estimateOutdated(run)
                   ? "default"
                   : "primary",
               )}

@@ -16,6 +16,10 @@ export const latestApiRun = (jobs: TranslationJob[]) =>
 export const awaitingQuote = (run: TranslationJob | undefined) =>
   run?.status === "ready" && !run.approved ? run.quote : null;
 
+/** An estimate priced with settings or a mode that have changed since. */
+export const estimateOutdated = (run: TranslationJob | undefined) =>
+  !!awaitingQuote(run) && !!run?.settings_changed;
+
 /**
  * Whether the user approved the run in the app after the assistant last used
  * DazedTL, so the assistant may still be waiting for an answer.

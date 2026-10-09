@@ -357,6 +357,21 @@ class WorkflowTests(unittest.TestCase):
             else None
         )
         reports = len(self.engine.reports)
+        # New rates make the shown cost stale; restoring them makes it current.
+        rates = self.settings_data["connections"][0]["model_options"]["fixture-model"]
+
+        def outdated():
+            jobs = self.service.state(self.identity)["jobs"]
+            return next(job for job in jobs if job["id"] == run["id"])[
+                "settings_changed"
+            ]
+
+        rates["inputRate"] = 3
+        self.assertTrue(outdated())
+        with self.assertRaisesRegex(ValueError, "changed after this estimate"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+        rates["inputRate"] = 1
+        self.assertFalse(outdated())
         write_json(self.game / "source.json", {"line": "変更。"})
         with self.assertRaises(ValueError):
             self.service.start(self.identity, run["id"], run["approval_token"])

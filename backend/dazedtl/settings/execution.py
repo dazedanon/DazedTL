@@ -12,7 +12,7 @@ def connection_summary(settings):
     return {key: connection[key] for key in ("name", "model")} if connection else None
 
 
-def configuration(settings, mode):
+def configuration(settings, mode, *, cached_only=False):
     state = settings._read()
     language = state["values"]["language"]
     if mode == "agent":
@@ -34,7 +34,7 @@ def configuration(settings, mode):
     defaults = settings.model_defaults(
         connection["id"],
         connection["model"],
-        cached_only=selected["pricing"] == "custom",
+        cached_only=cached_only or selected["pricing"] == "custom",
     )
     input_rate = (
         selected["inputRate"]

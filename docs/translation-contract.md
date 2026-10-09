@@ -119,6 +119,7 @@ The app's progress export is a derived view, not a replacement for an engine's e
 Review the run's complete request set and quote before start --approve TOKEN.
 This is the spending decision inside the same assistant conversation or app run.
 The user can instead approve the quote on the Progress tab, which starts the run without the assistant; inspect the run before starting it.
+A quote stops being approvable once API settings or the translation mode change after it; start refuses it, so compile and review a new plan.
 A quote is an estimate, not a guaranteed bill or an unlimited retry allowance.
 New runs include one context-clarification retry for a confirmed provider refusal, with any additional usage billed in the originally selected mode.
 Only refused requests are retried; a second refusal stays unresolved.
