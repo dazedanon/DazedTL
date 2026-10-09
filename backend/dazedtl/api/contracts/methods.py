@@ -67,6 +67,7 @@ from dazedtl.api.contracts.settings import (
 )
 from dazedtl.api.contracts.translation import (
     BackupCatalog,
+    OrganizedRun,
     PreparedHandoff,
     ProjectOptions,
     RequestPreview,
@@ -246,6 +247,12 @@ class SaveDocumentRequest(TypedDict):
 class InputPathRequest(TypedDict):
     project_id: str
     input_path: str
+
+
+class TranslationOrganizeRequest(TypedDict):
+    project_id: str
+    input_path: str
+    complete: NotRequired[bool]
 
 
 class RunRequest(TypedDict):
@@ -594,6 +601,7 @@ METHODS: dict[str, Method] = {
     "translation_save_document": Method(SaveDocumentRequest, Documents),
     "translation_prepare": Method(ProjectRequest, PreparedHandoff),
     "translation_compile": Method(InputPathRequest, TranslationJob),
+    "translation_organize": Method(TranslationOrganizeRequest, OrganizedRun),
     "translation_run": Method(RunRequest, TranslationJob, refresh=False),
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),

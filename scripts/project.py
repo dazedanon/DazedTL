@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from dazedtl.translation.organize import EXAMPLE as UNITS_EXAMPLE
 from dazedtl.translation.service import OPERATIONS
 
 
@@ -143,6 +144,10 @@ def main():
         "context",
         help="Read verified context investigation results and current document revisions",
     )
+    commands.add_parser(
+        "units-format",
+        help="Print an example of the source units file organize reads",
+    )
     commands.add_parser("plan-format")
     identify = commands.add_parser("identify")
     identify.add_argument("--engine", required=True)
@@ -172,6 +177,16 @@ def main():
     operation.add_argument("--arguments-file", type=Path)
     compile_plan = commands.add_parser("compile")
     compile_plan.add_argument("--input", required=True)
+    organize = commands.add_parser(
+        "organize",
+        help="Group the extracted source units into requests and compile the run; replies with counts only",
+    )
+    organize.add_argument("--input", required=True)
+    organize.add_argument(
+        "--complete",
+        action="store_true",
+        help="Only after auditing that the units cover every line in scope",
+    )
     for name in (
         "run",
         "stop",
@@ -226,7 +241,9 @@ def main():
     progress.add_argument("--input", required=True)
     args = parser.parse_args()
     try:
-        if args.command == "plan-format":
+        if args.command == "units-format":
+            result = UNITS_EXAMPLE
+        elif args.command == "plan-format":
             result = {
                 "version": 2,
                 "complete": False,
@@ -260,8 +277,10 @@ def main():
                     params["request_id"] = args.continue_request
             if hasattr(args, "run"):
                 params["run_id"] = args.run
-            if args.command in {"compile", "progress", "accept"}:
+            if args.command in {"compile", "organize", "progress", "accept"}:
                 params["input_path"] = args.input
+            if args.command == "organize":
+                params["complete"] = args.complete
             if args.command in {"accept", "review", "resolve-uncertain"}:
                 params["batch_id"] = args.batch
             if args.command in {"review", "resolve-uncertain"}:

@@ -264,6 +264,41 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reviewed", corrected["result"])
         self.assertEqual(corrected["request"]["context"]["qa_notes"]["line"], note)
 
+    def test_organized_lines_compile_without_returning_game_text(self):
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {
+                        "id": "a/1",
+                        "scene": "a",
+                        "source": "はい。",
+                        "kind": "dialogue",
+                        "speaker": "リリ",
+                    },
+                    {"id": "b/1", "scene": "b", "source": "いいえ。"},
+                ],
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "--complete"):
+            self.service.organize(self.identity, units)
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        organized = self.service.organize(self.identity, units)
+        self.assertEqual(organized["run"]["requests"], 2)
+        self.assertEqual(organized["summary"]["named_speakers"], 1)
+        self.assertNotIn("はい", json.dumps(organized, ensure_ascii=False))
+        plan = read_json(self.game / organized["summary"]["plan"])
+        self.assertEqual(plan["inputs"], [units])
+        preview = self.service.request(self.identity, organized["run"]["id"], 0)
+        self.assertEqual(preview["request"]["context"]["speakers"], {"a/1": "リリ"})
+
     def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(
         self,
     ):

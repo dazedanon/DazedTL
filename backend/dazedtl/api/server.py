@@ -512,7 +512,7 @@ class Application:
         prepares = (
             name == "guided_preview"
             and params.get("action") == "start"
-            or name == "translation_compile"
+            or name in {"translation_compile", "translation_organize"}
             or name == "images_editor_translation_preview"
         )
         if not explicit and not prepares:
@@ -522,7 +522,7 @@ class Application:
                 raise ValueError(
                     "The app is closing. Reopen it before preparing requests."
                 )
-            if name == "translation_compile":
+            if name in {"translation_compile", "translation_organize"}:
                 _record, project = self.translation.project(params.get("project_id"))
                 if project.read()["options"]["mode"] == "agent":
                     return
@@ -698,6 +698,7 @@ def routes(app):
         "prepare",
         "backups",
         "compile",
+        "organize",
         "run",
         "request",
         "start",

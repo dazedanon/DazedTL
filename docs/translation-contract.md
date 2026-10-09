@@ -47,9 +47,38 @@ RPG Maker preparation uses the existing shared helper; Ace and other formats req
 Git setup requires a source version and a reviewed runtime manifest for a fresh baseline.
 The untranslated flag is an attestation after source inspection, not permission to label English as an original.
 
+## Source units
+
+Len's extractor saves every line in scope as source units, and organize turns them into requests, so the assistant never reads or rewrites the game's text to group it.
+Use units-format for an example.
+The authoritative validator and grouping are in [organize.py](../backend/dazedtl/translation/organize.py).
+The file is an object with version 1 and units, a list in play order; each unit has these fields:
+
+| Field | Contract |
+| --- | --- |
+| id | Required. Unique single-line text of at most 240 characters that the engine's injector maps back to its location. |
+| scene | Required. The engine's scene, such as an event page, common event, scenario label or table. A scene's units stay together. |
+| source | Required. The Japanese line exactly as the injector will replace it. |
+| group | The file or area a scene belongs to; defaults to the scene. Small scenes of one group share a request. |
+| kind | dialogue, narration, ui, or unknown (the default) when the extractor cannot tell. |
+| speaker | A name the extractor's rules found, or null (the default). UI has no speaker. |
+| field | A section.key template from data/translation_contexts.json that applies to the whole scene, such as database.item. |
+| tokens, max_lines, max_characters | Protected literal strings present in the source, and layout bounds. |
+
+Speakers come only from the engine's own evidence, such as nameplates and face or speaker codes.
+Do not inherit the previous speaker or infer identity or gender from speech style; unknown speakers are valid.
+Keep nameplate text separate from speaker labels, and do not deduplicate lines by their Japanese text.
+
+Run organize --input with the units file, adding --complete once the inventory audit shows the units cover every line in scope.
+It packs whole scenes of one group and field into requests of at most the model's entries per request and 8,000 source characters.
+A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
+Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content, then compiled.
+The reply holds counts only; errors name unit IDs without repeating game text.
+Move game text only with scripts, never by pasting or retyping it.
+
 ## Source plan
 
-Use plan-format for a minimal example.
+Organize writes this plan; a plan written by hand compiles the same way, and plan-format shows a minimal one.
 The authoritative validator is [requests.py](../backend/dazedtl/translation/requests.py).
 The JSON object has these fields:
 
@@ -60,13 +89,9 @@ The JSON object has these fields:
 | inputs | Unique project-relative source and guidance files. Use immutable source exports, not a store whose translation columns will change. |
 | batches | Ordered coherent batches, each with a stable unique id and an ID-to-Japanese sources object. |
 
-Every batch requires kinds and speakers, both with exactly the same IDs as sources.
-Classify each line as dialogue, narration, ui, or unknown when its text type is unresolved.
-Use an evidenced speaker name or null for unknown/inapplicable speakers; UI must use null.
+Every batch requires kinds and speakers, both with exactly the same IDs as sources, following the rules for [source units](#source-units).
 Narration may carry a known narrator's identity without turning it into spoken dialogue.
-Unknown speakers are valid and never generate review flags automatically.
-Do not inherit the previous speaker or infer identity/gender from speech style.
-Resolve subjects and addressees independently using the Japanese.
+Unknown speakers never generate review flags automatically.
 
 A batch can also have source_context for preceding Japanese; scene_context for evidence-based scene and runtime-substitution notes; an instruction_key from the existing field templates; and constraints keyed by source ID.
 Supported constraints are tokens (protected literal strings), max_lines, and max_characters.
@@ -81,8 +106,6 @@ Intentional ambiguity can remain in a source-checked translation.
 Corrections invalidate that review, while retaining the notes and previous result for another pass.
 
 Preserve occurrence identity and scene order.
-Do not deduplicate dialogue globally by Japanese text.
-Keep nameplate text separate from contextual speaker labels.
 If an exchange spans requests, include the necessary surrounding source from the same scene/event branch and check continuity at the next review checkpoint.
 
 Compile using compile --input followed by the plan's game-relative path.

@@ -8,10 +8,14 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
-from dazedtl.settings.execution import configuration, connection_summary
+from dazedtl.settings.execution import (
+    configuration,
+    connection_summary,
+    entries_per_request,
+)
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, delivery, progress_report
+from . import backups, delivery, organize, progress_report
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .helper_command import git_note, helper_command
@@ -664,6 +668,30 @@ Additional project instructions:
                 0.5 if batch_provider and batch_provider != "openrouter" else None
             )
         return cfg, batch_provider
+
+    def organize(self, project_id, input_path, complete=False):
+        """Compiles a run from the lines Len's extractor saved, so the
+        assistant never reads or rewrites the game's text to group it."""
+        if type(complete) is not bool:
+            raise ValueError("Say whether the line inventory is complete.")
+        self.idle(project_id)
+        _record, project = self.project(project_id)
+        units = organize.units_input(read_json(project.artifact(input_path)))
+        if project.read()["options"]["mode"] != "agent" and not complete:
+            raise ValueError(
+                "API estimates need the complete line inventory. Audit it, then organize again with --complete."
+            )
+        value = organize.plan(
+            units, input_path, complete, entries_per_request(self.settings)
+        )
+        relative = organize.plan_path(value)
+        path = project_path(project.root, relative, exists=False)
+        if not path.exists() or read_json(path) != value:
+            write_json(path, value)
+        return {
+            "run": self.compile(project_id, relative),
+            "summary": organize.summary(units, value),
+        }
 
     def guidance_inputs(self, source):
         root = Path(source)

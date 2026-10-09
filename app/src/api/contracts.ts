@@ -1107,6 +1107,21 @@ export type PreparedHandoff = {
   path: string;
 };
 
+/** Counts only, so the assistant reads no game text back. */
+export type OrganizeSummary = {
+  units: number;
+  requests: number;
+  scenes: number;
+  kinds: Record<string, number>;
+  named_speakers: number;
+  plan: string;
+};
+
+export type OrganizedRun = {
+  run: TranslationJob;
+  summary: OrganizeSummary;
+};
+
 export type PreferenceValues = {
   language: string;
   model: string;
@@ -1999,6 +2014,12 @@ export type InputPathRequest = {
   input_path: string;
 };
 
+export type TranslationOrganizeRequest = {
+  project_id: string;
+  input_path: string;
+  complete?: boolean;
+};
+
 export type RunRequest = {
   project_id: string;
   run_id: string;
@@ -2390,6 +2411,10 @@ export type RpcContract = {
   };
   translation_prepare: { request: ProjectRequest; response: PreparedHandoff };
   translation_compile: { request: InputPathRequest; response: TranslationJob };
+  translation_organize: {
+    request: TranslationOrganizeRequest;
+    response: OrganizedRun;
+  };
   translation_run: { request: RunRequest; response: TranslationJob };
   translation_request: { request: RunIndexRequest; response: RequestPreview };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };

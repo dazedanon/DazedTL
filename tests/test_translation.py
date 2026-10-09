@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from dazedtl.storage import write_json
+from dazedtl.translation import organize
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.jobs import RunStore
 from dazedtl.translation.project import ProjectWorkspace, scope
@@ -719,3 +720,78 @@ class TranslationTests(unittest.TestCase):
         )
         self.assertNotEqual(row["fingerprint"], classified["fingerprint"])
         self.assertNotEqual(row["fingerprint"], flagged["fingerprint"])
+
+    def test_organized_plan_packs_whole_scenes_and_splits_large_ones_with_context(
+        self,
+    ):
+        def unit(identity, scene, **values):
+            return {"id": identity, "scene": scene, "source": identity + "。", **values}
+
+        units = organize.units_input(
+            {
+                "version": 1,
+                "units": [
+                    unit("a1", "A", group="Map", kind="dialogue", speaker="リリ"),
+                    unit("a2", "A", group="Map", tokens=["。"], max_lines=2),
+                    unit("b1", "B", group="Map"),
+                    *(
+                        unit(f"c{n}", "C", group="Map", speaker="ゴウ")
+                        for n in range(5)
+                    ),
+                    unit("d1", "Items", kind="ui", field="database.item"),
+                ],
+            }
+        )
+        value = organize.plan(units, "work/source-units.json", False, 4)
+        self.assertEqual(plan_input(value), value)
+        self.assertEqual(value["inputs"], ["work/source-units.json"])
+        batches = {batch["id"]: batch for batch in value["batches"]}
+        # Whole small scenes of one group share a request; a scene over the
+        # limit splits evenly, and later parts carry its earlier lines.
+        self.assertEqual(list(batches), ["a1", "c0", "c3", "d1"])
+        self.assertEqual(list(batches["a1"]["sources"]), ["a1", "a2", "b1"])
+        self.assertEqual(len(batches["c0"]["sources"]), 3)
+        self.assertNotIn("source_context", batches["c0"])
+        self.assertEqual(
+            batches["c3"]["source_context"], "ゴウ: c0。\nゴウ: c1。\nゴウ: c2。"
+        )
+        self.assertEqual(batches["a1"]["kinds"]["a1"], "dialogue")
+        self.assertEqual(batches["a1"]["kinds"]["b1"], "unknown")
+        self.assertEqual(
+            batches["a1"]["speakers"], {"a1": "リリ", "a2": None, "b1": None}
+        )
+        self.assertEqual(
+            batches["a1"]["constraints"], {"a2": {"tokens": ["。"], "max_lines": 2}}
+        )
+        self.assertEqual(batches["d1"]["instruction_key"], "database.item")
+        self.assertNotIn("instruction_key", batches["a1"])
+        # The same units always give the same plan and plan file.
+        again = organize.plan(units, "work/source-units.json", False, 4)
+        self.assertEqual(organize.plan_path(again), organize.plan_path(value))
+        summary = organize.summary(units, value)
+        self.assertEqual(
+            (summary["units"], summary["requests"], summary["scenes"]), (9, 4, 4)
+        )
+
+    def test_organizing_rejects_units_by_id_without_repeating_game_text(self):
+        valid = {"id": "one", "scene": "A", "source": "秘密の台詞"}
+        for units, named in (
+            ([valid, {**valid}], "one"),
+            ([{**valid, "tokens": ["\\C[9]"]}], "one"),
+            ([{**valid, "kind": "ui", "speaker": "リリ"}], "one"),
+            ([{**valid, "kind": "guess"}], "one"),
+            ([{**valid, "source": " "}], "one"),
+            (
+                [valid, {**valid, "id": "two", "scene": "B"}, {**valid, "id": "3"}],
+                "A",
+            ),
+            (
+                [valid, {**valid, "id": "two", "field": "database.item"}],
+                "A",
+            ),
+        ):
+            with self.subTest(units=units):
+                with self.assertRaises(ValueError) as caught:
+                    organize.units_input({"version": 1, "units": units})
+                self.assertIn(named, str(caught.exception))
+                self.assertNotIn("秘密", str(caught.exception))

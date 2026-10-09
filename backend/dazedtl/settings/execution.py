@@ -12,6 +12,20 @@ def connection_summary(settings):
     return {key: connection[key] for key in ("name", "model")} if connection else None
 
 
+def entries_per_request(settings):
+    """The active model's entries per request, or the default without a
+    connection, so requests organized in any mode also fit a later API run."""
+    connection = settings._connection(settings._read())
+    selected = (
+        connection["model_options"].get(
+            connection["model"], preferences.DEFAULT_OPTIONS
+        )
+        if connection
+        else preferences.DEFAULT_OPTIONS
+    )
+    return selected["entriesPerRequest"] or preferences.DEFAULT_ENTRIES_PER_REQUEST
+
+
 def configuration(settings, mode, *, cached_only=False):
     state = settings._read()
     language = state["values"]["language"]
@@ -64,8 +78,7 @@ def configuration(settings, mode, *, cached_only=False):
             selected.get("maxOutputTokens"), defaults.get("maxOutputTokens")
         ),
         "refusalRetry": REFUSAL_POLICY,
-        "entries_per_request": selected["entriesPerRequest"]
-        or preferences.DEFAULT_ENTRIES_PER_REQUEST,
+        "entries_per_request": entries_per_request(settings),
         "rates": {
             "input": input_rate,
             "output": output_rate,

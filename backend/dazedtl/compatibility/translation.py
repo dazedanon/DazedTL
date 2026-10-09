@@ -199,6 +199,19 @@ class TranslationEngine:
             }
             for batch in plan["batches"]
         ]
+        for batch in batches:
+            try:
+                if batch.get("instruction_key"):
+                    ctx(
+                        batch["instruction_key"],
+                        language=language,
+                        context=batch.get("source_context", ""),
+                    )
+            except KeyError:
+                raise ValueError(
+                    f"Request {batch['id']} names an unknown field template, "
+                    f"{batch['instruction_key']}. Use a section.key from data/translation_contexts.json."
+                ) from None
         compiled = request_contexts(self.project(source, options), batches)
         for original, result in zip(plan["batches"], compiled):
             context = result["context"]
