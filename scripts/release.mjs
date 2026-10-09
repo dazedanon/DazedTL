@@ -1,7 +1,8 @@
 // Publishes a DazedTL release from the dev branch: runs the checks, signs a
 // manifest of every file, tags it and pushes it to every mirror. A stable
-// release fast-forwards main to dev and commits there; a prerelease such as
-// 2.1.0-beta.1 is tagged on dev for the beta channel.
+// release fast-forwards main to dev and commits there, once CI has passed for
+// that commit on GitHub; a prerelease such as 2.1.0-beta.1 is tagged on dev
+// for the beta channel.
 //
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
@@ -10,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import { root } from "./dependencies.mjs";
 import {
   compare,
@@ -149,6 +151,82 @@ function checkRemote() {
     );
 }
 
+/** A GitHub API read, or null when GitHub has no such object. */
+async function github(route) {
+  const response = await fetch(`https://api.github.com/${route}`, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "DazedTL release",
+    },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (response.status === 404 || response.status === 422) return null;
+  if (!response.ok)
+    throw new Error(
+      `GitHub answered ${response.status} while checking CI. Try again later.`,
+    );
+  return response.json();
+}
+
+/**
+ * Requires the CI workflow to have passed on GitHub for `commit`, pushing
+ * dev there first when GitHub does not have it, so main only moves to commits
+ * whose checks and live tests passed on Windows and Linux. A run still going
+ * is waited for; a failed or cancelled one stops the release.
+ * @param {string} commit
+ * @param {boolean} push
+ */
+export async function requireCI(commit, push) {
+  const site = mirrors(root).find((mirror) => mirror.type === "github");
+  if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
+  const repository = new URL(site.url).pathname.replace(/^\/|\.git$/g, "");
+  const short = commit.slice(0, 7);
+  if (!(await github(`repos/${repository}/commits/${commit}`))) {
+    if (!push)
+      throw new Error(`Push dev to GitHub so CI can test ${short} first.`);
+    step("git", ["push", remote, "dev"]);
+  }
+  const started = Date.now();
+  let shown = "";
+  for (;;) {
+    const found = await github(
+      `repos/${repository}/actions/runs?head_sha=${commit}&per_page=50`,
+    );
+    const run = (found?.workflow_runs || [])
+      .filter((item) => item.path === ".github/workflows/ci.yml")
+      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+    if (run?.status === "completed") {
+      if (run.conclusion === "success") {
+        console.log(`CI passed for ${short}.`);
+        return;
+      }
+      const jobs = await github(
+        `repos/${repository}/actions/runs/${run.id}/jobs`,
+      );
+      const failed = (jobs?.jobs || [])
+        .filter((job) => job.conclusion !== "success")
+        .map((job) => job.name);
+      throw new Error(
+        [
+          `CI ${run.conclusion === "failure" ? "failed" : `ended as ${run.conclusion}`} for ${short}${failed.length ? `: ${failed.join(", ")}` : ""}.`,
+          run.html_url,
+          "Fix it on dev, or rerun it there if it failed for an unrelated reason, then release again.",
+        ].join("\n"),
+      );
+    }
+    if (!run && Date.now() - started > 5 * 60_000)
+      throw new Error(`CI did not start for ${short} on GitHub.`);
+    if (Date.now() - started > 60 * 60_000)
+      throw new Error(`CI for ${short} did not finish within an hour.`);
+    const status = run
+      ? `${run.status.replace("_", " ")}: ${run.html_url}`
+      : "waiting to start";
+    if (status !== shown) console.log(`CI for ${short} is ${status}`);
+    shown = status;
+    await delay(30_000);
+  }
+}
+
 /** Hashes the staged blobs, which are exactly what the mirrors archive. */
 function manifestFor(version) {
   const rows = execFileSync("git", ["ls-files", "-s", "-z"], { cwd: root })
@@ -197,7 +275,7 @@ function setVersion(version) {
   }
 }
 
-function release(version, push) {
+async function release(version, push) {
   if (!isVersion(version))
     throw new Error(
       `Give a version such as 2.0.0 or 2.1.0-beta.1, not "${version}".`,
@@ -220,6 +298,7 @@ function release(version, push) {
   step(process.execPath, ["scripts/build.mjs"]);
 
   const stable = !version.includes("-");
+  if (stable) await requireCI(git("rev-parse", "HEAD"), push);
   const branch = stable ? "main" : "dev";
   const tag = `v${version}`;
   const touched = [
@@ -309,11 +388,12 @@ function release(version, push) {
   }
 }
 
-try {
-  const [command] = process.argv.slice(2);
-  if (command === "key") createKey();
-  else release(command ?? "", !process.argv.includes("--local"));
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-}
+if (import.meta.main)
+  try {
+    const [command] = process.argv.slice(2);
+    if (command === "key") createKey();
+    else await release(command ?? "", !process.argv.includes("--local"));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  }

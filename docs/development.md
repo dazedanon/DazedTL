@@ -65,7 +65,9 @@ GitHub's Windows images include the Visual C++ runtime and other tools a fresh W
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
 From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
-A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, and `--local` stops before pushing.
+Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
+It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a failed or cancelled run stops the release.
+A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
 The [updater](architecture.md#distribution-and-updates) only accepts tags whose signed manifest matches every file.
 
 The mirrors are listed in [release/mirrors.json](../release/mirrors.json); the release pushes to all of them through one remote:
