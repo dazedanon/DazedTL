@@ -141,6 +141,66 @@ def backup_files(
         yield restored
 
 
+def census_path(workspace, project_id):
+    return Path(workspace) / "translation/projects" / project_id / "census.json"
+
+
+def take_census(
+    engine, workspace, project_id, source, state, decoded, stopped, progress
+):
+    """The census of the untranslated game, read from its prepared source
+    backup rather than the working copy, which gains English as work goes
+    on. The assistant's decoded dump, if named, adds engines the tool can't
+    decode itself."""
+    from . import census
+
+    snapshot = state.get("prepared_source") or state.get("source_backup")
+    if not snapshot:
+        raise ValueError("Back up the original game before taking its census.")
+    path = backup_path(workspace, project_id, source, snapshot["id"])
+    names = sorted(backups.manifest(path)["files"])
+    folder = None
+    if decoded:
+        folder = project_path(source, decoded.rstrip("/"), exists=False)
+        if not folder.is_dir():
+            raise ValueError(
+                "Name the folder your decoder wrote, relative to the game."
+            )
+
+    def dump(folder):
+        for item in sorted(folder.rglob("*")):
+            if item.is_file() and not item.is_symlink():
+                yield item.relative_to(folder).as_posix(), item.read_bytes()
+
+    with (
+        backups.materialized(path, files=census.wanted(names), stopped=stopped) as (
+            root,
+            _manifest,
+        ),
+        tempfile.TemporaryDirectory(prefix="dazedtl-census-") as work,
+    ):
+        result = census.scan(
+            names,
+            lambda name: (root / name).read_bytes(),
+            engine.census_decoders(root, work),
+            dump(folder) if folder else None,
+            progress,
+        )
+    result.update(snapshot=snapshot["id"], decoded_folder=decoded or None)
+    write_json(census_path(workspace, project_id), result)
+    kinds = {}
+    for entry in result["entries"]:
+        kinds[entry["kind"]] = kinds.get(entry["kind"], 0) + len(entry["runs"])
+    return {
+        "runs": sum(kinds.values()),
+        "kinds": dict(sorted(kinds.items())),
+        "unreadable": len(result["unreadable"]),
+        "opened": result["opened"],
+        "needs_dump": result["needs_dump"],
+        "decoded": result["decoded"],
+    }
+
+
 def execute(engine, workspace, job, plan, stopped, progress=lambda _message: None):
     with ExitStack() as resources:
         return _execute(engine, workspace, job, plan, stopped, progress, resources)
@@ -551,6 +611,17 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         records = Path(workspace) / "translation/projects" / job["project_id"]
         for name in ("engine.json", "assistant.json"):
             (records / name).unlink(missing_ok=True)
+    elif action == "census":
+        result = take_census(
+            engine,
+            workspace,
+            job["project_id"],
+            source,
+            state,
+            arguments.get("decoded"),
+            stopped,
+            progress,
+        )
     elif action == "discard_release":
         # A staged release the user decided against stops offering its review;
         # its preserved backup stays in Backups.

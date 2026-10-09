@@ -488,6 +488,59 @@ class TranslationEngine:
             + "). Saved receipts were retained."
         )
 
+    def glossary_terms(self, source):
+        """Source terms of the game's own glossary entries, which cover the
+        names and nameplates Len translates through the glossary."""
+        import re
+
+        from util.paths import GLOSSARY_BASE_SEPARATOR
+
+        path = Path(source) / ".dazedtl/glossary.txt"
+        if not path.is_file():
+            return []
+        game = path.read_text(encoding="utf-8-sig").split(GLOSSARY_BASE_SEPARATOR, 1)[0]
+        terms = []
+        for line in game.splitlines():
+            match = re.match(r"^([^#].*?)\s+\((.+)\)\s*$", line.strip())
+            if match:
+                terms += [
+                    term.strip() for term in match.group(1).split(",") if term.strip()
+                ]
+        return terms
+
+    def census_decoders(self, root, workdir):
+        """What the census uses for data it can't read as text: Ruby Marshal,
+        RGSS archives, and Wolf data through the bundled WolfDawn."""
+        from util import wolfdawn
+        from util.ace import rgssad, ruby_marshal
+
+        root, workdir = Path(root), Path(workdir)
+
+        class Decoders:
+            marshal = staticmethod(ruby_marshal.load)
+
+            @staticmethod
+            def rgssad(data):
+                members = []
+                for name, offset, size, key in rgssad.entries(data):
+                    if offset + size > len(data):
+                        raise ValueError(
+                            "An archived file runs past the archive's end."
+                        )
+                    members.append(
+                        (
+                            rgssad.safe_path(name).as_posix(),
+                            rgssad.decrypt(data[offset : offset + size], key),
+                        )
+                    )
+                return members
+
+            @staticmethod
+            def wolf(names):
+                return _wolf_documents(wolfdawn, root, workdir, names)
+
+        return Decoders()
+
     def rpgmaker_prepare(self, source, options, data_path=None, log=None):
         from desktop.backend.cli_environment import public_values
         from util.len_translation import setup_forge
@@ -976,3 +1029,41 @@ class TranslationProvider:
                 else:
                     errors.append(custom)
         return results, errors, usage
+
+
+def _wolf_documents(wolfdawn, root, workdir, names):
+    """WolfDawn's strings-extract documents for a Wolf game's data: archives
+    are unpacked first, and a file WolfDawn can't read is returned as None.
+    The engine reads a loose file before the same file in an archive, so an
+    archived file with a loose copy is left to the loose one."""
+    loose = {name for name in names if not name.casefold().endswith(".wolf")}
+    sources = []
+    for index, name in enumerate(names):
+        path = root / name
+        if name.casefold().endswith(".wolf"):
+            target = workdir / "wolf" / str(index)
+            if not wolfdawn.unpack_all([path], target).ok:
+                raise ValueError("WolfDawn could not unpack " + name)
+            parent = Path(name).parent.as_posix()
+            for inner in sorted(target.rglob("*")):
+                relative = inner.relative_to(target).as_posix()
+                shadow = relative if parent == "." else f"{parent}/{relative}"
+                if inner.is_file() and shadow not in loose:
+                    sources.append((f"{name}/{relative}", inner))
+        else:
+            sources.append((name, path))
+    documents = []
+    for index, (name, path) in enumerate(sources):
+        lowered = path.name.casefold()
+        if not lowered.endswith((".mps", ".project")) and lowered not in {
+            "commonevent.dat",
+            "game.dat",
+        }:
+            continue
+        output = workdir / "extract" / f"{index}.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if wolfdawn.strings_extract(path, output).ok and output.is_file():
+            documents.append((name, json.loads(output.read_text(encoding="utf-8-sig"))))
+        else:
+            documents.append((name, None))
+    return documents

@@ -151,6 +151,14 @@ def main():
         "context",
         help="Read verified context investigation results and current document revisions",
     )
+    census_command = commands.add_parser(
+        "census",
+        help="Count the game's Japanese text from its original files, as the coverage organize --complete checks; inspect the returned run with run --wait",
+    )
+    census_command.add_argument(
+        "--decoded",
+        help="Game-relative folder your decoder wrote, for containers the census can't open",
+    )
     commands.add_parser(
         "units-format",
         help="Print an example of the source units file organize reads",
@@ -330,6 +338,12 @@ def main():
             if args.command == "legacy":
                 params.update(
                     action=args.action, token=args.token, approved=args.approved
+                )
+            if args.command == "census":
+                method = "translation_operation"
+                params.update(
+                    action="census",
+                    arguments={"decoded": args.decoded} if args.decoded else {},
                 )
             if args.command == "operation":
                 params.update(
