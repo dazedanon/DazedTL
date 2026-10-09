@@ -1484,15 +1484,16 @@ def data_files(folder: Path) -> list[str]:
 
 def data_path(folder: Path, name: str) -> Path:
     """``name``.rvdata2 in the data folder, matched without regard to case as
-    on Windows, where RV2JSON and the game itself both find it."""
-    path = folder / (name + ".rvdata2")
-    if path.exists():
-        return path
-    wanted = path.name.lower()
-    for entry in os.listdir(folder):
-        if entry.lower() == wanted:
+    on Windows, where RV2JSON and the game itself both find it. The path keeps
+    the file's own spelling on every system, so its backup does too."""
+    wanted = name + ".rvdata2"
+    entries = os.listdir(folder) if folder.is_dir() else []
+    if wanted in entries:
+        return folder / wanted
+    for entry in entries:
+        if entry.lower() == wanted.lower():
             return folder / entry
-    return path
+    return folder / wanted
 
 
 def load_data(path: Path) -> Any:
