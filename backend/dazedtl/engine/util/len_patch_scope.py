@@ -15,7 +15,7 @@ from util.version_update import GitWorkflowError
 from util.version_update.git_workflow import (
     _AssetManifestEntry, _asset_state_path, _commit_tree, _hash_file,
     _is_local_only_asset, _is_tool_owned_path, _load_asset_manifest,
-    _load_asset_manifest_metadata, _message, _reject_original_checked_out_elsewhere,
+    _load_asset_manifest_metadata, _message, _open_index_lock, _reject_original_checked_out_elsewhere,
     _run_git, _save_asset_manifest, _temporary_index, _tree_files,
 )
 
@@ -248,7 +248,7 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
         source_tree = _tree(repo, original_payload, original_env)
         if source_tree != _run_git(repo, "rev-parse", f"{original_ref}^{{tree}}").stdout.strip():
             new_original = _commit_tree(repo, source_tree, _message("original: align patch file scope", state["original_version"]), (original_ref,))
-        with lock.open("xb") as handle:
+        with _open_index_lock(lock) as handle:
             acquired = True
             handle.write(Path(index_name).read_bytes())
         if (_run_git(repo, "rev-parse", "HEAD").stdout.strip() != head

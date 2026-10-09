@@ -920,6 +920,7 @@ A backend still busy 12 seconds after closing is ended with every process it sta
 Closing or pausing cannot undo an already submitted provider request.
 
 Git baselines and backup records gate new translation work.
+Index writes wait up to ten seconds while another Git process holds the index lock, as any `git status` does while it refreshes the index, so status polls keep that refresh while workers write ([_run_git](../backend/dazedtl/engine/util/version_update/git_workflow.py)).
 A checkout off the translation branch, or with an unfinished Git operation or asset sync, refuses every change to the game; [checkout_issue](../backend/dazedtl/translation/operations.py) names the problem for both the refusal and a translation warning that every Guided task shows.
 Reviewed runtime manifests control patch scope; all .dazedtl work stays outside both branches.
 The MV/MZ writer retains source metadata on ordinary corrections.

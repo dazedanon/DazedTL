@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping
@@ -44,6 +45,13 @@ _TOOL_NAME = "DazedMTLTool"
 _TOOL_EMAIL = "local@dazedmtl.invalid"
 _GAMEUPDATE_GITIGNORE = Path(__file__).resolve().parents[2] / "gameupdate" / ".gitignore"
 _ZERO_OID = "0" * 40
+# Commands that take the index lock before they change anything, so one that
+# found the lock held can run again. A `git status` holds it briefly while it
+# refreshes the index, including the app's own polls.
+_INDEX_WRITERS = frozenset(
+    {"add", "checkout", "checkout-index", "cherry-pick", "commit", "read-tree", "reset", "rm", "update-index"}
+)
+INDEX_LOCK_WAIT = 10.0
 _VERSION_LINE = re.compile(r"^DazedTL-Version:\s*(.+?)\s*$", re.MULTILINE)
 _VERSION_HINT = re.compile(
     r"(?i)(?:\bversion\b|\bver\.?|\bv|update(?:d)?(?:\s+original)?\s+game\s+files\s+to)"
@@ -330,24 +338,33 @@ def _run_git(
     # translate LF to CRLF, which corrupts hash-object --stdin blobs and can
     # embed trailing CR into update-index --index-info paths.
     input_bytes = None if input_text is None else input_text.encode("utf-8")
-    try:
-        raw = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            input=input_bytes,
-            env=process_env,
-            timeout=timeout,
-        )
-    except FileNotFoundError as exc:
-        raise GitWorkflowError("Git is not installed or is not available on PATH") from exc
-    # The exceptions' own text is a Python command list; say which Git command,
-    # after any -c settings in front of it.
-    except subprocess.TimeoutExpired as exc:
-        raise GitWorkflowError(f"git {_command_name(args)} did not finish within {timeout} seconds.") from exc
-    except (OSError, subprocess.SubprocessError) as exc:
-        reason = getattr(exc, "strerror", None) or type(exc).__name__
-        raise GitWorkflowError(f"git {_command_name(args)} could not run: {reason}") from exc
+    deadline = None
+    while True:
+        try:
+            raw = subprocess.run(
+                command,
+                check=False,
+                capture_output=True,
+                input=input_bytes,
+                env=process_env,
+                timeout=timeout,
+            )
+        except FileNotFoundError as exc:
+            raise GitWorkflowError("Git is not installed or is not available on PATH") from exc
+        # The exceptions' own text is a Python command list; say which Git command,
+        # after any -c settings in front of it.
+        except subprocess.TimeoutExpired as exc:
+            raise GitWorkflowError(f"git {_command_name(args)} did not finish within {timeout} seconds.") from exc
+        except (OSError, subprocess.SubprocessError) as exc:
+            reason = getattr(exc, "strerror", None) or type(exc).__name__
+            raise GitWorkflowError(f"git {_command_name(args)} could not run: {reason}") from exc
+        # Git names the lock file in every language: "Unable to create '<path>/index.lock'".
+        if not (raw.returncode and _command_name(args) in _INDEX_WRITERS and b"index.lock'" in raw.stderr):
+            break
+        deadline = deadline or time.monotonic() + INDEX_LOCK_WAIT
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.1)
     result = subprocess.CompletedProcess(
         raw.args,
         raw.returncode,
@@ -358,6 +375,20 @@ def _run_git(
         detail = result.stderr.strip() or result.stdout.strip() or "unknown Git error"
         raise GitWorkflowError(detail)
     return result
+
+
+def _open_index_lock(lock: Path):
+    """Creates the index lock for writing, waiting like `_run_git` while another Git process holds it."""
+    deadline = time.monotonic() + INDEX_LOCK_WAIT
+    while True:
+        try:
+            return lock.open("xb")
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise GitWorkflowError(
+                    f"Unable to create '{lock}': File exists. Another Git process is using this repository."
+                ) from None
+            time.sleep(0.1)
 
 
 def _require_matching_worktree(repo: Path, *, action: str) -> None:
