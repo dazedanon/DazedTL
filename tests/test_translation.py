@@ -752,6 +752,12 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(list(batches["a1"]["sources"]), ["a1", "a2", "b1"])
         self.assertEqual(len(batches["c0"]["sources"]), 3)
         self.assertNotIn("source_context", batches["c0"])
+        # Packed scenes are named, so the model keeps their context apart.
+        self.assertIn(
+            "- A: 2 lines, a1 to a2\n- B: 1 line, b1 to b1",
+            batches["a1"]["scene_context"],
+        )
+        self.assertNotIn("scene_context", batches["c3"])
         self.assertEqual(
             batches["c3"]["source_context"], "ゴウ: c0。\nゴウ: c1。\nゴウ: c2。"
         )

@@ -12,10 +12,14 @@ from .project import WORK
 
 VERSION = 1
 PLANS = WORK + "/work/plans/"
-# Requests hold at most the model's entries per request (see
+# API requests hold at most the model's entries per request (see
 # settings.execution.entries_per_request) and this much source text, which
 # keeps one refused or failed request small.
 MAX_CHARACTERS = 8000
+# An assistant translating itself reads each request's shared guidance again,
+# so Assistant only uses Len's larger batches of about 200-300 short lines.
+AGENT_LINES = 250
+AGENT_CHARACTERS = 12000
 # Earlier lines of a split scene that travel with each later part.
 CONTEXT_LINES = 8
 KINDS = {"dialogue", "narration", "ui", "unknown"}
@@ -221,10 +225,12 @@ def _parts(scene, lines, characters):
     return parts
 
 
-def plan(units, input_path, complete, lines):
+def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS):
     """A version-2 source plan: whole scenes of one group and field share a
-    request of at most lines units; larger scenes split with their earlier
-    lines as context. Each request takes its first line's ID."""
+    request of at most lines units and characters of source; larger scenes
+    split with their earlier lines as context. A request holding several
+    scenes names which lines belong to each, so context stays apart. Each
+    request takes its first line's ID."""
     scenes = []
     for unit in units:
         if not scenes or scenes[-1][0]["scene"] != unit["scene"]:
@@ -235,10 +241,10 @@ def plan(units, input_path, complete, lines):
     for scene in scenes:
         size = sum(len(unit["source"]) for unit in scene)
         key = (scene[0]["group"], scene[0]["field"])
-        if len(scene) > lines or size > MAX_CHARACTERS:
+        if len(scene) > lines or size > characters:
             current = None
             start = 0
-            for part in _parts(scene, lines, MAX_CHARACTERS):
+            for part in _parts(scene, lines, characters):
                 requests.append(
                     {
                         "units": part,
@@ -252,7 +258,7 @@ def plan(units, input_path, complete, lines):
             current
             and current["key"] == key
             and len(current["units"]) + len(scene) <= lines
-            and current["size"] + size <= MAX_CHARACTERS
+            and current["size"] + size <= characters
         ):
             current["units"] += scene
             current["size"] += size
@@ -271,6 +277,17 @@ def plan(units, input_path, complete, lines):
         }
         if request["context"]:
             batch["source_context"] = _context(request["context"])
+        scenes = {}
+        for unit in members:
+            scenes.setdefault(unit["scene"], []).append(unit["id"])
+        if len(scenes) > 1:
+            batch["scene_context"] = (
+                "These lines come from separate scenes; keep each scene's speakers and context to its own lines:\n"
+                + "\n".join(
+                    f"- {scene}: {len(ids)} {'line' if len(ids) == 1 else 'lines'}, {ids[0]} to {ids[-1]}"
+                    for scene, ids in scenes.items()
+                )
+            )
         if request["field"]:
             batch["instruction_key"] = request["field"]
         constraints = {

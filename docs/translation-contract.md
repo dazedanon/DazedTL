@@ -70,7 +70,8 @@ Do not inherit the previous speaker or infer identity or gender from speech styl
 Keep nameplate text separate from speaker labels, and do not deduplicate lines by their Japanese text.
 
 Run organize --input with the units file, adding --complete once the units cover the [census](#census-and-scope).
-It packs whole scenes of one group and field into requests of at most the model's entries per request and 8,000 source characters.
+It packs whole scenes of one group and field into requests: in the API modes of at most the model's entries per request and 8,000 source characters, and in Assistant only of up to 250 lines and 12,000 characters, Len's batch size, since the assistant reads each request's shared guidance again.
+A request holding several scenes names which lines belong to each, so the model keeps their speakers and context apart.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
 Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content, then compiled.
 The reply holds counts only; errors name unit IDs without repeating game text.
