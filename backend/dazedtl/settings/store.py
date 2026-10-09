@@ -412,12 +412,12 @@ class Settings:
         connection = self._connection(self._read())
         return self._configured(connection) and bool(connection["model"].strip())
 
-    def guided_configuration(self, mode):
+    def guided_configuration(self, mode, *, cached_only=False):
         from .execution import configuration
 
         state = self._read()
         return {
-            **configuration(self, mode),
+            **configuration(self, mode, cached_only=cached_only),
             "engine_settings": self._values(state),
             "stateGrouping": "compatible-states-v1",
             "choiceCollection": preferences.CHOICE_COLLECTION,

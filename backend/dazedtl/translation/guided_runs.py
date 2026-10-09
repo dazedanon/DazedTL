@@ -111,7 +111,7 @@ class GuidedRuns:
         self.comparison_files[path] = result
         return result
 
-    def inputs(self, project_id, native, phase, mode, *, guard=None):
+    def inputs(self, project_id, native, phase, mode, *, guard=None, cached_only=False):
         names = self.files(native, phase)
         inputs = self.guided.inputs(native)
         record = inputs.record()
@@ -132,8 +132,10 @@ class GuidedRuns:
             name: record.get("file_versions", {}).get(name, "") for name in names
         }
         configuration = self.guided.observations.once(
-            ("configuration", mode),
-            lambda: self.guided.settings.guided_configuration(mode),
+            ("configuration", mode, cached_only),
+            lambda: self.guided.settings.guided_configuration(
+                mode, cached_only=cached_only
+            ),
         )
         reused_names = self.name_reuse(native, configuration.get("language"))
         value = {
@@ -449,8 +451,20 @@ class GuidedRuns:
                         result.setdefault(key, {"source": source, "response": value})
         return result
 
-    def quote(self, project_id, native, phase, mode, *, guard=None, run_view=None):
-        inputs = self.inputs(project_id, native, phase, mode, guard=guard)
+    def quote(
+        self,
+        project_id,
+        native,
+        phase,
+        mode,
+        *,
+        guard=None,
+        run_view=None,
+        cached_only=False,
+    ):
+        inputs = self.inputs(
+            project_id, native, phase, mode, guard=guard, cached_only=cached_only
+        )
         records = self.records(project_id)
         jobs = getattr(self.guided.backend, "manual", None)
         jobs = jobs.jobs if jobs else {}
@@ -492,9 +506,17 @@ class GuidedRuns:
             run_view(identity, compact=True) for identity in owned if identity in jobs
         ]
         for phase in PHASES:
+            # Cached prices only, so a snapshot never waits on a pricing
+            # lookup; preparing, reviewing and starting a run check fully.
             try:
                 estimates[phase], _ = self.quote(
-                    project_id, native, phase, mode, guard=guard, run_view=run_view
+                    project_id,
+                    native,
+                    phase,
+                    mode,
+                    guard=guard,
+                    run_view=run_view,
+                    cached_only=True,
                 )
             except ValueError, OSError:
                 estimates[phase] = {"job": None, "current": False}

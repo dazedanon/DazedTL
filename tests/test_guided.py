@@ -183,14 +183,24 @@ class GuidedTests(unittest.TestCase):
             "rates": {"input": 1, "output": 2},
             "language": "English",
         }
-        self.settings = SimpleNamespace(
-            prepare_engine=lambda **_kwargs: None,
-            describe=lambda: {"revision": self.settings_revision},
-            guided_configuration=lambda mode: {
+        # Whether each configuration read could only use cached prices.
+        self.priced = []
+        self.uncached = False
+
+        def guided_configuration(mode, cached_only=False):
+            self.priced.append(cached_only)
+            if cached_only and self.uncached:
+                raise ValueError("Model pricing is unknown.")
+            return {
                 **deepcopy(self.configuration),
                 "mode": mode,
                 "revision": self.settings_revision,
-            },
+            }
+
+        self.settings = SimpleNamespace(
+            prepare_engine=lambda **_kwargs: None,
+            describe=lambda: {"revision": self.settings_revision},
+            guided_configuration=guided_configuration,
             connection_summary=lambda: {"name": "Fixture connection"},
         )
         self.backend.manual = SimpleNamespace(
@@ -394,6 +404,28 @@ class GuidedTests(unittest.TestCase):
             ]
         )
         self.assertEqual(self.started, [])
+
+    def test_snapshots_match_estimates_on_cached_prices_without_a_lookup(self):
+        # A price lookup runs a worker that a slow catalog download held past
+        # its 12 s limit; snapshots waited on it once per phase, so every poll
+        # took about 50 seconds.
+        self.seed_estimate()
+        self.priced.clear()
+        snapshot = self.guided.runs.snapshot(
+            self.identity, self.native, {"changed": [], "retired": []}
+        )
+        self.assertEqual(set(self.priced), {True})
+        self.assertTrue(snapshot["estimates"]["database"]["current"])
+        # Without cached prices, a snapshot cannot match the estimate, while
+        # preparing a review still looks them up.
+        self.uncached = True
+        snapshot = self.guided.runs.snapshot(
+            self.identity, self.native, {"changed": [], "retired": []}
+        )
+        self.assertFalse(snapshot["estimates"]["database"]["current"])
+        self.priced.clear()
+        self.guided.preview(self.identity, "start", options={"mode": "batch"})
+        self.assertEqual(set(self.priced), {False})
 
     def test_a_quote_cannot_start_after_pricing_or_runtime_context_changes_in_review(
         self,

@@ -50,15 +50,16 @@ def configuration(settings, mode, *, cached_only=False):
         connection["model"],
         cached_only=cached_only or selected["pricing"] == "custom",
     )
+    # Cached defaults are empty until the model's prices are first looked up.
     input_rate = (
         selected["inputRate"]
         if selected["pricing"] == "custom"
-        else defaults["inputRate"]
+        else defaults.get("inputRate")
     )
     output_rate = (
         selected["outputRate"]
         if selected["pricing"] == "custom"
-        else defaults["outputRate"]
+        else defaults.get("outputRate")
     )
     if input_rate is None or output_rate is None:
         raise ValueError(

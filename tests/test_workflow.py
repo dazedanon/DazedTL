@@ -601,6 +601,11 @@ class WorkflowTests(unittest.TestCase):
             self.service.start(self.identity, run["id"], run["approval_token"])
         rates["inputRate"] = 1
         self.assertFalse(outdated())
+        # Catalog prices not looked up since a restart are unknown, which reads
+        # as unchanged instead of failing every snapshot.
+        rates["pricing"] = "automatic"
+        self.assertFalse(outdated())
+        rates["pricing"] = "custom"
         write_json(self.game / "source.json", {"line": "変更。"})
         with self.assertRaises(ValueError):
             self.service.start(self.identity, run["id"], run["approval_token"])

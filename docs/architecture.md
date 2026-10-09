@@ -841,6 +841,7 @@ OpenRouter's absolute Batch input/output and optional cache rates, host, transpo
 Its [pricing adapter](../backend/dazedtl/compatibility/openrouter_pricing.py) adjusts estimates and native file accounting from the frozen rates without applying the engine's generic Batch discount twice.
 The native OpenAI token window remains OpenAI-only.
 Other providers' compatibility pricing resolver runs without credentials, reuses the preserved pricing rules, and labels cached catalog versus built-in rates.
+Guided and Assistant-led snapshots match estimates on prices already looked up and never run the resolver; preparing, reviewing and approving work look prices up.
 The OpenRouter adapter uses ordered inline submission and stores terminal response evidence under the owning run before validating request IDs.
 Verified responses can be collected again without provider access; incomplete or conflicting mappings cannot create a fetched marker or trigger paid retries.
 The existing approval journal, monitor, ownership guards, and clarification allowance remain authoritative.
