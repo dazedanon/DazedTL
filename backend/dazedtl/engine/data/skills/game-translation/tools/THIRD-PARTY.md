@@ -67,6 +67,7 @@ The references mention them for context only.
 
 - Python 3.10 or newer for every `.py` tool.
 - `murmurhash2` for `C++/Yuris/yuris_text.py` and `yuris_decompiler`'s archive reader.
+- `UnityPy` and `TypeTreeGeneratorAPI` for `Unity Text Dump/unity_dump.py`.
 - Pillow for `imgtl.py` and the image scripts, numpy for the KihoushiScarlet overlay builder, fontTools where a reference measures glyphs, tiktoken for `count_tokens.py`, customtkinter for `ForumPostGen`.
 - API clients only for the API workflow you choose: `anthropic`, `mistralai`, `openai`, `google-genai`. Each reference pipeline lists its own in `requirements.txt` where it has one.
 - `pylocres` for the Unreal locres override helper: install `C++/Unreal/requirements.txt` in the project environment. Its old copied `python/` package installation is excluded from Git.

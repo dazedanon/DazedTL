@@ -12,6 +12,8 @@
 
 `tools/.NET/AssetRipper/AssetRipper.GUI.Free.exe` (a download, see `tools/THIRD-PARTY.md`) → export the game to an `ExportedProject/`. This gives you decompiled `Assets/Scripts/Assembly-CSharp/*.cs` (readable) and all serialized assets as YAML (`.unity`, `.prefab`, `.asset`, `MonoBehaviour/*.asset`).
 
+For DazedTL's census, `tools/Unity Text Dump/unity_dump.py` dumps every TextAsset and MonoBehaviour as text or JSON on Linux or Windows; `TypeTreeGeneratorAPI` rebuilds stripped type trees from `Managed/*.dll`, so no MonoBehaviour is left as raw bytes.
+
 ## Step 2 - find where the JP text lives
 
 Search the export for Japanese `[぀-ヿ一-鿿]`. It is almost never in `.cs` code - it's in serialized assets. The usual homes:
@@ -29,9 +31,12 @@ harvest.
 
 Robust YAML field extraction: parse `- title: X` / `value: Y` pairs, join Unity's wrapped multi-line scalars (folds line-wraps as single spaces), handle single-quote `''` escaping. See `tools/Reference Pipelines/Unity Mono (NTR Soccer)/scripts/extract_text.py`.
 
-## Step 3 - CHECK FOR AN OFFICIAL LOCALIZATION FIRST
+## Step 3 - CHECK FOR AN OFFICIAL LOCALIZATION AND A MOD FOLDER FIRST
 
-**Many Japanese Unity games ship a complete official English localization that is simply locked to `ja`.** Before building any dictionary, check:
+**Some games read loose text files themselves.** List the file paths in `Assembly-CSharp.dll`'s user strings (UTF-16LE) before building a plugin.
+One game exports its CSV tables to `../CSV/` on first launch and reads them back, with per-language overrides in `CSV/Language/<name>/`; a translation ships as loose CSV files with no BepInEx at all.
+
+**Many Japanese Unity games ship an official English localization, complete or partial, that is simply locked to `ja`.** Translation tables keyed by the Japanese text (`ニューゲーム,New Game`) count toward it. Before building any dictionary, check:
 - Dialogue DB entries have non-empty English base fields (`Dialogue Text`) with `ja` as the variant.
 - Scenes hard-code `localizationSettings: { language: ja }`.
 - A TextTable has an English `Default`/`en` column.

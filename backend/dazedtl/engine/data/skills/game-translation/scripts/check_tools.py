@@ -22,6 +22,7 @@ BUNDLED = [
     "Unity BepInEx Translation Plugin Template/SheepClickerTL",
     "Unity BepInEx Text Layout Plugin/VBV",
     "Unity IL2CPP Text Tools",
+    "Unity Text Dump/unity_dump.py",
     "Unity Text Extraction Pipeline/LoserLife",
     "Reference Pipelines",
     "Active Projects/Artesia (Bakin)/ENGINE-CODES.md",
