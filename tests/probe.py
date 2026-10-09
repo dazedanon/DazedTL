@@ -22,6 +22,8 @@ class Probe:
             if key
             in {
                 "PATH",
+                # Windows' home folder, which Path.home() reads.
+                "USERPROFILE",
                 "SYSTEMROOT",
                 "WINDIR",
                 "TEMP",

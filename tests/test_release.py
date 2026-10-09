@@ -43,7 +43,8 @@ class ReleaseTests(unittest.TestCase):
                 "PlayerManual.pdf",
                 "docs/controls.md",
                 "LICENSE.txt",
-                "data/Items.json",
+                # MV's layout, as Windows has one folder for data and Ace's Data.
+                "www/data/Items.json",
             }
             private = {
                 ".api_key",
@@ -54,7 +55,7 @@ class ReleaseTests(unittest.TestCase):
                 ".venv/bin/python",
                 "www/save/file.rpgsave",
                 "nested/logs/debug.txt",
-                "data/Items.json.bak",
+                "www/data/Items.json.bak",
                 "cache/scan.json",
                 "AGENTS.md",
                 ".dazedtl/backups/current.json",
@@ -94,7 +95,7 @@ class ReleaseTests(unittest.TestCase):
                     archive.read("generated-game/gameupdate/previous_patch_sha.txt"),
                     ("a" * 40 + "\n").encode(),
                 )
-            (root / "data/Items.json").write_text("changed after inspection")
+            (root / "www/data/Items.json").write_text("changed after inspection")
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None)
 

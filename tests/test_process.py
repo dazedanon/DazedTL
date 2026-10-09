@@ -1,6 +1,7 @@
 """Hermetic process evidence and state response mapping, without providers."""
 
 import json
+import re
 import threading
 import unittest
 from copy import deepcopy
@@ -176,7 +177,21 @@ class ProcessTests(unittest.TestCase):
                 except OSError:
                     return
                 with connection:
-                    connection.recv(65536)
+                    # The whole request, or Windows resets the connection
+                    # before the client reads the reply.
+                    request = b""
+                    while b"\r\n\r\n" not in request:
+                        chunk = connection.recv(65536)
+                        if not chunk:
+                            break
+                        request += chunk
+                    head, _, body = request.partition(b"\r\n\r\n")
+                    length = re.search(rb"(?i)content-length: *(\d+)", head)
+                    while length and len(body) < int(length[1]):
+                        chunk = connection.recv(65536)
+                        if not chunk:
+                            break
+                        body += chunk
                     connection.sendall(replies.pop(0))
 
         threading.Thread(target=serve, daemon=True).start()

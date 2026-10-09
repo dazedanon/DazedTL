@@ -1,5 +1,6 @@
 """Guided approvals must retain scope, ownership and one-use submission intent."""
 
+import os
 import shutil
 import sys
 import unittest
@@ -1509,7 +1510,13 @@ class GuidedTests(unittest.TestCase):
 
         from dazedtl.translation import reference_folders
 
-        folder = self.root / 'Earlier "game" with an unfamiliar format'
+        # The task text escapes the path: its quote here, or a Windows path's
+        # backslashes, since Windows forbids quotes in names.
+        folder = self.root / (
+            "Earlier game with an unfamiliar format"
+            if os.name == "nt"
+            else 'Earlier "game" with an unfamiliar format'
+        )
         folder.mkdir()
         (folder / "old-terms.txt").write_text("薬: Potion")
         before = evidence(folder, ["old-terms.txt"])
