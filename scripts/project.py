@@ -77,13 +77,17 @@ def wait(workspace, params, run, minutes):
         return run["status"], run.get("declined_units", 0)
 
     started = state(run)
+    # Most operations finish in seconds; long runs settle to one check
+    # every 15 seconds.
+    pause = 1
     while state(run) == started and (
         run["status"] in {"running", "waiting"} or run.get("declined_units", 0)
     ):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(min(15, remaining))
+        time.sleep(min(pause, remaining))
+        pause = min(pause * 2, 15)
         run = call(workspace, "translation_run", params)
     return run
 
