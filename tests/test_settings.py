@@ -3,6 +3,7 @@
 import json
 import sys
 import threading
+import time
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -1018,8 +1019,9 @@ class SettingsTests(unittest.TestCase):
                 fetch.assert_called_once_with(model, "novita")
                 self.assertFalse(settings.translation_defaults()["batch_supported"])
             cache_key = (identity, model, "novita")
+            # An hour old; a monotonic clock's zero can be minutes ago.
             settings._openrouter_prices[cache_key] = (
-                0,
+                time.monotonic() - 3600,
                 settings._openrouter_prices[cache_key][1],
             )
             with patch.object(

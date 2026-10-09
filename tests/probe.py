@@ -40,11 +40,15 @@ class Probe:
             DAZEDTL_LEGACY_ROOT=str(Path(temporary) / "missing-engine"),
             DAZEDTL_ENGINE_SOURCE=str(Path(temporary) / "missing-engine"),
         )
-        self.deadline = time.monotonic() + 8
+        # Within the suite's budget (scripts/test.mjs), leaving room to report.
+        budget = float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10)
+        self.deadline = time.monotonic() + budget * 0.8
         self.process = subprocess.Popen(
             [
                 sys.executable,
                 "-I",
+                "-X",
+                "utf8",
                 "-B",
                 str(root / "tests/fixtures" / script),
                 str(root),

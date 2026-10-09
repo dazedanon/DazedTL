@@ -1,12 +1,16 @@
 """Tests import only this checkout's backend, never a user's engine workspace."""
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 from tests.probe import Probe
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+# Windows may name the temporary folder by its 8.3 short name, such as
+# RUNNER~1, while the app resolves the game folders it opens to long names.
+tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
 
 
 def load_tests(loader, tests, pattern):
