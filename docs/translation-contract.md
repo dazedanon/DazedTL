@@ -87,7 +87,7 @@ For containers it can't open, such as Unity, Unreal or encrypted archives, censu
 
 Each counted string has a kind and a field naming its structure, never a map, event or scene.
 Coverage counts Japanese runs by occurrence: each must appear in a unit, which holds the game's text exactly, be a term of the game's own glossary, or be set aside by a rule.
-Built-in rules set aside text players never see, such as comments, labels, asset names and switch names.
+Built-in rules set aside text players never see, such as comments, labels, asset names, switch names and the readmes beside a game; mod loaders and runtimes installed beside it, such as BepInEx, are not read.
 The assistant can add game-wide field rules in .dazedtl/len-method/work/scope-rules.json, as version 1 with rules of kind, field, reason (asset_name, identifier, comment, script_code or not_displayed) and, for code only, file.
 Rules never set aside dialogue, choices, names or other text the player reads.
 organize --complete is refused without a current census, while archives still need a decoded dump, or while anything is uncovered; .dazedtl/len-method/work/census-uncovered.json lists each uncovered location.

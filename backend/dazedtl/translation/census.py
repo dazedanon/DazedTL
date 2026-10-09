@@ -48,13 +48,21 @@ NEEDS_DUMP = {
 }  # fmt: skip
 NEEDS_DUMP_NAMES = {"data.win", "game.unx", "globalgamemanagers", "scene.pck"}
 SKIPPED_DIRS = {".git", ".dazedtl", "save", "saves", "locales", "swiftshader"}
+# Mod loaders and runtimes installed beside a game hold their own text, such
+# as an AutoTranslator cache, never the game's.
+TOOL_DIRS = {"bepinex", "melonloader", "monobleedingedge"}
 
 
 def candidate(name):
     """How the census treats a game file: 'read', 'open', 'wolf', 'dump' or None."""
     path = PurePosixPath(name)
     folders = [part.casefold() for part in path.parts[:-1]]
-    if any(part in SKIPPED_DIRS for part in folders):
+    if any(
+        part in SKIPPED_DIRS
+        or part in TOOL_DIRS
+        or part.endswith("_burstdebuginformation_donotship")
+        for part in folders
+    ):
         return None
     suffix = path.suffix.casefold()
     if suffix in TEXT:
@@ -537,6 +545,14 @@ def read(name, data):
         return read_html(text)
     if suffix in {".csv", ".tsv"}:
         return read_lines("text" + suffix, text, "," if suffix == ".csv" else "\t")
+    # Readmes, credits and version notes beside the game are never shown in
+    # it; NScripter keeps its numbered scripts (0.txt) there, which count.
+    if (
+        "/" not in name
+        and suffix in {".txt", ".md"}
+        and not PurePosixPath(name).stem.isdigit()
+    ):
+        return read_lines("document", text)
     if suffix in {".yaml", ".yml", ".asset", ".prefab", ".unity"}:
         return read_yaml("dump:yaml", text)
     return read_lines("text" + suffix, text)
@@ -693,6 +709,9 @@ BUILT_IN = [
         ]
     ),
     ("rpgmaker:plugins", "*/description", "not_displayed"),
+    ("document", "line", "not_displayed"),
+    # Unity Addressables' catalog lists asset addresses.
+    ("json", "m_InternalIds/*", "identifier"),
     ("*", "comment", "comment"),
     ("*", "script:comment", "comment"),
     ("*", "label", "identifier"),
