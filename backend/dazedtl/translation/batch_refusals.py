@@ -9,7 +9,7 @@ from typing import Any
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
-from .refusals import clarifiable, clarified
+from .refusals import clarified, refused
 
 
 def save(path, record):
@@ -71,7 +71,7 @@ def advance(
         rejected = {
             key: value
             for key, value in responses.items()
-            if key in requests and clarifiable(value)
+            if key in requests and refused(value)
         }
         if not rejected:
             return {

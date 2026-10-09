@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from dazedtl.translation.files import digest
-from dazedtl.translation.refusals import MESSAGE, clarifiable, clarified, field, refused
+from dazedtl.translation.refusals import MESSAGE, clarified, field, refused
 
 from .process_view import source_values
 
@@ -174,10 +174,7 @@ class RefusalRetry:
         self.reject(response)
         first = receipt(response)
         first_usage = first["usage"]
-        # the characters or retry that passage with an age clarification.
-        if not self.allow_clarification or not clarifiable(
-            response, (source or {}).values()
-        ):
+        if not self.allow_clarification:
             first.update(content=None, refusal=MESSAGE)
             with evidence.connect() as connection:
                 connection.execute(

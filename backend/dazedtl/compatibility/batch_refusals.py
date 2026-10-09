@@ -11,7 +11,7 @@ from typing import Any
 from dazedtl.storage import write_json
 from dazedtl.translation.batch_refusals import advance
 from dazedtl.translation.files import project_path, read_json
-from dazedtl.translation.refusals import POLICY, clarifiable, refused
+from dazedtl.translation.refusals import POLICY, refused
 
 RESULTS = "dazedtl-clarified-results.json"
 
@@ -92,7 +92,7 @@ def advance_guided(
     for batch in history:
         mapping = batch.get("custom_ids") or {}
         part = {key: results[key] for key in mapping.values() if key in results}
-        if not any(clarifiable(value) for value in part.values()):
+        if not any(refused(value) for value in part.values()):
             continue
         # A canceled/failed provider job is not authorization for more work.
         if batch.get("api_status") not in {"completed", "ended"}:

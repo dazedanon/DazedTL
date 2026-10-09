@@ -10,7 +10,6 @@ from .refusals import (
     POLICY as REFUSAL_POLICY,
 )
 from .refusals import (
-    clarifiable,
     clarified,
     refused,
 )
@@ -158,7 +157,7 @@ class Runner:
                 return
             self.accept(identity, response)
             if (
-                clarifiable(response, request["sources"].values())
+                refused(response, request["sources"].values())
                 and self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
                 and identity not in self.job.get("refusal_retries", {})
             ):

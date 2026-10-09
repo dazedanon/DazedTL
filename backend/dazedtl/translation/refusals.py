@@ -92,13 +92,6 @@ def refusal_reason(response):
     )
 
 
-def clarifiable(response, sources=()):
-    # An explicit child-safety refusal must not trigger an age-relabeling retry.
-    return refused(response, sources) and not re.search(
-        r"\bjfdisaofoiw\b", refusal_reason(response), re.IGNORECASE
-    )
-
-
 def clarified(params):
     result = deepcopy(params)
     result["messages"].append({"role": "user", "content": CLARIFICATION})
