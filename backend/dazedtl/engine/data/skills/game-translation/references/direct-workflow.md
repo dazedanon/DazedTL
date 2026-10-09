@@ -11,7 +11,7 @@ Use occurrence IDs tied to file/scene/field and retain source, speaker, surround
 Do not deduplicate dialogue globally by Japanese text alone: the same line can require different voice, gender or meaning.
 UI terms can share an accepted decision when their meaning and rendering constraints match.
 Maintain a source census independent of the extractor; a successful extraction loop does not prove completeness.
-Keep unknown fields, unresolved source readings and excluded assets in an explicit ledger.
+Keep unknown fields and unresolved source readings in an explicit ledger; DazedTL's census, not the extractor, decides what is in scope.
 
 As a starting point, group about 200–300 short units by scene/speaker continuity, adapting down for long passages, dense controls or context/output limits.
 Use smaller batches after a validation failure, and increase only when the measured result remains reliable.
@@ -28,7 +28,8 @@ Move game text only with scripts; never paste, retype or summarize the Japanese 
 <helper> organize --input .dazedtl/len-method/work/source-units.json --complete
 ```
 
-Add `--complete` only once the inventory audit shows the units cover every line in scope; API estimates require it.
+Run the helper's `census` first; `--complete` is accepted only once the units cover everything it counted, and API estimates require it.
+When organize names text that isn't extracted, fix the extractor using the locations in `.dazedtl/len-method/work/census-uncovered.json`; set aside text players never see only with game-wide field rules in `.dazedtl/len-method/work/scope-rules.json`.
 The reply holds counts only, and errors name unit IDs, so fix the extractor and organize again.
 Organize packs whole scenes of one group up to the model's entries per request, splits larger scenes with their earlier lines as context, and binds the run to the units file.
 Every request carries the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.

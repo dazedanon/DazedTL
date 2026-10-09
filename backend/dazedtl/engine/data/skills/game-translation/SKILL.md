@@ -172,24 +172,22 @@ Changed source, scope, guidance, references or API settings require a fresh esti
 Only an explicit preparation-only request ends with extraction, guidance, request plan and validation plan.
 For every mode, images follow the user's selected scope; finding Japanese art does not expand it.
 
-## Age evidence in cartoony and stylized games
+## Content is never a scope decision
 
-Cartoony, chibi and super-deformed art styles are common across adult casts.
-Do not infer that a character is underage or exclude text solely from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
-Distinguish the game's general visual style from specific evidence about a character's age or depiction.
-Use established age/adulthood lore, the complete scene context and relevant user clarification; do not start a cast-wide age investigation merely because the art is stylized.
-Before creating or reinstating an age-related exclusion, read `references/review-decisions.md` and reconcile prior corrections and retractions.
-Carry a reviewed adult-context conclusion forward when its evidence is unchanged; reopening it requires specific contrary evidence, not the same appearance-based inference.
-Keep any justified restriction specific to the supported scene/participant rather than extending an ambiguous cue to a species, group or the whole cast.
+DazedTL's census decides what is in scope: every piece of Japanese text the original game holds.
+Extract all of it, in every map, event, scene, database entry, plugin and script, including content that looks unused; never leave text out because of what it depicts.
+If you won't translate something, decline its request instead: its lines stay counted and visible, and the user decides who translates them.
+Keep age evidence accurate in the translation itself: cartoony, chibi and super-deformed art styles are common across adult casts, so do not infer that a character is underage from stylized proportions, short stature, a youthful face or an ambiguous label such as “girl”, "child", "kid", etc.
+Use established lore and the complete scene context, never invent ages or change characterization, and see `references/review-decisions.md` when a decision is disputed or reversed.
 
 ## Work in measured milestones
 
 1. Detect the engine/build, read its reference, and inspect the relevant existing tools in `references/tools-catalog.md` before adapting a pipeline.
 2. Preserve the source and prove a small delivery canary before bulk translation.
    Its mechanical checks are enough; a visual check you cannot make stays pending and never stops the run.
-3. Inventory player-facing text independently of the extractor, including plugin/script labels, runtime-generated text and authorized images.
-   Keep stable occurrence IDs, source hashes, speaker/scene associations and an explicit unresolved/excluded ledger.
-   Reconcile disputed or repeated exclusions with prior reviews and user corrections using `references/review-decisions.md` before changing scope.
+3. Take DazedTL's census, the inventory of the original game's Japanese text that the extractor must cover, including plugin/script labels and runtime-generated text; images in the selected scope are inventoried separately.
+   Keep stable occurrence IDs, source hashes, speaker/scene associations and a ledger of unresolved extraction.
+   Set aside text players never see only with game-wide field rules, as `references/review-decisions.md` describes.
 4. Build shared glossary and game guidance using `references/glossary-and-prompts.md` and any user-supplied reference games.
    Preserve placeholders, control flow, internal identifiers, source-supported identity and uncertainty.
 5. Translate, perform the source-checked dialogue pass, and save resumable batches with complete compiled context.
@@ -210,7 +208,7 @@ Update `progress.json` from saved records after batches/milestones and at least 
 Tell the user the completed/discovered count, whether corpus coverage is audited, the current phase, estimated remaining active work, the next milestone and any blocker.
 Keep translation, review, image work, injection, QA and packaging separate.
 Use measured throughput plus explicit phase estimates; suspend estimates when scope or evidence changes.
-Show excluded and unresolved player-facing text counts and reasons alongside eligible progress.
+Show declined lines, set-aside counts by rule and unresolved extraction alongside progress.
 A text bar at 100% never establishes release readiness.
 
 ## Engine detection
@@ -246,7 +244,7 @@ If you can't tell, run Detect It Easy (`tools/.NET/die/diec.exe`, a download lis
 - `references/api-batch.md`: agent-managed API preparation, in-conversation cost review and supported provider execution.
 - `references/progress-reporting.md`: report schema, provisional/audited denominators, active time, bounded phase estimates and resume invalidation.
 - `references/project-lifecycle.md`: source baselines, runtime patch Git scope, checkpointing, backup and delivery.
-- `references/review-decisions.md`: disputed exclusions, source evidence, prior corrections, restored translations and visible omission counts.
+- `references/review-decisions.md`: the only ways text stays untranslated, disputed decisions, age evidence in translation, restored translations and visible omission counts.
 - `references/field-guide.md`: detailed reference-pipeline choices and lessons; search only the relevant engine or failure class.
 - `references/tools-catalog.md`: reusable tool paths; `tools/THIRD-PARTY.md` identifies dependencies absent from the bundle.
 - `references/glossary-and-prompts.md`, `references/reference-translations.md`: identity, voice, terminology and previous translations.

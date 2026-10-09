@@ -895,6 +895,7 @@ Tracked game-source dependencies bind to their original-branch blobs; untracked 
 Both API transports consume the same logical request builder.
 Request IDs, speaker/scene context and protected tokens survive adapter conversion.
 Organize derives version-two plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text.
+A census the tool takes from the prepared source backup decides scope; organize --complete requires its coverage, so the assistant's extractor can't narrow it.
 An Assistant only run can mark requests declined; an API run compiled from the same plan finishes them, and the declined run reads them as accepted once their results exist.
 Version-two source plans require per-line text types and explicit nullable speakers.
 Unknown speakers remain valid; only explicit source ambiguity notes create targeted review flags.

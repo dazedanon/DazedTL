@@ -69,12 +69,29 @@ Speakers come only from the engine's own evidence, such as nameplates and face o
 Do not inherit the previous speaker or infer identity or gender from speech style; unknown speakers are valid.
 Keep nameplate text separate from speaker labels, and do not deduplicate lines by their Japanese text.
 
-Run organize --input with the units file, adding --complete once the inventory audit shows the units cover every line in scope.
+Run organize --input with the units file, adding --complete once the units cover the [census](#census-and-scope).
 It packs whole scenes of one group and field into requests of at most the model's entries per request and 8,000 source characters.
 A larger scene splits into even parts, each carrying the scene's earlier lines as source context.
 Each request takes its first unit's ID, and the plan is saved under .dazedtl/len-method/work/plans by its content, then compiled.
 The reply holds counts only; errors name unit IDs without repeating game text.
 Move game text only with scripts, never by pasting or retyping it.
+
+## Census and scope
+
+Scope is mechanical: DazedTL counts the original game's Japanese text itself, and the assistant never decides what is in scope.
+The census helper command runs an operation that reads the prepared source backup, never the working copy, and saves its count in the profile.
+The authoritative readers, rules and coverage are in [census.py](../backend/dazedtl/translation/census.py).
+It reads RPG Maker MV/MZ JSON and plugins, JavaScript, KAG/Tyrano and Ren'Py scripts, HTML, text and YAML.
+It opens RGSS archives and XP/VX/Ace data, Electron asar and unencrypted xp3 archives, and Wolf data through the bundled WolfDawn.
+For containers it can't open, such as Unity, Unreal or encrypted archives, census --decoded reads a game-relative folder that Len's decoder wrote, and Progress says the count came from it.
+
+Each counted string has a kind and a field naming its structure, never a map, event or scene.
+Coverage counts Japanese runs by occurrence: each must appear in a unit, which holds the game's text exactly, be a term of the game's own glossary, or be set aside by a rule.
+Built-in rules set aside text players never see, such as comments, labels, asset names and switch names.
+The assistant can add game-wide field rules in .dazedtl/len-method/work/scope-rules.json, as version 1 with rules of kind, field, reason (asset_name, identifier, comment, script_code or not_displayed) and, for code only, file.
+Rules never set aside dialogue, choices, names or other text the player reads.
+organize --complete is refused without a current census, while archives still need a decoded dump, or while anything is uncovered; .dazedtl/len-method/work/census-uncovered.json lists each uncovered location.
+Content is never a reason to leave text out; the assistant declines a request it won't translate, which keeps its lines in scope.
 
 ## Source plan
 
@@ -182,7 +199,7 @@ Use the maintained progress report format right after the first state read, afte
 Reports are accepted while an API run is active, and refused only while an operation changes the game.
 Starting or resuming an API run clears the blocker the last report named, since the run answers it; a blocker reported during the run stays until a later report clears it.
 Counts describe saved units; extraction coverage, review, images, injection, runtime QA and packaging are separate evidence.
-Report unresolved and excluded material explicitly.
+Report declined lines, set-aside counts and unresolved extraction explicitly.
 A complete text count cannot complete QA.
 
 Stage MV/MZ JSON and use write_rpgmaker so the existing writer preserves _original.

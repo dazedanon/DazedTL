@@ -153,9 +153,9 @@ the user explicitly limited the scope; do not ask for another setup prompt.
 
 ## 4. Translate and resume from verified artifacts
 
-Before relying on an exclusion list, reconcile it with prior reviews, retractions and user corrections using `review-decisions.md`.
-Do not suppress previously accepted work from a rationale already withdrawn unless new source evidence supports that change.
-Propagate a reviewed scope correction through batch selection, injection, QA, progress and delivery together.
+Scope is the census of the original game; an older exclusion list is not a scope decision, so reconcile it using `review-decisions.md`.
+Do not suppress previously accepted work on resume.
+Propagate a scope correction through the scope rules, injection, QA, progress and delivery together.
 
 Follow `progress-reporting.md` from the first measured corpus onward. Export current
 saved units, including unfinished occurrences, and call the live `progress-update`

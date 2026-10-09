@@ -148,6 +148,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
    Changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
+   DazedTL counts the game's Japanese text itself, and **Progress** shows whether your assistant extracted all of it; it can't leave out maps or scenes on its own.
    In **Assistant only**, lines your assistant won't translate appear under **Declined lines** while it carries on.
    Estimate them with your API connection and approve, or copy a prompt that has another coding assistant translate only those lines; your assistant picks up the translations once they're saved.
 5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
