@@ -220,7 +220,14 @@ function Workspace({
       </div>
       <Message
         message={
-          ["copy", "resume", "approve", "pause"].includes(action.key)
+          [
+            "copy",
+            "resume",
+            "approve",
+            "pause",
+            "estimate-declined",
+            "copy-declined",
+          ].includes(action.key)
             ? ""
             : action.error
         }

@@ -23,6 +23,19 @@ def now():
     return datetime.now(UTC).isoformat()
 
 
+def declined_units(job):
+    return sum(
+        count
+        for identity, count in job["unit_counts"].items()
+        if job["states"][identity]["state"] == "declined"
+    )
+
+
+def declined_message(job):
+    lines = declined_units(job)
+    return f"{lines} declined {'line needs' if lines == 1 else 'lines need'} another translator."
+
+
 class RunStore:
     def __init__(self, workspace, owner_alive=lambda: True):
         self.workspace = Path(workspace)
@@ -121,6 +134,7 @@ class RunStore:
             "states": states,
             "mode": plan.get("configuration", {}).get("mode"),
             "action": plan.get("action") if plan["kind"] == "operation" else None,
+            "finishes": plan.get("finishes"),
             "unit_counts": {
                 row["id"]: len(row["sources"]) for row in plan.get("requests", [])
             },
@@ -231,7 +245,41 @@ class RunStore:
         self.load(identity, project_id)
         write_json(self.folder(identity) / "stop.json", {"requested": now()})
 
+    def settled(self, job):
+        """The run with any declined request another run has since translated
+        read as accepted. It checks only that the saved result exists, so
+        state polls stay cheap; the result itself is validated when read."""
+        done = [
+            identity
+            for identity, row in job["states"].items()
+            if row["state"] == "declined"
+            and (
+                Path(job["source"])
+                / Results(job["source"]).relative(
+                    {"fingerprint": job["fingerprints"][identity]}
+                )
+            ).is_file()
+        ]
+        if not done:
+            return job
+        value = {
+            **job,
+            "states": {
+                **job["states"],
+                **{identity: {"state": "accepted", "message": ""} for identity in done},
+            },
+        }
+        if all(row["state"] == "accepted" for row in value["states"].values()):
+            value.update(
+                status="complete",
+                message="Translations saved. Injection and runtime QA remain separate.",
+            )
+        else:
+            value["message"] = declined_message(value)
+        return value
+
     def view(self, job):
+        job = self.settled(job)
         counts = {
             state: sum(row["state"] == state for row in job["states"].values())
             for state in (
@@ -239,6 +287,7 @@ class RunStore:
                 "sending",
                 "queued",
                 "accepted",
+                "declined",
                 "failed",
                 "uncertain",
             )
@@ -287,6 +336,8 @@ class RunStore:
                 for identity, count in job["unit_counts"].items()
                 if job["states"][identity]["state"] == "accepted"
             ),
+            "declined_units": declined_units(job),
+            "finishes": job.get("finishes"),
             "requests": len(job["states"]),
             "batches": [
                 {

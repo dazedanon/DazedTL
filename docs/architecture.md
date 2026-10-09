@@ -891,6 +891,8 @@ A compiled plan freezes sources, full context, field constraints, provider param
 Tracked game-source dependencies bind to their original-branch blobs; untracked source exports, project guidance and the plan file bind to their exact bytes.
 Both API transports consume the same logical request builder.
 Request IDs, speaker/scene context and protected tokens survive adapter conversion.
+Organize derives version-two plans from engine-neutral source units that Len's extractor saves, so parsing and injection stay in Len's per-engine tools and the assistant never rewrites the game's text.
+An Assistant only run can mark requests declined; an API run compiled from the same plan finishes them, and the declined run reads them as accepted once their results exist.
 Version-two source plans require per-line text types and explicit nullable speakers.
 Unknown speakers remain valid; only explicit source ambiguity notes create targeted review flags.
 Classification and notes enter the same context/fingerprint in every mode.

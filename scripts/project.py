@@ -69,10 +69,17 @@ def call(workspace, method, params):
 
 def wait(workspace, params, run, minutes):
     """Checks a run until its state changes or the time is up, so an assistant
-    waits in one command instead of polling turn by turn."""
+    waits in one command instead of polling turn by turn. An Assistant only
+    run waits while another model translates the lines it declined."""
     deadline = time.monotonic() + minutes * 60
-    started = run["status"]
-    while run["status"] == started and run["status"] in {"running", "waiting"}:
+
+    def state(run):
+        return run["status"], run.get("declined_units", 0)
+
+    started = state(run)
+    while state(run) == started and (
+        run["status"] in {"running", "waiting"} or run.get("declined_units", 0)
+    ):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
@@ -194,15 +201,17 @@ def main():
         "request",
         "results",
         "accept",
+        "decline",
         "review",
         "attach-batch",
         "resolve-uncertain",
     ):
         child = commands.add_parser(
             name,
-            help="Write the run's accepted translations by line ID to a file for injection; replies with counts only"
-            if name == "results"
-            else None,
+            help={
+                "results": "Write the run's accepted translations by line ID to a file for injection; replies with counts only",
+                "decline": "Assistant only: set aside a request you won't translate so another model can finish it",
+            }.get(name),
         )
         child.add_argument("--run", required=True)
         if name == "run":
@@ -228,8 +237,14 @@ def main():
         if name == "request":
             child.add_argument("--index", type=int, required=True)
             child.add_argument("--output", type=Path)
-        if name in {"accept", "review", "resolve-uncertain"}:
+        if name in {"accept", "decline", "review", "resolve-uncertain"}:
             child.add_argument("--batch", required=True)
+        if name == "decline":
+            child.add_argument(
+                "--reason",
+                required=True,
+                help="One line, at most 300 characters, without game text",
+            )
         if name == "accept":
             child.add_argument("--input", required=True)
         if name in {"review", "resolve-uncertain"}:
@@ -287,8 +302,10 @@ def main():
                 params["input_path"] = args.input
             if args.command == "organize":
                 params["complete"] = args.complete
-            if args.command in {"accept", "review", "resolve-uncertain"}:
+            if args.command in {"accept", "decline", "review", "resolve-uncertain"}:
                 params["batch_id"] = args.batch
+            if args.command == "decline":
+                params["reason"] = args.reason
             if args.command in {"review", "resolve-uncertain"}:
                 params["request_sha256"] = args.request_sha256
             if args.command == "resolve-uncertain":

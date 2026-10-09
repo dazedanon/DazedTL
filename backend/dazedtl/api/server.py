@@ -512,7 +512,8 @@ class Application:
         prepares = (
             name == "guided_preview"
             and params.get("action") == "start"
-            or name in {"translation_compile", "translation_organize"}
+            or name
+            in {"translation_compile", "translation_organize", "translation_finish"}
             or name == "images_editor_translation_preview"
         )
         if not explicit and not prepares:
@@ -705,6 +706,9 @@ def routes(app):
         "start",
         "stop",
         "accept",
+        "decline",
+        "finish",
+        "translator_prompt",
         "review",
         "progress",
         "operation",

@@ -286,6 +286,13 @@ class TranslationAcceptRequest(TypedDict):
     input_path: str
 
 
+class TranslationDeclineRequest(TypedDict):
+    project_id: str
+    run_id: str
+    batch_id: str
+    reason: str
+
+
 class TranslationReviewRequest(TypedDict):
     project_id: str
     run_id: str
@@ -610,6 +617,9 @@ METHODS: dict[str, Method] = {
     "translation_start": Method(TranslationStartRequest, TranslationJob),
     "translation_stop": Method(TranslationStopRequest, TranslationJob),
     "translation_accept": Method(TranslationAcceptRequest, TranslationJob),
+    "translation_decline": Method(TranslationDeclineRequest, TranslationJob),
+    "translation_finish": Method(RunRequest, TranslationJob),
+    "translation_translator_prompt": Method(RunRequest, PreparedHandoff, refresh=False),
     "translation_review": Method(TranslationReviewRequest, Saved),
     "translation_progress": Method(InputPathRequest, TranslationProgress),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),

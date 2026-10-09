@@ -1,5 +1,5 @@
 {
-  "version": "be63b90f6e1d7d0c",
+  "version": "d9d8687bf390d039",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -275,6 +275,18 @@
     },
     "translation_accept": {
       "refresh": true,
+      "duringClose": false
+    },
+    "translation_decline": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_finish": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "translation_translator_prompt": {
+      "refresh": false,
       "duringClose": false
     },
     "translation_review": {

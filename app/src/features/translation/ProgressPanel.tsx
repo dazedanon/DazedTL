@@ -27,10 +27,13 @@ import {
   approvalUntold,
   attemptJobs,
   awaitingQuote,
+  declinedRun,
   estimateOutdated,
+  finishingRun,
   latestApiRun,
 } from "./apiRun";
 import { phaseStates } from "./assistantPhases";
+import { DeclinedLines } from "./DeclinedLines";
 import { modeLabels } from "./OptionsPanel";
 import { StartOver } from "./StartOver";
 
@@ -85,6 +88,7 @@ export function ProgressPanel({
   const images = progress?.metrics.images;
   const attempt = attemptJobs(state);
   const run = latestApiRun(attempt);
+  const declined = declinedRun(attempt);
   const untold = approvalUntold(run, state.assistantSeenAt);
   // The API run's reminders already say to paste the prompt.
   const quiet =
@@ -177,6 +181,14 @@ export function ProgressPanel({
         )}
         {operation && <JobStatus job={operation} />}
       </AssistantTask>
+      {declined && (
+        <DeclinedLines
+          run={declined}
+          finishing={finishingRun(attempt, declined)}
+          state={state}
+          action={action}
+        />
+      )}
       {(options.mode !== "agent" || run) && (
         <ApiRun
           run={run}
@@ -300,12 +312,20 @@ function ApiRun({
         outdated
           ? "API settings or the translation mode changed after this estimate, so it can no longer be approved."
           : quote
-            ? "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
+            ? run.finishes
+              ? "Nothing is sent until you approve this estimate."
+              : "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
             : run.message
       }
     >
       <div className="status-panel-body">
-        {outdated ? (
+        {outdated && run.finishes ? (
+          <Notice tone="warning">
+            <span>
+              <strong>Needs you:</strong> estimate the declined lines again.
+            </span>
+          </Notice>
+        ) : outdated ? (
           <>
             <Notice tone="warning">
               <span>

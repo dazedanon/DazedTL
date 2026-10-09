@@ -7,6 +7,16 @@ import sys
 from pathlib import Path
 
 HELPER = Path(__file__).resolve().parents[3] / "scripts/project.py"
+# Every prompt that hands the helper to an assistant says this.
+LOOPBACK_NOTE = (
+    "The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). "
+    "A coding assistant's network sandbox can block that connection even while DazedTL is open. "
+    "If loopback access is restricted, use the assistant's normal permission/escalation flow for this helper "
+    'before your first helper command (in Codex, sandbox_permissions="require_escalated" when required). '
+    "Reuse valid permission already granted. "
+    "A failed sandboxed connection does not mean the app is closed: retry a read-only helper command with permitted access "
+    "before asking the user to reopen DazedTL."
+)
 
 
 def shell_command(arguments):

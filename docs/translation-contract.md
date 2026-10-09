@@ -140,6 +140,14 @@ It counts translations any run accepted for the same requests, and refuses once 
 The engine's injector reads that file and keeps its own source-location mappings.
 The app's progress export is a derived view, not a replacement for an engine's extraction or injection data.
 
+## Declined requests
+
+In Assistant only, decline --run ID --batch ID --reason TEXT sets aside a request the assistant won't translate, so it carries on with the rest.
+The reason is one line of at most 300 characters and never repeats game text.
+Decline rather than soften, shorten or leave out lines; a declined request can still be accepted later.
+Once nothing else in the run is pending, Progress offers the user two ways to finish them: an API estimate compiled from the same plan, which the user approves, or a prompt that has another assistant translate only those requests with request and accept.
+Either way the translations land in the same accepted store, so the declined requests then read as accepted, and run --wait on the Assistant only run returns as they are saved.
+
 ## API execution and recovery
 
 Review the run's complete request set and quote before start --approve TOKEN.

@@ -18,8 +18,8 @@ from dazedtl.storage import write_bytes, write_json
 from . import backups, delivery, organize, progress_report
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
-from .helper_command import git_note, helper_command
-from .jobs import Jobs, now
+from .helper_command import LOOPBACK_NOTE, git_note, helper_command
+from .jobs import Jobs, declined_message, now
 from .operations import (
     checkout_issue,
     lifecycle,
@@ -29,6 +29,14 @@ from .operations import (
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import plan_input, quote
 from .results import Results
+
+
+def priced_mode(finishes, run_mode, project_mode):
+    """The mode whose current settings an estimate must still match: the
+    project's, or its own for an estimate of declined lines, which an
+    Assistant only project asks for in an API mode."""
+    return run_mode if finishes else project_mode
+
 
 # Set while the project helper, run by the user's assistant, makes a request.
 assistant_request = ContextVar("assistant_request", default=False)
@@ -492,7 +500,7 @@ This project uses the new DazedTL app as its state and execution owner. Keep the
 {command} state
 {command} --help
 
-{git_note()}The helper connects to the running app over authenticated loopback HTTP (127.0.0.1). A coding assistant's network sandbox can block that connection even while DazedTL is open. If loopback access is restricted, use the assistant's normal permission/escalation flow for this helper before running state (in Codex, sandbox_permissions="require_escalated" when required). Reuse valid permission already granted. A failed sandboxed connection does not mean the app is closed: retry the read-only state command with permitted access before asking the user to reopen DazedTL. If permission is denied or unavailable, report that restriction as the blocker.
+{git_note()}{LOOPBACK_NOTE} If permission is denied or unavailable, report that restriction as the blocker.
 
 After a connection failure, inspect state and the relevant run before retrying any state-changing command; a lost response does not prove the action failed. Never blindly repeat a paid submission or project operation. The helper prints structured JSON; never copy API keys or the local connection token into game files, prompts, or arguments. If the app remains unreachable with permitted access, save local work and resume with the same prompt once the app is available. The app does not run the coding assistant itself.
 
@@ -526,8 +534,9 @@ Additional project instructions:
 
     def job_views(self, jobs, mode):
         """Saved runs as pages show them; an estimate waiting for approval
-        notes when the settings it priced have changed since."""
-        current = None
+        notes when the settings it priced have changed since. An estimate
+        for declined requests keeps its own mode, whatever the project's."""
+        current = {}
         views = []
         for job in jobs:
             view = self.jobs.store.view(job)
@@ -538,16 +547,19 @@ Additional project instructions:
                 and view["quote"]
                 and not view["approved"]
             ):
-                if current is None:
+                priced = priced_mode(job.get("finishes"), view["mode"], mode)
+                if priced not in current:
                     # Cached prices only, so a snapshot never waits on a
                     # pricing lookup; approval itself checks fully.
                     try:
-                        current = digest(
-                            self.api_configuration(mode, cached_only=True)[0]
+                        current[priced] = digest(
+                            self.api_configuration(priced, cached_only=True)[0]
                         )
                     except ValueError:
-                        current = ""
-                view["settings_changed"] = bool(current) and current != frozen
+                        current[priced] = ""
+                view["settings_changed"] = (
+                    bool(current[priced]) and current[priced] != frozen
+                )
             views.append(view)
         return views
 
@@ -569,6 +581,12 @@ Additional project instructions:
         return backups.catalog(project.root, self.workspace / "backups" / project_id)
 
     def compile(self, project_id, input_path):
+        return self._compile(project_id, input_path)
+
+    def _compile(self, project_id, input_path, *, mode=None, finishes=None):
+        """A run of the plan's requests. A run that finishes another run's
+        declined requests uses the API mode given and quotes only what has no
+        saved translation yet."""
         self.idle(project_id)
         self.clean_drafts(project_id)
         legacy = self.legacy_record(project_id)
@@ -587,8 +605,8 @@ Additional project instructions:
         )
         raw_path = project.artifact(input_path)
         raw = plan_input(read_json(raw_path))
-        cfg, batch_provider = self.api_configuration(selected["mode"])
-        if cfg["mode"] != "agent" and not raw["complete"]:
+        cfg, batch_provider = self.api_configuration(mode or selected["mode"])
+        if cfg["mode"] != "agent" and not raw["complete"] and not finishes:
             raise ValueError(
                 "API cost review requires the complete independently audited request corpus."
             )
@@ -653,6 +671,8 @@ Additional project instructions:
             "input_path": input_path,
             "batch_limits": limits,
         }
+        if finishes:
+            plan.update(label="Declined requests", finishes=finishes)
         job = self.jobs.store.create(project_id, plan, estimate)
         self.refresh_progress(project_id, plan)
         return self.jobs.store.view(job)
@@ -813,7 +833,11 @@ Additional project instructions:
             # they change would approve a cost the user no longer sees.
             _record, project = self.project(project_id)
             current, _provider = self.api_configuration(
-                project.read()["options"]["mode"]
+                priced_mode(
+                    plan.get("finishes"),
+                    plan["configuration"]["mode"],
+                    project.read()["options"]["mode"],
+                )
             )
             if digest(current) != digest(plan["configuration"]):
                 raise ValueError(
@@ -863,6 +887,7 @@ Additional project instructions:
         job, plan = self.jobs.store.load(run_id, project_id)
         if plan["kind"] != "translation":
             raise ValueError("Result receipts belong to translation runs.")
+        job = self.jobs.store.settled(job)
         self.validate_current(project_id, plan)
         request = next((row for row in plan["requests"] if row["id"] == batch_id), None)
         if not request:
@@ -908,6 +933,97 @@ Additional project instructions:
         self.jobs.store.save(job)
         self.refresh_progress(project_id, plan)
         return self.jobs.store.view(job)
+
+    def declined_run(self, project_id, run_id):
+        job, plan = self.jobs.store.load(run_id, project_id)
+        if plan["kind"] != "translation" or plan["configuration"]["mode"] != "agent":
+            raise ValueError(
+                "Only Assistant only runs have declined requests; API runs retry provider refusals themselves."
+            )
+        return self.jobs.store.settled(job), plan
+
+    def decline(self, project_id, run_id, batch_id, reason):
+        """Sets aside a request the assistant won't translate, so it carries
+        on and another model can finish it."""
+        self.idle(project_id)
+        job, plan = self.declined_run(project_id, run_id)
+        if (
+            not isinstance(reason, str)
+            or not reason.strip()
+            or len(reason) > 300
+            or any(char in reason for char in "\r\n\0")
+        ):
+            raise ValueError(
+                "Give a one-line reason of at most 300 characters, without game text."
+            )
+        request = next((row for row in plan["requests"] if row["id"] == batch_id), None)
+        if not request:
+            raise ValueError("Unknown request ID.")
+        if job["states"][batch_id]["state"] == "accepted" or Results(
+            plan["source"]
+        ).get(request):
+            raise ValueError("This request already has a saved translation.")
+        job["states"][batch_id] = {"state": "declined", "message": reason.strip()}
+        job["message"] = declined_message(job)
+        self.jobs.store.save(job)
+        return self.jobs.store.view(job)
+
+    def finish(self, project_id, run_id):
+        """An API estimate for the requests the assistant declined. It
+        compiles the same plan, so their translations land where the
+        assistant's run reads them."""
+        job, plan = self.declined_run(project_id, run_id)
+        states = {row["state"] for row in job["states"].values()}
+        if "declined" not in states:
+            raise ValueError("No declined requests remain in this run.")
+        if "pending" in states:
+            raise ValueError(
+                "Your assistant is still translating this run. Estimate the declined requests once it has finished."
+            )
+        return self._compile(
+            project_id,
+            plan["input_path"],
+            mode=self.default_mode(),
+            finishes=run_id,
+        )
+
+    def translator_prompt(self, project_id, run_id):
+        """A prompt for another assistant that translates only the declined
+        requests, through the same helper and receipts."""
+        job, plan = self.declined_run(project_id, run_id)
+        declined = [
+            (index, row["id"])
+            for index, row in enumerate(plan["requests"])
+            if job["states"][row["id"]]["state"] == "declined"
+        ]
+        if not declined:
+            raise ValueError("No declined requests remain in this run.")
+        _record, project = self.project(project_id)
+        command = helper_command(self.workspace, project_id)
+        listing = "\n".join(f"- {index}: {identity}" for index, identity in declined)
+        handoff = f"""Translate the requests listed below in a DazedTL translation run, then stop. Another assistant prepared this game and declined them; it carries on once their translations are saved.
+
+Game: {json.dumps(str(project.root), ensure_ascii=False)}
+Run: {run_id}
+
+Requests (index: request ID):
+{listing}
+
+Read each request with:
+
+{command} request --run {run_id} --index <index>
+
+It holds the Japanese lines by ID with their full context: instructions, glossary, speakers, line kinds, earlier lines and constraints. Translate every line into {plan["configuration"]["language"]}, keeping each ID, protected token and layout bound. Use the speakers and earlier lines for voice and who is addressed. Translate faithfully; never soften, shorten or leave out a line. Save a JSON receipt under {WORK}/work/receipts/ with request_sha256 set to the request's fingerprint and translations mapping every ID to its translation, then accept it with:
+
+{command} accept --run {run_id} --batch <request ID> --input <the receipt's path relative to the game>
+
+If you won't translate a request, skip it and go on; it stays declined. Use the helper only to read requests and accept receipts, and change nothing else in the project. When you finish, report only how many requests you saved.
+
+{LOOPBACK_NOTE}
+"""
+        path = project_path(project.root, WORK + "/translator-handoff.md", exists=False)
+        write_bytes(path, handoff.encode("utf-8"))
+        return {"handoff": handoff, "path": str(path)}
 
     def review(self, project_id, run_id, batch_id, request_sha256):
         self.idle(project_id)

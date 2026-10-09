@@ -264,7 +264,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reviewed", corrected["result"])
         self.assertEqual(corrected["request"]["context"]["qa_notes"]["line"], note)
 
-    def test_organized_lines_compile_and_return_results_by_line_id(self):
+    def test_organized_lines_are_translated_declined_finished_and_read_back_by_id(self):
         units = WORK + "/work/source-units.json"
         write_json(
             self.game / units,
@@ -299,6 +299,14 @@ class WorkflowTests(unittest.TestCase):
         run = organized["run"]["id"]
         preview = self.service.request(self.identity, run, 0)
         self.assertEqual(preview["request"]["context"]["speakers"], {"a/1": "リリ"})
+        # A request the assistant won't translate is set aside so it carries
+        # on; another model finishes it once nothing else is pending.
+        declined = self.service.decline(self.identity, run, "b/1", "Declined")
+        self.assertEqual(
+            (declined["counts"]["declined"], declined["declined_units"]), (1, 1)
+        )
+        with self.assertRaisesRegex(ValueError, "still translating"):
+            self.service.finish(self.identity, run)
         receipt = WORK + "/work/receipt.json"
         write_json(
             self.game / receipt,
@@ -308,20 +316,56 @@ class WorkflowTests(unittest.TestCase):
             },
         )
         self.service.accept(self.identity, run, "a/1", receipt)
+        with self.assertRaisesRegex(ValueError, "already has a saved translation"):
+            self.service.decline(self.identity, run, "a/1", "Not here")
         # The injector reads translations by line ID from a file; the reply
         # carries counts only.
         written = self.service.results(self.identity, run)
         self.assertEqual(
-            (written["translated"], written["missing"]), (1, {"pending": 1})
+            (written["translated"], written["missing"]), (1, {"declined": 1})
         )
         self.assertEqual(
             read_json(self.game / written["path"]),
             {
                 "run_id": run,
                 "translations": {"a/1": "Yes."},
-                "missing": {"b/1": "pending"},
+                "missing": {"b/1": "declined"},
             },
         )
+        prompt = self.service.translator_prompt(self.identity, run)["handoff"]
+        self.assertIn("- 1: b/1", prompt)
+        self.assertIn(f"accept --run {run}", prompt)
+        finishing = self.service.finish(self.identity, run)
+        self.assertEqual(
+            (finishing["mode"], finishing["finishes"], finishing["quote"]["requests"]),
+            ("batch", run, 1),
+        )
+        # The project stays in Assistant only; the estimate keeps its own mode.
+        record = self.service.jobs.store.record(finishing["id"])
+        self.assertFalse(
+            self.service.job_views([record], "agent")[0]["settings_changed"]
+        )
+        # Approval gets past the settings check; this test app sends nothing.
+        with self.assertRaisesRegex(ValueError, "Provider execution is disabled"):
+            self.service.start(
+                self.identity, finishing["id"], finishing["approval_token"]
+            )
+        _job, frozen = self.service.jobs.store.load(finishing["id"])
+        request = frozen["requests"][1]
+        self.assertEqual(
+            request["fingerprint"],
+            self.service.request(self.identity, run, 1)["request"]["fingerprint"],
+        )
+        write_json(
+            self.game / receipt,
+            {"request_sha256": request["fingerprint"], "translations": {"b/1": "No."}},
+        )
+        self.service.accept(self.identity, finishing["id"], "b/1", receipt)
+        settled = self.service.run(self.identity, run)
+        self.assertEqual(
+            (settled["status"], settled["declined_units"]), ("complete", 0)
+        )
+        self.assertEqual(self.service.results(self.identity, run)["missing"], {})
         write_json(
             self.game / units,
             {"version": 1, "units": [{"id": "a/1", "scene": "a", "source": "うん。"}]},

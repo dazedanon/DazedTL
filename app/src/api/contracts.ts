@@ -871,6 +871,8 @@ export type TranslationJob = {
   counts: Record<string, number>;
   units: number;
   accepted_units: number;
+  declined_units: number;
+  finishes: string | null;
   requests: number;
   stop_requested: boolean;
   cancel_requested: boolean;
@@ -2057,6 +2059,13 @@ export type TranslationAcceptRequest = {
   input_path: string;
 };
 
+export type TranslationDeclineRequest = {
+  project_id: string;
+  run_id: string;
+  batch_id: string;
+  reason: string;
+};
+
 export type TranslationReviewRequest = {
   project_id: string;
   run_id: string;
@@ -2437,6 +2446,15 @@ export type RpcContract = {
   translation_accept: {
     request: TranslationAcceptRequest;
     response: TranslationJob;
+  };
+  translation_decline: {
+    request: TranslationDeclineRequest;
+    response: TranslationJob;
+  };
+  translation_finish: { request: RunRequest; response: TranslationJob };
+  translation_translator_prompt: {
+    request: RunRequest;
+    response: PreparedHandoff;
   };
   translation_review: { request: TranslationReviewRequest; response: Saved };
   translation_progress: {

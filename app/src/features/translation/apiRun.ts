@@ -33,3 +33,28 @@ export const approvalUntold = (
     assistantSeenAt &&
     Date.parse(assistantSeenAt) >= Date.parse(run.app_approved_at)
   );
+
+/** The latest Assistant only run while it has lines the assistant declined. */
+export const declinedRun = (jobs: TranslationJob[]) => {
+  const run = jobs.find(
+    (job) => job.kind === "translation" && job.mode === "agent",
+  );
+  return run?.declined_units ? run : undefined;
+};
+
+/**
+ * The API run translating a run's declined lines while its estimate waits
+ * for approval or it still works; an outdated or ended one can be redone.
+ */
+export const finishingRun = (
+  jobs: TranslationJob[],
+  declined: TranslationJob,
+) =>
+  jobs.find(
+    (job) =>
+      job.finishes === declined.id &&
+      !estimateOutdated(job) &&
+      ["ready", "running", "waiting", "interrupted", "stopped"].includes(
+        job.status,
+      ),
+  );

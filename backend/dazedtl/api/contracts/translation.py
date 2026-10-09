@@ -85,6 +85,10 @@ class TranslationJob(TypedDict):
     counts: dict[str, int]
     units: int
     accepted_units: int
+    # Lines the assistant declined that no run has translated yet.
+    declined_units: int
+    # The Assistant only run whose declined requests this API run translates.
+    finishes: str | None
     requests: int
     stop_requested: bool
     cancel_requested: bool
