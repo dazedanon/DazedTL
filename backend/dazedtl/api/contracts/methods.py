@@ -74,6 +74,7 @@ from dazedtl.api.contracts.translation import (
     TranslationJob,
     TranslationOptions,
     TranslationProgress,
+    TranslationResults,
     TranslationState,
 )
 from dazedtl.api.contracts.workspace import (
@@ -604,6 +605,7 @@ METHODS: dict[str, Method] = {
     "translation_organize": Method(TranslationOrganizeRequest, OrganizedRun),
     "translation_run": Method(RunRequest, TranslationJob, refresh=False),
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
+    "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
     "translation_start": Method(TranslationStartRequest, TranslationJob),
     "translation_stop": Method(TranslationStopRequest, TranslationJob),

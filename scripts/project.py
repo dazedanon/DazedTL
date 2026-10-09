@@ -192,12 +192,18 @@ def main():
         "stop",
         "start",
         "request",
+        "results",
         "accept",
         "review",
         "attach-batch",
         "resolve-uncertain",
     ):
-        child = commands.add_parser(name)
+        child = commands.add_parser(
+            name,
+            help="Write the run's accepted translations by line ID to a file for injection; replies with counts only"
+            if name == "results"
+            else None,
+        )
         child.add_argument("--run", required=True)
         if name == "run":
             child.add_argument(

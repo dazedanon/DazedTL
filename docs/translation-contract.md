@@ -135,7 +135,9 @@ Record source-checked review with review only after performing that review.
 Do not regenerate source/review hashes to make stale work count as current.
 
 Accepted records live under .dazedtl/len-method/work/accepted, with correction history beside them.
-Adapters should import those accepted ID mappings into their existing source/translation stores and retain their source-location mappings.
+results --run ID writes the run's accepted translations by line ID to .dazedtl/len-method/work/results/ID.json, with each missing line's request state, and replies with counts only.
+It counts translations any run accepted for the same requests, and refuses once the extracted lines it was organized from have changed.
+The engine's injector reads that file and keeps its own source-location mappings.
 The app's progress export is a derived view, not a replacement for an engine's extraction or injection data.
 
 ## API execution and recovery

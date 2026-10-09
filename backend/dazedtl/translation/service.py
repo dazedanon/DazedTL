@@ -754,6 +754,51 @@ Additional project instructions:
             "result": Results(plan["source"]).get(plan["requests"][index]),
         }
 
+    def results(self, project_id, run_id):
+        """Writes the run's accepted translations by line ID for the engine's
+        injector, and replies with counts only."""
+        job, plan = self.jobs.store.load(run_id, project_id)
+        if plan["kind"] != "translation":
+            raise ValueError("Results belong to translation runs.")
+        identities = [key for request in plan["requests"] for key in request["sources"]]
+        if len(set(identities)) != len(identities):
+            raise ValueError(
+                "Line IDs repeat across this run's requests. Read each request's result instead."
+            )
+        # Guidance may change after translating; the lines the IDs name may not.
+        guidance = set(self.guidance_inputs(plan["source"]))
+        sources = {
+            path: value
+            for path, value in plan["evidence"].items()
+            if path not in guidance and path != plan["input_path"]
+        }
+        try:
+            if sources:
+                verify_evidence(plan["source"], sources)
+            self.engine.verify_bindings(plan["source"], plan["original_bindings"])
+        except ValueError:
+            raise ValueError(
+                "The extracted lines changed since this run was organized. Organize them again; unchanged requests keep their translations."
+            ) from None
+        saved = Results(plan["source"])
+        translations, missing = {}, {}
+        for request in plan["requests"]:
+            value = saved.get(request)
+            if value:
+                translations.update(value["translations"])
+            else:
+                state = job["states"][request["id"]]["state"]
+                missing.update(dict.fromkeys(request["sources"], state))
+        relative = WORK + "/work/results/" + run_id + ".json"
+        write_json(
+            project_path(plan["source"], relative, exists=False),
+            {"run_id": run_id, "translations": translations, "missing": missing},
+        )
+        counts = {}
+        for state in missing.values():
+            counts[state] = counts.get(state, 0) + 1
+        return {"path": relative, "translated": len(translations), "missing": counts}
+
     def start(self, project_id, run_id, approval_token=""):
         job, plan = self.jobs.store.load(run_id, project_id)
         if plan["kind"] != "translation":

@@ -334,6 +334,14 @@ class PreparedHandoff(TypedDict):
     path: str
 
 
+class TranslationResults(TypedDict):
+    """Where the run's translations were written by line ID; counts only."""
+
+    path: str
+    translated: int
+    missing: dict[str, int]
+
+
 class OrganizeSummary(TypedDict):
     """Counts only, so the assistant reads no game text back."""
 

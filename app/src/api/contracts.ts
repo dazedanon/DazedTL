@@ -1107,6 +1107,13 @@ export type PreparedHandoff = {
   path: string;
 };
 
+/** Where the run's translations were written by line ID; counts only. */
+export type TranslationResults = {
+  path: string;
+  translated: number;
+  missing: Record<string, number>;
+};
+
 /** Counts only, so the assistant reads no game text back. */
 export type OrganizeSummary = {
   units: number;
@@ -2417,6 +2424,7 @@ export type RpcContract = {
   };
   translation_run: { request: RunRequest; response: TranslationJob };
   translation_request: { request: RunIndexRequest; response: RequestPreview };
+  translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
   translation_start: {
     request: TranslationStartRequest;

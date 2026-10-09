@@ -264,7 +264,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("reviewed", corrected["result"])
         self.assertEqual(corrected["request"]["context"]["qa_notes"]["line"], note)
 
-    def test_organized_lines_compile_without_returning_game_text(self):
+    def test_organized_lines_compile_and_return_results_by_line_id(self):
         units = WORK + "/work/source-units.json"
         write_json(
             self.game / units,
@@ -296,8 +296,38 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("はい", json.dumps(organized, ensure_ascii=False))
         plan = read_json(self.game / organized["summary"]["plan"])
         self.assertEqual(plan["inputs"], [units])
-        preview = self.service.request(self.identity, organized["run"]["id"], 0)
+        run = organized["run"]["id"]
+        preview = self.service.request(self.identity, run, 0)
         self.assertEqual(preview["request"]["context"]["speakers"], {"a/1": "リリ"})
+        receipt = WORK + "/work/receipt.json"
+        write_json(
+            self.game / receipt,
+            {
+                "request_sha256": preview["request"]["fingerprint"],
+                "translations": {"a/1": "Yes."},
+            },
+        )
+        self.service.accept(self.identity, run, "a/1", receipt)
+        # The injector reads translations by line ID from a file; the reply
+        # carries counts only.
+        written = self.service.results(self.identity, run)
+        self.assertEqual(
+            (written["translated"], written["missing"]), (1, {"pending": 1})
+        )
+        self.assertEqual(
+            read_json(self.game / written["path"]),
+            {
+                "run_id": run,
+                "translations": {"a/1": "Yes."},
+                "missing": {"b/1": "pending"},
+            },
+        )
+        write_json(
+            self.game / units,
+            {"version": 1, "units": [{"id": "a/1", "scene": "a", "source": "うん。"}]},
+        )
+        with self.assertRaisesRegex(ValueError, "Organize them again"):
+            self.service.results(self.identity, run)
 
     def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(
         self,
