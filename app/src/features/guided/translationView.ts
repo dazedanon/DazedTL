@@ -422,18 +422,23 @@ export function fileStatus(name: string, run?: Job, settled = false) {
     run.process?.requests?.filter((row) => row.file === name) || [],
   );
   const states = rows.map((row) => row.state);
+  const working = activeWorker(run);
   // A submission without a provider receipt may still be at the provider, so
-  // its reason is checking before sending again, not rejected lines.
+  // its reason is checking before sending again, not rejected lines. A Live
+  // request still marked sent when its worker stopped is one of them.
   const incomplete = fileState(
     "needs_review",
-    states.includes("uncertain")
+    states.includes("uncertain") ||
+      (!working && run.mode !== "batch" && states.includes("submitted"))
       ? "Its submission could not be confirmed. Check Run history before sending it again."
       : "Some lines were rejected or not saved; Inspect shows which.",
   );
-  const partial =
-    run.partialOutputs?.includes(name) ||
-    run.process?.validationIssues?.some((issue) => issue.file === name);
-  const working = activeWorker(run);
+  const invalid = run.process?.validationIssues?.some(
+    (issue) => issue.file === name,
+  );
+  const partial = run.partialOutputs?.includes(name) || invalid;
+  const rejected =
+    invalid || states.some((state) => ["rejected", "failed"].includes(state));
   if (!noRequests && (run.workerStatus ?? run.status) !== "complete") {
     if (working && run.approval) return awaiting;
     const submitted = rows.filter((row) => row.state === "submitted");
@@ -481,6 +486,10 @@ export function fileStatus(name: string, run?: Job, settled = false) {
       // Item progress identifies the file still being parsed between requests,
       // including after rejection; progress.file is the last finished file.
       if (working && run.mode !== "batch" && run.itemProgress?.file === name)
+        return progress;
+      // A file stays partial until the worker finishes writing it, so only
+      // rejected or failed lines need review before then.
+      if (working && run.mode !== "batch" && saved && !rejected)
         return progress;
     }
   }

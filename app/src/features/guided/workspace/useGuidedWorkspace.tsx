@@ -63,6 +63,16 @@ import {
 import { selectionNames } from "../../../ui/displayText";
 import { childPath } from "../../../ui/displayPath";
 
+/** How the footer names a run that ended without failing. */
+const endings = {
+  stopped: "Run stopped",
+  interrupted: "Run interrupted",
+  canceled: "Run canceled",
+  cancelled: "Run canceled",
+};
+/** Footer notices that describe an earlier run or its stop request. */
+const runNotices = ["run:finished", "run:stop", "run:answer:false"];
+
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({
   project,
@@ -117,11 +127,13 @@ export function useGuidedWorkspace({
     // A failed run shows its reason on its task instead of reading as finished.
     if (ended && ended.status !== "failed" && !action.busy) {
       const outcome = historyOutcome(ended);
+      const ending =
+        endings[ended.status as keyof typeof endings] || "Run finished";
       // The footer already counts saved files; other outcomes need their detail.
       action.succeed(
         outcome.kind === "saved"
-          ? "Run finished."
-          : `Run finished · ${outcome.detail || outcome.label}`,
+          ? `${ending}.`
+          : `${ending} · ${outcome.detail || outcome.label}`,
         "run:finished",
       );
     }
@@ -707,7 +719,11 @@ export function useGuidedWorkspace({
       "",
       "review:cancel",
     );
-  const translateSelected = () => translationFlow.start();
+  // A new translation's progress replaces the notice about an earlier run.
+  const translateSelected = () => {
+    if (!action.busy && runNotices.includes(action.key)) action.clear();
+    translationFlow.start();
+  };
   useEffect(() => {
     if (
       action.busy ||

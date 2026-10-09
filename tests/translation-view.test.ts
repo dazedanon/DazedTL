@@ -439,6 +439,35 @@ test("a later event-code task cannot inherit completion from map outputs or an o
     fileStatus("Map001.json", partial).detail,
     fileStatus("Map001.json", rejected).detail,
   );
+  // A stopped Live run leaves its unanswered request marked sent; that is
+  // unconfirmed too.
+  const stopped = {
+    ...partial,
+    mode: "translate",
+    status: "stopped",
+    process: {
+      ...partial.process,
+      requests: [{ ...partial.process.requests[0], state: "submitted" }],
+    },
+  };
+  assert.equal(
+    fileStatus("Map001.json", stopped).detail,
+    fileStatus("Map001.json", partial).detail,
+  );
+  // A Live file still being written, such as one with nothing to send, is
+  // partial until it finishes but only rejected lines need review meanwhile.
+  const writing = {
+    ...maps,
+    mode: "translate",
+    status: "running",
+    partialOutputs: ["Map001.json"],
+    process: { requests: [], errors: [] },
+  };
+  assert.equal(fileStatus("Map001.json", writing).label, "Working");
+  assert.equal(
+    fileStatus("Map001.json", { ...writing, process: rejected.process }).label,
+    "Needs review",
+  );
   // Requests a run never sent, such as a refused Batch, leave the file untouched.
   const unsent = {
     ...partial,
