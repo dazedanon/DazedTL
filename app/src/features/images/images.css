@@ -23,7 +23,6 @@ main > .image-manager {
   flex: 1;
   height: auto;
 }
-.image-manager > .image-profile-issue,
 .image-manager-work > :is(.image-action-feedback, .image-index-progress) {
   padding-inline: 0;
 }
@@ -52,9 +51,11 @@ main > .image-manager {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
   background: var(--color-warning-surface);
-  border-bottom: 1px solid var(--color-warning-border);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--control-radius);
   font-size: var(--font-small);
 }
 /* The preview takes a full-height column beside the task, toolbar and
