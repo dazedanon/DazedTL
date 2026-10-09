@@ -10,7 +10,7 @@ Use this reference when a user disputes a decision, a later review contradicts a
 
 Only these keep Japanese out of the translated game:
 
-- Text players never see, such as engine identifiers, asset file names, comments and script code, set aside by a field rule that applies across the whole game.
+- Text players never see, such as engine identifiers, asset file names, comments and script code, set aside by a field rule that applies across the whole game; rules work only for engine data, scenarios and code DazedTL reads itself, so everything in a decoded dump is extracted.
 - Omissions the user approved, recorded with their words.
 - Unresolved extraction: text the extractor can't reach yet, reported as a defect to fix, not as a decision.
 

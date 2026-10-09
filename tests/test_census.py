@@ -203,7 +203,7 @@ class CensusTests(unittest.TestCase):
                 ("switches/*", "identifier"),
             },
         )
-        fields = census.fields(result)
+        fields = {**census.fields(result), "json": {"*/text"}}
         for rule, refused in (
             (
                 {"kind": "rpgmaker:map", "field": "**", "reason": "comment"},
@@ -225,6 +225,11 @@ class CensusTests(unittest.TestCase):
             (
                 {"kind": "rpgmaker:system", "field": "gameTitle", "reason": "content"},
                 "reason",
+            ),
+            # A data file's own field names can name content, so its text is extracted.
+            (
+                {"kind": "json", "field": "*/text", "reason": "not_displayed"},
+                "always extracted",
             ),
         ):
             with self.subTest(rule=rule), self.assertRaisesRegex(ValueError, refused):

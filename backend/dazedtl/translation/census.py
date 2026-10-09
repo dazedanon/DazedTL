@@ -648,6 +648,13 @@ def xp3_read(data, segments, adler):
 # --- Scope rules ------------------------------------------------------------------
 
 REASONS = {"asset_name", "identifier", "comment", "script_code", "not_displayed"}
+# The assistant's rules work only where DazedTL knows the format's structure.
+# Field names in decoded dumps, generic JSON and plain text are the game's
+# own and can name content, so everything there is extracted.
+RULE_KINDS = (
+    "rpgmaker:*", "rgss:*", "js", "js:plugin", "script:tjs", "script:ks",
+    "script:rpy", "html",
+)  # fmt: skip
 # Code files may be named by a rule; a map, event or scene never can.
 CODE_KINDS = {"js", "js:plugin", "script:tjs", "rgss:scripts", "html"}
 
@@ -823,6 +830,10 @@ def rules_input(value, fields):
             raise ValueError(
                 f"Scope rule {index} names a kind the census did not find."
             )
+        if not any(_kind(pattern, kind) for pattern in RULE_KINDS):
+            raise ValueError(
+                f"Scope rule {index} names {kind}, whose text is always extracted; rules work only for engine data, scenarios and code DazedTL reads itself."
+            )
         # Census fields never hold a map, event or scene index, so a rule that
         # matches one applies to every map, event and scene alike.
         if not isinstance(field, str) or not any(
@@ -908,11 +919,13 @@ def coverage(census, sources, glossary, rules):
     chosen = {}
 
     def rule_for(entry):
-        key = (entry["kind"], entry["field"], entry["file"])
+        key = (entry["kind"], entry["field"], entry["file"], entry["source"])
         if key not in chosen:
             chosen[key] = None
             if not protected(entry["kind"], entry["field"]):
                 for rule in every:
+                    if rule["by"] == "assistant" and entry["source"] != "tool":
+                        continue
                     if (
                         _kind(rule["kind"], entry["kind"])
                         and rule.get("file", entry["file"]) == entry["file"]
