@@ -160,6 +160,10 @@ def build_platform(source_dir: Path, platform: str, log_fn=print) -> Path | None
     target_dir = source_dir / "target"
     env = os.environ.copy()
     env["CARGO_TARGET_DIR"] = str(target_dir)
+    if platform == "windows":
+        # MinGW ld stamps the build time into the PE header, so an unchanged
+        # upstream would still produce a different committed binary.
+        env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS"] = "-C link-arg=-Wl,--no-insert-timestamp"
     if not _run(cmd, cwd=source_dir, env=env, log_fn=log_fn):
         return None
 
