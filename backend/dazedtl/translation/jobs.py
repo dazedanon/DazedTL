@@ -429,7 +429,10 @@ class Jobs:
             if job["status"] in {"running", "waiting"}:
                 job.update(
                     status="interrupted",
-                    message="The worker exited before completion. Resume to reconcile receipts before sending more work.",
+                    # Only a translation run has provider receipts to reconcile.
+                    message="The worker exited before completion. Resume to reconcile receipts before sending more work."
+                    if job["kind"] == "translation"
+                    else "The worker exited before completion. Run it again to continue.",
                 )
                 self.store.save(job)
 
