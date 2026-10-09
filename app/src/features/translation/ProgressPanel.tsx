@@ -13,6 +13,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { Feedback } from "../../ui/Feedback";
 import { displayLabels, type DisplayState } from "../../ui/displayStatus";
 import { timeAgo } from "../../ui/displayText";
 import { JobStatus } from "../../ui/JobStatus";
@@ -22,7 +23,12 @@ import { Notice } from "../../ui/Notice";
 import { StepProgress, type StepState } from "../../ui/StepProgress";
 import { TranslationCost } from "../guided/TranslationReview";
 import type { ProjectLink } from "../guided/workspace/model";
-import { apiRun, attemptJobs, awaitingQuote } from "./apiRun";
+import {
+  approvalUntold,
+  attemptJobs,
+  awaitingQuote,
+  latestApiRun,
+} from "./apiRun";
 import { modeLabels } from "./OptionsPanel";
 import { StartOver } from "./StartOver";
 
@@ -90,11 +96,14 @@ export function ProgressPanel({
   const status = taskState(progress, !!activity);
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
+  const attempt = attemptJobs(state);
+  const run = latestApiRun(attempt);
+  const untold = approvalUntold(run, state.assistantSeenAt);
+  // The API run's approval reminder already says to paste the prompt.
   const quiet =
     status === "waiting" &&
+    !untold &&
     now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
-  const attempt = attemptJobs(state);
-  const run = apiRun(attempt);
   const operation = attempt.find(
     (job) =>
       job.kind === "operation" &&
@@ -187,7 +196,13 @@ export function ProgressPanel({
         {operation && <JobStatus job={operation} />}
       </AssistantTask>
       {(options.mode !== "agent" || run) && (
-        <ApiRun run={run} state={state} action={action} resume={resume} />
+        <ApiRun
+          run={run}
+          state={state}
+          action={action}
+          untold={untold}
+          resume={resume}
+        />
       )}
       <div className="lens-project-links">
         {state.statusText && (
@@ -246,11 +261,13 @@ function ApiRun({
   run,
   state,
   action,
+  untold,
   resume,
 }: {
   run: TranslationJob | undefined;
   state: TranslationState;
   action: ReturnType<typeof useAction>;
+  untold: boolean;
   resume: ReactNode;
 }) {
   if (!run)
@@ -263,16 +280,7 @@ function ApiRun({
     );
   const mode = run.mode === "live" ? "live" : "batch";
   const charged = run.usage.openrouter_cost;
-  // The user decides here or in the assistant's conversation.
   const quote = awaitingQuote(run);
-  // The assistant learns of an approval given here only when it next uses
-  // DazedTL; until then it may still be waiting for an answer.
-  const untold =
-    !!run.app_approved_at &&
-    !(
-      state.assistantSeenAt &&
-      Date.parse(state.assistantSeenAt) >= Date.parse(run.app_approved_at)
-    );
   const reminder = ["running", "waiting"].includes(run.status)
     ? "tell your assistant you approved this run here, so it waits for the results and carries on."
     : run.status === "complete"
@@ -335,7 +343,7 @@ function ApiRun({
                 !state.providerEnabled
                   ? "Provider execution is off for this launch."
                   : state.active
-                    ? "Another run is still working."
+                    ? "Wait for the current work to finish."
                     : ""
               }
               pending={action.busy && action.key === "approve"}
@@ -367,6 +375,11 @@ function ApiRun({
               {run.quote && <span>Estimate {money(run.quote.cost)}</span>}
               {charged != null && <span>Charged {money(charged)}</span>}
             </p>
+            {/* An approval can be saved and the run still refuse to start;
+                the button that reported it is gone by then. */}
+            {action.key === "approve" && action.error && (
+              <Feedback error={action.error} />
+            )}
             {pause}
             {untold && (
               <>

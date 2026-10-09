@@ -25,7 +25,7 @@ import type { ProjectLink } from "../guided/workspace/model";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { OptionsPanel } from "./OptionsPanel";
-import { apiRun, attemptJobs, awaitingQuote } from "./apiRun";
+import { attemptJobs, awaitingQuote, latestApiRun } from "./apiRun";
 import { ProgressPanel } from "./ProgressPanel";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
@@ -142,8 +142,7 @@ function Workspace({
   // the prompt.
   const operating = state.jobs.some(
     (job) =>
-      job.kind === "operation" &&
-      ["running", "waiting", "interrupted"].includes(job.status),
+      job.kind === "operation" && ["running", "waiting"].includes(job.status),
   );
   const copyDisabled = operating || action.busy || draft.committing;
   // The page's main action ends every tab's footer. A second copy, such as
@@ -244,7 +243,7 @@ function Workspace({
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
               {/* An estimate waiting for approval holds the one primary. */}
               {copyControl(
-                awaitingQuote(apiRun(attemptJobs(state)))
+                awaitingQuote(latestApiRun(attemptJobs(state)))
                   ? "default"
                   : "primary",
               )}

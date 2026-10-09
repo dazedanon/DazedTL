@@ -9,11 +9,23 @@ export function attemptJobs(state: TranslationState) {
 }
 
 /** The latest API run the app holds for the assistant. */
-export const apiRun = (jobs: TranslationJob[]) =>
+export const latestApiRun = (jobs: TranslationJob[]) =>
   jobs.find((job) => job.kind === "translation" && job.mode !== "agent");
 
-/** The run's estimate while it waits for the user's spending decision. */
+/** A prepared run's estimate while it waits for the user's spending decision. */
 export const awaitingQuote = (run: TranslationJob | undefined) =>
-  run && !run.approved && !["complete", "uncertain"].includes(run.status)
-    ? run.quote
-    : null;
+  run?.status === "ready" && !run.approved ? run.quote : null;
+
+/**
+ * Whether the user approved the run in the app after the assistant last used
+ * DazedTL, so the assistant may still be waiting for an answer.
+ */
+export const approvalUntold = (
+  run: TranslationJob | undefined,
+  assistantSeenAt: string | null,
+) =>
+  !!run?.app_approved_at &&
+  !(
+    assistantSeenAt &&
+    Date.parse(assistantSeenAt) >= Date.parse(run.app_approved_at)
+  );

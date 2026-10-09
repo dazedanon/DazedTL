@@ -199,17 +199,15 @@ class Application:
                 project["engine"] = self.translation.engine.detect(project["source"])
                 if current["jobs"]:
                     job = current["jobs"][0]
-                    quote = (
+                    if (
                         job["quote"]
-                        if not job["approved"]
-                        and job["status"] not in {"complete", "uncertain"}
-                        else None
-                    )
-                    if quote:
+                        and job["status"] == "ready"
+                        and not job["approved"]
+                    ):
                         # A prepared run is not working; it waits for the user.
                         project.update(
                             status="Estimate needs your approval",
-                            detail=f"Approve the ${quote['cost']:.2f} estimate on Progress, or answer your assistant.",
+                            detail="Approve it on Progress, or answer your assistant.",
                         )
                     else:
                         project.update(

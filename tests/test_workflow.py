@@ -434,7 +434,8 @@ class WorkflowTests(unittest.TestCase):
         report("The hero's name is unclear.", "Reply with the hero's name.")
         # The user can hand the prompt back to the assistant during the wait,
         # without rewriting the guidance the run's frozen requests depend on.
-        self.assertIn("helper", self.service.prepare(self.identity)["handoff"])
+        handoff = self.service.prepare(self.identity)["handoff"]
+        self.assertIn("--project " + self.identity, handoff)
         self.assertFalse(self.engine.refreshed)
         lock.close()
         preview = self.service.request(self.identity, run["id"], 0)
