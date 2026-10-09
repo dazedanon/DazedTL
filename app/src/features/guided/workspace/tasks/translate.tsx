@@ -16,7 +16,7 @@ import {
   unconfirmedSubmission,
   unsettledBatches,
 } from "../../translationView";
-import { actionKey, fileCount } from "../model";
+import { actionKey, fileCount, runNotices } from "../model";
 import { selectionNames } from "../../../../ui/displayText";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
@@ -124,10 +124,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   // The open dialog owns its result or approval; only its work is pending here.
   const preparing =
     translationFlow.pending ||
-    (action.busy &&
-      ["translate:prepare", actionKey("start", { mode, phase })].includes(
-        action.key,
-      ));
+    (action.busy && action.key === actionKey("start", { mode, phase }));
   const stopLabel =
     estimating || current?.mode === "batch"
       ? null
@@ -245,13 +242,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         {applyFiles.length ? ` · ${applyFiles.length} saved` : ""}
       </strong>
       <small>
-        {([
-          "translate:prepare",
-          "run:answer:false",
-          "run:stop",
-          "run:finished",
-        ].includes(action.key) &&
-          action.notice) ||
+        {(runNotices.includes(action.key) && action.notice) ||
           translationFlow.notice ||
           guidance}
       </small>

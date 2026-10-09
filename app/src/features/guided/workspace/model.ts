@@ -44,6 +44,8 @@ export const actionKey = (
       : name === "export_selected" && options.run_id
         ? `export_selected:${displayText(options.run_id)}`
         : name;
+/** Footer notices about an earlier run, which a new translation retires. */
+export const runNotices = ["run:finished", "run:stop", "run:answer:false"];
 export const jobTime = (job: { updated?: string; created?: string }) =>
   Date.parse(job.updated || job.created || "") || 0;
 export const fileCount = (count: number) =>

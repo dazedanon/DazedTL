@@ -59,6 +59,7 @@ import {
   advancedCodes,
   fileCount,
   jobTime,
+  runNotices,
 } from "./model";
 import { selectionNames } from "../../../ui/displayText";
 import { childPath } from "../../../ui/displayPath";
@@ -70,8 +71,6 @@ const endings = {
   canceled: "Run canceled",
   cancelled: "Run canceled",
 };
-/** Footer notices that describe an earlier run or its stop request. */
-const runNotices = ["run:finished", "run:stop", "run:answer:false"];
 
 /** Shared state, derived values and actions behind every Guided task view. */
 export function useGuidedWorkspace({
