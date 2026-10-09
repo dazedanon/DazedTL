@@ -1,5 +1,6 @@
 """One project service shared by the Electron UI and the external agent helper."""
 
+import hashlib
 import json
 import threading
 import time
@@ -554,7 +555,7 @@ After a connection failure, inspect state and the relevant run before retrying a
 7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the run and its quote with run --run <id>; don't read requests merely to check them. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. When you ask, tell the user they can also approve with the button on DazedTL's Progress tab, which starts the run itself; inspect the run before starting it. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask for its approval; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
 8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Check every accepted line mechanically with scripts: IDs, protected tokens, layout bounds and untranslated text. Review accepted requests with review only after actually checking them, and any qa_notes they carry, against the Japanese; review the ones you are willing to read, record the rest as not reviewed in status.md, and go on. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
 {injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved extraction explicitly.
-{qa}. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
+{qa}. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
 
 For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
 
@@ -751,6 +752,10 @@ Additional project instructions:
         coverage = self.scope_coverage(project_id, project.root, units)
         if complete:
             require_coverage(coverage)
+            write_json(
+                self.inventory_path(project_id),
+                {"census_sha256": self.census_sha256(project_id), "units": len(units)},
+            )
         if project.read()["options"]["mode"] == "agent":
             lines, characters = organize.AGENT_LINES, organize.AGENT_CHARACTERS
         else:
@@ -768,14 +773,40 @@ Additional project instructions:
             summary["coverage"] = coverage
         return {"run": self.compile(project_id, relative), "summary": summary}
 
+    def coverage_path(self, project_id):
+        return self.workspace / "translation/projects" / project_id / "coverage.json"
+
     def saved_coverage(self, project_id):
         """The last coverage organize found, for Progress."""
         try:
-            return read_json(
-                self.workspace / "translation/projects" / project_id / "coverage.json"
-            )
+            return read_json(self.coverage_path(project_id))
         except ValueError, OSError:
             return None
+
+    def inventory_path(self, project_id):
+        return self.workspace / "translation/projects" / project_id / "inventory.json"
+
+    def census_sha256(self, project_id):
+        path = census_path(self.workspace, project_id)
+        return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+    def require_inventory(self, project_id, translated):
+        """A patch holds the whole census: organize --complete accepted the
+        units against the latest census, and the text export counts them all."""
+        try:
+            inventory = read_json(self.inventory_path(project_id))
+        except ValueError, OSError:
+            inventory = None
+        if not inventory or inventory["census_sha256"] != self.census_sha256(
+            project_id
+        ):
+            raise ValueError(
+                "Package needs the whole census extracted: run organize --complete with your units after the latest census."
+            )
+        if translated < inventory["units"]:
+            raise ValueError(
+                f"The text export counts {translated:,} lines, fewer than the {inventory['units']:,} organize --complete accepted. Export every unit before packaging."
+            )
 
     def scope_coverage(self, project_id, root, units):
         """How the census is covered by these units, the glossary and the
@@ -783,9 +814,7 @@ Additional project instructions:
         runs go to a file by location, so the extractor can be fixed."""
         path = census_path(self.workspace, project_id)
         if not path.exists():
-            (
-                self.workspace / "translation/projects" / project_id / "coverage.json"
-            ).unlink(missing_ok=True)
+            self.coverage_path(project_id).unlink(missing_ok=True)
             return None
         value = read_json(path)
         state = lifecycle(self.workspace, project_id)
@@ -813,10 +842,7 @@ Additional project instructions:
             project_path(root, CENSUS_UNCOVERED, exists=False),
             {"uncovered": uncovered, "unreadable": value["unreadable"]},
         )
-        write_json(
-            self.workspace / "translation/projects" / project_id / "coverage.json",
-            {**report, "checked_at": now()},
-        )
+        write_json(self.coverage_path(project_id), {**report, "checked_at": now()})
         return report
 
     def guidance_inputs(self, source):
@@ -1344,6 +1370,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                     raise ValueError(
                         "Finish the audited translation scope before packaging; unknown totals are not complete."
                     )
+            self.require_inventory(project_id, progress["metrics"]["text"]["total"])
             delivery.verify(project.root, full=True)
         self.settings.prepare_engine()
         plan = {

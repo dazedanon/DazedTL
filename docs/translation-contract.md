@@ -95,6 +95,7 @@ The assistant can add rules in .dazedtl/len-method/work/scope-rules.json, as ver
 Rules work on every kind, including decoded dumps, generic JSON and plain text, and never set aside dialogue, choices, names or other text the player reads in formats DazedTL reads itself.
 organize --complete is refused without a current census, while archives still need a decoded dump, or while anything is uncovered; .dazedtl/len-method/work/census-uncovered.json lists each uncovered location.
 Rules apply before extraction, so an identifier a rule sets aside never uses up the unit for the same words where the player reads them.
+Packaging requires organize --complete against the latest census, and a progress text export counting at least the units it accepted.
 Content is never a reason to leave text out; the assistant declines a request it won't translate, which keeps its lines in scope.
 
 ## Source plan

@@ -484,6 +484,10 @@ class WorkflowTests(unittest.TestCase):
             (0, 1, "tool"),
         )
         self.assertEqual(self.service.state(self.identity)["coverage"]["extracted"], 3)
+        # A patch needs every accepted unit exported, against the same census.
+        with self.assertRaisesRegex(ValueError, "fewer than the 2"):
+            self.service.require_inventory(self.identity, 1)
+        self.service.require_inventory(self.identity, 2)
         page.append(line(401, "追加の台詞。"))
         write_json(
             self.game / "data/Map001.json",
@@ -492,6 +496,9 @@ class WorkflowTests(unittest.TestCase):
         back_up()
         with self.assertRaisesRegex(ValueError, "Run census again"):
             self.service.organize(self.identity, units, True)
+        census()
+        with self.assertRaisesRegex(ValueError, "after the latest census"):
+            self.service.require_inventory(self.identity, 2)
 
     def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(
         self,
