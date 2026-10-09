@@ -335,7 +335,7 @@ def main():
                 params.update(
                     action=args.action,
                     arguments=json.loads(
-                        args.arguments_file.read_text(encoding="utf-8")
+                        args.arguments_file.read_text(encoding="utf-8-sig")
                         if args.arguments_file
                         else args.arguments
                     ),
