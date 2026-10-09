@@ -307,6 +307,13 @@ class _AssetManifestEntry:
     mode: str
 
 
+def _command_name(args: tuple[str, ...]) -> str:
+    index = 0
+    while index < len(args) - 1 and args[index] == "-c":
+        index += 2
+    return args[index] if index < len(args) else "command"
+
+
 def _run_git(
     cwd: Path,
     *args: str,
@@ -334,12 +341,13 @@ def _run_git(
         )
     except FileNotFoundError as exc:
         raise GitWorkflowError("Git is not installed or is not available on PATH") from exc
-    # The exceptions' own text is a Python command list; say which Git command.
+    # The exceptions' own text is a Python command list; say which Git command,
+    # after any -c settings in front of it.
     except subprocess.TimeoutExpired as exc:
-        raise GitWorkflowError(f"git {args[0]} did not finish within {timeout} seconds.") from exc
+        raise GitWorkflowError(f"git {_command_name(args)} did not finish within {timeout} seconds.") from exc
     except (OSError, subprocess.SubprocessError) as exc:
         reason = getattr(exc, "strerror", None) or type(exc).__name__
-        raise GitWorkflowError(f"git {args[0]} could not run: {reason}") from exc
+        raise GitWorkflowError(f"git {_command_name(args)} could not run: {reason}") from exc
     result = subprocess.CompletedProcess(
         raw.args,
         raw.returncode,
