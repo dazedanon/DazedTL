@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type {
+  Coverage,
   TranslationJob,
   TranslationOptions,
   TranslationProgress,
@@ -13,6 +14,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { HelpPopover } from "../../ui/HelpPopover";
 import { Feedback } from "../../ui/Feedback";
 import type { DisplayState } from "../../ui/displayStatus";
 import { timeAgo } from "../../ui/displayText";
@@ -150,8 +152,14 @@ export function ProgressPanel({
           label="Assistant phases"
           steps={phaseStates(progress, !!activity, options.include_images)}
         />
-        {!!(text?.translated || text?.reviewed || images?.translated) && (
+        {!!(
+          state.coverage ||
+          text?.translated ||
+          text?.reviewed ||
+          images?.translated
+        ) && (
           <p className="translation-metrics">
+            {state.coverage && <CoverageNote coverage={state.coverage} />}
             {!!text?.translated && (
               <span>
                 <strong>{text.translated.toLocaleString()}</strong>
@@ -234,6 +242,116 @@ export function ProgressPanel({
             <pre className="translation-report">{state.statusText}</pre>
           </DialogBody>
         </Modal>
+      )}
+    </>
+  );
+}
+
+const reasons: Record<string, string> = {
+  asset_name: "file names",
+  identifier: "internal names",
+  comment: "comments",
+  script_code: "script code",
+  not_displayed: "text not shown in the game",
+};
+
+/**
+ * Whether the assistant extracted all the Japanese text DazedTL counted in
+ * the game itself, and what rules set aside as never shown to players.
+ */
+function CoverageNote({ coverage }: { coverage: Coverage }) {
+  const pieces = (count: number) =>
+    `${count.toLocaleString()} ${count === 1 ? "piece" : "pieces"}`;
+  return (
+    <span>
+      {coverage.uncovered ? (
+        <>
+          <strong>{pieces(coverage.uncovered)}</strong> of the game&apos;s
+          Japanese text not extracted
+        </>
+      ) : (
+        "All of the game's Japanese text is extracted"
+      )}
+      {coverage.source === "assistant_dump" && (
+        <span className="muted">
+          {" "}
+          (counted from your assistant&apos;s decoded files)
+        </span>
+      )}
+      {coverage.stale && (
+        <span className="muted"> (the game changed since this count)</span>
+      )}
+      {coverage.needs_dump.length > 0 && (
+        <span className="muted">
+          {" "}
+          ({coverage.needs_dump.length.toLocaleString()} archives not read yet)
+        </span>
+      )}
+      {coverage.set_aside > 0 && (
+        <>
+          {" · "}
+          {pieces(coverage.set_aside)} set aside{" "}
+          <HelpPopover label="Text set aside">
+            <SetAside rules={coverage.rules} pieces={pieces} />
+          </HelpPopover>
+        </>
+      )}
+    </span>
+  );
+}
+
+/**
+ * What rules set aside: DazedTL's own by reason, and each rule the
+ * assistant wrote with the field it covers, since those are its decisions.
+ */
+function SetAside({
+  rules,
+  pieces,
+}: {
+  rules: Coverage["rules"];
+  pieces: (count: number) => string;
+}) {
+  const builtIn = new Map<string, number>();
+  for (const rule of rules.filter((item) => item.by === "tool"))
+    builtIn.set(rule.reason, (builtIn.get(rule.reason) || 0) + rule.runs);
+  const assistant = rules.filter((rule) => rule.by === "assistant");
+  return (
+    <>
+      <p>
+        Text players never see, set aside by rules that apply to the whole game,
+        never to one map or scene.
+      </p>
+      {builtIn.size > 0 && (
+        <p>
+          DazedTL&apos;s rules:{" "}
+          {[...builtIn]
+            .map(
+              ([reason, runs]) =>
+                `${reasons[reason] || reason} (${runs.toLocaleString()})`,
+            )
+            .join(", ")}
+        </p>
+      )}
+      {assistant.length > 0 && (
+        <>
+          <p>Your assistant&apos;s rules:</p>
+          <ul>
+            {assistant.map((rule) => (
+              <li key={`${rule.kind} ${rule.field} ${rule.file || ""}`}>
+                {pieces(rule.runs)} of {reasons[rule.reason] || rule.reason}:{" "}
+                <code>
+                  {rule.kind} {rule.field}
+                </code>
+                {rule.file && (
+                  <>
+                    {" "}
+                    in <code>{rule.file}</code>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </>
   );

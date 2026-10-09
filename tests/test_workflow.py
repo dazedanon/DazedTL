@@ -24,11 +24,17 @@ from dazedtl.translation.operations import (
     lifecycle,
     lifecycle_path,
     require_baseline,
+    take_census,
     verify_guided_review,
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
-from dazedtl.translation.service import IMAGE_UNITS, Translation
+from dazedtl.translation.service import (
+    CENSUS_UNCOVERED,
+    IMAGE_UNITS,
+    SCOPE_RULES,
+    Translation,
+)
 
 
 class Engine:
@@ -69,6 +75,17 @@ class Engine:
             }
             for batch in plan["batches"]
         ], "fixture-compiler"
+
+    def glossary_terms(self, _source):
+        return getattr(self, "glossary", [])
+
+    def census_decoders(self, _root, _workdir):
+        def undecodable(*_args):
+            raise ValueError("No such data in this fixture.")
+
+        return SimpleNamespace(
+            marshal=undecodable, rgssad=undecodable, wolf=undecodable
+        )
 
     def payload(self, request, configuration):
         return {
@@ -372,6 +389,109 @@ class WorkflowTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Organize them again"):
             self.service.results(self.identity, run)
+
+    def test_complete_needs_the_tools_census_covered_not_the_assistants_word(self):
+        def line(code, *parameters):
+            return {"code": code, "indent": 0, "parameters": list(parameters)}
+
+        (self.game / "source.json").unlink()
+        (self.game / "data").mkdir()
+        page = [
+            line(101, "", 0, 0, 2, "リリ"),
+            line(401, "はい。"),
+            line(108, "メモ"),
+            line(401, "秘密の場面です。"),
+        ]
+        write_json(
+            self.game / "data/Map001.json",
+            {"events": [None, {"name": "", "pages": [{"list": page}]}]},
+        )
+
+        def back_up():
+            state = lifecycle(self.profile, self.identity)
+            state["source_backup"] = snapshot(
+                self.game, store_path(self.game), source_game=True
+            )
+            write_json(lifecycle_path(self.profile, self.identity), state)
+
+        def census():
+            take_census(
+                self.engine,
+                self.profile,
+                self.identity,
+                self.game,
+                lifecycle(self.profile, self.identity),
+                None,
+                lambda: False,
+                lambda _message: None,
+            )
+
+        back_up()
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "mode": "agent"},
+        )
+        units = WORK + "/work/source-units.json"
+        write_json(
+            self.game / units,
+            {"version": 1, "units": [{"id": "a", "scene": "s", "source": "はい。"}]},
+        )
+        with self.assertRaisesRegex(ValueError, "Run census first"):
+            self.service.organize(self.identity, units, True)
+        census()
+        # The assistant's extractor skipped a line: the census names its
+        # field and location, never its text.
+        with self.assertRaises(ValueError) as refused:
+            self.service.organize(self.identity, units, True)
+        self.assertIn("[code=401]/parameters/0: 1", str(refused.exception))
+        self.assertNotIn("秘密", str(refused.exception))
+        missing = read_json(self.game / CENSUS_UNCOVERED)["uncovered"]
+        self.assertEqual(
+            [entry["location"] for entry in missing],
+            [
+                "events/1/pages/0/list/0/parameters/4",
+                "events/1/pages/0/list/3/parameters/0",
+            ],
+        )
+        write_json(
+            self.game / SCOPE_RULES,
+            {
+                "version": 1,
+                "rules": [{"kind": "rpgmaker:map", "field": "**", "reason": "comment"}],
+            },
+        )
+        with self.assertRaisesRegex(ValueError, "player reads"):
+            self.service.organize(self.identity, units, True)
+        (self.game / SCOPE_RULES).unlink()
+        write_json(
+            self.game / units,
+            {
+                "version": 1,
+                "units": [
+                    {"id": "a", "scene": "s", "source": "はい。"},
+                    {"id": "b", "scene": "s", "source": "秘密の場面です。"},
+                ],
+            },
+        )
+        # Nameplates are covered by the glossary, comments set aside built in.
+        self.engine.glossary = ["リリ"]
+        organized = self.service.organize(self.identity, units, True)
+        coverage = organized["summary"]["coverage"]
+        self.assertEqual(
+            (coverage["uncovered"], coverage["set_aside"], coverage["source"]),
+            (0, 1, "tool"),
+        )
+        self.assertEqual(self.service.state(self.identity)["coverage"]["extracted"], 3)
+        page.append(line(401, "追加の台詞。"))
+        write_json(
+            self.game / "data/Map001.json",
+            {"events": [None, {"name": "", "pages": [{"list": page}]}]},
+        )
+        back_up()
+        with self.assertRaisesRegex(ValueError, "Run census again"):
+            self.service.organize(self.identity, units, True)
 
     def test_unversioned_saved_run_keeps_results_and_approval_through_compatible_compiler_update(
         self,

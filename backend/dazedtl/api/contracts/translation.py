@@ -247,6 +247,41 @@ class ConnectionSummary(TypedDict):
     model: str
 
 
+class ScopeRuleCount(TypedDict):
+    # Built into DazedTL, or written by the user's assistant.
+    by: Literal["tool", "assistant"]
+    kind: str
+    field: str
+    reason: str
+    file: NotRequired[str]
+    runs: int
+
+
+class UncoveredField(TypedDict):
+    kind: str
+    field: str
+    runs: int
+
+
+class Coverage(TypedDict):
+    """How the tool's census of the game's Japanese text is covered, in
+    Japanese runs: extracted, set aside by a rule, or not extracted."""
+
+    runs: int
+    extracted: int
+    set_aside: int
+    uncovered: int
+    untraced: int
+    unit_runs: int
+    rules: list[ScopeRuleCount]
+    stale: bool
+    source: Literal["tool", "assistant_dump"]
+    needs_dump: list[str]
+    unreadable: int
+    uncovered_fields: list[UncoveredField]
+    checked_at: NotRequired[str]
+
+
 class TranslationState(ProjectOptions):
     engine: str
     legacyRun: LegacyRun | None
@@ -257,6 +292,8 @@ class TranslationState(ProjectOptions):
     # When the user's assistant last used the project helper, so Progress
     # shows its run started before the first report.
     assistantSeenAt: str | None
+    # The census coverage organize last found; None before a census.
+    coverage: Coverage | None
     git: GitStatus | None
     lifecycle: Lifecycle
     # The original backup the game folder already holds, offered to a project
@@ -355,6 +392,7 @@ class OrganizeSummary(TypedDict):
     kinds: dict[str, int]
     named_speakers: int
     plan: str
+    coverage: NotRequired[Coverage]
 
 
 class OrganizedRun(TypedDict):

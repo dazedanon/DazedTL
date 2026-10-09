@@ -826,6 +826,20 @@ pre {
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
+/* Help that is more than a sentence keeps the popover's own padding. */
+.help-popover > :first-child {
+  margin-top: 0;
+}
+.help-popover > :last-child {
+  margin-bottom: 0;
+}
+.help-popover p,
+.help-popover ul {
+  margin: var(--space-2) 0;
+}
+.help-popover ul {
+  padding-left: var(--space-5);
+}
 .combobox {
   position: relative;
   min-width: 0;

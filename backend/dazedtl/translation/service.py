@@ -15,12 +15,13 @@ from dazedtl.settings.execution import (
 )
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, delivery, organize, progress_report
+from . import backups, census, delivery, organize, progress_report
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .helper_command import LOOPBACK_NOTE, git_note, helper_command
 from .jobs import Jobs, declined_message, now
 from .operations import (
+    census_path,
     checkout_issue,
     lifecycle,
     reconcile_missing_backups,
@@ -29,6 +30,44 @@ from .operations import (
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import plan_input, quote
 from .results import Results
+
+SCOPE_RULES = WORK + "/work/scope-rules.json"
+CENSUS_UNCOVERED = WORK + "/work/census-uncovered.json"
+
+
+def require_coverage(scope):
+    """Complete means the tool saw every Japanese run the game holds
+    extracted or set aside by a rule; the assistant's word is not enough."""
+    if scope is None:
+        raise ValueError(
+            "Run census first: --complete needs the tool's own count of the game's Japanese text."
+        )
+    if scope["stale"]:
+        raise ValueError(
+            "The game's source changed after the census. Run census again."
+        )
+    if scope["needs_dump"]:
+        raise ValueError(
+            "The census can't read "
+            + ", ".join(scope["needs_dump"][:5])
+            + ". Decode it with Len's tools into a folder in the game, then run census --decoded <folder>."
+        )
+    if scope["untraced"] > max(50, scope["unit_runs"] // 4):
+        raise ValueError(
+            f"The census never saw {scope['untraced']:,} of your units' Japanese runs, so it can't read where this game keeps its text. Decode it with Len's tools and run census --decoded <folder>."
+        )
+    if scope["uncovered"]:
+        fields = "; ".join(
+            f"{row['kind']} {row['field']}: {row['runs']:,}"
+            for row in scope["uncovered_fields"][:8]
+        )
+        raise ValueError(
+            f"{scope['uncovered']:,} Japanese runs in the game are not extracted ({fields}). Extract them, or set aside text the player never sees with a field rule in "
+            + SCOPE_RULES
+            + "; "
+            + CENSUS_UNCOVERED
+            + " lists each location."
+        )
 
 
 def priced_mode(finishes, run_mode, project_mode):
@@ -379,6 +418,7 @@ class Translation:
             "documents": self.documents(project_id),
             "progress": progress,
             "assistantSeenAt": self.seen(project_id),
+            "coverage": self.saved_coverage(project_id),
             "git": git,
             "lifecycle": saved_lifecycle,
             **(
@@ -700,8 +740,11 @@ Additional project instructions:
         units = organize.units_input(read_json(project.artifact(input_path)))
         if project.read()["options"]["mode"] != "agent" and not complete:
             raise ValueError(
-                "API estimates need the complete line inventory. Audit it, then organize again with --complete."
+                "API estimates need every line extracted. Run census, cover it, then organize again with --complete."
             )
+        coverage = self.scope_coverage(project_id, project.root, units)
+        if complete:
+            require_coverage(coverage)
         value = organize.plan(
             units, input_path, complete, entries_per_request(self.settings)
         )
@@ -709,10 +752,60 @@ Additional project instructions:
         path = project_path(project.root, relative, exists=False)
         if not path.exists() or read_json(path) != value:
             write_json(path, value)
-        return {
-            "run": self.compile(project_id, relative),
-            "summary": organize.summary(units, value),
-        }
+        summary = organize.summary(units, value)
+        if coverage is not None:
+            summary["coverage"] = coverage
+        return {"run": self.compile(project_id, relative), "summary": summary}
+
+    def saved_coverage(self, project_id):
+        """The last coverage organize found, for Progress."""
+        try:
+            return read_json(
+                self.workspace / "translation/projects" / project_id / "coverage.json"
+            )
+        except ValueError, OSError:
+            return None
+
+    def scope_coverage(self, project_id, root, units):
+        """How the census is covered by these units, the glossary and the
+        scope rules, saved for Progress; None before a census. The uncovered
+        runs go to a file by location, so the extractor can be fixed."""
+        path = census_path(self.workspace, project_id)
+        if not path.exists():
+            (
+                self.workspace / "translation/projects" / project_id / "coverage.json"
+            ).unlink(missing_ok=True)
+            return None
+        value = read_json(path)
+        state = lifecycle(self.workspace, project_id)
+        snapshot = state.get("prepared_source") or state.get("source_backup")
+        rules_file = project_path(root, SCOPE_RULES, exists=False)
+        rules = census.rules_input(
+            read_json(rules_file) if rules_file.exists() else None,
+            census.fields(value),
+        )
+        report, uncovered = census.coverage(
+            value,
+            [unit["source"] for unit in units],
+            self.engine.glossary_terms(root),
+            rules,
+        )
+        report.update(
+            stale=not snapshot or value.get("snapshot") != snapshot["id"],
+            source="assistant_dump" if value["decoded"] else "tool",
+            needs_dump=[] if value["decoded"] else value["needs_dump"],
+            unreadable=len(value["unreadable"]),
+            uncovered_fields=census.summary(uncovered),
+        )
+        write_json(
+            project_path(root, CENSUS_UNCOVERED, exists=False),
+            {"uncovered": uncovered, "unreadable": value["unreadable"]},
+        )
+        write_json(
+            self.workspace / "translation/projects" / project_id / "coverage.json",
+            {**report, "checked_at": now()},
+        )
+        return report
 
     def guidance_inputs(self, source):
         root = Path(source)

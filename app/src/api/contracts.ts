@@ -1024,6 +1024,39 @@ export type ConnectionSummary = {
   model: string;
 };
 
+export type ScopeRuleCount = {
+  by: "tool" | "assistant";
+  kind: string;
+  field: string;
+  reason: string;
+  file?: string;
+  runs: number;
+};
+
+export type UncoveredField = {
+  kind: string;
+  field: string;
+  runs: number;
+};
+
+/** How the tool's census of the game's Japanese text is covered, in
+Japanese runs: extracted, set aside by a rule, or not extracted. */
+export type Coverage = {
+  runs: number;
+  extracted: number;
+  set_aside: number;
+  uncovered: number;
+  untraced: number;
+  unit_runs: number;
+  rules: ScopeRuleCount[];
+  stale: boolean;
+  source: "tool" | "assistant_dump";
+  needs_dump: string[];
+  unreadable: number;
+  uncovered_fields: UncoveredField[];
+  checked_at?: string;
+};
+
 export type TranslationState = ProjectOptions & {
   engine: string;
   legacyRun: LegacyRun | null;
@@ -1032,6 +1065,7 @@ export type TranslationState = ProjectOptions & {
   documents: Documents;
   progress: TranslationProgress | null;
   assistantSeenAt: string | null;
+  coverage: Coverage | null;
   git: GitStatus | null;
   lifecycle: Lifecycle;
   storedOriginal?: BackupSnapshot;
@@ -1124,6 +1158,7 @@ export type OrganizeSummary = {
   kinds: Record<string, number>;
   named_speakers: number;
   plan: string;
+  coverage?: Coverage;
 };
 
 export type OrganizedRun = {
