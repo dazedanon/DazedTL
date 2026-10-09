@@ -96,6 +96,42 @@ def reconcile_source_backup(workspace, project_id, source, state):
         identification.rename(archive / "engine.json")
 
 
+BACKUP_RECORDS = ("source_backup", "game_backup", "prepared_source", "workspace_backup")
+
+
+def reconcile_missing_backups(workspace, project_id, source, state):
+    """Retire backup records whose store is gone so their "unavailable"
+    warnings clear on their own, for example after the user deletes .dazedtl.
+    Each record must already carry record_status's `available`. A store that
+    still holds snapshots but misses a recorded one is left alone: that is
+    possible corruption to recover from, not a deliberate reset. Retired
+    records are archived beside reconcile_source_backup's for an audit trail.
+    """
+    try:
+        if (backups.store_path(source) / "snapshots").exists():
+            return ()
+    except OSError:
+        return ()
+    retired = {
+        key: state[key]
+        for key in BACKUP_RECORDS
+        if isinstance(state.get(key), dict) and state[key].get("available") is False
+    }
+    if not retired:
+        return ()
+    archive = (
+        Path(workspace)
+        / "backups/stale-project-records"
+        / project_id
+        / uuid.uuid4().hex
+    )
+    write_json(archive / "records.json", {"version": 1, "records": retired})
+    for key in retired:
+        state.pop(key, None)
+    write_json(lifecycle_path(workspace, project_id), state)
+    return tuple(retired)
+
+
 @contextmanager
 def backup_files(
     workspace, project_id, source, identity, *, files=None, stopped=lambda: False

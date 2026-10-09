@@ -648,6 +648,37 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(saved["game_backup"], later)
         self.assertEqual(len(list(archive.parent.iterdir())), 1)
 
+    def test_deleting_the_backup_store_clears_its_stale_unavailable_warnings(self):
+        # Deleting .dazedtl by hand leaves lifecycle records pointing at a store
+        # that is gone; nothing can recover them, so state retires the records
+        # instead of repeating their warnings on every read.
+        state = lifecycle(self.profile, self.identity)
+        state["workspace_backup"] = snapshot(
+            self.game / ".dazedtl", store_path(self.game)
+        )
+        write_json(lifecycle_path(self.profile, self.identity), state)
+        # A single snapshot missing while the store still stands is possible
+        # corruption: it keeps warning and its record so recovery stays offered.
+        shutil.rmtree(Path(state["workspace_backup"]["path"]))
+        kept = self.service.state(self.identity)
+        self.assertTrue(any("Workspace backup" in note for note in kept["warnings"]))
+        self.assertIn("workspace_backup", lifecycle(self.profile, self.identity))
+        # Deleting the whole store leaves nothing to recover, so its records and
+        # their warnings retire, archived for an audit trail.
+        shutil.rmtree(self.game / ".dazedtl")
+        cleared = self.service.state(self.identity)
+        self.assertEqual(cleared["warnings"], [])
+        current = lifecycle(self.profile, self.identity)
+        self.assertNotIn("source_backup", current)
+        self.assertNotIn("workspace_backup", current)
+        archive = next(
+            (self.profile / "backups/stale-project-records" / self.identity).iterdir()
+        )
+        self.assertEqual(
+            read_json(archive / "records.json")["records"]["source_backup"]["id"],
+            state["source_backup"]["id"],
+        )
+
     def test_moved_game_takes_over_the_original_its_own_store_holds(self):
         # A moved, copied or reinstalled game opens as a new project whose
         # profile has no record of the original the game's store already holds.

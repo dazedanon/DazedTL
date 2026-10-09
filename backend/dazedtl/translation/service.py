@@ -15,7 +15,12 @@ from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .helper_command import git_note, helper_command
 from .jobs import Jobs, now
-from .operations import checkout_issue, lifecycle, require_baseline
+from .operations import (
+    checkout_issue,
+    lifecycle,
+    reconcile_missing_backups,
+    require_baseline,
+)
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import plan_input, quote
 from .results import Results
@@ -308,6 +313,12 @@ class Translation:
             if saved_lifecycle.get("source_backup")
             else self.stored_original(project.root)
         )
+        titles = {
+            "source_backup": "Source backup",
+            "game_backup": "Latest game backup",
+            "prepared_source": "Prepared original backup",
+            "workspace_backup": "Workspace backup",
+        }
         for key, kind in (
             ("source_backup", "source"),
             ("game_backup", "source"),
@@ -318,16 +329,16 @@ class Translation:
                 saved_lifecycle[key] = backups.record_status(
                     project.root, saved_lifecycle[key], kind=kind
                 )
-                if not saved_lifecycle[key]["available"]:
-                    title = {
-                        "source_backup": "Source backup",
-                        "game_backup": "Latest game backup",
-                        "prepared_source": "Prepared original backup",
-                        "workspace_backup": "Workspace backup",
-                    }[key]
-                    warnings.append(
-                        title + " is unavailable. " + saved_lifecycle[key]["issue"]
-                    )
+        # A deleted store leaves nothing to recover, so retire its records
+        # instead of warning about them on every read. A store that kept its
+        # snapshots but lost a recorded one still warns, for recovery.
+        reconcile_missing_backups(
+            self.workspace, project_id, project.root, saved_lifecycle
+        )
+        for key, title in titles.items():
+            entry = saved_lifecycle.get(key)
+            if entry and not entry["available"]:
+                warnings.append(title + " is unavailable. " + entry["issue"])
         if identification.is_file():
             identified = read_json(identification)
             try:

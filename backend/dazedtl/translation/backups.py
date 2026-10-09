@@ -623,6 +623,9 @@ def record_status(game, record, *, kind):
         value = verify(location, source=game, full=False)
         if value["kind"] != kind:
             raise ValueError("The saved backup has the wrong content type.")
+    except BackupMissing:
+        # Its own message suits a refused restore; status callers prefix a title.
+        result.update(available=False, issue="Its saved files could not be found.")
     except (ValueError, OSError, KeyError, TypeError) as exc:
         result.update(
             available=False,
