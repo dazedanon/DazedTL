@@ -253,6 +253,7 @@ const reasons: Record<string, string> = {
   comment: "comments",
   script_code: "script code",
   not_displayed: "text not shown in the game",
+  other_language: "other languages",
 };
 
 /**

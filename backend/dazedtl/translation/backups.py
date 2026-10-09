@@ -447,6 +447,19 @@ def _copy(directory, value, name, output, stopped):
     output.chmod(mode)
 
 
+def peek(directory, name, size):
+    """The first bytes of one saved file, such as an archive's index,
+    without restoring a file that can be gigabytes."""
+    value = manifest(directory)
+    if name not in value["files"]:
+        raise ValueError("The backup has no such file.")
+    incoming = _stored_file(directory, value, name)
+    if _linked(incoming) or not stat.S_ISREG(incoming.stat().st_mode):
+        raise ValueError("Backup content is not a regular file.")
+    with incoming.open("rb") as reader:
+        return reader.read(size)
+
+
 @contextmanager
 def materialized(directory, *, files=None, stopped=lambda: False):
     """Supply verified normal files to engine tools without retaining another copy."""

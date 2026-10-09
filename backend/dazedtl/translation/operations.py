@@ -185,6 +185,7 @@ def take_census(
             engine.census_decoders(root, work),
             dump(folder) if folder else None,
             progress,
+            lambda name, size: backups.peek(path, name, size),
         )
     result.update(snapshot=snapshot["id"], decoded_folder=decoded or None)
     write_json(census_path(workspace, project_id), result)

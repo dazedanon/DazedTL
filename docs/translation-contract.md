@@ -82,13 +82,15 @@ Move game text only with scripts, never by pasting or retyping it.
 Scope is mechanical: DazedTL counts the original game's Japanese text itself, and the assistant never decides what is in scope.
 The census helper command runs an operation that reads the prepared source backup, never the working copy, and saves its count in the profile.
 The authoritative readers, rules and coverage are in [census.py](../backend/dazedtl/translation/census.py).
-It reads RPG Maker MV/MZ JSON and plugins, JavaScript, KAG/Tyrano and Ren'Py scripts, HTML, text and YAML.
+It reads RPG Maker MV/MZ JSON and plugins, JavaScript, KAG/Tyrano and Ren'Py scripts, decompiled YU-RIS scripts, HTML, text and YAML.
 It opens RGSS archives and XP/VX/Ace data, Electron asar and unencrypted xp3 archives, and Wolf data through the bundled WolfDawn.
+It reads YU-RIS archive indexes, so only archives holding scripts or text need a decoded dump.
 For containers it can't open, such as Unity, Unreal or encrypted archives, census --decoded reads a game-relative folder that Len's decoder wrote, and Progress says the count came from it.
 
 Each counted string has a kind and a field naming its structure, never a map, event or scene.
 Coverage counts Japanese runs by occurrence: each must appear in a unit, which holds the game's text exactly, be a term of the game's own glossary, or be set aside by a rule.
 Built-in rules set aside text players never see, such as comments, labels, asset names, switch names and the readmes beside a game; mod loaders and runtimes installed beside it, such as BepInEx, are not read.
+Comma or tab separated text is read by column; a table translating its Japanese first column into another language names that column table:key, and a built-in rule sets aside a Chinese column, whose characters Japanese runs can't tell apart.
 The assistant can add game-wide field rules in .dazedtl/len-method/work/scope-rules.json, as version 1 with rules of kind, field, reason (asset_name, identifier, comment, script_code or not_displayed) and, for code only, file.
 Rules never set aside dialogue, choices, names or other text the player reads, and work only for formats DazedTL reads itself: RPG Maker data, KAG/Tyrano and Ren'Py scenarios, and JavaScript, TJS, Ruby and HTML code.
 Text in decoded dumps, generic JSON and plain text files is always extracted, since their field names are the game's own and can name content.

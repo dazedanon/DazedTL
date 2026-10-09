@@ -108,6 +108,23 @@ GAME = {
 }
 
 
+def ypf(names, version=500):
+    """A YU-RIS YPF archive's index for these member names, without data."""
+    lengths = census._YPF_LENGTHS_500 if version == 500 else census._YPF_LENGTHS
+    key = 0xFF ^ (0x36 if version == 500 else 0)
+    entries = b"".join(
+        struct.pack("<IB", 0, lengths.index(len(name)) ^ 0xFF)
+        + bytes(byte ^ key for byte in name.encode("cp932"))
+        + bytes(22)
+        for name in names
+    )
+    return (
+        struct.pack("<4sIII", b"YPF\0", version, len(names), 32 + len(entries))
+        + bytes(16)
+        + entries
+    )
+
+
 def scan(files, decoded=None):
     data = {
         name: value
@@ -355,3 +372,47 @@ class CensusTests(unittest.TestCase):
             [("m_Text", "assistant_dump")],
         )
         self.assertTrue(dumped["decoded"])
+
+    def test_yuris_indexes_and_translation_tables_are_read(self):
+        # YU-RIS media archives hold no text, so only scripts need decoding.
+        names = ["pac/ysbin.ypf", "pac/bgm.ypf", "pac/old.ypf", "data/yst00001.ybn"]
+        archives = {
+            "pac/ysbin.ypf": ypf(["ysbin\\yst00001.ybn", "ysbin\\ysc.ybn"]),
+            "pac/bgm.ypf": ypf(["bgm\\bgm01.ogg", "bgm\\bgm02.ogg"], version=494),
+            # An index cut short can't be read, so it is decoded to be sure.
+            "pac/old.ypf": ypf(["a.ybn", "b.ogg"])[:40],
+        }
+        result = census.scan(
+            names,
+            None,
+            Decoders(),
+            [
+                ("ysbin/main.yst", 'IF[$s=="上2"]\nあら、こんにちは。'.encode()),
+                ("TextAsset/Event.txt", "セリフ,こんにちは\nセリフ,またね".encode()),
+                (
+                    "TextAsset/Chinese.txt",
+                    "default\nこんにちは,你好\nまたね,再見".encode(),
+                ),
+            ],
+            peek=lambda name, size: archives[name][:size],
+        )
+        self.assertEqual(result["opened"], ["pac/bgm.ypf"])
+        self.assertEqual(
+            result["needs_dump"], ["data/yst00001.ybn", "pac/old.ypf", "pac/ysbin.ypf"]
+        )
+        report, uncovered = census.coverage(
+            result, ["あら、こんにちは。", "こんにちは", "またね"], [], []
+        )
+        self.assertEqual(
+            [(rule["reason"], rule["runs"]) for rule in report["rules"]],
+            [("other_language", 2)],
+        )
+        self.assertEqual(
+            {(entry["field"], run) for entry in uncovered for run in entry["runs"]},
+            {
+                ("column:0", "セリフ"),
+                ("table:key", "こんにちは"),
+                ("table:key", "またね"),
+                ("line", "上"),
+            },
+        )

@@ -37,15 +37,18 @@ def runs(text):
 TEXT = {
     ".json", ".js", ".ks", ".tjs", ".rpy", ".html", ".htm", ".txt", ".csv",
     ".tsv", ".ini", ".xml", ".cfg", ".yaml", ".yml", ".asset", ".prefab",
-    ".unity", ".rxdata", ".rvdata", ".rvdata2",
+    ".unity", ".rxdata", ".rvdata", ".rvdata2", ".yst",
 }  # fmt: skip
 OPENED = {".rgssad", ".rgss2a", ".rgss3a", ".asar", ".xp3"}
 WOLF = {".mps", ".dat", ".project"}
 WOLF_TEXT = {"basicdata", "mapdata", "data"}
 NEEDS_DUMP = {
-    ".ypf", ".pck", ".utoc", ".ucas", ".assets", ".bundle", ".unity3d",
+    ".ybn", ".pck", ".utoc", ".ucas", ".assets", ".bundle", ".unity3d",
     ".dts", ".nsa", ".sar", ".dxa", ".pfs",
 }  # fmt: skip
+# Archives whose index the census reads: only those holding scripts or text
+# need a decoded dump, so pictures, music and voices are never decoded.
+INDEXED = {".ypf"}
 NEEDS_DUMP_NAMES = {"data.win", "game.unx", "globalgamemanagers", "scene.pck"}
 SKIPPED_DIRS = {".git", ".dazedtl", "save", "saves", "locales", "swiftshader"}
 # Mod loaders and runtimes installed beside a game hold their own text, such
@@ -54,7 +57,8 @@ TOOL_DIRS = {"bepinex", "melonloader", "monobleedingedge"}
 
 
 def candidate(name):
-    """How the census treats a game file: 'read', 'open', 'wolf', 'dump' or None."""
+    """How the census treats a game file: 'read', 'open', 'index', 'wolf',
+    'dump' or None."""
     path = PurePosixPath(name)
     folders = [part.casefold() for part in path.parts[:-1]]
     if any(
@@ -69,6 +73,8 @@ def candidate(name):
         return "read"
     if suffix in OPENED:
         return "open"
+    if suffix in INDEXED:
+        return "index"
     # Wolf keeps text in BasicData and MapData, or one Data archive; the
     # others hold pictures and sound, often gigabytes of them.
     if suffix == ".wolf":
@@ -412,19 +418,95 @@ def read_html(text):
     return rows
 
 
-def read_lines(kind, text, separator=None):
-    rows = []
-    for number, line in enumerate(text.splitlines(), 1):
-        for column, cell in enumerate(line.split(separator) if separator else [line]):
-            rows.append(
-                (
-                    kind,
-                    f"{number}:{column}",
-                    f"column:{column}" if separator else "line",
-                    cell,
-                )
-            )
-    return rows
+def read_lines(kind, text):
+    return [
+        (kind, f"{number}:0", "line", line)
+        for number, line in enumerate(text.splitlines(), 1)
+    ]
+
+
+_KANA = re.compile("[ぁ-ゖァ-ヺｦ-ｯｱ-ﾝ]")
+_HAN = re.compile("[㐀-䶿一-鿿豈-﫿]")
+_MARKUP = re.compile(r"\{[^{}]*\}|<[^<>]*>|\[[^\[\]]*\]")
+# Script code also separates with commas, inside quotes and brackets.
+_NESTED = re.compile(r'"[^"]*"|\'[^\']*\'|\([^()]*\)|\[[^\[\]]*\]')
+# Traditional and Simplified Chinese forms that Japanese text doesn't use.
+_CHINESE = set(
+    "們们这说从还让你嗎吗呢吧啊您妳麼體發戰獸擇對會說與讓從點變關國學氣實數萬當應兒經歡聽覺樂寫戲讀擊將傳處餘隨寶"
+)
+
+
+@lru_cache(maxsize=65536)
+def _japanese_charset(character):
+    try:
+        character.encode("cp932")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _language(cells):
+    """'chinese' or 'latin' for a column translating Japanese into another
+    language: kana, outside markup such as {name} placeholders, only in the
+    odd cell a translator left untranslated, and Chinese only where its
+    characters show it."""
+    text = [_MARKUP.sub("", cell) for cell in cells if cell.strip()]
+    if not text or sum(1 for cell in text if _KANA.search(cell)) > len(text) // 20:
+        return None
+    if any(_HAN.search(cell) for cell in text):
+        chinese = any(
+            character in _CHINESE
+            or (_HAN.match(character) and not _japanese_charset(character))
+            for cell in text
+            for character in cell
+        )
+        return "chinese" if chinese else None
+    latin = sum(1 for cell in text if re.search("[A-Za-z]", cell))
+    return "latin" if len(text) >= 2 and latin >= 0.8 * len(text) else None
+
+
+def read_table(kind, text, separator=None):
+    """Lines of comma or tab separated cells, by column. A table translating
+    its Japanese first column into another language names that column
+    table:key, and a Chinese column other_language: Japanese runs can't tell
+    its characters apart."""
+    lines = text.splitlines()
+    if separator is None:
+        filled = [line for line in lines if line.strip()]
+        separator = next(
+            (
+                mark
+                for mark in ("\t", ",")
+                if len(filled) >= 2
+                and sum(mark in _NESTED.sub("", line) for line in filled)
+                >= 0.6 * len(filled)
+            ),
+            None,
+        )
+        if separator is None:
+            return read_lines(kind, text)
+    rows = [line.split(separator) for line in lines]
+    width = max(map(len, rows), default=0)
+    languages = [None] + [
+        _language([row[column] for row in rows if len(row) > column])
+        for column in range(1, width)
+    ]
+    table = any(languages) and any(_KANA.search(row[0]) for row in rows)
+
+    def field(column):
+        if not table:
+            return f"column:{column}"
+        if column == 0:
+            return "table:key"
+        if languages[column] == "chinese":
+            return "other_language"
+        return f"table:column:{column}"
+
+    return [
+        (kind, f"{number}:{column}", field(column), cell)
+        for number, row in enumerate(rows, 1)
+        for column, cell in enumerate(row)
+    ]
 
 
 def read_yaml(kind, text):
@@ -546,7 +628,7 @@ def read(name, data):
     if suffix in {".html", ".htm"}:
         return read_html(text)
     if suffix in {".csv", ".tsv"}:
-        return read_lines("text" + suffix, text, "," if suffix == ".csv" else "\t")
+        return read_table("text" + suffix, text, "," if suffix == ".csv" else "\t")
     # Readmes, credits and version notes beside the game are never shown in
     # it; NScripter keeps its numbered scripts (0.txt) there, which count.
     if (
@@ -557,7 +639,9 @@ def read(name, data):
         return read_lines("document", text)
     if suffix in {".yaml", ".yml", ".asset", ".prefab", ".unity"}:
         return read_yaml("dump:yaml", text)
-    return read_lines("text" + suffix, text)
+    if suffix == ".yst":
+        return read_lines("script:yst", text)
+    return read_table("text" + suffix, text)
 
 
 # --- Containers the census opens itself -----------------------------------------
@@ -645,6 +729,44 @@ def xp3_read(data, segments, adler):
     return content
 
 
+def _swapped(*pairs):
+    table = list(range(256))
+    for i, j in pairs:
+        table[i], table[j] = table[j], table[i]
+    return table
+
+
+# YU-RIS stores each name's length through a byte permutation, which
+# version 500 changed (after Len's yuris_decompiler).
+_YPF_SWAPS = ((6, 53), (9, 11), (12, 16), (13, 19), (21, 27), (28, 30), (32, 35), (38, 41), (44, 47))  # fmt: skip
+_YPF_LENGTHS = _swapped((3, 72), (17, 25), (46, 50), *_YPF_SWAPS)
+_YPF_LENGTHS_500 = _swapped((3, 10), (17, 24), (20, 46), *_YPF_SWAPS)
+
+
+def ypf_members(head):
+    """The file names in a YU-RIS YPF archive's index, or None for another
+    kind of file under that name, such as a video; head(size) reads the
+    archive's first bytes, so the archive itself is never loaded."""
+    first = head(16)
+    if not first.startswith(b"YPF\0"):
+        return None
+    _magic, version, count, size = struct.unpack("<4sIII", first)
+    end = size if version >= 300 else size + 32
+    index = head(end)
+    lengths = _YPF_LENGTHS_500 if version == 500 else _YPF_LENGTHS
+    key = 0xFF ^ {290: 0x40, 500: 0x36}.get(version, 0)
+    tail = 22 if version >= 470 else 18
+    position, names = 32, []
+    for _ in range(count):
+        length = lengths[index[position + 4] ^ 0xFF]
+        raw = bytes(byte ^ key for byte in index[position + 5 : position + 5 + length])
+        names.append(raw.decode("cp932").replace("\\", "/"))
+        position += 5 + length + tail
+    if position != end:
+        raise ValueError("Unsupported YPF index.")
+    return names
+
+
 # --- Scope rules ------------------------------------------------------------------
 
 REASONS = {"asset_name", "identifier", "comment", "script_code", "not_displayed"}
@@ -719,6 +841,7 @@ BUILT_IN = [
     ),
     ("rpgmaker:plugins", "*/description", "not_displayed"),
     ("document", "line", "not_displayed"),
+    ("*", "other_language", "other_language"),
     # Unity Addressables' catalog lists asset addresses.
     ("json", "m_InternalIds/*", "identifier"),
     ("*", "comment", "comment"),
@@ -1002,15 +1125,19 @@ def wanted(names):
     return [name for name in names if candidate(name) in {"read", "open", "wolf"}]
 
 
-def scan(names, load, decoders, decoded=None, progress=lambda _message: None):
+def scan(
+    names, load, decoders, decoded=None, progress=lambda _message: None, peek=None
+):
     """The census of a game's files.
 
     names: every file in the untranslated game; load(name) -> bytes for the
-    wanted ones. decoders: marshal(data) -> Marshal value, rgssad(data) ->
+    wanted ones, and peek(name, size) -> the first bytes of an indexed
+    archive. decoders: marshal(data) -> Marshal value, rgssad(data) ->
     [(name, data)] and wolf(names) -> [(name, document)] for WolfDawn files.
     decoded: (name, data) pairs of the assistant's decoded dump, if any.
     """
     found, unreadable, opened, needs_dump, wolf = [], [], [], [], []
+    head = peek or (lambda name, size: load(name)[:size])
 
     def take(name, data, source):
         if PurePosixPath(name).suffix.casefold() in {".rxdata", ".rvdata", ".rvdata2"}:
@@ -1031,6 +1158,20 @@ def scan(names, load, decoders, decoded=None, progress=lambda _message: None):
             progress(f"Read {count:,} of {len(names):,} files")
         if how == "dump":
             needs_dump.append(name)
+        elif how == "index":
+            try:
+                members = ypf_members(lambda size, name=name: head(name, size))
+            except ValueError, UnicodeDecodeError, struct.error, IndexError:
+                needs_dump.append(name)
+                continue
+            # Scripts and text need the assistant's dump; an archive of only
+            # pictures or sound holds no text.
+            if members is None:
+                continue
+            if any(candidate(member) is not None for member in members):
+                needs_dump.append(name)
+            else:
+                opened.append(name)
         elif how == "wolf":
             wolf.append(name)
         elif how == "read":
