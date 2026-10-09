@@ -23,18 +23,54 @@ foreach ($folder in @([Environment]::GetFolderPath('Programs'), [Environment]::G
   }
 }`;
 
+// WScript.Shell writes a shortcut's paths through the ANSI code page, which
+// turns a folder named outside it, such as a Japanese user name on an English
+// Windows, into question marks, so the shell's Unicode link object writes it.
 const windows = `
-$shell = New-Object -ComObject WScript.Shell
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+[ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IShellLinkW {
+  void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder file, int size, IntPtr data, int flags);
+  void GetIDList(out IntPtr list);
+  void SetIDList(IntPtr list);
+  void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder name, int size);
+  void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
+  void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder folder, int size);
+  void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string folder);
+  void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder arguments, int size);
+  void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string arguments);
+  void GetHotkey(out short key);
+  void SetHotkey(short key);
+  void GetShowCmd(out int show);
+  void SetShowCmd(int show);
+  void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, out int index);
+  void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+  void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, int reserved);
+  void Resolve(IntPtr window, int flags);
+  void SetPath([MarshalAs(UnmanagedType.LPWStr)] string file);
+}
+[ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+class ShellLink {}
+public static class DazedTLShortcut {
+  public static void Save(string file, string target, string folder, string icon) {
+    var link = (IShellLinkW)new ShellLink();
+    link.SetPath(target);
+    link.SetWorkingDirectory(folder);
+    link.SetIconLocation(icon, 0);
+    link.SetDescription("Translate games with DazedTL");
+    ((IPersistFile)link).Save(file, true);
+  }
+}
+'@
 $folders = @([Environment]::GetFolderPath('Programs'))
 $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'DazedTL.lnk'
 if ($env:DAZEDTL_FIRST -or (Test-Path $desktop)) { $folders += [Environment]::GetFolderPath('Desktop') }
 foreach ($folder in $folders) {
-  $link = $shell.CreateShortcut((Join-Path $folder 'DazedTL.lnk'))
-  $link.TargetPath = $env:DAZEDTL_TARGET
-  $link.WorkingDirectory = $env:DAZEDTL_ROOT
-  $link.IconLocation = $env:DAZEDTL_ICON
-  $link.Description = 'Translate games with DazedTL'
-  $link.Save()
+  [DazedTLShortcut]::Save((Join-Path $folder 'DazedTL.lnk'), $env:DAZEDTL_TARGET, $env:DAZEDTL_ROOT, $env:DAZEDTL_ICON)
 }`;
 
 // Desktop entries quote arguments, then escape backslashes again as strings.
