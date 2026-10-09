@@ -76,12 +76,11 @@ export function ProgressPanel({
   const [report, setReport] = useState(false);
   const progress = state.progress;
   const reported = !!progress?.updated_at;
-  // The latest sign of the assistant: its own report, or its use of the
-  // helper, which shows the run started before the first report.
-  const activity = [progress?.updated_at, state.assistantSeenAt]
-    .filter((time): time is string => !!time)
-    .sort((a, b) => Date.parse(b) - Date.parse(a))
-    .at(0);
+  // The latest sign of the assistant is its use of the helper, which also
+  // sends its reports. An API run republishes the report while it works, so
+  // the report's time stands in only for projects from before DazedTL noted
+  // helper use.
+  const activity = state.assistantSeenAt || progress?.updated_at || undefined;
   const status = taskState(progress, !!activity);
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
