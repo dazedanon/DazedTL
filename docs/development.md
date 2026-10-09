@@ -83,7 +83,7 @@ Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
 
 ## Not yet verified
 
-- The Windows and macOS launchers and Windows shortcuts have not been run on those systems yet.
+- The macOS launcher has not been run on macOS yet; the [live test](#live-test) covers Windows and Linux.
 - Real provider billing and native game playtesting still need validation.
 
 ## Documentation
