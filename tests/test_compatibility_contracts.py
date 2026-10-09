@@ -1337,6 +1337,60 @@ print((root / ".gitignore").read_text() == text)
             )
         self.assertEqual(result.stdout.strip(), "True")
 
+    def test_images_are_a_progress_phase_of_their_own(self):
+        # Translation could not complete while images remained, so a run that
+        # finished its text showed it in progress beside the next phase. Saved
+        # reports from before the Images phase must still read.
+        script = """
+import hashlib, json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from util.len_translation import LenProject
+from util.len_progress import read_progress, update_progress
+root = Path(sys.argv[2])
+work = root / ".dazedtl/len-method/work"
+work.mkdir(parents=True)
+(root / "a.png").write_bytes(b"image")
+units = {"text": [{"id": "a", "source": "はい", "translation": "Yes",
+                   "translated_from_sha256": hashlib.sha256("はい".encode()).hexdigest()}],
+         "images": [{"id": "a.png", "source": "a.png", "translation": None}]}
+for kind, rows in units.items():
+    (work / (kind + ".json")).write_text(json.dumps({"complete": True, "units": rows}))
+report = {"phase": "injection", "text": ".dazedtl/len-method/work/text.json",
+          "images": ".dazedtl/len-method/work/images.json",
+          "phases": {"preparation": "complete", "extraction": "complete", "translation": "complete"}}
+project = LenProject(root)
+results = [update_progress(project, report)["phases"]["images"]]
+try:
+    update_progress(project, {**report, "phases": {**report["phases"], "images": "complete"}})
+except ValueError as error:
+    results.append(str(error))
+saved = root / ".dazedtl/len-method/progress.json"
+old = json.loads(saved.read_text())
+del old["phases"]["images"]
+saved.write_text(json.dumps(old))
+results.append(read_progress(project)["phases"]["images"])
+del report["images"]
+results.append(update_progress(LenProject(root, include_images=False), report)["phases"]["images"])
+print(json.dumps(results))
+"""
+        with TemporaryDirectory() as folder:
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", script, str(ENGINE), folder],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        self.assertEqual(
+            json.loads(result.stdout),
+            [
+                "active",
+                "Images cannot be complete while the images total is unknown or units remain untranslated.",
+                "active",
+                "out_of_scope",
+            ],
+        )
+
     def test_bundled_forge_accepts_the_install_patches(self):
         # Upstream refreshes rename Forge's minified identifiers; patches pinned
         # to the old names made every Forge install fail.

@@ -12,7 +12,7 @@ from util.len_translation import LenProject, _prepare_local_work, _validate_proj
 
 PHASES = {
     "preparation": "Preparation", "extraction": "Extraction", "translation": "Translation",
-    "injection": "Injection", "qa": "QA", "patch": "Patch",
+    "images": "Images", "injection": "Injection", "qa": "QA", "patch": "Patch",
 }
 STATES = {
     "pending": "Pending", "active": "In progress", "complete": "Done",
@@ -113,10 +113,21 @@ def _count_records(project, relative, kind, evidence):
             "corpus_sha256": _digest(json.dumps(sorted((key, value["source"]) for key, value in unique.items()), ensure_ascii=False).encode())}
 
 
+def _image_phase(project: LenProject, metric: dict) -> str:
+    """Images are a phase of their own. A report that leaves the phase out
+    gets it from the image records, which the app keeps for its Images steps."""
+    if not project.include_images:
+        return "out_of_scope"
+    if metric.get("total") is not None and metric.get("translated") == metric["total"]:
+        return "complete"
+    return "active" if metric.get("discovered") or metric.get("translated") else "pending"
+
+
 def empty_progress(project: LenProject) -> dict:
     return {
         "schema": 1, "updated_at": None, "scope_sha256": _scope(project), "phase": None,
-        "phases": dict.fromkeys(PHASES, "pending"),
+        "phases": {**dict.fromkeys(PHASES, "pending"),
+                   **({} if project.include_images else {"images": "out_of_scope"})},
         "metrics": {key: {"total": None, "translated": 0, "reviewed": 0} for key in ("text", "images")},
         "blocker": "", "next_action": "", "evidence": [],
         "timing": {}, "history": [], "estimates": {},
@@ -216,12 +227,15 @@ def update_progress(project: LenProject, report: dict) -> dict:
         snapshot["metrics"]["images"] = _count_records(project, report.get("images"), "images", evidence)
     elif report.get("images") is not None:
         raise ValueError("Images are outside the selected project scope.")
-    if snapshot["phases"]["translation"] == "complete":
-        required = [snapshot["metrics"]["text"]]
-        if project.include_images:
-            required.append(snapshot["metrics"]["images"])
-        if any(m["total"] is None or m["translated"] != m["total"] for m in required):
-            raise ValueError("Translation cannot be complete while scoped totals are unknown or units remain untranslated.")
+    if not project.include_images:
+        if phase == "images" or phases.get("images", "out_of_scope") != "out_of_scope":
+            raise ValueError("Images are outside the selected project scope.")
+    elif "images" not in phases and phase != "images":
+        snapshot["phases"]["images"] = _image_phase(project, snapshot["metrics"]["images"])
+    for key, kind in (("translation", "text"), ("images", "images")):
+        metric = snapshot["metrics"][kind]
+        if snapshot["phases"][key] == "complete" and (metric["total"] is None or metric["translated"] != metric["total"]):
+            raise ValueError(f"{PHASES[key]} cannot be complete while the {kind} total is unknown or units remain untranslated.")
     _validate_timing(report.get("timing", {}))
     _validate_estimates(report.get("estimates", {}))
     snapshot["timing"] = report.get("timing", {})
@@ -256,6 +270,11 @@ def read_progress(project: LenProject, *, check_hashes=True) -> dict:
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise ValueError("Progress must be stored in a regular progress.json file.")
     value = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else empty_progress(project)
+    phases, metrics = (value.get("phases"), value.get("metrics")) if isinstance(value, dict) else (None, None)
+    if isinstance(phases, dict) and "images" not in phases:
+        # Reports from before images became a phase of their own.
+        metric = metrics.get("images") if isinstance(metrics, dict) else None
+        phases["images"] = _image_phase(project, metric if isinstance(metric, dict) else {})
     _validate_snapshot(value)
     warnings = []
     if value["updated_at"] and value["scope_sha256"] != _scope(project):

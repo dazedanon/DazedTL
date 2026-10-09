@@ -460,12 +460,11 @@ class Translation:
             "Change only the text and the pixels it covers. Report an image you can't or won't edit as skipped, with the reason; it stays out of the patch. "
             "images --apply puts the translated, reviewed images into the game, encrypted as the game expects, and lists the runtime files it changed: "
             "add them to the runtime patch manifest before QA and the checkpoint. "
-            "Repeat until images --status reports done. The app records image progress from these steps, so leave images out of your progress reports. "
+            "Repeat until images --status reports done. The app records image progress from these steps, so leave image records out of your progress reports; images is a phase of its own. "
             "If images --status reports that DazedTL can't read this engine's images, follow Len's image reference and report images in your progress records."
             if selected["options"]["include_images"]
             else ""
         )
-        steps = "6-9" if images else "6-8"
         injection, qa = ("10", "11") if images else ("9", "10")
         handoff = f"""Translate this game and deliver a verified local patch using Len's maintained game-translation skills.
 
@@ -480,7 +479,7 @@ Work autonomously from start to finish. Ask the user only when the work cannot c
 
 The user's assistant plan pays for this session, so keep it economical. Read the skill and the detected engine's reference first; read each other reference when its phase begins, and only the sections the current step needs: project-lifecycle before backup and Git, glossary-and-prompts before guidance, text-fitting before injection, playtesting-and-release before the canary and QA, and version-updates only for an official game update. Prefer scripts and the helper over reading or pasting large files, and don't reread files already in context.
 
-Work in the numbered order below. Send your first progress report, with preparation active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps {steps}, injection is step {injection}, qa is step {qa}'s checks, and patch is packaging. Mark a phase complete once its work is saved.
+Work in the numbered order below. Send your first progress report, with preparation active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps 6-8, {"images is step 9, " if images else ""}injection is step {injection}, qa is step {qa}'s checks, and patch is packaging. Mark a phase complete once its work is saved.
 
 Retain engine-specific methodology and existing valid work. Use the shared glossary, game.md, quirks.md, custom skills, and registered reference games. Preserve uncertainty, speaker identities, scene boundaries, protected controls, and source-supported character voice.
 

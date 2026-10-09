@@ -35,13 +35,15 @@ report template in the pipeline if needed, updating checkpoints as work advances
 }
 ```
 
-- `phase`: `preparation`, `extraction`, `translation`, `injection`, `qa`, `patch`,
-  or null when no phase is active. This is the last reported activity, not a claim
+- `phase`: `preparation`, `extraction`, `translation`, `images`, `injection`, `qa`,
+  `patch`, or null when no phase is active. This is the last reported activity, not a claim
   that a process is currently running.
 - `phases`: those same keys with `pending`, `active`, `complete`, `blocked`, or
   `out_of_scope`. Several phases can be active when work overlaps; `phase` identifies the current focus and defaults to active.
   Set later phases out of scope only for an explicit preparation-only request. Report QA/playtesting and
   patch checkpoints from actual evidence, never from a translation count.
+  `images` is out of scope when the project's image scope is disabled; a report that leaves it out
+  gets it from the image records: complete once they are, active once they list an image.
 - `text`, `images`: game-relative paths to saved unit exports below, or null before
   measurement. Omit images when the project's image scope is disabled.
 - `inputs`: game-relative source/evidence file paths to watch for changes. Include
@@ -98,8 +100,8 @@ image assets in scope, not just rendered replacements.
 
 The helper calculates counts, validates updates, fingerprints listed artifacts and
 replaces the snapshot atomically. Re-running it cannot add duplicate completions.
-Marking translation complete requires known totals and all scoped text/images
-translated. Other phase checkpoints require the corresponding validation, playtest
+Marking translation complete requires a known text total with all text translated,
+and marking images complete the same for the scoped images. Other phase checkpoints require the corresponding validation, playtest
 or packaging evidence and are explicitly reported by the agent.
 
 The UI refreshes while visible. It shows the last update time and warns when tracked
@@ -143,7 +145,7 @@ A changed corpus/scope, regressed counts or reset clock discards incompatible th
 Without valid samples it displays the missing estimate explicitly and identifies the next measurement needed.
 
 `estimates` uses phase names from `phases`, with finite nonnegative lower/upper remaining active minutes and a short basis explaining assumptions/exclusions.
-Use it for preparation, extraction, images within translation, injection, QA and patch work that text throughput cannot predict.
+Use it for preparation, extraction, images, injection, QA and patch work that text throughput cannot predict.
 Update these values as work finishes; zero text remaining does not estimate the unfinished images or QA.
 Estimates are paused while blockers or stale-evidence warnings apply, and completed/out-of-scope phases are omitted.
 Do not add overlapping phase times into a claimed wall-clock deadline.

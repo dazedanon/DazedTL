@@ -22,6 +22,7 @@ Investigate and Translate save the same request-bound tasks Guided's Images task
 The assistant also does the user's part: its recommendations stay the list, and Apply publishes the translated, reviewed images and returns the runtime files to add to the patch manifest.
 The app turns the Image Manager's list into the image records that progress reports and packaging count.
 An image in the list counts until it is applied, one its translation skipped drops out, and the records complete once every image has a finding.
+Images is its own progress phase; a report that leaves it out gets it from these records, complete once they are and active once they list an image.
 Guided projects keep these steps in their Images task.
 
 ### Sandboxed connections
