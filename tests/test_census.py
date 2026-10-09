@@ -5,6 +5,7 @@ import importlib
 import json
 import struct
 import unittest
+import zlib
 from pathlib import Path
 
 from dazedtl.translation import census
@@ -47,6 +48,36 @@ def asar(files):
     raw = json.dumps(header).encode()
     pickle = struct.pack("<II", len(raw) + 4, len(raw)) + raw
     return struct.pack("<II", 4, len(pickle)) + pickle + body
+
+
+def xp3(files, scramble=False):
+    """A KiriKiri XP3 archive with zlib-compressed members; scramble mimics
+    an encrypted archive, whose stored bytes don't match their checksum."""
+    body, index = b"", b""
+    offset = len(census.XP3_MAGIC) + 8
+    for name, data in files.items():
+        stored = zlib.compress(data)
+        if scramble:
+            stored = zlib.compress(bytes(byte ^ 0x5A for byte in data))
+        encoded = name.encode("utf-16le")
+        info = struct.pack("<IQQH", 0, len(data), len(stored), len(name)) + encoded
+        segment = struct.pack("<IQQQ", 1, offset + len(body), len(data), len(stored))
+        adler = struct.pack("<I", zlib.adler32(data))
+        chunks = b"".join(
+            tag + struct.pack("<Q", len(chunk)) + chunk
+            for tag, chunk in ((b"info", info), (b"segm", segment), (b"adlr", adler))
+        )
+        index += b"File" + struct.pack("<Q", len(chunks)) + chunks
+        body += stored
+    packed = zlib.compress(index)
+    header = struct.pack("<BQQ", 1, len(packed), len(index))
+    return (
+        census.XP3_MAGIC
+        + struct.pack("<Q", offset + len(body))
+        + body
+        + header
+        + packed
+    )
 
 
 GAME = {
@@ -284,6 +315,16 @@ class CensusTests(unittest.TestCase):
             )
         )
         self.assertIn("string", fields["rgss:scripts"])
+        scenario = {"scenario/first.ks": "#あかね\nようこそ[p]".encode()}
+        result = scan(
+            {"data.xp3": xp3(scenario), "patch.xp3": xp3(scenario, scramble=True)}
+        )
+        self.assertEqual(
+            (result["opened"], result["needs_dump"]), (["data.xp3"], ["patch.xp3"])
+        )
+        self.assertEqual(
+            {entry["field"] for entry in result["entries"]}, {"speaker", "body"}
+        )
         packed = asar({"data/scenario/first.ks": "#あかね\nようこそ[p]".encode()})
         result = scan(
             {"resources/app.asar": packed, "Game_Data/sharedassets0.assets": b"\0"}

@@ -228,9 +228,11 @@ _REGEX_BEFORE = set("(,=:[!&|?{};+-*%<>~^")
 _REGEX_WORDS = {"return", "typeof", "case", "do", "else", "in", "of", "void"}
 
 
-def lex_code(text, ruby=False):
+def lex_code(text, ruby=False, multiline=False):
     """Comments and string literals of JavaScript-like or Ruby code as
-    (offset, field, text); None when the code cannot be lexed."""
+    (offset, field, text). Text past the point the lexer can't follow, such
+    as KAG3's closing END_OF_TJS_SCRIPT, comes last as 'unparsed', which no
+    rule sets aside."""
     out = []
     i, length, last, word = 0, len(text), "", ""
     while i < length:
@@ -251,7 +253,7 @@ def lex_code(text, ruby=False):
         if not ruby and text.startswith("/*", i):
             end = text.find("*/", i + 2)
             if end < 0:
-                return None
+                return out + [(i, "unparsed", text[i:])]
             out.append((i, "comment", text[i : end + 2]))
             i = end + 2
             continue
@@ -260,11 +262,11 @@ def lex_code(text, ruby=False):
             while j < length and text[j] != char:
                 if text[j] == "\\":
                     j += 1
-                elif text[j] == "\n" and char != "`" and not ruby:
-                    return None
+                elif text[j] == "\n" and char != "`" and not ruby and not multiline:
+                    return out + [(i, "unparsed", text[i:])]
                 j += 1
             if j >= length:
-                return None
+                return out + [(i, "unparsed", text[i:])]
             out.append((i, "string", text[i + 1 : j]))
             i, last, word = j + 1, "x", ""
             continue
@@ -276,10 +278,10 @@ def lex_code(text, ruby=False):
                 elif text[j] in "[]":
                     inside = text[j] == "["
                 elif text[j] == "\n":
-                    return None
+                    return out + [(i, "unparsed", text[i:])]
                 j += 1
             if j >= length:
-                return None
+                return out + [(i, "unparsed", text[i:])]
             out.append((i, "regex", text[i + 1 : j]))
             i, last, word = j + 1, "x", ""
             continue
@@ -300,11 +302,13 @@ def lex_code(text, ruby=False):
     return out
 
 
-def read_code(kind, text, ruby=False):
-    tokens = lex_code(text, ruby)
-    if tokens is None:
-        return [(kind, "0", "unparsed", text)]
-    return [(kind, str(offset), field, value) for offset, field, value in tokens]
+def read_code(kind, text, ruby=False, multiline=False):
+    """Code's comments and strings; TJS strings, unlike JavaScript's, may
+    span lines."""
+    return [
+        (kind, str(offset), field, value)
+        for offset, field, value in lex_code(text, ruby, multiline)
+    ]
 
 
 def read_kag(text):
@@ -377,8 +381,6 @@ def _tag(location, content):
 def read_renpy(text):
     """Ren'Py scripts: say statements, other statements' strings and comments."""
     tokens = lex_code(text, ruby=True)
-    if tokens is None:
-        return [("script:rpy", "0", "unparsed", text)]
     rows = []
     for offset, field, value in tokens:
         if field == "string":
@@ -536,7 +538,7 @@ def read(name, data):
     if suffix == ".js":
         return read_code("js:plugin" if "/plugins/" in lowered else "js", text)
     if suffix == ".tjs":
-        return read_code("script:tjs", text)
+        return read_code("script:tjs", text, multiline=True)
     if suffix == ".ks":
         return read_kag(text)
     if suffix == ".rpy":
