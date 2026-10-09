@@ -236,6 +236,9 @@ class TranslationState(ProjectOptions):
     drafts: TranslationDrafts
     documents: Documents
     progress: TranslationProgress | None
+    # When the user's assistant last used the project helper, so Progress
+    # shows its run started before the first report.
+    assistantSeenAt: str | None
     git: GitStatus | None
     lifecycle: Lifecycle
     # The original backup the game folder already holds, offered to a project

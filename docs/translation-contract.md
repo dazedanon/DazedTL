@@ -27,6 +27,7 @@ A lost response may follow a completed action, so inspect saved state and runs b
 ### Saved state and setup
 
 Use state before starting.
+Every Assistant-led helper call also records when the assistant last reached the project, which Progress shows before its first report.
 It reports the portable options, current Git and backup state, saved progress, pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
 Operation commands return saved job IDs; inspect them with run until they complete, fail, stop, or await approval or provider results.
@@ -133,7 +134,7 @@ This does not authorize automatic retries or settle the older receipts.
 
 ## Delivery and future versions
 
-Use the maintained progress report format after saved milestones and before waits or handoff.
+Use the maintained progress report format right after the first state read, after saved milestones and before waits or handoff.
 Counts describe saved units; extraction coverage, review, images, injection, runtime QA and packaging are separate evidence.
 Report unresolved and excluded material explicitly.
 A complete text count cannot complete QA.

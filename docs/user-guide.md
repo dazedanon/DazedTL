@@ -143,7 +143,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    It works on its own and asks you only when it must, such as to approve spending.
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
-   If its reports stop, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
+   If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 

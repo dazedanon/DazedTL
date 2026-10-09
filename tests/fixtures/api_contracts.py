@@ -167,17 +167,26 @@ try:
     from importlib.util import module_from_spec, spec_from_file_location
 
     from dazedtl.api.local import LocalAPI
-    from dazedtl.api.server import PROTOCOL
+    from dazedtl.api.server import PROTOCOL, assistant_dispatch
 
     spec = spec_from_file_location("project_helper", root / "scripts/project.py")
     helper = module_from_spec(spec)
     spec.loader.exec_module(helper)
-    local = LocalAPI(app.workspace, PROTOCOL["version"], call)
+    # Progress shows an Assistant-led run started once the assistant uses the
+    # helper, before its first report; the app's own reads never count.
+    state = {"project_id": project_id}
+    assert call("translation_state", state)["assistantSeenAt"] is None
+    local = LocalAPI(app.workspace, PROTOCOL["version"], assistant_dispatch(app, call))
     try:
-        for method in ("guided_context_status", "guided_event_text_request"):
+        for method in (
+            "guided_context_status",
+            "guided_event_text_request",
+            "translation_state",
+        ):
             helper.call(app.workspace, method, {"project_id": project_id})
     finally:
         local.close()
+    assert call("translation_state", state)["assistantSeenAt"]
 finally:
     app.closing = True
     app.guided.batch_monitor.close()

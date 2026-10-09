@@ -1019,6 +1019,7 @@ export type TranslationState = ProjectOptions & {
   drafts: TranslationDrafts;
   documents: Documents;
   progress: TranslationProgress | null;
+  assistantSeenAt: string | null;
   git: GitStatus | null;
   lifecycle: Lifecycle;
   storedOriginal?: BackupSnapshot;

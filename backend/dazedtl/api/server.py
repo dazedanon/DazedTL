@@ -757,11 +757,27 @@ def dispatcher(app, check=False):
     return dispatch
 
 
+def assistant_dispatch(app, dispatch):
+    """The project helper's requests; each Assistant-led one also notes that
+    the user's assistant reached its project, whether or not it succeeds."""
+
+    def run(name, params):
+        try:
+            return dispatch(name, params)
+        finally:
+            if name.startswith("translation_") and not app.closing:
+                app.translation.contacted(params.get("project_id"))
+
+    return run
+
+
 def serve(args, diagnostics):
     os.environ["PYTHON_DOTENV_DISABLED"] = "1"
     app = Application(args.workspace, not args.offline, diagnostics.failure)
     dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
-    local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
+    local = LocalAPI(
+        app.workspace, PROTOCOL["version"], assistant_dispatch(app, dispatch)
+    )
     # Electron matches replies by id, so previews may answer out of order
     # while the loop keeps reading; every other request still runs in turn.
     previews = ThreadPoolExecutor(PREVIEW_WORKERS, thread_name_prefix="preview")

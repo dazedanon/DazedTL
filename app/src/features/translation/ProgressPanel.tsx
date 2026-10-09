@@ -41,8 +41,11 @@ const phaseSteps: Record<string, { state: StepState; detail?: string }> = {
 const QUIET_MINUTES = 20;
 const money = (value: number) => "$" + value.toFixed(2);
 
-function taskState(progress: TranslationProgress | null): AssistantTaskState {
-  if (!progress?.updated_at) return "not_started";
+function taskState(
+  progress: TranslationProgress | null,
+  started: boolean,
+): AssistantTaskState {
+  if (!progress?.updated_at) return started ? "waiting" : "not_started";
   if (progress.blocker) return "blocked";
   return Object.values(progress.phases).every((phase) =>
     ["complete", "out_of_scope"].includes(phase),
@@ -71,12 +74,19 @@ export function ProgressPanel({
   const now = useMinute();
   const [report, setReport] = useState(false);
   const progress = state.progress;
-  const status = taskState(progress);
+  const reported = !!progress?.updated_at;
+  // The latest sign of the assistant: its own report, or its use of the
+  // helper, which shows the run started before the first report.
+  const activity = [progress?.updated_at, state.assistantSeenAt]
+    .filter((time): time is string => !!time)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))
+    .at(0);
+  const status = taskState(progress, !!activity);
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
   const quiet =
     status === "waiting" &&
-    now - new Date(progress!.updated_at!).getTime() > QUIET_MINUTES * 60_000;
+    now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
   const run = state.jobs.find(
     (job) => job.kind === "translation" && job.mode !== "agent",
   );
@@ -100,17 +110,15 @@ export function ProgressPanel({
       </p>
       <AssistantTask
         state={status}
-        progress={
-          progress?.updated_at
-            ? "last report " + timeAgo(progress.updated_at, now)
-            : undefined
-        }
+        progress={activity && "last active " + timeAgo(activity, now)}
         description={
           progress?.blocker ||
           progress?.next_action ||
-          "Copy the starting prompt into your coding assistant. It backs up the game, extracts and translates the text and builds a patch on its own; its reports appear here."
+          (!reported && activity
+            ? "Your assistant has started preparing the game. Its first report will appear here."
+            : "Copy the starting prompt into your coding assistant. It backs up the game, extracts and translates the text and builds a patch on its own; its reports appear here.")
         }
-        help="These are your assistant's saved reports. A report doesn't show that its session is still running, and finished text doesn't mean the game has been checked."
+        help="These are your assistant's saved reports and the last time it used DazedTL. Neither shows that its session is still running, and finished text doesn't mean the game has been checked."
       >
         {status === "blocked" && (
           <Notice tone="warning">
@@ -131,9 +139,13 @@ export function ProgressPanel({
           label="Assistant phases"
           steps={phases.map((phase) => ({
             ...phase,
-            ...(phaseSteps[progress?.phases[phase.id] || ""] || {
-              state: "next",
-            }),
+            ...(phaseSteps[
+              reported
+                ? progress.phases[phase.id]
+                : activity && phase.id === "preparation"
+                  ? "active"
+                  : ""
+            ] || { state: "next" }),
           }))}
         />
         {!!(text?.translated || text?.reviewed || images?.translated) && (

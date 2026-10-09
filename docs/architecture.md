@@ -460,6 +460,7 @@ Use these principles to evaluate real workflows, rather than adding extra panels
 Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits that the line width check enforces.
 Assistant-led is the UI name of the method built on Len's game-translation skills, and code and records keep the `len` identifier.
 Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make, such as a screenshot, stays pending instead of stopping the run.
+Progress counts the assistant's first helper call as the run starting, because an assistant can work through a whole phase before its first report.
 The assistant's own plan pays for every turn, so new games start on API Batch (Live when the connection cannot batch) and references are read as their phase begins.
 In both methods the [investigation skill](../backend/dazedtl/engine/data/skills/localization_investigation.md) runs one discovery pass, and its three blind passes only when the game asks for Thorough investigation; the setup loaders keep the chosen section, so a copied prompt never holds both.
 
