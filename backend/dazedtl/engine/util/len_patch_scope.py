@@ -185,7 +185,7 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     policy = scope_ignore((before_ignore or b"").decode("utf-8", errors="surrogateescape"), set(selected) | metadata)
     source = original_game.expanduser().resolve() if original_game is not None else None
     if source is not None and (source == repo or not source.is_dir()):
-        raise GitWorkflowError("Use a separate, matching untranslated backup as --original")
+        raise GitWorkflowError("Use a separate, matching untranslated backup as the original")
     # Existing Git originals are authoritative; a supplied backup must match them.
     original_files = {}
     for relative, row in selected.items():
@@ -194,7 +194,7 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
         if source is not None and ((source / relative).exists() or (source / relative).is_symlink()):
             original_files[relative] = _file(source, relative)
         elif relative not in originals and not ("original_sha256" in row and row["original_sha256"] is None):
-            raise GitWorkflowError(f"Supply the matching --original backup, or declare a translation-only addition with original_sha256: null: {relative}")
+            raise GitWorkflowError(f"Supply the matching untranslated original, or declare a translation-only addition with original_sha256: null: {relative}")
     source_entries = _hash_paths(repo, original_files, write=not dry_run)
     payload_entries = _hash_paths(repo, files, write=not dry_run)
     for name, entry in source_entries.items():

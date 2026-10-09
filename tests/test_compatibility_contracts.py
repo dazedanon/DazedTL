@@ -1337,6 +1337,41 @@ print((root / ".gitignore").read_text() == text)
             )
         self.assertEqual(result.stdout.strip(), "True")
 
+    def test_git_setup_accepts_declared_files_the_patch_will_add(self):
+        # A Unity mod patch delivers only files the original lacks, such as
+        # BepInEx; Git setup refused them because they didn't exist yet.
+        script = """
+import sys
+from pathlib import Path
+sys.path[:0] = sys.argv[1:3]
+from dazedtl.compatibility.translation import TranslationEngine
+game = Path(sys.argv[3])
+(game / "Game.exe").write_bytes(b"original")
+added = {"Game.exe": {}, "BepInEx/plugins/Patch.dll": {"original_sha256": None}}
+TranslationEngine.audit_scope(None, game, {"files": added})
+try:
+    TranslationEngine.audit_scope(None, game, ["Game.exe", "winhttp.dll"])
+except ValueError as error:
+    print(error)
+"""
+        with TemporaryDirectory() as folder:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-B",
+                    "-c",
+                    script,
+                    str(ENGINE),
+                    str(ENGINE.parents[1]),
+                    folder,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        self.assertIn("lacks or ignores: winhttp.dll", result.stdout)
+
     def test_images_are_a_progress_phase_of_their_own(self):
         # Translation could not complete while images remained, so a run that
         # finished its text showed it in progress beside the next phase. Saved

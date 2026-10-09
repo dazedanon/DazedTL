@@ -690,10 +690,19 @@ class TranslationEngine:
                 "Review the game's ignore rules before Git setup. Unscoped files would be tracked: "
                 + ", ".join(unexpected[:8])
             )
-        missing = set(entries) - actual
+        # A patch can add files the original lacks, such as a mod loader;
+        # declared as translation-only additions, they may not exist yet.
+        missing = sorted(
+            relative
+            for relative, row in entries.items()
+            if relative not in actual
+            and not ("original_sha256" in row and row["original_sha256"] is None)
+        )
         if missing:
             raise ValueError(
-                "The patch manifest contains missing or ignored files. Review the manifest and ignore rules."
+                "The patch manifest lists files the game lacks or ignores: "
+                + ", ".join(missing[:8])
+                + '. Review the ignore rules, or declare files the patch adds as {"files": {"<path>": {"original_sha256": null}}}.'
             )
 
     def commit(self, source, message):

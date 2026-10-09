@@ -118,6 +118,7 @@ python DAZEDTL_ROOT/scripts/len_translation.py git-scope \
 
 The manifest is a JSON list of exact relative paths, or an object with `files` mapping paths to records.
 A record can bind `sha256` and `original_sha256`; use `original_sha256: null` only for a genuine translation-only addition.
+Declare files the patch adds, such as a mod loader or a translation folder, this way from the start: Git setup accepts them before they exist.
 Include the whole patch, not just the latest batch.
 Repository metadata (`.gitignore`, `.gitattributes`, installation `README.md`) is handled separately.
 A source backup is needed for a newly included original that the `original` branch does not already protect.
