@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import platform
+import subprocess
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -43,8 +44,10 @@ PROTOCOL = json.loads(
 
 
 class Application:
-    def __init__(self, workspace, allow_providers):
+    def __init__(self, workspace, allow_providers, failure=None):
         self.closing = False
+        # Records errors the app handles itself, such as one unreadable project.
+        self.failure = failure or (lambda *_args, **_kwargs: None)
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self.workspace_lock = WorkspaceLock(self.workspace)
@@ -280,8 +283,16 @@ class Application:
                         status="Ready for guided setup",
                         detail="Preserve the original, prepare game files, and choose a translation scope.",
                     )
-            except (ValueError, OSError) as exc:
-                error = str(exc)
+            # A project that cannot be read, such as one whose Git cannot run
+            # (engine errors are RuntimeErrors), must not close the workspace:
+            # Settings and its updates stay reachable.
+            except (
+                ValueError,
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ) as exc:
+                error = self.unreadable(exc)
                 project.pop("operation", None)
                 project.update(
                     status="Project unavailable",
@@ -294,21 +305,31 @@ class Application:
                 images = self.images.state(project["id"])
             except ForeignWorkError as exc:
                 foreign["imagesForeign"] = exc.summary
-            except (ValueError, OSError) as exc:
-                image_error = str(exc)
+            except (
+                ValueError,
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ) as exc:
+                image_error = self.unreadable(exc)
         plugins, plugin_error = None, ""
         if project and project["available"]:
             try:
                 plugins = self.plugins.state(project["id"])
             except ForeignWorkError as exc:
                 foreign["pluginsForeign"] = exc.summary
-            except (ValueError, OSError) as exc:
-                plugin_error = str(exc)
+            except (
+                ValueError,
+                OSError,
+                RuntimeError,
+                subprocess.SubprocessError,
+            ) as exc:
+                plugin_error = self.unreadable(exc)
         assistant_tasks = []
         if project and project["available"]:
             try:
                 assistant_tasks = self.assistant_tasks.view(project["id"])
-            except ValueError, OSError:
+            except ValueError, OSError, RuntimeError, subprocess.SubprocessError:
                 assistant_tasks = []
         return {
             "application": views.application(state),
@@ -322,6 +343,14 @@ class Application:
             "pluginsError": plugin_error,
             **foreign,
         }
+
+    def unreadable(self, error):
+        """A project's read failure in words. A tool's own message is a Python
+        command list, so it goes to diagnostics instead."""
+        if isinstance(error, subprocess.SubprocessError):
+            self.failure(error, "workspace_snapshot")
+            return "A tool this project needs could not finish. Copy diagnostics for the details."
+        return str(error)
 
     def recheck(self, project_id):
         """Rechecks files the user may have edited outside the app."""
@@ -730,7 +759,7 @@ def dispatcher(app, check=False):
 
 def serve(args, diagnostics):
     os.environ["PYTHON_DOTENV_DISABLED"] = "1"
-    app = Application(args.workspace, not args.offline)
+    app = Application(args.workspace, not args.offline, diagnostics.failure)
     dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
     local = LocalAPI(app.workspace, PROTOCOL["version"], dispatch)
     # Electron matches replies by id, so previews may answer out of order

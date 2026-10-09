@@ -19,6 +19,24 @@ from . import request_parameters
 from .openrouter_batch import ResultsUnavailable
 
 
+def _git(arguments, purpose, timeout=120):
+    """Runs Git for its raw output; a failure says what it was for in words."""
+    try:
+        result = subprocess.run(
+            ["git", *arguments], capture_output=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(f"Git could not {purpose} within {timeout} seconds.") from exc
+    except OSError as exc:
+        raise ValueError(f"Git could not {purpose}: {exc.strerror or exc}") from exc
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(
+            f"Git could not {purpose}: {detail or f'exit status {result.returncode}'}"
+        )
+    return result.stdout
+
+
 class ProviderFailure(RuntimeError):
     def __init__(self, operation, error):
         status = getattr(error, "status_code", None)
@@ -417,12 +435,11 @@ class TranslationEngine:
 
         if not isinstance(blob, str) or not re.fullmatch(r"[0-9a-f]{40,64}", blob):
             raise ValueError("Choose a verified original source blob.")
-        return subprocess.run(
-            ["git", "-C", str(source), "cat-file", "blob", blob],
-            check=True,
-            capture_output=True,
+        return _git(
+            ["-C", str(source), "cat-file", "blob", blob],
+            "read the game's original files",
             timeout=30,
-        ).stdout
+        )
 
     def error_message(self, error):
         from util.version_update import GitWorkflowError
@@ -558,14 +575,12 @@ class TranslationEngine:
             write_bytes(ignore, scope_ignore(previous, set(entries)).encode("utf-8"))
         allowed = set(entries) | {".gitignore", ".gitattributes", "README.md"}
         with tempfile.TemporaryDirectory(prefix="dazedtl-scope-") as temporary:
-            subprocess.run(
-                ["git", "init", "--bare", "--quiet", temporary],
-                check=True,
-                capture_output=True,
+            _git(
+                ["init", "--bare", "--quiet", temporary],
+                "prepare the scope check",
             )
-            result = subprocess.run(
+            listed = _git(
                 [
-                    "git",
                     "--git-dir",
                     temporary,
                     "--work-tree",
@@ -575,12 +590,9 @@ class TranslationEngine:
                     "--exclude-standard",
                     "-z",
                 ],
-                check=True,
-                capture_output=True,
+                "list the game's files",
             )
-            actual = {
-                item.decode("utf-8") for item in result.stdout.split(b"\0") if item
-            }
+            actual = {item.decode("utf-8") for item in listed.split(b"\0") if item}
         unexpected = sorted(actual - allowed)
         if unexpected:
             raise ValueError(
