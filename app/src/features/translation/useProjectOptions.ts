@@ -47,9 +47,9 @@ export function useProjectOptions(
       }),
     );
   }
-  async function discard() {
-    await api.translation.draft(state.projectId, "options", null);
-    draft.session.adopt(saved);
-  }
+  const discard = () =>
+    draft.session.discard(saved, () =>
+      api.translation.draft(state.projectId, "options", null),
+    );
   return { ...draft, value: draft.value || saved, save, discard };
 }

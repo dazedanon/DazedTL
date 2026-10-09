@@ -149,9 +149,7 @@ class Translation:
             if path.exists()
             else {"options": None, "documents": {}}
         )
-        if value["options"]:
-            # Drafts saved before an option existed take its default.
-            value["options"]["options"] = {**ADDED, **value["options"]["options"]}
+        value["options"] = self.pending_options(identity, value["options"])
         record = self.projects.get(identity)
         legacy = record.get("backend_id")
         if legacy and legacy in self.settings.adapter.workflows.projects:
@@ -161,6 +159,17 @@ class Translation:
                 .get("documents", {})
             )
         return value
+
+    def pending_options(self, identity, value):
+        """An options draft, or None when it matches the saved options, such
+        as after turning a choice off and on again: it holds no edit to save,
+        so it must not hold up preparing or running work."""
+        if not value:
+            return None
+        # Drafts saved before an option existed take its default.
+        value = {**value, "options": {**ADDED, **value["options"]}}
+        _record, project = self.project(identity)
+        return None if value["options"] == self.options(project)["options"] else value
 
     def draft(self, project_id, section, value):
         if section not in {"options", "documents"}:
@@ -173,6 +182,7 @@ class Translation:
             ):
                 raise ValueError("Invalid options draft.")
             options(value["options"])
+            value = self.pending_options(project_id, value)
         if section == "documents":
             if (
                 not isinstance(value, dict)

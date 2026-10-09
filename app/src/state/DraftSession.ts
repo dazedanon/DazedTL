@@ -142,6 +142,18 @@ export class DraftSession<T> {
       }
     });
   };
+  /**
+   * Drops the draft: cancels the delayed write, clears the stored draft after
+   * any write already under way, then shows the saved value, so a write due
+   * during the clear cannot bring the discarded edit back.
+   */
+  discard = (saved: T, clear: () => Promise<unknown>) => {
+    clearTimeout(this.timer);
+    return this.enqueue(async () => {
+      await clear();
+      this.adopt(saved);
+    });
+  };
   dispose() {
     clearTimeout(this.timer);
     return this.flush();

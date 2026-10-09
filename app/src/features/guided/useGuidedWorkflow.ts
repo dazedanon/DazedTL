@@ -74,10 +74,8 @@ export function useGuidedWorkflow(
         revision: result.saved.revision,
       }),
     );
-  const discard = async () => {
-    await api.guided.draft(state.projectId, null);
-    draft.session.adopt(saved);
-  };
+  const discard = () =>
+    draft.session.discard(saved, () => api.guided.draft(state.projectId, null));
   const applySpeakers = (reset = false) =>
     draft.session.commit(
       async (value) => {

@@ -449,6 +449,23 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             worker_secret(self.profile, plan["configuration"])
 
+    def test_options_draft_matching_the_saved_options_does_not_block_work(self):
+        # Turning a choice off and on again leaves a draft the page shows as
+        # clean, so it must not refuse the starting prompt, including one an
+        # earlier version stored; a real edit still must.
+        saved = self.service.options(self.project)
+        same = {"revision": saved["revision"], "options": saved["options"]}
+        self.service.draft(self.identity, "options", same)
+        self.service.clean_drafts(self.identity)
+        write_json(
+            self.service.draft_path(self.identity), {"options": same, "documents": {}}
+        )
+        self.service.clean_drafts(self.identity)
+        edited = {**saved["options"], "instructions": "Unsaved"}
+        self.service.draft(self.identity, "options", {**same, "options": edited})
+        with self.assertRaises(ValueError):
+            self.service.clean_drafts(self.identity)
+
     def test_backup_never_recurses_into_itself_or_copies_git_and_work_records_as_source(
         self,
     ):
@@ -478,7 +495,9 @@ class WorkflowTests(unittest.TestCase):
             if path.is_file()
         }
         self.service.draft(
-            self.identity, "options", {"revision": "saved", "options": DEFAULTS}
+            self.identity,
+            "options",
+            {"revision": "saved", "options": {**DEFAULTS, "instructions": "Unsaved"}},
         )
         draft_path = self.service.draft_path(self.identity)
         saved_draft = draft_path.read_bytes()

@@ -68,6 +68,27 @@ test("autosaved writes become the clean baseline only once the latest edit is wr
   await session.dispose();
 });
 
+test("discard clears the stored draft after a write already under way", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const writing = Promise.withResolvers<void>();
+  let stored: string | null = null;
+  const session = new DraftSession<string>(async (value) => {
+    await writing.promise;
+    stored = value;
+  }, unexpected);
+  session.adopt("saved");
+  session.edit("edit");
+  t.mock.timers.tick(400);
+  await turn();
+  const discarding = session.discard("saved", async () => {
+    stored = null;
+  });
+  writing.resolve();
+  await discarding;
+  assert.equal(stored, null);
+  assert.equal(session.getSnapshot().dirty, false);
+});
+
 test("edits during an explicit save survive with the new saved revision", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   type Value = { text: string; revision: string };
