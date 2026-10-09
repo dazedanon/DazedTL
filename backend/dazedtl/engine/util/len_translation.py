@@ -460,6 +460,13 @@ def _prepare_local_work(project: LenProject) -> None:
         end = text.index(_WORK_IGNORE_END) + len(_WORK_IGNORE_END)
         if end < start:
             raise ValueError("The Len project .gitignore block is out of order.")
+        # A current block anywhere above the patch rules already keeps the work
+        # local. A checkpoint can leave the image patch rules after it, and
+        # moving it again would change a committed .gitignore.
+        patch = text.find("# BEGIN DazedTL Len patch files")
+        if text[start:end] + "\n" == _WORK_IGNORE_BLOCK and (patch < 0 or end < patch):
+            project.work_root.mkdir(parents=True, exist_ok=True)
+            return
         text = text[:start] + text[end:]
     patch_start = text.find("# BEGIN DazedTL Len patch files")
     if patch_start >= 0:

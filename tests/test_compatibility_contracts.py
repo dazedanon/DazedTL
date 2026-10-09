@@ -1311,6 +1311,32 @@ class ManualJobs:
         self.assertNotIn("private request body", str(raised.exception))
         self.assertIsNone(raised.exception.status_code)
 
+    def test_progress_reports_leave_a_checkpointed_gitignore_unchanged(self):
+        # A checkpoint after an image apply leaves the image rules between
+        # Len's work block and its patch block. Moving the work block again
+        # dirtied the committed .gitignore, so packaging refused.
+        script = """
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0, sys.argv[1])
+from util.len_translation import _WORK_IGNORE_BLOCK, _prepare_local_work
+root = Path(sys.argv[2])
+text = (_WORK_IGNORE_BLOCK + "\\n# DazedTL selected image patches\\n!/img/\\n"
+        "\\n# BEGIN DazedTL Len patch files\\n/*\\n# END DazedTL Len patch files\\n")
+(root / ".gitignore").write_text(text)
+_prepare_local_work(SimpleNamespace(game_root=root, work_root=root / "work"))
+print((root / ".gitignore").read_text() == text)
+"""
+        with TemporaryDirectory() as folder:
+            result = subprocess.run(
+                [sys.executable, "-I", "-B", "-c", script, str(ENGINE), folder],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        self.assertEqual(result.stdout.strip(), "True")
+
     def test_bundled_forge_accepts_the_install_patches(self):
         # Upstream refreshes rename Forge's minified identifiers; patches pinned
         # to the old names made every Forge install fail.
