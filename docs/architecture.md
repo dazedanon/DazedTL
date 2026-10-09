@@ -459,6 +459,8 @@ Make current state and the next useful action visible; use translation tasks and
 Use these principles to evaluate real workflows, rather than adding extra panels or confirmation steps to satisfy a checklist.
 Give each idea one name and keep it everywhere: Apply only means writing into the game (settings are saved or used); Backups are copies you can restore and Versions are the Git history used to merge game updates; Line widths are the per-line character limits that the line width check enforces.
 Assistant-led is the UI name of the method built on Len's game-translation skills, and code and records keep the `len` identifier.
+Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make, such as a screenshot, stays pending instead of stopping the run.
+The assistant's own plan pays for every turn, so new games start on API Batch (Live when the connection cannot batch), references are read as their phase begins, and one investigation pass replaces the skill's three unless the game asks for Thorough investigation.
 
 ### Visual design
 
@@ -516,7 +518,7 @@ A menu is a short list of choices that closes when you pick one.
 New pages start from one of three templates: the task page (stepper, task tabs, TaskHeader, the task's panels, its work area, footer), the project page (header, tabs, a body and footer per tab) and the decision dialog (the decision as its title, what will happen, explicit footer choices).
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
 A dialog whose tabs hold panels of different heights stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size.
-Settings, the Project page and [Assistant-led](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Assistant-led's footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
+Settings, the Project page and [Assistant-led](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Assistant-led's Progress tab leads with the assistant's status and its Options tab holds the choices made before starting, its footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
 A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.
@@ -667,6 +669,7 @@ Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
 Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands, in the shared display states, what comes back, and a row per expected result.
+It is a [StatusPanel](../app/src/ui/StatusPanel.tsx), the panel any work that is not the user's own uses to show its name, state and next step, such as Assistant-led's API run.
 The panel reads Needs review only while a result waits for the user's decision in that panel; a result that saved itself reads Done, or Applied once in the game, and one waiting only to go into the game reads Ready to apply.
 Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Other event text's Source choices do.
 Outdated marks a saved result whose basis changed before it went into the game; edits after a task's result is applied are expected and leave it as it was.

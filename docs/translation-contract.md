@@ -30,6 +30,7 @@ Use state before starting.
 It reports the portable options, current Git and backup state, saved progress, pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
 Operation commands return saved job IDs; inspect them with run until they complete, fail, stop, or await approval or provider results.
+`run --wait MINUTES` waits in one command and returns as soon as the run's state changes, so a long Batch costs the assistant one turn per wait instead of one per poll.
 
 Source backup precedes runtime preparation.
 RPG Maker preparation uses the existing shared helper; Ace and other formats require their engine's extraction/conversion route first.

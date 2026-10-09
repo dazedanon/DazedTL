@@ -86,7 +86,16 @@ class TranslationEngine:
         return LenProject(
             Path(source).resolve(),
             mode="local" if options["mode"] == "agent" else "api",
-            **{key: value for key, value in options.items() if key != "mode"},
+            # The engine's project keeps only what shapes the corpus and setup.
+            **{
+                key: options[key]
+                for key in (
+                    "include_images",
+                    "instructions",
+                    "include_glossary_base",
+                    "install_forge",
+                )
+            },
         )
 
     def detect(self, source):
@@ -147,7 +156,7 @@ class TranslationEngine:
                     + json.dumps(str(layout["data_path"]))
                     + "\n"
                     "For Ace, complete decryption and conversion before applying the RPG Maker methodology. "
-                    "Collect source speakers without paid API calls in Agent mode."
+                    "Collect source speakers without paid API calls in Assistant only mode."
                 ),
             )
             if layout

@@ -800,6 +800,7 @@ export type TranslationOptions = {
   include_images: boolean;
   include_glossary_base: boolean;
   install_forge: boolean;
+  thorough_investigation: boolean;
 };
 
 export type ProjectOptions = {
@@ -1024,9 +1025,9 @@ export type TranslationState = ProjectOptions & {
   active: boolean;
   warnings: string[];
   statusText: string;
-  handoff: string;
   providerEnabled: boolean;
   connection: ConnectionSummary | null;
+  batchSupported: boolean;
   legacyAvailable: boolean;
 };
 

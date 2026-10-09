@@ -5,6 +5,7 @@ import argparse
 import io
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -63,6 +64,20 @@ def call(workspace, method, params):
     if not value.get("ok"):
         raise ValueError(value.get("error", "Project operation failed."))
     return value["value"]
+
+
+def wait(workspace, params, run, minutes):
+    """Checks a run until its state changes or the time is up, so an assistant
+    waits in one command instead of polling turn by turn."""
+    deadline = time.monotonic() + minutes * 60
+    started = run["status"]
+    while run["status"] == started and run["status"] in {"running", "waiting"}:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(15, remaining))
+        run = call(workspace, "translation_run", params)
+    return run
 
 
 def main():
@@ -147,6 +162,14 @@ def main():
     ):
         child = commands.add_parser(name)
         child.add_argument("--run", required=True)
+        if name == "run":
+            child.add_argument(
+                "--wait",
+                type=float,
+                default=0,
+                metavar="MINUTES",
+                help="Wait up to MINUTES while the run keeps its state; returns as soon as it finishes or changes state",
+            )
         if name == "stop":
             child.add_argument(
                 "--cancel-provider",
@@ -251,6 +274,8 @@ def main():
                     ),
                 )
             result = call(args.workspace, method, params)
+            if args.command == "run" and args.wait > 0:
+                result = wait(args.workspace, params, result, args.wait)
         rendered = json.dumps(result, ensure_ascii=False, indent=2)
         if getattr(args, "output", None):
             args.output.write_text(rendered + "\n", encoding="utf-8")

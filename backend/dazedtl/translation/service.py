@@ -14,7 +14,7 @@ from .files import digest, evidence, project_path, read_json, verify_evidence
 from .helper_command import git_note, helper_command
 from .jobs import Jobs
 from .operations import checkout_issue, lifecycle, require_baseline
-from .project import WORK, ProjectWorkspace, options, scope
+from .project import ADDED, WORK, ProjectWorkspace, options, scope
 from .requests import plan_input, quote
 from .results import Results
 
@@ -81,6 +81,21 @@ class Translation:
         record = self.projects.get(identity)
         return record, ProjectWorkspace(record["source"])
 
+    def default_mode(self):
+        """New projects start on Batch, or on Live when the active connection
+        cannot run Batch, as Guided does."""
+        connection = connection_summary(self.settings)
+        return (
+            "live"
+            if connection
+            and connection["model"]
+            and not self.settings.translation_defaults().get("batch_supported")
+            else "batch"
+        )
+
+    def options(self, project):
+        return project.read(self.default_mode())
+
     def idle(self, identity):
         if self.jobs.running(identity):
             raise ValueError(
@@ -102,6 +117,9 @@ class Translation:
             if path.exists()
             else {"options": None, "documents": {}}
         )
+        if value["options"]:
+            # Drafts saved before an option existed take its default.
+            value["options"]["options"] = {**ADDED, **value["options"]["options"]}
         record = self.projects.get(identity)
         legacy = record.get("backend_id")
         if legacy and legacy in self.settings.adapter.workflows.projects:
@@ -157,7 +175,7 @@ class Translation:
     def save(self, project_id, revision, values):
         self.idle(project_id)
         _record, project = self.project(project_id)
-        saved = project.save(revision, values)
+        saved = project.save(revision, values, self.default_mode())
         self.draft(project_id, "options", None)
         return saved
 
@@ -202,7 +220,7 @@ class Translation:
 
     def state(self, project_id):
         record, project = self.project(project_id)
-        selected = project.read()
+        selected = self.options(project)
         warnings = []
         try:
             progress = self.engine.progress(project.root, selected["options"])
@@ -231,7 +249,6 @@ class Translation:
         self.jobs.reconcile()
         saved_jobs = self.jobs.store.list(project_id)[:30]
         warnings.extend(self.jobs.store.warnings)
-        handoff = project_path(project.root, WORK + "/handoff.md", exists=False)
         status = project_path(project.root, WORK + "/status.md", exists=False)
         identification = (
             self.workspace / "translation/projects" / project_id / "engine.json"
@@ -305,11 +322,11 @@ class Translation:
             "statusText": status.read_text(encoding="utf-8")[:250_000]
             if status.is_file() and status.stat().st_size <= 5_000_000
             else "",
-            "handoff": handoff.read_text(encoding="utf-8")
-            if handoff.is_file() and handoff.stat().st_size < 250_000
-            else "",
             "providerEnabled": self.settings.adapter.allow_providers,
             "connection": connection_summary(self.settings),
+            "batchSupported": bool(
+                self.settings.translation_defaults().get("batch_supported")
+            ),
             "legacyRun": (
                 {
                     key: value
@@ -337,16 +354,22 @@ class Translation:
         self.idle(project_id)
         self.clean_drafts(project_id)
         _record, project = self.project(project_id)
-        selected = project.read()
+        mode = self.default_mode()
+        selected = project.read(mode)
         if not selected["initialized"]:
-            selected = project.save(selected["revision"], selected["options"])
+            selected = project.save(selected["revision"], selected["options"], mode)
         setup = self.engine.prepare(project.root, selected["options"])
         command = helper_command(self.workspace, project_id)
         mode = {
-            "agent": "Agent Translation",
-            "live": "Live API Translation",
-            "batch": "API Batch Translation",
+            "agent": "Assistant only (you translate every line in this session; DazedTL makes no translation API calls)",
+            "live": "Live API (DazedTL sends one request at a time through the user's API connection)",
+            "batch": "API Batch (DazedTL submits provider Batch jobs through the user's API connection)",
         }[selected["options"]["mode"]]
+        investigation = (
+            "Investigation: thorough. Run setup.md's Three-pass discovery as written."
+            if selected["options"]["thorough_investigation"]
+            else "Investigation: standard. Run setup.md's Investigation method once yourself and skip its Three-pass discovery; this choice replaces the three-subagent requirement."
+        )
         instructions = selected["options"]["instructions"].strip() or "(none)"
         handoff = f"""Translate this game and deliver a verified local patch using Len's maintained game-translation skills.
 
@@ -355,8 +378,15 @@ Skill: {json.dumps(setup["skill"], ensure_ascii=False)}
 Setup instructions: {json.dumps(setup["setup"], ensure_ascii=False)}
 Selected execution mode: {mode}
 Image translation: {"included" if selected["options"]["include_images"] else "excluded; report remaining baked text separately"}
+{investigation}
 
-Read the skill and relevant engine, project-lifecycle, glossary, fitting, QA, and version-update references. Retain engine-specific methodology and existing valid work. Use the shared glossary, game.md, quirks.md, custom skills, and registered reference games. Preserve uncertainty, speaker identities, scene boundaries, protected controls, and source-supported character voice.
+Work autonomously from start to finish. Ask the user only when the work cannot continue without them: approving API spending, a missing or failing API connection in an API mode, access that is denied, or a decision only the user can make that no source evidence settles. Never ask for routine confirmations, permission to continue, or checks you could make or record yourself. When a check needs something you cannot do, such as capturing the game window, use the mechanical alternative, record the remaining check as pending in status.md and continue. Finish all independent work before asking, and report only such a question as the progress blocker, with the exact answer you need as next_action.
+
+The user's assistant plan pays for this session, so keep it economical. Read the skill and the detected engine's reference first; read each other reference when its phase begins, and only the sections the current step needs: project-lifecycle before backup and Git, glossary-and-prompts before guidance, text-fitting before injection, playtesting-and-release before the canary and QA, and version-updates only for an official game update. Prefer scripts and the helper over reading or pasting large files, and don't reread files already in context.
+
+Work in the numbered order below and report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps 6-8, injection is step 9, qa is step 10's checks, and patch is packaging. Mark a phase complete once its work is saved.
+
+Retain engine-specific methodology and existing valid work. Use the shared glossary, game.md, quirks.md, custom skills, and registered reference games. Preserve uncertainty, speaker identities, scene boundaries, protected controls, and source-supported character voice.
 
 This project uses the new DazedTL app as its state and execution owner. Keep the app open. Use this helper for project operations instead of the legacy Len CLI commands named in historical references:
 
@@ -369,11 +399,11 @@ After a connection failure, inspect state and the relevant run before retrying a
 
 1. Inspect saved state, artifacts, existing Git branches and runs. Identify the engine using identify --engine <name> --evidence <project-relative investigation report>. Reuse valid work. Do not re-submit in-flight work or regenerate reviewed translations merely because a session resumed. If state includes a legacyRun, recover it with legacy --action resume/answer/export; inspect its frozen approval before authorizing any additional submission. Preserve and review its exported results before importing matching receipts into the new request store.
 2. Before modifying runtime game files, run operation backup_source and wait for its saved job to complete. Use the app backup operations for all source/workspace checkpoints. They keep a deduplicated store in .dazedtl/backups/v2, exclude .dazedtl/backups from workspace snapshots, and reuse unchanged files and snapshots. Do not create additional full workspace copies, timestamped checkpoint directories or ZIPs inside .dazedtl. Keep existing older backups; never manually edit or prune the managed store. Investigate the engine and adapt Len's tools in .dazedtl/len-method/work. RPG Maker uses operation rpgmaker_prepare; Ace must first complete its reviewed decryption/conversion prerequisite. Honor the saved Forge choice. Other engines keep their native preparation and byte-preservation rules.
-3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. The helper retains a second prepared-source snapshot for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists.
+3. Prepare a complete runtime patch-file manifest and establish Git through operation git_setup, supplying the actual game version, manifest, and untranslated-source attestation after inspecting the game. Existing baselines and branches must be reused. Never place English on original. The helper retains a second prepared-source snapshot for source mappings. Do not invent a source release number; use initial-unversioned when no official label exists. Then prove the delivery path with the skill's canary before bulk translation: write a few visible strings through the real injection path, verify that they read back from the installed files and survive the engine's round trip, read the window title with a script where the engine allows, and restore the game byte for byte. Looking at the running game is optional; if you cannot capture it, record the visual check as pending and continue.
 4. Complete the shared setup investigation and independently audit the source inventory, including plugins/scripts, dynamic text, and images in scope. Keep glossary, context and voice guidance in their shared files; preserve user edits. Mark coverage provisional until the inventory is audited.
 5. Save a version-2 source-bound request plan using the format returned by plan-format. Classify every source ID in kinds as dialogue, narration, ui, or unknown when evidence cannot establish the text type. Supply a complete speakers map: use an evidenced name or null for unknown/inapplicable speakers; UI always has a null speaker. Never inherit the previous speaker or infer identity or gender from speech style. Unknown speakers are valid and do not block translation. Group coherent exchanges; include relevant Japanese from the same scene/event branch, scene/context notes and runtime substitution meanings, field instruction keys, and explicit engine-specific protected tokens/layout bounds. Resolve subjects and addressees separately from the speaker; preserve voice supported by the Japanese without inventing an identity. Add qa_notes keyed by source ID only for concrete uncertainty that could change meaning, gender, perspective or a plot fact. State the ambiguity and evidence to check; do not flag every unknown speaker or turn guesses into established facts. Declare immutable source exports as inputs, not a store whose translation fields change while you work. Tracked game-source files bind to original so ordinary English injection does not invalidate their source. Use compile --input <project-relative plan>. The helper supplies the same compiled context and validators in every mode. For API work, respect the configured request size and include source overlap when an exchange spans requests.
-6. Agent Translation: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. DazedTL makes no translation API calls in this mode. Follow the user's delegation instructions.
-7. Live/Batch API Translation: inspect the exact compiled request and quote. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. Poll run for status; resume saved jobs with start --run <id>. Never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
+6. Assistant only: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. DazedTL makes no translation API calls in this mode. Follow the user's delegation instructions.
+7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the exact compiled request and quote. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask for its approval; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
 8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Inspect each request's qa_notes and check flagged lines against surrounding source, relevant script branches or the installed scene. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Review accepted requests with review only after actually checking them and their flagged ambiguities against the source; fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.
 9. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved or excluded content explicitly.
 10. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
@@ -382,7 +412,7 @@ For official updates, use stage_update with the new official folder/version to p
 
 Use backups to list restore points, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
 
-Finish the local delivery or record a concrete blocker and exact next action. Continue automatically across routine phases.
+Finish the local delivery. Stop early only for a question from the list above, recorded as the blocker with the exact next action; continue automatically across every routine phase.
 
 Additional project instructions:
 {instructions}

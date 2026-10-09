@@ -1508,6 +1508,20 @@ pre {
 .step-progress > li[data-state="current"]::before {
   background: var(--color-accent);
 }
+.step-progress > li[data-state="blocked"] {
+  color: var(--color-text);
+}
+.step-progress > li[data-state="blocked"]::before {
+  background: var(--color-error-text);
+}
+.step-progress > li > small {
+  font-size: var(--font-small);
+  font-weight: var(--weight-regular);
+  color: var(--color-muted);
+}
+.step-progress > li[data-state="blocked"] > small {
+  color: var(--color-error-text);
+}
 /* Described choices: each option is a card, the chosen one accent-subtle. */
 .option-cards {
   display: grid;

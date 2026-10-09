@@ -23,6 +23,12 @@ Doing it first costs ten minutes and it does not need the API at all.
 mechanical rather than a screenshot you squint at. A window title is ideal:
 `Get-Process <player> | Select MainWindowTitle` answers it from a script.
 
+If you cannot capture or see the game window, the mechanical checks are the
+canary: the strings read back from the installed files, survive the engine's
+round trip, and show in a scripted window-title read where the engine allows.
+Record the visual look as pending in `status.md` and continue; do not stop the
+run or ask the user to look.
+
 It earns its place on the first run. On a Bakin game the canary changed
 `GameSettings.meta.title` and the title bar stayed Japanese - because the window
 title comes from `GameSettings.name`, a *different* field holding the *same*

@@ -117,7 +117,9 @@ class WorkflowTests(unittest.TestCase):
         )
         self.identity = self.record["id"]
         self.project = ProjectWorkspace(self.game)
-        self.project.save("new", {**DEFAULTS, "include_images": False})
+        self.project.save(
+            self.project.read()["revision"], {**DEFAULTS, "include_images": False}
+        )
         backup = snapshot(self.game, store_path(self.game), source_game=True)
         write_json(
             lifecycle_path(self.profile, self.identity),
@@ -155,6 +157,7 @@ class WorkflowTests(unittest.TestCase):
             _connection=Settings._connection,
             _configured=Settings._configured,
             model_defaults=lambda *_args, **_kwargs: {},
+            translation_defaults=lambda: {"batch_supported": True},
             adapter=SimpleNamespace(
                 allow_providers=False,
                 running=lambda: False,

@@ -1,4 +1,4 @@
-# API Batch Translation within one run
+# API Batch within one run
 
 DazedTL's API Settings own provider/model/credentials, and Batches owns supported persisted jobs.
 The same starting prompt covers preparation, cost review, submission, collection, QA and local delivery.
@@ -65,5 +65,6 @@ Historical `llm-pipeline.md` examples need adaptation to this contract and curre
 A transport success is not an accepted translation: validate and save the returned units before counting them.
 Record submitted/completed/failed request counts and provider wait status separately from translated/reviewed source-unit counts.
 Provider request counters can remain unchanged while work is running; they do not establish completion percentage or a delivery ETA.
-Before provider waits, save progress and job IDs, explain the next checkpoint, and poll/resume within the assistant session's capabilities.
+Before provider waits, save progress and job IDs and explain the next checkpoint.
+Wait with the helper's `run --wait` instead of frequent polling, and continue independent work while the provider works.
 Reconcile usage after collection and estimate remaining retries before additional paid work; keep within the user's authorization.

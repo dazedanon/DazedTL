@@ -9,19 +9,27 @@ from .files import digest, project_path, read_json
 WORK = ".dazedtl/len-method"
 MODES = {"agent", "live", "batch"}
 DEFAULTS = {
-    "mode": "agent",
+    "mode": "batch",
     "instructions": "",
     "include_images": True,
     "include_glossary_base": True,
     "install_forge": True,
+    "thorough_investigation": False,
 }
+# Options added after workflow.json shipped, which older files and drafts lack.
+ADDED = {"thorough_investigation": False}
+# How the assistant works rather than what it translates, so changing one keeps
+# saved runs and their quotes current.
+METHOD = {"mode", "thorough_investigation"}
 
 
 def options(value):
+    if isinstance(value, dict):
+        value = {**ADDED, **value}
     if not isinstance(value, dict) or set(value) != set(DEFAULTS):
         raise ValueError("Invalid translation project options.")
     if not isinstance(value["mode"], str) or value["mode"] not in MODES:
-        raise ValueError("Choose Agent, Live API, or API Batch Translation.")
+        raise ValueError("Choose API Batch, Live API or Assistant only.")
     if (
         not isinstance(value["instructions"], str)
         or len(value["instructions"].encode("utf-8")) > 100_000
@@ -29,14 +37,19 @@ def options(value):
         raise ValueError("Keep project instructions below 100 KB.")
     if any(
         type(value[key]) is not bool
-        for key in ("include_images", "include_glossary_base", "install_forge")
+        for key in (
+            "include_images",
+            "include_glossary_base",
+            "install_forge",
+            "thorough_investigation",
+        )
     ):
         raise ValueError("Project scope choices must be enabled or disabled.")
     return dict(value)
 
 
 def scope(value):
-    return digest({key: item for key, item in value.items() if key != "mode"})
+    return digest({key: item for key, item in value.items() if key not in METHOD})
 
 
 class ProjectWorkspace:
@@ -46,7 +59,10 @@ class ProjectWorkspace:
             raise ValueError("Choose a game folder.")
         self.path = project_path(self.root, WORK + "/workflow.json", exists=False)
 
-    def read(self):
+    def read(self, mode="batch"):
+        """The saved options; a new project starts in `mode`, the API mode the
+        active connection can run, and its revision names that default so a
+        clean view follows when the default changes."""
         if self.path.exists():
             raw = self.path.read_bytes()
             value = read_json(self.path, limit=200_000)
@@ -56,7 +72,7 @@ class ProjectWorkspace:
                 )
             selected = options(value.get("options"))
             return {"options": selected, "revision": digest(raw), "initialized": True}
-        selected = dict(DEFAULTS)
+        selected = {**DEFAULTS, "mode": mode}
         legacy = project_path(self.root, WORK + "/project.json", exists=False)
         if legacy.exists():
             old = read_json(legacy, limit=200_000)
@@ -72,11 +88,15 @@ class ProjectWorkspace:
             selected.update(
                 {key: old[key] for key in selected if key != "mode" and key in old}
             )
-            selected["mode"] = "agent" if old["mode"] == "local" else "batch"
-        return {"options": options(selected), "revision": "new", "initialized": False}
+            selected["mode"] = "agent" if old["mode"] == "local" else mode
+        return {
+            "options": options(selected),
+            "revision": "new:" + selected["mode"],
+            "initialized": False,
+        }
 
-    def save(self, revision, selected):
-        before = self.read()
+    def save(self, revision, selected, mode="batch"):
+        before = self.read(mode)
         if revision != before["revision"]:
             raise ValueError("Project options changed elsewhere. Reload before saving.")
         value = options(selected)

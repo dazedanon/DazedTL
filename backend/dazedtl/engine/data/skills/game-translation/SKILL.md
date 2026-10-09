@@ -31,9 +31,11 @@ task selection, manual file transfer or permission to continue at routine phase 
 Explicitly narrower user instructions, such as preparation only or a targeted correction,
 still define the scope; a legacy project.json task label does not.
 
-Continue until the local delivery is verified or a concrete blocker needs user input.
-Ask only for missing information or authorization that materially blocks progress;
-finish independent work while waiting. In API mode, handle cost review in the same
+Continue until the local delivery is verified or a question only the user can answer
+blocks progress: spending approval, a missing API connection, denied access, or a decision
+no source evidence settles. Never ask for routine confirmations or for checks you can make
+yourself; record a check you cannot make, such as a screenshot, as pending and continue.
+Finish independent work before asking. In API mode, handle cost review in the same
 conversation and carry forward valid spending authorization. Do not ask the user to
 return to the app to estimate requests or copy a second prompt. Resume after the answer.
 When a session or environment limit forces a handoff, save exact next actions and current
@@ -155,7 +157,7 @@ equivalent source and injection sidecars in the separately backed-up workspace w
 
 ## Select the work mode before translation
 
-The handoff explicitly names **Agent Translation** or **API Batch Translation**.
+The handoff explicitly names **Assistant only**, **Live API** or **API Batch**.
 Keep that choice visible in the opening update and resume notes.
 Direct work uses the coding assistant's access and plan limits; DazedTL makes no translation API calls.
 Follow the user's delegation instructions and read `references/direct-workflow.md` for batching, context reuse and validation cadence.
@@ -186,6 +188,7 @@ Keep any justified restriction specific to the supported scene/participant rathe
 
 1. Detect the engine/build, read its reference, and inspect the relevant existing tools in `references/tools-catalog.md` before adapting a pipeline.
 2. Preserve the source and prove a small delivery canary before bulk translation.
+   Its mechanical checks are enough; a visual check you cannot make stays pending and never stops the run.
 3. Inventory player-facing text independently of the extractor, including plugin/script labels, runtime-generated text and authorized images.
    Keep stable occurrence IDs, source hashes, speaker/scene associations and an explicit unresolved/excluded ledger.
    Reconcile disputed or repeated exclusions with prior reviews and user corrections using `references/review-decisions.md` before changing scope.

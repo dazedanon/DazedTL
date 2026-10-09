@@ -129,12 +129,22 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 
 ## Assistant-led
 
-1. Choose a mode: **Agent Translation** (your assistant translates by itself), **Live API Translation** or **API Batch Translation** (your API key, with an estimate to approve).
+1. In **Options**, choose who translates:
+   - **API Batch** is recommended: your API key translates in one provider job, at half the Live price where the provider offers it.
+   - **Live API** sends one request at a time at the full price; new games start on it when your connection can't run Batch.
+   - **Assistant only** needs no API key, but your assistant translates every line itself, which uses far more of its plan.
+
+   The API modes need a connection in Settings, and your assistant asks you to approve its estimate before anything is sent.
 2. Set which images to include and any instructions for your assistant.
+   **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.
 3. **Copy starting prompt** and paste it into your assistant.
    It needs access to the game folder and the DazedTL folder.
+   It works on its own and asks you only when it must, such as to approve spending.
 4. Keep DazedTL open while it works.
-   The same prompt picks up saved work later.
+   **Progress** shows its phases, anything it needs from you and any API run.
+   If its reports stop, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
+
+Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 
 Follow progress and check the translations in the Project page's **History**.
 Notes beside a translation flag text the AI wasn't sure about; check them against the original.

@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from dazedtl.storage import write_json
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.jobs import RunStore
-from dazedtl.translation.project import ProjectWorkspace
+from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.requests import logical_request, plan_input, result_value
 from dazedtl.translation.results import Results
 from dazedtl.translation.runner import Runner
@@ -607,6 +607,23 @@ class TranslationTests(unittest.TestCase):
             project.save(value["revision"], value["options"])
         self.assertEqual(project.read(), saved)
         self.assertEqual(legacy.read_bytes(), original)
+        # Options saved before the investigation choice existed still open,
+        # and their saved runs keep the scope their quotes were bound to.
+        older = {
+            "mode": "batch",
+            "instructions": "Keep this",
+            "include_images": False,
+            "include_glossary_base": True,
+            "install_forge": False,
+        }
+        write_json(project.path, {"version": 1, "options": older})
+        value = project.read()
+        self.assertFalse(value["options"]["thorough_investigation"])
+        bound = digest({k: v for k, v in older.items() if k != "mode"})
+        self.assertEqual(scope(value["options"]), bound)
+        self.assertEqual(
+            scope({**value["options"], "thorough_investigation": True}), bound
+        )
 
     def test_project_paths_and_plan_constraints_reject_unsafe_inputs(self):
         for relative in (

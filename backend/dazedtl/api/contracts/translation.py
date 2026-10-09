@@ -14,6 +14,7 @@ class TranslationOptions(TypedDict):
     include_images: bool
     include_glossary_base: bool
     install_forge: bool
+    thorough_investigation: bool
 
 
 class ProjectOptions(TypedDict):
@@ -244,9 +245,9 @@ class TranslationState(ProjectOptions):
     active: bool
     warnings: list[str]
     statusText: str
-    handoff: str
     providerEnabled: bool
     connection: ConnectionSummary | None
+    batchSupported: bool
     legacyAvailable: bool
 
 

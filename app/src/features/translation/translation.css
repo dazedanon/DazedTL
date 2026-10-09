@@ -1,29 +1,31 @@
-/* The options form's own fields; features this page hosts, such as Image
-   Manager, keep their label layouts. */
+/* The Options tab's fieldset only disables its fields while work runs. */
 .lens-options {
   border: 0;
   padding: 0;
   margin: 0;
   min-width: 0;
 }
-.lens-options label {
-  display: block;
-  margin: var(--space-4) 0;
+.lens-options-note {
+  margin-top: 0;
+  max-width: var(--measure);
 }
-.lens-options label > input:not([type="checkbox"]),
-.lens-options label > select,
-.lens-options label > textarea {
-  display: block;
-  width: 100%;
-  margin-top: var(--space-2);
+.lens-options .translation-facts,
+.lens-options .notice {
+  margin-top: var(--space-4);
+}
+/* The mode in one line above the assistant's status, with its way back to
+   Options. */
+.translation-mode-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-4);
+  color: var(--color-label);
 }
 .lens-method > .banner {
   flex-shrink: 0;
   margin: var(--space-3) var(--frame-inline) 0;
-}
-/* A panel after a section keeps the section gap; its own border divides. */
-.lens-method .ui-section + .action-list {
-  margin-top: var(--section-gap);
 }
 /* The context editor fills the body above its footer. */
 .lens-context-body {
@@ -34,68 +36,34 @@
   flex-shrink: 0;
   margin-top: 0;
 }
-.lens-options label > textarea {
-  resize: vertical;
+/* Inside the assistant task panel a note leads the phases, which lead the
+   counts; an API run's counts open its body. */
+.lens-method .status-panel-body > .translation-metrics:first-child {
+  margin-top: 0;
 }
-.lens-method details {
-  margin: var(--space-4) 0;
+.lens-method .status-panel-body > .notice:first-child {
+  margin-top: 0;
 }
-.lens-method summary {
-  cursor: pointer;
-  color: var(--color-muted);
-}
-.translation-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-6);
-}
-.translation-connection {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin: var(--space-4) 0;
-}
-.translation-connection .translation-facts {
-  flex: 1 1 300px;
-  min-width: 0;
-  margin: 0;
-}
-.lens-options .translation-check {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-}
-.translation-check input {
-  margin: 0;
-}
-/* Phases sit inside the assistant task panel: one column each, with the
-   shared status mark beside its state. */
-.translation-phases {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.translation-phases > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.translation-phases > div > span {
-  font-size: var(--font-small);
-  color: var(--color-muted);
-}
-.translation-phases strong {
-  font-size: var(--font-control);
-  font-weight: var(--weight-medium);
+.lens-method .status-panel-body > .notice + .step-progress {
+  margin-top: var(--space-4);
 }
 .translation-metrics {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-7);
-  margin-top: var(--space-3);
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-control);
+}
+.translation-metrics + .action-control,
+.status-panel-body > .job-status-status {
+  margin-top: var(--space-4);
+}
+/* The page's panels stack with the section gap between them. */
+.lens-method .status-panel + .status-panel {
+  margin-top: var(--space-4);
+}
+.lens-method .status-panel + .lens-project-links {
+  margin-top: var(--space-4);
 }
 .translation-facts {
   display: grid;
@@ -178,17 +146,21 @@
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
 }
+/* In its dialog the report scrolls with the dialog body instead of a box. */
+.dialog-body > .translation-report {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  background: none;
+}
 .translation-path {
   overflow-wrap: anywhere;
 }
 .translation-batch-list {
   padding-left: var(--space-4);
   overflow-wrap: anywhere;
-}
-@media (max-width: 1000px) {
-  .translation-phases {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
 .version-panel,
@@ -330,8 +302,4 @@
   flex-wrap: wrap;
   gap: var(--space-4);
   margin-top: var(--space-3);
-}
-/* A choice is as wide as its options need; instructions stay wide. */
-.lens-options label > select {
-  max-width: 24rem;
 }
