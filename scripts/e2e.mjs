@@ -692,6 +692,13 @@ try {
   await step("Copy the checkout into a downloaded-ZIP folder", () => {
     const count = copyCheckout();
     makeGame();
+    // A check that just ran keeps the app from installing a newer public
+    // release over the files under test.
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(
+      path.join(profile, "updates.json"),
+      JSON.stringify({ checkedAt: new Date().toISOString() }),
+    );
     protocol = JSON.parse(
       fs.readFileSync(
         path.join(install, "backend/dazedtl/api/protocol.json"),

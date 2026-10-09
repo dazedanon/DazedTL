@@ -41,6 +41,7 @@
 - Skip tests for trivial wrappers, constants, exact wording, incidental CSS, source substrings, framework guarantees, and duplicated behavior.
 - Keep tests hermetic with small generated or committed fixtures; no real providers, user games, credentials, or local workspace dependencies.
 - The full test suite has a hard 10-second wall-clock budget, including runner startup, fixtures, and teardown; builds and dependency installation are separate.
+  CI's slower runners use the larger budgets set in its [workflow](.github/workflows/ci.yml).
 - Measure the full suite with `node scripts/test.mjs`, which prints its runtime, before adding or expanding tests; at 10 seconds or more, pause additions and ask the user to choose removing redundant tests, refactoring for speed, or increasing the limit.
 - If added coverage reaches the limit, report the overrun and present the same choices before proceeding with more tests.
 - Do not bypass the budget by silently deleting or skipping tests, splitting suites, weakening checks, or raising the limit.

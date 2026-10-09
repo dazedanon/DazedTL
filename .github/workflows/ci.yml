@@ -42,8 +42,8 @@ jobs:
       - run: node scripts/test.mjs
         env:
           # The runners are several times slower than a development machine,
-          # Windows most of all.
-          DAZEDTL_TEST_BUDGET: ${{ runner.os == 'Windows' && 300 || 60 }}
+          # Windows most of all; about twice their measured runtimes.
+          DAZEDTL_TEST_BUDGET: ${{ runner.os == 'Windows' && 180 || 30 }}
 
   live:
     name: Live test (${{ matrix.os }})
