@@ -29,7 +29,7 @@ from dazedtl.stdio import private_stdin
 from dazedtl.storage import WorkspaceLock
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
-from dazedtl.translation.service import Translation
+from dazedtl.translation.service import Translation, assistant_request
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
@@ -199,11 +199,26 @@ class Application:
                 project["engine"] = self.translation.engine.detect(project["source"])
                 if current["jobs"]:
                     job = current["jobs"][0]
-                    project.update(
-                        status=job["label"] + " · " + job["status"].replace("_", " "),
-                        detail=job["message"],
-                        operation=views.pick(job, ("label", "status", "message")),
+                    quote = (
+                        job["quote"]
+                        if not job["approved"]
+                        and job["status"] not in {"complete", "uncertain"}
+                        else None
                     )
+                    if quote:
+                        # A prepared run is not working; it waits for the user.
+                        project.update(
+                            status="Estimate needs your approval",
+                            detail=f"Approve the ${quote['cost']:.2f} estimate on Progress, or answer your assistant.",
+                        )
+                    else:
+                        project.update(
+                            status=job["label"]
+                            + " · "
+                            + job["status"].replace("_", " "),
+                            detail=job["message"],
+                            operation=views.pick(job, ("label", "status", "message")),
+                        )
                 elif current["progress"] and current["progress"].get("phase"):
                     project.update(
                         status="Last reported: " + current["progress"]["phase"],
@@ -767,9 +782,11 @@ def assistant_dispatch(app, dispatch):
     the user's assistant reached its project, whether or not it succeeds."""
 
     def run(name, params):
+        request = assistant_request.set(True)
         try:
             return dispatch(name, params)
         finally:
+            assistant_request.reset(request)
             if name.startswith("translation_") and not app.closing:
                 app.translation.contacted(params.get("project_id"))
 

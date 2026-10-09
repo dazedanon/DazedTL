@@ -55,6 +55,7 @@
   font-size: var(--font-control);
 }
 .translation-metrics + .action-control,
+.translation-cost-review + .action-control,
 .status-panel-body > .job-status-status {
   margin-top: var(--space-4);
 }

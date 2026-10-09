@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.api.server import assistant_dispatch
 from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
@@ -79,6 +80,10 @@ class Engine:
 
     def documents(self, _source):
         return {}
+
+    def prepare(self, source, _options, *, refresh=True):
+        self.refreshed = refresh
+        return {"skill": "SKILL.md", "setup": str(Path(source) / "setup.md")}
 
     def progress(self, _source, _options, report=None, **_kwargs):
         if report is not None:
@@ -389,6 +394,30 @@ class WorkflowTests(unittest.TestCase):
             self.service.progress(self.identity, path)
 
         report("Awaiting approval to spend $0.01.", "On approval: start the run.")
+        # An approval in the app is noted so Progress can remind the user to
+        # tell the assistant; one the assistant sends through the helper is not.
+        other = self.service.compile(self.identity, self.plan_path)
+        helper = assistant_dispatch(
+            SimpleNamespace(closing=False, translation=self.service),
+            lambda _name, params: self.service.start(**params),
+        )
+        with patch.object(self.service.jobs, "start"):
+            self.service.start(self.identity, run["id"], run["approval_token"])
+            helper(
+                "translation_start",
+                {
+                    "project_id": self.identity,
+                    "run_id": other["id"],
+                    "approval_token": other["approval_token"],
+                },
+            )
+        self.assertEqual(
+            [
+                bool(self.service.run(self.identity, item["id"])["app_approved_at"])
+                for item in (run, other)
+            ],
+            [True, False],
+        )
         # The worker's first report as the approved run starts.
         progress_report.refresh(
             self.profile, self.identity, self.engine, plan, started=True
@@ -403,6 +432,10 @@ class WorkflowTests(unittest.TestCase):
         self.service.jobs.store.save(job)
         lock = WorkspaceLock(self.service.jobs.store.folder(run["id"]))
         report("The hero's name is unclear.", "Reply with the hero's name.")
+        # The user can hand the prompt back to the assistant during the wait,
+        # without rewriting the guidance the run's frozen requests depend on.
+        self.assertIn("helper", self.service.prepare(self.identity)["handoff"])
+        self.assertFalse(self.engine.refreshed)
         lock.close()
         preview = self.service.request(self.identity, run["id"], 0)
         receipt = WORK + "/work/result.json"

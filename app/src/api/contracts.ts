@@ -864,6 +864,7 @@ export type TranslationJob = {
   quote: TranslationQuote | null;
   approval_token: string;
   approved: boolean;
+  app_approved_at: string | null;
   result: Record<string, unknown> | null;
   usage: Record<string, number>;
   counts: Record<string, number>;

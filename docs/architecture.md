@@ -522,6 +522,7 @@ New pages start from one of three templates: the task page (stepper, task tabs, 
 Compose shared UI primitives with design tokens; editing footers sit outside scrolling content.
 A dialog whose tabs hold panels of different heights stacks them with [StackedTabPanels](../app/src/ui/Tabs.tsx), so switching tabs keeps its size.
 Settings, the Project page and [Assistant-led](../app/src/features/translation/Translation.tsx) share the editor page model: a header, tabs, a scrolling body and a footer per tab; Assistant-led's Progress tab leads with the assistant's status and its Options tab holds the choices made before starting, its footers end with its starting-prompt copy, its context documents use the same DocumentEditor tabs as Guided guidance, and its Images tab hosts the same Image Manager as Guided.
+Its API run panel holds the assistant's estimate for approval, so approving spending never leaves Progress; while an estimate waits, its button is the page's one primary and the footer copy steps down.
 Every stylesheet loads through [index.css](../app/src/styles/index.css) in a cascade layer: tokens, base, shared UI, the app shell layout, then features.
 A feature's rules override shared primitives regardless of selector specificity, so add a new stylesheet there and keep selectors simple instead of raising specificity to win.
 Layouts must remain readable and usable across displays ranging from small laptop monitors to large 4K monitors or TVs.

@@ -77,6 +77,7 @@ class TranslationJob(TypedDict):
     quote: TranslationQuote | None
     approval_token: str
     approved: bool
+    app_approved_at: str | None
     result: dict[str, object] | None
     usage: dict[str, float]
     counts: dict[str, int]

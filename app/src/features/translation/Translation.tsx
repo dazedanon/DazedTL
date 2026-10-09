@@ -25,6 +25,7 @@ import type { ProjectLink } from "../guided/workspace/model";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { OptionsPanel } from "./OptionsPanel";
+import { apiRun, attemptJobs, awaitingQuote } from "./apiRun";
 import { ProgressPanel } from "./ProgressPanel";
 import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
@@ -122,7 +123,7 @@ function Workspace({
       await flushDrafts();
       setView(next);
     });
-  const copy = () =>
+  const copy = (key: string) =>
     action.run(
       async () => {
         await flushDrafts();
@@ -131,25 +132,38 @@ function Workspace({
         await window.dazedtl.copyText(result.handoff);
       },
       "Starting prompt copied. Paste it into your coding assistant to begin or resume.",
-      "copy",
+      key,
     );
   // The same prompt starts and resumes; once the assistant has reported,
   // copying it again resumes the saved work.
   const started = !!state.progress?.updated_at;
-  // The page's main action ends every tab's footer.
-  const copyControl = (variant: "primary" | "default" = "primary") => (
+  // An API run can wait hours at the provider, and the prompt hands its
+  // results back to the assistant; only an operation changing the game holds
+  // the prompt.
+  const operating = state.jobs.some(
+    (job) =>
+      job.kind === "operation" &&
+      ["running", "waiting", "interrupted"].includes(job.status),
+  );
+  const copyDisabled = operating || action.busy || draft.committing;
+  // The page's main action ends every tab's footer. A second copy, such as
+  // the API run's reminder, reports under its own key beside itself.
+  const copyControl = (
+    variant: "primary" | "default" = "primary",
+    key = "copy",
+  ) => (
     <ActionControl
       variant={variant}
       label={
         (draft.dirty ? "Save and copy" : "Copy") +
         (started ? " prompt to resume" : " starting prompt")
       }
-      disabled={disabled}
-      pending={action.busy && action.key === "copy"}
+      disabled={copyDisabled}
+      pending={action.busy && action.key === key}
       pendingText="Copying…"
-      error={action.key === "copy" ? action.error : ""}
-      notice={action.key === "copy" ? action.notice : ""}
-      onClick={() => void copy()}
+      error={action.key === key ? action.error : ""}
+      notice={action.key === key ? action.notice : ""}
+      onClick={() => void copy(key)}
     />
   );
   const saveOptions = () =>
@@ -200,7 +214,11 @@ function Workspace({
         />
       </div>
       <Message
-        message={["copy", "pause"].includes(action.key) ? "" : action.error}
+        message={
+          ["copy", "resume", "approve", "pause"].includes(action.key)
+            ? ""
+            : action.error
+        }
         onDismiss={action.clear}
       />
       {[...state.warnings, ...(state.progress?.warnings || [])].map(
@@ -220,10 +238,16 @@ function Workspace({
                 action={action}
                 openProject={openProject}
                 showOptions={() => void show("options")}
+                resume={copyControl("default", "resume")}
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
-              {copyControl()}
+              {/* An estimate waiting for approval holds the one primary. */}
+              {copyControl(
+                awaitingQuote(apiRun(attemptJobs(state)))
+                  ? "default"
+                  : "primary",
+              )}
             </ActionBar>
           </>
         )}

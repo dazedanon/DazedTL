@@ -131,7 +131,7 @@ class TranslationEngine:
 
         return valid_document_name(name)
 
-    def prepare(self, source, options):
+    def prepare(self, source, options, *, refresh=True):
         from util.len_progress import initialize_progress
         from util.len_translation import (
             BUNDLED_SKILL,
@@ -143,6 +143,12 @@ class TranslationEngine:
         from util.skills import load_generic_project_setup, load_project_setup
 
         project = self.project(source, options)
+        paths = {
+            "skill": str(BUNDLED_SKILL / "SKILL.md"),
+            "setup": str(project.workspace / "setup.md"),
+        }
+        if not refresh:
+            return paths
         _validate_skill(BUNDLED_SKILL)
         shared = shared_context(project)
         _prepare_local_work(project)
@@ -168,10 +174,7 @@ class TranslationEngine:
         write_json(project.workspace / "context.json", shared)
         write_bytes(project.workspace / "setup.md", setup.encode("utf-8"))
         initialize_progress(project)
-        return {
-            "skill": str(BUNDLED_SKILL / "SKILL.md"),
-            "setup": str(project.workspace / "setup.md"),
-        }
+        return paths
 
     def progress(self, source, options, report=None, *, verify=False):
         from util.len_progress import read_progress, update_progress

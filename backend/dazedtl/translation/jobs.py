@@ -148,7 +148,7 @@ class RunStore:
         self.save(job)
         return job
 
-    def authorize(self, job):
+    def authorize(self, job, *, in_app=False):
         if job["quote"] is None:
             raise ValueError("API authorization requires a concrete quote.")
         key = self.root.parent / "approval.key"
@@ -167,6 +167,10 @@ class RunStore:
             key.read_bytes(), digest(receipt).encode("ascii"), hashlib.sha256
         ).hexdigest()
         write_json(self.folder(job["id"]) / "authorization.json", receipt)
+        # The assistant learns of an approval given in the app only when it
+        # next reaches the project, so Progress reminds the user until then.
+        if in_app:
+            job["app_approved_at"] = receipt["approved_at"]
         job["approved"] = True
         self.save(job)
 
@@ -273,6 +277,7 @@ class RunStore:
             "action": job.get("action"),
             "counts": counts,
             "approved": self.authorized(job),
+            "app_approved_at": job.get("app_approved_at"),
             "units": sum(job["unit_counts"].values()),
             "accepted_units": sum(
                 count

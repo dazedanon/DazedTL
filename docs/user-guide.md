@@ -143,6 +143,8 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    It works on its own and asks you only when it must, such as to approve spending.
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
+   When your assistant asks you to approve an API estimate, answer it or use **Approve** on **Progress**.
+   If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
 5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
    It puts back the original game files and moves the attempt to `.dazedtl/archived`; backups, save games, Image Manager work and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.

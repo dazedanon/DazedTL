@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type {
   TranslationJob,
@@ -6,6 +6,7 @@ import type {
   TranslationProgress,
   TranslationState,
 } from "../../api/contracts";
+import { flushDrafts } from "../../state/leaveGuards";
 import { useMinute } from "../../state/useMinute";
 import type { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
@@ -19,7 +20,9 @@ import { StatusPanel } from "../../ui/StatusPanel";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { StepProgress, type StepState } from "../../ui/StepProgress";
+import { TranslationCost } from "../guided/TranslationReview";
 import type { ProjectLink } from "../guided/workspace/model";
+import { apiRun, attemptJobs, awaitingQuote } from "./apiRun";
 import { modeLabels } from "./OptionsPanel";
 import { StartOver } from "./StartOver";
 
@@ -65,12 +68,15 @@ export function ProgressPanel({
   action,
   openProject,
   showOptions,
+  resume,
 }: {
   state: TranslationState;
   options: TranslationOptions;
   action: ReturnType<typeof useAction>;
   openProject: ProjectLink;
   showOptions: () => void;
+  /** Copies the prompt that hands the work back to the assistant. */
+  resume: ReactNode;
 }) {
   const now = useMinute();
   const [report, setReport] = useState(false);
@@ -87,15 +93,8 @@ export function ProgressPanel({
   const quiet =
     status === "waiting" &&
     now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
-  // Runs before the last start over belong to the attempt set aside; Run
-  // history keeps them.
-  const since = state.lifecycle.started_over?.at;
-  const attempt = state.jobs.filter(
-    (job) => !since || Date.parse(job.created) > Date.parse(since),
-  );
-  const run = attempt.find(
-    (job) => job.kind === "translation" && job.mode !== "agent",
-  );
+  const attempt = attemptJobs(state);
+  const run = apiRun(attempt);
   const operation = attempt.find(
     (job) =>
       job.kind === "operation" &&
@@ -188,7 +187,7 @@ export function ProgressPanel({
         {operation && <JobStatus job={operation} />}
       </AssistantTask>
       {(options.mode !== "agent" || run) && (
-        <ApiRun run={run} projectId={state.projectId} action={action} />
+        <ApiRun run={run} state={state} action={action} resume={resume} />
       )}
       <div className="lens-project-links">
         {state.statusText && (
@@ -245,12 +244,14 @@ const runStates: Record<string, DisplayState> = {
 /** The latest API run the app holds for the assistant, with its spending. */
 function ApiRun({
   run,
-  projectId,
+  state,
   action,
+  resume,
 }: {
   run: TranslationJob | undefined;
-  projectId: string;
+  state: TranslationState;
   action: ReturnType<typeof useAction>;
+  resume: ReactNode;
 }) {
   if (!run)
     return (
@@ -260,40 +261,125 @@ function ApiRun({
         description="Your assistant asks you to approve its estimate before anything is sent."
       />
     );
+  const mode = run.mode === "live" ? "live" : "batch";
   const charged = run.usage.openrouter_cost;
+  // The user decides here or in the assistant's conversation.
+  const quote = awaitingQuote(run);
+  // The assistant learns of an approval given here only when it next uses
+  // DazedTL; until then it may still be waiting for an answer.
+  const untold =
+    !!run.app_approved_at &&
+    !(
+      state.assistantSeenAt &&
+      Date.parse(state.assistantSeenAt) >= Date.parse(run.app_approved_at)
+    );
+  const reminder = ["running", "waiting"].includes(run.status)
+    ? "tell your assistant you approved this run here, so it waits for the results and carries on."
+    : run.status === "complete"
+      ? "tell your assistant this run has finished, so it carries on."
+      : "tell your assistant you approved this run here, so it checks the run and carries on.";
+  const pause = ["running", "waiting"].includes(run.status) && (
+    <ActionControl
+      label={run.stop_requested ? "Pausing" : "Pause at the next safe point"}
+      disabled={action.busy || run.stop_requested}
+      pending={action.busy && action.key === "pause"}
+      pendingText="Pausing…"
+      error={action.key === "pause" ? action.error : ""}
+      onClick={() =>
+        void action.run(
+          () => api.translation.stop(state.projectId, run.id),
+          "",
+          "pause",
+        )
+      }
+    />
+  );
   return (
     <StatusPanel
       title="API run"
-      state={runStates[run.status] || "blocked"}
-      progress={modeLabels[run.mode || "batch"]}
-      description={run.message}
+      state={quote ? "needs_review" : runStates[run.status] || "blocked"}
+      progress={modeLabels[mode]}
+      description={
+        quote
+          ? "Nothing is sent until you approve this estimate, here or in your assistant's conversation."
+          : run.message
+      }
     >
       <div className="status-panel-body">
-        <p className="translation-metrics">
-          <span>
-            <strong>{run.accepted_units.toLocaleString()}</strong> of{" "}
-            {run.units.toLocaleString()} lines saved
-          </span>
-          {run.quote && <span>Estimate {money(run.quote.cost)}</span>}
-          {charged != null && <span>Charged {money(charged)}</span>}
-        </p>
-        {["running", "waiting"].includes(run.status) && (
-          <ActionControl
-            label={
-              run.stop_requested ? "Pausing" : "Pause at the next safe point"
-            }
-            disabled={action.busy || run.stop_requested}
-            pending={action.busy && action.key === "pause"}
-            pendingText="Pausing…"
-            error={action.key === "pause" ? action.error : ""}
-            onClick={() =>
-              void action.run(
-                () => api.translation.stop(projectId, run.id),
-                "",
-                "pause",
-              )
-            }
-          />
+        {quote ? (
+          <>
+            <TranslationCost
+              value={{
+                requests: quote.requests,
+                input_tokens: quote.input_tokens,
+                output_tokens: quote.output_tokens,
+                [mode === "batch" ? "batch_cost" : "live_cost"]: quote.cost,
+              }}
+              mode={mode}
+            />
+            {mode === "batch" && quote.provider === "openrouter" && (
+              <Notice>
+                OpenRouter uses a 24-hour window, and a submitted Batch cannot
+                be canceled through this app.
+              </Notice>
+            )}
+            <ActionControl
+              variant="primary"
+              label={
+                mode === "batch"
+                  ? "Approve and submit Batch"
+                  : "Approve and start Live"
+              }
+              disabled={action.busy || state.active || !state.providerEnabled}
+              disabledReason={
+                !state.providerEnabled
+                  ? "Provider execution is off for this launch."
+                  : state.active
+                    ? "Another run is still working."
+                    : ""
+              }
+              pending={action.busy && action.key === "approve"}
+              pendingText={mode === "batch" ? "Submitting…" : "Starting…"}
+              error={action.key === "approve" ? action.error : ""}
+              onClick={() =>
+                void action.run(
+                  async () => {
+                    await flushDrafts();
+                    await api.translation.start(
+                      state.projectId,
+                      run.id,
+                      run.approval_token,
+                    );
+                  },
+                  "",
+                  "approve",
+                )
+              }
+            />
+          </>
+        ) : (
+          <>
+            <p className="translation-metrics">
+              <span>
+                <strong>{run.accepted_units.toLocaleString()}</strong> of{" "}
+                {run.units.toLocaleString()} lines saved
+              </span>
+              {run.quote && <span>Estimate {money(run.quote.cost)}</span>}
+              {charged != null && <span>Charged {money(charged)}</span>}
+            </p>
+            {pause}
+            {untold && (
+              <>
+                <Notice tone="warning">
+                  <span>
+                    <strong>Needs you:</strong> {reminder} If its session has
+                    ended, paste the prompt into a new one.
+                  </span>
+                </Notice>
+                {resume}
+              </>
+            )}
+          </>
         )}
       </div>
     </StatusPanel>
