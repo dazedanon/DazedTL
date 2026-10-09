@@ -15,7 +15,7 @@ import { FieldRow } from "../../ui/FieldRow";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
-import { versionSession } from "./versionState";
+import { updateSummary, versionSession } from "./versionState";
 import { displayText } from "../../ui/displayText";
 
 export function VersionsPanel({
@@ -263,10 +263,11 @@ export function VersionsPanel({
           </ActionSlot>
         </Section>
       ) : preview && !session.stale ? (
-        <Section title={`Review update to ${resultVersion}`}>
-          <p>
-            Review how this release affects the working game before applying it.
-          </p>
+        <Section
+          title={`Review update to ${resultVersion}`}
+          hint={updateSummary(preview.result!)}
+          className="version-review"
+        >
           <VersionChanges value={preview.result!} />
           <ActionSlot target={actionTarget}>
             {session.stage && (

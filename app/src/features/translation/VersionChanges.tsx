@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { VirtualList } from "../../ui/VirtualList";
-import { updateCounts } from "./versionState";
 import { displayText } from "../../ui/displayText";
 
 const paths = (value: unknown): string[] =>
@@ -23,7 +22,6 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
     String(row.path).toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
   const overlap = paths(value.overlapping_paths);
-  const counts = updateCounts(value);
   const warnings = [
     ...paths(value.json_warnings),
     ...rows(value.image_changes)
@@ -32,22 +30,6 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
   ];
   return (
     <div className="version-changes">
-      <dl className="version-counts">
-        {(
-          [
-            ["Added", counts.added],
-            ["Changed", counts.changed],
-            ["Removed", counts.removed],
-          ] as const
-        )
-          .filter(([, count]) => count)
-          .map(([label, count]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{count}</dd>
-            </div>
-          ))}
-      </dl>
       {!!overlap.length && (
         <p>
           {overlap.length} changed{" "}
@@ -62,14 +44,13 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
       ))}
       {!!changes.length && (
         <>
-          <label className="version-search">
-            Find a changed file
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filename or path"
-            />
-          </label>
+          <input
+            className="version-search"
+            aria-label="Find a changed file"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Find a changed file"
+          />
           <div className="version-file-list">
             <VirtualList
               items={filtered}
@@ -79,14 +60,14 @@ export function VersionChanges({ value }: { value: Record<string, unknown> }) {
             >
               {(row) => (
                 <div className="version-file">
-                  <div>
-                    <strong>{String(row.path)}</strong>
-                    <span>{String(row.change)}</span>
-                  </div>
-                  <p>
+                  <strong>{String(row.path)}</strong>
+                  <span className="version-file-result">
                     {displayText(row.result) ||
                       "Review this file after updating."}
-                  </p>
+                  </span>
+                  <span className="version-file-change">
+                    {String(row.change)}
+                  </span>
                 </div>
               )}
             </VirtualList>

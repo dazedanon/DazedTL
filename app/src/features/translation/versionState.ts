@@ -29,6 +29,20 @@ export function updateCounts(value: Record<string, unknown>) {
       assets.filter((row) => row.change === "Removed").length,
   };
 }
+/** The update's added, changed and removed file counts in words, without zeros. */
+export function updateSummary(value: Record<string, unknown>) {
+  const counts = updateCounts(value);
+  return (
+    [
+      ["added", counts.added],
+      ["changed", counts.changed],
+      ["removed", counts.removed],
+    ] as const
+  )
+    .filter(([, count]) => count)
+    .map(([label, count]) => `${count.toLocaleString()} ${label}`)
+    .join(" · ");
+}
 
 /** Only the latest preparation attempt can supply the update offered for review. */
 export function versionSession(

@@ -169,7 +169,7 @@
   min-width: 0;
 }
 .version-purpose {
-  margin-top: 0;
+  margin-block: 0;
 }
 .version-current {
   display: flex;
@@ -215,8 +215,7 @@
 .version-form > :is(.field-row, .check-field) + :is(.field-row, .check-field) {
   margin-top: 0;
 }
-.version-form > label,
-.version-search {
+.version-form > label {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
@@ -246,48 +245,77 @@
   gap: var(--space-2);
   align-items: flex-start;
 }
-.version-counts {
+/* A reviewed update fills the tab: its file list takes the height the page
+   has left and keeps a few rows on short windows, where the body scrolls. */
+.page-body:has(.version-review) {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-6);
-  margin: var(--space-4) 0;
+  flex-direction: column;
 }
-.version-counts > div {
+.page-body > .version-panel:has(.version-review),
+.version-review,
+.version-changes {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+  flex-direction: column;
+  flex: 1 0 0;
 }
-.version-counts dt {
-  color: var(--color-muted);
+.version-panel:has(.version-review) > .version-current {
+  margin-bottom: 0;
 }
-.version-counts dd {
-  margin: 0;
-  font-weight: var(--weight-semibold);
+.version-panel:has(.version-review) > button {
+  align-self: flex-start;
+  margin-top: var(--space-3);
+}
+.version-changes > p {
+  margin: 0 0 var(--space-3);
+}
+.version-search {
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 var(--space-3);
 }
 .version-file-list {
   display: flex;
   flex-direction: column;
-  max-height: min(20em, 45dvh);
-  margin-block: var(--space-3);
-  border-block: 1px solid var(--color-border);
+  flex: 1 1 0;
+  min-height: 8lh;
+  border-top: 1px solid var(--color-border);
 }
+/* A row reads path, result and change on one line when the panel is wide,
+   and puts the result under the path when it is narrow. */
 .version-file {
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-.version-file > div {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: var(--space-3);
-  justify-content: space-between;
+  gap: 0 var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 45%, transparent);
 }
 .version-file strong {
   overflow-wrap: anywhere;
   font-weight: var(--weight-medium);
 }
-.version-file p {
-  margin: var(--space-2) 0 0;
+.version-file-change {
+  grid-column: 2;
+  grid-row: 1;
+  text-align: end;
+}
+.version-file-result {
+  grid-column: 1 / -1;
   color: var(--color-muted);
+}
+@container (min-width: 52em) {
+  .version-file {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) 6em;
+  }
+  .version-file-result {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .version-file-change {
+    grid-column: 3;
+  }
 }
 @container (max-width: 30em) {
   .version-folder {
