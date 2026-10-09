@@ -967,6 +967,7 @@ MinGit's system config sets `core.autocrlf=true` as a Git for Windows install do
 The launcher puts its Node and, on Windows, that Git first on the app's `PATH`, since the backend validates plugin scripts with `node` and runs `git`.
 Detached launches log Electron's output to a temporary file and wait for its "shown" line, so the console stays open with the error when the app fails to start.
 Shortcuts are written once per folder location, and a deleted desktop shortcut stays deleted.
+A second install leaves them with the install they open while that one is still there and not older, and asks again on each start.
 Ubuntu's AppArmor rules block the Chromium sandbox of unregistered binaries, so the launcher stops with a one-time profile command instead of letting Electron exit silently.
 
 A release is a `v` tag on every mirror in [mirrors.json](../release/mirrors.json), whose commit carries `release/manifest.json`, the SHA-256 of every tracked file, signed with Ed25519 in `release/manifest.sig`.
