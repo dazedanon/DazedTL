@@ -3,12 +3,15 @@
 Works on YPF archives and YSTB scripts that yuris_decompiler reads, including
 YPF 500 and YSTB 555. Requires `pip install murmurhash2`.
 
-  yuris_text.py unpack  <archive.ypf> <out dir>
-  yuris_text.py key     <ybn dir>
-  yuris_text.py strings <ybn dir>
-  yuris_text.py units   <ybn dir> <units.json> [<command.argument> ...]
-  yuris_text.py patch   <ybn dir> <translations.json> <out ybn dir>
-  yuris_text.py pack    <original.ypf> <changed ybn dir> <out.ypf>
+  yuris_text.py unpack    <archive.ypf> <out dir>
+  yuris_text.py key       <ybn dir>
+  yuris_text.py decompile <ybn dir> <out dir>
+  yuris_text.py strings   <ybn dir>
+  yuris_text.py units     <ybn dir> <units.json> [<command.argument> ...]
+  yuris_text.py patch     <ybn dir> <translations.json> <out ybn dir>
+  yuris_text.py pack      <original.ypf> <changed ybn dir> <out.ypf>
+
+`decompile` writes the scripts' YST source as UTF-8, for DazedTL's census.
 
 Text lines are the scripts' WORD commands. Japanese string literals in
 command arguments, such as choices, character names or confirmation
@@ -26,7 +29,9 @@ reproduces the archive exactly.
 """
 
 import collections
+import contextlib
 import functools
+import io
 import json
 import re
 import struct
@@ -36,6 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "yuris_decompiler"))
 from murmurhash2 import murmurhash2  # noqa: E402
+from yurislib import y_decompile  # noqa: E402
 from yurislib.fileformat import (  # noqa: E402
     YPF,
     YSCM,
@@ -232,6 +238,14 @@ def patch(ybn, translations, out):
     print(patched, "arguments patched")
 
 
+def decompile(ybn, out):
+    # The decompiler prints every script path, which a Windows console's
+    # code page can't encode.
+    with contextlib.redirect_stdout(io.StringIO()) as log:
+        y_decompile(str(ybn), str(out), None, key(str(Path(ybn))), o_encoding="utf-8")
+    print(sum(1 for line in log.getvalue().splitlines() if line[:1].isdigit()), "scripts decompiled")
+
+
 def unpack(archive, out):
     with open(archive, "rb") as handle:
         YPF(handle).extract(out, log=None)
@@ -264,8 +278,14 @@ def pack(original, changed, out):
 
 
 if __name__ == "__main__":
+    # Japanese text and paths print as UTF-8 whatever the console's code page.
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8", errors="replace")
     command, *rest = sys.argv[1:] or ["help"]
-    commands = {"unpack": unpack, "strings": strings, "units": units, "patch": patch, "pack": pack}
+    commands = {
+        "unpack": unpack, "decompile": decompile, "strings": strings,
+        "units": units, "patch": patch, "pack": pack,
+    }
     if command == "key":
         print(hex(key(str(Path(*rest)))))
     elif command in commands:

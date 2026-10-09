@@ -19,7 +19,7 @@ Grouped because each is a smaller, archive-centric pipeline: **unpack archive â†
   `tools/Game Archives/YU-RIS YPF-YSTB/` and the `ypf_*`/`ystb_*` scripts beside it are Elfhime-specific (YPF 0x1E7, a fixed script key) and fail on other games.
   `tools/C++/Yuris/` also holds locale, font, speaker, nameplate and inpainting patches.
 - **Key:** YSTB scripts are XOR-encrypted with a per-game key; `yuris_text.py key` reads it from the scripts, since the first argument's offset is always zero.
-- **Flow:** `unpack` the archive holding `ysbin` (usually `pac/ysbin.ypf` or `data.ypf`), decompile with `yurislib.y_decompile(<ybn dir>, <out dir>, None, <key>, o_encoding="utf-8")` into a folder in the game for `census --decoded`, then `units`, `patch` and `pack`.
+- **Flow:** `unpack` the archive holding `ysbin` (usually `pac/ysbin.ypf` or `data.ypf`), `decompile` into a folder in the game for `census --decoded`, then `units`, `patch` and `pack`.
   The census reads archive indexes itself, so archives of only pictures, sound or video need no decoding.
 - **Text outside dialogue:** choices, character names, dialogs and messages are string literals in command arguments. `yuris_text.py strings` lists them by selector such as `GOSUB[ES.SEL.SET].PSTR`; pass the selectors holding player text to `units`.
   The rest, such as sound labels, file paths and values compared in `IF`, is script code: set it aside with scope rules, using `values` for words that also appear in text.
