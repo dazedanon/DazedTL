@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
@@ -149,3 +150,36 @@ class WorkspaceLock:
 
     def close(self):
         self.handle.close()
+
+
+@contextmanager
+def exclusive(path):
+    """Holds an exclusive lock on path, waiting while another thread or
+    process holds it."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
+
+            if not path.stat().st_size:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            # Closing the handle releases the lock.
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield

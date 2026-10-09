@@ -12,8 +12,8 @@ from unittest.mock import patch
 from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
 from dazedtl.settings.store import Settings
-from dazedtl.storage import write_json
-from dazedtl.translation import delivery
+from dazedtl.storage import WorkspaceLock, write_json
+from dazedtl.translation import delivery, progress_report
 from dazedtl.translation.backups import materialized, snapshot, store_path
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
@@ -366,6 +366,68 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(
                 (self.game / (WORK + "/progress.json")).read_bytes(), before
             )
+
+    def test_an_api_run_answers_its_approval_and_keeps_later_questions(self):
+        selected = self.project.read()
+        self.service.save(
+            self.identity, selected["revision"], {**selected["options"], "mode": "live"}
+        )
+        run = self.service.compile(self.identity, self.plan_path)
+        job, plan = self.service.jobs.store.load(run["id"])
+        path = WORK + "/work/report.json"
+
+        def report(blocker, next_action):
+            write_json(
+                self.game / path,
+                {
+                    "phase": "translation",
+                    "phases": {"translation": "blocked"},
+                    "blocker": blocker,
+                    "next_action": next_action,
+                },
+            )
+            self.service.progress(self.identity, path)
+
+        report("Awaiting approval to spend $0.01.", "On approval: start the run.")
+        # The worker's first report as the approved run starts.
+        progress_report.refresh(
+            self.profile, self.identity, self.engine, plan, started=True
+        )
+        latest = self.engine.reports[-1]
+        self.assertEqual(
+            (latest["blocker"], latest["next_action"], latest["phases"]["translation"]),
+            ("", progress_report.NEXT_ACTION, "active"),
+        )
+        # A Batch can wait at the provider for hours; the assistant still reports.
+        job["status"] = "running"
+        self.service.jobs.store.save(job)
+        lock = WorkspaceLock(self.service.jobs.store.folder(run["id"]))
+        report("The hero's name is unclear.", "Reply with the hero's name.")
+        lock.close()
+        preview = self.service.request(self.identity, run["id"], 0)
+        receipt = WORK + "/work/result.json"
+        write_json(
+            self.game / receipt,
+            {
+                "request_sha256": preview["request"]["fingerprint"],
+                "translations": {"line": "Yes."},
+            },
+        )
+        self.service.accept(self.identity, run["id"], "scene", receipt)
+        latest = self.engine.reports[-1]
+        self.assertEqual(
+            (latest["blocker"], latest["next_action"], latest["phases"]),
+            (
+                "The hero's name is unclear.",
+                "Reply with the hero's name.",
+                {
+                    "translation": "blocked",
+                    "injection": "pending",
+                    "qa": "pending",
+                    "patch": "pending",
+                },
+            ),
+        )
 
     def test_backups_and_conflict_recovery_are_real_prerequisites(self):
         state = read_json(lifecycle_path(self.profile, self.identity))

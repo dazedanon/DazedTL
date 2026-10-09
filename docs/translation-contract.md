@@ -136,6 +136,8 @@ This does not authorize automatic retries or settle the older receipts.
 ## Delivery and future versions
 
 Use the maintained progress report format right after the first state read, after saved milestones and before waits or handoff.
+Reports are accepted while an API run is active, and refused only while an operation changes the game.
+Starting or resuming an API run clears the blocker the last report named, since the run answers it; a blocker reported during the run stays until a later report clears it.
 Counts describe saved units; extraction coverage, review, images, injection, runtime QA and packaging are separate evidence.
 Report unresolved and excluded material explicitly.
 A complete text count cannot complete QA.

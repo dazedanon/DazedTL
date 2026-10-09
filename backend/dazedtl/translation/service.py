@@ -10,7 +10,7 @@ from typing import Any
 from dazedtl.settings.execution import configuration, connection_summary
 from dazedtl.storage import write_bytes, write_json
 
-from . import backups, delivery
+from . import backups, delivery, progress_report
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
 from .helper_command import git_note, helper_command
@@ -139,8 +139,8 @@ class Translation:
     def options(self, project):
         return project.read(self.default_mode())
 
-    def idle(self, identity):
-        if self.jobs.running(identity):
+    def idle(self, identity, kind=None):
+        if self.jobs.running(identity, kind):
             raise ValueError(
                 "Pause this project's active operation before changing its inputs."
             )
@@ -791,30 +791,12 @@ Additional project instructions:
         return {"saved": True}
 
     def refresh_progress(self, project_id, plan):
-        verify_evidence(plan["source"], plan["evidence"])
-        self.engine.verify_bindings(plan["source"], plan["original_bindings"])
-        relative, changed = Results(plan["source"]).export(plan)
-        report_path = project_path(
-            plan["source"], WORK + "/progress-report.json", exists=False
-        )
-        report: dict[str, Any] = (
-            read_json(report_path) if report_path.exists() else {"phases": {}}
-        )
-        report.update(text=relative, inputs=list(plan["evidence"]))
-        if changed:
-            report.update(
-                phase="translation",
-                blocker="",
-                next_action="Continue remaining translations, then perform fitting, injection and QA.",
-            )
-            report.setdefault("phases", {}).update(
-                translation="active", injection="pending", qa="pending", patch="pending"
-            )
-        self.engine.progress(plan["source"], plan["options"], report)
-        write_json(report_path, report)
+        progress_report.refresh(self.workspace, project_id, self.engine, plan)
 
     def progress(self, project_id, input_path):
-        self.idle(project_id)
+        # An API run can wait hours at the provider while the assistant works
+        # on and reports; only operations change the game under a report.
+        self.idle(project_id, "operation")
         _record, project = self.project(project_id)
         report = read_json(project.artifact(input_path))
         if (
@@ -837,12 +819,14 @@ Additional project instructions:
                 **report,
                 "inputs": list(dict.fromkeys([*report.get("inputs", []), proof])),
             }
-        value = self.engine.progress(project.root, project.read()["options"], report)
-        write_json(
-            project_path(project.root, WORK + "/progress-report.json", exists=False),
+        return progress_report.publish(
+            self.workspace,
+            project_id,
+            self.engine,
+            project.root,
+            project.read()["options"],
             report,
         )
-        return value
 
     def operation(self, project_id, action, arguments):
         if action not in OPERATIONS:

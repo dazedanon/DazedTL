@@ -6,20 +6,19 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dazedtl.compatibility.translation import TranslationEngine, TranslationProvider
 from dazedtl.settings.execution import worker_secret
-from dazedtl.storage import WorkspaceError, WorkspaceLock, write_json
+from dazedtl.storage import WorkspaceError, WorkspaceLock
+from dazedtl.translation import progress_report
 from dazedtl.translation.compilation import verify_compilation
-from dazedtl.translation.files import project_path, read_json, verify_evidence
+from dazedtl.translation.files import verify_evidence
 from dazedtl.translation.jobs import RunStore
 from dazedtl.translation.operations import execute, lifecycle, require_baseline
 from dazedtl.translation.ownership import alive
-from dazedtl.translation.project import WORK, ProjectWorkspace, scope
-from dazedtl.translation.results import Results
+from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.runner import Runner
 
 
@@ -117,34 +116,13 @@ def run_locked(workspace, identity, store):
 
             last_report = 0.0
 
-            def progress(force=False):
+            def progress(force=False, started=False):
                 nonlocal last_report
                 if not force and time.monotonic() - last_report < 10:
                     return
-                verify_evidence(plan["source"], plan["evidence"])
-                engine.verify_bindings(plan["source"], plan["original_bindings"])
-                report_path = project_path(
-                    plan["source"], WORK + "/progress-report.json", exists=False
+                progress_report.refresh(
+                    workspace, job["project_id"], engine, plan, started=started
                 )
-                report: dict[str, Any] = (
-                    read_json(report_path) if report_path.exists() else {"phases": {}}
-                )
-                relative, changed = Results(plan["source"]).export(plan)
-                report.update(text=relative, inputs=list(plan["evidence"]))
-                if changed:
-                    report.update(
-                        phase="translation",
-                        blocker="",
-                        next_action="Continue saved work, then fit, inject and perform QA.",
-                    )
-                    report.setdefault("phases", {}).update(
-                        translation="active",
-                        injection="pending",
-                        qa="pending",
-                        patch="pending",
-                    )
-                engine.progress(plan["source"], plan["options"], report)
-                write_json(report_path, report)
                 last_report = time.monotonic()
 
             provider = TranslationProvider(
@@ -152,6 +130,10 @@ def run_locked(workspace, identity, store):
                 worker_secret(workspace, plan["configuration"]),
                 receipt_root=store.folder(identity),
             )
+            # A worker restarted only to cancel the provider batch does not
+            # answer anything the assistant is waiting on.
+            if not store.cancel_requested(identity):
+                progress(True, started=True)
             while True:
                 runner = Runner(store, identity, provider, current, progress)
                 runner.step()

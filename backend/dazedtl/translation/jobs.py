@@ -337,16 +337,20 @@ class Jobs:
                 )
                 self.store.save(value)
 
-    def running(self, project_id=None):
+    def running(self, project_id=None, kind=None):
+        """Whether a run or operation, or only one of the given kind, holds
+        the project."""
         self.reconcile()
-        if any(
-            project_id is None
-            or self.store.record(identity)["project_id"] == project_id
-            for identity in self.processes
-        ):
-            return True
+        for identity in self.processes:
+            record = self.store.record(identity)
+            if (project_id is None or record["project_id"] == project_id) and (
+                kind is None or record["kind"] == kind
+            ):
+                return True
         for job in self.store.list(project_id):
             if job["status"] not in {"running", "waiting", "interrupted"}:
+                continue
+            if kind is not None and job["kind"] != kind:
                 continue
             try:
                 lock = WorkspaceLock(self.store.folder(job["id"]))
