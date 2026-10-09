@@ -5,7 +5,9 @@
 Requires `pip install UnityPy TypeTreeGeneratorAPI`. Release builds strip
 MonoBehaviour type trees; the generator rebuilds them from the game's own
 assemblies (Managed/*.dll for Mono, GameAssembly + global-metadata.dat for
-IL2CPP), so every MonoBehaviour reads as JSON. Files land under
+IL2CPP), so MonoBehaviours read as JSON; one the generator still can't read
+keeps its serialized strings (int32 length + UTF-8, 4-aligned) in a
+.strings.txt file, so the census counts its text. Files land under
 <assets file>/<type>/<name>_<path id>, so scope rules can name a container
 with a file pattern. Point `census --decoded` at the out folder, inside the
 game.
@@ -19,6 +21,24 @@ from pathlib import Path
 
 import UnityPy
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
+
+
+def serialized_strings(raw):
+    """Strings a MonoBehaviour serializes, read without its type tree."""
+    found, at = [], 0
+    while at + 4 <= len(raw):
+        size = int.from_bytes(raw[at : at + 4], "little")
+        if 0 < size <= len(raw) - at - 4:
+            try:
+                text = raw[at + 4 : at + 4 + size].decode("utf-8")
+            except UnicodeDecodeError:
+                text = ""
+            if text.strip() and all(ch.isprintable() or ch in "\r\n\t" for ch in text):
+                found.append(text.replace("\r", "\\r").replace("\n", "\\n"))
+                at += 4 + (size + 3) // 4 * 4
+                continue
+        at += 4
+    return found
 
 
 def safe(name):
@@ -38,6 +58,7 @@ def main(game, out):
         if kind not in ("TextAsset", "MonoBehaviour"):
             continue
         folder = out / safe(obj.assets_file.name) / kind
+        read = kind
         try:
             if kind == "TextAsset":
                 asset = obj.read()
@@ -52,10 +73,14 @@ def main(game, out):
                 body = json.dumps(tree, ensure_ascii=False, default=str).encode("utf-8")
         except Exception as error:  # report every unreadable object, keep going
             failed[(kind, type(error).__name__)] += 1
-            continue
+            if kind != "MonoBehaviour":
+                continue
+            target = folder / f"unread_{obj.path_id}.strings.txt"
+            body = "\n".join(serialized_strings(obj.get_raw_data())).encode("utf-8")
+            read = "strings only"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
-        dumped[kind] += 1
+        dumped[read] += 1
     print("dumped", dict(dumped), "failed", dict(failed))
     return 1 if failed else 0
 
