@@ -13,6 +13,7 @@ them go.
 
 import os
 import re
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -63,6 +64,19 @@ def _move(path, target):
                     "then start over again; what moved so far is in the archive."
                 ) from None
             time.sleep(0.25)
+
+
+def _shown(path):
+    """Git hides its folder on Windows; the archived copy shows in Explorer
+    like the rest of the attempt."""
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        attributes = kernel.GetFileAttributesW(str(path))
+        hidden = 0x2  # FILE_ATTRIBUTE_HIDDEN
+        if attributes != -1 and attributes & hidden:
+            kernel.SetFileAttributesW(str(path), attributes & ~hidden)
 
 
 def run(
@@ -122,6 +136,7 @@ def run(
     if git.exists() or git.is_symlink():
         progress("Setting the Git history aside.")
         _move(git, archive / "git")
+        _shown(archive / "git")
     work = project_path(root, WORK, exists=False)
     if work.is_dir():
         progress("Setting the assistant's work aside.")
