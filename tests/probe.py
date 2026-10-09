@@ -33,6 +33,7 @@ class Probe:
                 "LC_ALL",
                 "LD_LIBRARY_PATH",
                 "DYLD_LIBRARY_PATH",
+                "DAZEDTL_TEST_BUDGET",
             }
         }
         environment.update(

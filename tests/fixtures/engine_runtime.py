@@ -162,7 +162,8 @@ try:
             str(game), "RPG Maker MV/MZ", ["Items.json"], listing["revision"]
         )
     controller = manual.controller(job["id"])
-    controller.worker.join(5)
+    # Half the suite's budget (scripts/test.mjs) for the worker to exit.
+    controller.worker.join(float(os.environ.get("DAZEDTL_TEST_BUDGET") or 10) / 2)
     result = manual.jobs[job["id"]]
     assert result["status"] == "complete", (
         result["status"],
