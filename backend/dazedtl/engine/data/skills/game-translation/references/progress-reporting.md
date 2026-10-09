@@ -6,7 +6,8 @@ panel. Keep explanations and historical evidence in `status.md`. The agent
 maintains both; the user should not need another prompt or manual bookkeeping.
 
 After each saved batch or milestone, at least every 10 minutes during active work, and before pausing or handing off, export
-current unit records and run:
+current unit records and run the project helper's `progress --input <project-relative report>` in DazedTL's Assistant-led mode.
+Outside the app, the same report goes through:
 
 ```bash
 python DAZEDTL_ROOT/scripts/len_translation.py progress-update \

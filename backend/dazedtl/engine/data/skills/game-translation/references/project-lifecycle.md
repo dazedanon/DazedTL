@@ -105,7 +105,8 @@ Do not force-add work records to either game branch.
 
 First inject the reviewed runtime outputs into the selected game folder and verify their hashes.
 A translation present only in staging or an isolated QA game is not present in `main`.
-Create a complete list of the patch's runtime file paths in the ignored workspace, then run:
+Create a complete list of the patch's runtime file paths in the ignored workspace.
+In DazedTL's Assistant-led mode, the project helper's `operation checkpoint` with that manifest does this, supplying the matching original itself; outside the app, run:
 
 ```bash
 python DAZEDTL_ROOT/scripts/len_translation.py git-scope \
