@@ -254,6 +254,8 @@ class ScopeRuleCount(TypedDict):
     field: str
     reason: str
     file: NotRequired[str]
+    # How many exact runs the rule names, when it names them.
+    values: NotRequired[int]
     runs: int
 
 

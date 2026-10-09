@@ -319,8 +319,8 @@ function SetAside({
   return (
     <>
       <p>
-        Text players never see, set aside by rules that apply to the whole game,
-        never to one map or scene.
+        Text players never see, set aside by rules for a kind of field across
+        the game, some only in matching files or for listed words.
       </p>
       {builtIn.size > 0 && (
         <p>
@@ -337,8 +337,8 @@ function SetAside({
         <>
           <p>Your assistant&apos;s rules:</p>
           <ul>
-            {assistant.map((rule) => (
-              <li key={`${rule.kind} ${rule.field} ${rule.file || ""}`}>
+            {assistant.map((rule, index) => (
+              <li key={index}>
                 {pieces(rule.runs)} of {reasons[rule.reason] || rule.reason}:{" "}
                 <code>
                   {rule.kind} {rule.field}
@@ -349,6 +349,8 @@ function SetAside({
                     in <code>{rule.file}</code>
                   </>
                 )}
+                {rule.values !== undefined &&
+                  `, ${rule.values.toLocaleString()} listed ${rule.values === 1 ? "word" : "words"}`}
               </li>
             ))}
           </ul>

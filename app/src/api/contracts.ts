@@ -1030,6 +1030,7 @@ export type ScopeRuleCount = {
   field: string;
   reason: string;
   file?: string;
+  values?: number;
   runs: number;
 };
 

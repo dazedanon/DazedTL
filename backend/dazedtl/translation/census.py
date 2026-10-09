@@ -769,16 +769,10 @@ def ypf_members(head):
 
 # --- Scope rules ------------------------------------------------------------------
 
-REASONS = {"asset_name", "identifier", "comment", "script_code", "not_displayed"}
-# The assistant's rules work only where DazedTL knows the format's structure.
-# Field names in decoded dumps, generic JSON and plain text are the game's
-# own and can name content, so everything there is extracted.
-RULE_KINDS = (
-    "rpgmaker:*", "rgss:*", "js", "js:plugin", "script:tjs", "script:ks",
-    "script:rpy", "html",
-)  # fmt: skip
-# Code files may be named by a rule; a map, event or scene never can.
-CODE_KINDS = {"js", "js:plugin", "script:tjs", "rgss:scripts", "html"}
+REASONS = {
+    "asset_name", "identifier", "comment", "script_code", "not_displayed",
+    "other_language",
+}  # fmt: skip
 
 _RM = ("rpgmaker", "rgss")
 _ASSET_PARAMETERS = (
@@ -927,10 +921,12 @@ def protected(kind, field):
     return any(_kind(k, kind) and matches(f, field) for k, f in PROTECTED)
 
 
-def rules_input(value, fields):
-    """The assistant's scope rules, given the census's {kind: fields}. A rule
-    can't name an index, can name a file only for code, and is refused when
-    it would cover text the player reads."""
+def rules_input(value, fields, files=None):
+    """The assistant's scope rules, given the census's {kind: fields} and
+    {kind: files}. A rule sets aside a field across the game, optionally only
+    in files matching a path pattern or only exact runs (values), and is
+    refused when its field holds text the player reads in a format DazedTL
+    knows."""
     if value is None:
         return []
     if not isinstance(value, dict) or set(value) != {"version", "rules"}:
@@ -944,21 +940,16 @@ def rules_input(value, fields):
             "field",
             "reason",
             "file",
+            "values",
         }:
             raise ValueError(
-                f"Scope rule {index} accepts kind, field, reason and, for code, file."
+                f"Scope rule {index} accepts kind, field, reason, file and values."
             )
         kind, field, reason = rule.get("kind"), rule.get("field"), rule.get("reason")
         if kind not in fields:
             raise ValueError(
                 f"Scope rule {index} names a kind the census did not find."
             )
-        if not any(_kind(pattern, kind) for pattern in RULE_KINDS):
-            raise ValueError(
-                f"Scope rule {index} names {kind}, whose text is always extracted; rules work only for engine data, scenarios and code DazedTL reads itself."
-            )
-        # Census fields never hold a map, event or scene index, so a rule that
-        # matches one applies to every map, event and scene alike.
         if not isinstance(field, str) or not any(
             matches(field, have) for have in fields[kind]
         ):
@@ -970,9 +961,22 @@ def rules_input(value, fields):
                 f"Scope rule {index} needs a reason: {', '.join(sorted(REASONS))}."
             )
         if "file" in rule and (
-            kind not in CODE_KINDS or not isinstance(rule["file"], str)
+            not isinstance(rule["file"], str)
+            or not any(
+                matches(rule["file"], have) for have in (files or {}).get(kind, ())
+            )
         ):
-            raise ValueError(f"Scope rule {index} can name a file only for code.")
+            raise ValueError(
+                f"Scope rule {index} needs a file pattern that matches a census file of its kind."
+            )
+        if "values" in rule and (
+            not isinstance(rule["values"], list)
+            or not rule["values"]
+            or any(runs(item) != [item] for item in rule["values"])
+        ):
+            raise ValueError(
+                f"Scope rule {index} needs values that are each one Japanese run as the census counts it."
+            )
         if any(protected(kind, have) and matches(field, have) for have in fields[kind]):
             raise ValueError(
                 f"Scope rule {index} covers text the player reads, which is always translated."
@@ -980,7 +984,7 @@ def rules_input(value, fields):
         result.append(
             {
                 key: rule[key]
-                for key in ("kind", "field", "reason", "file")
+                for key in ("kind", "field", "reason", "file", "values")
                 if key in rule
             }
         )
@@ -1016,6 +1020,13 @@ def fields(census):
     return result
 
 
+def files(census):
+    result = {}
+    for entry in census["entries"]:
+        result.setdefault(entry["kind"], set()).add(entry["file"])
+    return result
+
+
 def coverage(census, sources, glossary, rules):
     """The census's runs as extracted (in a unit or the glossary), set aside
     by a built-in or assistant rule, or uncovered; protected text is never
@@ -1037,48 +1048,50 @@ def coverage(census, sources, glossary, rules):
 
     every = [
         *({"kind": k, "field": f, "reason": r, "by": "tool"} for k, f, r in BUILT_IN),
-        *({**rule, "by": "assistant"} for rule in rules),
+        *(
+            {**rule, "by": "assistant", "values": frozenset(rule["values"])}
+            if "values" in rule
+            else {**rule, "by": "assistant"}
+            for rule in rules
+        ),
     ]
     chosen = {}
 
-    def rule_for(entry):
-        key = (entry["kind"], entry["field"], entry["file"], entry["source"])
+    def rule_for(entry, run):
+        key = (entry["kind"], entry["field"], entry["file"])
         if key not in chosen:
-            chosen[key] = None
-            if not protected(entry["kind"], entry["field"]):
-                for rule in every:
-                    if rule["by"] == "assistant" and entry["source"] != "tool":
-                        continue
-                    if (
-                        _kind(rule["kind"], entry["kind"])
-                        and rule.get("file", entry["file"]) == entry["file"]
-                        and matches(rule["field"], entry["field"])
-                    ):
-                        chosen[key] = rule
-                        break
-        return chosen[key]
+            chosen[key] = (
+                []
+                if protected(entry["kind"], entry["field"])
+                else [
+                    index
+                    for index, rule in enumerate(every)
+                    if _kind(rule["kind"], entry["kind"])
+                    and matches(rule.get("file", entry["file"]), entry["file"])
+                    and matches(rule["field"], entry["field"])
+                ]
+            )
+        for index in chosen[key]:
+            if run in every[index].get("values", (run,)):
+                return index
+        return None
 
     counts, aside, uncovered, traced = Counter(), Counter(), [], set()
     for entry in census["entries"]:
         traced.update(entry["runs"])
-        missing = [run for run in entry["runs"] if not extracted(run)]
+        missing = []
+        # Rules first: an identifier a rule sets aside must not use up the
+        # unit that covers the same words where the player reads them.
+        for run in entry["runs"]:
+            if (index := rule_for(entry, run)) is not None:
+                counts["set_aside"] += 1
+                aside[index] += 1
+            elif extracted(run):
+                counts["extracted"] += 1
+            else:
+                missing.append(run)
         counts["runs"] += len(entry["runs"])
-        counts["extracted"] += len(entry["runs"]) - len(missing)
-        if not missing:
-            continue
-        rule = rule_for(entry)
-        if rule is not None:
-            counts["set_aside"] += len(missing)
-            aside[
-                (
-                    rule["by"],
-                    rule["kind"],
-                    rule["field"],
-                    rule["reason"],
-                    rule.get("file"),
-                )
-            ] += len(missing)
-        else:
+        if missing:
             counts["uncovered"] += len(missing)
             uncovered.append({**entry, "runs": missing})
     return {
@@ -1092,16 +1105,19 @@ def coverage(census, sources, glossary, rules):
         "unit_runs": len(unit_runs),
         "rules": [
             {
-                "by": by,
-                "kind": kind,
-                "field": field,
-                "reason": reason,
-                **({"file": file} if file else {}),
+                "by": every[index]["by"],
+                "kind": every[index]["kind"],
+                "field": every[index]["field"],
+                "reason": every[index]["reason"],
+                **({"file": every[index]["file"]} if "file" in every[index] else {}),
+                **(
+                    {"values": len(every[index]["values"])}
+                    if "values" in every[index]
+                    else {}
+                ),
                 "runs": count,
             }
-            for (by, kind, field, reason, file), count in sorted(
-                aside.items(), key=lambda item: tuple(map(str, item[0]))
-            )
+            for index, count in sorted(aside.items())
         ],
     }, uncovered
 

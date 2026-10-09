@@ -235,22 +235,28 @@ class CensusTests(unittest.TestCase):
                     "kind": "rpgmaker:map",
                     "field": "displayName",
                     "reason": "identifier",
-                    "file": "x",
+                    "file": "www/data/Map002.json",
                 },
-                "only for code",
+                "file pattern",
+            ),
+            (
+                {
+                    "kind": "rpgmaker:system",
+                    "field": "switches/*",
+                    "reason": "identifier",
+                    "values": ["フラグ 2"],
+                },
+                "one Japanese run",
             ),
             (
                 {"kind": "rpgmaker:system", "field": "gameTitle", "reason": "content"},
                 "reason",
             ),
-            # A data file's own field names can name content, so its text is extracted.
-            (
-                {"kind": "json", "field": "*/text", "reason": "not_displayed"},
-                "always extracted",
-            ),
         ):
             with self.subTest(rule=rule), self.assertRaisesRegex(ValueError, refused):
-                census.rules_input({"version": 1, "rules": [rule]}, fields)
+                census.rules_input(
+                    {"version": 1, "rules": [rule]}, fields, census.files(result)
+                )
         rules = census.rules_input(
             {
                 "version": 1,
@@ -373,7 +379,7 @@ class CensusTests(unittest.TestCase):
         )
         self.assertTrue(dumped["decoded"])
 
-    def test_yuris_indexes_and_translation_tables_are_read(self):
+    def test_decoded_scripts_take_rules_and_other_languages_are_set_aside(self):
         # YU-RIS media archives hold no text, so only scripts need decoding.
         names = ["pac/ysbin.ypf", "pac/bgm.ypf", "pac/old.ypf", "data/yst00001.ybn"]
         archives = {
@@ -388,7 +394,10 @@ class CensusTests(unittest.TestCase):
             Decoders(),
             [
                 ("ysbin/main.yst", 'IF[$s=="上2"]\nあら、こんにちは。'.encode()),
-                ("TextAsset/Event.txt", "セリフ,こんにちは\nセリフ,またね".encode()),
+                (
+                    "TextAsset/Event.txt",
+                    "セリフ,こんにちは\nセリフ,またね\nセリフ,セリフ".encode(),
+                ),
                 (
                     "TextAsset/Chinese.txt",
                     "default\nこんにちは,你好\nまたね,再見".encode(),
@@ -400,19 +409,46 @@ class CensusTests(unittest.TestCase):
         self.assertEqual(
             result["needs_dump"], ["data/yst00001.ybn", "pac/old.ypf", "pac/ysbin.ypf"]
         )
-        report, uncovered = census.coverage(
-            result, ["あら、こんにちは。", "こんにちは", "またね"], [], []
-        )
-        self.assertEqual(
-            [(rule["reason"], rule["runs"]) for rule in report["rules"]],
-            [("other_language", 2)],
-        )
-        self.assertEqual(
-            {(entry["field"], run) for entry in uncovered for run in entry["runs"]},
+        # Scripts' Japanese command words and comparisons are the assistant's
+        # to set aside; the extracted lines cover the rest, even where a
+        # command word is also the text a line shows.
+        rules = census.rules_input(
             {
-                ("column:0", "セリフ"),
-                ("table:key", "こんにちは"),
-                ("table:key", "またね"),
-                ("line", "上"),
+                "version": 1,
+                "rules": [
+                    {
+                        "kind": "text.txt",
+                        "field": "column:0",
+                        "reason": "identifier",
+                        "values": ["セリフ"],
+                    },
+                    {
+                        "kind": "text.txt",
+                        "field": "table:key",
+                        "reason": "identifier",
+                        "file": "TextAsset/*",
+                    },
+                    {
+                        "kind": "script:yst",
+                        "field": "line",
+                        "reason": "script_code",
+                        "values": ["上"],
+                    },
+                ],
+            },
+            census.fields(result),
+            census.files(result),
+        )
+        report, uncovered = census.coverage(
+            result, ["あら、こんにちは。", "こんにちは", "またね", "セリフ"], [], rules
+        )
+        self.assertEqual((report["uncovered"], uncovered), (0, []))
+        self.assertEqual(
+            {(rule["by"], rule["reason"], rule["runs"]) for rule in report["rules"]},
+            {
+                ("tool", "other_language", 2),
+                ("assistant", "identifier", 3),
+                ("assistant", "identifier", 2),
+                ("assistant", "script_code", 1),
             },
         )

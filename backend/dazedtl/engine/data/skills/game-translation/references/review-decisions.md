@@ -1,7 +1,7 @@
 # Scope decisions and their reversals
 
 Scope is mechanical.
-DazedTL's census counts every piece of Japanese text in the original game, and `organize --complete` requires all of it extracted or set aside by a field rule.
+DazedTL's census counts every piece of Japanese text in the original game, and `organize --complete` requires all of it extracted or set aside by a scope rule.
 Never remove text from scope because of its content, whether a line, a scene, a map, an event or a character's material.
 If you won't translate a request, decline it: its lines stay counted and visible on Progress, and the user decides who translates them.
 Use this reference when a user disputes a decision, a later review contradicts an earlier one, or a resumed task finds an older exclusion list.
@@ -10,7 +10,7 @@ Use this reference when a user disputes a decision, a later review contradicts a
 
 Only these keep Japanese out of the translated game:
 
-- Text players never see, such as engine identifiers, asset file names, comments and script code, set aside by a field rule that applies across the whole game; rules work only for engine data, scenarios and code DazedTL reads itself, so everything in a decoded dump is extracted.
+- Text players never see, such as engine identifiers, asset file names, comments, script code and other languages' translation tables, set aside by a scope rule for a field, optionally limited to matching files or exact values.
 - Omissions the user approved, recorded with their words.
 - Unresolved extraction: text the extractor can't reach yet, reported as a defect to fix, not as a decision.
 

@@ -187,7 +187,7 @@ Use established lore and the complete scene context, never invent ages or change
    Its mechanical checks are enough; a visual check you cannot make stays pending and never stops the run.
 3. Take DazedTL's census, the inventory of the original game's Japanese text that the extractor must cover, including plugin/script labels and runtime-generated text; images in the selected scope are inventoried separately.
    Keep stable occurrence IDs, source hashes, speaker/scene associations and a ledger of unresolved extraction.
-   Set aside text players never see only with game-wide field rules, as `references/review-decisions.md` describes.
+   Set aside text players never see only with scope rules, as `references/review-decisions.md` describes.
 4. Build shared glossary and game guidance using `references/glossary-and-prompts.md` and any user-supplied reference games.
    Preserve placeholders, control flow, internal identifiers, source-supported identity and uncertainty.
 5. Translate, perform the source-checked dialogue pass, and save resumable batches with complete compiled context.
