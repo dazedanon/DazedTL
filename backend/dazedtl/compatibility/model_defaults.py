@@ -82,7 +82,7 @@ class ModelDefaults:
                 raise ValueError("Unexpected model defaults.")
         except subprocess.SubprocessError, OSError, ValueError, KeyError:
             raise ValueError(
-                "Model defaults are unavailable. Try again before starting a run."
+                "This model's prices could not be looked up. Try again, or enter custom rates in Settings."
             ) from None
         self.cache[model] = (time.monotonic(), value)
         return deepcopy(value)

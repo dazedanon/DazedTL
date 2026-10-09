@@ -1326,3 +1326,36 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(model_output_limit(values, "models/model-large"), 65536)
         self.assertIsNone(model_output_limit(values, "model-small-other"))
         self.assertIsNone(model_output_limit(values, "model-bad"))
+
+    def test_a_slow_price_catalog_download_ends_at_its_deadline(self):
+        # The download's own limits let a slow link run past the 12 seconds
+        # its caller waits, so prices never loaded and the catalog was never
+        # saved for the next lookup.
+        from dazedtl.compatibility import pricing_worker
+
+        release = threading.Event()
+
+        class Stalled:
+            def __init__(self, **_kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def stream(self, *_args, **_kwargs):
+                release.wait(5)
+                raise httpx.ConnectError("released")
+
+        with (
+            patch.object(httpx, "Client", Stalled),
+            patch.object(pricing_worker, "DOWNLOAD_SECONDS", 0.05),
+        ):
+            started = time.monotonic()
+            try:
+                self.assertIsNone(pricing_worker.download("https://catalog.invalid"))
+            finally:
+                release.set()
+        self.assertLess(time.monotonic() - started, 1)

@@ -3,10 +3,15 @@
 import json
 import math
 import sys
+import threading
 import time
 from contextlib import redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path
+
+# The lookup's caller stops waiting after 12 seconds, and starting this
+# worker takes several of them on Windows.
+DOWNLOAD_SECONDS = 5
 
 
 def catalog(value):
@@ -42,11 +47,48 @@ def model_output_limit(prices, model):
     return output_limit(row.get("max_output_tokens"))
 
 
+def download(url):
+    """The catalog's bytes, or None when they do not all arrive in time.
+
+    The deadline covers the whole download, including the address lookup
+    that no client timeout bounds; past it, rates come from the saved catalog
+    or the engine's defaults.
+    """
+    import httpx
+
+    received = []
+
+    def read():
+        data = bytearray()
+        try:
+            with (
+                httpx.Client(
+                    timeout=DOWNLOAD_SECONDS, follow_redirects=False, trust_env=False
+                ) as client,
+                client.stream(
+                    "GET", url, headers={"Accept-Encoding": "identity"}
+                ) as response,
+            ):
+                response.raise_for_status()
+                for chunk in response.iter_raw(65536):
+                    data.extend(chunk)
+                    if len(data) > 20_000_000:
+                        return
+        except httpx.HTTPError, OSError:
+            return
+        received.append(bytes(data))
+
+    # A download still running at the deadline is abandoned with the process.
+    thread = threading.Thread(target=read, daemon=True)
+    thread.start()
+    thread.join(DOWNLOAD_SECONDS)
+    return received[0] if received else None
+
+
 def resolve(cache, model, online):
     from dazedtl.compatibility.runtime import activate
 
     activate()
-    import httpx
     from util import translation
 
     cache = Path(cache)
@@ -74,30 +116,16 @@ def resolve(cache, model, online):
         or cached.get("version") != 2
         or now - cached["fetched_at"] > 86400
     ):
-        try:
-            started, data = time.monotonic(), bytearray()
-            with (
-                httpx.Client(
-                    timeout=4, follow_redirects=False, trust_env=False
-                ) as client,
-                client.stream(
-                    "GET",
-                    translation._LITELLM_PRICING_URL,
-                    headers={"Accept-Encoding": "identity"},
-                ) as response,
-            ):
-                response.raise_for_status()
-                for chunk in response.iter_raw(65536):
-                    data.extend(chunk)
-                    if len(data) > 20_000_000 or time.monotonic() - started > 6:
-                        raise ValueError("Pricing catalog exceeds its read limit.")
-            prices = catalog(json.loads(data))
-            cached = {"version": 2, "fetched_at": now, "prices": prices}
-            from dazedtl.storage import write_json
+        data = download(translation._LITELLM_PRICING_URL)
+        if data is not None:
+            try:
+                prices = catalog(json.loads(data))
+                cached = {"version": 2, "fetched_at": now, "prices": prices}
+                from dazedtl.storage import write_json
 
-            write_json(cache, cached)
-        except httpx.HTTPError, ValueError, OSError:
-            pass
+                write_json(cache, cached)
+            except ValueError, OSError:
+                pass
 
     # The catalog read above has its own limits; the engine must not fetch again.
     translation._load_litellm_pricing.layer(
