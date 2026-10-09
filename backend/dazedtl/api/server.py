@@ -17,7 +17,7 @@ from dazedtl.api.local import LocalAPI
 from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.runtime import ENGINE_ROOT
 from dazedtl.compatibility.translation import TranslationEngine
-from dazedtl.diagnostics import Diagnostics
+from dazedtl.diagnostics import FOLDER, Diagnostics
 from dazedtl.foreign_work import ForeignWorkError
 from dazedtl.images import ImageService
 from dazedtl.images.editor import ImageEditor
@@ -30,6 +30,7 @@ from dazedtl.storage import WorkspaceLock
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.service import Translation, assistant_request
+from dazedtl.watchdog import Watchdog
 
 RPC_OUTPUT = sys.stdout
 from dazedtl.api import views
@@ -37,6 +38,9 @@ from dazedtl.api import views
 # Read-only image previews run on a few workers beside the request loop.
 CONCURRENT = frozenset({"images_preview"})
 PREVIEW_WORKERS = 4
+# Every other request waits behind the one running, so one this slow already
+# leaves the interface without answers.
+REQUEST_STALL_SECONDS = 30
 
 PROTOCOL = json.loads(
     Path(__file__).with_name("protocol.json").read_text(encoding="utf-8")
@@ -836,6 +840,16 @@ def serve(args, diagnostics):
     # while the loop keeps reading; every other request still runs in turn.
     previews = ThreadPoolExecutor(PREVIEW_WORKERS, thread_name_prefix="preview")
     output = threading.Lock()
+    hangs = Watchdog(
+        REQUEST_STALL_SECONDS,
+        lambda state, request, seconds, frame: diagnostics.hang(
+            "backend." + state,
+            seconds,
+            diagnostics.stack(frame),
+            operation=request[0],
+            request_id=request[1],
+        ),
+    )
 
     def respond(response):
         line = json.dumps(response, ensure_ascii=False)
@@ -904,7 +918,17 @@ def serve(args, diagnostics):
             ):
                 previews.submit(lambda request=request: respond(answer(request)))
             else:
-                respond(answer(request))
+                name = request.get("method") if isinstance(request, dict) else None
+                hangs.busy(
+                    (
+                        name if isinstance(name, str) and name in METHODS else "native",
+                        request.get("id") if isinstance(request, dict) else None,
+                    )
+                )
+                try:
+                    respond(answer(request))
+                finally:
+                    hangs.idle()
     finally:
         app.closing = True
         previews.shutdown(cancel_futures=True)
@@ -927,11 +951,10 @@ def main():
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
-    diagnostics = Diagnostics(
-        args.diagnostics_directory or args.workspace / "diagnostics",
-        root,
-        ENGINE_ROOT,
-    )
+    directory = Path(args.diagnostics_directory or args.workspace / "diagnostics")
+    diagnostics = Diagnostics(directory, root, ENGINE_ROOT)
+    # Workers record their own stalls there.
+    os.environ[FOLDER] = str(directory.resolve())
     try:
         if platform.python_version() != (root / ".python-version").read_text().strip():
             print("DAZEDTL_ERROR runtime_version", file=sys.stderr, flush=True)

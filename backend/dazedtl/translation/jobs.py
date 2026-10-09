@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dazedtl.diagnostics import FOLDER
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
 from .files import digest, read_json
@@ -499,6 +500,7 @@ class Jobs:
                 "GIT_CONFIG_GLOBAL",
                 "GIT_CONFIG_NOSYSTEM",
                 "GIT_ATTR_NOSYSTEM",
+                FOLDER,
             }
         }
         environment.update(

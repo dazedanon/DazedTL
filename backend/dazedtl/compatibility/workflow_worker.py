@@ -1,5 +1,6 @@
 """Preserved workflow runner with app-owned tool installation paths."""
 
+import json
 import runpy
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from desktop.backend import workflow_actions
 
 from dazedtl.compatibility.guided import apply_selected, run_ace, run_release
 from dazedtl.compatibility.translation import TranslationEngine
+from dazedtl.diagnostics import watch_action
 from dazedtl.translation.guided_inputs import GuidedInputs
 
 original = workflow_actions.run_action
@@ -74,5 +76,26 @@ def run_action(plan, log):
     )
 
 
+class Progress:
+    """The worker's event stream; every event the action sends is progress."""
+
+    def __init__(self, stream, progressed):
+        self.stream = stream
+        self.progressed = progressed
+
+    def write(self, text):
+        self.progressed()
+        return self.stream.write(text)
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
+
+
 workflow_actions.run_action = run_action
+try:
+    action = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["action"]
+except OSError, ValueError, KeyError, TypeError:
+    action = "unknown"  # The engine's worker reports the unreadable plan.
+# The worker keeps standard output as its event stream before redirecting it.
+sys.stdout = Progress(sys.stdout, watch_action(str(action)))
 runpy.run_path(str(source / "desktop/backend/workflow_worker.py"), run_name="__main__")

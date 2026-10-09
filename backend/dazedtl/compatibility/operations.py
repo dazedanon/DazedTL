@@ -1,8 +1,11 @@
 """Retain operation recovery while launching the app's compatibility worker."""
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
+
+from dazedtl.diagnostics import FOLDER
 
 
 def workflow_operations(source, workspace, lock):
@@ -25,6 +28,8 @@ def workflow_operations(source, workspace, lock):
                 "The workflow worker changed. Update its compatibility adapter."
             )
         kwargs["env"] = {**kwargs["env"], "PYTHONDONTWRITEBYTECODE": "1"}
+        if FOLDER in os.environ:
+            kwargs["env"][FOLDER] = os.environ[FOLDER]
         return native_launch(
             [
                 *arguments[:2],

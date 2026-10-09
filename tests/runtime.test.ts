@@ -118,7 +118,7 @@ test("crash recovery can copy diagnostics, and stale dialog responses cannot rel
   }
 });
 
-test("renderer diagnostics map bundle frames to source without messages, paths, or arbitrary rejection data", async (t) => {
+test("diagnostics map renderer frames to source and keep backend hang records, without messages, paths, or arbitrary rejection data", async (t) => {
   const checkout = fs.mkdtempSync(
     path.join(os.tmpdir(), "dazedtl-diagnostics-"),
   );
@@ -161,10 +161,31 @@ test("renderer diagnostics map bundle frames to source without messages, paths, 
     "render",
     fields.causes.map((cause) => ({ ...cause, message: error.message })),
   );
+  // The backend's hang records reach the report with only their safe fields.
+  fs.writeFileSync(
+    path.join(checkout, "diagnostics/backend-failures.jsonl"),
+    JSON.stringify({
+      time: "2026-10-09T18:00:00.000Z",
+      event: "operation.stalled",
+      action: "git_setup",
+      seconds: 60,
+      message: "private game text",
+      causes: [
+        {
+          type: "Stack",
+          frames: [{ file: "python/subprocess.py", line: 9, function: "run" }],
+        },
+      ],
+    }) + "\n",
+  );
   const report = await diagnostics.report();
   assert.match(
     report,
     /"file":"app\/app\/src\/app\/View.tsx","line":3,"column":5/,
+  );
+  assert.match(
+    report,
+    /"event":"operation.stalled","seconds":60,"action":"git_setup","causes":\[\{"type":"Stack","frames":\[\{"file":"python\/subprocess.py","line":9,"function":"run"\}\]\}\]/,
   );
   assert.doesNotMatch(report, /private|credentials|not-code|index-abc/);
   assert.deepEqual(

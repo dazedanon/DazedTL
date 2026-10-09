@@ -24,6 +24,10 @@ const EVENTS = new Set([
   "backend.spawn-failed",
   "backend.exit",
   "backend.invalid-response",
+  "backend.stalled",
+  "backend.resumed",
+  "operation.stalled",
+  "operation.resumed",
 ]);
 const LOGS = ["desktop-failures.jsonl", "backend-failures.jsonl"];
 const identifier = (value) =>
@@ -48,9 +52,10 @@ function safeRecord(record) {
     "exitCode",
     "errorCode",
     "stderrBytes",
+    "seconds",
   ])
     if (Number.isSafeInteger(record[name])) safe[name] = record[name];
-  for (const name of ["python", "code", "signal", "reason"])
+  for (const name of ["python", "code", "signal", "reason", "action"])
     if (identifier(record[name])) safe[name] = record[name];
   if (Array.isArray(record.causes))
     safe.causes = record.causes.slice(0, 3).map((cause) => ({

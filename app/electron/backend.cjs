@@ -134,12 +134,19 @@ class Backend {
       );
     });
     this.process.on("exit", (exitCode, signal) => {
+      // Requests are answered in turn, so the oldest unanswered one is
+      // usually what the backend was busy with.
+      const waiting = this.pending.values().next().value;
       if (!this.stopping || exitCode !== 0 || stderrBytes || startupCode)
         diagnostics.record("backend.exit", {
           exitCode,
           signal,
           stderrBytes,
           code: startupCode || undefined,
+          operation: waiting?.method,
+          seconds: waiting
+            ? Math.round((Date.now() - waiting.started) / 1000)
+            : undefined,
         });
       const message =
         startupMessages[startupCode] ||
@@ -166,7 +173,7 @@ class Backend {
           }),
         );
       const id = ++this.serial;
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject, method, started: Date.now() });
       this.process.stdin.write(
         JSON.stringify({ id, version: protocol.version, method, params }) +
           "\n",
@@ -178,9 +185,12 @@ class Backend {
     if (this.process.exitCode !== null || this.process.signalCode !== null)
       return Promise.resolve();
     return new Promise((resolve) => {
+      // A backend still busy at the limit is stopped; closing then waits
+      // briefly for its exit, which records the stop and the request it was
+      // busy with before the app exits.
       const timeout = setTimeout(() => {
         this.process.kill();
-        resolve(undefined);
+        setTimeout(resolve, 2000);
       }, 12000);
       this.process.once("exit", () => {
         clearTimeout(timeout);

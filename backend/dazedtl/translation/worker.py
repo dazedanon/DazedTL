@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from dazedtl.compatibility.translation import TranslationEngine, TranslationProvider
+from dazedtl.diagnostics import watch_action
 from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import WorkspaceError, WorkspaceLock
 from dazedtl.translation import progress_report
@@ -50,9 +51,11 @@ def run_locked(workspace, identity, store):
                 if plan.get("evidence"):
                     verify_evidence(plan["source"], plan["evidence"])
                 last_update = 0.0
+                progressed = watch_action(plan["action"])
 
                 def update(message):
                     nonlocal last_update
+                    progressed()
                     if store.stopped(identity):
                         raise InterruptedError(
                             "Stopped at an operation checkpoint; completed writes and backups were retained."
@@ -62,14 +65,18 @@ def run_locked(workspace, identity, store):
                         store.save(job)
                         last_update = time.monotonic()
 
-                result = execute(
-                    engine,
-                    workspace,
-                    job,
-                    plan,
-                    lambda: store.stopped(identity),
-                    update,
-                )
+                try:
+                    result = execute(
+                        engine,
+                        workspace,
+                        job,
+                        plan,
+                        lambda: store.stopped(identity),
+                        update,
+                    )
+                finally:
+                    # Ending also closes a stall it recorded.
+                    progressed()
                 # Native dataclasses can contain Paths; public records contain only JSON.
                 result = json.loads(
                     json.dumps(

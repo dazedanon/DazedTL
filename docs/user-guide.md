@@ -217,6 +217,7 @@ The **Beta** channel offers test versions early.
 ## When something goes wrong
 
 **Copy diagnostics** in the sidebar copies the app's version and recent errors for a problem report.
+If something stays stuck, copy diagnostics while it is still stuck; after a minute they say where it is waiting.
 It never includes API keys, game text or what was sent to the AI.
 Errors explained on screen aren't recorded, so include that message too.
 
