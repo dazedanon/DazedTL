@@ -1393,31 +1393,31 @@ pre {
   border-start-start-radius: var(--panel-inner-radius);
   border-start-end-radius: var(--panel-inner-radius);
 }
-/* The assistant task panel: its state, what comes back, and each result.
-   Work saved by another project shares its header: a name, a state and what
-   the choices below are about. */
-.assistant-task-header,
+/* A status panel, such as an assistant task: its name and state, then what
+   comes back. Work saved by another project shares its header: a name, a
+   state and what the choices below are about. */
+.status-panel-header,
 .foreign-work-header {
   padding: var(--space-3) var(--space-4);
 }
-.assistant-task-header + .action-row,
-.assistant-task-header + .assistant-task-body,
+.status-panel-header + .action-row,
+.status-panel-header + .status-panel-body,
 .foreign-work-header + .action-row {
   border-top: 1px solid var(--color-border);
 }
-.assistant-task-title,
+.status-panel-title,
 .foreign-work-title {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-2);
 }
-.assistant-task-title h3,
+.status-panel-title h3,
 .foreign-work-title h3 {
   margin: 0;
   font-size: var(--font-body);
 }
-.assistant-task-state,
+.status-panel-state,
 .foreign-work-title > .status-mark {
   display: inline-flex;
   align-items: center;
@@ -1426,10 +1426,12 @@ pre {
   font-size: var(--font-control);
   color: var(--color-muted);
 }
-.assistant-task-state > span + span::before {
-  content: "· ";
+/* The separator keeps the same space on both sides. */
+.status-panel-state > span + span::before {
+  content: "·";
+  margin-inline-end: var(--space-2);
 }
-.assistant-task-header > p,
+.status-panel-header > p,
 .foreign-work-header > p {
   margin: var(--space-1) 0 0;
   color: var(--color-muted);
@@ -1466,7 +1468,7 @@ pre {
 .action-row-label:has(> .status-heading) > small {
   padding-inline-start: calc(var(--icon-size) + var(--space-2));
 }
-.assistant-task-body {
+.status-panel-body {
   padding: var(--space-3) var(--space-4);
 }
 /* A task's steps as one row of bars under their names. */

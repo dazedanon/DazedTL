@@ -1,8 +1,8 @@
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ActionRow } from "./ActionList";
-import { HelpPopover } from "./HelpPopover";
 import type { DisplayState } from "./displayStatus";
-import { StatusHeading, StatusMark } from "./StatusMark";
+import { StatusHeading } from "./StatusMark";
+import { StatusPanel } from "./StatusPanel";
 
 /**
  * Where a copied task stands, in the shared words. Needs review means a
@@ -59,24 +59,15 @@ export function AssistantTask({
   /** Custom result content, for tasks whose results are not rows. */
   children?: ReactNode;
 }) {
-  const heading = useId();
   return (
-    <section
-      className="action-list assistant-task"
-      aria-labelledby={heading}
-      data-state={state}
+    <StatusPanel
+      className="assistant-task"
+      title={title}
+      state={state}
+      progress={progress}
+      description={description}
+      help={help}
     >
-      <div className="assistant-task-header panel-header">
-        <div className="assistant-task-title">
-          <h3 id={heading}>{title}</h3>
-          {help && <HelpPopover label={title}>{help}</HelpPopover>}
-          <span className="assistant-task-state">
-            <StatusMark state={state} />
-            {progress && <span>{progress}</span>}
-          </span>
-        </div>
-        <p>{description}</p>
-      </div>
       {results.map((row) => (
         <ActionRow
           key={row.id}
@@ -90,7 +81,7 @@ export function AssistantTask({
           {row.action}
         </ActionRow>
       ))}
-      {children && <div className="assistant-task-body">{children}</div>}
-    </section>
+      {children && <div className="status-panel-body">{children}</div>}
+    </StatusPanel>
   );
 }

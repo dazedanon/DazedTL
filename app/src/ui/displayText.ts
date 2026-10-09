@@ -7,6 +7,23 @@ export function displayText(value: unknown, fallback = "") {
       : fallback;
 }
 
+/** "just now", "47 min ago", "3 h ago" or "2 days ago". */
+export function timeAgo(since: string, now: number) {
+  const minutes = Math.max(
+    0,
+    Math.floor((now - new Date(since).getTime()) / 60_000),
+  );
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  return minutes < 1
+    ? "just now"
+    : minutes < 60
+      ? `${minutes} min ago`
+      : hours < 24
+        ? `${hours} h ago`
+        : `${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
 /** A status code as a phrase: "in_progress" reads "In progress". */
 export function sentence(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");

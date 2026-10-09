@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import { useApplication } from "../../app/ApplicationProvider";
 import { useAction } from "../../state/useAction";
+import { useMinute } from "../../state/useMinute";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
 import { Section } from "../../ui/Section";
 import { StatusHeading } from "../../ui/StatusMark";
+import { timeAgo } from "../../ui/displayText";
 import type { AssistantTaskView } from "./assistantTasks";
 
 /** The Project page section the top bar's count opens. */
@@ -15,32 +16,11 @@ export const assistantTasksHeading = "assistant-tasks";
 /** "Copied 14:02 · 47 min ago"; older copies give their date. */
 function copied(since: string, now: number) {
   const at = new Date(since);
-  const minutes = Math.max(0, Math.floor((now - at.getTime()) / 60_000));
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  const ago =
-    minutes < 1
-      ? "just now"
-      : minutes < 60
-        ? `${minutes} min ago`
-        : hours < 24
-          ? `${hours} h ago`
-          : `${days} ${days === 1 ? "day" : "days"} ago`;
   const time =
     at.toDateString() === new Date(now).toDateString()
       ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
       : at.toLocaleDateString([], { month: "short", day: "numeric" });
-  return `Copied ${time} · ${ago}`;
-}
-
-/** Keeps "47 min ago" current while the page is open. */
-function useMinute() {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
+  return `Copied ${time} · ${timeAgo(since, now)}`;
 }
 
 /**
