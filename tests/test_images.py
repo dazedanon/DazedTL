@@ -369,8 +369,16 @@ class ImageTests(unittest.TestCase):
         # Assistant-led packaging needs the image records to complete; before
         # these steps its assistant could not reach the Image Manager at all.
         write_bytes(self.game / "img/C.png", png((9, 9, 9, 255)))
-        self.assertEqual(self.service.assistant(self.identity, "scan")["next"], "scan")
-        self.scan()
+        # The scan runs on; status names the next step once it finishes.
+        self.service.assistant(self.identity, "scan")
+        deadline = time.monotonic() + 2
+        while (step := self.service.assistant(self.identity, "status"))[
+            "next"
+        ] == "scan":
+            if time.monotonic() > deadline:
+                self.fail("The scan did not finish.")
+            time.sleep(0.001)
+        self.assertEqual(step["next"], "investigate")
         self.assertEqual(
             self.service.progress_units(self.identity),
             {"complete": False, "units": []},
@@ -378,7 +386,7 @@ class ImageTests(unittest.TestCase):
         step = self.service.assistant(self.identity, "investigate")
         request = read_json(Path(step["task"]).with_suffix(".json"))
         # Its own task continues to the next step instead of stopping.
-        text = Path(step["task"]).read_text()
+        text = Path(step["task"]).read_text(encoding="utf-8")
         self.assertIn("Investigate which requested images", text)
         self.assertNotIn("then stop", text)
         self.assertEqual(step["report"], request["report"])
@@ -412,7 +420,9 @@ class ImageTests(unittest.TestCase):
         step = self.service.assistant(self.identity, "translate")
         self.assertEqual((step["next"], step["counts"]["listed"]), ("translate", 2))
         request = read_json(Path(step["task"]).with_suffix(".json"))
-        self.assertIn("Review each requested PNG", Path(step["task"]).read_text())
+        self.assertIn(
+            "Review each requested PNG", Path(step["task"]).read_text(encoding="utf-8")
+        )
         candidate = png((2, 3, 4, 100))
         write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
         hashes = {row["id"]: row["sourceHash"] for row in request["assets"]}
