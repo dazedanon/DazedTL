@@ -1683,6 +1683,50 @@ def _ensure_translation_branch(repo: Path, head: str, branch: str) -> None:
         _run_git(repo, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
 
 
+def unfinished_bootstrap(game_root: str | Path) -> bool:
+    """Whether the game's repository holds only a baseline DazedTL began and never registered.
+
+    A fresh bootstrap registers its translated branch last. Until then the
+    repository holds no commits, or only DazedTL's original import with its
+    translated start on top, and an index that is missing or equal to that
+    start. Anything more, such as another ref, a remote or a staged change,
+    can be someone's work, so that repository is not recognized.
+    """
+    found = _repository_for(Path(game_root).expanduser().resolve())
+    if found is None or found[1] or _configured_translation_branch(found[0]) is not None:
+        return False
+    repo = found[0]
+    head = _run_git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
+    remotes = _run_git(repo, "config", "--local", "--get-regexp", r"^remote\.", check=False).stdout
+    if head != f"refs/heads/{TRANSLATION_BRANCH}" or remotes.strip():
+        return False
+    listed = _run_git(repo, "for-each-ref", "--format=%(refname)%00%(objectname)").stdout
+    refs = dict(line.split("\x00") for line in listed.splitlines())
+    original = refs.pop(f"refs/heads/{ORIGINAL_BRANCH}", None)
+    translation = refs.pop(f"refs/heads/{TRANSLATION_BRANCH}", None)
+    if refs or (translation and not original):
+        return False
+    tool = f"{_TOOL_NAME} <{_TOOL_EMAIL}>"
+    for commit, parents, subjects in (
+        (original, "", ("original: import clean game ",)),
+        (translation, original, ("translation: start from original game ", "translation: record translated game ")),
+    ):
+        if not commit:
+            continue
+        fields = _run_git(repo, "log", "-1", "--format=%P%x00%an <%ae>%x00%cn <%ce>%x00%B", commit).stdout
+        found_parents, author, committer, message = fields.split("\x00", 3)
+        if (found_parents.strip(), author, committer) != (parents, tool, tool) or not (
+            message.startswith(subjects) and _VERSION_LINE.search(message)
+        ):
+            return False
+    if not _git_paths(repo, "index")["index"].exists():
+        return True
+    # Bootstrap writes the index only from its translated start.
+    return bool(translation) and not _run_git(
+        repo, "diff-index", "--cached", "--quiet", translation, check=False
+    ).returncode
+
+
 def bootstrap_repository(
     translated_game: str | Path,
     original_game: str | Path,
@@ -1702,11 +1746,14 @@ def bootstrap_repository(
     version = _validate_version(version)
     original = _validate_source(original_game, translated)
     found = _repository_for(translated)
+    # A baseline that stopped before registering its branch is made again in
+    # the same repository; the earlier attempt's commits stay in the reflog.
+    restart = found is not None and unfinished_bootstrap(translated)
     if found is not None:
         preserve_game_files = preserve_game_files or _preserve_game_files(found[0])
 
-    if found is None:
-        if translated.joinpath(".git").exists():
+    if found is None or restart:
+        if found is None and translated.joinpath(".git").exists():
             raise GitWorkflowError("The selected folder contains unusable Git metadata")
         # Format and validate on disk before creating any repository state.
         # The clean official folder is left untouched when it is a separate path;
@@ -1722,7 +1769,8 @@ def bootstrap_repository(
             _source_files(original, format_json=True)
             preformatted, prewarnings = _prepare_worktree_formatting(translated)
         gitignore_installed = _install_gameupdate_gitignore(translated, preserve_game_files=preserve_game_files)
-        _run_git(translated, "init", "-b", TRANSLATION_BRANCH)
+        if found is None:
+            _run_git(translated, "init", "-b", TRANSLATION_BRANCH)
         repo, prefix = translated, ""
         translation_branch = TRANSLATION_BRANCH
         _configure_exact_tree_repo(repo)

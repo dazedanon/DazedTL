@@ -8,7 +8,7 @@ from util.version_update import (
     GitWorkflowError, bootstrap_repository, inspect_repository,
     record_version_metadata, register_translation_branch,
 )
-from util.version_update.git_workflow import _git_paths, _preserve_game_files, _run_git
+from util.version_update.git_workflow import _git_paths, _preserve_game_files, _run_git, unfinished_bootstrap
 
 
 def _pending_operations(repo: Path) -> list[str]:
@@ -60,7 +60,9 @@ def setup_git(project: LenProject, *, original_game: Path | None = None, version
         record_version_metadata(project.game_root, version)
         action = "version-recorded"
     else:
-        if repo and not before["worktree_clean"]:
+        # A baseline DazedTL began and never registered is made again from the current files.
+        restart = bool(repo) and unfinished_bootstrap(project.game_root)
+        if repo and not restart and not before["worktree_clean"]:
             raise GitWorkflowError("Review and checkpoint current changes before registering a baseline; setup will not stage or discard them.")
         if not before["original_exists"] and before["available_original_refs"]:
             commits = {_run_git(Path(repo), "rev-parse", f"{ref}^{{commit}}").stdout.strip() for ref in before["available_original_refs"]}
@@ -70,7 +72,7 @@ def setup_git(project: LenProject, *, original_game: Path | None = None, version
             # without fetching, pushing, changing remotes or inventing an original.
             _run_git(Path(repo), "update-ref", "refs/heads/original", commits.pop(), "0" * 40)
             before = git_status(project)
-        if before["original_exists"]:
+        if before["original_exists"] and not restart:
             if version and before["original_version"] and version.strip() != before["original_version"]:
                 raise GitWorkflowError("The version differs from the existing original baseline. Use Version Update for a new release.")
             register_translation_branch(project.game_root, version, preserve_game_files=True)

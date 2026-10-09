@@ -653,11 +653,13 @@ class TranslationEngine:
 
     def audit_scope(self, source, manifest):
         from util.len_patch_scope import patch_manifest, scope_ignore
+        from util.version_update.git_workflow import unfinished_bootstrap
 
         # Reuse the patch helper's rejection of secrets, work records and unsafe paths.
         entries = patch_manifest(manifest)
         ignore = Path(source) / ".gitignore"
-        if not (Path(source) / ".git").exists():
+        # Only a baseline about to be made, or made again, takes these rules.
+        if not (Path(source) / ".git").exists() or unfinished_bootstrap(source):
             if ignore.is_symlink():
                 raise ValueError("The game's ignore file cannot be a symbolic link.")
             previous = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
