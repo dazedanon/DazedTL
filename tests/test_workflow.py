@@ -18,6 +18,7 @@ from dazedtl.translation import delivery, progress_report
 from dazedtl.translation.backups import materialized, snapshot, store_path
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
+from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.operations import (
     execute,
     lifecycle,
@@ -459,7 +460,7 @@ class WorkflowTests(unittest.TestCase):
         # The user can hand the prompt back to the assistant during the wait,
         # without rewriting the guidance the run's frozen requests depend on.
         handoff = self.service.prepare(self.identity)["handoff"]
-        self.assertIn("--project " + self.identity, handoff)
+        self.assertIn(helper_command(self.service.workspace, self.identity), handoff)
         self.assertFalse(self.engine.refreshed)
         lock.close()
         preview = self.service.request(self.identity, run["id"], 0)
