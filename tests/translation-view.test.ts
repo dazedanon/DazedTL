@@ -2130,6 +2130,29 @@ test("file line amounts count each source request once at its latest attempt", (
     done: 40,
     total: null,
   });
+  // A file the stopped run saved whole has its total, and a rerun that
+  // carried it over unsent keeps the lines of the run that translated it.
+  const whole = {
+    ...run,
+    status: "stopped",
+    availableOutputs: ["Items.json"],
+    partialOutputs: [],
+    changedOutputs: ["Items.json"],
+  };
+  assert.deepEqual(lines(state([whole])), { done: 40, total: 50 });
+  const rerun = {
+    ...whole,
+    id: "rerun",
+    status: "complete",
+    created: "2026-10-05T11:00:00+00:00",
+    changedOutputs: [],
+    process: { errors: [], requests: [] },
+  };
+  assert.deepEqual(lines(state([rerun, whole])), { done: 40, total: 50 });
+  assert.deepEqual(lines(state([{ ...rerun, status: "running" }, whole])), {
+    done: 40,
+    total: 50,
+  });
 });
 
 test("text locations name the editor's event, page and command, counting from one", () => {

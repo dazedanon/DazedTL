@@ -243,33 +243,50 @@ export function settledWithoutRequests(
  * "nothing to translate" check closes the file at what is done. Estimates
  * carry no per-file lines, so without a run the amounts stay unknown. A Live
  * run prepares requests as it goes, so while it works only the saved lines
- * are known; `running` marks that partial count.
+ * are known; `running` marks that partial count. A run that carried a
+ * finished file over without sending it, such as a rerun after a stop,
+ * keeps the lines of the run that translated it.
  */
 export function fileLines(
   state: Pick<GuidedState, "runs" | "sourceStatus">,
   phase: Phase,
   name: string,
 ): { done: number; total: number | null; running?: boolean } {
-  const run = fileRun(state.runs, phase, name, state.sourceStatus.retired);
+  const latest = fileRun(state.runs, phase, name, state.sourceStatus.retired);
   // One row per source request, at its latest attempt; duplicates never count.
-  const rows =
+  const requests = (run?: Job) =>
     run && !run.temporary
       ? groupedRequests(run.process?.requests || []).filter(
           (row) => row.file === name && row.state !== "unused",
         )
       : [];
+  // The run saved this file whole, whether or not the run itself finished.
+  const finished = (run: Job) =>
+    !!run.availableOutputs?.includes(name) &&
+    !run.partialOutputs?.includes(name);
+  const translated =
+    latest && !requests(latest).length && finished(latest)
+      ? fileMetricRun(state.runs, phase, name, state.sourceStatus.retired)
+      : undefined;
+  const run = translated && requests(translated).length ? translated : latest;
+  const rows = requests(run);
   const sum = (items: typeof rows) =>
     items.reduce((total, row) => total + row.sourceItems, 0);
   const done = sum(
     rows.filter((row) => ["validated", "saved"].includes(row.state)),
   );
-  if (settledWithoutRequests(state, phase, name, run))
+  if (settledWithoutRequests(state, phase, name, latest))
     return { done, total: done };
   if (run && run.mode !== "batch" && activeWorker(run))
     return { done, total: null, running: true };
-  // Live prepares requests as it goes, so one that ended early never saw
-  // the rest of the file and its prepared lines are not the file's total.
-  if (run && run.mode !== "batch" && run.status !== "complete")
+  // Live prepares requests as it goes, so a file a run did not finish never
+  // saw the rest of its lines and the prepared ones are not its total.
+  if (
+    run &&
+    run.mode !== "batch" &&
+    run.status !== "complete" &&
+    !finished(run)
+  )
     return { done, total: null };
   return { done, total: rows.length ? sum(rows) : null };
 }
