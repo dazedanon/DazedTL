@@ -1498,11 +1498,18 @@ pre {
   border-radius: var(--control-radius);
   background: var(--color-border);
 }
+/* A done mark follows its label, or starts the next line when narrow. */
+.step-progress > li > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-1);
+}
 .step-progress > li[data-state="done"] {
   color: var(--color-label);
 }
 .step-progress > li[data-state="done"]::before {
-  background: var(--color-accent-strong);
+  background: var(--color-success);
 }
 .step-progress > li[data-state="current"] {
   color: var(--color-text);
@@ -1510,6 +1517,17 @@ pre {
 }
 .step-progress > li[data-state="current"]::before {
   background: var(--color-accent);
+}
+/* Left unfinished behind the current step: half its bar. */
+.step-progress > li[data-state="started"] {
+  color: var(--color-label);
+}
+.step-progress > li[data-state="started"]::before {
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 50%,
+    var(--color-border) 50%
+  );
 }
 .step-progress > li[data-state="blocked"] {
   color: var(--color-text);

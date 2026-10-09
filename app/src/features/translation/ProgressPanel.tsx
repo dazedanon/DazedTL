@@ -14,13 +14,13 @@ import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Feedback } from "../../ui/Feedback";
-import { displayLabels, type DisplayState } from "../../ui/displayStatus";
+import type { DisplayState } from "../../ui/displayStatus";
 import { timeAgo } from "../../ui/displayText";
 import { JobStatus } from "../../ui/JobStatus";
 import { StatusPanel } from "../../ui/StatusPanel";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
-import { StepProgress, type StepState } from "../../ui/StepProgress";
+import { StepProgress } from "../../ui/StepProgress";
 import { TranslationCost } from "../guided/TranslationReview";
 import type { ProjectLink } from "../guided/workspace/model";
 import {
@@ -30,24 +30,10 @@ import {
   estimateOutdated,
   latestApiRun,
 } from "./apiRun";
+import { phaseStates } from "./assistantPhases";
 import { modeLabels } from "./OptionsPanel";
 import { StartOver } from "./StartOver";
 
-/** The assistant's phases, in the order the starting prompt works through. */
-const phases = [
-  { id: "preparation", label: "Preparation" },
-  { id: "extraction", label: "Extraction" },
-  { id: "translation", label: "Translation" },
-  { id: "injection", label: "Injection" },
-  { id: "qa", label: "QA" },
-  { id: "patch", label: "Patch" },
-];
-const phaseSteps: Record<string, { state: StepState; detail?: string }> = {
-  complete: { state: "done" },
-  active: { state: "current" },
-  blocked: { state: "blocked", detail: displayLabels.blocked },
-  out_of_scope: { state: "next", detail: displayLabels.skipped },
-};
 /** The assistant reports at least every 10 minutes while it works. */
 const QUIET_MINUTES = 20;
 const money = (value: number) => "$" + value.toFixed(2);
@@ -158,16 +144,7 @@ export function ProgressPanel({
         )}
         <StepProgress
           label="Assistant phases"
-          steps={phases.map((phase) => ({
-            ...phase,
-            ...(phaseSteps[
-              reported
-                ? progress.phases[phase.id]
-                : activity && phase.id === "preparation"
-                  ? "active"
-                  : ""
-            ] || { state: "next" }),
-          }))}
+          steps={phaseStates(progress, !!activity, options.include_images)}
         />
         {!!(text?.translated || text?.reviewed || images?.translated) && (
           <p className="translation-metrics">
