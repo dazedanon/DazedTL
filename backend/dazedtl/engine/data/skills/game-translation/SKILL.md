@@ -98,7 +98,7 @@ Use its system prompt and matched glossary in direct translation or the adapted 
 driver. SFX and reference translations are advisory. Refresh after guidance changes;
 retain the request fingerprint with retries and review records. Add a suitable
 `--instruction-key section.key` for a field-specific shared instruction template.
-For a sequence, prefer `context-many` as described in `references/direct-workflow.md`; it reuses shared guidance and reference reads while preserving each batch context exactly.
+Under DazedTL's project helper, save the extracted lines as source units and run `organize` instead, as described in `references/direct-workflow.md`; it groups and compiles every request, so the game text never passes through the assistant's own writing.
 The compiler itself makes no API calls and exports no credentials.
 
 For dialogue, also pass `--speakers <speaker JSON>` with the same IDs or list positions
@@ -164,12 +164,10 @@ Follow the user's delegation instructions and read `references/direct-workflow.m
 
 API Batch work reads `references/api-batch.md` first.
 Reuse the app's API Settings, pricing helpers and supported Batch backend.
-Prepare extraction, shared guidance, engine adapters and request compilation locally before paid submission.
-A whole-job price remains unavailable until the complete planned request corpus exists; do not label missing prices as $0.
-Run the live `api-estimate` helper, present its source-bound quote in the conversation,
-and obtain any missing spending authorization before submitting the actual collected requests.
-Changed source, scope, guidance, references or API settings require a fresh estimate.
-Review the actual collected adapter requests before submission; a preliminary allowance is not a spending cap.
+Prepare extraction, shared guidance and source units locally before paid submission; `organize` compiles the requests and the run carries the quote.
+A whole-job price remains unavailable until the complete unit inventory exists; do not label missing prices as $0.
+Present the run's quote in the conversation and obtain any missing spending authorization before starting it.
+Changed source, scope, guidance, references or API settings require a fresh estimate; a quote is not a spending cap.
 
 Only an explicit preparation-only request ends with extraction, guidance, request plan and validation plan.
 For every mode, images follow the user's selected scope; finding Japanese art does not expand it.

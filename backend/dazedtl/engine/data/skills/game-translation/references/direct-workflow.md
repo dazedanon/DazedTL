@@ -18,47 +18,22 @@ Use smaller batches after a validation failure, and increase only when the measu
 Do not split a scene merely to hit a fixed batch size.
 Translate names and terminology before dependent dialogue when that prevents repeated revision.
 
-## Compile a sequence without rereading the same corpus for every batch
+## Organize the extracted lines without rewriting them
 
-For one batch, the existing `context --sources ... --speakers ...` command remains available.
-For many batches, write a plan containing the reviewed source payloads and exact source/guidance input paths relative to the game:
-
-```json
-{
-  "complete": false,
-  "inputs": [".dazedtl/len-method/work/source-units.json"],
-  "batches": [{
-    "id": "map001-scene01",
-    "sources": {"line01": "はい。"},
-    "speakers": {"line01": "リリ"},
-    "source_context": ""
-  }]
-}
-```
-
-`instruction_key` is optional; choose an existing field template from the live `data/translation_contexts.json`, never invent a key.
-Omit it when no field-specific template applies.
-`speakers` and `source_context` are also optional, but provide known dialogue context.
-Set `complete` true only when the plan includes every request needed for the selected translation scope and source coverage is independently audited.
-A partial plan can support direct work, but it cannot be quoted as a complete API job.
+Under DazedTL's project helper, the extractor saves every line in scope as source units, and `organize` groups them into requests and compiles the run.
+Run the helper's `units-format` for the file's shape: stable occurrence IDs the injector maps back, scene and group keys in play order, kinds, evidenced speakers or null, literal protected tokens and layout bounds.
+Move game text only with scripts; never paste, retype or summarize the Japanese or its translation in replies or hand-written files.
 
 ```bash
-python DAZEDTL_ROOT/scripts/len_translation.py context-many \
-  --game-root /path/to/game --input /path/to/plan.json \
-  --output /path/to/game/.dazedtl/len-method/api-requests.json
+<helper> organize --input .dazedtl/len-method/work/source-units.json --complete
 ```
 
-The helper compiles shared guidance and reference matches once for the sequence, then checks them again before returning.
-Each batch context remains identical to the single-batch compiler output.
-Changed dependencies abort compilation; this is an operation-local reuse, not a permanent cache of old instructions.
-The saved plan binds source inputs, scope and the request compiler/templates to hashes.
-The live helper never invokes a translation provider or exports credentials.
-
-Consume the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.
-Retain the batch ID and `request_sha256` beside saved results and retry records.
-Compact whitespace or use a lossless structured view to reduce overhead; do not truncate glossary notes, discard fields or summarize instructions to make a request fit.
-Before adopting an optimized compiler/display, compare every resulting field and source ID against the existing path on representative batches, then benchmark it with the same data.
-A faster context compiler does not establish a faster model or end-to-end translation rate.
+Add `--complete` only once the inventory audit shows the units cover every line in scope; API estimates require it.
+The reply holds counts only, and errors name unit IDs, so fix the extractor and organize again.
+Organize packs whole scenes of one group up to the model's entries per request, splits larger scenes with their earlier lines as context, and binds the run to the units file.
+Every request carries the full system, glossary, SFX, field instructions, preceding source context, speaker-bearing `user` payload and advisory reference translations.
+In Assistant only, read each request with the helper, translate it, and save its receipt with `accept`; decline a request you won't translate rather than softening or leaving out lines.
+`results --run ID` writes the accepted translations by unit ID for the injector.
 
 ## Save small results; validate at the right scale
 
