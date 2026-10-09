@@ -2,11 +2,7 @@
 
 Source: <https://gitgud.io/zero64801/wolfdawn>
 
-Both platform binaries were built from tag `1.0.0`, commit
-`a30a3e82f133cebe10847f82897e7ff953fc57a5`.
+Both platform binaries were built from `master` at commit `eca12c0e9a5e06094b231db4f9eb8c7598ed8b16` (2026-10-06), 24 commits after tag `1.0.0`, with `python -m util.wolfdawn.update_tools --refresh-all`.
 
-The upstream repository did not contain a license file or declare a license
-when checked on 2026-08-02. Source availability alone does not grant
-redistribution rights. These binaries therefore remain a release-compliance
-blocker until the copyright holder supplies an explicit license or confirms
-that DazedTL may redistribute these builds.
+The upstream workspace `Cargo.toml` declares `license = "MIT"`, but the repository has no license file carrying the copyright notice and permission text that MIT redistribution requires (checked on 2026-10-08).
+These binaries therefore remain a release-compliance blocker until the copyright holder supplies that license text or confirms that DazedTL may redistribute these builds.
