@@ -556,8 +556,14 @@ class Jobs:
             time.sleep(0.05)
         for process in self.processes.values():
             if process.poll() is None:
+                # The whole tree, or a Git command the worker waits on outlives it.
                 if os.name == "nt":
-                    process.terminate()
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
                 else:
                     os.killpg(process.pid, signal.SIGTERM)
         self.reconcile()
