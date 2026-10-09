@@ -28,6 +28,8 @@ from dazedtl.api.contracts.guided import (
 )
 from dazedtl.api.contracts.images import (
     ImageActionResult,
+    ImageAssistantStep,
+    ImageAssistantStepResult,
     ImageDiscoveryScope,
     ImageEditorActionResult,
     ImageEditorSave,
@@ -200,6 +202,11 @@ class TranslationIdentifyRequest(TypedDict):
     project_id: str
     engine: str
     evidence_file: str
+
+
+class TranslationImagesRequest(TypedDict):
+    project_id: str
+    step: ImageAssistantStep
 
 
 class TranslationLegacyRequest(TypedDict):
@@ -602,6 +609,7 @@ METHODS: dict[str, Method] = {
         TranslationResolveUncertainRequest, TranslationJob
     ),
     "translation_identify": Method(TranslationIdentifyRequest, Saved),
+    "translation_images": Method(TranslationImagesRequest, ImageAssistantStepResult),
     "translation_legacy": Method(TranslationLegacyRequest, Job | ExportedFiles),
     # Images
     "images_state": Method(ProjectRequest, ImageManagerState, refresh=False),

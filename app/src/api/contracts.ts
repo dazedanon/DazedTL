@@ -1667,6 +1667,31 @@ export type ImageNativeTranslationActionResult = {
   result: ImageNativeOutcome;
 };
 
+export type ImageAssistantCounts = {
+  indexed: number;
+  notExamined: number;
+  recommended: number;
+  uncertain: number;
+  listed: number;
+  ready: number;
+  needsReview: number;
+  skipped: number;
+  applied: number;
+};
+
+/** Where an Assistant-led project's Images flow stands after a step. */
+export type ImageAssistantStepResult = {
+  next: "scan" | "investigate" | "translate" | "apply" | "done";
+  scan: string;
+  investigation: string;
+  translation: string;
+  problems: string[];
+  counts: ImageAssistantCounts;
+  task: string;
+  report: string;
+  applied: string[];
+};
+
 export type PluginFileReview = {
   path: string;
   destination: string;
@@ -1927,6 +1952,11 @@ export type TranslationIdentifyRequest = {
   project_id: string;
   engine: string;
   evidence_file: string;
+};
+
+export type TranslationImagesRequest = {
+  project_id: string;
+  step: "status" | "scan" | "investigate" | "translate" | "apply";
 };
 
 export type TranslationLegacyRequest = {
@@ -2395,6 +2425,10 @@ export type RpcContract = {
   translation_identify: {
     request: TranslationIdentifyRequest;
     response: Saved;
+  };
+  translation_images: {
+    request: TranslationImagesRequest;
+    response: ImageAssistantStepResult;
   };
   translation_legacy: {
     request: TranslationLegacyRequest;

@@ -447,3 +447,32 @@ class ImageNativeOutcome(TypedDict):
 class ImageNativeTranslationActionResult(TypedDict):
     state: ImageNativeTranslationState
     result: ImageNativeOutcome
+
+
+ImageAssistantStep = Literal["status", "scan", "investigate", "translate", "apply"]
+
+
+class ImageAssistantCounts(TypedDict):
+    indexed: int
+    notExamined: int
+    recommended: int
+    uncertain: int
+    listed: int
+    ready: int
+    needsReview: int
+    skipped: int
+    applied: int
+
+
+class ImageAssistantStepResult(TypedDict):
+    """Where an Assistant-led project's Images flow stands after a step."""
+
+    next: Literal["scan", "investigate", "translate", "apply", "done"]
+    scan: str
+    investigation: str
+    translation: str
+    problems: list[str]
+    counts: ImageAssistantCounts
+    task: str
+    report: str
+    applied: list[str]

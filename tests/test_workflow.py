@@ -27,7 +27,7 @@ from dazedtl.translation.operations import (
 )
 from dazedtl.translation.project import DEFAULTS, WORK, ProjectWorkspace, scope
 from dazedtl.translation.requests import plan_input
-from dazedtl.translation.service import Translation
+from dazedtl.translation.service import IMAGE_UNITS, Translation
 
 
 class Engine:
@@ -371,6 +371,30 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(
                 (self.game / (WORK + "/progress.json")).read_bytes(), before
             )
+
+    def test_reports_count_images_from_the_image_manager(self):
+        # The assistant's reports must carry the Image Manager's records, or
+        # translation never completes and packaging stays blocked.
+        selected = self.project.read()
+        self.service.save(
+            self.identity,
+            selected["revision"],
+            {**selected["options"], "include_images": True},
+        )
+        records = {"complete": False, "units": []}
+        self.service.image_units = lambda _identity: records
+        path = WORK + "/work/report.json"
+        write_json(
+            self.game / path, {"phase": "translation", "images": "my-images.json"}
+        )
+        self.service.progress(self.identity, path)
+        self.assertEqual(self.engine.reports[-1]["images"], IMAGE_UNITS)
+        self.assertEqual(read_json(self.game / IMAGE_UNITS), records)
+        # Applying images republishes the last report with the new counts.
+        records = {"complete": True, "units": []}
+        self.service.sync_images(self.identity)
+        self.assertEqual(read_json(self.game / IMAGE_UNITS), records)
+        self.assertEqual(self.engine.reports[-1]["phase"], "translation")
 
     def test_an_api_run_answers_its_approval_and_keeps_later_questions(self):
         selected = self.project.read()

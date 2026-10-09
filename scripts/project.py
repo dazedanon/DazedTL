@@ -91,10 +91,32 @@ def main():
     parser.add_argument("--project", required=True)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("state")
-    commands.add_parser(
+    images = commands.add_parser(
         "images",
-        help="Read the selected project's indexed images, scoped handoffs and saved reports",
+        help="Read the selected project's indexed images, scoped handoffs and saved reports; "
+        "an Assistant-led project's assistant runs its Images steps with one flag",
     )
+    image_step = images.add_mutually_exclusive_group()
+    for step, text in (
+        ("status", "Where the Images steps stand and which comes next"),
+        ("scan", "Index the game's images and wait for the scan to finish"),
+        (
+            "investigate",
+            "Save the task that finds images with text, as a file to follow",
+        ),
+        (
+            "translate",
+            "Make editable copies of the listed images and save the task that translates them",
+        ),
+        ("apply", "Put the translated, reviewed images into the game"),
+    ):
+        image_step.add_argument(
+            "--" + step,
+            dest="image_step",
+            action="store_const",
+            const=step,
+            help=text,
+        )
     plugins = commands.add_parser(
         "plugins",
         help="Read plugin work or continue the copied agent task after saving its report",
@@ -227,6 +249,9 @@ def main():
             method = "translation_" + args.command.replace("-", "_")
             if args.command == "images":
                 method = "images_state"
+                if args.image_step:
+                    method = "translation_images"
+                    params["step"] = args.image_step
             if args.command == "plugins":
                 method = (
                     "plugins_continue" if args.continue_request else "plugins_state"
@@ -276,6 +301,10 @@ def main():
             result = call(args.workspace, method, params)
             if args.command == "run" and args.wait > 0:
                 result = wait(args.workspace, params, result, args.wait)
+            if getattr(args, "image_step", None) == "scan":
+                while result["scan"] == "running":
+                    time.sleep(2)
+                    result = call(args.workspace, method, {**params, "step": "status"})
         rendered = json.dumps(result, ensure_ascii=False, indent=2)
         if getattr(args, "output", None):
             args.output.write_text(rendered + "\n", encoding="utf-8")

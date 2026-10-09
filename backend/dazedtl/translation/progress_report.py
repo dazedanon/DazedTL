@@ -29,6 +29,20 @@ def publish(workspace, project_id, engine, source, options, report):
     return value
 
 
+def update(workspace, project_id, engine, source, options, change):
+    """Republishes the last report after change edits it in place; nothing
+    happens before the assistant's first report."""
+    with _lock(workspace, project_id):
+        path = project_path(source, REPORT, exists=False)
+        if not path.exists():
+            return None
+        report = read_json(path)
+        change(report)
+        value = engine.progress(source, options, report)
+        write_json(path, report)
+    return value
+
+
 def refresh(workspace, project_id, engine, plan, *, started=False):
     """Republishes the last report with counts from the plan's saved results.
 

@@ -77,6 +77,7 @@ class Application:
         self.assistant_tasks = AssistantTasks(self.workspace)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
+        self.translation.image_units = self.images.progress_units
         self.translation.legacy_actions = {
             "resume": lambda identity: views.job(self.guided.resume(identity)),
             "stop": lambda identity: views.job(self.guided.stop(identity)),
@@ -387,6 +388,25 @@ class Application:
         return self._handed_off(
             project_id, self.images.action(project_id, action, options)
         )
+
+    def translation_images(self, project_id, step):
+        """One Images step for an Assistant-led project's own assistant. A
+        Guided project's Images task stays the user's to apply."""
+        record, project = self.translation.project(project_id)
+        if record.get("method") != "len":
+            raise ValueError(
+                "The helper's image steps are for Assistant-led projects; Guided translates images in its Images task."
+            )
+        if not project.read()["options"]["include_images"]:
+            raise ValueError(
+                "Image text is outside this project's scope; report any remaining baked text instead."
+            )
+        result = self.images.assistant(project_id, step)
+        try:
+            self.translation.sync_images(project_id)
+        except ValueError as exc:
+            result["problems"].append("Progress was not updated: " + str(exc))
+        return result
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(
@@ -699,6 +719,10 @@ def routes(app):
     # Absent from the helper's methods: only the user starts a project over.
     methods["project_start_over"] = (
         app.translation.start_over,
+        lambda value, _params: value,
+    )
+    methods["translation_images"] = (
+        app.translation_images,
         lambda value, _params: value,
     )
     methods["images_action"] = (

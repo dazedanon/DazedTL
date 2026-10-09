@@ -76,6 +76,9 @@ GUIDED_OPERATIONS = {
     "release_patch": ("Build local patch ZIP", {"plan", "sha256"}),
 }
 
+# The Image Manager's progress as Len image records, which the app writes.
+IMAGE_UNITS = WORK + "/work/image-units.json"
+
 # Started only from the app's own controls; the project helper cannot reach
 # these, so an assistant can never start its own project over.
 USER_OPERATIONS = {
@@ -95,6 +98,8 @@ class Translation:
         self.contact_lock = threading.Lock()
         # The API server installs handlers for the retained legacy run actions.
         self.legacy_actions: dict[str, Callable[..., Any]] = {}
+        # And the Image Manager's progress for Assistant-led image records.
+        self.image_units: Callable[[str], dict | None] | None = None
 
     def project(self, identity):
         record = self.projects.get(identity)
@@ -445,6 +450,23 @@ class Translation:
             else "Investigation: standard. setup.md describes One-pass discovery; follow it, and don't run the three blind passes some skill references describe."
         )
         instructions = selected["options"]["instructions"].strip() or "(none)"
+        images = (
+            "\n9. Images: translate them through DazedTL's Images steps rather than Len's manual image pipeline; "
+            "images --status says which step comes next, and the steps resume where they stopped. "
+            "images --scan indexes the game's images, decrypting encrypted ones. "
+            "images --investigate saves a task file and the report path it expects: follow the task to find the images with text players read, then save the report. "
+            "Your recommendations become the list. images --translate makes editable copies of the listed images and saves the translation task, "
+            "which carries the image skill and the local inpainting tools; follow it and save its report. "
+            "Change only the text and the pixels it covers. Report an image you can't or won't edit as skipped, with the reason; it stays out of the patch. "
+            "images --apply puts the translated, reviewed images into the game, encrypted as the game expects, and lists the runtime files it changed: "
+            "add them to the runtime patch manifest before QA and the checkpoint. "
+            "Repeat until images --status reports done. The app records image progress from these steps, so leave images out of your progress reports. "
+            "If images --status reports that DazedTL can't read this engine's images, follow Len's image reference and report images in your progress records."
+            if selected["options"]["include_images"]
+            else ""
+        )
+        steps = "6-9" if images else "6-8"
+        injection, qa = ("10", "11") if images else ("9", "10")
         handoff = f"""Translate this game and deliver a verified local patch using Len's maintained game-translation skills.
 
 Game: {json.dumps(str(project.root), ensure_ascii=False)}
@@ -458,7 +480,7 @@ Work autonomously from start to finish. Ask the user only when the work cannot c
 
 The user's assistant plan pays for this session, so keep it economical. Read the skill and the detected engine's reference first; read each other reference when its phase begins, and only the sections the current step needs: project-lifecycle before backup and Git, glossary-and-prompts before guidance, text-fitting before injection, playtesting-and-release before the canary and QA, and version-updates only for an official game update. Prefer scripts and the helper over reading or pasting large files, and don't reread files already in context.
 
-Work in the numbered order below. Send your first progress report, with preparation active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps 6-8, injection is step 9, qa is step 10's checks, and patch is packaging. Mark a phase complete once its work is saved.
+Work in the numbered order below. Send your first progress report, with preparation active, right after the first state read and before any other work; then report each phase when you enter it: preparation is steps 1-3 and the delivery canary, extraction is steps 4-5, translation is steps {steps}, injection is step {injection}, qa is step {qa}'s checks, and patch is packaging. Mark a phase complete once its work is saved.
 
 Retain engine-specific methodology and existing valid work. Use the shared glossary, game.md, quirks.md, custom skills, and registered reference games. Preserve uncertainty, speaker identities, scene boundaries, protected controls, and source-supported character voice.
 
@@ -478,9 +500,9 @@ After a connection failure, inspect state and the relevant run before retrying a
 5. Save a version-2 source-bound request plan using the format returned by plan-format. Classify every source ID in kinds as dialogue, narration, ui, or unknown when evidence cannot establish the text type. Supply a complete speakers map: use an evidenced name or null for unknown/inapplicable speakers; UI always has a null speaker. Never inherit the previous speaker or infer identity or gender from speech style. Unknown speakers are valid and do not block translation. Group coherent exchanges; include relevant Japanese from the same scene/event branch, scene/context notes and runtime substitution meanings, field instruction keys, and explicit engine-specific protected tokens/layout bounds. Resolve subjects and addressees separately from the speaker; preserve voice supported by the Japanese without inventing an identity. Add qa_notes keyed by source ID only for concrete uncertainty that could change meaning, gender, perspective or a plot fact. State the ambiguity and evidence to check; do not flag every unknown speaker or turn guesses into established facts. Declare immutable source exports as inputs, not a store whose translation fields change while you work. Tracked game-source files bind to original so ordinary English injection does not invalidate their source. Use compile --input <project-relative plan>. The helper supplies the same compiled context and validators in every mode. For API work, respect the configured request size and include source overlap when an exchange spans requests.
 6. Assistant only: read request --run <id> --index <n>, translate with your own session using every context field, perform the source-checked dialogue pass, and save a JSON receipt with request_sha256 and translations. Use accept --run <id> --batch <id> --input <project-relative receipt>. DazedTL makes no translation API calls in this mode. Follow the user's delegation instructions.
 7. Live API or API Batch: if no API connection is saved, finish all independent work first, then ask the user to add one in DazedTL's Settings. Inspect the exact compiled request and quote. Obtain any missing spending authorization in this same conversation, then use start --run <id> --approve <quote token>. This submits only the frozen reviewed request set. When you ask, tell the user they can also approve with the button on DazedTL's Progress tab, which starts the run itself; inspect the run before starting it. DazedTL runs the job; while it works, continue independent work such as images and fitting or injection tools. To wait, use run --run <id> --wait <minutes>, which returns when the run finishes or changes state, with a command timeout longer than the wait, instead of polling repeatedly. Resume saved jobs with start --run <id>. If the connection cannot run Batch, or a Batch run fails, prepare a Live quote for the remaining work and ask for its approval; never replace Batch with Live silently. Reconcile uncertain submissions before any retry; use attach-batch only with the matching provider job ID. Prepare a new remaining-work quote for failed requests. Do not ask the user to return to the app or copy another prompt at routine phase boundaries.
-8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Inspect each request's qa_notes and check flagged lines against surrounding source, relevant script branches or the installed scene. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Review accepted requests with review only after actually checking them and their flagged ambiguities against the source; fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.
-9. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved or excluded content explicitly.
-10. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
+8. Save translation records and report progress after each saved milestone, before waits, and at least every ten minutes. Use progress --input <project-relative report> for the maintained Len progress format. Routine progress reporting is lightweight; use operation backup_workspace or checkpoint for meaningful recovery milestones. Keep detailed evidence in status.md. Translation counts, source-checked review, images, injection, runtime QA and packaging are separate. Inspect each request's qa_notes and check flagged lines against surrounding source, relevant script branches or the installed scene. Preserve intentional ambiguity in the translation; retain any unresolved blocker in status.md. Review accepted requests with review only after actually checking them and their flagged ambiguities against the source; fingerprints are evidence, not counters to fabricate. For a correction, include the current result_sha256 as replaces_sha256 in the receipt and use accept again. It archives the previous result and invalidates affected review/QA; ordinary retries cannot overwrite accepted translations.{images}
+{injection}. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved or excluded content explicitly.
+{qa}. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. Use operation package for a local Git patch after QA is complete. Public publishing, uploads, remotes and pushes remain separate requests.
 
 For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Recompile only changed/new work with current source mappings; positional offsets alone are not stable across releases.
 
@@ -807,12 +829,43 @@ Additional project instructions:
     def refresh_progress(self, project_id, plan):
         progress_report.refresh(self.workspace, project_id, self.engine, plan)
 
+    def image_progress(self, project_id):
+        """Saves the Image Manager's progress as the image records an
+        Assistant-led report counts. None when the assistant keeps its own
+        image records, as for an engine the Image Manager can't read."""
+        _record, project = self.project(project_id)
+        if not project.read()["options"]["include_images"] or not self.image_units:
+            return None
+        value = self.image_units(project_id)
+        if value is None:
+            return None
+        write_json(project_path(project.root, IMAGE_UNITS, exists=False), value)
+        return IMAGE_UNITS
+
+    def sync_images(self, project_id):
+        """Republishes the last report with the Image Manager's current counts."""
+        images = self.image_progress(project_id)
+        if not images:
+            return
+        _record, project = self.project(project_id)
+        progress_report.update(
+            self.workspace,
+            project_id,
+            self.engine,
+            project.root,
+            project.read()["options"],
+            lambda report: report.update(images=images),
+        )
+
     def progress(self, project_id, input_path):
         # An API run can wait hours at the provider while the assistant works
         # on and reports; only operations change the game under a report.
         self.idle(project_id, "operation")
         _record, project = self.project(project_id)
         report = read_json(project.artifact(input_path))
+        images = self.image_progress(project_id)
+        if images and isinstance(report, dict):
+            report = {**report, "images": images}
         if (
             isinstance(report, dict)
             and report.get("phases", {}).get("qa") == "complete"
@@ -938,6 +991,7 @@ Additional project instructions:
                 raise ValueError("Review a completed official-update preview first.")
             arguments = {**preview["arguments"], "preview": previous["result"]}
         if action == "package":
+            self.sync_images(project_id)
             progress = self.engine.progress(project.root, selected, verify=True)
             if progress.get("warnings") or progress["phases"].get("qa") != "complete":
                 raise ValueError(

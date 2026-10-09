@@ -363,6 +363,116 @@ class ImageTests(unittest.TestCase):
             self.service.action(self.identity, "edit_task")
         self.assertEqual(editing["assets"][0]["id"], "img/A.png")
 
+    def test_an_assistant_led_assistant_runs_the_steps_and_its_progress_completes(
+        self,
+    ):
+        # Assistant-led packaging needs the image records to complete; before
+        # these steps its assistant could not reach the Image Manager at all.
+        write_bytes(self.game / "img/C.png", png((9, 9, 9, 255)))
+        self.assertEqual(self.service.assistant(self.identity, "scan")["next"], "scan")
+        self.scan()
+        self.assertEqual(
+            self.service.progress_units(self.identity),
+            {"complete": False, "units": []},
+        )
+        step = self.service.assistant(self.identity, "investigate")
+        request = read_json(Path(step["task"]).with_suffix(".json"))
+        # Its own task continues to the next step instead of stopping.
+        text = Path(step["task"]).read_text()
+        self.assertIn("Investigate which requested images", text)
+        self.assertNotIn("then stop", text)
+        self.assertEqual(step["report"], request["report"])
+        write_json(
+            request["report"],
+            {
+                "version": 1,
+                "kind": "discovery",
+                "projectId": self.identity,
+                "requestId": request["id"],
+                "inventoryRevision": request["inventoryRevision"],
+                "complete": True,
+                "assets": [
+                    {
+                        "id": row["id"],
+                        "sourceHash": row["sourceHash"],
+                        "classification": "no_text"
+                        if row["id"] == "img/B.png"
+                        else "recommended",
+                        "method": "visual",
+                        "examined": True,
+                        "reason": "",
+                        "evidence": "contact sheet 1",
+                        "variants": [],
+                    }
+                    for row in request["assets"]
+                ],
+            },
+        )
+        # The next step collects the report; recommendations become the list.
+        step = self.service.assistant(self.identity, "translate")
+        self.assertEqual((step["next"], step["counts"]["listed"]), ("translate", 2))
+        request = read_json(Path(step["task"]).with_suffix(".json"))
+        self.assertIn("Review each requested PNG", Path(step["task"]).read_text())
+        candidate = png((2, 3, 4, 100))
+        write_bytes(self.game / ".dazedtl/images/img/A.png", candidate)
+        hashes = {row["id"]: row["sourceHash"] for row in request["assets"]}
+        review = {
+            "version": 1,
+            "visual": True,
+            "alpha": True,
+            "protectedPixels": True,
+            "layout": True,
+            "evidence": "Compared original/candidate at native resolution.",
+        }
+        write_json(
+            request["report"],
+            {
+                "version": 1,
+                "kind": "editing",
+                "projectId": self.identity,
+                "requestId": request["id"],
+                "inventoryRevision": request["inventoryRevision"],
+                "complete": True,
+                "assets": [
+                    {
+                        "id": "img/A.png",
+                        "sourceHash": hashes["img/A.png"],
+                        "candidateHash": digest(candidate),
+                        "status": "edited",
+                        "reason": "",
+                        "review": review,
+                    },
+                    {
+                        "id": "img/C.png",
+                        "sourceHash": hashes["img/C.png"],
+                        "candidateHash": hashes["img/C.png"],
+                        "status": "skipped",
+                        "reason": "Text is part of the artwork.",
+                        "review": review,
+                    },
+                ],
+            },
+        )
+        self.assertEqual(
+            self.service.assistant(self.identity, "status")["next"], "apply"
+        )
+        step = self.service.assistant(self.identity, "apply")
+        self.assertEqual((step["next"], step["applied"]), ("done", []))
+        self.assertEqual((self.game / "img/A.png").read_bytes(), candidate)
+        # The skipped image stays out of the records; the applied one counts
+        # from its preserved original.
+        progress = self.service.progress_units(self.identity)
+        self.assertEqual(
+            (progress["complete"], [unit["id"] for unit in progress["units"]]),
+            (True, ["img/A.png"]),
+        )
+        unit = progress["units"][0]
+        self.assertEqual(
+            unit["translated_from_sha256"],
+            digest((self.game / unit["source"]).read_bytes()),
+        )
+        self.assertEqual((self.game / unit["translation"]).read_bytes(), candidate)
+
     def test_partial_reports_do_not_certify_detector_misses_or_replace_manual_exclusions(
         self,
     ):

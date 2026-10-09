@@ -17,6 +17,13 @@ Saved progress appears through the app observer.
 The helper cannot publish plugin files; final runtime Apply stays in the app.
 Read the active request before resuming after a lost reply.
 
+An Assistant-led project that includes image text runs the Images steps with `images --scan`, `--investigate`, `--translate` and `--apply`; `images --status` names the next one.
+Investigate and Translate save the same request-bound tasks Guided's Images task hands out, as files to follow, and the next step reads their saved reports.
+The assistant also does the user's part: its recommendations stay the list, and Apply publishes the translated, reviewed images and returns the runtime files to add to the patch manifest.
+The app turns the Image Manager's list into the image records that progress reports and packaging count.
+An image in the list counts until it is applied, one its translation skipped drops out, and the records complete once every image has a finding.
+Guided projects keep these steps in their Images task.
+
 ### Sandboxed connections
 
 A network sandbox can block loopback even when DazedTL is running.

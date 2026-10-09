@@ -39,6 +39,7 @@ CLASSIFICATIONS = {
 }
 EXAMINATION_METHODS = {"visual", "ocr", "local_ocr", "visual+ocr", "visual+local_ocr"}
 SCOPES = {"remaining", "all", "folders", "selected"}
+ASSISTANT_STEPS = ("status", "scan", "investigate", "translate", "apply")
 REVIEW_VERSION = 1
 VIEW = {
     "query": "",
@@ -1182,6 +1183,157 @@ class ImageService:
                 raise ValueError("Unknown image action.")
             return {"state": self.state(project_id)}
 
+    def assistant(self, project_id, step):
+        """Runs one Images step for an Assistant-led project's own assistant,
+        which also does the user's part: its recommendations stay the list,
+        and it applies the images it translated and reviewed."""
+        if step not in ASSISTANT_STEPS:
+            raise ValueError(
+                "Choose an image step: " + ", ".join(ASSISTANT_STEPS) + "."
+            )
+        profile = self.state(project_id)["profile"]
+        if not profile["supported"]:
+            raise ValueError(profile["reason"])
+        task, result = None, None
+        if step == "scan":
+            if (self.state(project_id)["job"] or {}).get("status") != "running":
+                self.action(project_id, "scan")
+        else:
+            self.action(project_id, "pickup")
+            if step == "investigate":
+                task = self.action(
+                    project_id,
+                    "discovery_task",
+                    {"scope": "remaining", "assistant": True},
+                )
+            elif step == "translate":
+                task = self.action(project_id, "edit_task", {"assistant": True})
+            elif step == "apply":
+                review = self.action(project_id, "preview_apply", {"ready_only": True})[
+                    "preview"
+                ]
+                result = self.action(project_id, "apply", {"token": review["token"]})[
+                    "result"
+                ]
+        state = self.state(project_id)
+        counts = state["counts"]
+        listed = counts["selected"]
+        waiting = {
+            kind: state[kind].get("status") in {"awaiting_results", "partial"}
+            for kind in ("discovery", "editing")
+        }
+        untranslated = listed - counts["selectedApplied"] - counts["selectedSkipped"]
+        next_step = (
+            "scan"
+            if (state["job"] or {}).get("status") == "running"
+            or not state["inventoryRevision"]
+            else "investigate"
+            if waiting["discovery"] or not self._investigated(project_id)
+            else "apply"
+            if counts["selectedReady"]
+            else "translate"
+            if waiting["editing"] or untranslated
+            else "done"
+        )
+        view = {
+            "next": next_step,
+            "scan": (state["job"] or {}).get("status", ""),
+            "investigation": state["discovery"].get("status", "idle"),
+            "translation": state["editing"].get("status", "idle"),
+            "problems": [
+                *state["discovery"].get("errors", []),
+                *state["editing"].get("errors", []),
+                *[
+                    state[kind]["rejected"]
+                    for kind in ("discovery", "editing")
+                    if state[kind].get("rejected")
+                ],
+            ],
+            "counts": {
+                "indexed": counts["indexed"],
+                "notExamined": counts["notExamined"],
+                "recommended": counts["recommended"],
+                "uncertain": counts["uncertain"],
+                "listed": listed,
+                "ready": counts["selectedReady"],
+                "needsReview": counts["selectedNeedsReview"],
+                "skipped": counts["selectedSkipped"],
+                "applied": counts["selectedApplied"],
+            },
+            "task": "",
+            "report": "",
+            "applied": [],
+        }
+        if task:
+            # The task's text embeds the image skill; a file keeps it out of
+            # the helper's printed reply.
+            path = Path(str(task["request"])).with_suffix(".md")
+            write_bytes(path, str(task["text"]).encode("utf-8"))
+            view.update(task=str(path), report=str(task["report"]))
+            if task.get("message"):
+                view["problems"].append(str(task["message"]))
+        if result:
+            view["applied"] = list(result.get("patch_files", []))
+            view["problems"].extend(result.get("errors", []))
+        return view
+
+    def _investigated(self, project_id):
+        """Whether every image has a finding or is settled, which is when an
+        investigation of the remaining images has nothing left to ask."""
+        return not any(
+            not (row.get("finding") or {}).get("examined")
+            and row["state"] != "applied"
+            and row["classification"] != "excluded"
+            for row in self._index(project_id).rows()
+        )
+
+    def progress_units(self, project_id):
+        """The Images flow as Len image progress records: each image in the
+        list, or already applied, counts until it is applied, except one its
+        translation skipped. None when this engine has no image profile."""
+        with self.lock:
+            value = self._load(project_id)
+            if not self._profile(project_id, value)["supported"]:
+                return None
+            root = self.record(project_id)[1]
+            listed = set(value["selection"])
+            units = []
+            for row in self._index(project_id).rows():
+                applied = row["state"] == "applied"
+                if not applied and (
+                    row["id"] not in listed or row["state"] == "skipped"
+                ):
+                    continue
+                # An applied image counts from its preserved original; any
+                # other from the untouched game file.
+                source = next(
+                    (
+                        relative
+                        for relative in (
+                            (row.get("frozen"), row.get("runtimeBackup"))
+                            if applied
+                            else (row.get("runtime"),)
+                        )
+                        if relative
+                        and project_path(root, relative, exists=False).is_file()
+                    ),
+                    None,
+                )
+                if not source:
+                    continue
+                unit = {"id": row["id"], "source": source, "translation": None}
+                if applied:
+                    unit.update(
+                        translation=row["editable"],
+                        translated_from_sha256=sha_file(project_path(root, source)),
+                    )
+                units.append(unit)
+            return {
+                "complete": bool(value["inventoryRevision"])
+                and self._investigated(project_id),
+                "units": units,
+            }
+
     def _scope(self, project_id, options, value):
         scope = options.get("scope", value["discovery"]["scope"])
         if scope not in SCOPES:
@@ -1239,6 +1391,7 @@ class ImageService:
         if not value["inventoryRevision"]:
             raise ValueError("Finish an image scan before preparing an assistant task.")
         kind = "discovery" if action == "discovery_task" else "editing"
+        own = options.get("assistant") is True
         scope, identities = (
             self._scope(project_id, options, value)
             if kind == "discovery"
@@ -1316,7 +1469,7 @@ class ImageService:
                 return {
                     "state": self.state(project_id),
                     **({"message": message} if message else {}),
-                    "text": self._task_text(project_id, previous, previous_path),
+                    "text": self._task_text(project_id, previous, previous_path, own),
                     "requestId": previous_id,
                     "request": str(previous_path),
                     "report": previous["report"],
@@ -1391,7 +1544,7 @@ class ImageService:
         return {
             "state": self.state(project_id),
             **({"message": message} if message else {}),
-            "text": self._task_text(project_id, request, request_path),
+            "text": self._task_text(project_id, request, request_path, own),
             "requestId": identity,
             "request": str(request_path),
             "report": str(report),
@@ -1407,9 +1560,9 @@ class ImageService:
             "expects": [str(report)],
         }
 
-    def _task_text(self, project_id, request, request_path):
+    def _task_text(self, project_id, request, request_path, own=False):
         root = self.record(project_id)[1]
-        contract = self._contract(request, request_path)
+        contract = self._contract(request, request_path, own)
         if request["kind"] == "editing":
             skill = self.adapter.skill(root, self._profile(project_id))
             # The Qt template assumes every PNG is scoped. Replace that statement before delegation.
@@ -1423,7 +1576,10 @@ class ImageService:
             )
         return contract
 
-    def _contract(self, request, path):
+    def _contract(self, request, path, own=False):
+        """The task an assistant follows. A copied task hands one step to
+        the user's assistant; own is the Assistant-led assistant, which runs
+        every step itself and continues to the next."""
         kind = request["kind"]
         example = {
             "version": 1,
@@ -1449,8 +1605,13 @@ class ImageService:
             ]
             instructions = (
                 "Investigate which requested images need translation. This is discovery only; do not edit images or game files. "
-                "Recommend the images with text players read: the app ticks your recommendations for the user to review before a separate translation task. "
-                "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
+                "Recommend the images with text players read: "
+                + (
+                    "your recommendations become the list you translate next. "
+                    if own
+                    else "the app ticks your recommendations for the user to review before a separate translation task. "
+                )
+                + "Use metadata, byte-identical duplicate groups, numbered contact sheets and enlarged crops/originals where needed. "
                 "Process bounded batches, cache results by source hash, resume unchanged work and record coverage honestly. "
                 "Use Len's image census methodology as a reference, not its whole-game authorization. "
                 "Local installed OCR is optional; do not install/download tools, invoke hosted OCR or paid services without separate authorization. "
@@ -1483,16 +1644,30 @@ class ImageService:
                 "Edit only the requested working PNG copies. Handle transcription, translation, rendering, validation and routine visual review. "
                 "Keep game runtime originals read-only, preserve exact filenames, PNG format, dimensions, mode and transparency. "
                 "Read frozen originals for redo and do not render repeatedly over translated pixels. Reuse glossary/context already saved in the request. "
-                "No mandatory user sign-off for every image. Report genuine uncertainties/exclusions or material generative choices for user decision; "
-                "do not call image-generation/paid services without separate authorization. "
+                "No mandatory user sign-off for every image. "
+                + (
+                    "Settle uncertainties yourself; report an image you can't or won't edit as skipped with the reason; "
+                    if own
+                    else "Report genuine uncertainties/exclusions or material generative choices for user decision; "
+                )
+                + "do not call image-generation/paid services without separate authorization. "
                 "Record edited/unchanged/skipped/needs_review/error for each asset and bind review to exact source and candidate hashes. "
                 "Review original/candidate appearance, alpha, protected artwork and runtime layout. Do not assert checks you have not performed. "
                 "Retain image_translation_log.md and reusable layout/resource records outside the editable tree. "
-                "Write the structured report below atomically, with partial updates for resume. The app, not the assistant, applies reviewed runtime images. "
-                "When the user later asks for changes, edit the same working copies and save this report again with their new candidate hashes and review; the app reads it again."
+                "Write the structured report below atomically, with partial updates for resume. "
+                + (
+                    "images --apply then puts the reviewed images into the game. "
+                    if own
+                    else "The app, not the assistant, applies reviewed runtime images. "
+                )
+                + "When the user later asks for changes, edit the same working copies and save this report again with their new candidate hashes and review; the app reads it again."
             )
         return (
-            "Perform this single user-authorized Guided image task using request "
+            (
+                "Perform this image task of your Assistant-led run using request "
+                if own
+                else "Perform this single user-authorized Guided image task using request "
+            )
             + str(path)
             + ".\n"
             "Request scope: "
@@ -1513,7 +1688,11 @@ class ImageService:
             + request["report"]
             + ". Required JSON schema example:\n"
             + json.dumps(example, ensure_ascii=False, indent=2)
-            + "\nCopying this task did not start an agent. Report what was completed, unresolved and skipped, then stop."
+            + (
+                "\nRecord what was completed, unresolved and skipped in status.md, then run images --status for the next step."
+                if own
+                else "\nCopying this task did not start an agent. Report what was completed, unresolved and skipped, then stop."
+            )
         )
 
     def _request(self, project_id, kind):
