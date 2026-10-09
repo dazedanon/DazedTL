@@ -204,6 +204,9 @@ class DeliveryRecord(TypedDict):
     commit: str
     game_version: str
     updater_stamp: bool
+    files: NotRequired[int]
+    # The workspace snapshot packaging takes, also kept as workspace_backup.
+    backup: NotRequired[BackupRecord]
 
 
 class VersionUpdate(TypedDict):

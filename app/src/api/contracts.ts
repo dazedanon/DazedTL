@@ -989,6 +989,8 @@ export type DeliveryRecord = {
   commit: string;
   game_version: string;
   updater_stamp: boolean;
+  files?: number;
+  backup?: BackupRecord;
 };
 
 export type VersionUpdate = {
