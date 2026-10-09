@@ -1,7 +1,8 @@
-const { spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const { createInterface } = require("node:readline");
 const path = require("node:path");
 const fs = require("node:fs");
+const { setTimeout: delay } = require("node:timers/promises");
 const protocol = require("../../backend/dazedtl/api/protocol.json");
 
 class Backend {
@@ -20,6 +21,7 @@ class Backend {
     this.pending = new Map();
     this.serial = 0;
     this.stopping = false;
+    this.forced = false;
     this.diagnostics = diagnostics;
     /** @type {NodeJS.ProcessEnv} */
     const env = {
@@ -53,6 +55,9 @@ class Backend {
       cwd: this.workspace,
       env,
       windowsHide: true,
+      // Its own process group, which a forced stop ends; Windows follows
+      // parent links instead.
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stderrBytes = 0;
@@ -143,6 +148,7 @@ class Backend {
           signal,
           stderrBytes,
           code: startupCode || undefined,
+          reason: this.forced ? "forced-stop" : undefined,
           operation: waiting?.method,
           seconds: waiting
             ? Math.round((Date.now() - waiting.started) / 1000)
@@ -180,24 +186,96 @@ class Backend {
       );
     });
   }
-  close() {
+  async close() {
     this.stopping = true;
-    if (this.process.exitCode !== null || this.process.signalCode !== null)
-      return Promise.resolve();
-    return new Promise((resolve) => {
-      // A backend still busy at the limit is stopped; closing then waits
-      // briefly for its exit, which records the stop and the request it was
-      // busy with before the app exits.
-      const timeout = setTimeout(() => {
-        this.process.kill();
-        setTimeout(resolve, 2000);
-      }, 12000);
-      this.process.once("exit", () => {
-        clearTimeout(timeout);
-        resolve(undefined);
-      });
-      this.process.stdin.end();
-    });
+    if (
+      !this.process.pid ||
+      this.process.exitCode !== null ||
+      this.process.signalCode !== null
+    )
+      return;
+    const exited = new Promise((resolve) =>
+      this.process.once("exit", () => resolve(true)),
+    );
+    const within = (milliseconds) =>
+      Promise.race([exited, delay(milliseconds, false)]);
+    this.process.stdin.end();
+    if (await within(12000)) return;
+    // A backend still busy at the limit is stopped together with everything
+    // it started, such as the Git command it waits on and workers; closing
+    // then waits briefly for its exit, which records the stop and the request
+    // it was busy with before the app exits.
+    this.forced = true;
+    await stopTree(this.process.pid);
+    await within(2000);
   }
 }
-module.exports = { Backend };
+
+/**
+ * Ends a process and every process it started. Workers lead sessions of their
+ * own, so their groups are found through their parents while the tree is
+ * still whole.
+ */
+async function stopTree(pid) {
+  if (process.platform === "win32") {
+    await new Promise((resolve) =>
+      execFile(
+        path.join(
+          process.env.SystemRoot || "C:\\Windows",
+          "System32",
+          "taskkill.exe",
+        ),
+        ["/PID", String(pid), "/T", "/F"],
+        { windowsHide: true, timeout: 10000 },
+        () => resolve(undefined),
+      ),
+    );
+    return;
+  }
+  const groups = await processGroups(pid);
+  const signal = (name) => {
+    for (const group of groups)
+      try {
+        process.kill(-group, name);
+      } catch {
+        groups.delete(group);
+      }
+  };
+  // Git removes its lock files when asked to stop; whatever still runs
+  // shortly after is killed.
+  signal("SIGTERM");
+  for (let waited = 0; groups.size && waited < 2000; waited += 100) {
+    await delay(100);
+    signal(0);
+  }
+  signal("SIGKILL");
+}
+
+/** The process groups of a process and of everything it started. */
+async function processGroups(root) {
+  const groups = new Set([root]);
+  const listing = await new Promise((resolve) =>
+    execFile(
+      "ps",
+      ["-A", "-o", "pid=,ppid=,pgid="],
+      { timeout: 5000 },
+      // Without a listing, the process's own group still ends.
+      (error, stdout) => resolve(error ? "" : stdout),
+    ),
+  );
+  const children = new Map();
+  for (const line of listing.split("\n")) {
+    const [pid, parent, group] = line.trim().split(/\s+/).map(Number);
+    if (!pid) continue;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push([pid, group]);
+  }
+  const pending = [root];
+  for (const parent of pending)
+    for (const [pid, group] of children.get(parent) || []) {
+      groups.add(group);
+      pending.push(pid);
+    }
+  return groups;
+}
+module.exports = { Backend, stopTree };

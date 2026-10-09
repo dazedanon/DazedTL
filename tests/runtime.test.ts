@@ -8,6 +8,10 @@ import { EventEmitter } from "node:events";
 import os from "node:os";
 import { rendererRecovery } from "../app/electron/renderer-recovery.cjs";
 import { Diagnostics } from "../app/electron/diagnostics.cjs";
+import { stopTree } from "../app/electron/backend.cjs";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { createInterface } from "node:readline";
 import { rendererFailure } from "../app/src/app/rendererErrors.ts";
 import { homeRelative } from "../app/src/ui/displayPath.ts";
 
@@ -195,6 +199,42 @@ test("diagnostics map renderer frames to source and keep backend hang records, w
     ).causes,
     [{ type: "Error", frames: [] }],
   );
+});
+
+test("a forced backend stop also ends workers in sessions of their own and the commands it waits on", async (t) => {
+  // Stands in for the backend: a worker in its own session and a hung Git
+  // command, both idle until stopped.
+  const backend = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const { spawn } = require("node:child_process");
+      const idle = ["-e", "setInterval(() => {}, 1000)"];
+      const worker = spawn(process.execPath, idle, { detached: true, stdio: "ignore" });
+      const git = spawn(process.execPath, idle, { stdio: "ignore" });
+      console.log(JSON.stringify([worker.pid, git.pid]));
+      setInterval(() => {}, 1000);`,
+    ],
+    {
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  );
+  const [line] = await once(createInterface({ input: backend.stdout }), "line");
+  const pids: number[] = [backend.pid!, ...JSON.parse(line)];
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  t.after(() => {
+    for (const pid of pids.filter(alive)) process.kill(pid, "SIGKILL");
+  });
+  await stopTree(backend.pid);
+  assert.deepEqual(pids.filter(alive), []);
 });
 
 test("desktop bounds fit scaled work areas without enlarging the default window on 4K displays", () => {

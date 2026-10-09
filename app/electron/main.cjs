@@ -101,8 +101,11 @@ app.on("second-instance", () => {
   window?.focus();
 });
 app.on("before-quit", (event) => {
-  if (quit) return;
+  // finishClose ends with app.exit, which skips this event. Any other quit,
+  // such as Electron's own once a destroyed window was the last, waits for it
+  // to stop the backend.
   event.preventDefault();
+  if (quit) return;
   // A window that is already gone can no longer save drafts; finish instead
   // of closing it, or the app would stay running without a window.
   if (!window || window.isDestroyed()) void finishClose();

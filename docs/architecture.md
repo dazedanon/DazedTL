@@ -912,6 +912,7 @@ Attaching a provider job still requires matching returned request IDs.
 Approval receipts bind the project, immutable plan and quote with a profile-local signature.
 A saved boolean alone cannot authorize a worker.
 Workers hold per-run locks and stop issuing work after losing their owning process.
+A backend still busy 12 seconds after closing is ended with every process it started, workers in sessions of their own included, so a hung Git command cannot keep holding the game or its index; their runs read as interrupted on the next start, and approved Batch queues continue as after any interruption.
 Closing or pausing cannot undo an already submitted provider request.
 
 Git baselines and backup records gate new translation work.
