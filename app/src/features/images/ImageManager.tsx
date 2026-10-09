@@ -46,6 +46,7 @@ import {
   gridStep,
   imageDraft,
   imageStatus,
+  rebaseImageDraft,
   virtualRows,
 } from "./imageSelection";
 import { focusItem, selectItem, type Modifiers } from "../../ui/selection";
@@ -646,6 +647,12 @@ function Manager({
       view: { ...current.view, ...patch, ...(reset ? { scroll: 0 } : {}) },
     }));
   };
+  // Edits made while a reply is on its way keep applying on top of it.
+  const rebase = (
+    before: ImageDraft,
+    current: ImageDraft,
+    result: { saved: ImageDraft },
+  ) => rebaseImageDraft(before, current, result.saved);
   const perform = async (
     name: string,
     options: Record<string, unknown> = {},
@@ -673,7 +680,7 @@ function Manager({
           if (reply.preview) setPreview(reply.preview);
           if (name === "apply" || name === "restore") setPreview(null);
           return { saved: imageDraft(reply.state) };
-        });
+        }, rebase);
       },
       notice,
       name,
@@ -746,11 +753,17 @@ function Manager({
     ["pending", "running", "stopping"].includes(state.job.status);
   const waiting = flow.waiting.investigation || flow.waiting.translation;
   // While a copied task waits, its report is looked for every few seconds,
-  // so results arrive even while DazedTL keeps the focus.
+  // so results arrive even while DazedTL keeps the focus. A report's
+  // recommendations change the saved choices, so the reply replaces the
+  // draft the ticks and views read.
   const pickUp = useEffectEvent(async () => {
     if (action.busy || draft.dirty) return;
     try {
-      images.set((await imagesApi.action(projectId, "pickup")).state);
+      await draft.session.commit(async () => {
+        const reply = (await imagesApi.action(projectId, "pickup")).state;
+        images.set(reply);
+        return { saved: imageDraft(reply) };
+      }, rebase);
     } catch {
       // Returning to the window checks again; a rejected report shows on the
       // task panel.

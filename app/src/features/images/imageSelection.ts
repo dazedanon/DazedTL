@@ -24,6 +24,46 @@ export function imageDraft(state: ImageManagerState): ImageDraft {
   };
 }
 
+/**
+ * The choices a reply saved, with the user's edits made while it was on its
+ * way replayed on top: images ticked or unticked since, and changed view
+ * settings. Keeping the edited draft whole would save over what the reply
+ * brought, such as an assistant's newly ticked recommendations.
+ */
+export function rebaseImageDraft(
+  before: ImageDraft,
+  current: ImageDraft,
+  saved: ImageDraft,
+): ImageDraft {
+  const had = new Set(before.selection);
+  const has = new Set(current.selection);
+  const added = current.selection.filter((id) => !had.has(id));
+  const removed = new Set(before.selection.filter((id) => !has.has(id)));
+  const changed = <K extends keyof ImageDraft>(key: K) =>
+    JSON.stringify(current[key]) !== JSON.stringify(before[key]);
+  return {
+    ...saved,
+    selection: [
+      ...new Set(
+        [...saved.selection, ...added].filter((id) => !removed.has(id)),
+      ),
+    ],
+    view: {
+      ...saved.view,
+      ...Object.fromEntries(
+        Object.entries(current.view).filter(
+          ([key, item]) =>
+            item !== before.view[key as keyof ImageDraft["view"]],
+        ),
+      ),
+    },
+    discoveryScope: changed("discoveryScope")
+      ? current.discoveryScope
+      : saved.discoveryScope,
+    folders: changed("folders") ? current.folders : saved.folders,
+  };
+}
+
 /** The most images one list read returns. */
 const READ_LIMIT = 500;
 /**

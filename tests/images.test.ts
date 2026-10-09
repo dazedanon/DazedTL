@@ -4,6 +4,7 @@ import {
   folderTree,
   gridStep,
   idsBetween,
+  rebaseImageDraft,
   virtualRows,
 } from "../app/src/features/images/imageSelection.ts";
 import { ThumbnailQueue } from "../app/src/features/images/thumbnails.ts";
@@ -11,6 +12,7 @@ import { imageFlow } from "../app/src/features/images/imageFlow.ts";
 import type {
   ImageAsset,
   ImageCounts,
+  ImageDraft,
   ImagePixels,
 } from "../app/src/api/contracts.ts";
 
@@ -148,6 +150,39 @@ test("Images leads with the step its saved work reaches", () => {
   );
   // An investigation that leaves nothing ticked finishes Images.
   assert.equal(at({ examined: 2, uncertain: 1 }, "complete"), "done");
+});
+
+test("edits made while a report is picked up keep its new ticks", () => {
+  // Protect the assistant's recommendations: a scroll or tick made while the
+  // report check is on its way must not save the older selection over them,
+  // and the user's own tick and untick still apply.
+  const draft = (selection: string[], scroll = 0): ImageDraft => ({
+    selection,
+    view: {
+      query: "",
+      status: "all",
+      folder: "",
+      showSelected: false,
+      tileSize: 112,
+      scroll,
+    },
+    discoveryScope: "all",
+    folders: [],
+  });
+  const before = draft(["a.png", "b.png"]);
+  const saved = draft(["a.png", "b.png", "sign.png"]);
+  saved.view.showSelected = true;
+  assert.deepEqual(
+    rebaseImageDraft(before, draft(before.selection, 300), saved),
+    {
+      ...saved,
+      view: { ...saved.view, scroll: 300 },
+    },
+  );
+  assert.deepEqual(
+    rebaseImageDraft(before, draft(["b.png", "c.png"]), saved).selection,
+    ["b.png", "sign.png", "c.png"],
+  );
 });
 
 test("the folder list counts what choosing a folder shows", () => {
