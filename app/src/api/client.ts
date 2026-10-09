@@ -154,6 +154,8 @@ export const api = {
       args: Record<string, unknown> = {},
     ) =>
       request("translation_operation", { project_id, action, arguments: args }),
+    startOver: (project_id: string, keep_context: boolean) =>
+      request("project_start_over", { project_id, keep_context }),
     attach: (
       project_id: string,
       run_id: string,

@@ -412,34 +412,39 @@ def verify(directory, *, source=None, full=True, stopped=lambda: False):
 def _extract(directory, value, target, names, stopped, progress):
     for index, name in enumerate(names, 1):
         _cancel(stopped)
-        incoming = _stored_file(directory, value, name)
-        if _linked(incoming) or not stat.S_ISREG(incoming.stat().st_mode):
-            raise ValueError("Backup content is not a regular file.")
         output = _child(target, name)
         output.parent.mkdir(parents=True, exist_ok=True)
-        copied = hashlib.sha256()
-        with incoming.open("rb") as reader, output.open("xb") as writer:
-            while block := reader.read(1024 * 1024):
-                _cancel(stopped)
-                copied.update(block)
-                writer.write(block)
-            writer.flush()
-            os.fsync(writer.fileno())
-        if copied.hexdigest() != value["files"][name]:
-            raise ValueError(
-                "Backup content failed its integrity check. No restore was published."
-            )
-        if _hash_file(output, stopped) != value["files"][name]:
-            raise ValueError(
-                "Restored content failed its integrity check. No restore was published."
-            )
-        mode = (
-            value["modes"][name]
-            if value["version"] == 2
-            else stat.S_IMODE(incoming.stat().st_mode)
-        )
-        output.chmod(mode)
+        _copy(directory, value, name, output, stopped)
         progress(index, name)
+
+
+def _copy(directory, value, name, output, stopped):
+    """Writes one saved file to a new path, verified and synced to disk."""
+    incoming = _stored_file(directory, value, name)
+    if _linked(incoming) or not stat.S_ISREG(incoming.stat().st_mode):
+        raise ValueError("Backup content is not a regular file.")
+    copied = hashlib.sha256()
+    with incoming.open("rb") as reader, output.open("xb") as writer:
+        while block := reader.read(1024 * 1024):
+            _cancel(stopped)
+            copied.update(block)
+            writer.write(block)
+        writer.flush()
+        os.fsync(writer.fileno())
+    if copied.hexdigest() != value["files"][name]:
+        raise ValueError(
+            "Backup content failed its integrity check. No restore was published."
+        )
+    if _hash_file(output, stopped) != value["files"][name]:
+        raise ValueError(
+            "Restored content failed its integrity check. No restore was published."
+        )
+    mode = (
+        value["modes"][name]
+        if value["version"] == 2
+        else stat.S_IMODE(incoming.stat().st_mode)
+    )
+    output.chmod(mode)
 
 
 @contextmanager
@@ -511,6 +516,86 @@ def restore(
         }
     finally:
         recovery.cleanup()
+
+
+def reset(
+    original,
+    current,
+    game,
+    archive,
+    *,
+    keep=lambda _name: False,
+    stopped=lambda: False,
+    progress=lambda _count, _path: None,
+):
+    """Puts a game folder back to its ``original`` snapshot in place.
+
+    ``current`` is a snapshot of the folder taken just before, so only the
+    files that differ are written. Files the original lacks move into
+    ``archive`` instead of being deleted, and ``keep`` names files left as
+    they are, such as save games. Each file is written and synced beside its
+    target before it replaces it, so an interruption leaves whole files, and
+    running it again finishes the job.
+    """
+    root = Path(game).resolve(strict=True)
+    before, after = manifest(original), manifest(current, root)
+    if before["kind"] != "source" or after["kind"] != "source":
+        raise ValueError("Only a game-file backup can put the game back.")
+    verify(original, full=False, stopped=stopped)
+    extras = sorted(
+        name
+        for name in after["files"]
+        if name not in before["files"] and not keep(name)
+    )
+    changed = [
+        name
+        for name in before["files"]
+        if not keep(name) and after["files"].get(name) != before["files"][name]
+    ]
+    count = 0
+    for name in extras:
+        _cancel(stopped)
+        target = _child(archive, name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _child(root, name).rename(target)
+        except FileNotFoundError:
+            continue
+        count += 1
+        progress(count, name)
+    # Folders the original lacks go once empty; kept files hold theirs.
+    for name in sorted(
+        set(after["directories"]) - set(before["directories"]),
+        key=lambda item: item.count("/"),
+        reverse=True,
+    ):
+        path = _child(root, name)
+        if path.is_dir() and not any(path.iterdir()):
+            path.rmdir()
+    for name in before["directories"]:
+        _child(root, name).mkdir(parents=True, exist_ok=True)
+    for name in changed:
+        _cancel(stopped)
+        target = _child(root, name)
+        if target.is_dir():
+            raise ValueError(
+                f"{name} is a folder holding files kept in place. Move them, then try again."
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(".dazedtl-restore-" + uuid.uuid4().hex)
+        try:
+            _copy(original, before, name, temporary, stopped)
+            try:
+                temporary.replace(target)
+            except PermissionError:
+                # Windows refuses to replace a read-only file.
+                target.chmod(stat.S_IREAD | stat.S_IWRITE)
+                temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        count += 1
+        progress(count, name)
+    return {"restored": len(changed), "set_aside": len(extras)}
 
 
 def lookup(game, legacy_root, identity):

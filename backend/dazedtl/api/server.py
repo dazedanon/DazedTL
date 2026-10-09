@@ -683,6 +683,11 @@ def routes(app):
             getattr(app.images, name),
             lambda value, _params: value,
         )
+    # Absent from the helper's methods: only the user starts a project over.
+    methods["project_start_over"] = (
+        app.translation.start_over,
+        lambda value, _params: value,
+    )
     methods["images_action"] = (
         app.images_action,
         lambda value, _params: views.image_action(value),

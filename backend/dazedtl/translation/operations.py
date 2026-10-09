@@ -499,6 +499,22 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         elif operation == "abort":
             state.pop("incoming_source", None)
             state.pop("incoming_version", None)
+    elif action == "start_over":
+        from .start_over import run as start_over
+
+        state, result = start_over(
+            source,
+            state,
+            engine.documents(source),
+            arguments["keep_context"],
+            stopped=stopped,
+            progress=progress,
+        )
+        # The engine the assistant identified and when it last called belong
+        # to the attempt set aside.
+        records = Path(workspace) / "translation/projects" / job["project_id"]
+        for name in ("engine.json", "assistant.json"):
+            (records / name).unlink(missing_ok=True)
     elif action == "discard_release":
         # A staged release the user decided against stops offering its review;
         # its preserved backup stays in Backups.

@@ -461,6 +461,7 @@ Give each idea one name and keep it everywhere: Apply only means writing into th
 Assistant-led is the UI name of the method built on Len's game-translation skills, and code and records keep the `len` identifier.
 Its starting prompt runs the whole method without the user: it asks only for spending approval, a missing API connection, denied access or a decision no source evidence settles, and a check it cannot make, such as a screenshot, stays pending instead of stopping the run.
 Progress counts the assistant's first helper call as the run starting, because an assistant can work through a whole phase before its first report.
+Start over restores the original game in place and moves the attempt, its Git history and anything the original lacks to `.dazedtl/archived` instead of deleting them, after saving game and project backups; save games, options and Image Manager work stay, and only the user can start it, so the project helper has no route to it.
 The assistant's own plan pays for every turn, so new games start on API Batch (Live when the connection cannot batch) and references are read as their phase begins.
 In both methods the [investigation skill](../backend/dazedtl/engine/data/skills/localization_investigation.md) runs one discovery pass, and its three blind passes only when the game asks for Thorough investigation; the setup loaders keep the chosen section, so a copied prompt never holds both.
 

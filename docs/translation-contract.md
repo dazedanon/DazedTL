@@ -28,6 +28,7 @@ A lost response may follow a completed action, so inspect saved state and runs b
 
 Use state before starting.
 Every Assistant-led helper call also records when the assistant last reached the project, which Progress shows before its first report.
+Starting a project over is the user's choice in the app; the helper cannot.
 It reports the portable options, current Git and backup state, saved progress, pending drafts, frozen runs, and any saved phased run requiring recovery.
 Record the detected engine with identify and a project-relative investigation report.
 Operation commands return saved job IDs; inspect them with run until they complete, fail, stop, or await approval or provider results.

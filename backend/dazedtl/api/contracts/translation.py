@@ -192,6 +192,12 @@ class GuidedReviewRecord(TypedDict):
     evidence: dict[str, str]
 
 
+class StartedOver(TypedDict):
+    at: str
+    # The game-relative folder holding the attempt set aside.
+    archive: str
+
+
 class DeliveryRecord(TypedDict):
     path: str
     commit: str
@@ -222,6 +228,8 @@ class Lifecycle(typing_extensions.TypedDict, extra_items=object):
     incoming_version: NotRequired[str]
     version_update: NotRequired[VersionUpdate]
     discarded_release: NotRequired[str]
+    # When the user last started over; earlier runs belong to that attempt.
+    started_over: NotRequired[StartedOver]
 
 
 class ConnectionSummary(TypedDict):

@@ -184,6 +184,17 @@ try:
             "translation_state",
         ):
             helper.call(app.workspace, method, {"project_id": project_id})
+        # Only the user starts a project over; the helper must refuse it.
+        try:
+            helper.call(
+                app.workspace,
+                "project_start_over",
+                {"project_id": project_id, "keep_context": True},
+            )
+        except ValueError as refused:
+            assert "only exposes" in str(refused), refused
+        else:
+            raise AssertionError("The project helper reached Start over.")
     finally:
         local.close()
     assert call("translation_state", state)["assistantSeenAt"]

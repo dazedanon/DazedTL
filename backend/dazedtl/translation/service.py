@@ -67,6 +67,12 @@ GUIDED_OPERATIONS = {
     "release_patch": ("Build local patch ZIP", {"plan", "sha256"}),
 }
 
+# Started only from the app's own controls; the project helper cannot reach
+# these, so an assistant can never start its own project over.
+USER_OPERATIONS = {
+    "start_over": ("Start over from the original game", {"keep_context"}),
+}
+
 
 class Translation:
     def __init__(self, workspace, projects, settings, engine, *, jobs=None):
@@ -839,6 +845,31 @@ Additional project instructions:
             raise ValueError("Unknown guided review operation.")
         return self._operation(project_id, action, arguments, GUIDED_OPERATIONS[action])
 
+    def start_over(self, project_id, keep_context):
+        """Puts the game back to its original and sets the assistant's work
+        aside, so the next starting prompt begins again."""
+        record, _project = self.project(project_id)
+        if record.get("method") != "len":
+            raise ValueError("Start over is for Assistant-led projects.")
+        if type(keep_context) is not bool:
+            raise ValueError("Choose whether to keep the glossary and notes.")
+        for job in self.jobs.store.list(project_id):
+            if job["kind"] == "translation" and job["status"] in {
+                "running",
+                "waiting",
+                "uncertain",
+            }:
+                raise ValueError(
+                    "Pause this project's API run, or settle its uncertain "
+                    "submission, before starting over."
+                )
+        return self._operation(
+            project_id,
+            "start_over",
+            {"keep_context": keep_context},
+            USER_OPERATIONS["start_over"],
+        )
+
     def _operation(self, project_id, action, arguments, specification):
         self.idle(project_id)
         self.clean_drafts(project_id)
@@ -871,7 +902,7 @@ Additional project instructions:
                 "Required operation arguments: " + ", ".join(sorted(required))
             )
         for key, value in arguments.items():
-            if key in {"untranslated", "patch_overlay"}:
+            if key in {"untranslated", "patch_overlay", "keep_context"}:
                 if type(value) is not bool:
                     raise ValueError("Operation flags must be true or false.")
             elif not isinstance(value, str) or len(value) > 10000 or "\0" in value:

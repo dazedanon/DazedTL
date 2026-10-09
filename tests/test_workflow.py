@@ -466,6 +466,76 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.service.clean_drafts(self.identity)
 
+    def test_start_over_restores_the_original_and_sets_the_attempt_aside(self):
+        # Starting over must put every original file back and move what the
+        # attempt added aside instead of deleting it, keeping save games, the
+        # notes the user keeps, the project's options and the backups; a paid
+        # API run still waiting at its provider must refuse it.
+        self.projects.choose_method(self.identity, "len")
+        run = self.service.compile(self.identity, self.plan_path)
+        job, _plan = self.service.jobs.store.load(run["id"])
+        job["status"] = "waiting"
+        self.service.jobs.store.save(job)
+        with self.assertRaisesRegex(ValueError, "Pause this project's API run"):
+            self.service.start_over(self.identity, True)
+        original = (self.game / "source.json").read_bytes()
+        write_json(self.game / "source.json", {"line": "Yes."})
+        translated = (self.game / "source.json").read_bytes()
+        (self.game / "js").mkdir()
+        (self.game / "js/Forge.js").write_text("added by setup")
+        (self.game / "save").mkdir()
+        (self.game / "save/file1.rmmzsave").write_text("progress")
+        (self.game / ".git").mkdir()
+        (self.game / ".git/HEAD").write_text("ref: refs/heads/main")
+        (self.game / WORK / "progress.json").write_text("{}")
+        glossary = self.game / ".dazedtl/glossary.txt"
+        glossary.write_text("Lili (リリ)")
+        self.engine.documents = lambda _source: {"glossary": {"path": str(glossary)}}
+        records = self.profile / "translation/projects" / self.identity
+        write_json(records / "assistant.json", {"seen_at": "2026-10-08T00:00:00"})
+
+        def start_over(keep_context):
+            execute(
+                self.engine,
+                self.profile,
+                {"project_id": self.identity},
+                {
+                    "source": str(self.game),
+                    "options": DEFAULTS,
+                    "action": "start_over",
+                    "arguments": {"keep_context": keep_context},
+                },
+                lambda: False,
+            )
+            state = lifecycle(self.profile, self.identity)
+            return state, self.game / state["started_over"]["archive"]
+
+        before = lifecycle(self.profile, self.identity)
+        state, archive = start_over(True)
+        self.assertEqual((self.game / "source.json").read_bytes(), original)
+        self.assertFalse((self.game / "js").exists())
+        self.assertEqual(
+            (archive / "game-files/js/Forge.js").read_text(), "added by setup"
+        )
+        self.assertEqual((self.game / "save/file1.rmmzsave").read_text(), "progress")
+        self.assertTrue((archive / "git/HEAD").is_file())
+        self.assertFalse((self.game / ".git").exists())
+        self.assertTrue((archive / "len-method/progress.json").is_file())
+        self.assertTrue(self.project.path.is_file())
+        self.assertEqual(glossary.read_text(), "Lili (リリ)")
+        self.assertFalse((records / "assistant.json").exists())
+        self.assertEqual(state["source_backup"], before["source_backup"])
+        with materialized(state["game_backup"]["path"]) as (saved, _manifest):
+            self.assertEqual((saved / "source.json").read_bytes(), translated)
+        # Running it again on the original changes no game file, and lets the
+        # notes go when the user chose not to keep them.
+        state, archive = start_over(False)
+        self.assertEqual((self.game / "source.json").read_bytes(), original)
+        self.assertFalse(glossary.exists())
+        self.assertEqual(
+            (archive / "context/.dazedtl/glossary.txt").read_text(), "Lili (リリ)"
+        )
+
     def test_backup_never_recurses_into_itself_or_copies_git_and_work_records_as_source(
         self,
     ):

@@ -144,6 +144,8 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
    If it goes quiet, for example at a usage limit, paste the prompt into a new session; it picks up the saved work.
+5. To try again from scratch, stop your assistant and choose **Start over…** on **Progress**.
+   It puts back the original game files and moves the attempt to `.dazedtl/archived`; backups, save games, Image Manager work and your options stay, and so do the glossary and notes unless you clear **Keep glossary and notes**.
 
 Your assistant's session uses its own plan in every mode, so on a limited plan pick a smaller model or lower reasoning effort.
 

@@ -21,6 +21,7 @@ import { Notice } from "../../ui/Notice";
 import { StepProgress, type StepState } from "../../ui/StepProgress";
 import type { ProjectLink } from "../guided/workspace/model";
 import { modeLabels } from "./OptionsPanel";
+import { StartOver } from "./StartOver";
 
 /** The assistant's phases, in the order the starting prompt works through. */
 const phases = [
@@ -87,12 +88,20 @@ export function ProgressPanel({
   const quiet =
     status === "waiting" &&
     now - new Date(activity!).getTime() > QUIET_MINUTES * 60_000;
-  const run = state.jobs.find(
+  // Runs before the last start over belong to the attempt set aside; Run
+  // history keeps them.
+  const since = state.lifecycle.started_over?.at;
+  const attempt = state.jobs.filter(
+    (job) => !since || Date.parse(job.created) > Date.parse(since),
+  );
+  const run = attempt.find(
     (job) => job.kind === "translation" && job.mode !== "agent",
   );
-  const operation = state.jobs.find(
+  const operation = attempt.find(
     (job) =>
-      job.kind === "operation" && ["running", "waiting"].includes(job.status),
+      job.kind === "operation" &&
+      job.action !== "start_over" &&
+      ["running", "waiting"].includes(job.status),
   );
   const total = text && (text.total ?? text.discovered);
   return (
@@ -197,6 +206,11 @@ export function ProgressPanel({
         <Button variant="link" onClick={() => openProject("versions")}>
           Game updates
         </Button>
+        <StartOver
+          state={state}
+          activity={activity}
+          available={!!(reported || state.assistantSeenAt || attempt.length)}
+        />
       </div>
       {report && (
         <Modal

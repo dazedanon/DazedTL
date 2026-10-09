@@ -978,6 +978,11 @@ export type GuidedReviewRecord = {
   evidence: Record<string, string>;
 };
 
+export type StartedOver = {
+  at: string;
+  archive: string;
+};
+
 export type DeliveryRecord = {
   path: string;
   commit: string;
@@ -1004,6 +1009,7 @@ export type Lifecycle = {
   incoming_version?: string;
   version_update?: VersionUpdate;
   discarded_release?: string;
+  started_over?: StartedOver;
   [key: string]: unknown;
 };
 
@@ -2002,6 +2008,11 @@ export type TranslationOperationRequest = {
   arguments: Record<string, unknown>;
 };
 
+export type StartOverRequest = {
+  project_id: string;
+  keep_context: boolean;
+};
+
 export type TranslationAttachBatchRequest = {
   project_id: string;
   run_id: string;
@@ -2369,6 +2380,7 @@ export type RpcContract = {
     request: TranslationOperationRequest;
     response: TranslationJob;
   };
+  project_start_over: { request: StartOverRequest; response: TranslationJob };
   translation_attach_batch: {
     request: TranslationAttachBatchRequest;
     response: TranslationJob;

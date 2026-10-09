@@ -284,6 +284,11 @@ class TranslationOperationRequest(TypedDict):
     arguments: dict[str, object]
 
 
+class StartOverRequest(TypedDict):
+    project_id: str
+    keep_context: bool
+
+
 class TranslationAttachBatchRequest(TypedDict):
     project_id: str
     run_id: str
@@ -591,6 +596,7 @@ METHODS: dict[str, Method] = {
     "translation_review": Method(TranslationReviewRequest, Saved),
     "translation_progress": Method(InputPathRequest, TranslationProgress),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),
+    "project_start_over": Method(StartOverRequest, TranslationJob),
     "translation_attach_batch": Method(TranslationAttachBatchRequest, TranslationJob),
     "translation_resolve_uncertain": Method(
         TranslationResolveUncertainRequest, TranslationJob
