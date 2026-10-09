@@ -1,7 +1,9 @@
 """Check for and apply WolfDawn ``wolf`` binary updates (maintainer-only upstream fetch).
 
 End users receive prebuilt binaries under ``util/wolfdawn/bin/<platform>/`` via
-DazedTL updates. Maintainers refresh them with ``--refresh-all`` or ``--force``.
+DazedTL updates. Maintainers refresh them with ``--refresh-all`` or ``--force``,
+which record the upstream commit each platform was built from in the committed
+``.wolf_version.json``.
 """
 
 from __future__ import annotations
@@ -48,24 +50,6 @@ def _log(msg: str, log_fn) -> None:
         print(msg, flush=True)
 
 
-def _platform_versions() -> dict[str, str]:
-    versions = _load_versions()
-    platforms = versions.get("platforms")
-    if isinstance(platforms, dict):
-        return {str(k): str(v) for k, v in platforms.items() if v}
-    tag = versions.get("tag", "")
-    if tag:
-        return {p: str(tag) for p in BUNDLED_PLATFORMS}
-    commit = versions.get("commit", "")
-    if commit:
-        return {p: str(commit) for p in BUNDLED_PLATFORMS}
-    return {}
-
-
-def _local_version(platform: str) -> str:
-    return _platform_versions().get(platform, "")
-
-
 def _refresh_from_release(platform: str, log_fn=print) -> str | None:
     asset = _latest_release_asset(platform)
     if not asset:
@@ -85,7 +69,11 @@ def refresh_wolfdawn_binary(
     platforms: Sequence[str] | None = None,
     log_fn=print,
 ) -> bool:
-    """Refresh WolfDawn binaries, trying source builds first."""
+    """Rebuild WolfDawn binaries from upstream source.
+
+    A release download only fills a missing binary: the newest release can be
+    older than the bundled build, so it never replaces one.
+    """
     targets = tuple(platforms or (platform or _platform_dir(),))
     try:
         upstream = upstream_commit()
@@ -101,11 +89,10 @@ def refresh_wolfdawn_binary(
 
     ok = True
     versions = _load_versions()
-    versions["commit"] = upstream
-    platform_versions = versions.setdefault("platforms", {})
+    platform_versions = versions.get("platforms")
     if not isinstance(platform_versions, dict):
         platform_versions = {}
-        versions["platforms"] = platform_versions
+    versions = {"platforms": platform_versions}
 
     for plat in targets:
         if source_results.get(plat):
@@ -113,16 +100,20 @@ def refresh_wolfdawn_binary(
             _log(f"WolfDawn updated from source ({plat}, {upstream[:12]})", log_fn)
             continue
 
+        if bundled_binary_path(plat).is_file():
+            _log(
+                f"ERROR: could not build WolfDawn for '{plat}' from source; kept the "
+                "bundled binary. Building needs cargo, plus x86_64-w64-mingw32-gcc "
+                "for Windows on Linux.",
+                log_fn,
+            )
+            ok = False
+            continue
+
         tag = _refresh_from_release(plat, log_fn=log_fn)
         if tag:
             platform_versions[plat] = tag
-            _log(f"WolfDawn updated from release ({plat}, {tag})", log_fn)
-            continue
-
-        if bundled_binary_path(plat).is_file():
-            _log(f"Keeping existing offline WolfDawn binary ({plat}).", log_fn)
-            if plat not in platform_versions:
-                platform_versions[plat] = _local_version(plat) or "offline"
+            _log(f"WolfDawn installed from release ({plat}, {tag})", log_fn)
             continue
 
         _log(f"ERROR: no WolfDawn binary available for '{plat}'.", log_fn)
