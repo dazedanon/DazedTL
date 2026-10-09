@@ -27,6 +27,9 @@ class GuidedRelease:
         return {"saved": True}
 
     def form_value(self, project_id, value):
+        if isinstance(value, dict):
+            # Forms saved before the investigation choice existed run one pass.
+            value = {"thorough_investigation": False, **value}
         if (
             not isinstance(value, dict)
             or set(value)
@@ -35,6 +38,7 @@ class GuidedRelease:
                 "original",
                 "untranslated",
                 "only_overflow",
+                "thorough_investigation",
                 "release",
                 "text",
             }
@@ -48,6 +52,7 @@ class GuidedRelease:
             or value.get("untranslated") is not None
             and type(value["untranslated"]) is not bool
             or type(value.get("only_overflow")) is not bool
+            or type(value["thorough_investigation"]) is not bool
         ):
             raise ValueError("Invalid guided form values.")
         text = value.get(
@@ -215,6 +220,7 @@ class GuidedRelease:
                 "original": "",
                 "untranslated": None,
                 "only_overflow": True,
+                "thorough_investigation": False,
                 **saved,
             },
         )

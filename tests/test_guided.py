@@ -1535,6 +1535,13 @@ class GuidedTests(unittest.TestCase):
         self.speaker_report()
         prompt = reopened.skill(self.identity, "setup")["text"]
         self.assertIn(json.dumps(str(folder)), prompt)
+        self.assertNotIn("three passes", prompt)
+        # The Thorough investigation choice reaches the copied task.
+        reopened.form(
+            self.identity,
+            {**reopened.saved_form(self.identity), "thorough_investigation": True},
+        )
+        self.assertIn("three passes", reopened.skill(self.identity, "setup")["text"])
         self.assertEqual(evidence(folder, ["old-terms.txt"]), before)
         other_source = self.root / "other-game"
         other_source.mkdir()
@@ -1658,7 +1665,11 @@ class GuidedTests(unittest.TestCase):
             "manual_job": self.pending,
             "engine_schema": schema,
         }
-        self.backend.workflows.skill = lambda *_: "Investigate this game."
+        self.backend.workflows.skill = lambda *_, thorough: (
+            "Investigate this game in three passes."
+            if thorough
+            else "Investigate this game."
+        )
 
         def apply(_identity, revision, options, key, receipt):
             self.assertEqual(

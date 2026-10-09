@@ -58,6 +58,7 @@ If a step fails, the reason appears beside the button and **Finish setup** carri
 It finds the speakers, lists the names with a free local scanner, and writes the glossary, character notes and game context.
 Edit what it wrote in **Guidance**.
 **Add game folder** lets an earlier game in a series supply terms; copy the task again afterwards.
+**Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan; Check's optional investigation follows the same choice.
 
 **Line widths** fills in from your assistant's measurements, and you can change them.
 

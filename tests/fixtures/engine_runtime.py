@@ -155,7 +155,14 @@ try:
         assert runtime_data_file(PROMPT_PATH).is_relative_to(
             root / "backend/dazedtl/engine/data"
         )
-        assert load_system_prompt() and load_project_setup("rpgmaker")
+        assert load_system_prompt()
+        # One investigation pass unless the user chose three; a prompt with
+        # both, or three by default, triples the assistant's usage.
+        standard, thorough = (
+            load_project_setup("rpgmaker", thorough=choice) for choice in (False, True)
+        )
+        assert "One-pass discovery" in standard and "Launch exactly" not in standard
+        assert "Launch exactly three" in thorough and "One-pass" not in thorough
         manual = app.backend.manual
         listing = manual.inspect(str(game), "RPG Maker MV/MZ")
         job = manual.start(

@@ -372,6 +372,7 @@ export type GuidedForm = {
   original: string;
   untranslated: boolean | null;
   only_overflow: boolean;
+  thorough_investigation: boolean;
   text: TextToolsForm;
   release: ReleaseForm;
 };

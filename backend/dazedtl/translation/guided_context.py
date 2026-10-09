@@ -50,7 +50,11 @@ class GuidedContext:
                     "expects": [guided / "event-text-findings.json"],
                 },
             }
-        text = self.guided.backend.workflows.skill(native["id"], name)
+        text = self.guided.backend.workflows.skill(
+            native["id"],
+            name,
+            thorough=self.guided.saved_form(project_id)["thorough_investigation"],
+        )
         handoff = None
         if name == "walkthrough":
             handoff = {

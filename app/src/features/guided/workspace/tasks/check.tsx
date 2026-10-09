@@ -362,8 +362,12 @@ export function qaView(w: GuidedWorkspace): TaskView {
             id: "investigation",
             title: "Running jokes and terms",
             // It saves nothing the app can check, so it shows no state.
-            detail:
-              "Optional. An investigation of recurring jokes, callbacks and terminology.",
+            detail: `Optional. An investigation of recurring jokes, callbacks and terminology${
+              // Names & glossary holds the choice for both investigations.
+              fields.thorough_investigation
+                ? ", in three passes (Thorough investigation)."
+                : "."
+            }`,
             action: copyTask("investigation", "Copy investigation task"),
           },
         ]}

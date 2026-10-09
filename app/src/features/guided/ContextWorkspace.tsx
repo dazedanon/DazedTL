@@ -23,11 +23,14 @@ export function ContextWorkspace({
   addReference,
   removeReference,
   removeImported,
+  investigation,
 }: {
   state: GuidedState;
   results: InvestigationResult[];
   actions: Record<InvestigationPart, ReactNode>;
   addReference: ReactNode;
+  /** How the copied task investigates, such as its number of passes. */
+  investigation: ReactNode;
   removeReference: (row: ReferenceFolder) => ReactNode;
   removeImported: (id: string) => ReactNode;
 }) {
@@ -87,60 +90,68 @@ export function ContextWorkspace({
           action: actions[row.id],
         }))}
       />
-      <section className="context-references" aria-label="Reference games">
-        <div className="context-section-heading">
-          <h3>
-            Reference games <span>Optional</span>
-          </h3>
-          {addReference}
-        </div>
-        <p className="muted">
-          The assistant will look for earlier names and terms in the selected
-          game folders.
-        </p>
-        {!references.length && !state.references.length && (
-          <p className="context-empty">No reference games added.</p>
-        )}
-        <ActionList compact>
-          {references.map((row) => (
-            <ActionRow
-              key={row.id}
-              label={
-                <>
-                  <strong>{row.title}</strong>
-                  <small>
-                    <PathText path={row.path} />
-                  </small>
-                  {!row.available && (
-                    <small>
-                      Folder unavailable · choose it again if it moved.
-                    </small>
-                  )}
-                </>
-              }
-            >
-              {removeReference(row)}
-            </ActionRow>
-          ))}
-        </ActionList>
-        {!!state.references.length && (
+      <div className="context-side">
+        <section className="context-references" aria-label="Reference games">
+          <div className="context-section-heading">
+            <h3>
+              Reference games <span>Optional</span>
+            </h3>
+            {addReference}
+          </div>
+          <p className="muted">
+            The assistant will look for earlier names and terms in the selected
+            game folders.
+          </p>
+          {!references.length && !state.references.length && (
+            <p className="context-empty">No reference games added.</p>
+          )}
           <ActionList compact>
-            {state.references.map((row) => (
+            {references.map((row) => (
               <ActionRow
                 key={row.id}
                 label={
                   <>
                     <strong>{row.title}</strong>
-                    <small>Previously imported reference</small>
+                    <small>
+                      <PathText path={row.path} />
+                    </small>
+                    {!row.available && (
+                      <small>
+                        Folder unavailable · choose it again if it moved.
+                      </small>
+                    )}
                   </>
                 }
               >
-                {removeImported(row.id)}
+                {removeReference(row)}
               </ActionRow>
             ))}
           </ActionList>
-        )}
-      </section>
+          {!!state.references.length && (
+            <ActionList compact>
+              {state.references.map((row) => (
+                <ActionRow
+                  key={row.id}
+                  label={
+                    <>
+                      <strong>{row.title}</strong>
+                      <small>Previously imported reference</small>
+                    </>
+                  }
+                >
+                  {removeImported(row.id)}
+                </ActionRow>
+              ))}
+            </ActionList>
+          )}
+        </section>
+        <section aria-labelledby="context-investigation-heading">
+          <div className="context-section-heading">
+            <h3 id="context-investigation-heading">Investigation</h3>
+          </div>
+          {investigation}
+        </section>
+      </div>
     </div>
   );
 }

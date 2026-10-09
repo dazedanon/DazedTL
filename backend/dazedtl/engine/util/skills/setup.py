@@ -29,6 +29,12 @@ _INVESTIGATION_PHASE_MARKERS = (
     "<!-- /investigation-phase -->",
 )
 _INVESTIGATION_PHASE_PLACEHOLDER = "{{LOCALIZATION_INVESTIGATION_PHASE}}"
+# Investigation discovery runs as three blind subagent passes (thorough) or
+# one pass (standard); the file holds both and a prompt keeps the chosen one.
+_DISCOVERY_MARKERS = {
+    True: ("<!-- discovery:thorough -->", "<!-- /discovery:thorough -->"),
+    False: ("<!-- discovery:standard -->", "<!-- /discovery:standard -->"),
+}
 _CHARACTER_IDENTITY_PLACEHOLDER = "{{CHARACTER_IDENTITY_RULES}}"
 
 _SPEAKER_CROSSCHECK = {
@@ -124,7 +130,23 @@ def _extract_required_section(text: str, markers: tuple[str, str]) -> str:
     return body
 
 
-def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "") -> str:
+def _choose_discovery(text: str, thorough: bool) -> str:
+    """Keep the chosen discovery section of the investigation and drop the other."""
+    for choice, (start, end) in _DISCOVERY_MARKERS.items():
+        if text.count(start) != 1 or text.count(end) != 1:
+            raise ValueError("The investigation skill must hold both discovery sections")
+        head, rest = text.split(start, 1)
+        body, tail = rest.split(end, 1)
+        text = head + (body.strip("\n") + "\n\n" if choice == thorough else "") + tail.lstrip("\n")
+    return text
+
+
+def load_investigation_skill(*, thorough: bool = False) -> str:
+    """Load the standalone investigation prompt with the chosen discovery."""
+    return _choose_discovery(_read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME), thorough).strip() + "\n"
+
+
+def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "", thorough: bool = False) -> str:
     """Load one Setup prompt with its shared investigation phase for *engine*."""
     raw = _read_skill_file("project_setup.md")
     body = _extract_engine_section(raw, engine)
@@ -136,7 +158,7 @@ def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "") -> str:
         _read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME),
         _INVESTIGATION_PHASE_MARKERS,
     )
-    body = body.replace(_INVESTIGATION_PHASE_PLACEHOLDER, investigation)
+    body = body.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _choose_discovery(investigation, thorough))
     body = _embed_identity_rules(body)
     marker_list = ", ".join(
         f"`{marker}`" for marker in sorted(SUPPORTED_CODE408_MARKERS)
@@ -186,7 +208,7 @@ def load_walkthrough_skill(game_root: str | Path, engine: str) -> str:
     return prompt.strip() + "\n"
 
 
-def load_generic_project_setup(game_root: str | Path) -> str:
+def load_generic_project_setup(game_root: str | Path, *, thorough: bool = False) -> str:
     """Load the generic project-context skill for one exact game folder."""
     root = str(game_root).strip()
     if not root:
@@ -206,7 +228,7 @@ def load_generic_project_setup(game_root: str | Path) -> str:
     investigation = _extract_required_section(
         _read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME), _INVESTIGATION_PHASE_MARKERS,
     )
-    prompt = _embed_identity_rules(prompt.replace(_INVESTIGATION_PHASE_PLACEHOLDER, investigation))
+    prompt = _embed_identity_rules(prompt.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _choose_discovery(investigation, thorough)))
     return prompt.replace(
         placeholder, str(Path(root).expanduser().resolve())
     ).strip() + "\n"

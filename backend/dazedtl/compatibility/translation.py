@@ -158,9 +158,12 @@ class TranslationEngine:
                     "For Ace, complete decryption and conversion before applying the RPG Maker methodology. "
                     "Collect source speakers without paid API calls in Assistant only mode."
                 ),
+                thorough=options["thorough_investigation"],
             )
             if layout
-            else load_generic_project_setup(source)
+            else load_generic_project_setup(
+                source, thorough=options["thorough_investigation"]
+            )
         )
         write_json(project.workspace / "context.json", shared)
         write_bytes(project.workspace / "setup.md", setup.encode("utf-8"))

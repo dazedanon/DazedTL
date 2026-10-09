@@ -67,6 +67,7 @@ families into preventive guidance before translation or bounded correction work 
 - Do not promote a one-off joke or ambiguous coincidence into a global rule.
 - Keep runtime, formatting, and exhaustive per-line checks in the normal QA workflow.
 
+<!-- discovery:thorough -->
 ## Three-pass discovery
 
 1. Freeze one starting packet containing the game paths, engine/version, applicable corpus map,
@@ -88,17 +89,34 @@ families into preventive guidance before translation or bounded correction work 
    blocker rather than presenting serialized or repeated work as the requested parallel passes.
 5. After all three passes, merge families by shared mechanism and anchors. Treat duplicate
    discoveries as convergence evidence, not waste; retain unique discoveries for equal verification.
-   Independently recount and inspect the union of proposed anchors, members, exceptions, and
-   corrections against the corpus. Treat starting guidance as hypotheses, not evidence; after the
-   blind passes, audit anchored quirks and game-specific glossary keys that have competing current
-   English renderings. For placeholder templates, inspect every distinct resolved value and relevant
-   context; do not force one English frame merely because the Japanese template is identical. Split
-   the policy or retain a backlog item when one frame is not natural for every member. Classify a
-   correction as actionable only when its text is player-visible and release-reachable; keep hidden
-   scaffolding, test content, and uncertain reachability in the backlog. If a canonical choice is a
-   corpus minority, cite the primary in-game label,
-   self-identification, or explicit user instruction that outweighs frequency; generated guidance
-   alone is not proof. Only the coordinator may confirm families and apply guidance.
+   Then verify the union as described under Verification.
+<!-- /discovery:thorough -->
+<!-- discovery:standard -->
+## One-pass discovery
+
+1. Gather one starting packet containing the game paths, engine/version, applicable corpus map,
+   short source-derived synopsis with its game-local and optional DLsite provenance, unchanged
+   guidance, user-supplied hypotheses, and any raw Phase 1 candidates. Treat the synopsis and
+   starting guidance as orientation rather than corpus evidence.
+2. Perform the Investigation method below once yourself. Do not launch subagents for discovery;
+   the user chose one pass to keep this step's cost down.
+3. Keep the guidance files unchanged until your findings are complete, then verify them as
+   described under Verification, as strictly as if another investigator had proposed them.
+<!-- /discovery:standard -->
+
+## Verification
+
+Independently recount and inspect the proposed anchors, members, exceptions, and corrections against
+the corpus. Treat starting guidance as hypotheses, not evidence; after discovery, audit anchored
+quirks and game-specific glossary keys that have competing current English renderings. For
+placeholder templates, inspect every distinct resolved value and relevant context; do not force one
+English frame merely because the Japanese template is identical. Split the policy or retain a
+backlog item when one frame is not natural for every member. Classify a correction as actionable
+only when its text is player-visible and release-reachable; keep hidden scaffolding, test content,
+and uncertain reachability in the backlog. If a canonical choice is a corpus minority, cite the
+primary in-game label, self-identification, or explicit user instruction that outweighs frequency;
+generated guidance alone is not proof. Only the coordinator, never a discovery worker, confirms
+families and applies guidance.
 
 ## Investigation method
 
@@ -171,8 +189,9 @@ families into preventive guidance before translation or bounded correction work 
    reason in the research backlog.
 8. When the project is untranslated, emphasize preventive guidance. When English already exists,
    additionally identify inconsistent members and propose translation corrections, but do not
-   apply those corrections. Return proposed guidance to the coordinator; it applies confirmed
-   guidance-file updates only after synthesizing all three reports.
+   apply those corrections. Proposed guidance goes to the coordinator, which applies confirmed
+   guidance-file updates only after Verification (and, in Three-pass discovery, after synthesizing
+   all three reports).
 
 <!-- /investigation-phase -->
 
@@ -227,5 +246,5 @@ search or context needed. If none remain, say so. This is a research backlog, no
 ### 7. Coverage
 
 State which file classes and map ranges were searched, occurrence totals that were independently
-recounted, whether all three isolated passes completed, and any inaccessible or intentionally
-excluded material.
+recounted, which discovery ran (and for Three-pass discovery, whether all three isolated passes
+completed), and any inaccessible or intentionally excluded material.

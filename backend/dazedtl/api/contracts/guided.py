@@ -82,6 +82,7 @@ class GuidedForm(TypedDict):
     original: str
     untranslated: bool | None
     only_overflow: bool
+    thorough_investigation: bool
     text: TextToolsForm
     release: ReleaseForm
 

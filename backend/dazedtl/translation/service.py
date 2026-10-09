@@ -368,7 +368,7 @@ class Translation:
         investigation = (
             "Investigation: thorough. Run setup.md's Three-pass discovery as written."
             if selected["options"]["thorough_investigation"]
-            else "Investigation: standard. Run setup.md's Investigation method once yourself and skip its Three-pass discovery; this choice replaces the three-subagent requirement."
+            else "Investigation: standard. setup.md describes One-pass discovery; follow it, and don't run the three blind passes some skill references describe."
         )
         instructions = selected["options"]["instructions"].strip() or "(none)"
         handoff = f"""Translate this game and deliver a verified local patch using Len's maintained game-translation skills.

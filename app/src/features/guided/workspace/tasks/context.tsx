@@ -9,6 +9,7 @@ import {
   type AssistantTaskState,
 } from "../../../../ui/AssistantTask";
 import { Message } from "../../../../ui/Feedback";
+import { CheckField } from "../../../../ui/FieldRow";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
 import { GuidanceEditor } from "../../GuidanceEditor";
@@ -17,6 +18,10 @@ import { sinceLabel } from "../../../assistant/assistantTasks";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
 import type { TaskView } from "./view";
+
+/** The optional investigation in Check follows the same choice. */
+const thoroughHelp =
+  "Three independent passes look for names, running jokes and speech habits instead of one. They find more, and that step uses about three times as much of your assistant's plan.";
 
 export function namesView(w: GuidedWorkspace): TaskView {
   const {
@@ -33,6 +38,8 @@ export function namesView(w: GuidedWorkspace): TaskView {
     feedback,
     task,
     copyTask,
+    fields,
+    editForm,
   } = w;
   let content: ReactNode;
   content = (
@@ -40,6 +47,16 @@ export function namesView(w: GuidedWorkspace): TaskView {
       <ContextWorkspace
         state={state}
         results={investigation}
+        investigation={
+          <CheckField
+            id="guided-thorough-investigation"
+            label="Thorough investigation"
+            help={thoroughHelp}
+            checked={fields.thorough_investigation}
+            disabled={disabled}
+            onChange={(checked) => editForm("thorough_investigation", checked)}
+          />
+        }
         actions={{
           formats: (
             <Button
