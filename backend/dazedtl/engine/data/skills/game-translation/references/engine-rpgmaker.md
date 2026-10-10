@@ -1316,7 +1316,7 @@ game, run `DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <ga
 then run the same script's `git-setup --game-root <game> --version <release>`.
 The preparation command formats JSON with dazedformat, formats plugins.js, installs
 the bundled GameUpdate files, writes missing per-game configuration from saved
-Config defaults, and installs the MV/MZ TranslationUpdateCheck. It preserves existing
+GameUpdate defaults, and installs the MV/MZ TranslationUpdateCheck. It preserves existing
 project configuration and excludes WOLF-only binaries and updater state.
 
 For Ace, perform the existing Workflow extraction/RV2JSON prerequisite first. The

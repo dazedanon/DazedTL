@@ -13,9 +13,9 @@ from util.paths import PROJECT_ROOT
 WOLF_README_SECTION = "README.wolf.md"
 GAMEUPDATE_COPY_SKIP_NAMES = frozenset({"previous_patch_sha.txt", WOLF_README_SECTION})
 WOLF_ONLY_GAMEUPDATE_NAMES = frozenset({"UberWolfCli.exe", "UberWolfCli.LICENSE.txt"})
-RPG_GAMEUPDATE_COPY_SKIP_NAMES = GAMEUPDATE_COPY_SKIP_NAMES | WOLF_ONLY_GAMEUPDATE_NAMES | {"patch-config.txt"}
-# Installing/updating the helper must not reset project-specific configuration.
-GAMEUPDATE_PRESERVE_EXISTING = frozenset({".gitignore", "README.md", "gameupdate/patch-config.txt"})
+RPG_GAMEUPDATE_COPY_SKIP_NAMES = GAMEUPDATE_COPY_SKIP_NAMES | WOLF_ONLY_GAMEUPDATE_NAMES
+# Reinstalling the helper keeps a game's own README and ignore rules.
+GAMEUPDATE_PRESERVE_EXISTING = frozenset({".gitignore", "README.md"})
 
 
 def format_plugins_js(path: str | Path) -> int:

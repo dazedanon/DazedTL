@@ -29,7 +29,7 @@ Git setup, extraction and guidance, then stops before translation or injection.
 - For a fresh RPG Maker project, preserve a recoverable copy before preparation,
   then run `rpgmaker-prep --game-root <game>` through that same application script.
   This uses Workflow's dazedformat JSON formatter, plugins.js formatter, bundled
-  GameUpdate copy rules, saved Config defaults and MV/MZ startup checker. Existing
+  GameUpdate copy rules, saved GameUpdate defaults and MV/MZ startup checker. Existing
   per-game patch configuration, README and ignore rules survive reinstallation.
   For MV/MZ, this command also honors the saved `install_forge` choice from Len's
   GUI (on by default), using Workflow's bundled Forge installer and saved playtest
