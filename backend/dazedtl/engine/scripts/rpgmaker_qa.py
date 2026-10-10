@@ -63,6 +63,9 @@ def main() -> int:
     next_cmd.add_argument(
         "--bundle", help="Claim this waiting bundle, such as one another reviewer declined."
     )
+    show = sub.add_parser("show", help="Print a bundle compactly for review.")
+    show.add_argument("--task", required=True, type=Path)
+    show.add_argument("--bundle", required=True)
     brief = sub.add_parser("brief", help="Print one reviewer role's fixed brief.")
     brief.add_argument("--task", required=True, type=Path)
     brief.add_argument("--role", required=True, choices=rpgmaker_qa.QA_ROLES)
@@ -96,6 +99,8 @@ def main() -> int:
         _print(rpgmaker_qa.release_bundle(args.task, args.bundle))
     elif args.command == "advance":
         _print(rpgmaker_qa.advance(args.task, args.skip_declined))
+    elif args.command == "show":
+        print(rpgmaker_qa.render_bundle(args.task, args.bundle), end="")
     elif args.command == "brief":
         print(rpgmaker_qa.brief(args.task, args.role))
     elif args.command == "context":

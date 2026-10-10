@@ -64,6 +64,8 @@ DEFAULT_SCREEN_CHAR_BUDGET = 48_000
 DEFAULT_SCREEN_ITEM_LIMIT = 160
 DEFAULT_DEEP_CHAR_BUDGET = 56_000
 DEFAULT_DEEP_ITEM_LIMIT = 24
+# Occurrences a deep item lists in full; its shapes still cover every one.
+DEEP_LOCATOR_LIMIT = 12
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
@@ -1261,7 +1263,9 @@ def _bundle_items(
     ]
 
 
-def _make_bundle(stage: str, bundle_id: str, group: list[dict]) -> dict:
+def _make_bundle(
+    stage: str, bundle_id: str, group: list[dict], extra: dict | None = None
+) -> dict:
     ordinals = []
     for item in group:
         if item.get("kind") == "scene":
@@ -1283,9 +1287,128 @@ def _make_bundle(stage: str, bundle_id: str, group: list[dict]) -> dict:
             item.get("kind") == "motif-family" for item in group
         ),
         "items": group,
+        **(extra or {}),
     }
     bundle["content_sha256"] = _sha256(_canonical_bytes(bundle))
     return bundle
+
+
+def _compact_deep_item(
+    item: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """A deep item without its scenes and motif reviews, which its bundle
+    prints once, and with long occurrence lists capped."""
+    item = dict(item)
+    scenes = item.pop("screen_scene_contexts", None) or []
+    motifs = item.pop("motif_contexts", None) or []
+    locators = item["locators"]
+    item["occurrences"] = len(locators)
+    item["target_shapes"] = [
+        dict(shape) for shape in sorted({
+            (
+                ("event_code", locator.get("event_code")),
+                ("pointers", len(locator["live_pointers"])),
+                ("transform", locator.get("live_transform", "identity")),
+            )
+            for locator in locators
+        }, key=lambda shape: json.dumps(shape))
+    ]
+    if len(locators) > DEEP_LOCATOR_LIMIT:
+        first = set(item.get("screen_context_identities") or [])
+        kept = sorted(locators, key=lambda row: row["identity"] not in first)
+        kept = kept[:DEEP_LOCATOR_LIMIT]
+        item["locators"] = kept
+        item["identities"] = [locator["identity"] for locator in kept]
+    if scenes:
+        # The scene shows the lines around it; windows would repeat them.
+        item.pop("nearby_commands", None)
+        item.pop("suspect_contexts", None)
+    return item, scenes, motifs
+
+
+def _compact_scene(scene: dict[str, Any], marks: dict[str, list[str]]) -> dict:
+    """A scene as deep review reads it: each line's text and speaker, and the
+    items whose screen evidence names it."""
+    lines = []
+    for line in scene["lines"]:
+        compact = {"source": line["source"], "translation": line["translation"]}
+        for key in ("speaker", "event_code"):
+            if key in line:
+                compact[key] = line[key]
+        named = marks.get(line.get("id") or line.get("context_id") or "")
+        if named:
+            compact["items"] = sorted(set(named))
+        lines.append(compact)
+    return {"scene_id": scene["scene_id"], "lines": lines}
+
+
+def _bundle_deep(items: list[dict]) -> list[dict]:
+    """Deep bundles grouped by scene, each scene and motif review printed once."""
+    prepared = [_compact_deep_item(item) for item in items]
+    order = {item["id"]: index for index, (item, _scenes, _motifs) in enumerate(prepared)}
+
+    def scene_key(entry):
+        item, scenes, _motifs = entry
+        first = scenes[0]["scene_id"] if scenes else str(
+            (item["locators"] or [{}])[0].get("file") or ""
+        )
+        return first, order[item["id"]]
+
+    prepared.sort(key=scene_key)
+    groups: list[list[tuple]] = []
+    current: list[tuple] = []
+    size = 0
+    seen: set[str] = set()
+    for entry in prepared:
+        item, scenes, motifs = entry
+        new = [scene for scene in scenes if scene["scene_id"] not in seen] + [
+            motif for motif in motifs if motif["id"] not in seen
+        ]
+        extra = len(_canonical_bytes(item)) + len(_canonical_bytes(new))
+        if current and (
+            len(current) >= DEFAULT_DEEP_ITEM_LIMIT
+            or size + extra > DEFAULT_DEEP_CHAR_BUDGET
+        ):
+            groups.append(current)
+            current, size, seen = [], 0, set()
+            extra = len(_canonical_bytes(item)) + len(_canonical_bytes(scenes + motifs))
+        current.append(entry)
+        size += extra
+        seen |= {scene["scene_id"] for scene in scenes} | {motif["id"] for motif in motifs}
+    if current:
+        groups.append(current)
+    bundles = []
+    for index, group in enumerate(groups, start=1):
+        scenes: dict[str, dict] = {}
+        keys: dict[str, str] = {}
+        motifs: dict[str, dict] = {}
+        members = []
+        # The scene lines each item's screen evidence names.
+        marks: dict[str, list[str]] = defaultdict(list)
+        for item, _scenes, _motifs in group:
+            for evidence in item.get("screen_evidence") or []:
+                marks[evidence["target_id"]].append(item["id"])
+        for item, item_scenes, item_motifs in group:
+            item = dict(item)
+            for scene in item_scenes:
+                if scene["scene_id"] not in keys:
+                    keys[scene["scene_id"]] = f"S{len(keys) + 1}"
+                    scenes[keys[scene["scene_id"]]] = _compact_scene(scene, marks)
+            if item_scenes:
+                item["scenes"] = [keys[scene["scene_id"]] for scene in item_scenes]
+            for motif in item_motifs:
+                motifs.setdefault(motif["id"], motif)
+            if item_motifs:
+                item["motifs"] = [motif["id"] for motif in item_motifs]
+            members.append(item)
+        bundles.append(_make_bundle(
+            "deep", f"deep-{index:04d}", members,
+            {
+                **({"scenes": scenes} if scenes else {}),
+                **({"motifs": motifs} if motifs else {}),
+            },
+        ))
+    return bundles
 
 
 def _split_declined(
@@ -2054,7 +2177,12 @@ def _database_number_allowance(
 ) -> frozenset[str]:
     """A database text may change a number only to one its own entry holds."""
     identity = review["id"]
-    targets = set(review.get("apply_identities") or []) or set(item["identities"])
+    targets = set(review.get("apply_identities") or [])
+    if not targets:
+        raise QAResultError(
+            f"A database number fix names the entries it changes in apply_identities: "
+            f"{identity}"
+        )
     for locator in item.get("locators") or []:
         if locator["identity"] not in targets:
             continue
@@ -2196,25 +2324,32 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
                 _database_number_allowance(review, item)
                 if kind == "database-numbers" else frozenset()
             )
-            targets = set(review.get("apply_identities") or []) or set(
-                item.get("identities") or []
-            )
-            for locator in item.get("locators") or []:
-                if locator["identity"] not in targets:
-                    continue
+            # Every occurrence the correction reaches, by its line structure;
+            # a capped item lists only some of them.
+            chosen = set(review.get("apply_identities") or [])
+            shapes = [
+                {
+                    "event_code": locator.get("event_code"),
+                    "pointers": len(locator["live_pointers"]),
+                    "transform": locator.get("live_transform", "identity"),
+                }
+                for locator in item.get("locators") or []
+                if locator["identity"] in chosen
+            ] if chosen else item.get("target_shapes") or []
+            for shape in shapes:
                 problems = correction_problems(
                     str(item["source"]),
                     str(item["translation"]),
                     correction,
-                    locator.get("event_code"),
-                    locator["live_pointers"],
-                    locator.get("live_transform", "identity"),
+                    shape["event_code"],
+                    ["/"] * shape["pointers"],
+                    shape["transform"],
                     allowed,
                 )
                 if problems:
                     raise QAResultError(
-                        f"The correction for {identity} would block apply at "
-                        f"{locator['identity']}: " + "; ".join(problems)
+                        f"The correction for {identity} would block apply: "
+                        + "; ".join(problems)
                     )
         elif review.get("source_fix") is not None:
             raise QAResultError(f"Only an actionable review can fix the source: {identity}")
@@ -2252,10 +2387,7 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
         if not isinstance(apply_ids, list) or not set(apply_ids).issubset(allowed_ids):
             raise QAResultError(f"Invalid apply_identities for {identity}")
         motif_ids = review.get("motif_ids") or []
-        allowed_motif_ids = {
-            str(context.get("id") or "")
-            for context in bundle_items[identity].get("motif_contexts") or []
-        }
+        allowed_motif_ids = set(bundle_items[identity].get("motifs") or [])
         if (
             not isinstance(motif_ids, list)
             or len(motif_ids) != len(set(motif_ids))
@@ -2439,6 +2571,262 @@ def context_view(task_dir: str | Path, locator: str, radius: int = 12) -> str:
                 + _context_text(json.dumps(parameters, ensure_ascii=False))[:200]
             )
     return "\n".join(lines)
+
+
+# Event commands whose text a rendered context shows; others print as data.
+_RENDERED_TEXT_CODES = frozenset({
+    101, 102, 108, 122, 320, 324, 355, 357, 401, 402, 405, 408, 655,
+})
+
+
+def _render_commands(commands: list[dict], indent: str) -> list[str]:
+    out = []
+    for command in commands or []:
+        code = command.get("code")
+        if code in _CONTEXT_QUIET_CODES:
+            continue
+        parameters = command.get("parameters")
+        if code in _RENDERED_TEXT_CODES:
+            shown = [
+                value for value in parameters if isinstance(value, (str, list))
+            ] if isinstance(parameters, list) else parameters
+            out.append(
+                f"{indent}#{command.get('index')} c{code}: JP="
+                + _context_text(json.dumps(command.get("original"), ensure_ascii=False))
+                + " EN=" + _context_text(json.dumps(shown, ensure_ascii=False))
+            )
+        else:
+            out.append(
+                f"{indent}#{command.get('index')} c{code}: "
+                + _context_text(json.dumps(parameters, ensure_ascii=False))[:160]
+            )
+    return out
+
+
+def _render_hints(entry: dict, indent: str) -> list[str]:
+    out = []
+    if entry.get("glossary"):
+        out.append(indent + "glossary: " + "; ".join(f"{a}={b}" for a, b in entry["glossary"]))
+    for alternative in entry.get("same_source_alternatives") or []:
+        out.append(indent + "same JP elsewhere: " + _context_text(alternative))
+    for row in entry.get("reference_translations") or []:
+        out.append(indent + "reference: " + _context_text(row.get("translation")))
+    if entry.get("lint"):
+        out.append(
+            indent + "lint (" + ", ".join(entry["lint"]["families"]) + "): "
+            + _context_text(entry["lint"]["proposed"])
+        )
+    return out
+
+
+def _render_line(number: int, line: dict, mark: str) -> list[str]:
+    speaker = f"<{line['speaker']}> " if line.get("speaker") else ""
+    code = f" c{line['event_code']}" if line.get("event_code") else ""
+    out = [
+        f"{number:>4} {mark}{code} JP: {speaker}{_context_text(line['source'])}",
+        f"{'':>4}   EN: {_context_text(line['translation'])}",
+    ]
+    if line.get("risk"):
+        out.append(f"{'':>4}   risk: " + ",".join(line["risk"]))
+    if line.get("context_expansion"):
+        out.append(f"{'':>4}   repeated in: " + ",".join(line["context_expansion"]))
+    if line.get("choice_context"):
+        labels = " | ".join(
+            f"{branch['index']}:{branch['label']}"
+            for branch in line["choice_context"].get("branches", [])
+        )
+        out.append(f"{'':>4}   choices: {labels}")
+    return out + _render_hints(line, "       ")
+
+
+def _render_screen_item(item: dict) -> list[str]:
+    kind = item.get("kind")
+    if kind == "scene":
+        out = [
+            f"### SCENE {item['id']} {item['scene_id']} "
+            f"({item['line_count']} lines, {item['target_count']} targets)"
+        ]
+        for number, line in enumerate(item["lines"], 1):
+            mark = f"[T {line['id']}]" if "id" in line else "[ctx]"
+            out += _render_line(number, line, mark)
+        return out
+    if kind == "cluster":
+        meta = [f"occ={item.get('occurrences', 1)}"]
+        if item.get("display_shapes"):
+            meta.append("shape=" + ",".join(item["display_shapes"]))
+        if item.get("speakers"):
+            meta.append("speakers=" + ",".join(item["speakers"]))
+        out = [f"### CLUSTER {item['id']} " + " ".join(meta)]
+        if item.get("risk"):
+            out.append("  risk: " + ",".join(item["risk"]))
+        out += [
+            "  JP: " + _context_text(item["source"]),
+            "  EN: " + _context_text(item["translation"]),
+        ]
+        return out + _render_hints(item, "  ")
+    if kind == "motif-family":
+        out = [
+            f"### MOTIF {item['id']} ({item['variant_count']} variants)",
+            "  anchors: " + ", ".join(item["anchors"]),
+            "  guidance: " + _context_text(item["guidance"]),
+        ]
+        for variant in item["variants"]:
+            out += [
+                f"  - VARIANT {variant['id']} occ={variant['occurrences']}",
+                "    JP: " + _context_text(variant["source"]),
+                "    EN: " + _context_text(variant["translation"]),
+            ] + _render_commands(variant.get("nearby_commands"), "      ")
+        return out
+    if kind == "lint-family":
+        out = [f"### LINT {item['id']} {item['family']}: {item['description']}"]
+        for proposal in item["proposals"]:
+            speaker = f" <{proposal['speaker']}>" if proposal.get("speaker") else ""
+            out += [
+                f"  {proposal['id']} {proposal['scene']}{speaker}",
+                "    JP:  " + _context_text(proposal["source"]),
+                "    EN:  " + _context_text(proposal["current"]),
+                "    FIX: " + _context_text(proposal["proposed"]),
+            ]
+        return out
+    return ["### " + json.dumps(item, ensure_ascii=False)]
+
+
+def _render_deep(bundle: dict) -> list[str]:
+    out = []
+    numbers = {item["id"]: number for number, item in enumerate(bundle["items"], 1)}
+    for number, item in enumerate(bundle["items"], 1):
+        out += [
+            "",
+            f"### ITEM {number} {item['id']}",
+            "  deep_reasons: " + ", ".join(item.get("deep_reasons") or []),
+        ]
+        meta = []
+        for key, label in (("risk", "risk"), ("display_shapes", "shape"),
+                           ("event_codes", "codes"), ("speakers", "speakers")):
+            if item.get(key):
+                meta.append(f"{label}=" + ",".join(map(str, item[key])))
+        listed = len(item.get("locators") or [])
+        meta.append(
+            f"occurrences={item.get('occurrences', listed)}"
+            + (f" (listing {listed})" if item.get("occurrences", listed) != listed else "")
+        )
+        out.append("  " + " ".join(meta))
+        out += [
+            "  JP: " + _context_text(item["source"]),
+            "  EN: " + _context_text(item["translation"]),
+        ] + _render_hints(item, "  ")
+        for evidence in item.get("screen_evidence") or []:
+            out.append(
+                f"  screen [{evidence['verdict']}] ({','.join(evidence['categories'])}): "
+                + _context_text(evidence["note"])
+            )
+        if item.get("scenes"):
+            out.append("  scenes: " + ", ".join(item["scenes"]))
+        if item.get("motifs"):
+            out.append("  motifs: " + ", ".join(item["motifs"]))
+        for locator in item.get("locators") or []:
+            if len(item.get("locators") or []) == 1 and locator["identity"] == item["id"]:
+                break
+            extra = []
+            speaker = (locator.get("speaker") or {}).get("display_name")
+            if speaker:
+                extra.append(f"speaker={speaker}")
+            if locator.get("database_entity"):
+                extra.append("entity=" + json.dumps(locator["database_entity"], ensure_ascii=False))
+            if locator.get("database_values"):
+                extra.append("values=" + ",".join(locator["database_values"]))
+            out.append(f"  - {locator['identity']} " + " ".join(extra))
+        if item.get("nearby_commands"):
+            out.append("  nearby:")
+            out += _render_commands(item["nearby_commands"], "    ")
+        for context in item.get("suspect_contexts") or []:
+            out.append(f"  around {context['identity']}:")
+            out += _render_commands(context["nearby_commands"], "    ")
+    for key, scene in (bundle.get("scenes") or {}).items():
+        out += ["", f"## SCENE {key} {scene['scene_id']} ({len(scene['lines'])} lines)"]
+        for number, line in enumerate(scene["lines"], 1):
+            named = [str(numbers[item]) for item in line.get("items") or [] if item in numbers]
+            mark = (">>ITEM " + ",".join(named)) if named else "  "
+            out += _render_line(number, line, mark)
+    for motif_id, motif in (bundle.get("motifs") or {}).items():
+        out += [
+            "",
+            f"## MOTIF {motif_id} {motif.get('disposition', '')}",
+            "  guidance: " + _context_text(motif.get("guidance")),
+            "  screen note: " + _context_text(motif.get("note")),
+        ]
+        for variant in motif.get("variants") or []:
+            out.append(
+                "  - " + _context_text(variant.get("source"))
+                + " || " + _context_text(variant.get("translation"))
+            )
+    return out
+
+
+def _render_group(item: dict) -> list[str]:
+    rule = item["rule"]
+    out = [
+        f"### SWEEP {item['id']} {item['family_key']}: "
+        f"{rule['find']!r} -> {rule['replace']!r}"
+        + (f" where the source has {rule['source_has']!r}" if rule.get("source_has") else ""),
+        "  accepted: JP " + _context_text(item["example"]["source"]),
+        "            EN " + _context_text(item["example"]["current"]),
+        "           FIX " + _context_text(item["example"]["correction"]),
+        "        reason " + _context_text(item["example"]["evidence"]),
+    ]
+    for candidate in item["candidates"]:
+        speaker = f" <{candidate['speaker']}>" if candidate.get("speaker") else ""
+        out += [
+            f"  {candidate['id']} {candidate['scene']}{speaker}",
+            "    JP:  " + _context_text(candidate["source"]),
+            "    EN:  " + _context_text(candidate["current"]),
+            "    FIX: " + _context_text(candidate["proposed"]),
+        ]
+    return out
+
+
+def _render_editorial(item: dict) -> list[str]:
+    finding = item["finding"]
+    out = [
+        f"### FINDING {item['id']} [{finding['severity']} {finding['category']}] "
+        f"{finding.get('family_key', '')} occurrences={item['occurrences']}",
+        "  JP:  " + _context_text(finding["source"]),
+        "  EN:  " + _context_text(finding["current"]),
+        "  FIX: " + _context_text(finding["correction"]),
+        "  evidence: " + _context_text(finding["evidence"]),
+    ]
+    basis = finding.get("editorial_basis")
+    if basis:
+        out += [
+            "  defect: " + _context_text(basis["defect"]),
+            "  support: " + _context_text(basis["source_support"]),
+        ]
+    for conflict in item.get("conflicts") or []:
+        out.append(f"  CONFLICT ({conflict['kind']}): " + conflict["message"])
+    return out + _render_commands(item.get("nearby_commands"), "    ")
+
+
+def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
+    """A bundle as compact text: what a reviewer reads instead of its JSON."""
+    _root, _task, checkpoint = _load_task(task_dir)
+    stage, row = _bundle_row(checkpoint, bundle_id)
+    bundle = _read_json(Path(row["path"]))
+    out = [
+        f"BUNDLE {bundle_id} ({stage}, {bundle['item_count']} targets, "
+        f"sha256 {bundle['content_sha256']}). Newlines show as ⏎."
+    ]
+    if stage == "deep":
+        out += _render_deep(bundle)
+    else:
+        for item in bundle["items"]:
+            out.append("")
+            if stage == "screen":
+                out += _render_screen_item(item)
+            elif stage == "sweep":
+                out += _render_group(item)
+            else:
+                out += _render_editorial(item)
+    return "\n".join(out) + "\n"
 
 
 def _decode_pointer(pointer: str) -> list[str]:
@@ -3163,12 +3551,7 @@ def _advance_unlocked(
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     candidate_reasons = checkpoint["deep"].get("candidate_reasons") or {}
     deep_items = _deep_items(root, candidate_reasons)
-    bundles = _bundle_items(
-        deep_items,
-        stage="deep",
-        char_budget=DEFAULT_DEEP_CHAR_BUDGET,
-        item_limit=DEFAULT_DEEP_ITEM_LIMIT,
-    ) if deep_items else []
+    bundles = _bundle_deep(deep_items) if deep_items else []
     checkpoint["deep"] = {
         "total_items": len(deep_items),
         "accepted_items": 0,

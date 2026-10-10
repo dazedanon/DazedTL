@@ -94,7 +94,9 @@ clean targets.
 
 ## Deep reviewer
 
-Each item states the `deep_reasons` that escalated it. Return exactly one review per item.
+Each item states the `deep_reasons` that escalated it. Return exactly one review per item. A
+deep bundle prints each scene once after its items, marking the lines each item's screen
+evidence names, and lists at most twelve of an item's occurrences.
 
 - `screen_evidence` keeps the screening reviewer's reason and `screen_scene_contexts` every scene
   used to reach it. A `clean` review of such an item rebuts that reason concretely in its
@@ -149,7 +151,9 @@ withdrawn, never revised.
 Prefix every command with `{{CLI}}`:
 
 - `status --task {{TASK}}`, `brief --task {{TASK}} --role <role>`
-- `next --task {{TASK}} --worker <name> [--bundle <id>]`, then read the bundle file it names
+- `next --task {{TASK}} --worker <name> [--bundle <id>]`, then read the bundle with
+  `show --task {{TASK}} --bundle <id>`, which prints it compactly; the bundle file it names
+  holds the same content as JSON
 - `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
 - `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no
   other reviewer will take a declined bundle

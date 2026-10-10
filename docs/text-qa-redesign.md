@@ -50,10 +50,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Engine
 
-### Cost
-
-- Deep bundles group items by scene, print each scene once and cap long occurrence lists.
-
 ### Speed
 
 - Deep review starts on accepted screen bundles instead of waiting for the whole screen.
@@ -65,12 +61,8 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - The QA phase of the progress report takes its stage and counts from the engine checkpoint.
 - The Text QA page and the starting flow implement the [user experience](#user-experience) above.
 
-## Skill
-
-- Rendering moves into the engine: scene-grouped deep bundles.
-
 ## Order of work
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-2. Cost: scene-grouped deep bundles.
+2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.

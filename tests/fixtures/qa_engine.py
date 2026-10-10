@@ -354,7 +354,10 @@ def deep_result(row, corrections):
                 "motif_ids": [],
                 "evidence": "Checked against the source and scene.",
                 "correction": correction,
-                "apply_identities": [],
+                # A database number fix names the entries it changes.
+                "apply_identities": item["identities"]
+                if item["source"] == SWORD and correction
+                else [],
             }
         )
     return {
@@ -367,6 +370,9 @@ def deep_result(row, corrections):
 
 row = qa.next_bundle(task, "deep-a")
 assert "森の奥へ" not in {item["source"] for item in bundle_of(row)["items"]}
+# The scene prints once, marking the lines its items' screen evidence names.
+shown = qa.render_bundle(task, row["id"])
+assert shown.count("## SCENE S1") == 1 and ">>ITEM" in shown, shown
 # A correction that would trip the post-apply regression is refused when it
 # is submitted, so it can never reach findings or roll back an apply.
 try:
