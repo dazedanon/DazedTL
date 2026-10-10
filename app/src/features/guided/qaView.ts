@@ -129,7 +129,11 @@ export function qaStages(qa: QaState): {
 
 /** The summary line once QA is done: corrections and what it covered. */
 export function qaSummary(qa: QaState) {
-  const applied = qa.findings.filter((row) => row.state === "applied").length;
+  // A proposal the user chose counts as a correction.
+  const chosen = qa.questions.filter((row) => row.choice === "use");
+  const applied = [...qa.findings, ...chosen].filter(
+    (row) => row.state === "applied",
+  ).length;
   const lines = qa.coverage?.lines || 0;
   const missing = qa.coverage?.not_reviewed || 0;
   const corrections = (count: number) =>
@@ -137,8 +141,8 @@ export function qaSummary(qa: QaState) {
   return [
     qa.applied
       ? `${corrections(applied)} applied`
-      : qa.findings.length
-        ? `${corrections(qa.findings.length)} to apply`
+      : qa.findings.length + chosen.length
+        ? `${corrections(qa.findings.length + chosen.length)} to apply`
         : "No corrections needed",
     lines && `${(lines - missing).toLocaleString()} lines checked`,
   ]

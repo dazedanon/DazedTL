@@ -116,6 +116,9 @@
   --check-column-width: 13rem;
   /* A count typed inside a sentence, such as a row limit. */
   --inline-number-width: 4.5rem;
+  /* The short labels before a text change's lines, such as "Correction",
+     so the text lines up from one change to the next. */
+  --change-label-width: 5.5rem;
   --field-column-gap: var(--space-4);
   --action-column-width: 19rem;
   /* Image Manager's preview column beside the task and grid; narrow

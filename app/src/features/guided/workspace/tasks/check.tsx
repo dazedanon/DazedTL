@@ -281,7 +281,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
     action.key === "qa-save" ||
     (!!action.error &&
       ((action.key === "qa-apply" && phase === "applied") ||
-        qa.findings.some(
+        [...qa.findings, ...qa.questions].some(
           (row) => action.key === "qa-undo:" + row.id && row.state === "undone",
         )));
   const start = (label: string, variant: "primary" | "default" = "primary") => (
@@ -303,6 +303,13 @@ export function qaView(w: GuidedWorkspace): TaskView {
       }
     />
   );
+  const undoUnavailable = qa.rules_changed
+    ? "An update changed QA's rules after these corrections were applied."
+    : "";
+  // Once applied, only a proposal the user chose went into the game.
+  const questions = qa.applied
+    ? qa.questions.filter((row) => row.choice === "use")
+    : qa.questions;
   const activity = qaActivity(qa);
   const coverage = qa.coverage;
   const panelState: AssistantTaskState =
@@ -358,7 +365,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
               : phase === "running"
                 ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
                 : phase === "questions"
-                  ? "QA needs your answer for the lines below before it applies its corrections."
+                  ? "QA applies its corrections once you answer the questions below."
                   : phase === "ready"
                     ? "Your assistant applies these corrections next; you can also apply them here."
                     : qaSummary(qa)
@@ -376,7 +383,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
               (coverage?.not_reviewed || coverage?.preflight) ? (
                 <>
                   {[
-                    `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
+                    // The summary that describes finished QA counts them.
+                    !["applied", "clean"].includes(phase) &&
+                      `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
                     coverage.not_reviewed &&
                       `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
                     coverage.preflight &&
@@ -401,13 +410,17 @@ export function qaView(w: GuidedWorkspace): TaskView {
           </div>
         ) : undefined}
       </AssistantTask>
-      {qa.questions.length > 0 && !qa.applied && (
+      {questions.length > 0 && phase !== "outdated" && (
         <QaQuestions
-          questions={qa.questions}
+          questions={questions}
           disabled={disabled}
+          undoUnavailable={undoUnavailable}
           feedback={feedback}
           choose={(question, choice) =>
             step(`qa-${choice}:` + question, "choose", { question, choice })
+          }
+          undo={(row) =>
+            step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
           }
         />
       )}
@@ -423,11 +436,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         <QaAuditLog
           findings={qa.findings}
           disabled={disabled}
-          undoUnavailable={
-            qa.rules_changed
-              ? "An update changed QA's rules after these corrections were applied."
-              : ""
-          }
+          undoUnavailable={undoUnavailable}
           feedback={feedback}
           undo={(row) =>
             step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
@@ -459,6 +468,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
     start("Start text QA")
   ) : phase === "outdated" ? (
     start("Run QA again")
+  ) : phase === "applied" || phase === "clean" ? (
+    // Text edited since, such as new translation, can take another pass.
+    start("Run QA again", "default")
   ) : phase === "ready" ? (
     <ActionControl
       label={applyFailed ? "Try again" : "Apply corrections"}

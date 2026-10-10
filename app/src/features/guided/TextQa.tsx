@@ -9,7 +9,6 @@ import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
-import { StatusPanel } from "../../ui/StatusPanel";
 import { qaGroups, qaOrigin } from "./qaView";
 
 type Feedback = (
@@ -53,83 +52,113 @@ function Change({
 
 /**
  * The lines QA cannot settle from the game's text. Each choice saves at
- * once; QA applies once every line has one.
+ * once; QA applies once every line has one, and an applied proposal can be
+ * undone like a correction.
  */
 export function QaQuestions({
   questions,
   disabled,
+  undoUnavailable,
   choose,
+  undo,
   feedback,
 }: {
   questions: QaQuestion[];
   disabled: boolean;
+  /** Why Undo cannot run, such as rules an update changed. */
+  undoUnavailable: string;
   choose: (question: string, choice: "keep" | "use") => void;
+  undo: (question: QaQuestion) => void;
   feedback: Feedback;
 }) {
   const open = questions.filter((row) => !row.choice).length;
+  // The task's own panel carries the state; this card names what is left.
   return (
-    <StatusPanel
-      title="Needs you"
-      state={open ? "needs_review" : "done"}
-      progress={
-        open
-          ? `${open.toLocaleString()} of ${questions.length.toLocaleString()} to answer`
-          : undefined
-      }
-      description="Reviewers could not settle these lines from the game's text. Choose for each; QA applies its corrections once every line has an answer."
-    >
-      {questions.map((row) => (
-        <ActionRow
-          key={row.id}
-          label={
-            <>
-              <Change
-                source={row.source}
-                current={row.current}
-                other={row.proposal}
-                otherLabel="Proposal"
-              />
-              <small>{row.reason}</small>
-              {row.places > 1 && <small>{row.places} places in the game</small>}
-            </>
-          }
-        >
-          {row.choice ? (
-            <span className="text-qa-choice">
-              {row.choice === "use" ? "Using the proposal" : "Keeping the text"}
-              {!row.state && row.proposal && (
-                <Button
-                  variant="link"
-                  disabled={disabled}
-                  onClick={() =>
-                    choose(row.id, row.choice === "use" ? "keep" : "use")
-                  }
-                >
-                  Change
-                </Button>
-              )}
-            </span>
-          ) : (
-            <>
+    <section className="text-qa-questions" aria-label="Needs you">
+      <h3>
+        {open
+          ? `Needs you · ${open.toLocaleString()} to answer`
+          : "Your answers"}
+      </h3>
+      <p>Reviewers could not settle these lines from the game's text.</p>
+      <ActionList>
+        {questions.map((row) => (
+          <ActionRow
+            key={row.id}
+            label={
+              <>
+                {row.state === "applied" ? (
+                  <Change
+                    source={row.source}
+                    current={row.proposal || row.current}
+                    other={row.current}
+                    otherLabel="Was"
+                  />
+                ) : (
+                  <Change
+                    source={row.source}
+                    current={row.current}
+                    other={row.proposal}
+                    otherLabel="Proposal"
+                  />
+                )}
+                <small>{row.reason}</small>
+                {row.places > 1 && (
+                  <small>{row.places} places in the game</small>
+                )}
+              </>
+            }
+          >
+            {row.state === "applied" ? (
               <ActionControl
-                label="Keep current text"
-                disabled={disabled}
-                {...feedback("qa-keep:" + row.id, "Saving…")}
-                onClick={() => choose(row.id, "keep")}
+                label="Undo"
+                variant="link"
+                disabled={disabled || !!undoUnavailable}
+                disabledReason={undoUnavailable}
+                {...feedback("qa-undo:" + row.id, "Undoing…")}
+                onClick={() => undo(row)}
               />
-              {row.proposal && (
+            ) : row.state === "undone" ? (
+              <span className="text-qa-choice">Undone</span>
+            ) : row.choice ? (
+              <span className="text-qa-choice">
+                {row.choice === "use"
+                  ? "Using the proposal"
+                  : "Keeping the text"}
+                {!row.state && row.proposal && (
+                  <Button
+                    variant="link"
+                    disabled={disabled}
+                    onClick={() =>
+                      choose(row.id, row.choice === "use" ? "keep" : "use")
+                    }
+                  >
+                    Change
+                  </Button>
+                )}
+              </span>
+            ) : (
+              <>
                 <ActionControl
-                  label="Use proposal"
+                  label="Keep current text"
                   disabled={disabled}
-                  {...feedback("qa-use:" + row.id, "Saving…")}
-                  onClick={() => choose(row.id, "use")}
+                  {...feedback("qa-keep:" + row.id, "Saving…")}
+                  onClick={() => choose(row.id, "keep")}
                 />
-              )}
-            </>
-          )}
-        </ActionRow>
-      ))}
-    </StatusPanel>
+                {row.proposal && (
+                  <ActionControl
+                    label="Use proposal"
+                    disabled={disabled}
+                    {...feedback("qa-use:" + row.id, "Saving…")}
+                    onClick={() => choose(row.id, "use")}
+                  />
+                )}
+              </>
+            )}
+          </ActionRow>
+        ))}
+      </ActionList>
+    </section>
   );
 }
 
@@ -256,7 +285,7 @@ export function QaCoverage({
     <Modal label="What QA did not cover" onDismiss={onClose} size="lg">
       <DialogHeader
         title="What QA did not cover"
-        description="Reviewers declined these lines, so no reviewer judged them, and QA cannot correct Japanese outside its inventory."
+        description="Lines no reviewer judged, and Japanese outside what QA can correct."
         onClose={onClose}
       />
       <DialogBody className="text-qa-coverage">
@@ -264,31 +293,36 @@ export function QaCoverage({
         {!report && !error && <p className="muted">Loading…</p>}
         {report && (
           <>
-            <section aria-label="Not reviewed">
-              <div className="check-results-heading">
-                <h3>Not reviewed · {unreviewed.length.toLocaleString()}</h3>
-                {unreviewed.length > 0 && (
-                  <Button
-                    variant="link"
-                    pending={saving}
-                    onClick={() => {
-                      setSaving(true);
-                      markReviewed(unreviewed.map((row) => row.identity))
-                        .then(setReport, (reason: unknown) =>
-                          setError(
-                            reason instanceof Error
-                              ? reason.message
-                              : String(reason),
-                          ),
-                        )
-                        .finally(() => setSaving(false));
-                    }}
-                  >
-                    I reviewed these
-                  </Button>
-                )}
-              </div>
-              {report.not_reviewed.length ? (
+            {report.not_reviewed.length > 0 && (
+              <section aria-label="Not reviewed">
+                <div className="check-results-heading">
+                  <h3>
+                    Not reviewed · {report.not_reviewed.length.toLocaleString()}
+                  </h3>
+                  {unreviewed.length > 0 && (
+                    <Button
+                      variant="link"
+                      pending={saving}
+                      onClick={() => {
+                        setSaving(true);
+                        markReviewed(unreviewed.map((row) => row.identity))
+                          .then(setReport, (reason: unknown) =>
+                            setError(
+                              reason instanceof Error
+                                ? reason.message
+                                : String(reason),
+                            ),
+                          )
+                          .finally(() => setSaving(false));
+                      }}
+                    >
+                      I reviewed these
+                    </Button>
+                  )}
+                </div>
+                <p className="muted">
+                  Reviewers declined these lines, so no reviewer judged them.
+                </p>
                 <ActionList>
                   {report.not_reviewed.map((row) => (
                     <ActionRow
@@ -308,10 +342,8 @@ export function QaCoverage({
                     </ActionRow>
                   ))}
                 </ActionList>
-              ) : (
-                <Notice>Reviewers judged every line.</Notice>
-              )}
-            </section>
+              </section>
+            )}
             {report.preflight_total > 0 && (
               <section aria-label="Japanese QA cannot correct">
                 <h3>
