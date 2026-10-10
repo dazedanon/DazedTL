@@ -48,12 +48,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - When QA finishes or needs the user, the app notifies them through its existing notification mechanism, if it has one.
 - The page follows the [UX principles](architecture.md#ux-principles) and [shared presentation](architecture.md#workflow-and-shared-presentation) rules: a compact layout, each status shown once, no zero counters or finished progress bars, and shared primitives.
 
-## Engine
-
-### Speed
-
-- The engine assigns, releases and times workers, so a stalled worker is reassigned and the estimate comes from the engine.
-
 ## App and helper
 
 - `project.py qa` also exposes undo and the Needs you choices, so a choice resumes QA.
@@ -64,4 +58,4 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: engine-managed workers, the stage strip, the Needs you card and undo.
+3. Speed and presentation: the stage strip, the Needs you card and undo.

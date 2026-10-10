@@ -46,17 +46,19 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    One worker may take every role in turn, except that an editorial bundle never goes to a
    worker that wrote one of its judgment corrections.
 2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
-   bundle. Write results only in `{{RECEIPTS}}`, one file per bundle named after its ID; DazedTL
-   keeps the accepted copy. A worker that cannot finish a bundle releases it.
+   bundle; `next` moves QA through its stages by itself. Write results only in `{{RECEIPTS}}`,
+   one file per bundle named after its ID; DazedTL keeps the accepted copy. A worker that cannot
+   finish a bundle releases it. A worker not seen for twenty minutes, or three times a typical
+   bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
+   `status` gives the engine's estimate of the time left.
 3. Declined items move to a bundle of their own. Offer each to another worker, which claims it
    with `next --bundle <id>`; a second decline sets it aside. If no other worker is available,
    continue with `--skip-declined`. Set-aside items are reported as not reviewed; never ask the
    user to review them.
 4. Deep bundles open while screening continues, and `next` hands them out once no screen
-   bundle is waiting. When the screen stage is done, run `{{CLI}} advance --task {{TASK}}`. When
-   deep review is done, run `{{CLI}} finalize --task {{TASK}}`; it moves to the sweep and
-   editorial stages in turn, so keep claiming bundles and run finalize again until it reports
-   `complete`.
+   bundle is waiting. QA then moves through the sweep and editorial stages until `status`
+   reports `complete`. `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}`
+   take the same steps by hand, which `--skip-declined` needs.
 5. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use

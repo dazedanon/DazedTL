@@ -68,6 +68,13 @@ DEFAULT_DEEP_ITEM_LIMIT = 24
 DEEP_LOCATOR_LIMIT = 12
 # Ready deep items that open a deep bundle while screening continues.
 EARLY_DEEP_BATCH = DEFAULT_DEEP_ITEM_LIMIT
+# A bundle whose worker has not been seen this long, or three times a typical
+# bundle's time when longer, has stalled; the next idle worker takes it.
+STALL_MINIMUM_SECONDS = 20 * 60
+# Workers seen this recently count toward the estimate.
+ACTIVE_WORKER_SECONDS = 30 * 60
+# Seconds one review target takes, by stage, until the task has measured it.
+DEFAULT_SECONDS_PER_ITEM = {"screen": 5.0, "deep": 60.0, "sweep": 4.0, "editorial": 30.0}
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
@@ -1752,6 +1759,91 @@ def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
     return root, task, checkpoint
 
 
+def _reviewed_seconds(rows: list[dict[str, Any]]) -> list[tuple[float, int]]:
+    """Each accepted bundle's review time and target count."""
+    return [
+        (
+            (
+                datetime.fromisoformat(row["accepted_at"])
+                - datetime.fromisoformat(row["assigned_at"])
+            ).total_seconds(),
+            int(row["item_count"]),
+        )
+        for row in rows
+        if row["status"] == "accepted"
+        and row.get("assigned_at")
+        and row.get("accepted_at")
+        and int(row["item_count"])
+    ]
+
+
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    return (
+        ordered[middle] if len(ordered) % 2 else (ordered[middle - 1] + ordered[middle]) / 2
+    )
+
+
+def _seconds_per_item(checkpoint: dict[str, Any], stage: str) -> float:
+    timed = _reviewed_seconds(checkpoint.get(stage, {}).get("bundles", []))
+    if not timed:
+        return DEFAULT_SECONDS_PER_ITEM[stage]
+    return _median([seconds / count for seconds, count in timed])
+
+
+def _stall_after(checkpoint: dict[str, Any], stage: str) -> float:
+    timed = _reviewed_seconds(checkpoint.get(stage, {}).get("bundles", []))
+    typical = _median([seconds for seconds, _count in timed]) if timed else 0.0
+    return max(STALL_MINIMUM_SECONDS, 3 * typical)
+
+
+def _stalled(checkpoint: dict[str, Any], stage: str, row: dict[str, Any]) -> bool:
+    if row["status"] != "assigned" or not row.get("assigned_at"):
+        return False
+    seen = (checkpoint.get("workers") or {}).get(row.get("assigned_to") or "", {})
+    last = max(
+        datetime.fromisoformat(row["assigned_at"]),
+        datetime.fromisoformat(seen.get("last_seen") or row["assigned_at"]),
+    )
+    idle = (datetime.now(timezone.utc) - last).total_seconds()
+    return idle > _stall_after(checkpoint, stage)
+
+
+def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """The work left by stage and the engine's estimate of its time."""
+    now = datetime.now(timezone.utc)
+    active = sorted(
+        name for name, worker in (checkpoint.get("workers") or {}).items()
+        if worker.get("last_seen")
+        and (now - datetime.fromisoformat(worker["last_seen"])).total_seconds()
+        <= ACTIVE_WORKER_SECONDS
+    )
+    remaining = {}
+    for stage in REVIEW_STAGES:
+        state = checkpoint.get(stage) or {}
+        total = int(state.get("total_items", 0))
+        if stage == "deep":
+            total = max(total, int(state.get("projected_items", 0)))
+        set_aside = sum(
+            row["item_count"] for row in state.get("bundles", [])
+            if row["status"] == "set-aside"
+        )
+        remaining[stage] = max(0, total - int(state.get("accepted_items", 0)) - set_aside)
+    seconds = sum(
+        remaining[stage] * _seconds_per_item(checkpoint, stage) for stage in remaining
+    )
+    measured = any(
+        _reviewed_seconds((checkpoint.get(stage) or {}).get("bundles", []))
+        for stage in REVIEW_STAGES
+    )
+    return {
+        "remaining": remaining,
+        "workers": active,
+        "eta_seconds": round(seconds / max(1, len(active))) if measured else None,
+    }
+
+
 def _stage_metrics(stage: dict[str, Any], *, active: bool) -> dict[str, Any]:
     bundles = stage["bundles"]
     assigned = [row for row in bundles if row["status"] == "assigned"]
@@ -1849,6 +1941,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             ),
         },
         "decisions": len(_decisions(root)),
+        "estimate": _estimate(checkpoint),
         "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
     }
@@ -1882,50 +1975,93 @@ def next_bundle(
     root = Path(task_dir).expanduser().resolve()
     worker = str(worker or "worker")
     with _task_lock(root):
-        root, task, checkpoint = _load_task(root)
-        stage = checkpoint["stage"]
-        if stage not in REVIEW_STAGES:
-            if bundle_id:
-                raise ValueError(f"No bundle can be claimed in the {stage} stage")
-            return None
-        # Deep bundles open while screening continues; screening comes first.
-        stages = ["screen", "deep"] if stage == "screen" else [stage]
-        bundles = [row for name in stages for row in checkpoint[name]["bundles"]]
+        for _transition in range(8):
+            row, moved = _next_unlocked(root, worker, bundle_id)
+            if row is not None or not moved:
+                return row
+        return None
+
+
+def _stage_finished(checkpoint: dict[str, Any], stages: list[str]) -> bool:
+    return all(
+        row["status"] in {"accepted", "set-aside"}
+        for stage in stages for row in checkpoint[stage]["bundles"]
+    )
+
+
+def _next_unlocked(
+    root: Path, worker: str, bundle_id: str | None
+) -> tuple[dict[str, Any] | None, bool]:
+    """One assignment attempt; True when it moved QA to its next stage instead."""
+    root, task, checkpoint = _load_task(root)
+    workers = checkpoint.setdefault("workers", {})
+    workers.setdefault(worker, {"bundles": 0, "seconds": 0.0})["last_seen"] = _utc_now()
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    stage = checkpoint["stage"]
+    if stage not in REVIEW_STAGES:
         if bundle_id:
-            claimed_stage, pending = _bundle_row(checkpoint, bundle_id)
-            if claimed_stage not in stages:
-                raise ValueError(f"{bundle_id} belongs to the {claimed_stage} stage")
-            if pending["status"] == "assigned" and pending.get("assigned_to") == worker:
-                return copy.deepcopy(pending)
-            if pending["status"] != "pending":
-                raise ValueError(f"{bundle_id} is {pending['status']}, not waiting")
-            if worker in (pending.get("declined_by") or []):
-                raise ValueError(
-                    f"{worker} declined {bundle_id}; another reviewer must claim it"
-                )
-            if worker in (pending.get("authors") or []):
-                raise ValueError(
-                    f"{worker} wrote corrections in {bundle_id}; an independent "
-                    "reviewer must confirm them"
-                )
-        else:
-            for row in bundles:
-                if row["status"] == "assigned" and row.get("assigned_to") == worker:
-                    return copy.deepcopy(row)
-            pending = next((
-                row for row in bundles
-                if row["status"] == "pending"
-                and worker not in (row.get("declined_by") or [])
-                and worker not in (row.get("authors") or [])
-            ), None)
+            raise ValueError(f"No bundle can be claimed in the {stage} stage")
+        return None, False
+    # Deep bundles open while screening continues; screening comes first.
+    stages = ["screen", "deep"] if stage == "screen" else [stage]
+    bundles = [row for name in stages for row in checkpoint[name]["bundles"]]
+    if bundle_id:
+        claimed_stage, pending = _bundle_row(checkpoint, bundle_id)
+        if claimed_stage not in stages:
+            raise ValueError(f"{bundle_id} belongs to the {claimed_stage} stage")
+        if pending["status"] == "assigned" and pending.get("assigned_to") == worker:
+            return copy.deepcopy(pending)
+        if pending["status"] != "pending":
+            raise ValueError(f"{bundle_id} is {pending['status']}, not waiting")
+        if worker in (pending.get("declined_by") or []):
+            raise ValueError(
+                f"{worker} declined {bundle_id}; another reviewer must claim it"
+            )
+        if worker in (pending.get("authors") or []):
+            raise ValueError(
+                f"{worker} wrote corrections in {bundle_id}; an independent "
+                "reviewer must confirm them"
+            )
+    else:
+        for row in bundles:
+            if row["status"] == "assigned" and row.get("assigned_to") == worker:
+                return copy.deepcopy(row), False
+        eligible = [
+            (name, row) for name in stages for row in checkpoint[name]["bundles"]
+            if worker not in (row.get("declined_by") or [])
+            and worker not in (row.get("authors") or [])
+        ]
+        pending = next(
+            (row for _name, row in eligible if row["status"] == "pending"), None
+        )
+        stalled = next(
+            (row for name, row in eligible if _stalled(checkpoint, name, row)),
+            None,
+        )
+        if pending is None and stalled is not None:
+            # Its worker stopped answering; the first result accepted counts.
+            pending = stalled
+            pending["reassigned_from"] = pending.get("assigned_to") or ""
         if pending is None:
-            return None
-        pending["status"] = "assigned"
-        pending["assigned_to"] = worker
-        pending["assigned_at"] = _utc_now()
-        checkpoint["updated_at"] = _utc_now()
-        _atomic_write_json(root / "checkpoint.json", checkpoint)
-        return copy.deepcopy(pending)
+            if not _stage_finished(checkpoint, [stage]):
+                return None, False
+            # Every bundle of the stage is reviewed: move QA on, as advance
+            # and finalize would.
+            before = stage
+            if stage == "screen":
+                _advance_unlocked(root)
+            else:
+                _finalize_unlocked(root)
+            return None, _read_json(root / "checkpoint.json")["stage"] != before or (
+                stage == "editorial"
+                and not _stage_finished(_read_json(root / "checkpoint.json"), ["editorial"])
+            )
+    pending["status"] = "assigned"
+    pending["assigned_to"] = worker
+    pending["assigned_at"] = _utc_now()
+    checkpoint["updated_at"] = _utc_now()
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    return copy.deepcopy(pending), False
 
 
 def release_bundle(task_dir: str | Path, bundle_id: str) -> dict[str, Any]:
@@ -2503,6 +2639,15 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         row["status"] = "accepted"
         row["result_path"] = str(canonical_path)
         row["accepted_at"] = _utc_now()
+        worker = checkpoint.setdefault("workers", {}).setdefault(
+            str(row.get("assigned_to") or ""), {"bundles": 0, "seconds": 0.0}
+        )
+        worker["bundles"] += 1
+        if row.get("assigned_at"):
+            worker["seconds"] += (
+                datetime.fromisoformat(row["accepted_at"])
+                - datetime.fromisoformat(row["assigned_at"])
+            ).total_seconds()
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
         if stage == "screen" and checkpoint["stage"] == "screen":

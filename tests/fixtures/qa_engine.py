@@ -426,7 +426,12 @@ state = qa.finalize(task, skip_declined=True)
 # The sweep rule found the other dialogue lines with the word, not the label;
 # its reviewer accepts one and rejects the sentence start.
 assert state["stage"] == "sweep", state
+# A worker that stops answering loses its bundle to the next idle one.
+qa.STALL_MINIMUM_SECONDS = 0
+stalled = qa.next_bundle(task, "sweep-slow")
 row = qa.next_bundle(task, "sweep-a")
+qa.STALL_MINIMUM_SECONDS = 20 * 60
+assert row["id"] == stalled["id"] and row["reassigned_from"] == "sweep-slow", row
 (family,) = bundle_of(row)["items"]
 assert sorted(row["current"] for row in family["candidates"]) == [
     "Arousal!",
@@ -507,18 +512,24 @@ except ValueError as error:
     assert "independent" in str(error), error
 else:
     raise AssertionError("A correction's author claimed its editorial pass.")
-# A revision that breaks the recorded decision comes back in a second round.
-while row := qa.next_bundle(task, "editor-a"):
+# A revision that breaks the recorded decision comes back in a second round,
+# which next opens by itself once the first is reviewed.
+row = qa.next_bundle(task, "editor-a")
+while row and row.get("round", 1) == 1:
     editorial(row, {STRATUM["_original"]: ("revise", "Rest on the first stratum")})
-state = qa.finalize(task)
-assert state["stage"] == "editorial" and state["editorial"]["round"] == 2, state
+    row = qa.next_bundle(task, "editor-a")
+assert qa.status(task)["editorial"]["round"] == 2
 (second,) = editorial(
-    qa.next_bundle(task, "editor-a"),
-    {STRATUM["_original"]: ("revise", "Rest on the First Stratum")},
+    row, {STRATUM["_original"]: ("revise", "Rest on the First Stratum")}
 )["items"]
 assert any("decision" in conflict["key"] for conflict in second["conflicts"]), second
-state = qa.finalize(task)
+# With nothing left to review, next completes QA and the engine has timed it.
+assert qa.next_bundle(task, "editor-a") is None
+state = qa.status(task)
 assert state["stage"] == "complete", state
+assert (
+    state["estimate"]["eta_seconds"] == 0 and "editor-a" in state["estimate"]["workers"]
+)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 # Accepted lint families combine into one correction; a rejected one is left out.
 assert sorted(row["correction"] for row in findings["findings"]) == [
