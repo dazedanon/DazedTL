@@ -37,6 +37,12 @@ def main() -> int:
     for name in ("status", "advance", "finalize", "dry-run"):
         command = sub.add_parser(name)
         command.add_argument("--task", required=True, type=Path)
+        if name in {"advance", "finalize"}:
+            command.add_argument(
+                "--skip-declined",
+                action="store_true",
+                help="Report declined bundles no other reviewer took as not reviewed.",
+            )
     rebuild = sub.add_parser("rebuild-deep")
     rebuild.add_argument("--task", required=True, type=Path)
     rebuild.add_argument("--output-root", type=Path)
@@ -46,6 +52,15 @@ def main() -> int:
     next_cmd = sub.add_parser("next")
     next_cmd.add_argument("--task", required=True, type=Path)
     next_cmd.add_argument("--worker", required=True)
+    next_cmd.add_argument(
+        "--bundle", help="Claim this waiting bundle, such as one another reviewer declined."
+    )
+    context = sub.add_parser(
+        "context", help="Print read-only game text around an identity or command list."
+    )
+    context.add_argument("--task", required=True, type=Path)
+    context.add_argument("--at", required=True)
+    context.add_argument("--radius", type=int, default=12)
     accept = sub.add_parser("accept")
     accept.add_argument("--task", required=True, type=Path)
     accept.add_argument("--result", required=True, type=Path)
@@ -87,14 +102,16 @@ def main() -> int:
     elif args.command == "status":
         _print(rpgmaker_qa.status(args.task))
     elif args.command == "next":
-        bundle = rpgmaker_qa.next_bundle(args.task, args.worker)
+        bundle = rpgmaker_qa.next_bundle(args.task, args.worker, args.bundle)
         _print(bundle or {"bundle": None, "status": rpgmaker_qa.status(args.task)})
     elif args.command == "accept":
         _print(rpgmaker_qa.accept_result(args.task, args.result))
     elif args.command == "release":
         _print(rpgmaker_qa.release_bundle(args.task, args.bundle))
     elif args.command == "advance":
-        _print(rpgmaker_qa.advance(args.task))
+        _print(rpgmaker_qa.advance(args.task, args.skip_declined))
+    elif args.command == "context":
+        print(rpgmaker_qa.context_view(args.task, args.at, args.radius))
     elif args.command == "rebuild-deep":
         task, state = rpgmaker_qa.rebuild_deep_from_screen(
             args.task, args.output_root
@@ -106,7 +123,7 @@ def main() -> int:
         )
         _print({"task": str(task), "status": state})
     elif args.command == "finalize":
-        _print(rpgmaker_qa.finalize(args.task))
+        _print(rpgmaker_qa.finalize(args.task, args.skip_declined))
     elif args.command == "corrections":
         if args.allow_uncertain and not args.approve_all:
             parser.error("--allow-uncertain requires --approve-all")

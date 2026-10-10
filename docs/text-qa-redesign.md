@@ -54,9 +54,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 ### Quality and coverage
 
 - Preflight reports Japanese left in custom data files and plugin parameters, even when the engine cannot correct it.
-- Screen and deep results accept a declined disposition for a scene or item, with the reviewer's reason.
-  The engine moves a declined scene into its own bundle so the rest of its bundle can be accepted, offers it to another reviewer, and otherwise skips it in deep review and reports it in findings as a coverage gap.
-  Workers can claim a bundle by ID.
 - A deterministic lint stage proposes fixes for known families before screening, so screening concentrates on meaning and voice.
   The first families are spacing after ♥, stray letters for the small っ, dakuten apostrophes on real words, list items merged onto one line, quoted titles that no longer match their target, duplicated labels and level-tag spacing.
 - After deep review, a family sweep turns every line matching an accepted family into a candidate finding with the family's correction, reviewed as a group.
@@ -83,10 +80,10 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 ## Skill
 
 - One policy covers the screen, deep, editorial and apply roles, with a fixed brief for each role.
-- Rendering moves into the engine: scene-grouped deep bundles, a read-only context viewer that leaves out declined scenes, and the regression simulation finalize uses.
+- Rendering moves into the engine: scene-grouped deep bundles.
 
 ## Order of work
 
-1. Quality and coverage: the single policy with automatic apply through the app, the declined disposition, the lint stage and family sweep, and inventory completeness.
+1. Quality and coverage: the single policy with automatic apply through the app, the lint stage and family sweep, and inventory completeness.
 2. Cost: the forced-review filters and scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.

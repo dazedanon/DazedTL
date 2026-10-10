@@ -52,6 +52,19 @@ write(
                         speaker("アリナ", "Arina"),
                         STRATUM,
                         line("今日はいい天気だね", "Nice weather today."),
+                        # Japanese residue forces deep review, where it is declined.
+                        line("朝だ", "It's 朝."),
+                    )
+                ],
+            },
+            # The scene the screen reviewers decline.
+            {
+                "id": 2,
+                "pages": [
+                    page(
+                        speaker("案内人", "Guide"),
+                        line("ここは暗い森だ", "This is a dark forest."),
+                        line("森の奥へ", "Into the 森."),
                     )
                 ],
             },
@@ -97,9 +110,19 @@ def screen_targets(bundle):
             yield item
 
 
-# Screening flags the stratum line; everything else is clean.
+def declined_scene(item):
+    return item["kind"] == "scene" and "/events/2/" in item["scene_id"]
+
+
+# Screening flags the stratum line and declines the forest scene; everything
+# else is clean.
 while row := qa.next_bundle(task, "screen-a"):
     bundle = bundle_of(row)
+    declined = [
+        {"id": item["id"], "reason": "Outside what this reviewer reviews."}
+        for item in bundle["items"]
+        if declined_scene(item)
+    ]
     exceptions = [
         {
             "id": target["id"],
@@ -121,17 +144,72 @@ while row := qa.next_bundle(task, "screen-a"):
                 "reviewed_all": True,
                 "exceptions": exceptions,
                 "motif_reviews": [],
+                "declined": declined,
             },
         ),
     )
+# The declined scene moved to a bundle of its own that waits for another
+# reviewer: never the one that declined it, and the stage cannot end early.
+waiting = [
+    row
+    for row in json.loads((task / "checkpoint.json").read_text())["screen"]["bundles"]
+    if row["status"] == "pending"
+]
+assert [row["declined_by"] for row in waiting] == [["screen-a"]], waiting
+assert qa.status(task)["declined"]["waiting"] == 3
+for attempt in (
+    lambda: qa.next_bundle(task, "screen-a", waiting[0]["id"]),
+    lambda: qa.advance(task),
+):
+    try:
+        attempt()
+    except ValueError as error:
+        assert "declined" in str(error), error
+    else:
+        raise AssertionError("A declined bundle was handed back or skipped.")
+# A second reviewer claims it by ID and declines too, which sets it aside.
+row = qa.next_bundle(task, "screen-b", waiting[0]["id"])
+qa.accept_result(
+    task,
+    result_path(
+        row["id"],
+        {
+            "schema": qa.SCREEN_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviewed_all": True,
+            "exceptions": [],
+            "motif_reviews": [],
+            "declined": [
+                {"id": item["id"], "reason": "Also declined."}
+                for item in bundle_of(row)["items"]
+            ],
+        },
+    ),
+)
+assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 3}
 state = qa.advance(task)
 assert state["stage"] == "deep", state
+# Deep review and the context view leave the declined scene out, even its
+# Japanese residue, which would otherwise force deep review.
+try:
+    qa.context_view(task, "Map001.json#/events/2/pages/0/list")
+except ValueError as error:
+    assert "declined" in str(error), error
+else:
+    raise AssertionError("The context view showed a declined scene.")
+assert "第1層で休む" in qa.context_view(task, "Map001.json#/events/1/pages/0/list/1")
 
 
 def deep_result(row, corrections):
     bundle = bundle_of(row)
     reviews = []
     for item in bundle["items"]:
+        if item["source"] == "朝だ":
+            reviews.append(
+                {"id": item["id"], "disposition": "declined", "reason": "Not reviewed."}
+            )
+            continue
         correction = corrections.get(item["source"])
         reviews.append(
             {
@@ -155,6 +233,7 @@ def deep_result(row, corrections):
 
 
 row = qa.next_bundle(task, "deep-a")
+assert "森の奥へ" not in {item["source"] for item in bundle_of(row)["items"]}
 # A correction that would trip the post-apply regression is refused when it
 # is submitted, so it can never reach findings or roll back an apply.
 try:
@@ -177,9 +256,28 @@ qa.accept_result(
     ),
 )
 assert qa.next_bundle(task, "deep-a") is None
-qa.finalize(task)
+# With no other reviewer for the declined deep item, finalize reports it as
+# not reviewed only when asked to.
+try:
+    qa.finalize(task)
+except ValueError as error:
+    assert "--skip-declined" in str(error), error
+else:
+    raise AssertionError("Finalize skipped a declined bundle silently.")
+qa.finalize(task, skip_declined=True)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 assert [row["correction"] for row in findings["findings"]] == [
     "Rest on the First Stratum"
 ], findings["findings"]
+# The declined scene is a coverage gap, reported once with its reasons.
+assert [item["reasons"] for item in findings["declined"]] == [
+    ["Outside what this reviewer reviews.", "Also declined."],
+    ["Not reviewed."],
+], findings["declined"]
+assert {row["source"] for row in findings["not_reviewed"]} == {
+    "案内人",
+    "ここは暗い森だ",
+    "森の奥へ",
+    "朝だ",
+}, findings["not_reviewed"]
 print("ok")

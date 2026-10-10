@@ -725,6 +725,9 @@ Copied tasks do not imply completed work, and a saved discovery stage does not c
 Chosen corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before app-reviewed Apply.
 The [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py) checks each correction when a reviewer submits it, and every finding again when findings are made, against what the post-apply regression rejects: a mechanical flag the correction adds, a line count its pointers can't hold, or more rows than a message window shows.
 So no finding can roll an apply back; an English ordinal such as "First" may stand for the source's number, as in "First Stratum" for 第1層.
+A reviewer that will not review an item declines it with a one-line reason, and the engine accepts the rest of its bundle and moves the declined items to a bundle of their own that only another reviewer can claim.
+They are set aside once a second reviewer declines them, or when the assistant reports no other reviewer, so content is never classified or excluded in advance.
+Set-aside lines stay out of deep review, corrections and the read-only context view, and findings report them once as not reviewed.
 The clipboard task stops before runtime publication.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 

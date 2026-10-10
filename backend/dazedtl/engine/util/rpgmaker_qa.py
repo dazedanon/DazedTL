@@ -57,7 +57,13 @@ DEFAULT_DEEP_ITEM_LIMIT = 24
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
-DEEP_DISPOSITIONS = frozenset({"clean", "actionable", "uncertain-playtest"})
+DEEP_DISPOSITIONS = frozenset({
+    "clean", "actionable", "uncertain-playtest", "declined",
+})
+# A reviewer that will not review an item says why in one line, without game text.
+DECLINE_REASON_LIMIT = 300
+# Distinct reviewers that must decline an item before it is set aside unreviewed.
+DECLINES_TO_SET_ASIDE = 2
 SEVERITIES = frozenset({"critical", "high", "medium"})
 FINDING_CATEGORIES = frozenset({
     "meaning",
@@ -850,6 +856,10 @@ def _scene_items(
             "kind": "scene",
             "id": "scene-" + group["signature"][:20],
             "scene_id": group["scene_id"],
+            **(
+                {"scene_copies": [copy_id for copy_id, _records in group["copies"]]}
+                if len(group["copies"]) > 1 else {}
+            ),
             "scene_occurrences": len(group["copies"]),
             "target_count": len(target_clusters),
             "line_count": len(lines),
@@ -1031,36 +1041,80 @@ def _bundle_items(
         current_chars += size
     if current:
         groups.append(current)
-    bundles = []
-    for index, group in enumerate(groups, start=1):
-        ordinals = []
-        for item in group:
-            if item.get("kind") == "scene":
-                ordinals.extend(
-                    line["ordinal"] for line in item["lines"] if "id" in line
-                )
-            elif item.get("kind") == "motif-family":
-                ordinals.append(item["ordinal"])
-            else:
-                ordinals.append(item["ordinal"])
-        item_count = sum(int(item.get("target_count", 1)) for item in group)
-        bundle = {
-            "schema": BUNDLE_SCHEMA,
-            "stage": stage,
-            "bundle_id": f"{stage}-{index:04d}",
-            "ordinal_start": min(ordinals),
-            "ordinal_end": max(ordinals),
-            "item_count": item_count,
-            "review_unit_count": len(group),
-            "scene_count": sum(item.get("kind") == "scene" for item in group),
-            "motif_count": sum(
-                item.get("kind") == "motif-family" for item in group
-            ),
-            "items": group,
-        }
-        bundle["content_sha256"] = _sha256(_canonical_bytes(bundle))
-        bundles.append(bundle)
-    return bundles
+    return [
+        _make_bundle(stage, f"{stage}-{index:04d}", group)
+        for index, group in enumerate(groups, start=1)
+    ]
+
+
+def _make_bundle(stage: str, bundle_id: str, group: list[dict]) -> dict:
+    ordinals = []
+    for item in group:
+        if item.get("kind") == "scene":
+            ordinals.extend(
+                line["ordinal"] for line in item["lines"] if "id" in line
+            )
+        else:
+            ordinals.append(item["ordinal"])
+    bundle = {
+        "schema": BUNDLE_SCHEMA,
+        "stage": stage,
+        "bundle_id": bundle_id,
+        "ordinal_start": min(ordinals),
+        "ordinal_end": max(ordinals),
+        "item_count": sum(int(item.get("target_count", 1)) for item in group),
+        "review_unit_count": len(group),
+        "scene_count": sum(item.get("kind") == "scene" for item in group),
+        "motif_count": sum(
+            item.get("kind") == "motif-family" for item in group
+        ),
+        "items": group,
+    }
+    bundle["content_sha256"] = _sha256(_canonical_bytes(bundle))
+    return bundle
+
+
+def _split_declined(
+    root: Path,
+    checkpoint: dict[str, Any],
+    stage: str,
+    row: dict[str, Any],
+    bundle: dict[str, Any],
+    reasons: dict[str, str],
+) -> int:
+    """Move declined items into their own bundle for another reviewer.
+
+    Returns how many targets moved. After enough distinct reviewers declined
+    the same items, they are set aside unreviewed instead.
+    """
+    items = [item for item in bundle["items"] if item["id"] in reasons]
+    worker = str(row.get("assigned_to") or "") or "unnamed reviewer"
+    declined_by = sorted({*(row.get("declined_by") or []), worker})
+    origin = row.get("origin") or row["id"]
+    number = 1 + sum(
+        other.get("origin") == origin for other in checkpoint[stage]["bundles"]
+    )
+    split = _make_bundle(stage, f"{origin}-d{number}", items)
+    path = root / "bundles" / stage / f"{split['bundle_id']}.json"
+    _atomic_write_json(path, split)
+    checkpoint[stage]["bundles"].append({
+        "id": split["bundle_id"],
+        "path": str(path),
+        "sha256": split["content_sha256"],
+        "item_count": split["item_count"],
+        "status": (
+            "set-aside" if len(declined_by) >= DECLINES_TO_SET_ASIDE else "pending"
+        ),
+        "assigned_to": "",
+        "result_path": "",
+        "origin": origin,
+        "declined_by": declined_by,
+        "declines": [
+            *(row.get("declines") or []),
+            {"worker": worker, "reasons": reasons},
+        ],
+    })
+    return split["item_count"]
 
 
 def _write_bundles(
@@ -1280,6 +1334,21 @@ reviews must omit `editorial_basis`.
 
 If a worker cannot finish an assigned bundle, release it with
 `{cli} release --task {task_argument} --bundle "<bundle-id>"`.
+
+If a reviewer will not review an item, it declines that item instead of skipping or softening it:
+a screen result lists it in `declined` as `{{"id":"<scene, cluster or motif id>","reason":"one line
+without game text"}}`, and a deep review uses `{{"id":"...","disposition":"declined","reason":"..."}}`.
+DazedTL accepts the rest of the bundle and moves declined items to a bundle of their own. Offer it
+to another reviewer, which claims it under its own worker name with
+`{cli} next --task {task_argument} --worker "<name>" --bundle "<bundle-id>"`; the reviewer that
+declined it never receives it again. Once a
+second reviewer declines it, it is set aside. If no other reviewer is available, use
+`advance --skip-declined` or `finalize --skip-declined`. Set-aside items are reported as not
+reviewed; never ask the user to review them.
+
+For read-only game text around a line, run
+`{cli} context --task {task_argument} --at "<identity or command list>"`; it leaves out scenes a
+reviewer declined.
 """
 
 
@@ -1490,26 +1559,70 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "projected": deep.get("projected_items", deep["total_items"]),
             **_stage_metrics(deep, active=checkpoint["stage"] == "deep"),
         },
+        "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
     }
 
 
-def next_bundle(task_dir: str | Path, worker: str) -> dict[str, Any] | None:
+def _declined_counts(checkpoint: dict[str, Any]) -> dict[str, int]:
+    rows = [
+        row for stage in ("screen", "deep") for row in checkpoint[stage]["bundles"]
+        if row.get("declined_by")
+    ]
+    return {
+        "waiting": sum(
+            row["item_count"] for row in rows
+            if row["status"] in {"pending", "assigned"}
+        ),
+        "set_aside": sum(
+            row["item_count"] for row in rows if row["status"] == "set-aside"
+        ),
+    }
+
+
+def next_bundle(
+    task_dir: str | Path, worker: str, bundle_id: str | None = None
+) -> dict[str, Any] | None:
+    """Assign the worker its next bundle, or the named one.
+
+    A worker never receives a bundle it declined; another reviewer can claim
+    that bundle by its ID.
+    """
     root = Path(task_dir).expanduser().resolve()
+    worker = str(worker or "worker")
     with _task_lock(root):
         root, task, checkpoint = _load_task(root)
         stage = checkpoint["stage"]
         if stage not in {"screen", "deep"}:
+            if bundle_id:
+                raise ValueError(f"No bundle can be claimed in the {stage} stage")
             return None
         bundles = checkpoint[stage]["bundles"]
-        for row in bundles:
-            if row["status"] == "assigned" and row.get("assigned_to") == worker:
-                return copy.deepcopy(row)
-        pending = next((row for row in bundles if row["status"] == "pending"), None)
+        if bundle_id:
+            claimed_stage, pending = _bundle_row(checkpoint, bundle_id)
+            if claimed_stage != stage:
+                raise ValueError(f"{bundle_id} belongs to the {claimed_stage} stage")
+            if pending["status"] == "assigned" and pending.get("assigned_to") == worker:
+                return copy.deepcopy(pending)
+            if pending["status"] != "pending":
+                raise ValueError(f"{bundle_id} is {pending['status']}, not waiting")
+            if worker in (pending.get("declined_by") or []):
+                raise ValueError(
+                    f"{worker} declined {bundle_id}; another reviewer must claim it"
+                )
+        else:
+            for row in bundles:
+                if row["status"] == "assigned" and row.get("assigned_to") == worker:
+                    return copy.deepcopy(row)
+            pending = next((
+                row for row in bundles
+                if row["status"] == "pending"
+                and worker not in (row.get("declined_by") or [])
+            ), None)
         if pending is None:
             return None
         pending["status"] = "assigned"
-        pending["assigned_to"] = str(worker or "worker")
+        pending["assigned_to"] = worker
         pending["assigned_at"] = _utc_now()
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
@@ -1591,12 +1704,50 @@ def _screen_motif_map(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
+def _declined_items(bundle: dict, result: dict) -> dict[str, str]:
+    """The bundle items a reviewer declined, with the one-line reason for each."""
+    declined = result.get("declined", [])
+    if not isinstance(declined, list):
+        raise QAResultError("Declined items must be a list")
+    items = {item["id"] for item in bundle["items"]}
+    reasons: dict[str, str] = {}
+    for entry in declined:
+        identity = str((entry or {}).get("id") or "") if isinstance(entry, dict) else ""
+        reason = str(entry.get("reason") or "").strip() if isinstance(entry, dict) else ""
+        if identity not in items or identity in reasons:
+            raise QAResultError(f"Invalid or duplicate declined item {identity!r}")
+        if not reason or "\n" in reason or len(reason) > DECLINE_REASON_LIMIT:
+            raise QAResultError(
+                f"A declined item needs a one-line reason of at most "
+                f"{DECLINE_REASON_LIMIT} characters: {identity}"
+            )
+        reasons[identity] = reason
+    return reasons
+
+
+def _item_targets(item: dict[str, Any]) -> set[str]:
+    """The screen target and context IDs one bundle item holds."""
+    if item.get("kind") == "scene":
+        return {
+            line.get("id") or line["context_id"]
+            for line in item["lines"]
+            if "id" in line or "context_id" in line
+        }
+    return {item["id"]}
+
+
 def _validate_screen_result(bundle: dict, result: dict) -> None:
     if result.get("schema") != SCREEN_RESULT_SCHEMA:
         raise QAResultError("Screen result has the wrong schema")
     if result.get("reviewed_all") is not True:
         raise QAResultError("Screen result must confirm reviewed_all=true")
-    allowed = set(_screen_target_map(bundle))
+    declined = _declined_items(bundle, result)
+    allowed = set(_screen_target_map(bundle)) - {
+        target
+        for item in bundle["items"]
+        if item["id"] in declined
+        for target in _item_targets(item)
+    }
     seen: set[str] = set()
     exceptions = result.get("exceptions")
     if not isinstance(exceptions, list):
@@ -1618,7 +1769,10 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
         if not str(item.get("note") or "").strip():
             raise QAResultError(f"Screen exception has no reason for {identity}")
 
-    expected_motifs = _screen_motif_map(bundle)
+    expected_motifs = {
+        key: value for key, value in _screen_motif_map(bundle).items()
+        if key not in declined
+    }
     motif_reviews = result.get("motif_reviews")
     if not isinstance(motif_reviews, list):
         raise QAResultError("Screen result motif_reviews must be a list")
@@ -1669,6 +1823,24 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
         disposition = review.get("disposition")
         if disposition not in DEEP_DISPOSITIONS:
             raise QAResultError(f"Invalid deep disposition for {identity}")
+        if disposition == "declined":
+            reason = str(review.get("reason") or "").strip()
+            if not reason or "\n" in reason or len(reason) > DECLINE_REASON_LIMIT:
+                raise QAResultError(
+                    f"A declined item needs a one-line reason of at most "
+                    f"{DECLINE_REASON_LIMIT} characters: {identity}"
+                )
+            if any(
+                review.get(key) for key in (
+                    "severity", "category", "family_key", "motif_ids",
+                    "evidence", "correction", "apply_identities",
+                    "editorial_basis",
+                )
+            ):
+                raise QAResultError(
+                    f"A declined item carries only its reason: {identity}"
+                )
+            continue
         if disposition == "actionable":
             if review.get("severity") not in SEVERITIES:
                 raise QAResultError(f"Actionable review has invalid severity for {identity}")
@@ -1769,7 +1941,24 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             if _read_json(canonical_path) != result:
                 raise QAResultError("An accepted bundle result cannot be replaced")
             return status(root)
+        if row["status"] == "set-aside":
+            raise QAResultError(
+                f"{bundle_id} was set aside after reviewers declined it"
+            )
         _atomic_write_json(canonical_path, result)
+        declined = (
+            _declined_items(bundle, result)
+            if stage == "screen"
+            else {
+                review["id"]: review["reason"]
+                for review in result["reviews"]
+                if review["disposition"] == "declined"
+            }
+        )
+        moved = (
+            _split_declined(root, checkpoint, stage, row, bundle, declined)
+            if declined else 0
+        )
         if stage == "screen":
             exception_ids = checkpoint["screen"].setdefault("exception_ids", [])
             candidate_reasons = checkpoint["deep"].setdefault(
@@ -1807,13 +1996,87 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
                 checkpoint["screen"].get("motif_accepted", 0)
             ) + len(result["motif_reviews"])
             checkpoint["deep"]["projected_items"] = len(candidate_reasons)
-        checkpoint[stage]["accepted_items"] += int(row["item_count"])
+        checkpoint[stage]["accepted_items"] += int(row["item_count"]) - moved
         row["status"] = "accepted"
         row["result_path"] = str(canonical_path)
         row["accepted_at"] = _utc_now()
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
     return status(root)
+
+
+# Commands the context view leaves out: flow, waits, sound and picture moves.
+_CONTEXT_QUIET_CODES = frozenset({
+    0, 221, 222, 223, 224, 225, 230, 231, 232, 235, 241, 245, 246, 249, 250,
+    404, 412,
+})
+_CONTEXT_TEXT_CODES = frozenset({
+    101, 102, 108, 122, 320, 324, 355, 357, 401, 402, 405, 408, 655,
+})
+
+
+def _context_text(value: Any) -> str:
+    return "∅" if value is None else str(value).replace("\n", "⏎")
+
+
+def context_view(task_dir: str | Path, locator: str, radius: int = 12) -> str:
+    """Read-only game text around a locator, with Japanese and current English.
+
+    The locator is an inventory identity or a command list such as
+    `Map001.json#/events/1/pages/0/list`. Scenes a reviewer declined stay out.
+    """
+    root, task, checkpoint = _load_task(task_dir)
+    data_root = Path(task["data_root"]).resolve()
+    filename, _, pointer = locator.split("@", 1)[0].partition("#")
+    path = (data_root / filename).resolve()
+    if data_root not in path.parents or not path.is_file() or path.suffix != ".json":
+        raise ValueError(f"Unknown game data file: {filename}")
+    parts = _decode_pointer(pointer)
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    if "list" not in parts:
+        node = _resolve_parts(
+            document, parts[: parts.index("_original")] if "_original" in parts else parts
+        )
+        return json.dumps(node, ensure_ascii=False, indent=1)[:6000]
+    list_index = len(parts) - 1 - parts[::-1].index("list")
+    scene = f"{filename}#/" + "/".join(
+        part.replace("~", "~0").replace("/", "~1") for part in parts[: list_index + 1]
+    )
+    declined = _declined_scope(
+        root, checkpoint, _read_json(root / "inventory.json"), waiting=True
+    )
+    if scene in declined["context_scenes"]:
+        raise ValueError("A reviewer declined this scene, so it is left out of context.")
+    commands = _resolve_parts(document, parts[: list_index + 1])
+    if list_index + 1 < len(parts):
+        center = int(parts[list_index + 1])
+        start = max(0, center - radius)
+        end = min(len(commands), center + radius + 1)
+    else:
+        center, start, end = None, 0, len(commands)
+    lines = [f"{scene} commands {start}-{end - 1} of {len(commands)}"]
+    for index in range(start, end):
+        command = commands[index]
+        code = command.get("code")
+        if code in _CONTEXT_QUIET_CODES:
+            continue
+        mark = ">>" if index == center else "  "
+        parameters = command.get("parameters")
+        if code in _CONTEXT_TEXT_CODES:
+            shown = [
+                value for value in parameters if isinstance(value, (str, list))
+            ] if isinstance(parameters, list) else parameters
+            lines.append(
+                f"{mark}#{index} c{code}: JP="
+                + _context_text(json.dumps(command.get("_original"), ensure_ascii=False))
+                + " EN=" + _context_text(json.dumps(shown, ensure_ascii=False))
+            )
+        else:
+            lines.append(
+                f"{mark}#{index} c{code}: "
+                + _context_text(json.dumps(parameters, ensure_ascii=False))[:200]
+            )
+    return "\n".join(lines)
 
 
 def _decode_pointer(pointer: str) -> list[str]:
@@ -1993,12 +2256,100 @@ def _motif_translation_roster(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _declined_scope(
+    root: Path,
+    checkpoint: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    waiting: bool = False,
+) -> dict[str, Any]:
+    """What reviewers declined: set aside, and with `waiting` also still offered.
+
+    `scenes` are scenes no screen reviewer read, `context_scenes` adds those of
+    declined deep items, and `identities` are the lines no reviewer judged,
+    which no correction may target.
+    """
+    task = _read_json(root / "task.json")
+    screen_index = _load_screen_index(root, task)
+    records, clusters = _record_maps(manifest)
+    statuses = {"set-aside", "pending", "assigned"} if waiting else {"set-aside"}
+    scenes: set[str] = set()
+    context_scenes: set[str] = set()
+    unreviewed: set[str] = set()
+    items = []
+    for stage in ("screen", "deep"):
+        for row in checkpoint[stage]["bundles"]:
+            if row["status"] not in statuses or not row.get("declined_by"):
+                continue
+            reasons: dict[str, list[str]] = defaultdict(list)
+            for decline in row.get("declines") or []:
+                for item_id, reason in decline["reasons"].items():
+                    reasons[item_id].append(reason)
+            for item in _read_json(Path(row["path"]))["items"]:
+                kind = item.get("kind") or stage
+                if kind == "scene":
+                    copies = set(item.get("scene_copies") or [item["scene_id"]])
+                    scenes |= copies
+                    context_scenes |= copies
+                    unreviewed |= {
+                        screen_index[line["id"]]["cluster_id"]
+                        for line in item["lines"] if "id" in line
+                    }
+                elif kind in {"cluster", "deep"} or stage == "deep":
+                    unreviewed.add(item["id"])
+                    context_scenes |= {
+                        scene["scene_id"]
+                        for scene in item.get("screen_scene_contexts") or []
+                    }
+                items.append({
+                    "stage": stage,
+                    "id": item["id"],
+                    "kind": "deep" if stage == "deep" else kind,
+                    "set_aside": row["status"] == "set-aside",
+                    "reasons": reasons.get(item["id"], []),
+                })
+    identities = {
+        identity
+        for cluster_id in unreviewed if cluster_id in clusters
+        for identity in clusters[cluster_id]["identities"]
+    } | {
+        record["identity"]
+        for record in records.values()
+        if (position := _scene_position(record)) and position[0] in scenes
+    }
+    return {
+        "scenes": scenes,
+        "context_scenes": context_scenes,
+        "clusters": unreviewed,
+        "identities": identities,
+        "items": items,
+    }
+
+
+def _not_reviewed(
+    scope: dict[str, Any], records: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The lines no reviewer judged, for the optional queue the user can read."""
+    return [
+        {
+            "identity": identity,
+            "file": records[identity]["file"],
+            "source": records[identity]["source"],
+            "current": records[identity]["live"],
+        }
+        for identity in sorted(scope["identities"])
+    ]
+
+
 def _deep_items(
     root: Path, candidate_reasons: dict[str, dict[str, Any]]
 ) -> list[dict]:
     manifest = _read_json(root / "inventory.json")
     context = _read_json(root / "context.json")
     records, clusters = _record_maps(manifest)
+    declined = _declined_scope(
+        root, _read_json(root / "checkpoint.json"), manifest
+    )
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
     for cluster in manifest["clusters"]:
@@ -2011,14 +2362,21 @@ def _deep_items(
     )
     items = []
     for identity in manifest["review_sequence"]:
-        if identity not in candidate_reasons:
+        # Lines in scenes a reviewer declined stay out of deep review.
+        if identity not in candidate_reasons or identity in declined["clusters"]:
             continue
         cluster = clusters[identity]
-        member_records = [records[item] for item in cluster["identities"]]
+        member_records = [
+            records[item] for item in cluster["identities"]
+            if item not in declined["identities"]
+        ]
+        if not member_records:
+            continue
         candidate = candidate_reasons[identity]
         context_identities = [
             item for item in candidate.get("context_identities") or []
             if item in records and item in cluster["identities"]
+            and item not in declined["identities"]
         ]
         representative = (
             records[context_identities[0]] if context_identities else member_records[0]
@@ -2030,7 +2388,7 @@ def _deep_items(
         item = {
             **compact[identity],
             "deep_reasons": list(candidate.get("reasons") or []),
-            "identities": list(cluster["identities"]),
+            "identities": [record["identity"] for record in member_records],
             "screen_context_identities": context_identities,
             "locators": [{
                 "identity": record["identity"],
@@ -2054,8 +2412,12 @@ def _deep_items(
         }
         if screen_evidence.get(identity):
             item["screen_evidence"] = screen_evidence[identity]
-        if screen_scenes.get(identity):
-            item["screen_scene_contexts"] = screen_scenes[identity]
+        scenes = [
+            scene for scene in screen_scenes.get(identity) or []
+            if scene["scene_id"] not in declined["scenes"]
+        ]
+        if scenes:
+            item["screen_scene_contexts"] = scenes
         if motif_contexts.get(identity):
             contexts = motif_contexts[identity]
             if "motif-scene-contradiction" in item["deep_reasons"]:
@@ -2065,12 +2427,41 @@ def _deep_items(
     return items
 
 
-def _advance_unlocked(task_dir: str | Path) -> dict[str, Any]:
+def _settle_declined(
+    checkpoint: dict[str, Any], stage: str, skip_declined: bool
+) -> None:
+    """Require a finished stage; declined bundles nobody else took are set aside
+    only on request."""
+    rows = checkpoint[stage]["bundles"]
+    waiting = [
+        row for row in rows
+        if row["status"] == "pending" and row.get("declined_by")
+    ]
+    if any(
+        row["status"] not in {"accepted", "set-aside"} and row not in waiting
+        for row in rows
+    ):
+        raise ValueError(f"Every {stage} bundle must be accepted first")
+    if waiting and not skip_declined:
+        raise ValueError(
+            f"{len(waiting)} declined {stage} bundle(s) wait for another reviewer "
+            f"({', '.join(row['id'] for row in waiting)}): claim each with next "
+            "--bundle ID under a different worker name, or use --skip-declined "
+            "to report them as not reviewed"
+        )
+    for row in waiting:
+        row["status"] = "set-aside"
+        row["skipped"] = True
+
+
+def _advance_unlocked(
+    task_dir: str | Path, skip_declined: bool = False
+) -> dict[str, Any]:
     root, _task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] != "screen":
         return status(root)
-    if any(row["status"] != "accepted" for row in checkpoint["screen"]["bundles"]):
-        raise ValueError("Every screen bundle must be accepted before deep review")
+    _settle_declined(checkpoint, "screen", skip_declined)
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
     candidate_reasons = checkpoint["deep"].get("candidate_reasons") or {}
     deep_items = _deep_items(root, candidate_reasons)
     bundles = _bundle_items(
@@ -2092,10 +2483,10 @@ def _advance_unlocked(task_dir: str | Path) -> dict[str, Any]:
     return status(root)
 
 
-def advance(task_dir: str | Path) -> dict[str, Any]:
+def advance(task_dir: str | Path, skip_declined: bool = False) -> dict[str, Any]:
     root = Path(task_dir).expanduser().resolve()
     with _task_lock(root):
-        return _advance_unlocked(root)
+        return _advance_unlocked(root, skip_declined)
 
 
 def rebuild_deep_from_screen(
@@ -2185,20 +2576,25 @@ def rebuild_deep_from_screen(
     return rebuilt, status(rebuilt)
 
 
-def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
+def _finalize_unlocked(
+    task_dir: str | Path, skip_declined: bool = False
+) -> dict[str, Any]:
     root, task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] == "screen":
         raise ValueError("Advance the completed screen stage first")
-    if any(row["status"] != "accepted" for row in checkpoint["deep"]["bundles"]):
-        raise ValueError("Every deep-review bundle must be accepted before finalizing")
+    _settle_declined(checkpoint, "deep", skip_declined)
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
+    declined = _declined_scope(root, checkpoint, manifest)
     findings = []
     uncertain = []
     motif_families = []
     deep_dispositions: dict[str, str] = {}
     deep_motif_attributions: dict[str, set[str] | None] = {}
     for row in checkpoint["screen"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
         bundle = _read_json(Path(row["path"]))
         motifs = _screen_motif_map(bundle)
         if not motifs:
@@ -2222,8 +2618,12 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
                 "_variant_ids": [variant["id"] for variant in motif["variants"]],
             })
     for row in checkpoint["deep"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
         result = _read_json(Path(row["result_path"]))
         for review in result["reviews"]:
+            if review["disposition"] == "declined":
+                continue
             deep_dispositions[review["id"]] = review["disposition"]
             deep_motif_attributions[review["id"]] = (
                 set(review.get("motif_ids") or [])
@@ -2232,7 +2632,11 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
             )
             if review["disposition"] == "actionable":
                 cluster = clusters[review["id"]]
-                target_ids = review.get("apply_identities") or cluster["identities"]
+                target_ids = [
+                    identity
+                    for identity in review.get("apply_identities") or cluster["identities"]
+                    if identity not in declined["identities"]
+                ]
                 findings.append({
                     "id": "",
                     "cluster_id": review["id"],
@@ -2353,6 +2757,10 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
         "finding_families": finding_families,
         "uncertain_playtests": uncertain,
         "motif_families": sorted(motif_families, key=lambda item: item["id"]),
+        # A coverage gap, never a review someone must attest: what reviewers
+        # declined and the lines nobody judged.
+        "declined": declined["items"],
+        "not_reviewed": _not_reviewed(declined, records),
     }
     findings_path = root / "findings.json"
     _atomic_write_json(findings_path, document)
@@ -2363,10 +2771,10 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
     return status(root)
 
 
-def finalize(task_dir: str | Path) -> dict[str, Any]:
+def finalize(task_dir: str | Path, skip_declined: bool = False) -> dict[str, Any]:
     root = Path(task_dir).expanduser().resolve()
     with _task_lock(root):
-        return _finalize_unlocked(root)
+        return _finalize_unlocked(root, skip_declined)
 
 
 def rebuild_findings_from_results(
