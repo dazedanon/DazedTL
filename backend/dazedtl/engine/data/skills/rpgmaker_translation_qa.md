@@ -52,9 +52,11 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    with `next --bundle <id>`; a second decline sets it aside. If no other worker is available,
    continue with `--skip-declined`. Set-aside items are reported as not reviewed; never ask the
    user to review them.
-4. When the screen stage is done, run `{{CLI}} advance --task {{TASK}}`. When deep review is
-   done, run `{{CLI}} finalize --task {{TASK}}`; it moves to the sweep and editorial stages in
-   turn, so keep claiming bundles and run finalize again until it reports `complete`.
+4. Deep bundles open while screening continues, and `next` hands them out once no screen
+   bundle is waiting. When the screen stage is done, run `{{CLI}} advance --task {{TASK}}`. When
+   deep review is done, run `{{CLI}} finalize --task {{TASK}}`; it moves to the sweep and
+   editorial stages in turn, so keep claiming bundles and run finalize again until it reports
+   `complete`.
 5. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use
@@ -96,7 +98,9 @@ clean targets.
 
 Each item states the `deep_reasons` that escalated it. Return exactly one review per item. A
 deep bundle prints each scene once after its items, marking the lines each item's screen
-evidence names, and lists at most twelve of an item's occurrences.
+evidence names, and lists at most twelve of an item's occurrences. Deep bundles open while
+screening continues; an item whose screen evidence grew after its deep review comes back with
+that `prior_review`, and your review replaces it.
 
 - `screen_evidence` keeps the screening reviewer's reason and `screen_scene_contexts` every scene
   used to reach it. A `clean` review of such an item rebuts that reason concretely in its

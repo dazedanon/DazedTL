@@ -13,6 +13,9 @@ sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util import rpgmaker_qa as qa
 
+# Deep bundles open as soon as one screened cluster is ready.
+qa.EARLY_DEEP_BATCH = 1
+
 game = temporary / "game"
 data = game / "data"
 data.mkdir(parents=True)
@@ -192,6 +195,10 @@ def declined_scene(item):
 # Screening flags the stratum line and declines the forest scene; everything
 # else is clean.
 while row := qa.next_bundle(task, "screen-a"):
+    if not row["id"].startswith("screen"):
+        # A deep bundle opened early; it waits for the deep reviewer.
+        qa.release_bundle(task, row["id"])
+        break
     bundle = bundle_of(row)
     declined = [
         {"id": item["id"], "reason": "Outside what this reviewer reviews."}
@@ -238,6 +245,9 @@ while row := qa.next_bundle(task, "screen-a"):
             },
         ),
     )
+# Deep review started before screening ended.
+assert qa.status(task)["stage"] == "screen"
+assert json.loads((task / "checkpoint.json").read_text())["deep"]["bundles"]
 # The declined scene moved to a bundle of its own that waits for another
 # reviewer: never the one that declined it, and the stage cannot end early.
 waiting = [

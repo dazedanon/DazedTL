@@ -52,7 +52,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ### Speed
 
-- Deep review starts on accepted screen bundles instead of waiting for the whole screen.
 - The engine assigns, releases and times workers, so a stalled worker is reassigned and the estimate comes from the engine.
 
 ## App and helper
@@ -65,4 +64,4 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.
+3. Speed and presentation: engine-managed workers, the stage strip, the Needs you card and undo.

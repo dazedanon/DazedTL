@@ -66,6 +66,8 @@ DEFAULT_DEEP_CHAR_BUDGET = 56_000
 DEFAULT_DEEP_ITEM_LIMIT = 24
 # Occurrences a deep item lists in full; its shapes still cover every one.
 DEEP_LOCATOR_LIMIT = 12
+# Ready deep items that open a deep bundle while screening continues.
+EARLY_DEEP_BATCH = DEFAULT_DEEP_ITEM_LIMIT
 
 SCREEN_VERDICTS = frozenset({"suspect", "needs-context"})
 MOTIF_DISPOSITIONS = frozenset({"preserved", "suspect", "uncertain-playtest"})
@@ -1344,7 +1346,7 @@ def _compact_scene(scene: dict[str, Any], marks: dict[str, list[str]]) -> dict:
     return {"scene_id": scene["scene_id"], "lines": lines}
 
 
-def _bundle_deep(items: list[dict]) -> list[dict]:
+def _bundle_deep(items: list[dict], first: int = 1) -> list[dict]:
     """Deep bundles grouped by scene, each scene and motif review printed once."""
     prepared = [_compact_deep_item(item) for item in items]
     order = {item["id"]: index for index, (item, _scenes, _motifs) in enumerate(prepared)}
@@ -1380,7 +1382,7 @@ def _bundle_deep(items: list[dict]) -> list[dict]:
     if current:
         groups.append(current)
     bundles = []
-    for index, group in enumerate(groups, start=1):
+    for index, group in enumerate(groups, start=first):
         scenes: dict[str, dict] = {}
         keys: dict[str, str] = {}
         motifs: dict[str, dict] = {}
@@ -1670,6 +1672,9 @@ def prepare_task(
                 first=len(bundles) + 1,
             )
             items += lint_items
+            _atomic_write_json(
+                staging / "screen-targets.json", _screen_targets(items, bundles)
+            )
             bundle_summaries = _write_bundles(
                 staging, bundles, recorded_root=task_dir
             )
@@ -1883,10 +1888,12 @@ def next_bundle(
             if bundle_id:
                 raise ValueError(f"No bundle can be claimed in the {stage} stage")
             return None
-        bundles = checkpoint[stage]["bundles"]
+        # Deep bundles open while screening continues; screening comes first.
+        stages = ["screen", "deep"] if stage == "screen" else [stage]
+        bundles = [row for name in stages for row in checkpoint[name]["bundles"]]
         if bundle_id:
             claimed_stage, pending = _bundle_row(checkpoint, bundle_id)
-            if claimed_stage != stage:
+            if claimed_stage not in stages:
                 raise ValueError(f"{bundle_id} belongs to the {claimed_stage} stage")
             if pending["status"] == "assigned" and pending.get("assigned_to") == worker:
                 return copy.deepcopy(pending)
@@ -2498,6 +2505,9 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         row["accepted_at"] = _utc_now()
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
+        if stage == "screen" and checkpoint["stage"] == "screen":
+            if _issue_deep(root, checkpoint, final=False):
+                _atomic_write_json(root / "checkpoint.json", checkpoint)
     return status(root)
 
 
@@ -2721,6 +2731,13 @@ def _render_deep(bundle: dict) -> list[str]:
             out.append(
                 f"  screen [{evidence['verdict']}] ({','.join(evidence['categories'])}): "
                 + _context_text(evidence["note"])
+            )
+        prior = item.get("prior_review")
+        if prior:
+            out.append(
+                f"  earlier deep review [{prior['disposition']}]: "
+                + _context_text(prior.get("evidence"))
+                + (f" -> {_context_text(prior['correction'])}" if prior.get("correction") else "")
             )
         if item.get("scenes"):
             out.append("  scenes: " + ", ".join(item["scenes"]))
@@ -3295,8 +3312,13 @@ def _not_reviewed(
 
 
 def _deep_items(
-    root: Path, candidate_reasons: dict[str, dict[str, Any]]
+    root: Path,
+    candidate_reasons: dict[str, dict[str, Any]],
+    only: set[str] | None = None,
+    prior: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict]:
+    """Deep items for the candidates, or for `only` those; a cluster reviewed
+    before carries that `prior_review` to reconcile with newer evidence."""
     manifest = _read_json(root / "inventory.json")
     context = _read_json(root / "context.json")
     records, clusters = _record_maps(manifest)
@@ -3317,7 +3339,11 @@ def _deep_items(
     items = []
     for identity in manifest["review_sequence"]:
         # Lines in scenes a reviewer declined stay out of deep review.
-        if identity not in candidate_reasons or identity in declined["clusters"]:
+        if (
+            identity not in candidate_reasons
+            or identity in declined["clusters"]
+            or only is not None and identity not in only
+        ):
             continue
         cluster = clusters[identity]
         member_records = [
@@ -3391,8 +3417,131 @@ def _deep_items(
             if "motif-scene-contradiction" in item["deep_reasons"]:
                 contexts = [_motif_translation_roster(value) for value in contexts]
             item["motif_contexts"] = contexts
+        if prior and identity in prior:
+            item["prior_review"] = prior[identity]
         items.append(item)
     return items
+
+
+def _screen_targets(items: list[dict[str, Any]], bundles: list[dict]) -> dict:
+    """Which screen bundle targets each cluster, and which review its motifs."""
+    targets: dict[str, str] = {}
+    motifs: dict[str, list[str]] = defaultdict(list)
+    for bundle in bundles:
+        for item in bundle["items"]:
+            if item.get("kind") == "scene":
+                for line in item["lines"]:
+                    if "id" in line:
+                        targets[line["id"]] = bundle["bundle_id"]
+            elif item.get("kind") == "cluster":
+                targets[item["id"]] = bundle["bundle_id"]
+            elif item.get("kind") == "motif-family":
+                for variant in item["variants"]:
+                    motifs[variant["id"]].append(bundle["bundle_id"])
+    return {"targets": targets, "motifs": dict(motifs)}
+
+
+def _latest_deep_reviews(
+    checkpoint: dict[str, Any],
+) -> dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any]]]:
+    """Each cluster's latest accepted deep review, with its item and row; a
+    later review saw everything the earlier one did."""
+    latest = {}
+    for row in checkpoint["deep"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
+        items = {item["id"]: item for item in _read_json(Path(row["path"]))["items"]}
+        for review in _read_json(Path(row["result_path"]))["reviews"]:
+            if review["disposition"] != "declined":
+                latest[review["id"]] = (review, items[review["id"]], row)
+    return latest
+
+
+def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
+    """Open deep bundles for candidates whose screen evidence is complete.
+
+    While screening continues, a batch opens once enough clusters are ready:
+    their target bundle and motif reviews are accepted. When screening ends,
+    every remaining candidate opens, and a cluster whose evidence grew after
+    its deep review opens again with that review beside it. Returns how many
+    items opened.
+    """
+    deep = checkpoint["deep"]
+    candidates = deep.setdefault("candidate_reasons", {})
+    issued = deep.setdefault("issued", {})
+    rows = deep.setdefault("bundles", [])
+    open_clusters = {
+        item["id"]
+        for row in rows if row["status"] in {"pending", "assigned"}
+        for item in _read_json(Path(row["path"]))["items"]
+    }
+    if final:
+        ready = set(candidates)
+    else:
+        index = _read_json(root / "screen-targets.json")
+        statuses = {row["id"]: row["status"] for row in checkpoint["screen"]["bundles"]}
+        screen_index = _load_screen_index(root, _read_json(root / "task.json"))
+        cluster_bundle = {
+            screen_index[target]["cluster_id"] if target in screen_index else target: bundle
+            for target, bundle in index["targets"].items()
+        }
+        ready = {
+            cluster_id for cluster_id in candidates
+            if cluster_id not in issued
+            and statuses.get(cluster_bundle.get(cluster_id, "")) == "accepted"
+            and all(
+                statuses.get(bundle) == "accepted"
+                for bundle in index["motifs"].get(cluster_id, [])
+            )
+        }
+        if len(ready) < EARLY_DEEP_BATCH:
+            return 0
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    manifest = _read_json(root / "inventory.json")
+    declined = _declined_scope(root, checkpoint, manifest, waiting=not final)
+    evidence, scenes, motifs = _screen_handoff_context(root)
+    _reopen_disputed_preserved_motifs(candidates, evidence, motifs)
+    if final:
+        ready = set(candidates)
+
+    def signature(cluster_id):
+        return _sha256(_canonical_bytes([
+            sorted(candidates[cluster_id]["reasons"]),
+            evidence.get(cluster_id) or [],
+            sorted(scene["scene_id"] for scene in scenes.get(cluster_id) or []),
+            [
+                [motif["id"], motif.get("disposition"), motif.get("suspect_ids")]
+                for motif in motifs.get(cluster_id) or []
+            ],
+        ]))[:20]
+
+    fresh = {
+        cluster_id for cluster_id in ready
+        if cluster_id not in declined["clusters"]
+        and cluster_id not in open_clusters
+        and issued.get(cluster_id) != signature(cluster_id)
+    }
+    if not fresh:
+        return 0
+    latest = _latest_deep_reviews(checkpoint)
+    prior = {
+        cluster_id: {
+            key: review.get(key)
+            for key in ("disposition", "severity", "category", "evidence", "correction")
+        }
+        for cluster_id, (review, _item, _row) in latest.items()
+        if cluster_id in fresh
+    }
+    items = _deep_items(root, candidates, only=fresh, prior=prior)
+    if not items:
+        return 0
+    bundles = _bundle_deep(items, first=len(rows) + 1)
+    rows += _write_bundles(root, bundles)
+    for item in items:
+        issued[item["id"]] = signature(item["id"])
+    deep["total_items"] = int(deep.get("total_items", 0)) + len(items)
+    deep["projected_items"] = max(len(candidates), deep["total_items"])
+    return len(items)
 
 
 def _settle_declined(
@@ -3429,34 +3578,29 @@ def _sweep_items(
     records, _clusters = _record_maps(manifest)
     corrected: set[str] = set()
     families: dict[str, dict[str, Any]] = {}
-    for row in checkpoint["deep"]["bundles"]:
-        if row["status"] != "accepted":
+    for review, item, row in _latest_deep_reviews(checkpoint).values():
+        if review["disposition"] != "actionable":
             continue
-        items = {item["id"]: item for item in _read_json(Path(row["path"]))["items"]}
-        for review in _read_json(Path(row["result_path"]))["reviews"]:
-            if review["disposition"] != "actionable":
-                continue
-            corrected.add(review["id"])
-            if not review.get("sweep"):
-                continue
-            item = items[review["id"]]
-            family_key = _normalize_family_key(review["family_key"])
-            shapes = sorted(item.get("display_shapes") or [])
-            key = _sha256(_canonical_bytes([family_key, review["sweep"], shapes]))[:20]
-            families.setdefault(key, {
-                "family_key": family_key,
-                "rule": review["sweep"],
-                "shapes": shapes,
-                "example": {
-                    "source": item["source"],
-                    "current": item["translation"],
-                    "correction": review["correction"],
-                    "evidence": review["evidence"],
-                },
-                "category": _normalize_category(review.get("category")),
-                "severity": review["severity"],
-                "author": str(row.get("assigned_to") or ""),
-            })
+        corrected.add(review["id"])
+        if not review.get("sweep"):
+            continue
+        family_key = _normalize_family_key(review["family_key"])
+        shapes = sorted(item.get("display_shapes") or [])
+        key = _sha256(_canonical_bytes([family_key, review["sweep"], shapes]))[:20]
+        families.setdefault(key, {
+            "family_key": family_key,
+            "rule": review["sweep"],
+            "shapes": shapes,
+            "example": {
+                "source": item["source"],
+                "current": item["translation"],
+                "correction": review["correction"],
+                "evidence": review["evidence"],
+            },
+            "category": _normalize_category(review.get("category")),
+            "severity": review["severity"],
+            "author": str(row.get("assigned_to") or ""),
+        })
     items = []
     for key, family in sorted(families.items()):
         find, replace = family["rule"]["find"], family["rule"]["replace"]
@@ -3550,18 +3694,9 @@ def _advance_unlocked(
     if checkpoint["stage"] != "screen":
         return status(root)
     _settle_declined(checkpoint, "screen", skip_declined)
-    _atomic_write_json(root / "checkpoint.json", checkpoint)
-    candidate_reasons = checkpoint["deep"].get("candidate_reasons") or {}
-    deep_items = _deep_items(root, candidate_reasons)
-    bundles = _bundle_deep(deep_items) if deep_items else []
-    checkpoint["deep"] = {
-        "total_items": len(deep_items),
-        "accepted_items": 0,
-        "projected_items": len(deep_items),
-        "candidate_reasons": candidate_reasons,
-        "bundles": _write_bundles(root, bundles) if bundles else [],
-    }
-    checkpoint["stage"] = "deep" if bundles else "ready-finalize"
+    _issue_deep(root, checkpoint, final=True)
+    checkpoint["deep"]["projected_items"] = checkpoint["deep"]["total_items"]
+    checkpoint["stage"] = "deep" if checkpoint["deep"]["bundles"] else "ready-finalize"
     checkpoint["updated_at"] = _utc_now()
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     return status(root)
@@ -3698,56 +3833,50 @@ def _draft_document(
                 },
                 "_variant_ids": [variant["id"] for variant in motif["variants"]],
             })
-    for row in checkpoint["deep"]["bundles"]:
-        if row["status"] != "accepted":
-            continue
-        result = _read_json(Path(row["result_path"]))
-        for review in result["reviews"]:
-            if review["disposition"] == "declined":
-                continue
-            deep_dispositions[review["id"]] = review["disposition"]
-            deep_motif_attributions[review["id"]] = (
-                set(review.get("motif_ids") or [])
-                if "motif_ids" in review
-                else None
-            )
-            kind = (review.get("source_fix") or {}).get("kind")
-            if review["disposition"] == "actionable" and kind == "show-text":
-                findings.append(_show_text_finding(
-                    review, records, task, faces, row, declined
-                ))
-            elif review["disposition"] == "actionable":
-                cluster = clusters[review["id"]]
-                target_ids = [
-                    identity
-                    for identity in review.get("apply_identities") or cluster["identities"]
-                    if identity not in declined["identities"]
-                ]
-                findings.append({
-                    "id": "",
-                    "cluster_id": review["id"],
-                    "severity": review["severity"],
-                    "category": _normalize_category(review.get("category")),
-                    "family_key": _normalize_family_key(review.get("family_key")),
-                    "evidence": review["evidence"],
-                    "source": cluster["source"],
-                    "current": cluster["live"],
-                    "correction": review["correction"],
-                    "target_identities": target_ids,
-                    "authors": [str(row.get("assigned_to") or "")],
-                    **(
-                        {"source_fix": kind, "allowed_flags": ["visible-number-mismatch"]}
-                        if kind == "database-numbers" else {}
-                    ),
-                    **(
-                        {"editorial_basis": review["editorial_basis"]}
-                        if _normalize_category(review.get("category"))
-                        in EDITORIAL_JUDGMENT_CATEGORIES
-                        else {}
-                    ),
-                })
-            elif review["disposition"] == "uncertain-playtest":
-                uncertain.append(review)
+    for review, _item, row in _latest_deep_reviews(checkpoint).values():
+        deep_dispositions[review["id"]] = review["disposition"]
+        deep_motif_attributions[review["id"]] = (
+            set(review.get("motif_ids") or [])
+            if "motif_ids" in review
+            else None
+        )
+        kind = (review.get("source_fix") or {}).get("kind")
+        if review["disposition"] == "actionable" and kind == "show-text":
+            findings.append(_show_text_finding(
+                review, records, task, faces, row, declined
+            ))
+        elif review["disposition"] == "actionable":
+            cluster = clusters[review["id"]]
+            target_ids = [
+                identity
+                for identity in review.get("apply_identities") or cluster["identities"]
+                if identity not in declined["identities"]
+            ]
+            findings.append({
+                "id": "",
+                "cluster_id": review["id"],
+                "severity": review["severity"],
+                "category": _normalize_category(review.get("category")),
+                "family_key": _normalize_family_key(review.get("family_key")),
+                "evidence": review["evidence"],
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "correction": review["correction"],
+                "target_identities": target_ids,
+                "authors": [str(row.get("assigned_to") or "")],
+                **(
+                    {"source_fix": kind, "allowed_flags": ["visible-number-mismatch"]}
+                    if kind == "database-numbers" else {}
+                ),
+                **(
+                    {"editorial_basis": review["editorial_basis"]}
+                    if _normalize_category(review.get("category"))
+                    in EDITORIAL_JUDGMENT_CATEGORIES
+                    else {}
+                ),
+            })
+        elif review["disposition"] == "uncertain-playtest":
+            uncertain.append(review)
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
     _add_lint_findings(
         findings, _lint_decisions(checkpoint, declined), manifest, declined
