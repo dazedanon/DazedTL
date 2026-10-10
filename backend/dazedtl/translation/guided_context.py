@@ -145,8 +145,9 @@ class GuidedContext:
         if not qa["current"]:
             raise ValueError(qa["message"])
         task = Path(qa["task"])
+        helper = helper_command(self.guided.translation.workspace, project_id, "qa")
         return {
-            "text": qa_handoff(task),
+            "text": qa_handoff(task, helper),
             "handoff": {
                 "kind": "qa",
                 "requestId": task.name,

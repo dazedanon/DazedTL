@@ -440,10 +440,15 @@ class GuidedActions:
             if action == "release_patch"
             else {"backup_id"}
             if action == "use_source_backup"
+            else {"message"}
+            if action == "checkpoint"
             else set()
         )
         if set(options) - allowed:
             raise ValueError("Unknown guided action option.")
+        message = options.get("message", "")
+        if not isinstance(message, str) or len(message) > 120 or "\n" in message:
+            raise ValueError("A version message is one line of at most 120 characters.")
         if action in {"backup_source", "use_source_backup"}:
             saved = lifecycle(self.guided.translation.workspace, project_id).get(
                 "source_backup"

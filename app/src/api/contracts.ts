@@ -588,6 +588,34 @@ export type QaCorrection = {
   identity: string;
 };
 
+export type TextQaOperation = {
+  kind: "prepare" | "apply" | "checkpoint";
+  id: string;
+  status: string;
+  message: string;
+};
+
+/** Where the game's text QA stands, for the assistant's project helper. */
+export type TextQaStatus = {
+  focus: string;
+  task: string;
+  stage: string;
+  current: boolean;
+  applied: boolean;
+  /** Findings with a correction. */
+  findings: number;
+  /** Open playtest or context questions. */
+  questions: number;
+  message: string;
+  /** The step to run next. */
+  next: string;
+  /** The engine's checkpoint status. */
+  progress: Record<string, unknown>;
+  operation?: TextQaOperation;
+  /** The saved findings file. */
+  report?: string;
+};
+
 export type QaState = {
   current: boolean;
   applied: boolean;
@@ -2066,6 +2094,12 @@ export type TranslationImagesRequest = {
   step: "status" | "scan" | "investigate" | "translate" | "apply";
 };
 
+export type TranslationQaRequest = {
+  project_id: string;
+  step: "status" | "report" | "prepare" | "apply" | "checkpoint";
+  leave_uncertain?: boolean;
+};
+
 export type TranslationLegacyRequest = {
   project_id: string;
   action: "resume" | "stop" | "answer" | "export";
@@ -2586,6 +2620,7 @@ export type RpcContract = {
     request: TranslationImagesRequest;
     response: ImageAssistantStepResult;
   };
+  translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
   translation_legacy: {
     request: TranslationLegacyRequest;
     response: Job | ExportedFiles;

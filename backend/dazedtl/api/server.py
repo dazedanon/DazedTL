@@ -30,6 +30,7 @@ from dazedtl.storage import WorkspaceLock
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
 from dazedtl.translation.service import Translation, assistant_request
+from dazedtl.translation.text_qa import TextQA
 from dazedtl.watchdog import Watchdog
 
 RPC_OUTPUT = sys.stdout
@@ -79,6 +80,7 @@ class Application:
             context=self.guided.assistant_context,
         )
         self.assistant_tasks = AssistantTasks(self.workspace)
+        self.text_qa = TextQA(self.guided)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.image_units = self.images.progress_units
@@ -418,6 +420,11 @@ class Application:
         except ValueError as exc:
             result["problems"].append("Progress was not updated: " + str(exc))
         return result
+
+    def translation_qa(self, project_id, step, leave_uncertain=False):
+        """One text QA step for the project's assistant; apply goes through
+        the app's reviewed publication, never a direct write."""
+        return self.text_qa.run(project_id, step, leave_uncertain)
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(
@@ -766,6 +773,7 @@ def routes(app):
         app.translation_images,
         lambda value, _params: value,
     )
+    methods["translation_qa"] = (app.translation_qa, lambda value, _params: value)
     methods["images_action"] = (
         app.images_action,
         lambda value, _params: views.image_action(value),

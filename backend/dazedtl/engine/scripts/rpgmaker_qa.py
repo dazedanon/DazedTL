@@ -34,7 +34,7 @@ def main() -> int:
     prepare.add_argument("--focus", required=True, choices=sorted(FOCUSES))
     prepare.add_argument("--output-root", required=True, type=Path)
 
-    for name in ("status", "advance", "finalize", "dry-run"):
+    for name in ("status", "advance", "finalize"):
         command = sub.add_parser(name)
         command.add_argument("--task", required=True, type=Path)
         if name in {"advance", "finalize"}:
@@ -75,24 +75,6 @@ def main() -> int:
     release = sub.add_parser("release")
     release.add_argument("--task", required=True, type=Path)
     release.add_argument("--bundle", required=True)
-    corrections = sub.add_parser("corrections")
-    corrections.add_argument("--task", required=True, type=Path)
-    approval = corrections.add_mutually_exclusive_group(required=True)
-    approval.add_argument("--approve", nargs="+")
-    approval.add_argument(
-        "--approve-all",
-        action="store_true",
-        help="Approve all finalized findings in a full-game release task.",
-    )
-    corrections.add_argument(
-        "--allow-uncertain",
-        action="store_true",
-        help="Leave unresolved playtest records unchanged after explicit user direction.",
-    )
-    apply_cmd = sub.add_parser("apply")
-    apply_cmd.add_argument("--task", required=True, type=Path)
-    regress = sub.add_parser("regress")
-    regress.add_argument("--task", required=True, type=Path)
 
     args = parser.parse_args()
     if args.command == "prepare":
@@ -126,21 +108,6 @@ def main() -> int:
         _print(rpgmaker_qa._decisions(Path(args.task).expanduser().resolve()))
     elif args.command == "finalize":
         _print(rpgmaker_qa.finalize(args.task, args.skip_declined))
-    elif args.command == "corrections":
-        if args.allow_uncertain and not args.approve_all:
-            parser.error("--allow-uncertain requires --approve-all")
-        if args.approve_all:
-            _print(rpgmaker_qa.create_release_correction_map(
-                args.task, allow_uncertain=args.allow_uncertain
-            ))
-        else:
-            _print(rpgmaker_qa.create_correction_map(args.task, args.approve))
-    elif args.command == "dry-run":
-        _print(rpgmaker_qa.dry_run_correction_map(args.task))
-    elif args.command == "apply":
-        _print(rpgmaker_qa.apply_correction_map(args.task))
-    elif args.command == "regress":
-        _print(rpgmaker_qa.regression_check(args.task))
     return 0
 
 

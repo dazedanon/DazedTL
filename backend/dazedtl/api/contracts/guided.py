@@ -305,6 +305,30 @@ class QaCorrection(TypedDict):
     identity: str
 
 
+class TextQaOperation(TypedDict):
+    kind: Literal["prepare", "apply", "checkpoint"]
+    id: str
+    status: str
+    message: str
+
+
+class TextQaStatus(TypedDict):
+    """Where the game's text QA stands, for the assistant's project helper."""
+
+    focus: str
+    task: str
+    stage: str
+    current: bool
+    applied: bool
+    findings: Annotated[int, "Findings with a correction."]
+    questions: Annotated[int, "Open playtest or context questions."]
+    message: str
+    next: Annotated[str, "The step to run next."]
+    progress: Annotated[dict[str, object], "The engine's checkpoint status."]
+    operation: NotRequired[TextQaOperation]
+    report: NotRequired[Annotated[str, "The saved findings file."]]
+
+
 class QaState(TypedDict):
     current: bool
     # Corrections chosen from this task were applied and not restored.

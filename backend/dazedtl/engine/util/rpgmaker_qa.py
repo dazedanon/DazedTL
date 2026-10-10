@@ -1303,23 +1303,9 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
     receipt_dir = (
         Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
     )
-    if task["focus"] == "release":
-        correction_workflow = f"""9. Once finalize reports `complete`, continue automatically; do not ask the user to
-   approve stable finding IDs. Run
-   `{cli} corrections --task {task_argument} --approve-all`, followed by
-   `{cli} dry-run --task {task_argument}`, then
-   `{cli} apply --task {task_argument}`. The first command is restricted to the full-game
-   release focus and refuses to proceed when unresolved `uncertain_playtests` remain. If it
-   refuses, ask the user only about those named playtest/context decisions. After the user
-   explicitly chooses to apply the independently verified findings while leaving those records
-   unchanged, rerun corrections with `--approve-all --allow-uncertain`. Pause and report any
-   deterministic audit, dry-run, apply, or regression error; never bypass a failed safeguard."""
-    else:
-        correction_workflow = f"""9. Once finalize reports `complete`, show the targeted findings to the user and wait
-   for approval of specific stable IDs. Create and validate the selected correction map with
-   `{cli} corrections --task {task_argument} --approve QA-0001 ...` and
-   `{cli} dry-run --task {task_argument}`. Only then apply it with
-   `{cli} apply --task {task_argument}`. Targeted reruns never use `--approve-all`."""
+    correction_workflow = """9. Once finalize reports `complete`, DazedTL applies the findings through its own reviewed
+   publication, which History can restore, with the project helper's `qa --apply` from your
+   handoff. No QA command here writes game files."""
     return f"""# AI-helper QA task
 
 This task is managed by DazedTL. Do not create another manifest, index, checkpoint, registry,
@@ -1378,8 +1364,6 @@ redistribute a scene outside the claim/release commands.
    wording; read them with `{cli} decisions --task {task_argument}` before deciding the same
    kind of question.
 {correction_workflow}
-
-   DazedTL applies correction maps atomically and runs regression.
 
 For a screen bundle, inspect every target. A `scene` item contains one complete ordered `lines`
 array; lines with an `id` are required review targets and lines with `context_id` were targeted in
@@ -4075,12 +4059,17 @@ def _set_pointer(document: Any, pointer: str, value: str) -> None:
         parent[key] = value
 
 
-def create_correction_map(
+def correction_map(
     task_dir: str | Path, approved_finding_ids: Iterable[str]
 ) -> dict[str, Any]:
+    """The checksummed operations that apply the approved findings.
+
+    It is built in memory for the app's apply, which runs it on disposable
+    copies and publishes the result; no QA command writes the game itself.
+    """
     root, task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] != "complete":
-        raise ValueError("QA discovery must be complete before creating corrections")
+        raise ValueError("QA review must be complete before its findings are applied")
     findings_doc = _read_json(root / "findings.json")
     approved = set(approved_finding_ids)
     selected = [item for item in findings_doc["findings"] if item["id"] in approved]
@@ -4125,37 +4114,15 @@ def create_correction_map(
                 "replacement": finding["correction"],
                 "allowed_flags": list(finding.get("allowed_flags") or []),
             })
-    correction_map = {
+    document = {
         "schema": CORRECTION_MAP_SCHEMA,
         "created_at": _utc_now(),
         "manifest_sha256": task["manifest_sha256"],
         "approved_finding_ids": sorted(approved),
         "operations": operations,
     }
-    correction_map["content_sha256"] = _sha256(_canonical_bytes(correction_map))
-    _atomic_write_json(root / "correction-map.json", correction_map)
-    return correction_map
-
-
-def create_release_correction_map(
-    task_dir: str | Path, *, allow_uncertain: bool = False
-) -> dict[str, Any]:
-    """Approve every finalized release finding when no user decision is pending."""
-    root, task, checkpoint = _load_task(task_dir)
-    if checkpoint["stage"] != "complete":
-        raise ValueError("QA discovery must be complete before creating corrections")
-    if task["focus"] != "release":
-        raise ValueError("Automatic approval is restricted to full-game release QA")
-    findings_doc = _read_json(root / "findings.json")
-    uncertain = list(findings_doc.get("uncertain_playtests") or [])
-    if uncertain and not allow_uncertain:
-        raise ValueError(
-            "Automatic approval paused because unresolved uncertain playtests remain; "
-            "ask the user about those records or explicitly use --allow-uncertain to "
-            "leave them unchanged"
-        )
-    finding_ids = [item["id"] for item in findings_doc.get("findings") or []]
-    return create_correction_map(root, finding_ids)
+    document["content_sha256"] = _sha256(_canonical_bytes(document))
+    return document
 
 
 def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
@@ -4298,19 +4265,6 @@ def _dry_run_loaded_correction_map(
     return report
 
 
-def dry_run_correction_map(task_dir: str | Path) -> dict[str, Any]:
-    """Validate every approved target and return a no-write operation preview."""
-    root, task, checkpoint = _load_task(task_dir)
-    if checkpoint["stage"] != "complete":
-        raise ValueError("QA discovery must be complete before validating corrections")
-    return _dry_run_loaded_correction_map(
-        root,
-        task,
-        _read_json(root / "correction-map.json"),
-        "correction-dry-run.json",
-    )
-
-
 def _render_json_like(raw: bytes, document: Any) -> bytes:
     """Render JSON using the file's existing BOM, indentation, and final newline."""
     has_bom = raw.startswith(b"\xef\xbb\xbf")
@@ -4412,22 +4366,6 @@ def _apply_loaded_correction_map(
     return regression
 
 
-def apply_correction_map(task_dir: str | Path) -> dict[str, Any]:
-    """Apply an approved correction map with validation and rollback on failure."""
-    root, task, checkpoint = _load_task(task_dir)
-    if checkpoint["stage"] != "complete":
-        raise ValueError("QA discovery must be complete before applying corrections")
-    return _apply_loaded_correction_map(
-        root,
-        task,
-        _read_json(root / "correction-map.json"),
-        _read_json(root / "inventory.json"),
-        dry_run_name="correction-dry-run.json",
-        regression_name="regression.json",
-        nonblocking_introduced_flags=APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-    )
-
-
 def _regression_check_loaded(
     task: dict[str, Any],
     before: dict[str, Any],
@@ -4491,20 +4429,6 @@ def _regression_check_loaded(
         "after_manifest_sha256": after["content_sha256"],
         "records_checked": len(after_records),
     }
-
-
-def regression_check(task_dir: str | Path) -> dict[str, Any]:
-    root, task, _checkpoint = _load_task(task_dir)
-    correction_path = root / "editorial-correction-map.json"
-    if not correction_path.is_file():
-        correction_path = root / "correction-map.json"
-    corrections = _read_json(correction_path) if correction_path.is_file() else None
-    return _regression_check_loaded(
-        task,
-        _read_json(root / "inventory.json"),
-        corrections,
-        nonblocking_introduced_flags=APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-    )
 
 
 def find_latest_task(

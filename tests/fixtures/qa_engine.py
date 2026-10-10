@@ -498,9 +498,19 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "The arousal is building…",
     "The arousal won't stop.",
 ], findings["findings"]
-# Source fixes go through the same correction map, apply and regression.
-qa.create_correction_map(task, [row["id"] for row in findings["findings"]])
-assert qa.apply_correction_map(task)["valid"]
+# Source fixes go through the same correction map, apply and regression the
+# app runs on its disposable copy; this game is the test's own copy.
+selected = qa.correction_map(task, [row["id"] for row in findings["findings"]])
+inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
+assert qa._apply_loaded_correction_map(
+    task,
+    json.loads((task / "task.json").read_text(encoding="utf-8")),
+    selected,
+    inventory,
+    dry_run_name="dry-run.json",
+    regression_name="regression.json",
+    nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
+)["valid"]
 headers = [
     command["parameters"]
     for command in json.loads((data / "Map001.json").read_text())["events"][1]["pages"][

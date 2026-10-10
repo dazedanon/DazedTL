@@ -92,6 +92,32 @@ def wait(workspace, params, run, minutes):
     return run
 
 
+def settle_qa(workspace, params, result):
+    """Waits for the QA step the app started; an apply that succeeds goes on
+    to its checkpoint, so one command applies and records the corrections."""
+
+    def finish(result):
+        while (result.get("operation") or {}).get("status") == "running":
+            time.sleep(2)
+            result = call(workspace, "translation_qa", {**params, "step": "status"})
+        return result
+
+    if params["step"] not in {"prepare", "apply", "checkpoint"}:
+        return result
+    result = finish(result)
+    operation = result.get("operation") or {}
+    if params["step"] == "apply" and operation.get("status") == "complete":
+        result = finish(
+            call(workspace, "translation_qa", {**params, "step": "checkpoint"})
+        )
+    if (result.get("operation") or {}).get("status") != "complete":
+        raise ValueError(
+            "The QA step did not finish: "
+            + json.dumps(result.get("operation"), ensure_ascii=False)
+        )
+    return result
+
+
 def main():
     # Assistants read this through a pipe, which Windows encodes in the ANSI
     # code page; game names and text need UTF-8 however the helper is started.
@@ -129,6 +155,33 @@ def main():
             const=step,
             help=text,
         )
+    qa = commands.add_parser(
+        "qa",
+        help="Text QA for RPG Maker games: where it stands, preparing its task, and "
+        "applying finished findings through DazedTL, which then saves a checkpoint",
+    )
+    qa_step = qa.add_mutually_exclusive_group()
+    for step, text in (
+        ("status", "Where QA stands and which step comes next"),
+        ("report", "Where QA stands, with the saved findings file"),
+        ("prepare", "Prepare or resume the QA task and wait for it"),
+        (
+            "apply",
+            "Apply every finished finding as one reviewed text batch, then save a checkpoint",
+        ),
+        (
+            "checkpoint",
+            "Save the checkpoint after an apply whose checkpoint did not run",
+        ),
+    ):
+        qa_step.add_argument(
+            "--" + step, dest="qa_step", action="store_const", const=step, help=text
+        )
+    qa.add_argument(
+        "--leave-uncertain",
+        action="store_true",
+        help="Only after the user chose it: apply while open playtest questions stay unchanged",
+    )
     plugins = commands.add_parser(
         "plugins",
         help="Read plugin work or continue the copied agent task after saving its report",
@@ -302,6 +355,11 @@ def main():
                 if args.image_step:
                     method = "translation_images"
                     params["step"] = args.image_step
+            if args.command == "qa":
+                params.update(
+                    step=args.qa_step or "status",
+                    leave_uncertain=args.leave_uncertain,
+                )
             if args.command == "plugins":
                 method = (
                     "plugins_continue" if args.continue_request else "plugins_state"
@@ -361,6 +419,8 @@ def main():
             result = call(args.workspace, method, params)
             if args.command == "run" and args.wait > 0:
                 result = wait(args.workspace, params, result, args.wait)
+            if args.command == "qa":
+                result = settle_qa(args.workspace, params, result)
             if getattr(args, "image_step", None) == "scan":
                 while result["scan"] == "running":
                     time.sleep(2)

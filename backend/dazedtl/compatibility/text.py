@@ -24,8 +24,6 @@ FINDING_FIELDS = (
     "classification",
     "identity",
 )
-# The QaCorrection contract: what a chosen correction shows in the app.
-CORRECTION_FIELDS = ("finding_id", "file", "expected", "replacement", "identity")
 
 
 def binding(plan):
@@ -43,14 +41,14 @@ def binding(plan):
     }
 
 
-def qa_handoff(task):
+def qa_handoff(task, helper=None):
     """The text a coding assistant receives for one prepared QA task."""
     task = Path(task)
+    apply = f"`{helper} --apply`" if helper else "the project helper's `qa --apply`"
     return (
-        "This is optional DazedTL text QA. Follow the task README for immutable inventory, screen and deep discovery, findings and correction-map validation only. "
-        "Do not run apply, editorial-apply, or any runtime publication command. Do not edit the game. "
-        "Stop after discovery and correction-map preparation. The user selects corrections and reviews Apply in DazedTL. "
-        "Never claim copying this task completes QA.\n\nTask: "
+        "Run DazedTL text QA for this game from start to finish without the user. Follow the task README for review. "
+        f"When finalize reports complete, apply the findings with {apply}: DazedTL applies them as one reviewed text batch that History can restore, then saves a checkpoint commit. "
+        "Ask the user only about an open playtest or context question. Never edit game files yourself.\n\nTask: "
         + str(task)
         + "\nREADME: "
         + str(task / "README.md")
@@ -115,16 +113,23 @@ def qa_state(plan):
             for row in document.get("uncertain_playtests", [])
         ]
     ]
-    corrections = []
-    path = root / "correction-map.json"
-    if path.exists() and checkpoint["stage"] == "complete":
-        document = read_json(path)
-        qa._validate_correction_map(document, task)
-        # Operations also carry engine pointers and transforms for the apply.
-        corrections = [
-            {key: row[key] for key in CORRECTION_FIELDS}
-            for row in document.get("operations", [])
-        ]
+    # Each finding's targets, read from its saved finding; apply builds the
+    # engine's checked correction map itself.
+    corrections = [
+        {
+            "finding_id": row["id"],
+            "file": identity.split("#", 1)[0] if identity else row.get("file", ""),
+            "expected": row["current"],
+            "replacement": row["correction"],
+            "identity": identity,
+        }
+        for row in document.get("findings", [])
+        if checkpoint["stage"] == "complete"
+        for identity in (
+            row.get("target_identities")
+            or [row.get("nameplate_identity") or row.get("line_identity") or ""]
+        )
+    ]
     # Corrections chosen from this task stay applied when the text changes
     # later; records saved before they named their task count when made after
     # it was prepared.
@@ -281,19 +286,10 @@ def prepare_publication(plan):
             or any(not isinstance(value, str) for value in chosen)
         ):
             raise ValueError("Choose correction IDs to apply.")
-        corrections = read_json(task_root / "correction-map.json")
-        available = {row["finding_id"] for row in corrections["operations"]}
+        available = {row["finding_id"] for row in state["corrections"]}
         if set(chosen) - available:
             raise ValueError("The chosen QA corrections changed. Refresh findings.")
-        selected = {
-            **corrections,
-            "approved_finding_ids": sorted(chosen),
-            "operations": [
-                row for row in corrections["operations"] if row["finding_id"] in chosen
-            ],
-        }
-        selected.pop("content_sha256", None)
-        selected["content_sha256"] = qa._sha256(qa._canonical_bytes(selected))
+        selected = qa.correction_map(task_root, chosen)
         with tempfile.TemporaryDirectory(
             dir=folder, prefix="qa-candidates-"
         ) as temporary:

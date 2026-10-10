@@ -723,7 +723,7 @@ Reapplying saved translations discloses replacement of later runtime edits, inde
 Optional text QA retains the engine's project-scoped discovery inventory and findings, bound to current runtime text and original-source context.
 Its inventory holds the text the engine translated, which keeps its Japanese in `_original`; a [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports the Japanese players may read that it cannot correct, in messages and database fields without `_original`, custom data files and plugin parameters, so that gap is shown rather than silent.
 Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
-Chosen corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before app-reviewed Apply.
+Applied corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before they are published.
 The [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py) checks each correction when a reviewer submits it, and every finding again when findings are made, against what the post-apply regression rejects: a mechanical flag the correction adds, a line count its pointers can't hold, or more rows than a message window shows.
 So no finding can roll an apply back; an English ordinal such as "First" may stand for the source's number, as in "First Stratum" for 第1層.
 A reviewer that will not review an item declines it with a one-line reason, and the engine accepts the rest of its bundle and moves the declined items to a bundle of their own that only another reviewer can claim.
@@ -736,7 +736,9 @@ A deep correction of a problem that recurs word for word can carry a sweep rule 
 An editorial stage then confirms every reviewer-written correction: a reviewer accepts, revises or withdraws it, and a fluency, voice or wordplay correction goes only to a worker that wrote none of its bundle's corrections.
 Before each round, a consistency check marks corrections that contradict the translation quirks, a structured label, each other or the decision log, where reviewers record shared choices such as narration tense; a contradiction comes back in another round until it is resolved, and after four rounds it is reported as unverified instead of applied.
 Slips in the Japanese source have findings of their own: a Show Text header's face and name, which must be a face the game already shows, and a database text whose number its own entry contradicts, which may change only to a number that entry holds; apply and regression check both like any correction.
-The clipboard task stops before runtime publication.
+Release QA applies its finished findings without asking: the project helper's [qa](../backend/dazedtl/translation/text_qa.py) `--apply` previews and executes the same one-use `qa_apply` text batch the Text QA review does, so History can restore it, and then saves a checkpoint commit.
+It waits while a playtest or context question is open unless the user chose to leave those lines unchanged; no QA command writes game files itself, and pushing and publishing stay the user's.
+An Assistant-led MV/MZ or Ace game gets the Guided game workspace for this the first time its assistant uses QA, and its checkpoint reuses the runtime manifest of its last one.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 
 The selected phase files bind each new run and each application preview.

@@ -25,6 +25,9 @@ An image in the list counts until it is applied, one its translation skipped dro
 Images is its own progress phase; a report that leaves it out gets it from these records, complete once they are and active once they list an image.
 Guided projects keep these steps in their Images task.
 
+Text QA for RPG Maker MV/MZ and VX Ace runs with `qa`: `qa --prepare` prepares or resumes the task, whose README the assistant follows to review, and `qa --apply` applies the finished findings through the app and saves a checkpoint; `qa --status` names the next step.
+Apply waits while a playtest or context question is open; `--leave-uncertain` applies the rest only after the user chose to leave those lines unchanged.
+
 ### Sandboxed connections
 
 A network sandbox can block loopback even when DazedTL is running.

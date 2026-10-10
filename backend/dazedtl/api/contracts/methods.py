@@ -25,6 +25,7 @@ from dazedtl.api.contracts.guided import (
     ReleaseDestination,
     SkillText,
     SpeakerScan,
+    TextQaStatus,
 )
 from dazedtl.api.contracts.images import (
     ImageActionResult,
@@ -211,6 +212,12 @@ class TranslationIdentifyRequest(TypedDict):
 class TranslationImagesRequest(TypedDict):
     project_id: str
     step: ImageAssistantStep
+
+
+class TranslationQaRequest(TypedDict):
+    project_id: str
+    step: Literal["status", "report", "prepare", "apply", "checkpoint"]
+    leave_uncertain: NotRequired[bool]
 
 
 class TranslationLegacyRequest(TypedDict):
@@ -652,6 +659,7 @@ METHODS: dict[str, Method] = {
     ),
     "translation_identify": Method(TranslationIdentifyRequest, Saved),
     "translation_images": Method(TranslationImagesRequest, ImageAssistantStepResult),
+    "translation_qa": Method(TranslationQaRequest, TextQaStatus),
     "translation_legacy": Method(TranslationLegacyRequest, Job | ExportedFiles),
     # Images
     "images_state": Method(ProjectRequest, ImageManagerState, refresh=False),
