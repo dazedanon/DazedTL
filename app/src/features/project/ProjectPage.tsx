@@ -3,6 +3,7 @@ import { ArrowRight, Check, Folder, FolderOpen } from "lucide-react";
 import type { AppState, Job, Project } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import { ActionBar } from "../../ui/ActionBar";
+import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { Button } from "../../ui/Button";
 import { HelpPopover } from "../../ui/HelpPopover";
@@ -495,6 +496,23 @@ function ProjectHistory({
   const backup = translation.lifecycle.source_backup;
   const baseline =
     !!backup && backup.available !== false && !!translation.git?.configured;
+  // A text QA batch restores from here, newest first, as each restore needs
+  // the game's text as the batch left it.
+  const publication =
+    ["qa_apply", "qa_undo"].includes(inspected?.action || "") &&
+    inspected?.status === "complete" &&
+    typeof inspected.result?.publication === "string"
+      ? inspected.result.publication
+      : "";
+  const publications = guided.readiness.publications;
+  const batch = publications.find((row) => row.id === publication);
+  const restoreBlocked = !batch
+    ? "History restores only its ten newest text batches."
+    : batch.state === "restored"
+      ? "This batch is already restored."
+      : publications[0]?.id !== batch.id
+        ? "Restore the newer text batch first."
+        : "";
   return (
     <>
       <PageBody className="history-host-body">
@@ -522,22 +540,45 @@ function ProjectHistory({
             openGuided({ kind: "reapply", runId: job.id })
           }
           actions={
-            canResumeRun(inspected) && (
+            publication ? (
               <ActionList compact>
                 <ActionRow
                   label={
-                    <small>Continue Live with this run’s saved settings.</small>
+                    <small>
+                      {inspected?.action === "qa_apply"
+                        ? "Put back the text these corrections replaced; Text QA then offers them again."
+                        : "Apply the corrections this batch undid again."}
+                    </small>
                   }
                 >
-                  <Button
-                    onClick={() =>
-                      openGuided({ kind: "resume", runId: inspected.id })
-                    }
-                  >
-                    Review resume
-                  </Button>
+                  <ActionControl
+                    label="Review restore"
+                    disabled={!baseline || !!restoreBlocked}
+                    disabledReason={restoreBlocked}
+                    onClick={() => openGuided({ kind: "restore", publication })}
+                  />
                 </ActionRow>
               </ActionList>
+            ) : (
+              canResumeRun(inspected) && (
+                <ActionList compact>
+                  <ActionRow
+                    label={
+                      <small>
+                        Continue Live with this run’s saved settings.
+                      </small>
+                    }
+                  >
+                    <Button
+                      onClick={() =>
+                        openGuided({ kind: "resume", runId: inspected.id })
+                      }
+                    >
+                      Review resume
+                    </Button>
+                  </ActionRow>
+                </ActionList>
+              )
             )
           }
         />

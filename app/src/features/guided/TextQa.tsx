@@ -54,6 +54,7 @@ export function TextQaWork({
   onCoverage,
   report,
   rerun = "Run QA again to check the text.",
+  restorable = false,
   children,
 }: {
   qa: QaState;
@@ -73,6 +74,8 @@ export function TextQaWork({
   report?: ReactNode;
   /** How the user has an outdated task checked again. */
   rerun?: string;
+  /** History on the Project page can restore a whole batch. */
+  restorable?: boolean;
   /** Fields before QA starts, such as its focus. */
   children?: ReactNode;
 }) {
@@ -123,7 +126,12 @@ export function TextQaWork({
                     ? "Your assistant applies these corrections next; you can also apply them here."
                     : qaSummary(qa)
         }
-        help="Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction."
+        help={
+          "Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction" +
+          (restorable
+            ? ", and History on the Project page restores a whole batch."
+            : ".")
+        }
       >
         {qa.task ? (
           <div className="text-qa-status">

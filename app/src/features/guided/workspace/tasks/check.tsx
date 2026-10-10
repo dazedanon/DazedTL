@@ -287,6 +287,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
       applyFailed={applyFailed}
       run={step}
       onCoverage={() => setPanel("qa-coverage")}
+      restorable
       report={
         qaJob && (
           <Button variant="link" onClick={() => inspect(qaJob)}>

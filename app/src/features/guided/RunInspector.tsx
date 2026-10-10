@@ -306,6 +306,7 @@ export function RunInspector({
                       `${new Date(job.created).toLocaleString()} · `}
                     <code>{job.id}</code>
                   </p>
+                  {actions}
                   {!!job.files?.length && (
                     <dl className="run-detail-summary">
                       <div>

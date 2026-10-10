@@ -669,20 +669,22 @@ export function useGuidedWorkspace({
     const opened =
       request.kind === "checkpoint"
         ? review("checkpoint")
-        : action.run(
-            async () => {
-              if (request.kind === "reapply") await reapplyRun(request.runId);
-              else {
-                const run = state.runs.find(
-                  (item) => item.id === request.runId,
-                );
-                if (!run) throw new Error("That run is no longer saved.");
-                setResume(run);
-              }
-            },
-            "",
-            request.kind,
-          );
+        : request.kind === "restore"
+          ? review("runtime_restore", { publication: request.publication })
+          : action.run(
+              async () => {
+                if (request.kind === "reapply") await reapplyRun(request.runId);
+                else {
+                  const run = state.runs.find(
+                    (item) => item.id === request.runId,
+                  );
+                  if (!run) throw new Error("That run is no longer saved.");
+                  setResume(run);
+                }
+              },
+              "",
+              request.kind,
+            );
     void opened.finally(() => intentHandled?.());
   });
   useEffect(() => {

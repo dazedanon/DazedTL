@@ -1,6 +1,6 @@
 # Text QA redesign
 
-This is the plan for the next version of text QA; implemented parts move to [architecture](architecture.md#workflow-and-shared-presentation) and leave this plan.
+This was the plan for the text QA redesign; every part is implemented and described in [architecture](architecture.md#workflow-and-shared-presentation), and its goals, decisions and the evidence behind them remain here as rationale.
 Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md), the [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py), the [copied handoff](../backend/dazedtl/compatibility/text.py) and [the task's view](../app/src/features/guided/TextQa.tsx).
 
 ## Goals
@@ -31,14 +31,8 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - Decisions, declined content and the editorial pass were visible only in the assistant's chat, and the user stepped in about fifteen times.
 - The run used about six million assistant tokens; deep items embedded whole scenes, so one set of deep drafts held 9.5 MB until scenes were grouped and printed once (2.3 MB).
 
-## User experience
-
-The Text QA page, the Assistant-led tab and Progress are described in [architecture](architecture.md#workflow-and-shared-presentation); one part remains:
-
-- Undoing every correction at once restores the QA batch from History.
-
 ## Order of work
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: done, described in [architecture](architecture.md#workflow-and-shared-presentation), except restoring a QA batch from History.
+3. Speed and presentation: done, described in [architecture](architecture.md#workflow-and-shared-presentation).

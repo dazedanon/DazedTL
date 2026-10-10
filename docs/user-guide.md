@@ -106,6 +106,7 @@ Both Check tasks are optional:
 - **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and **Review them** lists the lines QA did not cover.
+  To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
 Apply and playtest an early scene before translating everything.

@@ -80,7 +80,9 @@ export type GuidedIntent =
   // A checkpoint asked for from a Project tab returns there once saved.
   | { kind: "checkpoint"; returnTo?: "versions" }
   | { kind: "reapply"; runId: string }
-  | { kind: "resume"; runId: string };
+  | { kind: "resume"; runId: string }
+  // History restores a text batch, such as QA's corrections, through its review.
+  | { kind: "restore"; publication: string };
 /** Project tools live on the Project page; tasks link to their tab. */
 export type ProjectLink = (
   tab: "history" | "versions" | "backups",
