@@ -128,4 +128,5 @@ Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) rea
 - The [user guide](user-guide.md) explains the app's workflows, API setup, backups and diagnostics.
 - [Architecture](architecture.md) covers code ownership, boundaries and design decisions.
 - The [translation contract](translation-contract.md) is for engine adapter authors and assistant integrations.
+- The [text QA redesign](text-qa-redesign.md) plans the next version of text QA.
 - [AGENTS.md](../AGENTS.md) holds contribution rules.
