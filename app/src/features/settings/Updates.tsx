@@ -129,7 +129,13 @@ export default function Updates({ running }: { running: boolean }) {
         </section>
         {!state.revert && (
           <ReleaseNotes
-            version={state.staged || state.version}
+            since={
+              state.staged
+                ? state.version
+                : state.outcome?.ok
+                  ? state.outcome.from
+                  : ""
+            }
             releases={state.staged ? state.notes.staged : state.notes.installed}
           />
         )}

@@ -111,8 +111,9 @@
 .field-row + .connection-panel {
   margin-top: var(--space-5);
 }
-/* What's new: each kind of change labels its list, as detail rows do, and a
-   release's version and date head its rows when the notes span several. */
+/* What's new: each kind of change labels its list in the form's label
+   column, and a release's version and date head its rows when the notes span
+   several. */
 .release-notes {
   display: grid;
   justify-items: start;
@@ -141,15 +142,17 @@
   font-weight: var(--weight-regular);
 }
 .release-notes-release + .release-notes-release {
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
 }
 .release-notes-sections {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-4);
   margin: 0;
 }
 .release-notes-sections .summary-row {
+  grid-template-columns: var(--field-label-width) minmax(0, 1fr);
   align-items: start;
+  gap: var(--field-column-gap);
   min-height: 0;
 }
 .release-notes-sections ul {
@@ -160,6 +163,13 @@
   padding-left: var(--space-4);
 }
 @media (max-width: 1050px) {
+  .release-notes-sections .summary-row {
+    grid-template-columns: minmax(0, min(var(--field-label-width), 45%)) minmax(
+        0,
+        1fr
+      );
+    gap: var(--space-3);
+  }
   .connection-keyless {
     margin-left: calc(min(var(--field-label-width), 45%) + var(--space-3));
   }

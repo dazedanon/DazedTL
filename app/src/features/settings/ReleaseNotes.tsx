@@ -50,29 +50,31 @@ function Sections({ release }: { release: Release }) {
 }
 
 /**
- * What changed in `version`, from CHANGELOG.md. Notes spanning several
- * releases name each one, newest first.
+ * What changed, from CHANGELOG.md: one release's entry, or every release
+ * after `since`, newest first, each under its version.
  */
 export function ReleaseNotes({
-  version,
+  since,
   releases,
 }: {
-  version: string;
+  since: string;
   releases: Release[];
 }) {
   const [all, setAll] = useState(false);
   if (!releases.length) return null;
-  const single = releases.length === 1 && releases[0].version === version;
+  const single = releases.length === 1 || !since;
   const visible = all ? releases : releases.slice(0, shown);
   return (
     <section className="release-notes" aria-labelledby="release-notes-title">
       <h2 id="release-notes-title">
-        What&apos;s new in {version}
+        {single
+          ? `What's new in ${releases[0].version}`
+          : `What's new since ${since}`}
         {single && releases[0].date && (
           <span className="release-notes-date">{day(releases[0].date)}</span>
         )}
       </h2>
-      {single ? (
+      {releases.length === 1 ? (
         <Sections release={releases[0]} />
       ) : (
         visible.map((release) => (
@@ -91,8 +93,12 @@ export function ReleaseNotes({
           </section>
         ))
       )}
-      {!single && releases.length > shown && (
-        <Button variant="link" onClick={() => setAll((value) => !value)}>
+      {releases.length > shown && (
+        <Button
+          variant="link"
+          aria-expanded={all}
+          onClick={() => setAll((value) => !value)}
+        >
           {all
             ? "Show fewer versions"
             : `Show ${releases.length - shown} earlier ${releases.length - shown === 1 ? "version" : "versions"}`}
