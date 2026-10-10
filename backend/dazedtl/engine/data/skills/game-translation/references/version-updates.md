@@ -284,14 +284,14 @@ Maintain an explicit tool-owned path set and preserve it on **every** official t
 - Diff the tool-owned subset of the proposed official tree against the base ref through a temporary index, and rewrite any difference back to the base version, or delete it with a zero-oid line if it did not exist in the base.
 - Append your tool's metadata dir to `.git/info/exclude` so removed legacy updater state cannot re-enter the branches.
 - Keep local-only artifacts out of the asset manifest entirely: saves, logs, caches, `previous_patch_sha.txt`, `Save*`, `wolf_json/originals/`, `.md`/`.rst` docs.
-- Install the bundled ignore policy **without discarding project rules**: strip complete `# BEGIN/END <tool> settings` blocks before comparison so an equivalent block is not relocated every run, recognize and replace the previous bundled template rather than preserving it as a user rule, and re-append anything left under a `# Existing project rules` header.
+- Change only your tool's own managed `# BEGIN/END <tool>` blocks in the game's `.gitignore`, in place, so project rules survive and an equivalent block is not relocated every run.
 
 ### Binaries: gitignored, but still versioned
 
 Committing every PNG and OGG makes the patch repo hundreds of MB and unusable as a public download.
 Plain-ignoring them means an official art or audio update never reaches the player's install.
 
-- Ship a **deny-by-default** `.gitignore`: `*.*`, then whitelist the text extensions you actually merge - `.json`, `.js`, `.txt`, `.csv`, `.rb`, `.rvdata2`, `.ks`, `.tjs`, `.ain`, `.yaml`, plus named WOLF `.dat` files.
+- Keep a **deny-by-default** `.gitignore`: ignore everything (`/*`), then allow exactly the reviewed patch files, as the managed `# BEGIN DazedTL Len patch files` block does.
 - Track the ignored files in a manifest of `{path: {sha256, size, mode}}` stored **outside** the repo content, under `<git-common-dir>/`, keyed by a hash of the game prefix so several games in one repo do not collide.
 - **Decide what is ignored by asking git, never by reimplementing the matcher.** Pipe NUL-separated virtual paths to `git check-ignore --no-index -z --stdin` and accept exit codes 0 and 1 only, so nested `.gitignore` files, `.git/info/exclude` and the user's global excludes all apply.
 - Validate the manifest strictly on load - `sha256` matches `[0-9a-f]{64}`, mode is `100644` or `100755`, path is relative with no `..` and no CR/LF/TAB - and treat a bad manifest as a hard error.

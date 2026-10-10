@@ -25,13 +25,7 @@ from typing import Iterable, Mapping
 
 import jsbeautifier
 
-from util.paths import (
-    GAME_IMAGE_PATCH_GITIGNORE_COMMENT,
-    GAME_TOOL_GITIGNORE_BEGIN,
-    GAME_TOOL_GITIGNORE_END,
-    ensure_game_tool_gitignore,
-    normalize_game_tool_gitignore_text,
-)
+from util.paths import ensure_game_tool_gitignore
 
 
 ORIGINAL_BRANCH = "original"
@@ -43,7 +37,6 @@ _PRESERVE_GAME_FILES_TRAILER = "DazedTL-Preserve-Game-Files: true"
 VERSION_TRAILER = "DazedTL-Version"
 _TOOL_NAME = "DazedMTLTool"
 _TOOL_EMAIL = "local@dazedmtl.invalid"
-_GAMEUPDATE_GITIGNORE = Path(__file__).resolve().parents[2] / "gameupdate" / ".gitignore"
 _ZERO_OID = "0" * 40
 # Commands that take the index lock before they change anything, so one that
 # found the lock held can run again. A `git status` holds it briefly while it
@@ -996,8 +989,12 @@ def _ensure_local_excludes(repo: Path) -> None:
             handle.write(f"{rule}\n")
 
 
-def _install_gameupdate_gitignore(game_root: Path, *, preserve_game_files: bool = False) -> bool:
-    """Install the bundled ignore policy without discarding project rules."""
+def _install_game_gitignore(game_root: Path, *, preserve_game_files: bool = False) -> bool:
+    """Keep the portable DazedTL settings rules in the game's .gitignore.
+
+    Projects that preserve game files also get attributes that keep native
+    payload bytes exact across clones. Project rules are never replaced.
+    """
     if preserve_game_files:
         attributes = game_root / ".gitattributes"
         if attributes.is_symlink() or (attributes.exists() and not attributes.is_file()):
@@ -1006,128 +1003,7 @@ def _install_gameupdate_gitignore(game_root: Path, *, preserve_game_files: bool 
             # This travels with clones; repo-local core.autocrlf alone does not.
             with attributes.open("xb") as handle:
                 handle.write(b"# Preserve native game payload bytes across platforms.\n* -text\n")
-        return ensure_game_tool_gitignore(game_root)
-    try:
-        template = _GAMEUPDATE_GITIGNORE.read_bytes()
-    except OSError as exc:
-        raise GitWorkflowError(
-            f"Bundled GameUpdate .gitignore is unavailable: {_GAMEUPDATE_GITIGNORE}"
-        ) from exc
-    if not template.strip():
-        raise GitWorkflowError("Bundled GameUpdate .gitignore is empty")
-
-    destination = game_root / ".gitignore"
-    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
-        raise GitWorkflowError("The game .gitignore must be a regular file")
-    existing = destination.read_bytes() if destination.exists() else b""
-
-    def normalized(value: bytes) -> bytes:
-        return value.replace(b"\r\n", b"\n").strip()
-
-    def without_portable_blocks(value: bytes) -> bytes:
-        """Remove complete managed blocks and normalize their surrounding gap."""
-        cleaned = value.replace(b"\r\n", b"\n")
-        begin = GAME_TOOL_GITIGNORE_BEGIN.encode("utf-8")
-        end_marker = GAME_TOOL_GITIGNORE_END.encode("utf-8")
-        while True:
-            start = cleaned.find(begin)
-            if start < 0:
-                break
-            end = cleaned.find(end_marker, start)
-            if end < 0:
-                break
-            end += len(end_marker)
-            before = cleaned[:start].rstrip(b"\n")
-            after = cleaned[end:].lstrip(b"\n")
-            separator = b"\n\n" if before and after else b""
-            cleaned = before + separator + after
-        return cleaned.strip()
-
-    def normalize_portable_rules() -> bool:
-        try:
-            return ensure_game_tool_gitignore(game_root)
-        except Exception as exc:
-            raise GitWorkflowError(
-                f"Could not update portable DazedTL .gitignore rules: {exc}"
-            ) from exc
-
-    def canonical_portable_rules(value: bytes) -> bytes:
-        try:
-            return normalize_game_tool_gitignore_text(
-                value.decode("utf-8", errors="surrogateescape"),
-                path_label=str(destination),
-            ).encode("utf-8", errors="surrogateescape")
-        except Exception as exc:
-            raise GitWorkflowError(
-                f"Could not update portable DazedTL .gitignore rules: {exc}"
-            ) from exc
-
-    # Validate the original bytes before stripping complete blocks. Otherwise
-    # a nested BEGIN marker can be consumed by the outer block and hide an
-    # incomplete managed section along with project-owned rules.
-    canonical_portable_rules(existing)
-
-    # The managed block may validly appear on either side of the selected-image
-    # exceptions. Compare the bundled policy without that block so bootstrap does
-    # not relocate an equivalent section every time different tool versions run.
-    if normalized(without_portable_blocks(template)) in normalized(
-        without_portable_blocks(existing)
-    ):
-        return normalize_portable_rules()
-
-    # The previous bundled policy is exactly the current policy without the
-    # newly managed portable-settings block. Replace that installed prefix
-    # instead of preserving it as if it were user-authored project rules.
-    previous_template = without_portable_blocks(template)
-    project_rules = without_portable_blocks(existing)
-    previous_separator = b"\n\n# Existing project rules\n"
-    image_marker = GAME_IMAGE_PATCH_GITIGNORE_COMMENT.encode("utf-8")
-    image_start = project_rules.find(image_marker)
-    if project_rules == previous_template:
-        project_rules = b""
-    elif project_rules.startswith(previous_template + previous_separator):
-        project_rules = project_rules[
-            len(previous_template + previous_separator) :
-        ].strip()
-    elif image_start >= 0 and [
-        line
-        for line in normalized(project_rules[:image_start]).splitlines()
-        if line.strip()
-    ] == [
-        line
-        for line in normalized(previous_template).splitlines()
-        if line.strip()
-    ]:
-        project_rules = project_rules[image_start:].strip()
-
-    combined = template.rstrip(b"\r\n") + b"\n"
-    if project_rules:
-        combined += b"\n# Existing project rules\n" + project_rules + b"\n"
-
-    combined = canonical_portable_rules(combined)
-
-    original_mode = destination.stat().st_mode if destination.exists() else 0o100644
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=".gitignore.dazedtl-", dir=game_root
-    )
-    try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(combined)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.chmod(temporary_name, stat.S_IMODE(original_mode))
-        os.replace(temporary_name, destination)
-    except Exception:
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
-        try:
-            Path(temporary_name).unlink()
-        except FileNotFoundError:
-            pass
-        raise
-    return True
+    return ensure_game_tool_gitignore(game_root)
 
 
 def _reject_original_checked_out_elsewhere(repo: Path) -> None:
@@ -1745,7 +1621,7 @@ def bootstrap_repository(
 
     The preservation setting is repository-local and also applies to later
     registration, update previews and official updates. Existing Workflow callers
-    retain their normalized text and bundled GameUpdate ignore policy.
+    retain their normalized text.
     """
     translated = Path(translated_game).expanduser().resolve()
     if not translated.is_dir():
@@ -1775,7 +1651,7 @@ def bootstrap_repository(
         else:
             _source_files(original, format_json=True)
             preformatted, prewarnings = _prepare_worktree_formatting(translated)
-        gitignore_installed = _install_gameupdate_gitignore(translated, preserve_game_files=preserve_game_files)
+        gitignore_installed = _install_game_gitignore(translated, preserve_game_files=preserve_game_files)
         if found is None:
             _run_git(translated, "init", "-b", TRANSLATION_BRANCH)
         repo, prefix = translated, ""
@@ -1856,7 +1732,7 @@ def bootstrap_repository(
             _run_git(repo, "config", "--local", _PRESERVE_GAME_FILES_CONFIG, "true")
         else:
             preformatted, prewarnings = _prepare_worktree_formatting(translated)
-        gitignore_installed = _install_gameupdate_gitignore(translated, preserve_game_files=preserve_game_files)
+        gitignore_installed = _install_game_gitignore(translated, preserve_game_files=preserve_game_files)
         _ensure_translation_branch(repo, head_commit, translation_branch)
         original_tree = _write_tree_from_folder(
             repo, original, game_prefix=prefix, base_commit=head_commit,
@@ -1968,7 +1844,7 @@ def register_translation_branch(
     if preserve_game_files:
         _run_git(status.repo_root, "config", "--local", _PRESERVE_GAME_FILES_CONFIG, "true")
     _ensure_local_excludes(status.repo_root)
-    gitignore_installed = _install_gameupdate_gitignore(game, preserve_game_files=_preserve_game_files(status.repo_root))
+    gitignore_installed = _install_game_gitignore(game, preserve_game_files=_preserve_game_files(status.repo_root))
     translation_tree = _write_tree_from_folder(
         status.repo_root,
         game,
