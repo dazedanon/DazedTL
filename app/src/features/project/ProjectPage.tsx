@@ -506,11 +506,16 @@ function ProjectHistory({
       : "";
   const publications = guided.readiness.publications;
   const batch = publications.find((row) => row.id === publication);
+  // Restores, and the batches they took out, leave the text as the batch
+  // before them left it.
+  const newest = publications.find(
+    (row) => row.kind !== "runtime_restore" && row.state !== "restored",
+  );
   const restoreBlocked = !batch
     ? "History restores only its ten newest text batches."
     : batch.state === "restored"
       ? "This batch is already restored."
-      : publications[0]?.id !== batch.id
+      : newest?.id !== batch.id
         ? "Restore the newer text batch first."
         : "";
   return (
