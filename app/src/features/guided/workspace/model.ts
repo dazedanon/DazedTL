@@ -61,6 +61,7 @@ export type Panel =
   | "preparation"
   | "release-assets"
   | "fitting"
+  | "qa-coverage"
   | null;
 export const panelTitles: Record<Exclude<Panel, null>, string> = {
   files: "Choose files for this pass",
@@ -72,6 +73,7 @@ export const panelTitles: Record<Exclude<Panel, null>, string> = {
   preparation: "Preparation tools",
   "release-assets": "Additional runtime assets",
   fitting: "Line width check settings",
+  "qa-coverage": "What QA did not cover",
 };
 /** A review the Project page asks the Translation workspace to open. */
 export type GuidedIntent =

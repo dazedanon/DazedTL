@@ -183,16 +183,17 @@ function standing(
     if (!qa.task) return { state: "idle" };
     // Applied corrections change the text the task checked, and later edits
     // are expected; only findings not applied yet go out of date.
-    if (!qa.current)
-      return qa.applied
-        ? { state: "finished" }
-        : { state: "outdated", detail: qa.message };
-    if (qa.findings.length)
+    if (qa.applied) return { state: "finished" };
+    if (!qa.current) return { state: "outdated", detail: qa.message };
+    // Only the user's answers hold QA up; the assistant applies the rest.
+    const questions = qa.questions.filter((row) => !row.choice).length;
+    if (questions)
       return {
         state: "needs_review",
-        detail: `${qa.findings.length.toLocaleString()} ${qa.findings.length === 1 ? "finding" : "findings"} to review`,
+        detail: `${questions.toLocaleString()} ${questions === 1 ? "question" : "questions"} for you`,
       };
-    if (qa.status.stage === "complete") return { state: "finished" };
+    if (qa.status.stage === "complete" && !qa.findings.length)
+      return { state: "finished" };
     // Preparing again makes a new task; only a copy of that one waits on it.
     return record.requestId === qa.task.split(/[\\/]/).pop()
       ? waiting()

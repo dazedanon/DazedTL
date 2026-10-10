@@ -568,24 +568,73 @@ export type PublicationStatus = {
 
 export type QaFinding = {
   id: string;
-  source?: string;
-  live?: string;
-  current?: string;
-  correction?: string;
-  reason?: string;
-  evidence?: string;
-  note?: string;
-  category?: string;
-  classification?: string;
-  identity?: string;
+  source: string;
+  current: string;
+  correction: string;
+  category: string;
+  severity: string;
+  /** The family a reviewer or lint named, or empty. */
+  family: string;
+  /** How the finding came to be: a reviewer, lint, the family sweep or a source fix. */
+  kind: "review" | "lint" | "sweep" | "source";
+  /** Lines the correction changes. */
+  places: number;
+  files: string[];
+  reason: string;
+  /** The editorial reviewer's note. */
+  editorial?: string;
+  state?: "applied" | "undone";
 };
 
-export type QaCorrection = {
-  finding_id: string;
-  file: string;
-  expected: string;
-  replacement: string;
+/** A playtest or context question no evidence settled; the user answers. */
+export type QaQuestion = {
+  id: string;
+  source: string;
+  current: string;
+  reason: string;
+  places: number;
+  proposal?: string;
+  choice?: "keep" | "use";
+  state?: "applied" | "undone";
+};
+
+export type QaCoverage = {
+  /** Translated lines in QA's inventory. */
+  lines: number;
+  /** Lines reviewers declined and the user has not read. */
+  not_reviewed: number;
+  /** Japanese QA cannot correct, outside its inventory. */
+  preflight: number;
+};
+
+export type QaActivity = {
+  stage: "screen" | "deep" | "sweep" | "editorial";
+  done: number;
+  total: number;
+  eta_seconds?: number;
+};
+
+export type QaReportLine = {
   identity: string;
+  file: string;
+  source: string;
+  current: string;
+  reviewed: boolean;
+};
+
+export type QaPreflightEntry = {
+  file: string;
+  pointer: string;
+  kind: string;
+  text: string;
+};
+
+/** What QA could not cover, for the coverage sheet. */
+export type QaReport = {
+  not_reviewed: QaReportLine[];
+  /** A sample of the Japanese QA cannot correct. */
+  preflight: QaPreflightEntry[];
+  preflight_total: number;
 };
 
 export type TextQaOperation = {
@@ -623,7 +672,9 @@ export type QaState = {
   status: Record<string, unknown>;
   message: string;
   findings: QaFinding[];
-  corrections: QaCorrection[];
+  questions: QaQuestion[];
+  coverage?: QaCoverage;
+  activity?: QaActivity;
 };
 
 export type Readiness = {
@@ -2096,8 +2147,22 @@ export type TranslationImagesRequest = {
 
 export type TranslationQaRequest = {
   project_id: string;
-  step: "status" | "report" | "prepare" | "apply" | "checkpoint";
-  leave_uncertain?: boolean;
+  step:
+    | "status"
+    | "report"
+    | "prepare"
+    | "apply"
+    | "checkpoint"
+    | "undo"
+    | "choose";
+  findings?: string[];
+  question?: string;
+  choice?: "keep" | "use";
+};
+
+export type QaReviewedRequest = {
+  project_id: string;
+  identities: string[];
 };
 
 export type TranslationLegacyRequest = {
@@ -2621,6 +2686,8 @@ export type RpcContract = {
     response: ImageAssistantStepResult;
   };
   translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
+  guided_qa_report: { request: ProjectRequest; response: QaReport };
+  guided_qa_reviewed: { request: QaReviewedRequest; response: QaReport };
   translation_legacy: {
     request: TranslationLegacyRequest;
     response: Job | ExportedFiles;

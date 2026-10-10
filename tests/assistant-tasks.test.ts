@@ -89,6 +89,7 @@ test("copied tasks wait for a newer result, and dismissed ones read Not started"
           task: "/qa/release/new",
           current: true,
           findings: [],
+          questions: [],
           status: { stage: "screen" },
         },
         publications: [],

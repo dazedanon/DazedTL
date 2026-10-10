@@ -227,7 +227,13 @@ while row := qa.next_bundle(task, "screen-a"):
         }
         for target in screen_targets(bundle)
         if target["source"]
-        in {STRATUM["_original"], AROUSAL["_original"], WELCOME["_original"], SWORD}
+        in {
+            STRATUM["_original"],
+            AROUSAL["_original"],
+            WELCOME["_original"],
+            SWORD,
+            "よく来たね",
+        }
     ]
     qa.accept_result(
         task,
@@ -308,6 +314,22 @@ def deep_result(row, corrections):
         if item["source"] == "朝だ":
             reviews.append(
                 {"id": item["id"], "disposition": "declined", "reason": "Not reviewed."}
+            )
+            continue
+        if item["source"] == "よく来たね":
+            # A question no evidence settles, with a proposal the user may use.
+            reviews.append(
+                {
+                    "id": item["id"],
+                    "disposition": "uncertain-playtest",
+                    "severity": None,
+                    "category": "",
+                    "family_key": "",
+                    "motif_ids": [],
+                    "evidence": "Whether the owner knows Arina depends on an earlier scene.",
+                    "correction": "Welcome back.",
+                    "apply_identities": [],
+                }
             )
             continue
         if item["source"] == WELCOME["_original"]:
@@ -542,17 +564,48 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
 ], findings["findings"]
 # Source fixes go through the same correction map, apply and regression the
 # app runs on its disposable copy; this game is the test's own copy.
-selected = qa.correction_map(task, [row["id"] for row in findings["findings"]])
+# The user chose the open question's proposal, so it applies too.
+(question,) = findings["uncertain_playtests"]
+assert question["source"] == "よく来たね" and question["places"] == 1, question
 inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
-assert qa._apply_loaded_correction_map(
-    task,
-    json.loads((task / "task.json").read_text(encoding="utf-8")),
-    selected,
-    inventory,
-    dry_run_name="dry-run.json",
-    regression_name="regression.json",
-    nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-)["valid"]
+
+
+def apply(document):
+    return qa._apply_loaded_correction_map(
+        task,
+        json.loads((task / "task.json").read_text(encoding="utf-8")),
+        document,
+        inventory,
+        dry_run_name="dry-run.json",
+        regression_name="regression.json",
+        nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
+    )["valid"]
+
+
+assert apply(
+    qa.correction_map(
+        task, [row["id"] for row in findings["findings"]], [question["id"]]
+    )
+)
+
+
+def message(source):
+    commands = json.loads((data / "Map001.json").read_text())["events"][1]["pages"][0]
+    return next(
+        command["parameters"][0]
+        for command in commands["list"]
+        if command.get("_original") == source
+    )
+
+
+assert message("よく来たね") == "Welcome back."
+# Undoing one correction puts its line back and leaves the rest.
+stratum = next(
+    row["id"] for row in findings["findings"] if row["source"] == STRATUM["_original"]
+)
+assert apply(qa.correction_map(task, [stratum], undo=True))
+assert message(STRATUM["_original"]) == "Rest on Stratum 1"
+assert message(AROUSAL["_original"]) == "The arousal won't stop."
 headers = [
     command["parameters"]
     for command in json.loads((data / "Map001.json").read_text())["events"][1]["pages"][

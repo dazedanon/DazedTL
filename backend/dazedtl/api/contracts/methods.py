@@ -21,6 +21,7 @@ from dazedtl.api.contracts.guided import (
     GuidedStep,
     OutputFolder,
     Preview,
+    QaReport,
     ReferenceFolder,
     ReleaseDestination,
     SkillText,
@@ -216,8 +217,17 @@ class TranslationImagesRequest(TypedDict):
 
 class TranslationQaRequest(TypedDict):
     project_id: str
-    step: Literal["status", "report", "prepare", "apply", "checkpoint"]
-    leave_uncertain: NotRequired[bool]
+    step: Literal[
+        "status", "report", "prepare", "apply", "checkpoint", "undo", "choose"
+    ]
+    findings: NotRequired[list[str]]
+    question: NotRequired[str]
+    choice: NotRequired[Literal["keep", "use"]]
+
+
+class QaReviewedRequest(TypedDict):
+    project_id: str
+    identities: list[str]
 
 
 class TranslationLegacyRequest(TypedDict):
@@ -660,6 +670,8 @@ METHODS: dict[str, Method] = {
     "translation_identify": Method(TranslationIdentifyRequest, Saved),
     "translation_images": Method(TranslationImagesRequest, ImageAssistantStepResult),
     "translation_qa": Method(TranslationQaRequest, TextQaStatus),
+    "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
+    "guided_qa_reviewed": Method(QaReviewedRequest, QaReport),
     "translation_legacy": Method(TranslationLegacyRequest, Job | ExportedFiles),
     # Images
     "images_state": Method(ProjectRequest, ImageManagerState, refresh=False),

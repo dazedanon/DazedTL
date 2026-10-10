@@ -63,11 +63,12 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use
    that wording. Reviewers read them with `{{CLI}} decisions --task {{TASK}}`.
-6. When finalize reports `complete`, apply with the project helper's `qa --apply` from your
-   handoff. It applies every finding as one reviewed text batch and saves a checkpoint commit.
-   If it names open playtest or context questions, ask the user about exactly those, then apply
-   with `--leave-uncertain` to leave them unchanged. Report a failed safeguard instead of
-   working around it.
+6. When `status` reports `complete`, apply with the project helper's `qa --apply --wait 60`
+   from your handoff. It applies every finding, and each question's proposal the user chose, as
+   one reviewed text batch and saves a checkpoint commit. Open playtest or context questions
+   wait for the user, who answers them in DazedTL's Text QA task; apply follows once every one
+   has an answer, so tell the user once and keep waiting. `qa --undo <finding>` puts back one
+   applied correction. Report a failed safeguard instead of working around it.
 
 ## Screen reviewer
 
@@ -125,7 +126,8 @@ that `prior_review`, and your review replaces it.
   DazedTL then finds every other line it changes for group review.
 - `apply_identities` may limit a context-specific correction to some of the item's identities.
 - `uncertain-playtest` is for runtime or context uncertainty no evidence settles; say what must
-  be checked in `evidence`. These become the questions the user answers.
+  be checked in `evidence`, and give a `correction` when you have a proposal the user may choose
+  instead of the current text. These become the questions the user answers in DazedTL.
 - A slip in the Japanese source itself gets a `source_fix`: a Show Text header showing the wrong
   speaker's face or name, or a database text stating a number its own entry contradicts.
 - A deep item's `lint` names mechanical fixes already accepted for the line; DazedTL applies
@@ -210,10 +212,10 @@ Editorial:
 Run DazedTL text QA for {{GAME}} from start to finish. You are the coordinator: read the task
 README, {{README}}, and follow it; it holds the whole policy and every role's brief.
 
-Apply finished findings with `{{HELPER}} --apply`, which applies them through DazedTL as one
-reviewed text batch that History can restore and then saves a checkpoint commit; `{{HELPER}}`
-alone says where QA stands. Ask the user only about the open playtest or context questions apply
-names. Never edit game files yourself.
+Apply finished findings with `{{HELPER}} --apply --wait 60`, which applies them through DazedTL
+as one reviewed text batch that History can restore and then saves a checkpoint commit;
+`{{HELPER}}` alone says where QA stands. The user answers open playtest or context questions in
+DazedTL, and apply waits for those answers. Never edit game files yourself.
 
 <!-- qa-focus:database -->
 Database focus: the inventory holds the game's database files; review only this task's bundles.

@@ -26,7 +26,8 @@ Images is its own progress phase; a report that leaves it out gets it from these
 Guided projects keep these steps in their Images task.
 
 Text QA for RPG Maker MV/MZ and VX Ace runs with `qa`: `qa --prepare` prepares or resumes the task, whose README the assistant follows to review, and `qa --apply` applies the finished findings through the app and saves a checkpoint; `qa --status` names the next step.
-Apply waits while a playtest or context question is open; `--leave-uncertain` applies the rest only after the user chose to leave those lines unchanged.
+Apply waits while a playtest or context question is open: the user answers it in DazedTL's Text QA task, and `qa --apply --wait MINUTES` applies once every answer is in.
+`qa --undo QA-0001` puts back one applied correction, and `qa --choose QUESTION keep` or `use` records an answer the user gave the assistant.
 
 ### Sandboxed connections
 

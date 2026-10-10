@@ -314,8 +314,6 @@ export function useGuidedWorkspace({
       item.status === "complete",
   );
   const qa = state.readiness.qa;
-  const chosenFindings =
-    fields.text.findings_task === qa.task ? fields.text.findings : [];
   const qaStatus = qa.status;
   const release = fields.release;
   const releaseAction = release.kind === "game" ? "release" : "release_patch";
@@ -1263,22 +1261,11 @@ export function useGuidedWorkspace({
     plugins: ownState(application.snapshot?.plugins)?.counts.ready || 0,
     images: ownState(application.snapshot?.images)?.counts.selectedReady || 0,
     rewraps: fittingCurrent ? fittingEligible : 0,
-    qa: qa.current ? chosenFindings.length : 0,
   };
   const pending = usePendingChanges({
     projectId: project.id,
     settle: application.settle,
-    guided: (part) =>
-      part.id === "rewraps"
-        ? { name: "rewrap_apply", options: layoutOptions }
-        : {
-            name: "qa_apply",
-            options: {
-              focus: fields.text.focus,
-              task: fields.text.findings_task,
-              findings: chosenFindings,
-            },
-          },
+    guided: () => ({ name: "rewrap_apply", options: layoutOptions }),
     preparePreview,
     execute,
     lastExecuted,
@@ -1552,8 +1539,8 @@ export function useGuidedWorkspace({
     qaTask,
     qaJob,
     qa,
-    chosenFindings,
     qaStatus,
+    whenFinished,
     release,
     releaseAction,
     releasePath,

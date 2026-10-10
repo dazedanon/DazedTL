@@ -50,7 +50,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## App and helper
 
-- `project.py qa` also exposes undo and the Needs you choices, so a choice resumes QA.
 - The QA phase of the progress report takes its stage and counts from the engine checkpoint.
 - The Text QA page and the starting flow implement the [user experience](#user-experience) above.
 
@@ -58,4 +57,4 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: the stage strip, the Needs you card and undo.
+3. Speed and presentation: the Assistant-led starting flow and Progress, and restoring a QA batch from History.

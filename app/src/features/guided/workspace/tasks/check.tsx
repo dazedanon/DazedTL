@@ -4,7 +4,6 @@ import { textLocation } from "../../textLocation";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { FieldRow } from "../../../../ui/FieldRow";
-import { sentence } from "../../../../ui/displayText";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import {
@@ -14,7 +13,12 @@ import {
 import { HelpPopover } from "../../../../ui/HelpPopover";
 import { fittingCodes, fittingSummary } from "../../FittingSettings";
 import { Notice } from "../../../../ui/Notice";
-import { sinceLabel } from "../../../assistant/assistantTasks";
+import { api } from "../../../../api/client";
+import { jobTime } from "../model";
+import { ActionControl } from "../../../../ui/ActionControl";
+import { StepProgress } from "../../../../ui/StepProgress";
+import { QaAuditLog, QaQuestions } from "../../TextQa";
+import { qaActivity, qaPhase, qaStages, qaSummary } from "../../qaView";
 
 export function fittingView(w: GuidedWorkspace): TaskView {
   const {
@@ -204,304 +208,232 @@ export function fittingView(w: GuidedWorkspace): TaskView {
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
+    project,
     baseline,
-    qaTask,
-    qaJob,
     qa,
-    chosenFindings,
-    qaStatus,
-    editText,
+    qaJob,
+    action,
     disabled,
-    task,
+    feedback,
+    editText,
     copyTask,
     inspect,
-    reviewPending,
     advance,
     fields,
     handoff,
+    operationJob,
+    whenFinished,
+    save,
+    setPanel,
   } = w;
-  // The app prepares the task and its mechanical inventory itself; the
-  // assistant has the task once it is copied or its screening has begun.
-  const screening = handoff("qa");
-  const qaCopied = screening.waiting;
-  // Applying corrections changes the text this task checked, which makes it
-  // stale; that and later edits are expected, not a problem.
-  const qaApplied = qa.applied;
-  // A finding can be chosen once its assistant prepared a correction for it.
-  const operations = new Map<string, typeof qa.corrections>();
-  for (const change of qa.corrections)
-    operations.set(change.finding_id, [
-      ...(operations.get(change.finding_id) || []),
-      change,
-    ]);
-  const choosable = qa.findings
-    .map((row) => row.id)
-    .filter((id) => operations.has(id));
-  const choose = (ids: string[]) => {
-    editText("findings_task", qa.task || "");
-    editText("findings", [...new Set(ids)]);
-  };
-  const qaStarted = (["screen", "deep"] as const).some((key) => {
-    const counts = qaStatus[key] as Record<string, number> | undefined;
-    return !!(counts?.accepted || counts?.checked);
-  });
-  // A finished run with no findings is done; the assistant has nothing left.
-  const qaState: AssistantTaskState = qaApplied
-    ? "applied"
-    : // The text this task checked changed since.
-      !qa.current && qaStatus.stage
-      ? "outdated"
-      : qa.findings.length
-        ? "needs_review"
-        : qaStatus.stage === "complete"
-          ? "done"
-          : qaCopied || qaStarted
-            ? "waiting"
-            : "not_started";
-  let content: ReactNode;
-  content = (
+  const phase = qaPhase(qa);
+  const copied = handoff("qa").waiting;
+  // An apply that failed and rolled back says so beside its retry; one from
+  // before this task was prepared belongs to an earlier task.
+  const applying = operationJob("qa_apply");
+  const preparing = operationJob("qa_prepare");
+  const applyFailed =
+    phase === "ready" &&
+    applying &&
+    ["failed", "interrupted"].includes(applying.status) &&
+    jobTime(applying) >= jobTime(preparing || {})
+      ? applying.message || "The apply did not finish."
+      : "";
+  /** Runs one QA step; an apply or undo goes on to its checkpoint commit. */
+  const step = (
+    key: string,
+    name: "prepare" | "apply" | "undo" | "choose",
+    details: Parameters<typeof api.guided.qa>[2] = {},
+    success = "",
+  ) =>
+    action.run(
+      async () => {
+        await save();
+        const started = await api.guided.qa(project.id, name, details);
+        if (name === "choose" || !started.operation) return;
+        const ended = await whenFinished(started.operation.id);
+        if (ended.status !== "complete")
+          throw new Error(ended.message || "QA did not finish this step.");
+        if (name === "prepare") {
+          await window.dazedtl.copyText(
+            (await api.guided.skill(project.id, "qa")).text,
+          );
+          return;
+        }
+        const saved = await api.guided.qa(project.id, "checkpoint");
+        const committed = await whenFinished(saved.operation!.id);
+        if (committed.status !== "complete")
+          throw new Error(
+            "The corrections are in the game, but their version was not saved: " +
+              (committed.message || "the checkpoint did not finish."),
+          );
+      },
+      success,
+      key,
+    );
+  const start = (label: string, variant: "primary" | "default" = "primary") => (
+    <ActionControl
+      label={label}
+      variant={variant}
+      disabled={disabled || !baseline}
+      disabledReason={baseline ? "" : "Set up the game first."}
+      {...feedback("qa-start", "Preparing QA…")}
+      onClick={() =>
+        step(
+          "qa-start",
+          "prepare",
+          {},
+          "QA task copied. Paste it into your coding assistant.",
+        )
+      }
+    />
+  );
+  const activity = qaActivity(qa);
+  const coverage = qa.coverage;
+  const panelState: AssistantTaskState =
+    phase === "applied"
+      ? "applied"
+      : phase === "outdated"
+        ? "outdated"
+        : phase === "questions"
+          ? "needs_review"
+          : phase === "clean"
+            ? "done"
+            : phase === "ready"
+              ? "ready"
+              : copied || phase === "running"
+                ? "waiting"
+                : "not_started";
+  const content: ReactNode = (
     <>
-      <FieldRow id="qa-focus" label="QA focus">
-        {(props) => (
-          <select
-            {...props}
-            value={fields.text.focus}
-            disabled={disabled}
-            onChange={(event) => {
-              editText("focus", event.target.value);
-              editText("findings", []);
-            }}
-          >
-            {[
-              ["release", "Full game text"],
-              ["database", "Database"],
-              ["dialogue", "Dialogue"],
-              ["risky-codes", "Risky event codes"],
-            ].map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        )}
-      </FieldRow>
+      {phase === "not_started" && (
+        <FieldRow id="qa-focus" label="QA focus">
+          {(props) => (
+            <select
+              {...props}
+              value={fields.text.focus}
+              disabled={disabled}
+              onChange={(event) => editText("focus", event.target.value)}
+            >
+              {[
+                ["release", "Full game text"],
+                ["database", "Database"],
+                ["dialogue", "Dialogue"],
+                ["risky-codes", "Risky event codes"],
+              ].map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          )}
+        </FieldRow>
+      )}
       <AssistantTask
-        state={qaState}
-        progress={
-          qaCopied && !qa.findings.length
-            ? sinceLabel(screening.since)
-            : undefined
-        }
+        title="Text QA"
+        state={panelState}
+        progress={phase === "running" ? activity : undefined}
         description={
-          // Before any result exists, "saved results match" has nothing to
-          // describe; say what happens next instead.
-          qaState === "applied"
-            ? "Chosen corrections are applied. Prepare QA again to check the current text."
-            : qaState === "done"
-              ? "Your assistant saved no findings for the current text."
-              : qaState === "waiting"
-                ? "Results appear here as your assistant saves them."
-                : qaState === "not_started" && qaTask
-                  ? "Copy the prepared task to your assistant."
-                  : qa.message
+          phase === "not_started"
+            ? "Start QA to prepare its task and copy it to your assistant, which reviews the game's text and applies verified corrections."
+            : phase === "outdated"
+              ? "The game text changed after QA. Run QA again to check the current text."
+              : phase === "running"
+                ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
+                : phase === "questions"
+                  ? "QA needs your answer for the lines below before it applies its corrections."
+                  : phase === "ready"
+                    ? "Your assistant applies these corrections next; you can also apply them here."
+                    : qaSummary(qa)
         }
-        help="Discovery describes the saved reports. It does not certify the current game as QA passed."
-        results={[
-          {
-            id: "qa",
-            title: "QA findings",
-            state: qaState,
-            detail: (
-              <>
-                {!!qa.findings.length &&
-                  `${qa.findings.length.toLocaleString()} saved · `}
-                {qaStatus.stage
-                  ? (["mechanical", "screen", "deep"] as const)
-                      .map((key) => {
-                        const counts = qaStatus[key] as
-                          Record<string, number> | undefined;
-                        // A stage with nothing to review is left out.
-                        return counts?.total
-                          ? `${
-                              key === "screen"
-                                ? "Text screening"
-                                : key === "mechanical"
-                                  ? "Mechanical inventory"
-                                  : "Deep text review"
-                            } ${(counts.accepted ?? counts.checked ?? 0).toLocaleString()} of ${counts.total.toLocaleString()}${
-                              counts.unresolved
-                                ? ` · ${counts.unresolved.toLocaleString()} unresolved`
-                                : ""
-                            }`
-                          : "";
-                      })
-                      .filter(Boolean)
-                      .join(" · ") || "No translated text to check."
-                  : "Prepare or resume QA for the current runtime text."}
-                {qaJob && (
-                  <>
-                    {" "}
-                    <Button variant="link" onClick={() => inspect(qaJob)}>
-                      Report details
-                    </Button>
-                  </>
-                )}
-              </>
-            ),
-            // Preparing again refreshes a prepared task; the footer copies it.
-            action:
-              qaTask &&
-              task(
-                "qa_prepare",
-                "Prepare again",
-                { focus: fields.text.focus },
-                !baseline,
-              ),
-          },
-        ]}
-      />
-      {/* The QA findings row already says whether results are pending. */}
-      {!!qa.findings.length && (
-        <section className="text-qa-results">
-          {/* One row per finding: its change, evidence and, when it has a
-              prepared correction, the choice to apply it. */}
-          <div className="check-results-heading">
-            <h3>Findings</h3>
-            {!!choosable.length && !qaApplied && (
-              <>
-                <span className="muted">
-                  {chosenFindings.length} of {choosable.length} chosen
-                </span>
-                <Button
-                  variant="link"
-                  disabled={
-                    disabled ||
-                    !qa.current ||
-                    chosenFindings.length === choosable.length
-                  }
-                  onClick={() => choose(choosable)}
-                >
-                  Choose all
-                </Button>
-                <Button
-                  variant="link"
-                  disabled={disabled || !chosenFindings.length}
-                  onClick={() => choose([])}
-                >
-                  Clear
-                </Button>
-              </>
-            )}
-          </div>
-          <ul className="text-qa-findings">
-            {qa.findings.map((row) => {
-              const changes = operations.get(row.id) || [];
-              const before = row.current || row.live || changes[0]?.expected;
-              const after = row.correction || changes[0]?.replacement;
-              const files = [...new Set(changes.map((change) => change.file))];
-              return (
-                <li key={row.id} data-applied={qaApplied || undefined}>
-                  <input
-                    hidden={qaApplied}
-                    type="checkbox"
-                    id={`qa-${row.id}`}
-                    aria-label={`Apply ${row.id}`}
-                    disabled={disabled || !qa.current || !changes.length}
-                    checked={chosenFindings.includes(row.id)}
-                    onChange={(event) =>
-                      choose(
-                        event.target.checked
-                          ? [...chosenFindings, row.id]
-                          : chosenFindings.filter((id) => id !== row.id),
-                      )
-                    }
-                  />
-                  <label htmlFor={`qa-${row.id}`}>
-                    <span className="text-qa-change">
-                      <span>{before}</span>
-                      {after && (
-                        <>
-                          <span aria-label="becomes">→</span>
-                          <strong>{after}</strong>
-                        </>
-                      )}
-                    </span>
-                    <small>
-                      {[
-                        row.classification ||
-                          (row.category && sentence(row.category)),
-                        row.source,
-                        files.join(", "),
-                        changes.length > 1 && `${changes.length} places`,
-                        row.id,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </small>
-                    {(row.reason || row.evidence || row.note) && (
-                      <small>{row.reason || row.evidence || row.note}</small>
-                    )}
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+        help="Verified corrections go into the game as one text batch, saved as a version. History can restore the batch, and Undo puts back one correction."
+      >
+        {qa.task && <StepProgress label="QA stages" steps={qaStages(qa)} />}
+        {qa.task && (coverage?.not_reviewed || coverage?.preflight) ? (
+          <p className="text-qa-coverage-line">
+            {[
+              `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
+              coverage.not_reviewed &&
+                `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
+              coverage.preflight &&
+                `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}{" "}
+            <Button variant="link" onClick={() => setPanel("qa-coverage")}>
+              Review them
+            </Button>
+          </p>
+        ) : null}
+        {qaJob && phase !== "not_started" && (
+          <Button variant="link" onClick={() => inspect(qaJob)}>
+            Report details
+          </Button>
+        )}
+      </AssistantTask>
+      {qa.questions.length > 0 && !qa.applied && (
+        <QaQuestions
+          questions={qa.questions}
+          disabled={disabled}
+          feedback={feedback}
+          choose={(question, choice) =>
+            step(`qa-${choice}:` + question, "choose", { question, choice })
+          }
+        />
+      )}
+      {applyFailed && (
+        <Notice tone="warning">
+          <span>
+            The apply failed and was rolled back, so the game is unchanged:{" "}
+            {applyFailed}
+          </span>
+        </Notice>
+      )}
+      {qa.findings.length > 0 && phase !== "outdated" && (
+        <QaAuditLog
+          findings={qa.findings}
+          disabled={disabled}
+          feedback={feedback}
+          undo={(row) =>
+            step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
+          }
+        />
       )}
     </>
   );
-  // The footer walks QA forward: prepare a task, copy it, then review the
-  // corrections chosen from its findings. Findings checked against text that
-  // has changed since lead back to preparing again, and a finished run with
-  // no findings hands the lead to Continue.
-  const review =
-    qaApplied || (qa.findings.length && !qa.current)
-      ? task(
-          "qa_prepare",
-          "Prepare QA again",
-          { focus: fields.text.focus },
-          !baseline,
-        )
-      : qa.findings.length
-        ? reviewPending({
-            only: "qa",
-            label: "Review chosen corrections",
-            blocked: !baseline
-              ? true
-              : !chosenFindings.length
-                ? choosable.length
-                  ? "Choose corrections first."
-                  : "No finding has a prepared correction yet."
-                : false,
-          })
-        : qaState === "done"
-          ? undefined
-          : qaTask
-            ? copyTask(
-                "qa",
-                "Copy QA task",
-                "primary",
-                "QA task copied. Paste it into your coding assistant.",
-              )
-            : task(
-                "qa_prepare",
-                "Prepare text QA task",
-                { focus: fields.text.focus },
-                !baseline,
-                "primary",
-              );
+  const footer =
+    phase === "not_started" ? (
+      start("Start text QA")
+    ) : phase === "outdated" ? (
+      start("Run QA again")
+    ) : phase === "ready" ? (
+      <ActionControl
+        label={applyFailed ? "Try again" : "Apply corrections"}
+        variant="primary"
+        disabled={disabled}
+        {...feedback("qa-apply", "Applying…")}
+        onClick={() => step("qa-apply", "apply", {}, "Corrections applied.")}
+      />
+    ) : phase === "running" ? (
+      copyTask(
+        "qa",
+        "Copy QA task",
+        "default",
+        "QA task copied. Paste it into your coding assistant.",
+      )
+    ) : undefined;
   return {
     content,
-    action: review,
+    action: footer,
     next: advance(
       undefined,
       undefined,
-      qaState === "done" ? "primary" : "quiet",
+      ["applied", "clean"].includes(phase) ? "primary" : "quiet",
     ),
     heading: {
       title: "Text QA",
       description:
-        "Prepare a QA task, copy it to your assistant, then review its saved findings.",
+        "Your assistant reviews the game's text and applies verified corrections; you answer only what it can't settle.",
     },
   };
 }

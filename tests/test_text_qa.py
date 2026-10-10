@@ -5,7 +5,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-from dazedtl.storage import write_json
 from dazedtl.translation.text_qa import CHECKPOINT_MESSAGE, TextQA
 
 
@@ -25,6 +24,7 @@ def fake_guided(folder, qa, method="guided"):
         backend=SimpleNamespace(
             guided_text_state=lambda _native, _focus: {"qa": qa},
             operations=SimpleNamespace(jobs=jobs),
+            workflows=SimpleNamespace(folder=lambda _id: Path(folder)),
         ),
         preview=lambda _id, action, _files, options: (
             calls.append(("preview", action, options)) or {"token": action}
@@ -45,28 +45,25 @@ class TextQATests(unittest.TestCase):
         # wrote the game directly, so History could not restore them.
         with TemporaryDirectory() as folder:
             task = Path(folder) / "task"
-            write_json(
-                task / "findings.json",
-                {
-                    "findings": [{"id": "QA-0001"}, {"id": "QA-0002"}],
-                    "uncertain_playtests": [{"id": "Map001.json#/1"}],
-                },
-            )
             qa = {
                 "task": str(task),
                 "current": True,
                 "applied": False,
                 "message": "",
-                "findings": [],
+                "findings": [{"id": "QA-0001"}, {"id": "QA-0002"}],
+                "questions": [{"id": "Map001.json#/1", "proposal": "Better."}],
                 "status": {"stage": "complete"},
             }
             guided, calls = fake_guided(folder, qa)
             service = TextQA(guided)  # type: ignore[arg-type]
-            with self.assertRaisesRegex(ValueError, "question"):
+            # An open question waits for the user's answer, given in the app.
+            with self.assertRaisesRegex(ValueError, "user's choice"):
                 service.run("project", "apply")
-            with self.assertRaisesRegex(ValueError, "Apply QA's findings"):
+            with self.assertRaisesRegex(ValueError, "Apply or undo"):
                 service.run("project", "checkpoint")
-            service.run("project", "apply", leave_uncertain=True)
+            service.run("project", "choose", question="Map001.json#/1", choice="use")
+            qa["questions"][0]["choice"] = "use"
+            service.run("project", "apply")
             state = service.run("project", "checkpoint")
             self.assertEqual(
                 calls,
@@ -78,6 +75,7 @@ class TextQATests(unittest.TestCase):
                             "focus": "release",
                             "task": str(task),
                             "findings": ["QA-0001", "QA-0002"],
+                            "proposals": ["Map001.json#/1"],
                         },
                     ),
                     ("execute", "qa_apply"),
@@ -89,4 +87,4 @@ class TextQATests(unittest.TestCase):
             # Applied findings are not applied twice.
             qa["applied"] = True
             with self.assertRaisesRegex(ValueError, "already applied"):
-                service.run("project", "apply", leave_uncertain=True)
+                service.run("project", "apply")

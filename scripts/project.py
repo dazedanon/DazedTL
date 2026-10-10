@@ -92,6 +92,19 @@ def wait(workspace, params, run, minutes):
     return run
 
 
+def awaiting_answers(workspace, params, minutes):
+    """Waits while open QA questions wait for the user's answers in the app."""
+    deadline = time.monotonic() + minutes * 60
+    pause = 2
+    status = {"project_id": params["project_id"], "step": "status"}
+    while call(workspace, "translation_qa", status)["questions"]:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(pause, remaining))
+        pause = min(pause * 2, 15)
+
+
 def settle_qa(workspace, params, result):
     """Waits for the QA step the app started; an apply that succeeds goes on
     to its checkpoint, so one command applies and records the corrections."""
@@ -102,13 +115,17 @@ def settle_qa(workspace, params, result):
             result = call(workspace, "translation_qa", {**params, "step": "status"})
         return result
 
-    if params["step"] not in {"prepare", "apply", "checkpoint"}:
+    if params["step"] not in {"prepare", "apply", "checkpoint", "undo"}:
         return result
     result = finish(result)
     operation = result.get("operation") or {}
-    if params["step"] == "apply" and operation.get("status") == "complete":
+    if params["step"] in {"apply", "undo"} and operation.get("status") == "complete":
         result = finish(
-            call(workspace, "translation_qa", {**params, "step": "checkpoint"})
+            call(
+                workspace,
+                "translation_qa",
+                {"project_id": params["project_id"], "step": "checkpoint"},
+            )
         )
     if (result.get("operation") or {}).get("status") != "complete":
         raise ValueError(
@@ -167,20 +184,37 @@ def main():
         ("prepare", "Prepare or resume the QA task and wait for it"),
         (
             "apply",
-            "Apply every finished finding as one reviewed text batch, then save a checkpoint",
+            (
+                "Apply every finished finding and each proposal the user chose as "
+                "one reviewed text batch, then save a checkpoint"
+            ),
         ),
         (
             "checkpoint",
-            "Save the checkpoint after an apply whose checkpoint did not run",
+            "Save the checkpoint after an apply or undo whose checkpoint did not run",
         ),
     ):
         qa_step.add_argument(
             "--" + step, dest="qa_step", action="store_const", const=step, help=text
         )
+    qa_step.add_argument(
+        "--undo",
+        nargs="+",
+        metavar="FINDING",
+        help="Put back the lines of these applied corrections, then save a checkpoint",
+    )
+    qa_step.add_argument(
+        "--choose",
+        nargs=2,
+        metavar=("QUESTION", "CHOICE"),
+        help="Record the user's answer to an open question: keep or use",
+    )
     qa.add_argument(
-        "--leave-uncertain",
-        action="store_true",
-        help="Only after the user chose it: apply while open playtest questions stay unchanged",
+        "--wait",
+        type=float,
+        default=0,
+        metavar="MINUTES",
+        help="With --apply: wait up to MINUTES for the user's answers to open questions",
     )
     plugins = commands.add_parser(
         "plugins",
@@ -356,10 +390,19 @@ def main():
                     method = "translation_images"
                     params["step"] = args.image_step
             if args.command == "qa":
-                params.update(
-                    step=args.qa_step or "status",
-                    leave_uncertain=args.leave_uncertain,
+                params["step"] = (
+                    "undo"
+                    if args.undo
+                    else "choose"
+                    if args.choose
+                    else args.qa_step or "status"
                 )
+                if args.undo:
+                    params["findings"] = args.undo
+                if args.choose:
+                    params.update(question=args.choose[0], choice=args.choose[1])
+                if params["step"] == "apply" and args.wait > 0:
+                    awaiting_answers(args.workspace, params, args.wait)
             if args.command == "plugins":
                 method = (
                     "plugins_continue" if args.continue_request else "plugins_state"

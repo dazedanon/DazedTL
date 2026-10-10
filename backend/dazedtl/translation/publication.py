@@ -58,9 +58,11 @@ def freeze(
     restore=None,
     overwrite=False,
     task=None,
+    findings=None,
 ):
     """Freeze both sides before the user reviews an exact destination batch.
-    `task` names the QA task whose corrections the batch applies."""
+    `task` names the QA task whose corrections the batch applies or undoes,
+    and `findings` which of them."""
     if not candidates:
         raise ValueError("Select at least one file or correction to apply.")
     identity = uuid.uuid4().hex
@@ -100,6 +102,7 @@ def freeze(
         "outputs_hash": receipt_hash(folder),
         "restores": restore["id"] if restore else None,
         "task": task,
+        **({"findings": sorted(findings)} if findings else {}),
     }
     index = Path(folder) / "source-inputs.json"
     record["source_inputs"] = digest(index.read_bytes()) if index.exists() else None

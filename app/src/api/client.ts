@@ -290,6 +290,20 @@ export const api = {
       request("guided_context_review", { project_id, name, revision, choice }),
     skill: (project_id: string, name: string) =>
       request("guided_skill", { project_id, name }),
+    /** One text QA step, shared with the assistant's project helper. */
+    qa: (
+      project_id: string,
+      step: "status" | "prepare" | "apply" | "checkpoint" | "undo" | "choose",
+      details: {
+        findings?: string[];
+        question?: string;
+        choice?: "keep" | "use";
+      } = {},
+    ) => request("translation_qa", { project_id, step, ...details }),
+    qaReport: (project_id: string) =>
+      request("guided_qa_report", { project_id }),
+    qaReviewed: (project_id: string, identities: string[]) =>
+      request("guided_qa_reviewed", { project_id, identities }),
   },
   answer: (project_id: string, token: string, approved: boolean) =>
     request("guided_answer", { project_id, token, approved }),

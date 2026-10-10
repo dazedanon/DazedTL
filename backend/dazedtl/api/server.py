@@ -421,10 +421,10 @@ class Application:
             result["problems"].append("Progress was not updated: " + str(exc))
         return result
 
-    def translation_qa(self, project_id, step, leave_uncertain=False):
-        """One text QA step for the project's assistant; apply goes through
-        the app's reviewed publication, never a direct write."""
-        return self.text_qa.run(project_id, step, leave_uncertain)
+    def translation_qa(self, project_id, step, findings=None, question="", choice=""):
+        """One text QA step for the project's assistant or the Text QA task;
+        apply and undo go through the app's publication, never a direct write."""
+        return self.text_qa.run(project_id, step, findings, question, choice)
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(
@@ -774,6 +774,12 @@ def routes(app):
         lambda value, _params: value,
     )
     methods["translation_qa"] = (app.translation_qa, lambda value, _params: value)
+    # Only the user marks lines they read; the helper has no route to it.
+    methods["guided_qa_report"] = (app.text_qa.report, lambda value, _params: value)
+    methods["guided_qa_reviewed"] = (
+        app.text_qa.reviewed,
+        lambda value, _params: value,
+    )
     methods["images_action"] = (
         app.images_action,
         lambda value, _params: views.image_action(value),

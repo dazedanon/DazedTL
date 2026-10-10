@@ -427,9 +427,11 @@ class ExistingBackend:
         plan.update(
             action=action,
             options=options,
-            label="Restore reviewed text batch"
-            if action == "runtime_restore"
-            else "Apply chosen QA corrections",
+            label={
+                "runtime_restore": "Restore reviewed text batch",
+                "qa_apply": "Apply QA corrections",
+                "qa_undo": "Undo QA corrections",
+            }[action],
         )
         return {
             **result,
@@ -454,7 +456,7 @@ class ExistingBackend:
             "applied": False,
             "status": {},
             "findings": [],
-            "corrections": [],
+            "questions": [],
             "message": "No QA task prepared for this focus.",
         }
         try:
@@ -473,7 +475,7 @@ class ExistingBackend:
                 "applied": False,
                 "status": {},
                 "findings": [],
-                "corrections": [],
+                "questions": [],
                 "message": str(exc),
             }
         return {

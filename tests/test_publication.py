@@ -287,7 +287,7 @@ class PublicationTests(unittest.TestCase):
         _close_contracts()
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
-        self.assertEqual(state["corrections"][0]["replacement"], "Arjilee Plateau")
+        self.assertEqual(state["findings"][0]["files"], ["MapInfos.json"])
         # Corrections applied from this task, and only this task, stay applied
         # once something else is applied later.
         applied = []

@@ -285,24 +285,72 @@ class PublicationStatus(TypedDict):
 
 class QaFinding(TypedDict):
     id: str
-    source: NotRequired[str]
-    live: NotRequired[str]
-    current: NotRequired[str]
-    correction: NotRequired[str]
-    reason: NotRequired[str]
-    evidence: NotRequired[str]
-    note: NotRequired[str]
-    category: NotRequired[str]
-    classification: NotRequired[str]
-    identity: NotRequired[str]
+    source: str
+    current: str
+    correction: str
+    category: str
+    severity: str
+    family: Annotated[str, "The family a reviewer or lint named, or empty."]
+    kind: Annotated[
+        Literal["review", "lint", "sweep", "source"],
+        "How the finding came to be: a reviewer, lint, the family sweep or a source fix.",
+    ]
+    places: Annotated[int, "Lines the correction changes."]
+    files: list[str]
+    reason: str
+    editorial: NotRequired[Annotated[str, "The editorial reviewer's note."]]
+    state: NotRequired[Literal["applied", "undone"]]
 
 
-class QaCorrection(TypedDict):
-    finding_id: str
-    file: str
-    expected: str
-    replacement: str
+class QaQuestion(TypedDict):
+    """A playtest or context question no evidence settled; the user answers."""
+
+    id: str
+    source: str
+    current: str
+    reason: str
+    places: int
+    proposal: NotRequired[str]
+    choice: NotRequired[Literal["keep", "use"]]
+    state: NotRequired[Literal["applied", "undone"]]
+
+
+class QaCoverage(TypedDict):
+    lines: Annotated[int, "Translated lines in QA's inventory."]
+    not_reviewed: Annotated[int, "Lines reviewers declined and the user has not read."]
+    preflight: Annotated[int, "Japanese QA cannot correct, outside its inventory."]
+
+
+class QaActivity(TypedDict):
+    stage: Literal["screen", "deep", "sweep", "editorial"]
+    done: int
+    total: int
+    eta_seconds: NotRequired[int]
+
+
+class QaReportLine(TypedDict):
     identity: str
+    file: str
+    source: str
+    current: str
+    reviewed: bool
+
+
+class QaPreflightEntry(TypedDict):
+    file: str
+    pointer: str
+    kind: str
+    text: str
+
+
+class QaReport(TypedDict):
+    """What QA could not cover, for the coverage sheet."""
+
+    not_reviewed: list[QaReportLine]
+    preflight: Annotated[
+        list[QaPreflightEntry], "A sample of the Japanese QA cannot correct."
+    ]
+    preflight_total: int
 
 
 class TextQaOperation(TypedDict):
@@ -331,13 +379,15 @@ class TextQaStatus(TypedDict):
 
 class QaState(TypedDict):
     current: bool
-    # Corrections chosen from this task were applied and not restored.
+    # This task's findings were applied and that batch was not restored.
     applied: bool
     task: NotRequired[str]
     status: dict[str, object]
     message: str
     findings: list[QaFinding]
-    corrections: list[QaCorrection]
+    questions: list[QaQuestion]
+    coverage: NotRequired[QaCoverage]
+    activity: NotRequired[QaActivity]
 
 
 class Readiness(TypedDict):

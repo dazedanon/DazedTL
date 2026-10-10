@@ -10,20 +10,24 @@ from dazedtl.storage import write_json
 from dazedtl.translation import publication
 from dazedtl.translation.files import decode_json, digest, project_path, read_json
 
-# The QaFinding contract: what a saved finding shows in the app.
-FINDING_FIELDS = (
-    "id",
-    "source",
-    "live",
-    "current",
-    "correction",
-    "reason",
-    "evidence",
-    "note",
-    "category",
-    "classification",
-    "identity",
-)
+# Where each QA stage stands for the page's activity line.
+ACTIVITY_STAGES = ("screen", "deep", "sweep", "editorial")
+
+
+def _finding_kind(row):
+    """How a finding came to be, for the audit log's grouping."""
+    if row.get("kind") == "show-text" or row.get("source_fix"):
+        return "source"
+    if row.get("lint_only"):
+        return "lint"
+    if row.get("sweep_families"):
+        return "sweep"
+    return "review"
+
+
+def _task_record(folder, name, task):
+    path = Path(folder) / name
+    return (read_json(path) if path.exists() else {}).get(task)
 
 
 def binding(plan):
@@ -61,7 +65,7 @@ def qa_state(plan):
             "applied": False,
             "status": {},
             "findings": [],
-            "corrections": [],
+            "questions": [],
             "message": "No QA task prepared for this focus.",
         }
     saved = read_json(pointer)
@@ -82,7 +86,7 @@ def qa_state(plan):
         raise ValueError(
             "The immutable QA task evidence changed. Prepare current QA before using these reports."
         )
-    root, task, checkpoint = qa._load_task(task_path)
+    root, task, _checkpoint = qa._load_task(task_path)
     if (
         task["game_root"] != plan["project"]["source"]
         or task["data_root"] != plan["project"]["data"]
@@ -97,53 +101,163 @@ def qa_state(plan):
         or document.get("task_sha256") != qa._sha256(qa._canonical_bytes(task))
     ):
         raise ValueError("Saved findings belong to another QA task.")
-    # Engine findings also carry cluster, family, severity and target
-    # identities for correction maps; the app shows only the review fields.
-    findings = [
-        {key: row[key] for key in FINDING_FIELDS if key in row}
-        for row in document.get("findings", [])
-        + [
-            {**row, "classification": "Uncertain - excluded from corrections"}
-            for row in document.get("uncertain_playtests", [])
-        ]
-    ]
-    # Each finding's targets, read from its saved finding; apply builds the
-    # engine's checked correction map itself.
-    corrections = [
-        {
-            "finding_id": row["id"],
-            "file": identity.split("#", 1)[0] if identity else row.get("file", ""),
-            "expected": row["current"],
-            "replacement": row["correction"],
-            "identity": identity,
-        }
-        for row in document.get("findings", [])
-        if checkpoint["stage"] == "complete"
-        for identity in (
-            row.get("target_identities")
-            or [row.get("nameplate_identity") or row.get("line_identity") or ""]
-        )
-    ]
-    # Corrections chosen from this task stay applied when the text changes
-    # later; records saved before they named their task count when made after
-    # it was prepared.
+    # Batches applied or undone from this task, oldest first; a restored one
+    # counts for neither. Records saved before batches named their task count
+    # when made after it was prepared.
     prepared = datetime.fromisoformat(task["created_at"]).timestamp()
-    applied = any(
-        row["kind"] == "qa_apply"
+    rows = [
+        row
+        for row in publication.history(plan["folder"])
+        if row["kind"] in {"qa_apply", "qa_undo"}
         and row["state"] == "complete"
         and (row["task"] == str(root) if "task" in row else row["created"] >= prepared)
-        for row in publication.history(plan["folder"])
+    ]
+    every = [row["id"] for row in document.get("findings", [])]
+    applied_ids, undone_ids = set(), set()
+    for row in sorted(rows, key=lambda row: row["created"]):
+        named = set(row.get("findings") or every)
+        if row["kind"] == "qa_apply":
+            applied_ids |= named
+            undone_ids -= named
+        else:
+            undone_ids |= named
+    applied = any(row["kind"] == "qa_apply" for row in rows)
+
+    def finding_state(identity):
+        return (
+            "undone"
+            if identity in undone_ids
+            else "applied"
+            if identity in applied_ids
+            else ""
+        )
+
+    findings = []
+    for row in document.get("findings", []):
+        targets = row.get("target_identities") or []
+        files = sorted(
+            {identity.split("#", 1)[0] for identity in targets}
+            or ({row["file"]} if row.get("file") else set())
+        )
+        findings.append(
+            {
+                "id": row["id"],
+                "source": row["source"],
+                "current": row["current"],
+                "correction": row["correction"],
+                "category": row["category"],
+                "severity": row["severity"],
+                "family": row.get("family_key") or "",
+                "kind": _finding_kind(row),
+                "places": max(1, len(targets)),
+                "files": files,
+                "reason": row.get("evidence") or "",
+                **(
+                    {"editorial": row["editorial"]["note"]}
+                    if (row.get("editorial") or {}).get("note")
+                    else {}
+                ),
+                **(
+                    {"state": finding_state(row["id"])}
+                    if finding_state(row["id"])
+                    else {}
+                ),
+            }
+        )
+    choices = _task_record(plan["folder"], "text-qa-choices.json", str(root)) or {}
+    questions = [
+        {
+            "id": row["id"],
+            "source": row.get("source", ""),
+            "current": row.get("current", ""),
+            "reason": row.get("evidence") or "",
+            "places": int(row.get("places") or 1),
+            **({"proposal": row["correction"]} if row.get("correction") else {}),
+            **({"choice": choices[row["id"]]} if row["id"] in choices else {}),
+            **({"state": finding_state(row["id"])} if finding_state(row["id"]) else {}),
+        }
+        for row in document.get("uncertain_playtests", [])
+    ]
+    engine_status = qa.status(root)
+    stage = engine_status.get("stage", "")
+    reviewed = set(
+        _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
     )
+    unreviewed = [
+        row
+        for row in document.get("not_reviewed", [])
+        if row["identity"] not in reviewed
+    ]
+    activity = {}
+    if stage in ACTIVITY_STAGES:
+        counts = engine_status[stage]
+        total = (
+            max(counts["total"], counts.get("projected", 0))
+            if stage == "deep"
+            else counts["total"]
+        )
+        activity = {
+            "stage": stage,
+            "done": counts["accepted"],
+            "total": total,
+            **(
+                {"eta_seconds": int(engine_status["estimate"]["eta_seconds"])}
+                if engine_status["estimate"]["eta_seconds"] is not None
+                else {}
+            ),
+        }
     return {
         "current": current,
         "applied": applied,
         "task": str(root),
-        "status": qa.status(root),
+        "status": engine_status,
         "findings": findings,
-        "corrections": corrections,
+        "questions": questions,
+        **(
+            {
+                "coverage": {
+                    "lines": int((task.get("counts") or {}).get("records", 0)),
+                    "not_reviewed": len(unreviewed),
+                    "preflight": sum((task.get("preflight") or {}).values()),
+                }
+            }
+            if document
+            else {}
+        ),
+        **({"activity": activity} if activity else {}),
         "message": "Saved results match current project text."
         if current
-        else "Project text or source context changed. Prepare current QA before applying corrections.",
+        else "The game text changed since this QA task was prepared.",
+    }
+
+
+def qa_report(plan):
+    """What QA could not cover: lines no reviewer judged, with whether the user
+    reviewed them, and Japanese QA cannot correct."""
+    from util import rpgmaker_qa as qa
+
+    state = qa_state(plan)
+    if not state.get("task"):
+        raise ValueError("Prepare text QA first.")
+    root = Path(state["task"])
+    document = (
+        read_json(root / "findings.json") if (root / "findings.json").exists() else {}
+    )
+    reviewed = set(
+        _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
+    )
+    preflight = qa._read_json(root / "preflight.json")
+    return {
+        "not_reviewed": [
+            {**row, "reviewed": row["identity"] in reviewed}
+            for row in document.get("not_reviewed", [])
+        ],
+        "preflight": [
+            {key: row[key] for key in ("file", "pointer", "kind", "text")}
+            for name in ("untranslated", "custom_data", "plugin_parameters")
+            for row in preflight.get(name, [])
+        ],
+        "preflight_total": sum(preflight.get("counts", {}).values()),
     }
 
 
@@ -261,29 +375,41 @@ def prepare_publication(plan):
             raise ValueError(
                 "No fitting edits are eligible. Protected row overflows were skipped; review the text or fitting settings and scan again."
             )
-    elif action == "qa_apply":
+    elif action in {"qa_apply", "qa_undo"}:
         from util import rpgmaker_qa as qa
 
         state = qa_state(plan)
-        if not state["current"]:
+        if action == "qa_apply" and not state["current"]:
             raise ValueError(state["message"])
         if options.get("task") != state["task"]:
             raise ValueError(
                 "The QA task changed. Choose corrections from the current findings."
             )
         task_root, task, _checkpoint = qa._load_task(state["task"])
-        chosen = options.get("findings")
+        chosen = options.get("findings", [])
+        proposals = options.get("proposals", [])
         if (
             not isinstance(chosen, list)
-            or not chosen
-            or len(set(chosen)) != len(chosen)
-            or any(not isinstance(value, str) for value in chosen)
+            or not isinstance(proposals, list)
+            or not chosen + proposals
+            or len(set(chosen + proposals)) != len(chosen + proposals)
+            or any(not isinstance(value, str) for value in chosen + proposals)
         ):
-            raise ValueError("Choose correction IDs to apply.")
-        available = {row["finding_id"] for row in state["corrections"]}
-        if set(chosen) - available:
-            raise ValueError("The chosen QA corrections changed. Refresh findings.")
-        selected = qa.correction_map(task_root, chosen)
+            raise ValueError("Choose the corrections to apply or undo.")
+        states = {row["id"]: row.get("state", "") for row in state["findings"]}
+        wanted = "applied" if action == "qa_undo" else ""
+        if any(states.get(value, "missing") != wanted for value in chosen + proposals):
+            raise ValueError(
+                "Only applied corrections can be undone."
+                if action == "qa_undo"
+                else "The chosen QA corrections changed. Refresh findings."
+            )
+        try:
+            selected = qa.correction_map(
+                task_root, chosen, proposals, undo=action == "qa_undo"
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
         with tempfile.TemporaryDirectory(
             dir=folder, prefix="qa-candidates-"
         ) as temporary:
@@ -299,15 +425,23 @@ def prepare_publication(plan):
                 staging / "inventory.json", read_json(task_root / "inventory.json")
             )
             scratch_task = {**task, "data_root": str(scratch)}
-            qa._apply_loaded_correction_map(
-                staging,
-                scratch_task,
-                selected,
-                read_json(task_root / "inventory.json"),
-                dry_run_name="dry-run.json",
-                regression_name="regression.json",
-                nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-            )
+            try:
+                qa._apply_loaded_correction_map(
+                    staging,
+                    scratch_task,
+                    selected,
+                    read_json(task_root / "inventory.json"),
+                    dry_run_name="dry-run.json",
+                    regression_name="regression.json",
+                    nonblocking_introduced_flags=qa.APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
+                )
+            except ValueError as exc:
+                if action == "qa_undo" and "Expected" in str(exc):
+                    raise ValueError(
+                        "A line changed in the game since QA corrected it, so the "
+                        "correction can't be undone here. Use History or edit it."
+                    ) from exc
+                raise
             for name in {row["file"] for row in selected["operations"]}:
                 candidates[(prefix / name).as_posix()] = project_path(
                     scratch, name
@@ -322,7 +456,10 @@ def prepare_publication(plan):
         outputs=outputs,
         restore=restored,
         overwrite=action == "export_selected",
-        task=options["task"] if action == "qa_apply" else None,
+        task=options["task"] if action in {"qa_apply", "qa_undo"} else None,
+        findings=options.get("findings", []) + options.get("proposals", [])
+        if action in {"qa_apply", "qa_undo"}
+        else None,
     )
     if action == "export_selected":
         plan["overwrite_runtime"] = True

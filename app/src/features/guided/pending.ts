@@ -2,7 +2,7 @@
 
 import type { Preview } from "../../api/contracts.ts";
 
-export type PendingPartId = "plugins" | "images" | "rewraps" | "qa";
+export type PendingPartId = "plugins" | "images" | "rewraps";
 
 export interface PendingPart {
   id: PendingPartId;
@@ -19,8 +19,6 @@ export type PendingInput = {
   images: number;
   /** Line rewraps a current line width check would write. */
   rewraps: number;
-  /** Chosen QA fixes for the current QA task. */
-  qa: number;
 };
 
 const parts: Record<
@@ -30,7 +28,6 @@ const parts: Record<
   plugins: { title: "Plugin files", one: "plugin file" },
   images: { title: "Images", one: "image" },
   rewraps: { title: "Rewrapped lines", one: "rewrap" },
-  qa: { title: "QA fixes", one: "QA fix", many: "QA fixes" },
 };
 
 /** The part a task applies, or null while it has nothing ready. */
@@ -49,7 +46,7 @@ export function pendingPart(
 }
 
 /**
- * What a rewrap or QA review would write, so a fresh preview taken just
+ * What a rewrap review would write, so a fresh preview taken just
  * before Apply can be compared with the reviewed one. It binds the exact
  * bytes by hash: the visible diff is cut off on large files.
  */

@@ -2522,6 +2522,24 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
             review.get("evidence") or ""
         ).strip():
             raise QAResultError(f"Uncertain review has no playtest reason for {identity}")
+        if disposition == "uncertain-playtest" and review.get("correction") is not None:
+            # A proposal the user may choose instead of the current text.
+            proposal = review["correction"]
+            item = bundle_items[identity]
+            if not isinstance(proposal, str) or not proposal.strip():
+                raise QAResultError(f"A question's proposal must be text: {identity}")
+            for shape in item.get("target_shapes") or []:
+                problems = correction_problems(
+                    str(item["source"]), str(item["translation"]), proposal,
+                    shape["event_code"], ["/"] * shape["pointers"], shape["transform"],
+                )
+                if problems:
+                    raise QAResultError(
+                        f"The proposal for {identity} would block apply: "
+                        + "; ".join(problems)
+                    )
+        elif disposition == "clean" and review.get("correction") is not None:
+            raise QAResultError(f"A clean review has no correction: {identity}")
         family_key = review.get("family_key")
         if not isinstance(family_key, str):
             raise QAResultError(f"Review has invalid family_key for {identity}")
@@ -4021,7 +4039,16 @@ def _draft_document(
                 ),
             })
         elif review["disposition"] == "uncertain-playtest":
-            uncertain.append(review)
+            cluster = clusters[review["id"]]
+            uncertain.append({
+                **review,
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "places": len([
+                    identity for identity in cluster["identities"]
+                    if identity not in declined["identities"]
+                ]),
+            })
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
     _add_lint_findings(
         findings, _lint_decisions(checkpoint, declined), manifest, declined
@@ -4670,9 +4697,15 @@ def _set_pointer(document: Any, pointer: str, value: str) -> None:
 
 
 def correction_map(
-    task_dir: str | Path, approved_finding_ids: Iterable[str]
+    task_dir: str | Path,
+    approved_finding_ids: Iterable[str],
+    chosen_proposals: Iterable[str] = (),
+    *,
+    undo: bool = False,
 ) -> dict[str, Any]:
-    """The checksummed operations that apply the approved findings.
+    """The checksummed operations that apply the approved findings, with the
+    open questions whose proposal the user chose, or with `undo` put their
+    lines back.
 
     It is built in memory for the app's apply, which runs it on disposable
     copies and publishes the result; no QA command writes the game itself.
@@ -4685,6 +4718,28 @@ def correction_map(
     selected = [item for item in findings_doc["findings"] if item["id"] in approved]
     if {item["id"] for item in selected} != approved:
         raise ValueError("One or more approved finding IDs do not exist")
+    manifest_clusters = {
+        cluster["representative"]: cluster
+        for cluster in _read_json(root / "inventory.json")["clusters"]
+    }
+    questions = {
+        row["id"]: row for row in findings_doc.get("uncertain_playtests") or []
+    }
+    for question_id in chosen_proposals:
+        question = questions.get(question_id)
+        if not question or not question.get("correction"):
+            raise ValueError("A chosen proposal no longer exists")
+        cluster = manifest_clusters[question_id]
+        selected.append({
+            "id": question_id,
+            "correction": question["correction"],
+            "target_identities": [
+                identity for identity in cluster["identities"]
+                if identity not in {
+                    row["identity"] for row in findings_doc.get("not_reviewed") or []
+                }
+            ],
+        })
     manifest = _read_json(root / "inventory.json")
     records = {record["identity"]: record for record in manifest["records"]}
     operations = []
@@ -4724,11 +4779,19 @@ def correction_map(
                 "replacement": finding["correction"],
                 "allowed_flags": list(finding.get("allowed_flags") or []),
             })
+    if undo:
+        # Each operation puts back the text it replaced.
+        for operation in operations:
+            operation["expected"], operation["replacement"] = (
+                operation["replacement"], operation["expected"]
+            )
+            operation["allowed_flags"] = []
     document = {
         "schema": CORRECTION_MAP_SCHEMA,
         "created_at": _utc_now(),
         "manifest_sha256": task["manifest_sha256"],
-        "approved_finding_ids": sorted(approved),
+        "approved_finding_ids": sorted(approved | set(chosen_proposals)),
+        **({"mode": "undo"} if undo else {}),
         "operations": operations,
     }
     document["content_sha256"] = _sha256(_canonical_bytes(document))
