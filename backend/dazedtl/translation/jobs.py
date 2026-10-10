@@ -5,9 +5,12 @@ import hmac
 import os
 import re
 import secrets
+import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from datetime import UTC, datetime
@@ -35,6 +38,33 @@ def declined_units(job):
 def declined_message(job):
     lines = declined_units(job)
     return f"{lines} declined {'line needs' if lines == 1 else 'lines need'} another translator."
+
+
+def scratch(identity):
+    """A run worker's temporary files, beside the system's own rather than in
+    the run folder, so Windows paths stay short. A killed worker cannot clean
+    up, and Set up restores a whole game copy here, so the app removes this
+    folder whenever it sees the worker gone."""
+    return Path(tempfile.gettempdir()) / ("dazedtl-run-" + identity[:16])
+
+
+def remove_scratch(identity):
+    folder = scratch(identity)
+    if folder.is_symlink():
+        folder.unlink()
+        return
+
+    def retry(function, path, _error):
+        # Windows refuses to delete the read-only files Git and backups leave.
+        try:
+            if os.name == "nt" and not os.path.islink(path):
+                os.chmod(path, stat.S_IWRITE)
+            function(path)
+        except OSError:
+            pass  # Still in use; the next start removes it.
+
+    if folder.exists():
+        shutil.rmtree(folder, onexc=retry)
 
 
 class RunStore:
@@ -396,6 +426,15 @@ class Jobs:
                     message="The app closed. Resume to reconcile saved work.",
                 )
                 self.store.save(value)
+            if scratch(value["id"]).exists():
+                try:
+                    lock = WorkspaceLock(self.store.folder(value["id"]))
+                except WorkspaceError:
+                    continue  # The previous app's worker is still finishing.
+                try:
+                    remove_scratch(value["id"])
+                finally:
+                    lock.close()
 
     def running(self, project_id=None, kind=None):
         """Whether a run or operation, or only one of the given kind, holds
@@ -425,6 +464,7 @@ class Jobs:
             if process.poll() is None:
                 continue
             self.processes.pop(identity)
+            remove_scratch(identity)
             job, _plan = self.store.load(identity)
             if job["status"] in {"running", "waiting"}:
                 job.update(
@@ -528,7 +568,14 @@ class Jobs:
             "--owner-token",
             self.owner_token,
         ]
+        temporary = scratch(identity)
+        # A stopped earlier attempt's files; no worker holds this run.
+        remove_scratch(identity)
         try:
+            temporary.mkdir(mode=0o700, exist_ok=True)
+            environment.update(
+                TEMP=str(temporary), TMP=str(temporary), TMPDIR=str(temporary)
+            )
             # Only structured job records cross into the UI; raw provider output is never logged.
             self.processes[identity] = subprocess.Popen(
                 arguments,
@@ -539,6 +586,7 @@ class Jobs:
                 start_new_session=os.name != "nt",
             )
         except OSError:
+            remove_scratch(identity)
             job.update(
                 status="failed",
                 message="The worker could not start; no requests were submitted.",
@@ -552,11 +600,7 @@ class Jobs:
         for identity in self.processes:
             job, _plan = self.store.load(identity)
             self.store.stop(identity, job["project_id"])
-        deadline = time.monotonic() + 4
-        while time.monotonic() < deadline and any(
-            process.poll() is None for process in self.processes.values()
-        ):
-            time.sleep(0.05)
+        self.wait(4)
         for process in self.processes.values():
             if process.poll() is None:
                 # The whole tree, or a Git command the worker waits on outlives it.
@@ -569,4 +613,13 @@ class Jobs:
                     )
                 else:
                     os.killpg(process.pid, signal.SIGTERM)
+        # Then their temporary files can go now rather than at the next start.
+        self.wait(1)
         self.reconcile()
+
+    def wait(self, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline and any(
+            process.poll() is None for process in self.processes.values()
+        ):
+            time.sleep(0.05)

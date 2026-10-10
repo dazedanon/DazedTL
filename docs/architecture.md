@@ -917,6 +917,7 @@ Approval receipts bind the project, immutable plan and quote with a profile-loca
 A saved boolean alone cannot authorize a worker.
 Workers hold per-run locks and stop issuing work after losing their owning process.
 Closing asks workers to stop at a checkpoint and a few seconds later ends any still running, with the processes they started.
+An ended worker cannot clean up after itself, so each run worker keeps its temporary files, such as a restored game copy, in a [folder of its own](../backend/dazedtl/translation/jobs.py) that the app removes once it sees the worker gone, or at the next start.
 A backend still busy 12 seconds after closing is ended with every process it started, workers in sessions of their own included, so a hung Git command cannot keep holding the game or its index; their runs read as interrupted on the next start, and approved Batch queues continue as after any interruption.
 Closing or pausing cannot undo an already submitted provider request.
 

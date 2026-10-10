@@ -1,15 +1,19 @@
 """Shared request acceptance and paid-work recovery, with no provider or game dependencies."""
 
 import json
+import os
+import stat
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from dazedtl.storage import write_json
+from dazedtl.storage import WorkspaceLock, write_json
 from dazedtl.translation import organize
 from dazedtl.translation.files import digest, project_path
-from dazedtl.translation.jobs import RunStore
+from dazedtl.translation.jobs import Jobs, RunStore, scratch
 from dazedtl.translation.project import ProjectWorkspace, scope
 from dazedtl.translation.requests import logical_request, plan_input, result_value
 from dazedtl.translation.results import Results
@@ -173,6 +177,43 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(current["status"], "stopped")
         self.assertEqual(current["states"]["one"]["state"], "accepted")
         self.assertEqual(current["states"]["two"]["state"], "pending")
+
+    def test_a_killed_workers_temporary_files_go_once_the_app_sees_it_gone(self):
+        # A killed worker never runs its own cleanup, so every forced stop
+        # during Set up left a restored copy of the game in the temp folder.
+        plan = {"version": 1, "kind": "operation", "source": str(self.game)}
+        stopped, held = (self.store.create("project", plan) for _ in range(2))
+        self.enterContext(patch.object(tempfile, "tempdir", str(self.root)))
+        for job in (stopped, held):
+            restored = scratch(job["id"]) / "dazedtl-restore-1/data/System.json"
+            restored.parent.mkdir(parents=True)
+            restored.write_text("{}")
+            os.chmod(restored, stat.S_IREAD)
+        worker = WorkspaceLock(self.store.folder(held["id"]))
+        jobs = Jobs(self.store.workspace, False)
+        worker.close()
+        self.assertFalse(scratch(stopped["id"]).exists())
+        self.assertTrue(scratch(held["id"]).exists())
+
+        class Process:
+            pid = 0
+            exited = False
+
+            def poll(self):
+                return 0 if self.exited else None
+
+        process = Process()
+        with patch("subprocess.Popen", return_value=process) as launch:
+            jobs.start(stopped["id"], "project")
+        environment = launch.call_args.kwargs["env"]
+        self.assertEqual(
+            {environment[key] for key in ("TEMP", "TMP", "TMPDIR")},
+            {str(scratch(stopped["id"]))},
+        )
+        (scratch(stopped["id"]) / "dazedtl-git-index-1").write_bytes(b"DIRC")
+        process.exited = True
+        jobs.reconcile()
+        self.assertFalse(scratch(stopped["id"]).exists())
 
     def test_cancellation_retains_completed_rows_and_does_not_submit_later_chunks(self):
         job, plan = self.run_record("batch", [request("one"), request("two")])
