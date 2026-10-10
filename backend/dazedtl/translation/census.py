@@ -606,8 +606,9 @@ def read_wolf(document):
     return rows
 
 
-def read(name, data):
-    """The rows of one readable game file, or None when it cannot be read."""
+def read(name, data, beside_game=True):
+    """The rows of one readable game file, or None when it cannot be read;
+    beside_game is False for a decoded dump, whose top files aren't readmes."""
     suffix = PurePosixPath(name).suffix.casefold()
     text = decode_text(data)
     if text is None:
@@ -632,7 +633,8 @@ def read(name, data):
     # Readmes, credits and version notes beside the game are never shown in
     # it; NScripter keeps its numbered scripts (0.txt) there, which count.
     if (
-        "/" not in name
+        beside_game
+        and "/" not in name
         and suffix in {".txt", ".md"}
         and not PurePosixPath(name).stem.isdigit()
     ):
@@ -1162,7 +1164,7 @@ def scan(
             except ValueError:
                 rows = None
         else:
-            rows = read(name, data)
+            rows = read(name, data, source == "tool")
         if rows is None:
             unreadable.append(name)
         else:

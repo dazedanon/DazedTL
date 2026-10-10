@@ -394,6 +394,8 @@ class CensusTests(unittest.TestCase):
             Decoders(),
             [
                 ("ysbin/main.yst", 'IF[$s=="上2"]\nあら、こんにちは。'.encode()),
+                # A dump's top files are the game's text, never a readme.
+                ("title.txt", "タイトル".encode()),
                 (
                     "TextAsset/Event.txt",
                     "セリフ,こんにちは\nセリフ,またね\nセリフ,セリフ".encode(),
@@ -440,7 +442,10 @@ class CensusTests(unittest.TestCase):
             census.files(result),
         )
         report, uncovered = census.coverage(
-            result, ["あら、こんにちは。", "こんにちは", "またね", "セリフ"], [], rules
+            result,
+            ["あら、こんにちは。", "こんにちは", "またね", "セリフ", "タイトル"],
+            [],
+            rules,
         )
         self.assertEqual((report["uncovered"], uncovered), (0, []))
         self.assertEqual(
