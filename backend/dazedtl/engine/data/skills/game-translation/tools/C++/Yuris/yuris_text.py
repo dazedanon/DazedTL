@@ -14,6 +14,8 @@ YPF 500 and YSTB 555. Requires `pip install murmurhash2`.
 `decompile` writes the scripts' YST source as UTF-8, for DazedTL's census.
 A line break in text is the bytes EF F0, outside Shift-JIS; units show it as
 "\n" and patch writes "\n" (or "\r\n") in a translation back as those bytes.
+The window title in yscfg.ybn is unit `yscfg.ybn/title`; it keeps its place in
+the file, so a translation can't be longer than the original's bytes.
 
 Text lines are the scripts' WORD commands. Japanese string literals in
 command arguments, such as choices, character names or confirmation
@@ -63,6 +65,21 @@ STRING = 0x4D
 # The E-ris text engine breaks a line on these bytes (VNTextPatch writes them
 # for "\r\n").
 LINE_BREAK = b"\xef\xf0"
+
+
+# yscfg.ybn holds the window title as a 16-bit length and Shift-JIS bytes.
+TITLE = 0x4C
+
+
+def title(ybn):
+    """(text, room in bytes) of the window title, or None."""
+    path = Path(ybn, "yscfg.ybn")
+    data = path.read_bytes() if path.exists() else b""
+    if data[:4] != b"YSCF" or len(data) < TITLE + 2:
+        return None
+    room = int.from_bytes(data[TITLE : TITLE + 2], "little")
+    raw = data[TITLE + 2 : TITLE + 2 + room].rstrip(b"\0 ")
+    return raw.decode("cp932", "replace"), room
 
 
 def text_of(data):
@@ -178,6 +195,11 @@ def units(ybn, out, *selectors):
                     "speaker": match.group(1) if match else None,
                 }
             )
+    if found_title := title(ybn):
+        found.append(
+            {"id": "yscfg.ybn/title", "group": "yscfg", "scene": "yscfg", "source": found_title[0],
+             "kind": "ui", "speaker": None, "max_characters": found_title[1]}
+        )
     Path(out).write_text(
         json.dumps({"version": 1, "units": found}, ensure_ascii=False, indent=1), "utf-8"
     )
@@ -194,13 +216,25 @@ def encode(unit_id, text):
 
 def patch(ybn, translations, out):
     wanted = collections.defaultdict(dict)
-    for unit_id, text in json.loads(Path(translations).read_text("utf-8")).items():
+    translated = json.loads(Path(translations).read_text("utf-8"))
+    new_title = translated.pop("yscfg.ybn/title", None)
+    for unit_id, text in translated.items():
         name, *place = unit_id.split("/")
         wanted[name][tuple(map(int, place))] = text
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     secret = key(str(ybn))
     patched = 0
+    if new_title is not None:
+        room = title(ybn)[1]
+        data = encode("yscfg.ybn/title", new_title)
+        if len(data) > room:
+            raise SystemExit(f"yscfg.ybn/title: {len(data)} bytes; the title holds at most {room}.")
+        # Spaces keep the stored length, so the fields after it stay put.
+        config = bytearray((Path(ybn) / "yscfg.ybn").read_bytes())
+        config[TITLE + 2 : TITLE + 2 + room] = data.ljust(room, b" ")
+        (out / "yscfg.ybn").write_bytes(config)
+        patched += 1
     for _path, name, ystb, yscm in scripts(ybn):
         if name not in wanted:
             continue
@@ -256,6 +290,12 @@ def decompile(ybn, out):
     with contextlib.redirect_stdout(io.StringIO()) as log:
         y_decompile(str(ybn), str(out), None, key(str(Path(ybn))), o_encoding="utf-8")
     print(sum(1 for line in log.getvalue().splitlines() if line[:1].isdigit()), "scripts decompiled")
+    # The decompiler skips yscfg; the title goes beside the scripts so the
+    # census counts it (a .txt at the top would read as a readme).
+    if found := title(ybn):
+        Path(out, "yscfg").mkdir(parents=True, exist_ok=True)
+        Path(out, "yscfg", "title.txt").write_text(found[0] + "\n", "utf-8")
+        print(f"window title: {found[1]} bytes of room")
 
 
 def unpack(archive, out):

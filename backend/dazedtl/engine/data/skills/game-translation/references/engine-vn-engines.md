@@ -23,6 +23,7 @@ Grouped because each is a smaller, archive-centric pipeline: **unpack archive â†
   The census reads archive indexes itself, so archives of only pictures, sound or video need no decoding.
 - **Text outside dialogue:** choices, character names, dialogs and messages are string literals in command arguments. `yuris_text.py strings` lists them by selector such as `GOSUB[ES.SEL.SET].PSTR`; pass the selectors holding player text to `units`.
   The rest, such as sound labels, file paths and values compared in `IF`, is script code: set it aside with scope rules, using `values` for words that also appear in text.
+- **Window title:** `decompile` also writes the title from `yscfg.ybn` (which the decompiler skips) for the census, and `units` emits it as `yscfg.ybn/title`; it keeps its place in the file, so its translation can't exceed the original's bytes.
 - **Line breaks:** the E-ris text engine wraps at any character, so English breaks mid-word unless fitted; put breaks in translations as `\n`, which `patch` writes as the engine's break bytes `EF F0` (outside Shift-JIS).
 - **Delivery:** `pack` appends changed scripts to a copy of the original archive and repoints their entries; the engine loads it, and a pack without changes reproduces the archive byte for byte. Text must be Shift-JIS.
 
