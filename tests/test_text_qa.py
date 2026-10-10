@@ -1,11 +1,15 @@
 """Text QA's helper steps apply findings only through the app's publication."""
 
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
+from dazedtl.api.contracts.guided import TextQaStatus
+from dazedtl.api.contracts.validation import _close_contracts
 from dazedtl.translation.text_qa import CHECKPOINT_MESSAGE, TextQA
+from pydantic import TypeAdapter
 
 
 def fake_guided(folder, qa, method="guided"):
@@ -84,7 +88,20 @@ class TextQATests(unittest.TestCase):
                 ],
             )
             self.assertEqual(state["operation"]["kind"], "checkpoint")
+            # A checkpoint that failed runs again for the apply before it;
+            # once one saves, there is nothing left to save.
+            guided.backend.operations.jobs["checkpoint-job"]["status"] = "failed"
+            service.run("project", "checkpoint")
+            self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})
+            with self.assertRaisesRegex(ValueError, "Apply or undo"):
+                service.run("project", "checkpoint")
             # Applied findings are not applied twice.
             qa["applied"] = True
             with self.assertRaisesRegex(ValueError, "already applied"):
                 service.run("project", "apply")
+            # Undo's reply meets the helper contract; one that did not made
+            # the page report a finished undo as failed before its checkpoint.
+            undone = service.run("project", "undo", findings=["QA-0001"])
+            _close_contracts()
+            TypeAdapter(TextQaStatus).validate_json(json.dumps(undone), strict=True)
+            self.assertEqual(undone["operation"]["kind"], "undo")

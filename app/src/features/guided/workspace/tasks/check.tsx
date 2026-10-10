@@ -239,6 +239,16 @@ export function qaView(w: GuidedWorkspace): TaskView {
     jobTime(applying) >= jobTime(preparing || {})
       ? applying.message || "The apply did not finish."
       : "";
+  /** Saves the game's corrected text as a version. */
+  const checkpoint = async () => {
+    const saved = await api.guided.qa(project.id, "checkpoint");
+    const committed = await whenFinished(saved.operation!.id);
+    if (committed.status !== "complete")
+      throw new Error(
+        "The corrections are in the game, but their version was not saved: " +
+          (committed.message || "the checkpoint did not finish."),
+      );
+  };
   /** Runs one QA step; an apply or undo goes on to its checkpoint commit. */
   const step = (
     key: string,
@@ -260,17 +270,20 @@ export function qaView(w: GuidedWorkspace): TaskView {
           );
           return;
         }
-        const saved = await api.guided.qa(project.id, "checkpoint");
-        const committed = await whenFinished(saved.operation!.id);
-        if (committed.status !== "complete")
-          throw new Error(
-            "The corrections are in the game, but their version was not saved: " +
-              (committed.message || "the checkpoint did not finish."),
-          );
+        await checkpoint();
       },
       success,
       key,
     );
+  // An apply or undo whose checkpoint failed has no control left to report
+  // it; saving the version again takes its place and reports its own result.
+  const unsaved =
+    action.key === "qa-save" ||
+    (!!action.error &&
+      ((action.key === "qa-apply" && phase === "applied") ||
+        qa.findings.some(
+          (row) => action.key === "qa-undo:" + row.id && row.state === "undone",
+        )));
   const start = (label: string, variant: "primary" | "default" = "primary") => (
     <ActionControl
       label={label}
@@ -423,34 +436,55 @@ export function qaView(w: GuidedWorkspace): TaskView {
       )}
     </>
   );
-  const footer =
-    phase === "not_started" ? (
-      start("Start text QA")
-    ) : phase === "outdated" ? (
-      start("Run QA again")
-    ) : phase === "ready" ? (
-      <ActionControl
-        label={applyFailed ? "Try again" : "Apply corrections"}
-        variant="primary"
-        disabled={disabled}
-        {...feedback("qa-apply", "Applying…")}
-        onClick={() => step("qa-apply", "apply", {}, "Corrections applied.")}
-      />
-    ) : phase === "running" ? (
-      copyTask(
-        "qa",
-        "Copy QA task",
-        "default",
-        "QA task copied. Paste it into your coding assistant.",
-      )
-    ) : undefined;
+  const footer = unsaved ? (
+    <ActionControl
+      label="Save version"
+      variant="primary"
+      disabled={disabled || (action.key === "qa-save" && !!action.notice)}
+      {...(action.key === "qa-save"
+        ? feedback("qa-save", "Saving…")
+        : { feedbackKey: action.key, error: action.error })}
+      onClick={() =>
+        action.run(
+          async () => {
+            await save();
+            await checkpoint();
+          },
+          "Version saved.",
+          "qa-save",
+        )
+      }
+    />
+  ) : phase === "not_started" ? (
+    start("Start text QA")
+  ) : phase === "outdated" ? (
+    start("Run QA again")
+  ) : phase === "ready" ? (
+    <ActionControl
+      label={applyFailed ? "Try again" : "Apply corrections"}
+      variant="primary"
+      disabled={disabled}
+      {...feedback("qa-apply", "Applying…")}
+      onClick={() => step("qa-apply", "apply", {}, "Corrections applied.")}
+    />
+  ) : phase === "running" ? (
+    copyTask(
+      "qa",
+      "Copy QA task",
+      "default",
+      "QA task copied. Paste it into your coding assistant.",
+    )
+  ) : undefined;
   return {
     content,
     action: footer,
     next: advance(
       undefined,
       undefined,
-      ["applied", "clean"].includes(phase) ? "primary" : "quiet",
+      ["applied", "clean"].includes(phase) &&
+        (!unsaved || (action.key === "qa-save" && !!action.notice))
+        ? "primary"
+        : "quiet",
     ),
     heading: {
       title: "Text QA",

@@ -208,7 +208,7 @@ export function QaAuditLog({
                     onClick={() => undo(row)}
                   />
                 ) : row.state === "undone" ? (
-                  <StatusMark state="skipped" />
+                  <span className="text-qa-choice">Undone</span>
                 ) : null}
               </ActionRow>
             ))}

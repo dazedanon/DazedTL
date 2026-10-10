@@ -638,7 +638,7 @@ export type QaReport = {
 };
 
 export type TextQaOperation = {
-  kind: "prepare" | "apply" | "checkpoint";
+  kind: "prepare" | "apply" | "undo" | "checkpoint";
   id: string;
   status: string;
   message: string;

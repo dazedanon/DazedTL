@@ -354,7 +354,7 @@ class QaReport(TypedDict):
 
 
 class TextQaOperation(TypedDict):
-    kind: Literal["prepare", "apply", "checkpoint"]
+    kind: Literal["prepare", "apply", "undo", "checkpoint"]
     id: str
     status: str
     message: str

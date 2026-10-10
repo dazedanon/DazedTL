@@ -212,15 +212,17 @@ class TextQA:
         """The commit that records applied or undone corrections in the
         game's history."""
         saved = self.operation(project_id)
-        if (
-            not saved
-            or saved["kind"] not in {"apply", "undo"}
-            or saved["status"] != "complete"
-        ):
+        # A checkpoint that did not finish runs again for the step before it.
+        kind = (
+            read_json(self.guided.path(project_id, "text-qa-operation")).get("after")
+            if saved and saved["kind"] == "checkpoint" and saved["status"] != "complete"
+            else saved and saved["status"] == "complete" and saved["kind"]
+        )
+        if kind not in {"apply", "undo"}:
             raise ValueError(
                 "Apply or undo QA corrections before saving their checkpoint."
             )
-        message = CHECKPOINT_MESSAGE if saved["kind"] == "apply" else UNDO_MESSAGE
+        message = CHECKPOINT_MESSAGE if kind == "apply" else UNDO_MESSAGE
         record, _project = self.guided.translation.project(project_id)
         if record.get("method") == "len":
             # The assistant's own checkpoints name the runtime files of its patch.
@@ -240,12 +242,17 @@ class TextQA:
                 project_id, "checkpoint", None, {"message": message}
             )
             job = self.guided.execute(project_id, preview["token"])
-        self.started(project_id, "checkpoint", job, runner="translation")
+        self.started(project_id, "checkpoint", job, runner="translation", after=kind)
 
-    def started(self, project_id, kind, job, runner="native"):
+    def started(self, project_id, kind, job, runner="native", after=""):
         write_json(
             self.guided.path(project_id, "text-qa-operation"),
-            {"kind": kind, "id": job["id"], "runner": runner},
+            {
+                "kind": kind,
+                "id": job["id"],
+                "runner": runner,
+                **({"after": after} if after else {}),
+            },
         )
 
     def operation(self, project_id) -> dict[str, Any] | None:
@@ -280,7 +287,7 @@ class TextQA:
                 "if it has not run."
             )
         elif not qa["current"]:
-            following = "The game text changed since this task; run qa --prepare."
+            following = qa["message"] + " Run qa --prepare."
         elif stage == "complete" and waiting:
             following = (
                 "The user answers the open questions in DazedTL; run qa --apply "
