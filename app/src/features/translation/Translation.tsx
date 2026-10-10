@@ -36,8 +36,11 @@ import { ImageManager } from "../images/ImageManager";
 import { ImageTextEditor } from "../images/ImageTextEditor";
 import { StatusIcon } from "../../ui/StatusIcon";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
+import { useOperationEnd } from "../../state/useOperationEnd";
+import { TextQaTab } from "./TextQaTab";
 
-export type TranslationView = "progress" | "options" | "context" | "images";
+export type TranslationView =
+  "progress" | "options" | "context" | "images" | "qa";
 type View = TranslationView;
 
 export default function Translation({
@@ -97,6 +100,15 @@ function Workspace({
   const [view, setView] = useState<View>(initialView);
   const [editorAssets, setEditorAssets] = useState<string[] | null>(null);
   const [imageFooter, setImageFooter] = useState<HTMLDivElement | null>(null);
+  // Text QA runs in the Guided game workspace its first use opens.
+  const guided = application.snapshot?.guided;
+  const own = guided?.projectId === project.id ? guided : null;
+  const qa = own?.readiness.qa.task ? own.readiness.qa : null;
+  const questions = qa?.questions.filter((row) => !row.choice).length || 0;
+  const finished = useOperationEnd(
+    [...(own?.operations || []), ...state.jobs],
+    !!application.snapshot?.application.running,
+  );
   const tabs: Tab<View>[] = [
     { id: "progress", label: "Progress" },
     { id: "options", label: "Options" },
@@ -113,6 +125,22 @@ function Workspace({
         />
       ),
     },
+    // QA shows once the assistant has prepared its task.
+    ...(qa
+      ? [
+          {
+            id: "qa" as const,
+            label: "Text QA",
+            status: questions > 0 && (
+              <StatusIcon
+                status={displayMarks.needs_review}
+                label={displayLabels.needs_review}
+                size={14}
+              />
+            ),
+          },
+        ]
+      : []),
   ];
   const disabled = state.active || action.busy || draft.committing;
   const edit = <K extends keyof TranslationOptions>(
@@ -227,7 +255,7 @@ function Workspace({
             "pause",
             "estimate-declined",
             "copy-declined",
-          ].includes(action.key)
+          ].includes(action.key) || action.key.startsWith("qa-")
             ? ""
             : action.error
         }
@@ -251,6 +279,8 @@ function Workspace({
                 openProject={openProject}
                 showOptions={() => void show("options")}
                 resume={copyControl("default", "resume")}
+                qa={qa}
+                openQa={() => void show("qa")}
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>
@@ -300,6 +330,16 @@ function Workspace({
         )}
         {view === "context" && (
           <ContextPanel state={state} copy={copyControl} />
+        )}
+        {view === "qa" && qa && (
+          <TextQaTab
+            projectId={project.id}
+            qa={qa}
+            action={action}
+            disabled={disabled}
+            finished={finished}
+            copy={copyControl()}
+          />
         )}
         {view === "images" && (
           <>

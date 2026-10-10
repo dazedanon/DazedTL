@@ -196,3 +196,19 @@ export function qaOrigin(row: QaFinding) {
     source: "Fix for a slip in the Japanese source",
   }[row.kind];
 }
+
+/**
+ * An apply or undo whose checkpoint failed has no control left to report
+ * it; saving the version again takes its place and reports its own result,
+ * under the "qa-save" key.
+ */
+export function qaUnsaved(qa: QaState, action: { key: string; error: string }) {
+  return (
+    action.key === "qa-save" ||
+    (!!action.error &&
+      ((action.key === "qa-apply" && qaPhase(qa) === "applied") ||
+        [...qa.findings, ...qa.questions].some(
+          (row) => action.key === "qa-undo:" + row.id && row.state === "undone",
+        )))
+  );
+}

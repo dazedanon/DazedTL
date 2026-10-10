@@ -39,4 +39,47 @@ test("only the assistant's reported phase reads as current, and Images shows onl
     ["current", "next", "next", "next", "next", "next"],
     "the first helper call starts preparation before any report",
   );
+  // QA's stage and counts come from its task, and its questions hold it for
+  // the user; whether it is done stays the report's, since new translation
+  // after an apply reopens it.
+  const qa = (status: object, extra: object = {}) =>
+    ({
+      task: "/qa/task",
+      current: true,
+      applied: false,
+      message: "",
+      findings: [],
+      questions: [],
+      status,
+      ...extra,
+    }) as never;
+  const qaStep = (value: never, phase = "qa", state = "active") =>
+    phaseStates(report(phase, { qa: state }), true, false, value).find(
+      (step) => step.id === "qa",
+    );
+  const deep = qa(
+    { stage: "deep" },
+    { activity: { stage: "deep", done: 9, total: 190 } },
+  );
+  assert.deepEqual(qaStep(deep), {
+    id: "qa",
+    label: "QA",
+    state: "current",
+    detail: "Deep review 9 of 190",
+  });
+  const asking = qa(
+    { stage: "complete" },
+    {
+      questions: [{ id: "q", source: "", current: "", reason: "", places: 1 }],
+    },
+  );
+  assert.equal(qaStep(asking)?.detail, "1 question for you");
+  assert.equal(
+    qaStep(
+      qa({ stage: "complete" }, { applied: true }),
+      "translation",
+      "pending",
+    )?.state,
+    "next",
+  );
 });

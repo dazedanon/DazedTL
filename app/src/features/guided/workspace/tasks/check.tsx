@@ -6,19 +6,20 @@ import { Button } from "../../../../ui/Button";
 import { FieldRow } from "../../../../ui/FieldRow";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
-import {
-  AssistantTask,
-  type AssistantTaskState,
-} from "../../../../ui/AssistantTask";
 import { HelpPopover } from "../../../../ui/HelpPopover";
 import { fittingCodes, fittingSummary } from "../../FittingSettings";
 import { Notice } from "../../../../ui/Notice";
 import { api } from "../../../../api/client";
 import { jobTime } from "../model";
 import { ActionControl } from "../../../../ui/ActionControl";
-import { StepProgress } from "../../../../ui/StepProgress";
-import { QaAuditLog, QaQuestions } from "../../TextQa";
-import { qaActivity, qaPhase, qaStages, qaSummary } from "../../qaView";
+import { TextQaWork } from "../../TextQa";
+import {
+  runQaStep,
+  saveQaVersion,
+  type QaStepDetails,
+  type QaStepName,
+} from "../../qaSteps";
+import { qaPhase, qaUnsaved } from "../../qaView";
 
 export function fittingView(w: GuidedWorkspace): TaskView {
   const {
@@ -227,7 +228,6 @@ export function qaView(w: GuidedWorkspace): TaskView {
     setPanel,
   } = w;
   const phase = qaPhase(qa);
-  const copied = handoff("qa").waiting;
   // An apply that failed and rolled back says so beside its retry; one from
   // before this task was prepared belongs to an earlier task.
   const applying = operationJob("qa_apply");
@@ -239,51 +239,26 @@ export function qaView(w: GuidedWorkspace): TaskView {
     jobTime(applying) >= jobTime(preparing || {})
       ? applying.message || "The apply did not finish."
       : "";
-  /** Saves the game's corrected text as a version. */
-  const checkpoint = async () => {
-    const saved = await api.guided.qa(project.id, "checkpoint");
-    const committed = await whenFinished(saved.operation!.id);
-    if (committed.status !== "complete")
-      throw new Error(
-        "The corrections are in the game, but their version was not saved: " +
-          (committed.message || "the checkpoint did not finish."),
-      );
-  };
-  /** Runs one QA step; an apply or undo goes on to its checkpoint commit. */
+  /** Runs one QA step; preparing goes on to copy the task. */
   const step = (
     key: string,
-    name: "prepare" | "apply" | "undo" | "choose",
-    details: Parameters<typeof api.guided.qa>[2] = {},
+    name: QaStepName,
+    details: QaStepDetails = {},
     success = "",
   ) =>
     action.run(
       async () => {
         await save();
-        const started = await api.guided.qa(project.id, name, details);
-        if (name === "choose" || !started.operation) return;
-        const ended = await whenFinished(started.operation.id);
-        if (ended.status !== "complete")
-          throw new Error(ended.message || "QA did not finish this step.");
-        if (name === "prepare") {
+        await runQaStep(project.id, name, details, whenFinished);
+        if (name === "prepare")
           await window.dazedtl.copyText(
             (await api.guided.skill(project.id, "qa")).text,
           );
-          return;
-        }
-        await checkpoint();
       },
       success,
       key,
     );
-  // An apply or undo whose checkpoint failed has no control left to report
-  // it; saving the version again takes its place and reports its own result.
-  const unsaved =
-    action.key === "qa-save" ||
-    (!!action.error &&
-      ((action.key === "qa-apply" && phase === "applied") ||
-        [...qa.findings, ...qa.questions].some(
-          (row) => action.key === "qa-undo:" + row.id && row.state === "undone",
-        )));
+  const unsaved = qaUnsaved(qa, action);
   const start = (label: string, variant: "primary" | "default" = "primary") => (
     <ActionControl
       label={label}
@@ -303,147 +278,45 @@ export function qaView(w: GuidedWorkspace): TaskView {
       }
     />
   );
-  const undoUnavailable = qa.rules_changed
-    ? "An update changed QA's rules after these corrections were applied."
-    : "";
-  // Once applied, only a proposal the user chose went into the game.
-  const questions = qa.applied
-    ? qa.questions.filter((row) => row.choice === "use")
-    : qa.questions;
-  const activity = qaActivity(qa);
-  const coverage = qa.coverage;
-  const panelState: AssistantTaskState =
-    phase === "applied"
-      ? "applied"
-      : phase === "outdated"
-        ? "outdated"
-        : phase === "questions"
-          ? "needs_review"
-          : phase === "clean"
-            ? "done"
-            : phase === "ready"
-              ? "ready"
-              : copied || phase === "running"
-                ? "waiting"
-                : "not_started";
   const content: ReactNode = (
-    <>
-      {phase === "not_started" && (
-        <FieldRow id="qa-focus" label="QA focus">
-          {(props) => (
-            <select
-              {...props}
-              value={fields.text.focus}
-              disabled={disabled}
-              onChange={(event) => editText("focus", event.target.value)}
-            >
-              {[
-                ["release", "Full game text"],
-                ["database", "Database"],
-                ["dialogue", "Dialogue"],
-                ["risky-codes", "Risky event codes"],
-              ].map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          )}
-        </FieldRow>
-      )}
-      <AssistantTask
-        title="Text QA"
-        state={panelState}
-        progress={phase === "running" ? activity : undefined}
-        description={
-          phase === "not_started"
-            ? "Start QA to prepare its task and copy it to your assistant."
-            : phase === "outdated"
-              ? qa.rules_changed
-                ? "An update changed QA's rules after this task was prepared. Run QA again to check the text."
-                : "The game text changed after QA. Run QA again to check the current text."
-              : phase === "running"
-                ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
-                : phase === "questions"
-                  ? "QA applies its corrections once you answer the questions below."
-                  : phase === "ready"
-                    ? "Your assistant applies these corrections next; you can also apply them here."
-                    : qaSummary(qa)
-        }
-        help="Verified corrections go into the game as one text batch, saved as a version. History can restore the batch, and Undo puts back one correction."
-      >
-        {qa.task ? (
-          <div className="text-qa-status">
-            {/* An outdated task's stages and coverage describe old text. */}
-            {phase !== "outdated" && (
-              <StepProgress label="QA stages" steps={qaStages(qa)} />
-            )}
-            <p>
-              {phase !== "outdated" &&
-              (coverage?.not_reviewed || coverage?.preflight) ? (
-                <>
-                  {[
-                    // The summary that describes finished QA counts them.
-                    !["applied", "clean"].includes(phase) &&
-                      `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
-                    coverage.not_reviewed &&
-                      `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
-                    coverage.preflight &&
-                      `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}{" "}
-                  <Button
-                    variant="link"
-                    onClick={() => setPanel("qa-coverage")}
-                  >
-                    Review them
-                  </Button>
-                </>
-              ) : null}
-              {qaJob && (
-                <Button variant="link" onClick={() => inspect(qaJob)}>
-                  Report details
-                </Button>
-              )}
-            </p>
-          </div>
-        ) : undefined}
-      </AssistantTask>
-      {questions.length > 0 && phase !== "outdated" && (
-        <QaQuestions
-          questions={questions}
-          disabled={disabled}
-          undoUnavailable={undoUnavailable}
-          feedback={feedback}
-          choose={(question, choice) =>
-            step(`qa-${choice}:` + question, "choose", { question, choice })
-          }
-          undo={(row) =>
-            step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
-          }
-        />
-      )}
-      {applyFailed && (
-        <Notice tone="warning">
-          <span>
-            The apply failed and was rolled back, so the game is unchanged:{" "}
-            {applyFailed}
-          </span>
-        </Notice>
-      )}
-      {qa.findings.length > 0 && phase !== "outdated" && (
-        <QaAuditLog
-          findings={qa.findings}
-          disabled={disabled}
-          undoUnavailable={undoUnavailable}
-          feedback={feedback}
-          undo={(row) =>
-            step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
-          }
-        />
-      )}
-    </>
+    <TextQaWork
+      qa={qa}
+      waiting={handoff("qa").waiting}
+      disabled={disabled}
+      feedback={feedback}
+      applyFailed={applyFailed}
+      run={step}
+      onCoverage={() => setPanel("qa-coverage")}
+      report={
+        qaJob && (
+          <Button variant="link" onClick={() => inspect(qaJob)}>
+            Report details
+          </Button>
+        )
+      }
+    >
+      <FieldRow id="qa-focus" label="QA focus">
+        {(props) => (
+          <select
+            {...props}
+            value={fields.text.focus}
+            disabled={disabled}
+            onChange={(event) => editText("focus", event.target.value)}
+          >
+            {[
+              ["release", "Full game text"],
+              ["database", "Database"],
+              ["dialogue", "Dialogue"],
+              ["risky-codes", "Risky event codes"],
+            ].map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        )}
+      </FieldRow>
+    </TextQaWork>
   );
   const footer = unsaved ? (
     <ActionControl
@@ -457,7 +330,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
         action.run(
           async () => {
             await save();
-            await checkpoint();
+            await saveQaVersion(project.id, whenFinished);
           },
           "Version saved.",
           "qa-save",

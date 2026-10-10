@@ -1,17 +1,35 @@
-/** Text QA's questions for the user, its audit log and its coverage sheet. */
+/**
+ * Text QA as both methods show it: where it stands, its questions for the
+ * user, its audit log and its coverage sheet.
+ */
 
-import { useEffect, useState } from "react";
-import type { QaFinding, QaQuestion, QaReport } from "../../api/contracts";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type {
+  QaFinding,
+  QaQuestion,
+  QaReport,
+  QaState,
+} from "../../api/contracts";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
+import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
-import { qaGroups, qaOrigin } from "./qaView";
+import { StepProgress } from "../../ui/StepProgress";
+import type { QaStepDetails } from "./qaSteps";
+import {
+  qaActivity,
+  qaGroups,
+  qaOrigin,
+  qaPhase,
+  qaStages,
+  qaSummary,
+} from "./qaView";
 
-type Feedback = (
+export type Feedback = (
   key: string,
   pendingText?: string,
 ) => {
@@ -21,6 +39,155 @@ type Feedback = (
   error: string;
   notice: string;
 };
+
+/**
+ * The task's panel, then its questions, a failed apply and the corrections.
+ * Each page adds its own footer and the fields it offers before QA starts.
+ */
+export function TextQaWork({
+  qa,
+  waiting,
+  disabled,
+  feedback,
+  applyFailed,
+  run,
+  onCoverage,
+  report,
+  rerun = "Run QA again to check the text.",
+  children,
+}: {
+  qa: QaState;
+  /** The task went to an assistant that has not started on it yet. */
+  waiting: boolean;
+  disabled: boolean;
+  feedback: Feedback;
+  applyFailed: string;
+  run: (
+    key: string,
+    name: "undo" | "choose",
+    details: QaStepDetails,
+    success?: string,
+  ) => void;
+  onCoverage: () => void;
+  /** Opens the task's report, where the page has an inspector. */
+  report?: ReactNode;
+  /** How the user has an outdated task checked again. */
+  rerun?: string;
+  /** Fields before QA starts, such as its focus. */
+  children?: ReactNode;
+}) {
+  const phase = qaPhase(qa);
+  const coverage = qa.coverage;
+  const undoUnavailable = qa.rules_changed
+    ? "An update changed QA's rules after these corrections were applied."
+    : "";
+  // Once applied, only a proposal the user chose went into the game.
+  const questions = qa.applied
+    ? qa.questions.filter((row) => row.choice === "use")
+    : qa.questions;
+  const state: AssistantTaskState =
+    phase === "applied"
+      ? "applied"
+      : phase === "outdated"
+        ? "outdated"
+        : phase === "questions"
+          ? "needs_review"
+          : phase === "clean"
+            ? "done"
+            : phase === "ready"
+              ? "ready"
+              : waiting || phase === "running"
+                ? "waiting"
+                : "not_started";
+  const undo = (id: string) =>
+    run("qa-undo:" + id, "undo", { findings: [id] }, "Undone.");
+  return (
+    <>
+      {phase === "not_started" && children}
+      <AssistantTask
+        title="Text QA"
+        state={state}
+        progress={phase === "running" ? qaActivity(qa) : undefined}
+        description={
+          phase === "not_started"
+            ? "Start QA to prepare its task and copy it to your assistant."
+            : phase === "outdated"
+              ? (qa.rules_changed
+                  ? "An update changed QA's rules after this task was prepared. "
+                  : "The game text changed after QA. ") + rerun
+              : phase === "running"
+                ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
+                : phase === "questions"
+                  ? "QA applies its corrections once you answer the questions below."
+                  : phase === "ready"
+                    ? "Your assistant applies these corrections next; you can also apply them here."
+                    : qaSummary(qa)
+        }
+        help="Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction."
+      >
+        {qa.task ? (
+          <div className="text-qa-status">
+            {/* An outdated task's stages and coverage describe old text. */}
+            {phase !== "outdated" && (
+              <StepProgress label="QA stages" steps={qaStages(qa)} />
+            )}
+            <p>
+              {phase !== "outdated" &&
+              (coverage?.not_reviewed || coverage?.preflight) ? (
+                <>
+                  {[
+                    // The summary that describes finished QA counts them.
+                    !["applied", "clean"].includes(phase) &&
+                      `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
+                    coverage.not_reviewed &&
+                      `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
+                    coverage.preflight &&
+                      `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  <Button variant="link" onClick={onCoverage}>
+                    Review them
+                  </Button>
+                </>
+              ) : null}
+              {report}
+            </p>
+          </div>
+        ) : undefined}
+      </AssistantTask>
+      {questions.length > 0 && phase !== "outdated" && (
+        <QaQuestions
+          questions={questions}
+          disabled={disabled}
+          undoUnavailable={undoUnavailable}
+          feedback={feedback}
+          choose={(question, choice) =>
+            run(`qa-${choice}:` + question, "choose", { question, choice })
+          }
+          undo={(row) => undo(row.id)}
+        />
+      )}
+      {applyFailed && (
+        <Notice tone="warning">
+          <span>
+            The apply failed and was rolled back, so the game is unchanged:{" "}
+            {applyFailed}
+          </span>
+        </Notice>
+      )}
+      {qa.findings.length > 0 && phase !== "outdated" && (
+        <QaAuditLog
+          findings={qa.findings}
+          disabled={disabled}
+          undoUnavailable={undoUnavailable}
+          feedback={feedback}
+          undo={(row) => undo(row.id)}
+        />
+      )}
+    </>
+  );
+}
 
 /** Source, current text and the other side of a change, labelled. */
 function Change({
@@ -275,11 +442,16 @@ export function QaCoverage({
   const [report, setReport] = useState<QaReport | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // The sheet reads the report once when it opens, however often the page
+  // around it renders.
+  const first = useRef(load);
   useEffect(() => {
-    load().then(setReport, (reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : String(reason)),
-    );
-  }, [load]);
+    first
+      .current()
+      .then(setReport, (reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : String(reason)),
+      );
+  }, []);
   const unreviewed = report?.not_reviewed.filter((row) => !row.reviewed) || [];
   return (
     <Modal label="What QA did not cover" onDismiss={onClose} size="lg">

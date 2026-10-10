@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { api } from "../../api/client";
 import type {
   Coverage,
+  QaState,
   TranslationJob,
   TranslationOptions,
   TranslationProgress,
@@ -67,6 +68,8 @@ export function ProgressPanel({
   openProject,
   showOptions,
   resume,
+  qa,
+  openQa,
 }: {
   state: TranslationState;
   options: TranslationOptions;
@@ -75,6 +78,9 @@ export function ProgressPanel({
   showOptions: () => void;
   /** Copies the prompt that hands the work back to the assistant. */
   resume: ReactNode;
+  /** The text QA task the assistant prepared, if any. */
+  qa: QaState | null;
+  openQa: () => void;
 }) {
   const now = useMinute();
   const [report, setReport] = useState(false);
@@ -105,6 +111,10 @@ export function ProgressPanel({
       ["running", "waiting"].includes(job.status),
   );
   const total = text && (text.total ?? text.discovered);
+  const qaQuestions =
+    qa && !qa.applied && qa.current
+      ? qa.questions.filter((row) => !row.choice).length
+      : 0;
   return (
     <>
       <p className="translation-mode-summary">
@@ -148,9 +158,23 @@ export function ProgressPanel({
             the prompt into a new session; it picks up the saved work.
           </Notice>
         )}
+        {!!qaQuestions && (
+          <Notice tone="warning">
+            <span>
+              <strong>Needs you:</strong> text QA has{" "}
+              {qaQuestions === 1
+                ? "a question"
+                : `${qaQuestions.toLocaleString()} questions`}{" "}
+              only you can answer; it applies its corrections after.
+            </span>
+            <Button variant="link" onClick={openQa}>
+              Answer in Text QA
+            </Button>
+          </Notice>
+        )}
         <StepProgress
           label="Assistant phases"
-          steps={phaseStates(progress, !!activity, options.include_images)}
+          steps={phaseStates(progress, !!activity, options.include_images, qa)}
         />
         {!!(
           state.coverage ||

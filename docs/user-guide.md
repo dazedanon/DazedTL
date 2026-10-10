@@ -104,7 +104,8 @@ Lines the AI got wrong keep their original text until you translate again.
 Both Check tasks are optional:
 
 - **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
-- **Text QA**: copy the task, and your assistant reviews the translated text.
+- **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
+  Answer the questions it can't settle on the page; each correction is listed with **Undo**, and **Review them** lists the lines QA did not cover.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
 Apply and playtest an early scene before translating everything.
@@ -145,6 +146,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
 4. Keep DazedTL open while it works.
    **Progress** shows its phases, anything it needs from you and any API run.
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
+   For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
    When your assistant asks you to approve an API estimate, answer it or use the approve button on **Progress**.
    If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
    Changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.

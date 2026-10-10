@@ -1,7 +1,7 @@
 # Text QA redesign
 
 This is the plan for the next version of text QA; implemented parts move to [architecture](architecture.md#workflow-and-shared-presentation) and leave this plan.
-Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md), the [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py), the [copied handoff](../backend/dazedtl/compatibility/text.py) and the [Text QA page](../app/src/features/guided/workspace/tasks/check.tsx).
+Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md), the [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py), the [copied handoff](../backend/dazedtl/compatibility/text.py) and [the task's view](../app/src/features/guided/TextQa.tsx).
 
 ## Goals
 
@@ -33,28 +33,12 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## User experience
 
-- Starting: in Assistant-led projects QA is a phase of the method, so the starting prompt runs it with no separate handoff.
-  In Guided projects the Text QA page has one primary action that prepares the task and copies it in a single click; after that the user needs to do nothing else.
-- Running: one stage strip (Preflight, Lint, Screen, Deep, Consistency, Editorial, Apply) marks the current stage, and one activity line gives its count and estimate, such as "Deep review 412 of 621 · about 25 min left".
-  The engine's checkpoint feeds the page and the assistant task list, so both stay current without assistant reports.
-  Bundle IDs, worker names and receipts belong in Report details, not the page.
-- Needs you: a card appears only when QA cannot continue without the user: an unresolved playtest or context question, a failed safeguard, or a consequential action such as pushing.
-  It states the decision plainly, shows its evidence (source, current text, proposal) and offers the choices as buttons; choosing resumes QA without another copy.
-- Declined items never raise a card; the coverage line reports them once, such as "9,857 lines checked · 15 not reviewed (declined by the reviewer)", with an optional link to review them.
-- Done: one summary line gives the applied count and coverage, followed by the audit log grouped by category or family, with before and after, the reason and Undo for each finding; undoing everything uses History.
-  There are no checkboxes before apply.
-- Outdated: when the game text changed after QA, one line says so and offers Run QA again.
-- Errors appear next to the control in plain language with the recovery action; an apply that failed and rolled back says so and offers the fix or a retry.
-- When QA finishes or needs the user, the app notifies them through its existing notification mechanism, if it has one.
-- The page follows the [UX principles](architecture.md#ux-principles) and [shared presentation](architecture.md#workflow-and-shared-presentation) rules: a compact layout, each status shown once, no zero counters or finished progress bars, and shared primitives.
+The Text QA page, the Assistant-led tab and Progress are described in [architecture](architecture.md#workflow-and-shared-presentation); one part remains:
 
-## App and helper
-
-- The QA phase of the progress report takes its stage and counts from the engine checkpoint.
-- The Text QA page and the starting flow implement the [user experience](#user-experience) above.
+- Undoing every correction at once restores the QA batch from History.
 
 ## Order of work
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: the Assistant-led starting flow and Progress, and restoring a QA batch from History.
+3. Speed and presentation: done, described in [architecture](architecture.md#workflow-and-shared-presentation), except restoring a QA batch from History.
