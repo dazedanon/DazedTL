@@ -298,7 +298,10 @@ class GuidedRelease:
                 project["source"], paths
             )
             state = lifecycle(self.guided.translation.workspace, project_id)
-            saved = state.get("prepared_source") or state.get("source_backup")
+            # Only the prepared source can supply an original at the
+            # checkpoint; a setup backup of a game that was already
+            # translated holds its additions, such as GameUpdate's config.
+            saved = state.get("prepared_source")
             source_files = {}
             if saved:
                 location = backups.lookup(

@@ -3088,11 +3088,30 @@ class GuidedTests(unittest.TestCase):
 
     def test_checkpoint_manifest_distinguishes_new_plugins_from_original_assets(self):
         write_json(self.source / "new-plugin.js", {"fixture": True})
+        path = lifecycle_path(self.translation.workspace, self.identity)
+        # A game set up with its translation already in Git has no prepared
+        # source, and its setup backup holds that translation's additions,
+        # such as GameUpdate's config, which the checkpoint cannot supply as
+        # originals.
+        config = self.source / "gameupdate/patch-config.txt"
+        config.parent.mkdir()
+        config.write_text("owner=translator")
+        saved = snapshot(self.source, store_path(self.source), source_game=True)
+        write_json(path, {"version": 1, "source_backup": saved})
+        self.assertEqual(
+            self.guided.patch_manifest(
+                self.identity, ["gameupdate/patch-config.txt"], "checkpoint"
+            )["files"]["gameupdate/patch-config.txt"],
+            {"original_sha256": None},
+        )
+        state = read_json(path)
+        write_json(path, {**state, "prepared_source": state["source_backup"]})
+        write_json(self.source / "added-later.js", {"fixture": True})
         manifest = self.guided.patch_manifest(
-            self.identity, ["Items.json", "new-plugin.js"], "checkpoint"
+            self.identity, ["Items.json", "added-later.js"], "checkpoint"
         )
         self.assertEqual(manifest["files"]["Items.json"], {})
-        self.assertEqual(manifest["files"]["new-plugin.js"], {"original_sha256": None})
+        self.assertEqual(manifest["files"]["added-later.js"], {"original_sha256": None})
         # A source file already tracked on original is not a translation-only addition.
         self.translation.engine.source_bindings = lambda *_args: {
             "new-plugin.js": "original-blob"
