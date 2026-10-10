@@ -151,7 +151,7 @@ class GuidedContext:
             "handoff": {
                 "kind": "qa",
                 "requestId": task.name,
-                "expects": [task / "findings.json", task / "correction-map.json"],
+                "expects": [task / "findings.json"],
             },
         }
 

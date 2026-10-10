@@ -1,187 +1,225 @@
-# QA Exported RPG Maker Translations — Local Task Handoff
+# RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-local-v10
-app-owned-inventory immutable-review-bundles scene-affine-semantic-screen
-evidence-preserving-deep-handoff motif-family-receipts selective-risk-escalation
-validated-checkpoints honest-global-coverage grouped-finding-families
-motif-finding-attribution final-consistency-audit final-editorial-pass
-subjective-precision-gate ignored-receipt-workspace clean-release-auto-approval
-preserve-original atomic-apply post-fix-regression
-legacy-center-code-safety
-no-provider-api
+<!-- qa-contract:rpgmaker-qa-v11
+single-policy role-briefs app-owned-inventory immutable-review-bundles
+scene-affine-screen lint-group-review declined-disposition evidence-preserving-deep
+family-sweep decision-log consistency-check editorial-stage regression-simulation
+app-publication-apply checkpoint-commit no-provider-api
 -->
 
-<task_context>
-Selected game root: `{{GAME_ROOT}}`
+This one policy governs text QA: the task README and the copied handoff are made from it. DazedTL
+owns the pipeline; the AI helper is the reviewer, and the local tools do the mechanical and
+orchestration work. Do not create another manifest, index, checkpoint, registry or script, and
+do not call a model-provider API.
 
-Selected game data: `{{GAME_DATA_FOLDER}}`
+## Policy
 
-Selected QA focus: `{{QA_FOCUS}}`
+- Quality and coverage come first, then cost, then speed.
+- Run QA from preparation to applied corrections without the user. Ask only when a playtest or
+  context question blocks a correction and no source evidence settles it.
+- Review every item you are given. If you will not review an item, decline it with a one-line
+  reason that does not repeat game text; never skip, soften or shorten it. Nothing is classified
+  or excluded in advance: declining is the only way an item goes unreviewed, and DazedTL offers
+  it to another reviewer before reporting it as not reviewed.
+- Treat stylistic preference as clean. Change a line only for a concrete defect, with the
+  smallest natural correction that resolves it; equally faithful and fluent alternatives stay as
+  they are. Extra slang, jokes, hostility or explanation are not repairs, and deliberate
+  stiffness, restraint and awkwardness in the source stay.
+- The current source, the scene and the game's glossary are authoritative. Reference-game
+  translations are advisory: a difference is a reason to compare referent, function, tone and
+  context, not a defect by itself.
+- Preserve every runtime control code, speaker, honorific policy and line structure. For MV/MZ
+  Show Text (code 401), keep `\ac` centering on every nonempty line; `\ac` directly before a
+  letter hides that word (`\acWhat` hides "What"), so the fix is `\ac What`, never removing the
+  code. A following control such as `\ac\C[...]` already delimits it.
+- Never write game files, `findings.json` or another worker's results. DazedTL validates every
+  result, simulates the apply, and applies findings through its own reviewed text batch, which
+  History can restore.
 
-DazedTL checkout: `{{QA_TOOL_ROOT}}`
+## Coordinator
 
-Game glossary: `{{VOCAB_FILE}}`
+You run the task. Read `context.json` once for the glossary, translation guidance and reference
+translations, then run `{{CLI}} status --task {{TASK}}`.
 
-Translation quirks: `{{QUIRKS_FILE}}`
+1. Use two to four reviewers when the helper can run parallel workers, each with a unique name.
+   Give each the brief for its role: `{{CLI}} brief --task {{TASK}} --role <screen|deep|group|editorial>`.
+   One worker may take every role in turn, except that an editorial bundle never goes to a
+   worker that wrote one of its judgment corrections.
+2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
+   bundle. Write results only in `{{RECEIPTS}}`, one file per bundle named after its ID; DazedTL
+   keeps the accepted copy. A worker that cannot finish a bundle releases it.
+3. Declined items move to a bundle of their own. Offer each to another worker, which claims it
+   with `next --bundle <id>`; a second decline sets it aside. If no other worker is available,
+   continue with `--skip-declined`. Set-aside items are reported as not reviewed; never ask the
+   user to review them.
+4. When the screen stage is done, run `{{CLI}} advance --task {{TASK}}`. When deep review is
+   done, run `{{CLI}} finalize --task {{TASK}}`; it moves to the sweep and editorial stages in
+   turn, so keep claiming bundles and run finalize again until it reports `complete`.
+5. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
+   `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
+   `--source <Japanese> --translation <English>` when every correction of that text must use
+   that wording. Reviewers read them with `{{CLI}} decisions --task {{TASK}}`.
+6. When finalize reports `complete`, apply with the project helper's `qa --apply` from your
+   handoff. It applies every finding as one reviewed text batch and saves a checkpoint commit.
+   If it names open playtest or context questions, ask the user about exactly those, then apply
+   with `--leave-uncertain` to leave them unchanged. Report a failed safeguard instead of
+   working around it.
 
-Game skill: `{{GAME_SKILL_FILE}}`
+## Screen reviewer
 
-Optional game skills: `{{GAME_SKILLS_FOLDER}}`
+Inspect every target in your bundle and report only exceptions; one accepted result covers the
+clean targets.
 
-Ignored reviewer receipts: `{{GAME_ROOT}}/.dazedtl/qa-receipts/`
-</task_context>
+- A `scene` item is one complete command-list scene in order. Lines with an `id` are your
+  targets; lines with a `context_id` were targeted in another scene, but report a problem this
+  scene exposes on them too. Read every line so speaker continuity, callbacks, pronouns and comic
+  timing stay visible. A `cluster` item is isolated non-dialogue text.
+- For every target verify who acts and to whom; pronouns, possessives and relationships;
+  negation, conditions, certainty and obligation; quantities and chronology; omitted or invented
+  information; and speaker voice and natural English. `context_expansion` marks a repeated
+  pronoun-bearing translation assigned in more than one scene: judge it against this scene.
+- Read the English exchange in order for reply continuity, rhythm, emotional beats and distinct
+  voices. Treat Japanese discourse markers, stance particles, hedges and intensifiers as part of
+  the whole utterance, and flag semantic inflation: a reaction to the current remark turned into
+  unsupported skill, habit, frequency, progress or change over time.
+- `risk` values are attention hints, not defects. Compare `same_source_alternatives` for genuine
+  inconsistency and `reference_translations` for established wording.
+- A line's `lint` already proposes its mechanical fixes; do not report those again.
+- A `motif-family` item gathers every translation of one recurring joke or wordplay rule from
+  the translation quirks. Review it once: name one recognizable English joke mechanism and check
+  that every nonliteral variant still reads as its callback before calling it `preserved`;
+  otherwise name the affected variants in `suspect_ids`. Sharing a name is not a callback.
+- An exception's verdict is `suspect` or `needs-context`, with categories and a short concrete
+  note.
 
-## Required workflow
+## Deep reviewer
 
-DazedTL owns this QA pipeline. Do not create a replacement manifest, index, registry, checkpoint,
-sharding system, or generated script. Do not call a model-provider API. The current AI helper is
-the semantic reviewer; the local tools do the mechanical and orchestration work.
+Each item states the `deep_reasons` that escalated it. Return exactly one review per item.
 
-Prepare or resume the selected task with:
+- `screen_evidence` keeps the screening reviewer's reason and `screen_scene_contexts` every scene
+  used to reach it. A `clean` review of such an item rebuts that reason concretely in its
+  `evidence`; do not clear it because the problem is absent from the small `nearby_commands`
+  window. Use `{{CLI}} context --task {{TASK}} --at <identity>` for more surrounding text.
+- `motif_contexts` holds the family-level wordplay review; reconcile scene and family evidence.
+  `motif-scene-contradiction` means a scene reviewer disputed a variant of a family called
+  preserved, so every variant was reopened. Set `motif_ids` only when your correction or
+  question concerns that joke mechanism.
+- `actionable` is for a concrete, source-supported defect with a correction: severity
+  `critical`, `high` or `medium`, and one category from {{CATEGORIES}}. A correction must pass
+  apply's regression: DazedTL refuses one that adds a flag, changes a number, breaks a line
+  structure or needs more rows than the window shows. An English ordinal ("First Stratum") may
+  stand for a source number.
+- Actionable `fluency`, `voice` and `wordplay` reviews carry `editorial_basis`: the concrete
+  reader-facing defect, the source, scene or guidance that makes it defective, and
+  `not_preference: true`.
+- Set `family_key` when lines share one underlying problem, such as `term:黄泉の巌`. When the
+  problem recurs word for word, add a `sweep` rule that reproduces your correction exactly;
+  DazedTL then finds every other line it changes for group review.
+- `apply_identities` may limit a context-specific correction to some of the item's identities.
+- `uncertain-playtest` is for runtime or context uncertainty no evidence settles; say what must
+  be checked in `evidence`. These become the questions the user answers.
+- A slip in the Japanese source itself gets a `source_fix`: a Show Text header showing the wrong
+  speaker's face or name, or a database text stating a number its own entry contradicts.
+- A deep item's `lint` names mechanical fixes already accepted for the line; DazedTL applies
+  them to your correction too, so write it for meaning and voice.
 
-```text
-python "{{QA_TOOL_ROOT}}/scripts/rpgmaker_qa.py" prepare --game-root "{{GAME_ROOT}}" --data "{{GAME_DATA_FOLDER}}" --focus "{{QA_FOCUS}}" --output-root "{{QA_TOOL_ROOT}}/log/rpgmaker_qa"
+## Group reviewer
+
+A `lint-family` item lists one mechanical family's exact fixes, and a `sweep-family` item lists
+every other line an accepted correction's sweep rule changes, beside that correction. Check them
+as a group and reject only the proposals that would harm their line, such as a sentence start,
+a system label or a style this game deliberately keeps, with a note. Every proposal you do not
+reject becomes a finding.
+
+## Editorial reviewer
+
+This is the last pass before corrections are applied. For each finding compare the source,
+current text, correction, evidence and nearby game text, and confirm publication-ready meaning,
+natural English, speaker voice, terminology and honorific policy, runtime controls, line breaks
+and fit. `accept` a correction that fixes a concrete defect, `revise` it with a smaller or more
+natural `replacement` for the same defect, and `withdraw` it when the current and proposed
+wordings are equally valid. For `fluency`, `voice` and `wordplay`, confirm the `editorial_basis`
+independently. An item's `conflicts` name corrections that contradict each other, the
+translation quirks, a recorded decision or a structured label: revise until they agree, or
+accept with a note when the contexts need the difference. A Show Text header fix is accepted or
+withdrawn, never revised.
+
+## Commands
+
+Prefix every command with `{{CLI}}`:
+
+- `status --task {{TASK}}`, `brief --task {{TASK}} --role <role>`
+- `next --task {{TASK}} --worker <name> [--bundle <id>]`, then read the bundle file it names
+- `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
+- `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no
+  other reviewer will take a declined bundle
+- `context --task {{TASK}} --at <identity or command list>` for read-only surrounding text;
+  scenes a reviewer declined are left out
+- `decide --task {{TASK}} ...` and `decisions --task {{TASK}}`
+- `rebuild-deep --task <earlier task>` when DazedTL reports that its QA rules changed after an
+  earlier task's screen was complete: it reuses that screen's checked results in a new task
+
+## Result formats
+
+Every result names its `bundle_id` and the `bundle_sha256` that `next` returned. A declined item
+is `{"id": "<item id>", "reason": "<one line, no game text>"}` in a screen, group or editorial
+result's `declined` list, and a deep review with `"disposition": "declined"` and a `reason`.
+
+Screen:
+
+```json
+{"schema":"{{SCREEN_SCHEMA}}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}],"motif_reviews":[{"id":"motif-...","disposition":"preserved","note":"The joke mechanism and why every variant keeps it.","suspect_ids":[]}],"lint_reviews":[{"id":"lint-family-...","rejected":[],"note":""}],"declined":[]}
 ```
 
-Open the generated task directory's `README.md` and follow it exactly. It gives the checksum-bound
-screen and deep-review result schemas and the commands for claiming, accepting, resuming, and
-finalizing bundles.
+Deep:
 
-Write temporary screen and deep result JSON only beneath the task-specific directory named by the
-generated README under `{{GAME_ROOT}}/.dazedtl/qa-receipts/`. Never place `.qa-*.json` or
-`qa-*.json` in the game root. DazedTL retains accepted canonical receipts in its managed task;
-the ignored game-local directory is convenient review history and must not pollute Git changes.
+```json
+{"schema":"{{DEEP_SCHEMA}}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{"id":"...","disposition":"actionable","severity":"medium","category":"voice","family_key":"term:...","motif_ids":[],"evidence":"concrete reason","correction":"Corrected text.","apply_identities":[],"editorial_basis":{"defect":"...","source_support":"...","not_preference":true},"sweep":{"find":"exact current text","replace":"exact corrected text","source_has":"optional Japanese"}}]}
+```
 
-The screen stage keeps every dialogue command-list scene intact and assigns that complete scene to
-one worker only. A bundle may contain several whole scenes, but no scene may cross bundle or worker
-boundaries. Exact duplicate scenes may share one contextual receipt. Non-dialogue text remains a
-compact cluster screen. Clean targets are represented by the accepted bundle receipt, while
-exceptions contain only suspects or context needs. Risk cues, glossary hits, length ratios, and
-same-source alternatives guide that screen; they do not by themselves mandate deep review.
-When the user configured reference games, exact Japanese-source matches appear as
-`reference_translations` evidence on the affected targets. Compare established wording for
-returning terms and callbacks, but treat it as advisory: a difference is a cue to investigate, not
-an automatic defect. The current source, scene, and explicit current-game glossary win when the
-contexts differ or the older references conflict.
+A clean review keeps `severity` null, `category` and `family_key` empty and `correction` null.
+Source fixes are `"source_fix":{"kind":"show-text","face_name":"<a face the game shows>","face_index":0,"name":"<nameplate, empty for narration>"}`
+with category `speaker`, `correction` null and exactly one `apply_identities` entry, or
+`"source_fix":{"kind":"database-numbers"}` on a correction that changes a number only to one of
+its locator's `database_values`.
 
-For every scene target, explicitly verify who performs each action and to whom;
-pronouns and relationships; negation and conditions; certainty and obligation; quantities and
-chronology; omitted or invented information; and speaker voice plus natural English. Repeated
-translations containing third-person pronouns are shown in every distinct scene context; other
-pronoun-bearing translations spoken by different detected speakers receive one representative scene per speaker.
-Ordinary safe repetition remains deduplicated.
+Group (lint items go in the screen result's `lint_reviews`):
 
-Read the English exchange in order for reply continuity, rhythm, emotional beats, and distinct
-speaker voices, then check any proposed revision against the Japanese. Concrete fluency or voice
-defects include calqued syntax that obstructs reading, a reply that no longer connects naturally,
-flattened source-supported hesitation or attitude, and formality that contradicts the speaker's
-relationship or current scene. Preserve deliberate stiffness, restraint, and awkwardness in the
-source. Extra slang, jokes, hostility, or explanation are not repairs. Equally faithful and fluent
-alternatives remain stylistic preference; the existing editorial-evidence and independent-review
-requirements still apply.
+```json
+{"schema":"{{SWEEP_SCHEMA}}","bundle_id":"sweep-0001","bundle_sha256":"...","reviews":[{"id":"sweep-family-...","rejected":[],"note":""}],"declined":[]}
+```
 
-Treat Japanese discourse markers, stance particles, hedges, and intensifiers as part of the whole
-utterance rather than as separate factual claims. Flag semantic inflation when a translation turns
-a reaction to the current remark or action into unsupported skill, habit, frequency, progress, or
-change over time. A fluent or witty rendering is not clean if it adds one of those implications.
+Editorial:
 
-For MV/MZ code 401 live message text, preserve `\ac` center alignment. DazedTL strips it from model
-input and deterministically restores `\ac ` to every nonempty translated display line after
-wrapping. Flag `\ac` directly before Latin text, including after a newline: RPG Maker reads the
-following letters as part of the escape-code name, so `\acWhat` hides `What`. Correct it to
-`\ac What`; never delete the centering code as the fix. A following control such as `\ac\C[...]`
-already delimits the code safely. Also flag a centered `_original` whose live code 401 text lost
-`\ac` entirely. Preserve surrounding newlines and all other required controls.
+```json
+{"schema":"{{EDITORIAL_SCHEMA}}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{"id":"QA-0001","verdict":"accept","note":""},{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"},{"id":"QA-0003","verdict":"withdraw","note":"why"}],"declined":[]}
+```
 
-Recurring-joke and wordplay rules with distinctive Japanese anchors in translation quirks become
-deterministic motif families. Every matching variant is reviewed together and receives an explicit
-family receipt even when preserved. A preserved receipt must name one recognizable English joke
-mechanism and verify that every nonliteral variant still reads as its callback; sharing a character
-name alone is not enough. If a scene reviewer later disputes a wordplay variant, the local engine
-reopens every variant in that preserved family for deep review. Otherwise, the engine expands scene
-exceptions, motif suspects, and only strong mechanical/runtime defects and choice structures for
-evidence-backed deep review.
-Escalated screen suspects retain the reviewer's categories and rationale plus every complete scene
-used to reach that judgment. Relevant motif-family receipts travel with the deep item so the deep
-reviewer must reconcile scene and family evidence instead of silently discarding either one. A
-deep reviewer may clear a screen suspect only with a concrete rebuttal recorded in its evidence.
-Actionable deep findings use the documented category taxonomy and may share a generic `family_key`;
-final reports group matching keys while retaining every independently correctable target. A local
-checkpoint reports whole-focus progress, motif coverage, suspect counts, projected deep work,
-worker assignments, throughput, and ETA—never merely one completed bundle.
+## Handoff
 
-Final motif-family summaries reconcile the earlier family receipt with every accepted deep result.
-Actionable or uncertain variants supersede an earlier clean family disposition, while the original
-screen receipt remains nested in the report for auditability. Deep reviews explicitly attribute
-motif IDs only when their correction or playtest uncertainty concerns that joke mechanism;
-unrelated defects and ordinary anchor collisions never make a motif family look broken.
+Run DazedTL text QA for {{GAME}} from start to finish. You are the coordinator: read the task
+README, {{README}}, and follow it; it holds the whole policy and every role's brief.
 
-If QA rules change after an exhaustive screen finishes, reuse its checksum-validated receipts and
-regenerate only deep review with `rebuild-deep --task "<completed-task>"`. The command creates a
-new task; it never overwrites the completed source task or reuses evidence when the manifest,
-context, or screen-bundle checksums differ.
-If only final-report rules change after deep review completes, use
-`rebuild-final --task "<completed-task>"`; compatible screen and deep receipts are
-checksum-validated and replayed into a new task without invoking semantic review again.
-
-Finalization first runs a deterministic consistency audit against exact mappings recorded in the
-translation quirks and repeated structured UI headers. If it reports a conflict, do not present a
-partial report: reconcile the named deep receipts and use `rebuild-final` until the audit passes.
-
-After finalization and before showing findings to the user, perform a final editorial pass over
-every actionable correction. Prefer a reviewer who did not author the correction when another
-reviewer is available. Compare the source, current translation, proposed correction, evidence,
-and supplied scene context. Confirm that each correction is publication-ready, not merely
-semantically defensible: it must read naturally, preserve speaker voice and register, follow the
-project's terminology and honorific policy, retain required runtime controls, and fit the relevant
-dialogue or UI constraints. Keep this pass scoped to the proposed findings; do not reopen clean
-inventory records.
-
-Treat stylistic preference as clean. Change a line only when you can name a concrete defect, use
-the smallest natural correction that resolves it, and withdraw the finding when the current and
-proposed wordings are merely equally valid stylistic alternatives.
-
-For actionable `fluency`, `voice`, and `wordplay` findings, require a reviewer who did not author
-the correction to independently confirm the recorded `editorial_basis`: the concrete
-reader-facing defect, the source/scene/guidance that makes it defective, and that the proposal is
-not merely preferred wording. If independent review is unavailable or does not agree, revise the
-deep result to `clean` and rebuild the final report. Objective categories do not need this extra
-gate.
-
-Do not show or apply a correction that fails this pass. Do not edit `findings.json` directly.
-Revise its corresponding deep result receipt, run `rebuild-final` into a separate output root, and
-repeat the editorial pass on the returned task.
-
-For a full-game release task, once every actionable correction passes and there are no unresolved
-playtest/context records, automatically create the all-findings correction map, dry-run it, and
-apply it through DazedTL's atomic regression gate. Do not make the user approve already-verified
-stable IDs. If `uncertain_playtests` is nonempty, or any deterministic audit, dry-run, apply, or
-regression safeguard fails, pause and ask only for the decision needed to resolve that issue. The
-generated README provides the restricted `--approve-all` commands and the explicit
-`--allow-uncertain` path for applying verified findings while leaving uncertain records unchanged.
-
-Targeted reruns still require approval of specific stable IDs because they do not represent the
-complete release gate. Never modify or remove `_original`, and never write game files directly;
-always use the generated README's correction-map, dry-run, atomic-apply, and regression commands.
+Apply finished findings with `{{HELPER}} --apply`, which applies them through DazedTL as one
+reviewed text batch that History can restore and then saves a checkpoint commit; `{{HELPER}}`
+alone says where QA stands. Ask the user only about the open playtest or context questions apply
+names. Never edit game files yourself.
 
 <!-- qa-focus:database -->
-Database focus. The local manifest owns the exact canonical database-file scope; review only the
-prepared bundles for this focus.
+Database focus: the inventory holds the game's database files; review only this task's bundles.
 <!-- /qa-focus:database -->
 
 <!-- qa-focus:risky-codes -->
-Risky event-code focus. The local manifest owns the exact translation-sensitive command scope;
-review only the prepared bundles for this focus.
+Risky event-code focus: the inventory holds translation-sensitive event commands; review only
+this task's bundles.
 <!-- /qa-focus:risky-codes -->
 
 <!-- qa-focus:dialogue -->
-Dialogue focus. Review each prepared scene as one ordered conversation, plus the prepared motif
-families for recurring humor and wordplay. When a concrete issue exposes a same-source, glossary,
-or context family, use the related evidence supplied in the deep bundle rather than building a
-separate corpus index.
+Dialogue focus: review each scene as one ordered conversation, plus the motif families for
+recurring humor and wordplay.
 <!-- /qa-focus:dialogue -->
 
 <!-- qa-focus:release -->
-Coverage and release focus. The local manifest inventories every supported `_original` leaf and
-the task may finish only when its exhaustive screen and deep-review denominators are complete.
+Full release focus: the inventory holds every translated line, and the task is complete only
+when every bundle of every stage is accepted or reported as not reviewed.
 <!-- /qa-focus:release -->

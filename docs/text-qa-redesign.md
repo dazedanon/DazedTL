@@ -16,7 +16,6 @@ Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/r
 - Content handling starts only when a reviewer declines an item; QA never classifies or excludes content in advance, because which models decline what is not known beforehand.
   A declined item is offered to another reviewer, and if none will review it, finalize reports it as a coverage gap and never asks the user to attest a review; an optional queue lets the user review it.
 - After apply, QA records a [checkpoint](translation-contract.md#delivery-and-future-versions) commit; pushing and publishing stay user-approved.
-- The app generates the copied handoff from the QA skill, so one policy governs the skill, the task README and the handoff.
 
 ## Why
 
@@ -69,11 +68,10 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Skill
 
-- One policy covers the screen, deep, editorial and apply roles, with a fixed brief for each role.
 - Rendering moves into the engine: scene-grouped deep bundles.
 
 ## Order of work
 
-1. Quality and coverage: the single policy.
+1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
 2. Cost: the forced-review filters and scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.

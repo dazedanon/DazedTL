@@ -214,8 +214,8 @@ def _embed_identity_rules(prompt: str) -> str:
     return prompt.replace(_CHARACTER_IDENTITY_PLACEHOLDER, _read_skill_file("character_identity.md").strip())
 
 
-def load_rpgmaker_qa_skill(focus: str) -> str:
-    """Load the shared RPG Maker QA rules plus one exhaustive-screen focus."""
+def rpgmaker_qa_skill_parts(focus: str) -> tuple[str, str]:
+    """The shared RPG Maker QA policy and one focus's section, separately."""
     valid_focuses = {key for key, _label in RPGMAKER_QA_FOCUSES}
     if focus not in valid_focuses:
         raise ValueError(f"Unknown RPG Maker QA focus: {focus!r}")
@@ -250,7 +250,12 @@ def load_rpgmaker_qa_skill(focus: str) -> str:
 
     if not selected:
         raise ValueError(f"QA focus section is empty: {focus}")
-    common = "".join(common_parts).strip()
+    return "".join(common_parts).strip(), selected
+
+
+def load_rpgmaker_qa_skill(focus: str) -> str:
+    """Load the shared RPG Maker QA rules plus one exhaustive-screen focus."""
+    common, selected = rpgmaker_qa_skill_parts(focus)
     return f"{common}\n\n{selected}\n"
 
 

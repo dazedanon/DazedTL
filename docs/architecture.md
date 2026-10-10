@@ -721,6 +721,7 @@ Interrupted publication retains exact authorized before/after hashes for another
 Completed restores retire the recovered batch's notice in history; undoing a restore revives the earlier batch state without changing preserved receipts.
 Reapplying saved translations discloses replacement of later runtime edits, independently of output availability.
 Optional text QA retains the engine's project-scoped discovery inventory and findings, bound to current runtime text and original-source context.
+One [QA policy](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md) makes the task README, each reviewer role's fixed brief and the copied handoff, so they cannot disagree about applying.
 Its inventory holds the text the engine translated, which keeps its Japanese in `_original`; a [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reports the Japanese players may read that it cannot correct, in messages and database fields without `_original`, custom data files and plugin parameters, so that gap is shown rather than silent.
 Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
 Applied corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before they are published.

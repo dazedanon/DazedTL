@@ -41,18 +41,12 @@ def binding(plan):
     }
 
 
-def qa_handoff(task, helper=None):
-    """The text a coding assistant receives for one prepared QA task."""
-    task = Path(task)
-    apply = f"`{helper} --apply`" if helper else "the project helper's `qa --apply`"
-    return (
-        "Run DazedTL text QA for this game from start to finish without the user. Follow the task README for review. "
-        f"When finalize reports complete, apply the findings with {apply}: DazedTL applies them as one reviewed text batch that History can restore, then saves a checkpoint commit. "
-        "Ask the user only about an open playtest or context question. Never edit game files yourself.\n\nTask: "
-        + str(task)
-        + "\nREADME: "
-        + str(task / "README.md")
-    )
+def qa_handoff(task, helper="project.py qa"):
+    """The text a coding assistant receives for one prepared QA task, from
+    the QA policy that also makes its README."""
+    from util import rpgmaker_qa as qa
+
+    return qa.handoff_text(task, helper)
 
 
 def qa_state(plan):

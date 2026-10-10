@@ -63,6 +63,9 @@ def main() -> int:
     next_cmd.add_argument(
         "--bundle", help="Claim this waiting bundle, such as one another reviewer declined."
     )
+    brief = sub.add_parser("brief", help="Print one reviewer role's fixed brief.")
+    brief.add_argument("--task", required=True, type=Path)
+    brief.add_argument("--role", required=True, choices=rpgmaker_qa.QA_ROLES)
     context = sub.add_parser(
         "context", help="Print read-only game text around an identity or command list."
     )
@@ -93,6 +96,8 @@ def main() -> int:
         _print(rpgmaker_qa.release_bundle(args.task, args.bundle))
     elif args.command == "advance":
         _print(rpgmaker_qa.advance(args.task, args.skip_declined))
+    elif args.command == "brief":
+        print(rpgmaker_qa.brief(args.task, args.role))
     elif args.command == "context":
         print(rpgmaker_qa.context_view(args.task, args.at, args.radius))
     elif args.command == "rebuild-deep":

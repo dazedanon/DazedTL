@@ -40,6 +40,7 @@ from util.rpgmaker_qa_verify import verify_manifest
 from util import rpgmaker_qa_lint as lint
 from util.rpgmaker_qa_preflight import preflight
 from util.reference_games import reference_context
+from util.skills import rpgmaker_qa_skill_parts
 
 
 TASK_SCHEMA = "rpgmaker-qa-task-v3"
@@ -438,6 +439,11 @@ def _engine_fingerprint() -> str:
         "risk_cues": {
             label: pattern.pattern for label, pattern in sorted(_JP_RISK_CUES.items())
         },
+        # The policy the README and briefs are made from.
+        "policy_sha256": _sha256("\n".join(
+            "\n".join(rpgmaker_qa_skill_parts(focus))
+            for focus in ("database", "risky-codes", "dialogue", "release")
+        )),
         "screen_inconsistent_source_evidence": True,
     }
     return _sha256(_canonical_bytes(contract))
@@ -1297,209 +1303,86 @@ def runtime_command(script: str | Path) -> str:
     return prefix + shell_argument(sys.executable) + ' -X utf8 ' + shell_argument(script)
 
 
+QA_ROLES = ("screen", "deep", "group", "editorial")
+_SKILL_SECTION_RE = re.compile(r"^## (.+)$", re.M)
+
+
+def _skill_sections(focus: str) -> tuple[str, dict[str, str], str]:
+    """The QA policy's introduction, its sections by title, and the focus."""
+    common, selected = rpgmaker_qa_skill_parts(focus)
+    starts = list(_SKILL_SECTION_RE.finditer(common))
+    intro = common[: starts[0].start()].strip() if starts else common
+    sections = {
+        match.group(1).strip(): common[
+            match.end() : starts[index + 1].start() if index + 1 < len(starts) else None
+        ].strip()
+        for index, match in enumerate(starts)
+    }
+    return intro, sections, selected
+
+
+def _fill(text: str, values: dict[str, str]) -> str:
+    for key, value in values.items():
+        text = text.replace("{{" + key + "}}", value)
+    return text
+
+
+def _skill_values(task_dir: Path, task: dict[str, Any]) -> dict[str, str]:
+    return {
+        "CLI": runtime_command(
+            Path(__file__).resolve().parents[1] / "scripts" / "rpgmaker_qa.py"
+        ),
+        "TASK": shell_argument(task_dir),
+        "RECEIPTS": str(
+            Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
+        ),
+        "CATEGORIES": ", ".join(sorted(FINDING_CATEGORIES)),
+        "SCREEN_SCHEMA": SCREEN_RESULT_SCHEMA,
+        "DEEP_SCHEMA": DEEP_RESULT_SCHEMA,
+        "SWEEP_SCHEMA": SWEEP_RESULT_SCHEMA,
+        "EDITORIAL_SCHEMA": EDITORIAL_RESULT_SCHEMA,
+    }
+
+
 def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
-    cli = runtime_command(Path(__file__).resolve().parents[1] / "scripts" / "rpgmaker_qa.py")
-    task_argument = shell_argument(task_dir)
-    receipt_dir = (
-        Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
+    """The task README: the QA policy with every role's brief, for this task."""
+    intro, sections, focus = _skill_sections(task["focus"])
+    body = "\n\n".join(
+        f"## {title}\n\n{text}" for title, text in sections.items() if title != "Handoff"
     )
-    correction_workflow = """9. Once finalize reports `complete`, DazedTL applies the findings through its own reviewed
-   publication, which History can restore, with the project helper's `qa --apply` from your
-   handoff. No QA command here writes game files."""
-    return f"""# AI-helper QA task
+    return _fill(
+        f"# Text QA task\n\nTask: `{task_dir}`\n\n{focus}\n\n{intro}\n\n{body}\n",
+        _skill_values(task_dir, task),
+    )
 
-This task is managed by DazedTL. Do not create another manifest, index, checkpoint, registry,
-or pipeline. Do not call a model-provider API; use the current AI helper for semantic review.
-Do not edit the game during discovery.
 
-Task directory: `{task_dir}`
-Reviewer receipt workspace: `{receipt_dir}`
+def brief(task_dir: str | Path, role: str) -> str:
+    """One reviewer's fixed brief: the policy, its role and the commands."""
+    if role not in QA_ROLES:
+        raise ValueError("Choose a role: " + ", ".join(QA_ROLES))
+    root, task, _checkpoint = _load_task(task_dir)
+    _intro, sections, focus = _skill_sections(task["focus"])
+    title = {"screen": "Screen reviewer", "deep": "Deep reviewer",
+             "group": "Group reviewer", "editorial": "Editorial reviewer"}[role]
+    parts = [focus] + [
+        f"## {name}\n\n{sections[name]}"
+        for name in ("Policy", title, "Commands", "Result formats")
+    ]
+    return _fill("\n\n".join(parts) + "\n", _skill_values(root, task))
 
-If the AI helper supports parallel reviewers, use two to four persistent workers. Each worker must
-use a unique name with `next`; DazedTL assigns non-overlapping bundles and keeps global coverage.
-Dialogue is scene-affine: every command-list scene is an indivisible review unit and can occur in
-only one bundle. A bundle may contain multiple complete scenes, but workers must never split or
-redistribute a scene outside the claim/release commands.
 
-1. Read `context.json` once for the game glossary and translation guidance.
-   If `reference_translations.status` is `ready`, use its exact Japanese-source matches as
-   advisory evidence of established wording. A reference difference is a reason to compare
-   referent, function, tone, and scene context—not an automatic defect. The current source and
-   explicit current-game glossary remain authoritative.
-2. Run `{cli} status --task {task_argument}`.
-3. Claim work with `{cli} next --task {task_argument} --worker "<unique-worker-name>"`.
-4. Read the returned immutable bundle and write the result schema described below. Create the
-   reviewer receipt workspace above and write every temporary screen/deep result there using a
-   unique filename containing its bundle ID. Never write `.qa-*.json` or `qa-*.json` in the game
-   root. DazedTL copies accepted receipts into the managed task directory; the ignored workspace
-   only preserves convenient reviewer history.
-5. Submit it with `{cli} accept --task {task_argument} --result "<result.json>"`.
-6. Continue until `next` says the current stage is complete, then run
-   `{cli} advance --task {task_argument}` and continue the next stage.
-7. When every deep bundle is accepted, run `{cli} finalize --task {task_argument}`. It moves to
-   the `sweep` stage when an accepted family's rule finds more lines, and then to the
-   `editorial` stage; review those bundles with `next` and `accept` as before, and run finalize
-   again after each stage until it reports `complete`.
-8. The editorial stage is the final pass over every reviewer-written correction before it can be
-   applied. Compare the source, current translation, correction, evidence and nearby game text,
-   and confirm publication-ready meaning, natural English, speaker voice, terminology and
-   honorific policy, runtime controls, line breaks, and dialogue or UI fit. Treat stylistic
-   preference as clean: `accept` a correction that fixes a concrete defect, `revise` it with a
-   `replacement` when a smaller or more natural correction fixes the same defect, and `withdraw`
-   it when the current and proposed wordings are equally valid. For `fluency`, `voice` and
-   `wordplay`, confirm the recorded `editorial_basis` independently; DazedTL never gives those
-   bundles to a worker that wrote one of their corrections. An item's `conflicts` name
-   corrections that contradict each other, the translation quirks, a recorded decision or a
-   structured label: revise until they agree, or accept with a note when the contexts need the
-   difference. Finalize repeats the check and opens another round for conflicts that remain.
-   Return:
-
-```json
-{{"schema":"{EDITORIAL_RESULT_SCHEMA}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{{"id":"QA-0001","verdict":"accept","note":""}},{{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"}},{{"id":"QA-0003","verdict":"withdraw","note":"why"}}]}}
-```
-
-   Record a choice every reviewer must follow, such as narration tense or a quoted label, with
-   `{cli} decide --task {task_argument} --worker "<name>" --key "<topic>" --choice "<choice>"`,
-   adding `--source "<Japanese>" --translation "<English>"` when a correction must use that exact
-   wording; read them with `{cli} decisions --task {task_argument}` before deciding the same
-   kind of question.
-{correction_workflow}
-
-For a screen bundle, inspect every target. A `scene` item contains one complete ordered `lines`
-array; lines with an `id` are required review targets and lines with `context_id` were targeted in
-another representative scene. Read every line so speaker continuity, callbacks, pronouns, and
-comic timing remain visible. If this scene exposes a context-specific problem on a `context_id`
-line, it may also be reported as an exception. A `cluster` item is isolated non-dialogue text. Omit
-clean scene/cluster targets from
-`exceptions`; one accepted bundle receipt covers them. `risk` values are attention hints, not
-defects and not automatic deep-review instructions. When present, compare
-`same_source_alternatives` for genuine consistency problems. When present, compare
-`reference_translations` with the current wording, but accept a deliberate current-game
-translation when the referent or context differs or older references conflict.
-
-For every scene target, explicitly verify: who performs each action and to whom; pronouns,
-possessives, and relationships; negation, conditions, certainty, and obligation; quantities and
-chronology; omitted or invented information; and speaker voice plus natural English. A
-`context_expansion` value means a repeated pronoun-bearing translation was intentionally assigned
-in more than one scene. Judge it against this scene rather than assuming the wording that worked in
-another context still works here.
-
-Read the English exchange in order for reply continuity, rhythm, emotional beats, and distinct
-speaker voices, then check any proposed revision against the Japanese. Concrete fluency or voice
-defects include calqued syntax that obstructs reading, a reply that no longer connects naturally,
-flattened source-supported hesitation or attitude, and formality that contradicts the speaker's
-relationship or current scene. Preserve deliberate stiffness, restraint, and awkwardness in the
-source. Extra slang, jokes, hostility, or explanation are not repairs. Equally faithful and fluent
-alternatives remain stylistic preference; the existing editorial-evidence and independent-review
-requirements still apply.
-
-A `motif-family` item gathers all translations matching one recurring-joke or wordplay rule from
-the project's quirks. Return exactly one `motif_reviews` entry for every motif in the bundle,
-including preserved families. Name concrete affected variant IDs in `suspect_ids`; do not flag
-intentional functional variation merely because wording differs. Before marking a family
-`preserved`, name the single recognizable English joke mechanism in the note and verify that every
-nonliteral variant still reads as a callback to it; merely mentioning the same name is not enough.
-Write:
-
-```json
-{{"schema":"{SCREEN_RESULT_SCHEMA}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}}],"motif_reviews":[{{"id":"motif-...","disposition":"preserved","note":"The English variants retain the named joke and its function.","suspect_ids":[]}}],"lint_reviews":[{{"id":"lint-family-...","rejected":[],"note":""}}]}}
-```
-
-A `lint-family` item lists one lint family's proposals: deterministic fixes for a known mechanical
-defect, each with its source, current and proposed text. Check them as a group and return exactly
-one `lint_reviews` entry per lint item. A proposal you do not list in `rejected` is accepted; a
-note is required when you reject any. Reject a proposal that would harm its line, or a style this
-game deliberately keeps. A scene line or cluster with `lint` already has those mechanical fixes
-proposed: do not report them again, and judge the rest of the line.
-
-For a deep bundle, return exactly one review per item:
-
-```json
-{{"schema":"{DEEP_RESULT_SCHEMA}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{{"id":"...","disposition":"clean","severity":null,"category":"","family_key":"","motif_ids":[],"evidence":"","correction":null,"apply_identities":[]}}]}}
-```
-
-When an actionable correction fixes a problem that recurs word for word elsewhere, such as a term
-or a capitalization, add `"sweep":{{"find":"<exact current text>","replace":"<exact corrected
-text>","source_has":"<optional Japanese the source must contain>"}}` with its `family_key`.
-Applying it to the current translation must give your correction exactly. After deep review,
-DazedTL finds every other line of the same display shape that the rule changes and puts them in
-sweep bundles. A `sweep-family` item lists those lines with the rule's proposed text and the
-accepted example; review them as a group and return:
-
-```json
-{{"schema":"{SWEEP_RESULT_SCHEMA}","bundle_id":"sweep-0001","bundle_sha256":"...","reviews":[{{"id":"sweep-family-...","rejected":[],"note":""}}]}}
-```
-
-A candidate you do not reject becomes a finding with the family's correction. Reject one where the
-rule does not fit its line, such as a sentence start or a system label, with a note.
-
-Some slips are in the Japanese source itself; fix them with `source_fix` on an actionable review:
-
-- `{{"kind":"show-text","face_name":"<face>","face_index":0,"name":"<nameplate>"}}` when a message
-  shows the wrong speaker's face or name. Use category `speaker`, `correction` null and exactly
-  one `apply_identities` entry, the message whose Show Text header is wrong. The face must be one
-  the game already shows; an empty name is for narration.
-- `{{"kind":"database-numbers"}}` when a database text states a number its own entry contradicts,
-  such as a description's attack bonus. The correction may change a number only to one of the
-  locator's `database_values`.
-
-A deep item's `lint` names the mechanical fixes accepted for its line. DazedTL applies them to your
-correction as well, so write the correction for meaning and voice.
-
-Each deep item states the high-confidence `deep_reasons` that caused escalation. Do not expand the
-queue yourself. `screen_evidence` preserves the screening reviewer's concrete reason, and
-`screen_scene_contexts` preserves every complete scene used to reach that judgment. Explicitly
-adjudicate that evidence; do not clear a screen suspect merely because its problem is absent from
-the small `nearby_commands` window. A `clean` review for an item with `screen_evidence` must rebut
-the screening rationale concretely in its own `evidence`; silent clearing is rejected.
-`motif_contexts` contains the family-level wordplay review. When scene and motif evidence disagree,
-reconcile both in the evidence for your disposition. If `deep_reasons` contains
-`motif-scene-contradiction`, a scene reviewer disputed a wordplay variant after the family screen
-called it preserved, so every family variant has been reopened. Judge each one against a single
-recognizable English joke mechanism rather than accepting unrelated name-bearing phrases.
-Set `motif_ids` to the exact bundle-provided motif IDs only when this review's correction or
-playtest uncertainty actually concerns those joke mechanisms. Use an empty list for ordinary name
-mentions, anchor collisions, and unrelated defects on a motif-matched line; motif summaries use
-this attribution and must not claim that an unrelated correction is a family failure.
-
-Use `actionable` only for a concrete source-supported defect with a supported correction; its
-severity must be lowercase `critical`, `high`, or `medium`. Use `uncertain-playtest` for
-runtime/context uncertainty and give its playtest reason in `evidence`. `apply_identities` may be
-empty to target the whole exact cluster, or list only bundle-provided identity locators when the
-correction is context-specific. Never write game files yourself.
-
-For actionable reviews, use one category from: {", ".join(sorted(FINDING_CATEGORIES))}. Set
-`family_key` to a reusable generic key when multiple lines express one underlying problem—for
-example `term:黄泉の巌` or `ui:ＢＧＭ`; otherwise use an empty string. Clean and uncertain reviews
-must use an empty `family_key`.
-
-Actionable `fluency`, `voice`, and `wordplay` reviews must also include exactly this object:
-
-```json
-{{"editorial_basis":{{"defect":"Concrete reader-facing defect in the current wording.","source_support":"Source, scene, or project guidance that makes it defective.","not_preference":true}}}}
-```
-
-Do not use these categories for equally valid alternatives. Other categories and non-actionable
-reviews must omit `editorial_basis`.
-
-If a worker cannot finish an assigned bundle, release it with
-`{cli} release --task {task_argument} --bundle "<bundle-id>"`.
-
-If a reviewer will not review an item, it declines that item instead of skipping or softening it:
-a screen result lists it in `declined` as `{{"id":"<scene, cluster or motif id>","reason":"one line
-without game text"}}`, and a deep review uses `{{"id":"...","disposition":"declined","reason":"..."}}`.
-DazedTL accepts the rest of the bundle and moves declined items to a bundle of their own. Offer it
-to another reviewer, which claims it under its own worker name with
-`{cli} next --task {task_argument} --worker "<name>" --bundle "<bundle-id>"`; the reviewer that
-declined it never receives it again. Once a
-second reviewer declines it, it is set aside. If no other reviewer is available, use
-`advance --skip-declined` or `finalize --skip-declined`. Set-aside items are reported as not
-reviewed; never ask the user to review them.
-
-For read-only game text around a line, run
-`{cli} context --task {task_argument} --at "<identity or command list>"`; it leaves out scenes a
-reviewer declined.
-"""
+def handoff_text(task_dir: str | Path, helper: str) -> str:
+    """The copied task: the policy's handoff for this task and helper."""
+    root, task, _checkpoint = _load_task(task_dir)
+    _intro, sections, _focus = _skill_sections(task["focus"])
+    return _fill(
+        sections["Handoff"],
+        {
+            "GAME": Path(task["game_root"]).name,
+            "README": str(root / "README.md"),
+            "HELPER": helper,
+        },
+    ) + "\n"
 
 
 def prepare_task(

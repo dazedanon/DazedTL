@@ -10,6 +10,7 @@ from util.skills.setup import (
     load_generic_project_setup,
     load_project_setup,
     load_rpgmaker_qa_skill,
+    rpgmaker_qa_skill_parts,
     load_walkthrough_skill,
     skills_dir,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "load_generic_project_setup",
     "load_project_setup",
     "load_rpgmaker_qa_skill",
+    "rpgmaker_qa_skill_parts",
     "load_walkthrough_skill",
     "load_system_prompt",
     "migrate_game_skill_text",
