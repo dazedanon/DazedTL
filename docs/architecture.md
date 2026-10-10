@@ -731,6 +731,7 @@ Set-aside lines stay out of deep review, corrections and the read-only context v
 Before screening, [lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) proposes exact fixes for known mechanical families: spacing after ♥, stray letters for the small っ, dakuten apostrophes on real words, list items merged onto one line, quoted titles that no longer match their title, duplicated labels and level-tag spacing.
 Screen lines show those fixes, so screening concentrates on meaning and voice, and each family's proposals are reviewed as a group in small items by scene.
 Accepted fixes become findings and also apply on top of a deep correction of the same line.
+A deep correction of a problem that recurs word for word can carry a sweep rule that reproduces it exactly; after deep review the engine finds every other line of the same display shape the rule changes, and reviewers accept or reject those as a group before findings are made.
 The clipboard task stops before runtime publication.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 

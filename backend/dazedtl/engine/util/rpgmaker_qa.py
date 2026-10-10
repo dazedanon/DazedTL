@@ -46,6 +46,9 @@ CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
 DEEP_RESULT_SCHEMA = "rpgmaker-qa-deep-result-v3"
+SWEEP_RESULT_SCHEMA = "rpgmaker-qa-sweep-result-v1"
+# Stages whose bundles reviewers claim, in order.
+REVIEW_STAGES = ("screen", "deep", "sweep")
 FINDINGS_SCHEMA = "rpgmaker-qa-findings-v5"
 CORRECTION_MAP_SCHEMA = "rpgmaker-qa-correction-map-v1"
 REGRESSION_SCHEMA = "rpgmaker-qa-regression-v1"
@@ -1297,7 +1300,9 @@ redistribute a scene outside the claim/release commands.
 5. Submit it with `{cli} accept --task {task_argument} --result "<result.json>"`.
 6. Continue until `next` says the current stage is complete, then run
    `{cli} advance --task {task_argument}` and continue the next stage.
-7. When every deep bundle is accepted, run `{cli} finalize --task {task_argument}`.
+7. When every deep bundle is accepted, run `{cli} finalize --task {task_argument}`. If it
+   reports the `sweep` stage, review the sweep bundles with `next` and `accept`, then run
+   finalize again.
    Finalization audits exact mappings from the translation quirks and repeated structured UI
    headers across all proposed corrections. If it reports a conflict, do not present a partial
    report; reconcile the named deep receipts and run `rebuild-final` until the audit passes.
@@ -1389,6 +1394,21 @@ For a deep bundle, return exactly one review per item:
 ```json
 {{"schema":"{DEEP_RESULT_SCHEMA}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{{"id":"...","disposition":"clean","severity":null,"category":"","family_key":"","motif_ids":[],"evidence":"","correction":null,"apply_identities":[]}}]}}
 ```
+
+When an actionable correction fixes a problem that recurs word for word elsewhere, such as a term
+or a capitalization, add `"sweep":{{"find":"<exact current text>","replace":"<exact corrected
+text>","source_has":"<optional Japanese the source must contain>"}}` with its `family_key`.
+Applying it to the current translation must give your correction exactly. After deep review,
+DazedTL finds every other line of the same display shape that the rule changes and puts them in
+sweep bundles. A `sweep-family` item lists those lines with the rule's proposed text and the
+accepted example; review them as a group and return:
+
+```json
+{{"schema":"{SWEEP_RESULT_SCHEMA}","bundle_id":"sweep-0001","bundle_sha256":"...","reviews":[{{"id":"sweep-family-...","rejected":[],"note":""}}]}}
+```
+
+A candidate you do not reject becomes a finding with the family's correction. Reject one where the
+rule does not fit its line, such as a sentence start or a system label, with a note.
 
 A deep item's `lint` names the mechanical fixes accepted for its line. DazedTL applies them to your
 correction as well, so write the correction for meaning and voice.
@@ -1582,6 +1602,7 @@ def prepare_task(
                     "candidate_reasons": forced_candidates,
                     "bundles": [],
                 },
+                "sweep": {"total_items": 0, "accepted_items": 0, "bundles": []},
                 "findings_file": "",
             }
             _atomic_write_json(staging / "task.json", task)
@@ -1684,6 +1705,16 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "projected": deep.get("projected_items", deep["total_items"]),
             **_stage_metrics(deep, active=checkpoint["stage"] == "deep"),
         },
+        "sweep": {
+            "accepted": checkpoint.get("sweep", {}).get("accepted_items", 0),
+            "total": checkpoint.get("sweep", {}).get("total_items", 0),
+            **_stage_metrics(
+                checkpoint.get("sweep") or {
+                    "bundles": [], "accepted_items": 0, "total_items": 0,
+                },
+                active=checkpoint["stage"] == "sweep",
+            ),
+        },
         "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
     }
@@ -1691,7 +1722,8 @@ def status(task_dir: str | Path) -> dict[str, Any]:
 
 def _declined_counts(checkpoint: dict[str, Any]) -> dict[str, int]:
     rows = [
-        row for stage in ("screen", "deep") for row in checkpoint[stage]["bundles"]
+        row for stage in REVIEW_STAGES
+        for row in checkpoint.get(stage, {}).get("bundles", [])
         if row.get("declined_by")
     ]
     return {
@@ -1718,7 +1750,7 @@ def next_bundle(
     with _task_lock(root):
         root, task, checkpoint = _load_task(root)
         stage = checkpoint["stage"]
-        if stage not in {"screen", "deep"}:
+        if stage not in REVIEW_STAGES:
             if bundle_id:
                 raise ValueError(f"No bundle can be claimed in the {stage} stage")
             return None
@@ -1773,8 +1805,8 @@ def release_bundle(task_dir: str | Path, bundle_id: str) -> dict[str, Any]:
 
 
 def _bundle_row(checkpoint: dict, bundle_id: str) -> tuple[str, dict]:
-    for stage in ("screen", "deep"):
-        for row in checkpoint[stage]["bundles"]:
+    for stage in REVIEW_STAGES:
+        for row in checkpoint.get(stage, {}).get("bundles", []):
             if row["id"] == bundle_id:
                 return stage, row
     raise QAResultError(f"Unknown bundle id {bundle_id!r}")
@@ -1960,6 +1992,66 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
             )
 
 
+def _validate_sweep_rule(review: dict[str, Any], item: dict[str, Any]) -> None:
+    """A sweep rule must reproduce its review's correction exactly."""
+    identity = review["id"]
+    rule = review["sweep"]
+    if (
+        not isinstance(rule, dict)
+        or not {"find", "replace"} <= set(rule)
+        or set(rule) - {"find", "replace", "source_has"}
+        or not all(isinstance(value, str) for value in rule.values())
+    ):
+        raise QAResultError(
+            f"A sweep rule is {{find, replace, optional source_has}}: {identity}"
+        )
+    find, replace = rule["find"], rule["replace"]
+    source_has = rule.get("source_has", "")
+    if not 0 < len(find) <= 200 or len(replace) > 200 or find == replace:
+        raise QAResultError(f"A sweep rule needs a short, real change: {identity}")
+    if len(source_has) > 100 or source_has not in str(item["source"]):
+        raise QAResultError(
+            f"A sweep rule's source_has must appear in the source: {identity}"
+        )
+    if not str(review.get("family_key") or "").strip():
+        raise QAResultError(f"A sweep rule needs the family_key it fixes: {identity}")
+    if str(item["translation"]).replace(find, replace) != review["correction"]:
+        raise QAResultError(
+            f"Applying the sweep rule to the current text must give the "
+            f"correction exactly: {identity}"
+        )
+
+
+def _validate_sweep_result(bundle: dict, result: dict) -> None:
+    if result.get("schema") != SWEEP_RESULT_SCHEMA:
+        raise QAResultError("Sweep result has the wrong schema")
+    declined = _declined_items(bundle, result)
+    expected = {
+        item["id"]: item for item in bundle["items"] if item["id"] not in declined
+    }
+    reviews = result.get("reviews")
+    if not isinstance(reviews, list) or not all(
+        isinstance(review, dict) for review in reviews
+    ):
+        raise QAResultError("Sweep result reviews must be a list of objects")
+    reviewed = [str(review.get("id") or "") for review in reviews]
+    if len(reviewed) != len(set(reviewed)) or set(reviewed) != set(expected):
+        raise QAResultError("Sweep result must review every assigned family exactly once")
+    for review in reviews:
+        rejected = review.get("rejected")
+        allowed = {row["id"] for row in expected[review["id"]]["candidates"]}
+        if (
+            not isinstance(rejected, list)
+            or len(rejected) != len(set(rejected))
+            or not set(rejected) <= allowed
+        ):
+            raise QAResultError(f"Sweep rejections are invalid for {review['id']}")
+        if rejected and not str(review.get("note") or "").strip():
+            raise QAResultError(
+                f"A sweep review that rejects candidates needs a note: {review['id']}"
+            )
+
+
 def _validate_deep_result(bundle: dict, result: dict) -> None:
     if result.get("schema") != DEEP_RESULT_SCHEMA:
         raise QAResultError("Deep result has the wrong schema")
@@ -2031,6 +2123,12 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
             raise QAResultError(
                 f"Non-actionable review cannot have editorial_basis for {identity}"
             )
+        if review.get("sweep") is not None:
+            if disposition != "actionable":
+                raise QAResultError(
+                    f"Only an actionable review can carry a sweep rule: {identity}"
+                )
+            _validate_sweep_rule(review, bundle_items[identity])
         if (
             disposition == "clean"
             and bundle_items[identity].get("screen_evidence")
@@ -2087,6 +2185,8 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             raise QAResultError("Result does not match the immutable bundle checksum")
         if stage == "screen":
             _validate_screen_result(bundle, result)
+        elif stage == "sweep":
+            _validate_sweep_result(bundle, result)
         else:
             _validate_deep_result(bundle, result)
         canonical_path = root / "results" / stage / f"{bundle_id}.json"
@@ -2101,7 +2201,7 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         _atomic_write_json(canonical_path, result)
         declined = (
             _declined_items(bundle, result)
-            if stage == "screen"
+            if stage in {"screen", "sweep"}
             else {
                 review["id"]: review["reason"]
                 for review in result["reviews"]
@@ -2436,8 +2536,8 @@ def _declined_scope(
     context_scenes: set[str] = set()
     unreviewed: set[str] = set()
     items = []
-    for stage in ("screen", "deep"):
-        for row in checkpoint[stage]["bundles"]:
+    for stage in REVIEW_STAGES:
+        for row in checkpoint.get(stage, {}).get("bundles", []):
             if row["status"] not in statuses or not row.get("declined_by"):
                 continue
             reasons: dict[str, list[str]] = defaultdict(list)
@@ -2446,7 +2546,10 @@ def _declined_scope(
                     reasons[item_id].append(reason)
             for item in _read_json(Path(row["path"]))["items"]:
                 kind = item.get("kind") or stage
-                if kind == "scene":
+                if stage == "sweep":
+                    # Lines were reviewed; only the sweep's fixes are left out.
+                    pass
+                elif kind == "scene":
                     copies = set(item.get("scene_copies") or [item["scene_id"]])
                     scenes |= copies
                     context_scenes |= copies
@@ -2513,6 +2616,76 @@ def _lint_decisions(
                 if str(review.get("note") or "").strip():
                     entry["notes"].append(str(review["note"]).strip())
     return accepted
+
+
+def _add_sweep_findings(
+    findings: list[dict[str, Any]],
+    checkpoint: dict[str, Any],
+    records: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Accepted sweep candidates as findings, one per line, rules combined.
+
+    Returns candidates left out because their combined rules would block apply.
+    """
+    by_cluster: dict[str, list[tuple[dict, dict, str]]] = defaultdict(list)
+    for row in checkpoint.get("sweep", {}).get("bundles", []):
+        if row["status"] != "accepted":
+            continue
+        reviews = {
+            review["id"]: review
+            for review in _read_json(Path(row["result_path"]))["reviews"]
+        }
+        for item in _read_json(Path(row["path"]))["items"]:
+            review = reviews.get(item["id"])
+            if review is None:
+                continue
+            for candidate in item["candidates"]:
+                if candidate["id"] not in review["rejected"]:
+                    by_cluster[candidate["cluster_id"]].append(
+                        (item, candidate, str(review.get("note") or "").strip())
+                    )
+    dropped = []
+    for cluster_id, accepted in sorted(by_cluster.items()):
+        accepted.sort(key=lambda entry: entry[0]["family_key"])
+        item, candidate, note = accepted[0]
+        correction = candidate["current"]
+        for family, _candidate, _note in accepted:
+            correction = correction.replace(
+                family["rule"]["find"], family["rule"]["replace"]
+            )
+        targets = sorted(
+            set.intersection(*(set(entry[1]["identities"]) for entry in accepted))
+        )
+        problems = sorted({
+            problem
+            for identity in targets
+            for problem in correction_problems(
+                records[identity]["source"], records[identity]["live"],
+                correction, records[identity].get("event_code"),
+                records[identity]["live_pointers"], records[identity]["live_transform"],
+            )
+        })
+        if problems or not targets:
+            dropped.append({"cluster_id": cluster_id, "problems": problems})
+            continue
+        findings.append({
+            "id": "",
+            "cluster_id": cluster_id,
+            "severity": item["severity"],
+            "category": item["category"],
+            "family_key": item["family_key"],
+            "evidence": (
+                "Same problem as an accepted correction: "
+                + item["example"]["evidence"]
+                + (" Sweep reviewer: " + note if note else "")
+            ),
+            "source": candidate["source"],
+            "current": candidate["current"],
+            "correction": correction,
+            "target_identities": targets,
+            "sweep_families": sorted({entry[0]["family_key"] for entry in accepted}),
+        })
+    return dropped
 
 
 def _add_lint_findings(
@@ -2729,10 +2902,129 @@ def _settle_declined(
         row["skipped"] = True
 
 
+def _sweep_items(
+    checkpoint: dict[str, Any], manifest: dict[str, Any], declined: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Every other line an accepted family's sweep rule changes, for group review."""
+    records, _clusters = _record_maps(manifest)
+    corrected: set[str] = set()
+    families: dict[str, dict[str, Any]] = {}
+    for row in checkpoint["deep"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
+        items = {item["id"]: item for item in _read_json(Path(row["path"]))["items"]}
+        for review in _read_json(Path(row["result_path"]))["reviews"]:
+            if review["disposition"] != "actionable":
+                continue
+            corrected.add(review["id"])
+            if not review.get("sweep"):
+                continue
+            item = items[review["id"]]
+            family_key = _normalize_family_key(review["family_key"])
+            shapes = sorted(item.get("display_shapes") or [])
+            key = _sha256(_canonical_bytes([family_key, review["sweep"], shapes]))[:20]
+            families.setdefault(key, {
+                "family_key": family_key,
+                "rule": review["sweep"],
+                "shapes": shapes,
+                "example": {
+                    "source": item["source"],
+                    "current": item["translation"],
+                    "correction": review["correction"],
+                    "evidence": review["evidence"],
+                },
+                "category": _normalize_category(review.get("category")),
+                "severity": review["severity"],
+            })
+    items = []
+    for key, family in sorted(families.items()):
+        find, replace = family["rule"]["find"], family["rule"]["replace"]
+        source_has = family["rule"].get("source_has", "")
+        candidates = []
+        for cluster in manifest["clusters"]:
+            cluster_id = cluster["representative"]
+            if (
+                cluster_id in corrected
+                or cluster_id in declined["clusters"]
+                or find not in cluster["live"]
+                or source_has not in cluster["source"]
+            ):
+                continue
+            members = [
+                records[identity] for identity in cluster["identities"]
+                if identity not in declined["identities"]
+                and (
+                    not family["shapes"]
+                    or records[identity].get("display_shape") in family["shapes"]
+                )
+            ]
+            proposed = cluster["live"].replace(find, replace)
+            if not members or any(
+                correction_problems(
+                    record["source"], record["live"], proposed,
+                    record.get("event_code"), record["live_pointers"],
+                    record["live_transform"],
+                )
+                for record in members
+            ):
+                continue
+            position = _scene_position(members[0])
+            speaker = str((members[0].get("speaker") or {}).get("display_name") or "")
+            candidates.append({
+                "id": "sweep-" + _sha256(f"{key}\0{cluster_id}")[:16],
+                "cluster_id": cluster_id,
+                "identities": [record["identity"] for record in members],
+                "scene": position[0] if position else members[0]["file"],
+                **({"speaker": speaker} if speaker else {}),
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "proposed": proposed,
+            })
+        candidates.sort(key=lambda row: (row["scene"], row["cluster_id"]))
+        for start in range(0, len(candidates), LINT_ITEM_LIMIT):
+            chunk = candidates[start : start + LINT_ITEM_LIMIT]
+            items.append({
+                "kind": "sweep-family",
+                "id": "sweep-family-" + _sha256(
+                    key + "\0" + "\0".join(row["id"] for row in chunk)
+                )[:20],
+                "ordinal": len(items) + 1,
+                "family_key": family["family_key"],
+                "rule": family["rule"],
+                "category": family["category"],
+                "severity": family["severity"],
+                "example": family["example"],
+                "target_count": len(chunk),
+                "candidates": chunk,
+            })
+    return items
+
+
 def _advance_unlocked(
     task_dir: str | Path, skip_declined: bool = False
 ) -> dict[str, Any]:
     root, _task, checkpoint = _load_task(task_dir)
+    if checkpoint["stage"] == "deep":
+        _settle_declined(checkpoint, "deep", skip_declined)
+        manifest = _read_json(root / "inventory.json")
+        items = _sweep_items(
+            checkpoint, manifest, _declined_scope(root, checkpoint, manifest)
+        )
+        bundles = _bundle_items(
+            items,
+            stage="sweep",
+            char_budget=DEFAULT_DEEP_CHAR_BUDGET,
+            item_limit=DEFAULT_DEEP_ITEM_LIMIT,
+        ) if items else []
+        checkpoint["sweep"] = {
+            "total_items": sum(item["target_count"] for item in items),
+            "accepted_items": 0,
+            "bundles": _write_bundles(root, bundles) if bundles else [],
+        }
+        checkpoint["stage"] = "sweep" if bundles else "ready-finalize"
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        return status(root)
     if checkpoint["stage"] != "screen":
         return status(root)
     _settle_declined(checkpoint, "screen", skip_declined)
@@ -2857,7 +3149,14 @@ def _finalize_unlocked(
     root, task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] == "screen":
         raise ValueError("Advance the completed screen stage first")
-    _settle_declined(checkpoint, "deep", skip_declined)
+    if checkpoint["stage"] == "deep":
+        state = _advance_unlocked(root, skip_declined)
+        if state["stage"] == "sweep":
+            # Reviewers check the family sweep before findings are made.
+            return state
+        root, task, checkpoint = _load_task(root)
+    if checkpoint["stage"] == "sweep":
+        _settle_declined(checkpoint, "sweep", skip_declined)
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
@@ -2932,6 +3231,7 @@ def _finalize_unlocked(
                 })
             elif review["disposition"] == "uncertain-playtest":
                 uncertain.append(review)
+    sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
     lint_dropped = _add_lint_findings(
         findings, _lint_decisions(checkpoint, declined), manifest, declined
     )
@@ -2944,7 +3244,8 @@ def _finalize_unlocked(
     _simulate_apply(findings, records)
     _audit_final_findings(findings, _read_json(root / "context.json"))
     finding_by_cluster = {
-        item["cluster_id"]: item for item in findings if not item.get("lint_only")
+        item["cluster_id"]: item for item in findings
+        if not item.get("lint_only") and not item.get("sweep_families")
     }
     uncertain_ids = {item["id"] for item in uncertain}
     for motif in motif_families:
@@ -3042,6 +3343,7 @@ def _finalize_unlocked(
         "declined": declined["items"],
         "not_reviewed": _not_reviewed(declined, records),
         "lint_dropped": lint_dropped,
+        "sweep_dropped": sweep_dropped,
     }
     findings_path = root / "findings.json"
     _atomic_write_json(findings_path, document)

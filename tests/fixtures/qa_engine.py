@@ -40,6 +40,7 @@ def write(name, value):
 
 
 STRATUM = line("第1層で休む", "Rest on Stratum 1")
+AROUSAL = line("ムラムラが止まらない", "The Arousal won't stop.")
 write(
     "Map001.json",
     {
@@ -56,6 +57,10 @@ write(
                         line("朝だ", "It's 朝."),
                         # Two lint families, both accepted.
                         line("あっ…♥すごい", "Ah…h♥Amazing"),
+                        # A deep correction whose sweep finds two more lines.
+                        AROUSAL,
+                        line("ムラムラしてきた…", "The Arousal is building…"),
+                        line("ムラムラ！", "Arousal!"),
                     )
                 ],
             },
@@ -79,10 +84,11 @@ write(
         None,
         {
             "id": 1,
-            "name": "Potion",
+            # The same word as a label, which the sweep leaves alone.
+            "name": "Arousal",
             # A lint proposal the reviewer rejects.
             "description": "Restores HP.♥Yay",
-            "_original": {"name": "薬", "description": "体力を回復する。♥"},
+            "_original": {"name": "ムラムラ", "description": "体力を回復する。♥"},
         },
     ],
 )
@@ -147,7 +153,7 @@ while row := qa.next_bundle(task, "screen-a"):
             "note": "Stratum ordinal reads oddly.",
         }
         for target in screen_targets(bundle)
-        if target["source"] == STRATUM["_original"]
+        if target["source"] in {STRATUM["_original"], AROUSAL["_original"]}
     ]
     qa.accept_result(
         task,
@@ -228,13 +234,19 @@ def deep_result(row, corrections):
             )
             continue
         correction = corrections.get(item["source"])
+        sweep = (
+            {"find": "Arousal", "replace": "arousal", "source_has": "ムラムラ"}
+            if correction and item["source"] == AROUSAL["_original"]
+            else None
+        )
         reviews.append(
             {
                 "id": item["id"],
                 "disposition": "actionable" if correction else "clean",
                 "severity": "medium" if correction else None,
                 "category": "terminology" if correction else "",
-                "family_key": "",
+                "family_key": "term:ムラムラ" if sweep else "",
+                "sweep": sweep,
                 "motif_ids": [],
                 "evidence": "Checked against the source and scene.",
                 "correction": correction,
@@ -269,7 +281,14 @@ else:
 qa.accept_result(
     task,
     result_path(
-        "ordinal", deep_result(row, {STRATUM["_original"]: "Rest on the First Stratum"})
+        "ordinal",
+        deep_result(
+            row,
+            {
+                STRATUM["_original"]: "Rest on the First Stratum",
+                AROUSAL["_original"]: "The arousal won't stop.",
+            },
+        ),
     ),
 )
 assert qa.next_bundle(task, "deep-a") is None
@@ -281,12 +300,46 @@ except ValueError as error:
     assert "--skip-declined" in str(error), error
 else:
     raise AssertionError("Finalize skipped a declined bundle silently.")
-qa.finalize(task, skip_declined=True)
+state = qa.finalize(task, skip_declined=True)
+# The sweep rule found the other dialogue lines with the word, not the label;
+# its reviewer accepts one and rejects the sentence start.
+assert state["stage"] == "sweep", state
+row = qa.next_bundle(task, "sweep-a")
+(family,) = bundle_of(row)["items"]
+assert sorted(row["current"] for row in family["candidates"]) == [
+    "Arousal!",
+    "The Arousal is building…",
+], family
+qa.accept_result(
+    task,
+    result_path(
+        "sweep",
+        {
+            "schema": qa.SWEEP_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviews": [
+                {
+                    "id": family["id"],
+                    "rejected": [
+                        candidate["id"]
+                        for candidate in family["candidates"]
+                        if candidate["current"] == "Arousal!"
+                    ],
+                    "note": "A sentence start keeps its capital.",
+                }
+            ],
+        },
+    ),
+)
+qa.finalize(task)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 # Accepted lint families combine into one correction; a rejected one is left out.
 assert sorted(row["correction"] for row in findings["findings"]) == [
     "Ah…♥ Amazing",
     "Rest on the First Stratum",
+    "The arousal is building…",
+    "The arousal won't stop.",
 ], findings["findings"]
 assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3}
 # The declined scene is a coverage gap, reported once with its reasons.
