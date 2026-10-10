@@ -27,7 +27,7 @@ def fake_guided(folder, qa, method="guided"):
         saved_form=lambda _id: {"text": {"focus": "release"}},
         backend=SimpleNamespace(
             guided_text_state=lambda _native, _focus: {"qa": qa},
-            operations=SimpleNamespace(jobs=jobs),
+            operations=SimpleNamespace(jobs=jobs, active=""),
             workflows=SimpleNamespace(folder=lambda _id: Path(folder)),
         ),
         preview=lambda _id, action, _files, options: (
@@ -67,7 +67,14 @@ class TextQATests(unittest.TestCase):
                 service.run("project", "checkpoint")
             service.run("project", "choose", question="Map001.json#/1", choice="use")
             qa["questions"][0]["choice"] = "use"
-            service.run("project", "apply")
+            applied = service.run("project", "apply")
+            # The job reports its end before its worker exits; the checkpoint
+            # waits for the worker, so the apply still reads as running.
+            guided.backend.operations.active = applied["operation"]["id"]
+            self.assertEqual(
+                service.run("project", "status")["operation"]["status"], "running"
+            )
+            guided.backend.operations.active = ""
             state = service.run("project", "checkpoint")
             self.assertEqual(
                 calls,

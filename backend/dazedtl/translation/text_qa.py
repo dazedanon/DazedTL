@@ -262,8 +262,13 @@ class TextQA:
             return None
         saved = read_json(path)
         if saved["runner"] == "native":
-            job = self.guided.backend.operations.jobs.get(saved["id"]) or {}
+            operations = self.guided.backend.operations
+            job = operations.jobs.get(saved["id"]) or {}
             state, message = job.get("status", "interrupted"), job.get("message", "")
+            # A job reports its end before its worker exits, and the next
+            # step, such as the checkpoint, waits for the worker.
+            if operations.active == saved["id"]:
+                state = "running"
         else:
             job = self.guided.translation.run(project_id, saved["id"])
             state, message = job["status"], job.get("message", "")
