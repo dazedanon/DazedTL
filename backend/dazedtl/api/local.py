@@ -27,7 +27,7 @@ AGENT_METHODS = frozenset(
 
 
 class LocalAPI:
-    def __init__(self, workspace, version, dispatch):
+    def __init__(self, workspace, version, dispatch, failure=lambda *_args: None):
         self.path = Path(workspace) / "agent-connection.json"
         if self.path.is_symlink():
             raise ValueError("The agent connection must be a regular workspace file.")
@@ -43,6 +43,7 @@ class LocalAPI:
                 ):
                     self.send_error(403)
                     return
+                method = None
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
                     if not 0 < length <= 2_000_000:
@@ -70,6 +71,13 @@ class LocalAPI:
                         "value": dispatch(method, value.get("params", {})),
                     }
                 except Exception as exc:  # noqa: BLE001
+                    # The assistant sees only a generic message for anything
+                    # but a ValueError, so keep the cause for Copy diagnostics.
+                    if not isinstance(exc, ValueError):
+                        failure(
+                            exc,
+                            f"helper {method}" if isinstance(method, str) else "helper",
+                        )
                     result = {
                         "ok": False,
                         "version": version,

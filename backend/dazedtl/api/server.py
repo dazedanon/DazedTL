@@ -834,7 +834,10 @@ def serve(args, diagnostics):
     app = Application(args.workspace, not args.offline, diagnostics.failure)
     dispatch = dispatcher(app, os.environ.get("DAZEDTL_CHECK_CONTRACTS") == "1")
     local = LocalAPI(
-        app.workspace, PROTOCOL["version"], assistant_dispatch(app, dispatch)
+        app.workspace,
+        PROTOCOL["version"],
+        assistant_dispatch(app, dispatch),
+        diagnostics.failure,
     )
     # Electron matches replies by id, so previews may answer out of order
     # while the loop keeps reading; every other request still runs in turn.

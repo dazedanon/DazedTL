@@ -176,7 +176,19 @@ try:
     # helper, before its first report; the app's own reads never count.
     state = {"project_id": project_id}
     assert call("translation_state", state)["assistantSeenAt"] is None
-    local = LocalAPI(app.workspace, PROTOCOL["version"], assistant_dispatch(app, call))
+    failures = []
+
+    def dispatch(name, params):
+        if params.get("explode"):
+            raise RuntimeError("A fault the assistant can't act on.")
+        return call(name, params)
+
+    local = LocalAPI(
+        app.workspace,
+        PROTOCOL["version"],
+        assistant_dispatch(app, dispatch),
+        lambda _error, operation: failures.append(operation),
+    )
     try:
         for method in (
             "guided_context_status",
@@ -195,6 +207,17 @@ try:
             assert "only exposes" in str(refused), refused
         else:
             raise AssertionError("The project helper reached Start over.")
+        # An unexpected fault reads as generic to the assistant, so Copy
+        # diagnostics must keep its cause.
+        try:
+            helper.call(
+                app.workspace,
+                "translation_state",
+                {"project_id": project_id, "explode": 1},
+            )
+        except ValueError as refused:
+            assert "could not finish" in str(refused), refused
+        assert failures == ["helper translation_state"], failures
     finally:
         local.close()
     assert call("translation_state", state)["assistantSeenAt"]
