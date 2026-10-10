@@ -1420,7 +1420,8 @@ print(json.dumps(results))
             json.loads(result.stdout),
             [
                 "active",
-                "Images cannot be complete while the images total is unknown or units remain untranslated.",
+                "Images cannot be complete while 0 of 1 images units count as translated; "
+                "a unit counts once it has its translation and the translated_from_sha256 of its current source.",
                 "active",
                 "out_of_scope",
             ],

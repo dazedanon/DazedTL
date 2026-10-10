@@ -235,7 +235,12 @@ def update_progress(project: LenProject, report: dict) -> dict:
     for key, kind in (("translation", "text"), ("images", "images")):
         metric = snapshot["metrics"][kind]
         if snapshot["phases"][key] == "complete" and (metric["total"] is None or metric["translated"] != metric["total"]):
-            raise ValueError(f"{PHASES[key]} cannot be complete while the {kind} total is unknown or units remain untranslated.")
+            if metric["total"] is None:
+                raise ValueError(f"{PHASES[key]} cannot be complete while the {kind} total is unknown; export every unit with complete set to true.")
+            raise ValueError(
+                f"{PHASES[key]} cannot be complete while {metric['translated']:,} of {metric['total']:,} {kind} units count as translated; "
+                "a unit counts once it has its translation and the translated_from_sha256 of its current source."
+            )
     _validate_timing(report.get("timing", {}))
     _validate_estimates(report.get("estimates", {}))
     snapshot["timing"] = report.get("timing", {})
