@@ -3,6 +3,17 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.6.0] - 2026-10-10
+
+### Added
+
+- **Settings > GameUpdate:** choose the forge, host, owner and branch players update from, and DazedTL writes and commits each game's patch config for you.
+- **Game updates:** shows the game's repository and whether its patch config is current.
+
+### Fixed
+
+- A review with one added file says "1 file is an addition" instead of "1 files are additions".
+
 ## [2.5.4] - 2026-10-10
 
 ### Fixed
@@ -278,6 +289,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.6.0]: https://github.com/dazedanon/DazedTL/compare/v2.5.4...v2.6.0
 [2.5.4]: https://github.com/dazedanon/DazedTL/compare/v2.5.3...v2.5.4
 [2.5.3]: https://github.com/dazedanon/DazedTL/compare/v2.5.2...v2.5.3
 [2.5.2]: https://github.com/dazedanon/DazedTL/compare/v2.5.1...v2.5.2
