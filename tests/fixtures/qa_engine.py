@@ -628,4 +628,14 @@ assert {row["source"] for row in findings["not_reviewed"]} == {
     "森の奥へ",
     "朝だ",
 }, findings["not_reviewed"]
+# After an update changes the rules, the task still reports where it stood,
+# but nothing made under the old rules can be applied.
+qa._engine_fingerprint = lambda: "updated"
+assert qa.status(task)["rules_changed"]
+try:
+    qa.correction_map(task, [stratum])
+except ValueError as error:
+    assert "rules changed" in str(error), error
+else:
+    raise AssertionError("Corrections from older rules were applied.")
 print("ok")

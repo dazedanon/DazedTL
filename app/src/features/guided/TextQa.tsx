@@ -140,11 +140,14 @@ export function QaQuestions({
 export function QaAuditLog({
   findings,
   disabled,
+  undoUnavailable,
   undo,
   feedback,
 }: {
   findings: QaFinding[];
   disabled: boolean;
+  /** Why Undo cannot run, such as rules an update changed. */
+  undoUnavailable: string;
   undo: (finding: QaFinding) => void;
   feedback: Feedback;
 }) {
@@ -192,7 +195,8 @@ export function QaAuditLog({
                   <ActionControl
                     label="Undo"
                     variant="link"
-                    disabled={disabled}
+                    disabled={disabled || !!undoUnavailable}
+                    disabledReason={undoUnavailable}
                     {...feedback("qa-undo:" + row.id, "Undoing…")}
                     onClick={() => undo(row)}
                   />

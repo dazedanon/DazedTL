@@ -1746,12 +1746,19 @@ def prepare_task(
     return task_dir, status(task_dir)
 
 
-def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
+def _read_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
+    """The task and its checkpoint for reading, whichever rules prepared it."""
     root = Path(task_dir).expanduser().resolve()
     task = _read_json(root / "task.json")
     checkpoint = _read_json(root / "checkpoint.json")
     if task.get("schema") != TASK_SCHEMA or checkpoint.get("schema") != CHECKPOINT_SCHEMA:
         raise ValueError(f"Unsupported or corrupt QA task: {root}")
+    return root, task, checkpoint
+
+
+def _load_task(task_dir: str | Path) -> tuple[Path, dict, dict]:
+    """The task and its checkpoint for work, which needs the rules that made it."""
+    root, task, checkpoint = _read_task(task_dir)
     if task.get("engine_fingerprint") != _engine_fingerprint():
         raise ValueError(
             f"QA rules changed after this task was prepared; create a fresh task: {root}"
@@ -1885,13 +1892,15 @@ def _stage_metrics(stage: dict[str, Any], *, active: bool) -> dict[str, Any]:
 
 
 def status(task_dir: str | Path) -> dict[str, Any]:
-    root, task, checkpoint = _load_task(task_dir)
+    # A task an update made unusable still reports where it stood.
+    root, task, checkpoint = _read_task(task_dir)
     screen = checkpoint["screen"]
     deep = checkpoint["deep"]
     return {
         "task": str(root),
         "focus": task["focus"],
         "engine_fingerprint": task["engine_fingerprint"],
+        "rules_changed": task["engine_fingerprint"] != _engine_fingerprint(),
         "stage": checkpoint["stage"],
         "mechanical": {
             "checked": task["counts"]["records"],

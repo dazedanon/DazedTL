@@ -608,7 +608,7 @@ export type QaCoverage = {
 };
 
 export type QaActivity = {
-  stage: "screen" | "deep" | "sweep" | "editorial";
+  stage: "lint" | "screen" | "deep" | "sweep" | "editorial";
   done: number;
   total: number;
   eta_seconds?: number;
@@ -675,6 +675,7 @@ export type QaState = {
   questions: QaQuestion[];
   coverage?: QaCoverage;
   activity?: QaActivity;
+  rules_changed?: boolean;
 };
 
 export type Readiness = {

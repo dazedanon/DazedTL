@@ -27,6 +27,7 @@ export function qaPhase(qa: QaState): QaPhase {
 }
 
 const stageNames = {
+  lint: "Lint review",
   screen: "Screening",
   deep: "Deep review",
   sweep: "Consistency sweep",

@@ -86,13 +86,16 @@ def qa_state(plan):
         raise ValueError(
             "The immutable QA task evidence changed. Prepare current QA before using these reports."
         )
-    root, task, _checkpoint = qa._load_task(task_path)
+    # A task from before an update still shows what it found and applied,
+    # though only a task prepared with the current rules can continue.
+    root, task, _checkpoint = qa._read_task(task_path)
     if (
         task["game_root"] != plan["project"]["source"]
         or task["data_root"] != plan["project"]["data"]
     ):
         raise ValueError("The QA task belongs to another project.")
-    current = saved["binding"] == binding(plan)
+    rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
+    current = saved["binding"] == binding(plan) and not rules_changed
     document = (
         read_json(root / "findings.json") if (root / "findings.json").exists() else {}
     )
@@ -196,6 +199,10 @@ def qa_state(plan):
             if stage == "deep"
             else counts["total"]
         )
+        lint = engine_status["screen"]["lint"]
+        if stage == "screen" and lint["accepted"] < lint["total"]:
+            # Lint families lead the screen bundles; the line names them.
+            stage, counts, total = "lint", lint, lint["total"]
         activity = {
             "stage": stage,
             "done": counts["accepted"],
@@ -225,8 +232,11 @@ def qa_state(plan):
             else {}
         ),
         **({"activity": activity} if activity else {}),
+        **({"rules_changed": True} if rules_changed else {}),
         "message": "Saved results match current project text."
         if current
+        else "An update changed QA's rules after this task was prepared."
+        if rules_changed
         else "The game text changed since this QA task was prepared.",
     }
 
@@ -384,6 +394,11 @@ def prepare_publication(plan):
         if options.get("task") != state["task"]:
             raise ValueError(
                 "The QA task changed. Choose corrections from the current findings."
+            )
+        if state.get("rules_changed"):
+            raise ValueError(
+                "An update changed QA's rules after these corrections were applied, so "
+                "Undo is no longer available. Run QA again to check the text."
             )
         task_root, task, _checkpoint = qa._load_task(state["task"])
         chosen = options.get("findings", [])

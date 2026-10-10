@@ -322,7 +322,7 @@ class QaCoverage(TypedDict):
 
 
 class QaActivity(TypedDict):
-    stage: Literal["screen", "deep", "sweep", "editorial"]
+    stage: Literal["lint", "screen", "deep", "sweep", "editorial"]
     done: int
     total: int
     eta_seconds: NotRequired[int]
@@ -388,6 +388,9 @@ class QaState(TypedDict):
     questions: list[QaQuestion]
     coverage: NotRequired[QaCoverage]
     activity: NotRequired[QaActivity]
+    # An update changed QA's rules after this task was prepared: it is
+    # outdated, and its applied corrections can no longer be undone here.
+    rules_changed: NotRequired[bool]
 
 
 class Readiness(TypedDict):

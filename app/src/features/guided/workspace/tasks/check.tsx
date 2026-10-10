@@ -277,10 +277,12 @@ export function qaView(w: GuidedWorkspace): TaskView {
       variant={variant}
       disabled={disabled || !baseline}
       disabledReason={baseline ? "" : "Set up the game first."}
-      {...feedback("qa-start", "Preparing QA…")}
+      // The copy control that replaces this one once QA runs keeps its
+      // outcome.
+      {...feedback("copy:qa", "Preparing QA…")}
       onClick={() =>
         step(
-          "qa-start",
+          "copy:qa",
           "prepare",
           {},
           "QA task copied. Paste it into your coding assistant.",
@@ -335,9 +337,11 @@ export function qaView(w: GuidedWorkspace): TaskView {
         progress={phase === "running" ? activity : undefined}
         description={
           phase === "not_started"
-            ? "Start QA to prepare its task and copy it to your assistant, which reviews the game's text and applies verified corrections."
+            ? "Start QA to prepare its task and copy it to your assistant."
             : phase === "outdated"
-              ? "The game text changed after QA. Run QA again to check the current text."
+              ? qa.rules_changed
+                ? "An update changed QA's rules after this task was prepared. Run QA again to check the text."
+                : "The game text changed after QA. Run QA again to check the current text."
               : phase === "running"
                 ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
                 : phase === "questions"
@@ -348,28 +352,41 @@ export function qaView(w: GuidedWorkspace): TaskView {
         }
         help="Verified corrections go into the game as one text batch, saved as a version. History can restore the batch, and Undo puts back one correction."
       >
-        {qa.task && <StepProgress label="QA stages" steps={qaStages(qa)} />}
-        {qa.task && (coverage?.not_reviewed || coverage?.preflight) ? (
-          <p className="text-qa-coverage-line">
-            {[
-              `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
-              coverage.not_reviewed &&
-                `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
-              coverage.preflight &&
-                `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
-            ]
-              .filter(Boolean)
-              .join(" · ")}{" "}
-            <Button variant="link" onClick={() => setPanel("qa-coverage")}>
-              Review them
-            </Button>
-          </p>
-        ) : null}
-        {qaJob && phase !== "not_started" && (
-          <Button variant="link" onClick={() => inspect(qaJob)}>
-            Report details
-          </Button>
-        )}
+        {qa.task ? (
+          <div className="text-qa-status">
+            {/* An outdated task's stages and coverage describe old text. */}
+            {phase !== "outdated" && (
+              <StepProgress label="QA stages" steps={qaStages(qa)} />
+            )}
+            <p>
+              {phase !== "outdated" &&
+              (coverage?.not_reviewed || coverage?.preflight) ? (
+                <>
+                  {[
+                    `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
+                    coverage.not_reviewed &&
+                      `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
+                    coverage.preflight &&
+                      `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  <Button
+                    variant="link"
+                    onClick={() => setPanel("qa-coverage")}
+                  >
+                    Review them
+                  </Button>
+                </>
+              ) : null}
+              {qaJob && (
+                <Button variant="link" onClick={() => inspect(qaJob)}>
+                  Report details
+                </Button>
+              )}
+            </p>
+          </div>
+        ) : undefined}
       </AssistantTask>
       {qa.questions.length > 0 && !qa.applied && (
         <QaQuestions
@@ -393,6 +410,11 @@ export function qaView(w: GuidedWorkspace): TaskView {
         <QaAuditLog
           findings={qa.findings}
           disabled={disabled}
+          undoUnavailable={
+            qa.rules_changed
+              ? "An update changed QA's rules after these corrections were applied."
+              : ""
+          }
           feedback={feedback}
           undo={(row) =>
             step("qa-undo:" + row.id, "undo", { findings: [row.id] }, "Undone.")
