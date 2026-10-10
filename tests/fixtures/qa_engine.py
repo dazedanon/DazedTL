@@ -56,6 +56,9 @@ write(
                         speaker("アリナ", "Arina"),
                         STRATUM,
                         line("今日はいい天気だね", "Nice weather today."),
+                        # Flags that are style, not defects, force no deep review.
+                        line("討伐3体", "Three defeated."),
+                        line("100%の力", "100% power"),
                         speaker("店長", "Owner", face="owner"),
                         line("よく来たね", "Glad you came."),
                         speaker("アリナ", "Arina"),
@@ -140,9 +143,21 @@ write("Synopsis.json", [{"text": "あらすじ"}])
     encoding="utf-8",
 )
 
+
+def source(identity):
+    inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
+    return next(
+        cluster["source"]
+        for cluster in inventory["clusters"]
+        if cluster["representative"] == identity
+    )
+
+
 storage = temporary / "storage"
 task, state = qa.prepare_task(game, data, "release", storage)
 assert state["stage"] == "screen", state
+forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
+assert {source(identity) for identity in forced} == {"朝だ", "森の奥へ"}, forced
 assert state["preflight"] == {
     "untranslated": 1,
     "custom_data": 1,

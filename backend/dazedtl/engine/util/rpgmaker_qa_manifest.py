@@ -85,7 +85,9 @@ CODE357_TEXT_ARGUMENTS = {
 _RUNTIME_TOKEN_RE = re.compile(
     r"\\(?:[A-Za-z]+\[[^\]\r\n]*\]|[{}.!|^><])"
     r"|__PROTECTED_\d+__"
-    r"|%(?:\d+\$)?[-+#0 ]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
+    r"|%(?:\d+\$)?[-+#0]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
+    # RPG Maker's numbered placeholders, as in "%1 uses %2!".
+    r"|%\d+"
 )
 _UNSAFE_BARE_CENTER_RE = re.compile(
     r"\\(?:ac|cl)(?=[A-Za-z])", re.IGNORECASE
@@ -95,25 +97,43 @@ _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 _VISIBLE_NUMBER_RE = re.compile(
     r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
 )
-_ORDINAL_WORDS = {
-    word: value
-    for value, word in enumerate(
-        (
-            "first second third fourth fifth sixth seventh eighth ninth tenth "
-            "eleventh twelfth thirteenth fourteenth fifteenth sixteenth "
-            "seventeenth eighteenth nineteenth twentieth"
-        ).split(),
-        start=1,
-    )
+_CARDINALS = (
+    "one two three four five six seven eight nine ten eleven twelve thirteen "
+    "fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+).split()
+_ORDINALS = (
+    "first second third fourth fifth sixth seventh eighth ninth tenth "
+    "eleventh twelfth thirteenth fourteenth fifteenth sixteenth "
+    "seventeenth eighteenth nineteenth twentieth"
+).split()
+_NUMBER_WORDS = {
+    **{word: str(value) for value, word in enumerate(_CARDINALS, start=1)},
+    **{word: str(value) for value, word in enumerate(_ORDINALS, start=1)},
+    **{
+        word: str(value)
+        for word, value in (
+            ("thirty", 30), ("forty", 40), ("fifty", 50), ("sixty", 60),
+            ("seventy", 70), ("eighty", 80), ("ninety", 90), ("hundred", 100),
+            ("thousand", 1000),
+        )
+    },
 }
-# English ordinals stand for a source number (第1層 as "First Stratum", 1番目 as
-# "1st"), so they may match one; an unmatched one ("wait a second") is prose.
+# English number words and ordinals stand for a source number (第1層 as "First
+# Stratum", 3体 as "three"), so they may match one; an unmatched one ("wait a
+# second", "this one") is prose.
 _ORDINAL_RE = re.compile(
     r"(?<![A-Za-z0-9_])(?:(\d+)(?:st|nd|rd|th)|("
-    + "|".join(_ORDINAL_WORDS)
+    + "|".join(_NUMBER_WORDS)
     + r"))(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
+_THOUSANDS_RE = re.compile(r"^-?\d{1,3}(?:,\d{3})+$")
+
+
+def _number(text: str) -> str:
+    """A visible number as written, without a plus sign or thousands commas."""
+    text = text.lstrip("+")
+    return text.replace(",", "") if _THOUSANDS_RE.match(text) else text
 
 
 def _numbers_match(source_numbers: list[str], live: str) -> bool:
@@ -123,12 +143,12 @@ def _numbers_match(source_numbers: list[str], live: str) -> bool:
     an ordinal may match one or be skipped.
     """
     tokens = [
-        (match.start(), match.group(0), False)
+        (match.start(), _number(match.group(0)), False)
         for match in _VISIBLE_NUMBER_RE.finditer(live)
     ]
     for match in _ORDINAL_RE.finditer(live):
         digits, word = match.groups()
-        value = digits or str(_ORDINAL_WORDS[word.casefold()])
+        value = digits or _NUMBER_WORDS[word.casefold()]
         tokens.append((match.start(), value, True))
     tokens.sort()
     # matched[j]: the first j source numbers are matched by the tokens so far.
@@ -396,13 +416,13 @@ def _mechanical_evidence(source: str, live: str, code: int | None) -> dict[str, 
     source_tokens = _RUNTIME_TOKEN_RE.findall(source)
     live_tokens = _RUNTIME_TOKEN_RE.findall(live)
     source_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub("", source)
+        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", source)
     )
     live_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub("", live)
+        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", live)
     )
-    source_numbers = _VISIBLE_NUMBER_RE.findall(source_visible)
-    live_numbers = _VISIBLE_NUMBER_RE.findall(live_visible)
+    source_numbers = [_number(n) for n in _VISIBLE_NUMBER_RE.findall(source_visible)]
+    live_numbers = [_number(n) for n in _VISIBLE_NUMBER_RE.findall(live_visible)]
     flags = []
     if not live.strip():
         flags.append("empty-live")

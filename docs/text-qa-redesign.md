@@ -52,7 +52,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ### Cost
 
-- Forced deep review keeps only checks that find defects: number checks ignore ordinals, kanji numerals and idioms such as 1番, and runtime-token checks skip codes that survive unchanged.
 - Deep bundles group items by scene, print each scene once and cap long occurrence lists.
 
 ### Speed
@@ -73,5 +72,5 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 ## Order of work
 
 1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-2. Cost: the forced-review filters and scene-grouped deep bundles.
+2. Cost: scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.

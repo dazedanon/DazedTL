@@ -66,7 +66,9 @@ CODE357_TEXT_ARGUMENTS = {
 _RUNTIME_TOKEN_RE = re.compile(
     r"\\(?:[A-Za-z]+\[[^\]\r\n]*\]|[{}.!|^><])"
     r"|__PROTECTED_\d+__"
-    r"|%(?:\d+\$)?[-+#0 ]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
+    r"|%(?:\d+\$)?[-+#0]*(?:\d+|\*)?(?:\.\d+)?[A-Za-z]"
+    # RPG Maker's numbered placeholders, as in "%1 uses %2!".
+    r"|%\d+"
 )
 _UNSAFE_BARE_CENTER_RE = re.compile(
     r"\\(?:ac|cl)(?=[A-Za-z])", re.IGNORECASE
@@ -82,8 +84,19 @@ _ORDINALS = (
     "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
     "nineteenth", "twentieth",
 )
+_CARDINALS = (
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen", "twenty",
+)
+_TENS = {
+    "thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
+    "eighty": "80", "ninety": "90", "hundred": "100", "thousand": "1000",
+}
 _ORDINAL_TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9_])(?:\d+(?:st|nd|rd|th)|" + "|".join(_ORDINALS) + r")(?![A-Za-z0-9_])",
+    r"(?<![A-Za-z0-9_])(?:\d+(?:st|nd|rd|th)|"
+    + "|".join(_ORDINALS + _CARDINALS + tuple(_TENS))
+    + r")(?![A-Za-z0-9_])",
     re.IGNORECASE,
 )
 
@@ -92,13 +105,22 @@ def _ordinal_value(token: str) -> str:
     lowered = token.casefold()
     if lowered in _ORDINALS:
         return str(_ORDINALS.index(lowered) + 1)
+    if lowered in _CARDINALS:
+        return str(_CARDINALS.index(lowered) + 1)
+    if lowered in _TENS:
+        return _TENS[lowered]
     return lowered.rstrip("stndrh")
+
+
+def _plain_number(text: str) -> str:
+    text = text.lstrip("+")
+    return text.replace(",", "") if re.match(r"^-?\d{1,3}(?:,\d{3})+$", text) else text
 
 
 def _numbers_shown(source_numbers: list[str], live: str) -> bool:
     """Plain live numbers must equal the source's in order; ordinals may fill gaps."""
     tokens = sorted(
-        [(m.start(), m.group(0), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
+        [(m.start(), _plain_number(m.group(0)), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
         + [(m.start(), _ordinal_value(m.group(0)), True) for m in _ORDINAL_TOKEN_RE.finditer(live)]
     )
 
@@ -228,13 +250,13 @@ def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
     source_tokens = _RUNTIME_TOKEN_RE.findall(source)
     live_tokens = _RUNTIME_TOKEN_RE.findall(live)
     source_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub("", source)
+        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", source)
     )
     live_visible = unicodedata.normalize(
-        "NFKC", _RUNTIME_TOKEN_RE.sub("", live)
+        "NFKC", _RUNTIME_TOKEN_RE.sub(" ", live)
     )
-    source_numbers = _VISIBLE_NUMBER_RE.findall(source_visible)
-    live_numbers = _VISIBLE_NUMBER_RE.findall(live_visible)
+    source_numbers = [_plain_number(n) for n in _VISIBLE_NUMBER_RE.findall(source_visible)]
+    live_numbers = [_plain_number(n) for n in _VISIBLE_NUMBER_RE.findall(live_visible)]
     flags = []
     if not live.strip():
         flags.append("empty-live")

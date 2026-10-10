@@ -726,7 +726,8 @@ Its inventory holds the text the engine translated, which keeps its Japanese in 
 Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
 Applied corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before they are published.
 The [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py) checks each correction when a reviewer submits it, and every finding again when findings are made, against what the post-apply regression rejects: a mechanical flag the correction adds, a line count its pointers can't hold, or more rows than a message window shows.
-So no finding can roll an apply back; an English ordinal such as "First" may stand for the source's number, as in "First Stratum" for 第1層.
+So no finding can roll an apply back; an English number word or ordinal may stand for the source's number, as in "First Stratum" for 第1層, and plus signs and thousands separators don't count.
+A mechanical flag forces deep review only when it can be a defect: a number the English adds or changes, a number above ten it drops outside ordinals, kanji numerals and idioms such as 1番, or a control code it lost, RPG Maker's %1 placeholders included.
 A reviewer that will not review an item declines it with a one-line reason, and the engine accepts the rest of its bundle and moves the declined items to a bundle of their own that only another reviewer can claim.
 They are set aside once a second reviewer declines them, or when the assistant reports no other reviewer, so content is never classified or excluded in advance.
 Set-aside lines stay out of deep review, corrections and the read-only context view, and findings report them once as not reviewed.

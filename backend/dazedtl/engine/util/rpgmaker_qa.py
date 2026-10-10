@@ -17,6 +17,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import unicodedata
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -1134,11 +1135,78 @@ def _screen_items(
     return items, screen_index
 
 
+# Source numbers in ordinal or idiom contexts (第1層, 1番目, 3日目, 一番) read as
+# words in English; kanji numerals are words already.
+_ORDINAL_OR_IDIOM_NUMBER_RE = re.compile(
+    r"第\s*(\d+)|(\d+)\s*(?:番|回目|人目|日目|度目|階)"
+)
+_KANJI_DIGITS = {
+    "〇": 0, "一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
+    "八": 8, "九": 9,
+}
+_KANJI_NUMBER_RE = re.compile(r"[〇一二三四五六七八九十百千]+")
+
+
+def _kanji_value(text: str) -> int | None:
+    total, current = 0, 0
+    for char in text:
+        if char in _KANJI_DIGITS:
+            current = current * 10 + _KANJI_DIGITS[char]
+        else:
+            unit = {"十": 10, "百": 100, "千": 1000}[char]
+            total += (current or 1) * unit
+            current = 0
+    value = total + current
+    return value or None
+
+
+def _number_defect(source: str, live: str) -> bool:
+    """Whether a number mismatch can be a translation defect worth deep review.
+
+    A number the English adds or changes always is. A source number missing
+    from the English is only when it is not an ordinal or idiom, not a small
+    count English writes as a word ("three", "once"), and not a word already.
+    """
+    evidence = _mechanical_evidence(source, live, None)
+    visible = unicodedata.normalize("NFKC", source)
+    idioms = Counter(
+        number.lstrip("0") or "0"
+        for match in _ORDINAL_OR_IDIOM_NUMBER_RE.finditer(visible)
+        for number in match.groups() if number
+    )
+    kanji = Counter(
+        str(value) for match in _KANJI_NUMBER_RE.finditer(source)
+        if (value := _kanji_value(match.group(0))) is not None
+    )
+    source_numbers = Counter(evidence["source_visible_numbers"])
+    live_numbers = Counter(evidence["live_visible_numbers"])
+    if live_numbers - source_numbers - kanji - idioms:
+        return True
+    missing = source_numbers - live_numbers - idioms
+    return any(
+        not (number.isdigit() and int(number) <= 10) for number in missing
+    )
+
+
 def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
-    """Return only high-confidence reasons that override a clean screen receipt."""
+    """Return only high-confidence reasons that override a clean screen receipt.
+
+    Number and runtime-token flags force deep review only when they can be a
+    defect: a changed number, or a source code the English lost.
+    """
+    source, live = str(item["source"]), str(item["translation"])
+    evidence = _mechanical_evidence(source, live, None)
     reasons = {
         reason for reason in item.get("risk") or []
         if reason in FORCED_DEEP_MECHANICAL_FLAGS
+        and not (
+            reason == "visible-number-mismatch" and not _number_defect(source, live)
+        )
+        and not (
+            reason == "runtime-token-mismatch"
+            and not Counter(evidence["source_runtime_tokens"])
+            - Counter(evidence["live_runtime_tokens"])
+        )
     }
     if set(item.get("event_codes") or []) & FORCED_DEEP_EVENT_CODES:
         reasons.add("choice-context")
