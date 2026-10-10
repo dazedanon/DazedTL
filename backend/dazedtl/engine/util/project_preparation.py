@@ -114,9 +114,20 @@ def rpgmaker_layout(game_root: str | Path) -> dict | None:
 
 
 def write_gameupdate_config(game_root: str | Path, *, env_path=None) -> tuple[bool, str]:
-    from util.gameupdate_config import write_patch_config
+    """Write a missing or placeholder patch-config.txt from the saved defaults
+    and the game's repository; a real one is kept. Returns (ready, message)."""
+    from util.gameupdate_config import CONFIG, load_gameupdate_defaults, reconcile
 
-    return write_patch_config(game_root, env_path=env_path or PROJECT_ROOT / ".env", overwrite=False)
+    try:
+        state = reconcile(game_root, load_gameupdate_defaults(env_path or PROJECT_ROOT / ".env"))
+    except Exception as exc:  # noqa: BLE001 - preparation reports it and continues
+        return False, f"could not write {CONFIG}: {exc}"
+    if state["state"] == "ready":
+        values = state["values"]
+        return True, f"{CONFIG}: {values['host']}/{values['username']}/{values['repo']} ({values['branch']})"
+    if state["state"] == "edited":
+        return False, f"kept the edited {CONFIG}; its values differ from the saved settings"
+    return False, f"skipped {CONFIG}: {state['message']}"
 
 
 def install_startup_check(game_root: str | Path) -> tuple[bool, str]:

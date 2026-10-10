@@ -175,3 +175,38 @@
   color: var(--color-muted);
   font-size: var(--font-control);
 }
+/* GameUpdate: where players download this game's patch, below game updates. */
+.gameupdate-panel {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-4);
+  margin-top: var(--space-5);
+}
+.gameupdate-repo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.gameupdate-repo input {
+  flex: 0 1 24rem;
+  min-width: 0;
+}
+.gameupdate-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}
+.gameupdate-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.gameupdate-panel > .action-list,
+.gameupdate-panel > .notice {
+  margin-top: var(--space-4);
+}

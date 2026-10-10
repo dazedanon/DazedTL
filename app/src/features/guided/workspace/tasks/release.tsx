@@ -37,7 +37,12 @@ export function packageView(w: GuidedWorkspace): TaskView {
     localOperation,
     stopOperation,
     handoff,
+    translation,
+    openProject,
   } = w;
+  // GameUpdate's config must be complete before a release; its repository is
+  // set on the Project page.
+  const updaterBlocked = translation.gameUpdate.state === "needs_repo";
   const writing = handoff("walkthrough");
   let content: ReactNode;
   content = (
@@ -160,7 +165,8 @@ export function packageView(w: GuidedWorkspace): TaskView {
     { output: releasePath },
     destinationError
       ? "Choose a destination the archive can be saved to."
-      : !baseline ||
+      : updaterBlocked ||
+          !baseline ||
           !release.directory.trim() ||
           !release.name.trim() ||
           destinationPending ||
@@ -170,13 +176,21 @@ export function packageView(w: GuidedWorkspace): TaskView {
   );
   // Building with no text applied packages the original text, even with
   // applied images; say so once, unless the destination must be fixed first.
-  const actionContext = !destinationError &&
+  const actionContext = destinationError ? undefined : updaterBlocked ? (
+    <span>
+      GameUpdate needs this game&apos;s repository.{" "}
+      <Button variant="link" onClick={() => openProject("versions")}>
+        Set repository
+      </Button>
+    </span>
+  ) : (
     !state.readiness.applied.length &&
     !state.readiness.unapplied.length && (
       <span>
         No translated text applied yet: the ZIP keeps the original text.
       </span>
-    );
+    )
+  );
   // A running build reports its progress beside its own button.
   const secondary = localOperation && (
     <Button

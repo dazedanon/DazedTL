@@ -374,7 +374,16 @@ Guided release freezes the current runtime scope and original-source bindings th
 Patch packaging saves its checkpoint and workspace restore point as part of the same operation.
 The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material, and verifies the source and destination before atomically replacing a ZIP.
 Guided patches add current applied-image receipts and explicitly reviewed image/font paths to the runtime scope.
-Local patches omit GameUpdate configuration; clean ZIPs include it only with the frozen engine's verified public commit stamp.
+Each game's GameUpdate config, `gameupdate/patch-config.txt`, belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py).
+It writes the compact file from Settings' GameUpdate defaults and the game's repository, which the game's `.dazedtl/settings.json` keeps with any values the game sets itself and the digest of the file it last wrote.
+The repository comes from the `origin` remote when that names the configured owner; a placeholder is never written, and a working config it has not seen is adopted as the game's own.
+A file changed after that write keeps its values until the user keeps or replaces them on the Project page.
+Settings offer GameUpdate's own forge names, gitlab, forgejo and github; a saved gitea reads as forgejo.
+[GameUpdate](../backend/dazedtl/translation/game_update.py) reconciles the file when a game is opened or selected, when the window regains focus, after Settings change and before a scope review or release, never while an operation holds the game; observations only read its status, cached on Git's metadata and the files it reads.
+Every translation version commits a complete config with the patch scope, as a translation-only addition when the original lacks it, so the Len `.gitignore` block allows it; a placeholder never enters Git.
+Guided releases wait while GameUpdate has an owner but no repository; a game without an owner, or with an edited file, still builds.
+The status warns when no Git remote shares the config's site and `owner/repo`; hosts of one forge, such as `ssh.gitgud.io` and `gitgud.io`, share a site.
+Local patches omit the config unless their commit is the verified public version, which Guided's patch never claims; clean ZIPs include it only with the frozen engine's verified public commit stamp.
 Player updater scripts remain included but cannot update an unstamped local build without configuration.
 Archive availability describes the saved ZIP on disk, never freshness against later game edits.
 Archive names and additional asset choices are retained per project, with separate game and patch names.
@@ -666,10 +675,12 @@ The original-backup record lives in the profile's per-project lifecycle, while s
 Translation state then offers the earliest game snapshot there, which setup saves first, and the backup step takes it over (`use_source_backup`, bound to the snapshot it showed and refused once a record exists) instead of saving the current, possibly translated, files; saving the current files instead keeps its review.
 The preparation worker records each completed stage against the current prepared files, stops on failure or cancellation, and resumes remaining stages without repeating current completed work.
 Individual preparation tools update the same receipts; GameUpdate file installation does not imply a tested delivery configuration.
+The receipts leave out `gameupdate/patch-config.txt`, which follows Settings and the game's repository after preparation.
 New baselines require current preparation evidence at preview and execution; existing Git baselines remain usable without historical preparation receipts.
 A finished setup continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
 They are the Project page's Game updates and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
+Game updates also holds the game's GameUpdate repository and its config's status, below the version tools.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.
 Guided keeps update steps in History's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
 Backup history is grouped by game versus project files and appears only after the user chooses recovery.
@@ -806,7 +817,7 @@ The report names the checkout revision and whether tracked files changed, since 
 Connections and preferences share one atomic record in workspace `settings/settings.json`.
 The Settings editor retains its session while hidden, so returning preserves its current view and fields without another initial settings read; the sidebar marks Settings while that hidden draft is unsaved.
 Saved secrets never enter renderer responses or recovery drafts, and model drafts are bound to connection IDs.
-The public preference schema contains language, model, and per-model request/pricing options; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
+The public preference schema contains language, model, per-model request/pricing options and GameUpdate's defaults, which stay among the engine values; legacy formatting and other engine values are retained privately through a backed-up versioned upgrade.
 The adapter materializes legacy settings only before engine actions and checks the original provider route before resuming saved runs.
 Connection checks are model-list requests, with bounded reads, no redirects, and no generated text; Settings runs one after saving new or changed credentials, and again on request.
 Provider presets declare their transport protocol independently of their identity.

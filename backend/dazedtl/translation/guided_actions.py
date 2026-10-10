@@ -487,6 +487,8 @@ class GuidedActions:
                 )
             }
         if action in {"git_setup", "checkpoint", "guided_review", "release_patch"}:
+            # The reviewed scope carries GameUpdate's current config.
+            self.guided.translation.game_update.sync(project_id)
             paths = self.guided.release_paths(project_id, project["source"], action)
             manifest = self.guided.patch_manifest(project_id, paths, action)
             expected = evidence(project["source"], [*paths, *manifest["inputs"]])
@@ -692,13 +694,20 @@ class GuidedActions:
             if action == "release_patch" and native["engine"] == "ACE"
             else None
         )
+        # The translation version commits GameUpdate's config for publishing;
+        # the local patch ZIP leaves it out.
+        updater = "gameupdate/patch-config.txt"
+        omitted = action == "release_patch" and (
+            updater in paths or (Path(project["source"]) / updater).is_file()
+        )
+        shown = [name for name in paths if name != updater] if omitted else paths
         return {
             "token": token,
             "action": action,
             "label": label,
             "destination": destination,
-            "files": len(paths),
-            "paths": paths,
+            "files": len(shown),
+            "paths": shown,
             "options": options,
             "estimate": quote if action == "start" else None,
             "run": {
@@ -726,17 +735,15 @@ class GuidedActions:
                 and not (action == "start" and options["mode"] == "estimate")
             ),
             "package": {
-                "included": len(paths),
-                "excluded": int(
-                    (Path(project["source"]) / "gameupdate/patch-config.txt").is_file()
-                ),
+                "included": len(shown),
+                "excluded": int(omitted),
                 "exclusions": [
                     {
-                        "path": "gameupdate/patch-config.txt",
-                        "reason": "GameUpdate disabled in this local patch; publication is separate",
+                        "path": updater,
+                        "reason": "GameUpdate disabled in this local patch; the translation version keeps it for publishing",
                     }
                 ]
-                if (Path(project["source"]) / "gameupdate/patch-config.txt").is_file()
+                if omitted
                 else [],
                 "updater": "GameUpdate configuration is omitted from local patches. Publishing is separate."
                 + (

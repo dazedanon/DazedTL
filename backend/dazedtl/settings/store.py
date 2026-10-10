@@ -330,9 +330,36 @@ class Settings:
             )
         return values
 
+    def game_update(self, state=None):
+        """Where players' GameUpdate downloads patches, for every game; each
+        game adds its own repository."""
+        values = self._values(state or self._read())
+        forge = values.get("gameUpdateForge", "gitlab")
+        return {
+            # GameUpdate names the Gitea API forgejo; earlier versions saved gitea.
+            "forge": "forgejo" if forge == "gitea" else forge,
+            "host": values.get("gameUpdateHost", ""),
+            "username": values.get("gameUpdateUsername", ""),
+            "branch": values.get("gameUpdateBranch", "main"),
+        }
+
+    def save_game_update(self, revision, values):
+        state = self._read()
+        self._revision(state, revision)
+        checked = self.adapter.check_game_update(values)
+        state["legacy"]["values"].update(
+            gameUpdateForge=checked["forge"],
+            gameUpdateHost=checked["host"],
+            gameUpdateUsername=checked["username"],
+            gameUpdateBranch=checked["branch"],
+        )
+        self._write(state)
+        return self.describe()
+
     def describe(self):
         state = self._read()
         values = {key: self._values(state)[key] for key in ("language", "model")}
+        update = self.game_update(state)
         selected = self._connection(state)
         model_options = deepcopy(
             selected["model_options"] if selected else state["model_options"]
@@ -390,6 +417,12 @@ class Settings:
                 for name, definition in providers.PROVIDERS.items()
             ],
             "checksEnabled": self.adapter.allow_providers,
+            "gameUpdate": {
+                "forge": update["forge"],
+                "host": update["host"],
+                "owner": update["username"],
+                "branch": update["branch"],
+            },
         }
         draft = state["draft"]
         profile = draft and draft["connections"].get(state["active"])

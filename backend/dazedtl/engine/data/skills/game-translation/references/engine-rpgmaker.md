@@ -1315,9 +1315,12 @@ Len uses Workflow's RPG Maker preparation before translation: back up the starti
 game, run `DAZEDTL_ROOT/scripts/len_translation.py rpgmaker-prep --game-root <game>`,
 then run the same script's `git-setup --game-root <game> --version <release>`.
 The preparation command formats JSON with dazedformat, formats plugins.js, installs
-the bundled GameUpdate files, writes missing per-game configuration from saved
-GameUpdate defaults, and installs the MV/MZ TranslationUpdateCheck. It preserves existing
-project configuration and excludes WOLF-only binaries and updater state.
+the bundled GameUpdate files, writes the game's GameUpdate configuration from the
+saved GameUpdate defaults and its repository, and installs the MV/MZ
+TranslationUpdateCheck. It preserves existing project configuration and excludes
+WOLF-only binaries and updater state. Checkpoints commit a complete
+`gameupdate/patch-config.txt` with the patch, so manifests need not list it;
+DazedTL keeps its values, so do not edit it.
 
 For Ace, perform the existing Workflow extraction/RV2JSON prerequisite first. The
 formatter targets its JSON export (`ace_json` or `--data-path <export>`), never the

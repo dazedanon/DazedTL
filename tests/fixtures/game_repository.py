@@ -1,13 +1,16 @@
-"""Real Git journeys for a game's version save: interrupted baselines and a held index lock."""
+"""Real Git journeys for a game's repository: interrupted baselines, a held
+index lock and the GameUpdate config a published patch carries."""
 
 import shutil
 import subprocess
 import sys
 import threading
+import zipfile
 from pathlib import Path
 
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
+sys.path.insert(0, str(root / "backend"))
 
 from util.len_git import setup_git
 from util.len_translation import LenProject
@@ -88,4 +91,98 @@ lock = raced / ".git/index.lock"
 lock.write_bytes(b"")
 threading.Timer(0.2, lock.unlink).start()
 _run_git(raced, "read-tree", "main")
+
+# GameUpdate: published repositories are patches players download, so the
+# translation commit carries a working patch-config.txt that DazedTL writes
+# from the saved defaults and the origin remote, never a placeholder.
+from dazedtl.compatibility.translation import TranslationEngine
+from util import gameupdate_config as updater
+
+defaults = {
+    "forge": "gitlab",
+    "host": "gitgud.io",
+    "username": "dazed-translations",
+    "branch": "main",
+}
+published = game("published")
+(published / "gameupdate").mkdir()
+(published / "gameupdate/patch.ps1").write_text("# GameUpdate fixture\n")
+save(published)
+config = published / updater.CONFIG
+state = updater.reconcile(published, defaults)
+assert state["state"] == "needs_repo" and not config.exists(), state
+# An earlier version left a placeholder; it must never be published.
+config.write_text("username=dazed-translations\nrepo=YOUR_PATCH_REPO\nbranch=main\n")
+engine = TranslationEngine(temporary / "profile")
+options = {
+    "mode": "agent",
+    "include_images": False,
+    "instructions": "",
+    "include_glossary_base": False,
+    "install_forge": False,
+}
+manifest = {"files": {"data/System.json": {}}}
+
+
+def checkpoint():
+    engine.git_scope(published, options, manifest, None, False)
+    engine.commit(published, "translation: fixture checkpoint")
+    return git(published, "ls-files").split()
+
+
+with engine.context():
+    assert updater.CONFIG not in checkpoint()
+    git(
+        published,
+        "remote",
+        "add",
+        "origin",
+        "git@ssh.gitgud.io:dazed-translations/published.git",
+    )
+    state = updater.reconcile(published, defaults)
+    assert state["state"] == "ready" and not state["committed"], state
+    assert config.read_text().splitlines()[2:] == [
+        "forge=gitlab",
+        "host=gitgud.io",
+        "username=dazed-translations",
+        "repo=published",
+        "branch=main",
+    ], config.read_text()
+    assert updater.CONFIG in checkpoint()
+    assert "!/gameupdate/patch-config.txt" in (published / ".gitignore").read_text()
+    assert updater.status(published, defaults)["committed"]
+    # A local patch ZIP is no verified public version, so it leaves the config out.
+    packaged = engine.package(published, options, manifest, temporary / "deliveries")
+    names = zipfile.ZipFile(packaged["path"]).namelist()
+    assert "data/System.json" in names and updater.CONFIG not in names, names
+    # DazedTL's own file follows Settings; a hand edit is reported, not overwritten.
+    moved = {**defaults, "host": "gitlab.com"}
+    assert updater.reconcile(published, moved)["state"] == "ready"
+    assert "host=gitlab.com" in config.read_text()
+    assert "remotes are on ssh.gitgud.io" in updater.status(published, moved)["remote"]
+    config.write_text(config.read_text().replace("gitlab.com", "gitgud.io"))
+    state = updater.reconcile(published, moved)
+    assert state["state"] == "edited" and state["differences"] == ["host"], state
+    assert "host=gitgud.io" in config.read_text()
+    state = updater.reconcile(published, moved, "keep")
+    assert state["state"] == "ready" and state["overrides"] == ["host"], state
+
+# A working config DazedTL has not seen is the game's own: its values stay,
+# including a forge and host other than Settings'.
+mirrored = temporary / "mirrored"
+(mirrored / "gameupdate").mkdir(parents=True)
+(mirrored / "gameupdate/patch.ps1").write_text("# GameUpdate fixture\n")
+git(mirrored, "init", "-q")
+git(
+    mirrored,
+    "remote",
+    "add",
+    "origin",
+    "https://git.dazedtl.dev/dazed-translations/mirrored",
+)
+own = "# Copied from the example\n forge=forgejo\n host=git.dazedtl.dev\nusername=dazed-translations\nrepo=mirrored\nbranch=main\n"
+(mirrored / updater.CONFIG).write_text(own)
+state = updater.reconcile(mirrored, defaults)
+assert state["state"] == "ready" and state["overrides"] == ["forge", "host"], state
+assert not state["remote"] and (mirrored / updater.CONFIG).read_text() == own, state
 print("ok")

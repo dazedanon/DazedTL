@@ -169,15 +169,19 @@ Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `
 MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
 Set up never replaces a game's existing `README.md`; to get the current one, delete it and choose **Recreate GameUpdate files** under **Preparation tools**.
 
-To connect the game to its repository, copy `gameupdate/patch-config.example.txt` to `patch-config.txt` beside it and fill it in:
+DazedTL connects each game to its repository through `gameupdate/patch-config.txt`, which it writes and commits with each translation version:
 
-```txt
-forge=gitlab
-host=gitgud.io
-username=YOUR_ORG_OR_USER
-repo=YOUR_PATCH_REPO
-branch=main
-```
+1. In **Settings > GameUpdate**, choose the forge and host and enter the owner of your patch repositories, such as `dazed-translations`.
+   Leave the owner empty if you don't publish with GameUpdate.
+2. Each game's repository is under **GameUpdate** on the Project page's **Game updates** tab.
+   DazedTL fills it in from the game's `origin` remote when that belongs to the owner; otherwise type it and **Save**.
+   Until it's known, Release waits for it.
+
+The status below it says whether the file is **Ready to publish**, **Not committed yet** (the next translation version, such as building a patch ZIP, commits it) or **Changed outside DazedTL**.
+For a file someone edited, **Keep the file** keeps its values for this game and **Rewrite the file** puts DazedTL's back; **Follow Settings** later drops what the game kept.
+A warning appears when players would download from a site or repository this game's Git remotes don't point to.
+
+The file holds these keys:
 
 | Key | Meaning |
 | --- | --- |
@@ -189,7 +193,7 @@ branch=main
 
 A file with only `username`, `repo` and `branch` uses GitLab on `gitgud.io`.
 
-Before building a clean game ZIP for players, commit the game on that branch and push it to the repository branch it tracks.
+Before building a clean game ZIP for players, save the translation version and push it to the repository branch it tracks.
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
 Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
 

@@ -14,7 +14,7 @@ import { flushDrafts } from "../state/leaveGuards";
 import { useAction } from "../state/useAction";
 import type { GuidedStep, Screen, TranslationMethod } from "../api/contracts";
 import { useApplication } from "./ApplicationProvider";
-import Settings from "../features/settings/Settings";
+import Settings, { type SettingsSection } from "../features/settings/Settings";
 import Updates from "../features/settings/Updates";
 import { PageHeader, PageLayout } from "../ui/PageLayout";
 import GuidedWorkflow from "../features/guided/GuidedWorkflow";
@@ -44,6 +44,10 @@ export default function App() {
   // Settings stays mounted after its first visit so its session survives.
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
+  // A Settings section another page asked for, such as GameUpdate.
+  const [settingsRequest, setSettingsRequest] = useState<{
+    section: SettingsSection;
+  }>();
   if (state?.screen === "settings" && !settingsOpened) setSettingsOpened(true);
   const [projectTab, setProjectTab] = useState<ProjectTab>("status");
   const [historyQuery, setHistoryQuery] = useState<string>();
@@ -335,7 +339,10 @@ export default function App() {
               style={{ display: "contents" }}
             >
               <ErrorBoundary label="Settings">
-                <Settings onDirty={setSettingsDirty} />
+                <Settings
+                  onDirty={setSettingsDirty}
+                  request={settingsRequest}
+                />
               </ErrorBoundary>
             </div>
           )}
@@ -397,7 +404,10 @@ export default function App() {
                 openTask={openTask}
                 openTranslation={openTranslation}
                 chooseMethod={() => setMethodOpen(true)}
-                settings={() => navigate("settings")}
+                settings={(section) => {
+                  if (section) setSettingsRequest({ section });
+                  void navigate("settings");
+                }}
                 openGuided={openGuided}
               />
             )}

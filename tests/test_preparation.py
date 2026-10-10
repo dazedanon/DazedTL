@@ -61,8 +61,6 @@ class PreparationTests(unittest.TestCase):
             )
             state = preparation.state(native, folder)
             self.assertTrue(state["complete"])
-            self.assertIn("Add gameupdate/patch-config.txt", state["configuration"])
-            self.assertFalse(state["configurationReady"])
             write_json(game / "data/Items.json", ["changed"])
             self.assertFalse(preparation.state(native, folder)["complete"])
             other = {**native, "id": "other"}
@@ -75,7 +73,7 @@ class PreparationTests(unittest.TestCase):
                 ["complete", "pending", "pending"],
             )
 
-    def test_games_without_plugins_skip_the_plugin_stage_and_report_config_truthfully(
+    def test_games_without_plugins_skip_the_plugin_stage_and_keep_it_through_config_changes(
         self,
     ):
         with TemporaryDirectory() as directory:
@@ -110,8 +108,6 @@ class PreparationTests(unittest.TestCase):
             )
             self.assertEqual(called, ["format_data", "gameupdate"])
             self.assertTrue(result["complete"])
-            self.assertIn("Set repo=", result["configuration"])
-            self.assertFalse(result["configurationReady"])
             # A completed receipt cannot authorize preparation after its Ace export disappears.
             native["engine"] = "ACE"
             data = root / "game/data/Items.json"
@@ -134,5 +130,9 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(called, before)
             data.write_bytes(original)
             self.assertTrue(preparation.state(native, root / "profile")["complete"])
-            (root / "game/gameupdate/patch-config.txt").unlink()
+            # The config follows Settings and the game's repository afterwards,
+            # so writing it again keeps the preparation receipt.
+            (root / "game/gameupdate/patch-config.txt").write_text("repo=filled-in")
+            self.assertTrue(preparation.state(native, root / "profile")["complete"])
+            (root / "game/gameupdate/other.txt").write_text("changed helper file")
             self.assertFalse(preparation.state(native, root / "profile")["complete"])

@@ -379,6 +379,9 @@ class Application:
         project = self.state()["project"]
         if not project or project["id"] != project_id or not project["available"]:
             return {"checked": 0}
+        # Remotes added outside the app, such as by publishing, fill in the
+        # game's GameUpdate repository.
+        self.translation.game_update.sync(project_id)
         return {"checked": self.images.recheck(project_id)}
 
     def _handed_off(self, project_id, result):
@@ -440,10 +443,12 @@ class Application:
                 )
         detected = {"source": str(root), "engine": self.translation.engine.detect(root)}
         self.projects.open(detected)
+        self.sync_game_update()
         return self.state()
 
     def select_project(self, project_id):
         self.projects.select(project_id)
+        self.sync_game_update()
         return self.state()
 
     def project_method(self, project_id, method):
@@ -469,6 +474,23 @@ class Application:
     def settings_save(self, revision, connection_id, values, model_options):
         self.guided.idle()
         return self.settings.save(revision, connection_id, values, model_options)
+
+    def settings_game_update(self, revision, forge, host, owner, branch):
+        settings = self.settings.save_game_update(
+            revision,
+            {"forge": forge, "host": host, "username": owner, "branch": branch},
+        )
+        self.sync_game_update()
+        return settings
+
+    def project_game_update(self, project_id, action, repo=None):
+        return self.translation.game_update.act(project_id, action, repo)
+
+    def sync_game_update(self):
+        """The open game's GameUpdate config follows Settings and its remotes."""
+        project = self.projects.current
+        if project and Path(project["source"]).is_dir():
+            self.translation.game_update.sync(project["id"])
 
     def settings_draft(self, revision, connection_id, values, model_options):
         return self.settings.draft(revision, connection_id, values, model_options)
@@ -605,6 +627,11 @@ def routes(app):
         },
         "connection_usage": (app.connection_usage, lambda value, _params: value),
         "settings_draft": (app.settings_draft, lambda value, _params: value),
+        "settings_game_update": (
+            app.settings_game_update,
+            lambda value, _params: views.settings(value),
+        ),
+        "project_game_update": (app.project_game_update, lambda value, _params: value),
         "settings_model_defaults": (
             app.settings_model_defaults,
             lambda value, _params: value,

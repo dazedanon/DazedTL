@@ -59,6 +59,7 @@ from dazedtl.api.contracts.runs import (
 from dazedtl.api.contracts.settings import (
     ConnectionInput,
     ConnectionUsage,
+    Forge,
     ModelDefaults,
     ModelOptions,
     OpenRouterHost,
@@ -67,6 +68,7 @@ from dazedtl.api.contracts.settings import (
 )
 from dazedtl.api.contracts.translation import (
     BackupCatalog,
+    GameUpdateStatus,
     OrganizedRun,
     PreparedHandoff,
     ProjectOptions,
@@ -519,6 +521,22 @@ class PreferencesRequest(TypedDict):
     model_options: dict[str, ModelOptions]
 
 
+class GameUpdateDefaultsRequest(TypedDict):
+    revision: int
+    forge: Forge
+    host: str
+    owner: str
+    branch: str
+
+
+class ProjectGameUpdateRequest(TypedDict):
+    project_id: str
+    # save a repository, keep an edited file's values, replace them with
+    # DazedTL's, or follow Settings again.
+    action: Literal["save", "keep", "replace", "defaults"]
+    repo: NotRequired[str]
+
+
 METHODS: dict[str, Method] = {
     # Workspace
     "workspace_snapshot": Method(
@@ -539,6 +557,8 @@ METHODS: dict[str, Method] = {
         PreferencesRequest, Saved, refresh=False, during_close=True
     ),
     "settings_revert": Method(ConnectionRequest, Settings, refresh=False),
+    # GameUpdate's defaults; the open game's config follows them.
+    "settings_game_update": Method(GameUpdateDefaultsRequest, Settings),
     "connection_save": Method(ConnectionSaveRequest, Settings, during_close=True),
     "connection_select": Method(ConnectionRequest, Settings),
     "connection_check": Method(ConnectionRequest, Settings),
@@ -624,6 +644,8 @@ METHODS: dict[str, Method] = {
     "translation_progress": Method(InputPathRequest, TranslationProgress),
     "translation_operation": Method(TranslationOperationRequest, TranslationJob),
     "project_start_over": Method(StartOverRequest, TranslationJob),
+    # The game's GameUpdate repository and config; the user's choice only.
+    "project_game_update": Method(ProjectGameUpdateRequest, GameUpdateStatus),
     "translation_attach_batch": Method(TranslationAttachBatchRequest, TranslationJob),
     "translation_resolve_uncertain": Method(
         TranslationResolveUncertainRequest, TranslationJob

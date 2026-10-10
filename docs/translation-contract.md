@@ -227,7 +227,7 @@ Snapshot IDs remain valid after moving the entire store with the game; engine so
 Standalone recovery without an app profile is documented in the [user guide](user-guide.md#backups-and-recovery).
 Package requires current reported QA and creates a local patch from reviewed Git files.
 It does not create remotes, push, or upload.
-The existing GameUpdate checks govern public commit stamping.
+A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.
 Complete the relevant engine preparation there, then use version_preview and version_apply with its saved preview ID.

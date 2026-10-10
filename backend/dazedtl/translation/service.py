@@ -19,6 +19,7 @@ from dazedtl.storage import write_bytes, write_json
 from . import backups, census, delivery, organize, progress_report
 from .compilation import compile_requests, verify_compilation
 from .files import digest, evidence, project_path, read_json, verify_evidence
+from .game_update import GameUpdate
 from .helper_command import LOOPBACK_NOTE, git_note, helper_command
 from .jobs import Jobs, declined_message, now
 from .operations import (
@@ -153,6 +154,7 @@ class Translation:
         self.legacy_actions: dict[str, Callable[..., Any]] = {}
         # And the Image Manager's progress for Assistant-led image records.
         self.image_units: Callable[[str], dict | None] | None = None
+        self.game_update = GameUpdate(self)
 
     def project(self, identity):
         record = self.projects.get(identity)
@@ -421,6 +423,7 @@ class Translation:
             "assistantSeenAt": self.seen(project_id),
             "coverage": self.saved_coverage(project_id),
             "git": git,
+            "gameUpdate": self.game_update.state(project_id),
             "lifecycle": saved_lifecycle,
             **(
                 {
@@ -1380,6 +1383,9 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                     )
             self.require_inventory(project_id, progress["metrics"]["text"]["total"])
             delivery.verify(project.root, full=True)
+        if action in {"git_setup", "checkpoint", "package"}:
+            # The translation version commits GameUpdate's current config.
+            self.game_update.sync(project_id)
         self.settings.prepare_engine()
         plan = {
             "version": 1,

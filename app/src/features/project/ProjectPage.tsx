@@ -25,6 +25,8 @@ import type { GuidedIntent } from "../guided/workspace/model";
 import { BackupsPanel } from "../translation/BackupsPanel";
 import { RequestsPanel } from "../translation/RequestsPanel";
 import { VersionsPanel } from "../translation/VersionsPanel";
+import type { SettingsSection } from "../settings/Settings";
+import { GameUpdatePanel } from "./GameUpdatePanel";
 import { guidedEngines, methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
@@ -65,7 +67,8 @@ export default function ProjectPage({
   openTask: (step: string, task: string) => void;
   openTranslation: (view?: "images") => void;
   chooseMethod: () => void;
-  settings: () => void;
+  /** Opens Settings, at a section when one is given. */
+  settings: (section?: SettingsSection) => void;
   /** Opens Translation for a review that belongs to the Guided workspace. */
   openGuided: (intent: GuidedIntent) => void;
 }) {
@@ -157,6 +160,7 @@ export default function ProjectPage({
             onBackups={() => onTab("backups")}
             openTask={openTask}
             openGuided={openGuided}
+            openSettings={() => settings("gameupdate")}
           />
         )}
         {tab === "backups" && <ProjectBackups />}
@@ -400,7 +404,7 @@ function ProjectStatus({
         {!state.provider_ready && (
           <Notice tone="warning">
             <span>Choose a connection and model before API translation.</span>
-            <Button variant="link" disabled={busy} onClick={settings}>
+            <Button variant="link" disabled={busy} onClick={() => settings()}>
               Open Settings
             </Button>
           </Notice>
@@ -547,17 +551,22 @@ function ProjectVersions({
   onBackups,
   openTask,
   openGuided,
+  openSettings,
 }: {
   project: Project;
   onBackups: () => void;
   openTask: (step: string, task: string) => void;
   openGuided: (intent: GuidedIntent) => void;
+  openSettings: () => void;
 }) {
   const { snapshot } = useApplication();
   const translation = snapshot?.translation;
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   if (!translation || translation.projectId !== project.id) return null;
   const guided = project.method === "guided";
+  const checkpoint = guided
+    ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })
+    : undefined;
   return (
     <>
       <PageBody>
@@ -567,12 +576,19 @@ function ProjectVersions({
           state={translation}
           onBackups={onBackups}
           onPrepare={guided ? () => openTask("setup", "setup") : undefined}
-          onCheckpoint={
-            guided
-              ? () => openGuided({ kind: "checkpoint", returnTo: "versions" })
-              : undefined
-          }
+          onCheckpoint={checkpoint}
           actionTarget={target}
+        />
+        <GameUpdatePanel
+          key={project.id}
+          projectId={project.id}
+          status={translation.gameUpdate}
+          disabled={translation.active || !!snapshot?.application.running}
+          openSettings={openSettings}
+          // A changed tracked file already shows the checkpoint above.
+          onCheckpoint={
+            translation.git?.worktree_clean === false ? undefined : checkpoint
+          }
         />
       </PageBody>
       <ActionBar feedback={null}>

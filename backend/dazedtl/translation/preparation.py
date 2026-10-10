@@ -7,6 +7,7 @@ from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
 
+UPDATER_CONFIG = "gameupdate/patch-config.txt"
 LABELS = {
     "format_data": "Format game data",
     "format_plugins": "Format plugins.js",
@@ -48,6 +49,10 @@ def fingerprint(native, observed=None):
     for path in paths:
         if path.is_file():
             relative = path.relative_to(root).as_posix()
+            if relative == UPDATER_CONFIG:
+                # Each game's config follows Settings and its repository after
+                # preparation; the Project page reports it.
+                continue
             checked = project_path(root, relative)
             files[relative] = (
                 observed(checked) if observed else digest(checked.read_bytes())
@@ -88,28 +93,7 @@ def state(native, folder, *, active=False, observed=None):
     return {
         "complete": all(row["status"] == "complete" for row in stages),
         "stages": stages,
-        "configuration": saved.get("configuration", "") if valid else "",
-        "configurationReady": valid and saved.get("configurationReady") is True,
     }
-
-
-def configuration(native):
-    """The patch delivery note shown after GameUpdate installation, and whether it is set."""
-    path = project_path(native["source"], "gameupdate/patch-config.txt", exists=False)
-    if not path.is_file():
-        return (
-            "GameUpdate files installed. Add gameupdate/patch-config.txt, copied from the example beside it, before release.",
-            False,
-        )
-    if "YOUR_PATCH_REPO" in path.read_text(encoding="utf-8"):
-        return (
-            "GameUpdate files installed. Set repo= in gameupdate/patch-config.txt before release.",
-            False,
-        )
-    return (
-        "GameUpdate configuration is set. Its delivery connection has not been tested.",
-        True,
-    )
 
 
 def run(plan, log, execute, guard):
@@ -154,10 +138,6 @@ def run(plan, log, execute, guard):
             if isinstance(result, dict) and result.get("ok") is False:
                 raise ValueError(result.get("message") or row["label"] + " failed.")
             row.update(status="complete", result=result)
-            if row["action"] == "gameupdate":
-                value["configuration"], value["configurationReady"] = configuration(
-                    native
-                )
             save()
         except Exception as error:
             row.update(

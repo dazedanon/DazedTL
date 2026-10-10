@@ -13,6 +13,7 @@ import type {
   Documents,
   SettingsPayload,
   ConnectionInput,
+  GameUpdateDefaults,
   TranslationOptions,
 } from "./contracts";
 
@@ -160,6 +161,16 @@ export const api = {
       request("translation_operation", { project_id, action, arguments: args }),
     startOver: (project_id: string, keep_context: boolean) =>
       request("project_start_over", { project_id, keep_context }),
+    gameUpdate: (
+      project_id: string,
+      action: "save" | "keep" | "replace" | "defaults",
+      repo?: string,
+    ) =>
+      request("project_game_update", {
+        project_id,
+        action,
+        ...(repo === undefined ? {} : { repo }),
+      }),
     attach: (
       project_id: string,
       run_id: string,
@@ -323,6 +334,8 @@ export const api = {
       model_options: modelOptions,
       connection_id: activeConnectionId,
     }),
+  saveGameUpdateDefaults: (revision: number, values: GameUpdateDefaults) =>
+    request("settings_game_update", { revision, ...values }),
   saveConnection: (revision: number, input: ConnectionInput) =>
     request("connection_save", { revision, ...input }),
   selectConnection: (revision: number, connection_id: string) =>

@@ -46,6 +46,18 @@ class SettingsDraft(TypedDict):
     modelOptions: dict[str, ModelOptions]
 
 
+type Forge = Literal["gitlab", "forgejo", "github"]
+
+
+class GameUpdateDefaults(TypedDict):
+    """Where players' GameUpdate downloads patches; each game adds its repository."""
+
+    forge: Forge
+    host: str
+    owner: str
+    branch: str
+
+
 class Settings(TypedDict):
     revision: int
     values: PreferenceValues
@@ -57,6 +69,7 @@ class Settings(TypedDict):
     connections: list[Connection]
     providers: list[SettingsProvider]
     checksEnabled: bool
+    gameUpdate: GameUpdateDefaults
     draft: NotRequired[SettingsDraft]
 
 

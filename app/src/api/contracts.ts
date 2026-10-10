@@ -514,8 +514,6 @@ export type PreparationStage = {
 
 export type Preparation = {
   complete: boolean;
-  configuration: string;
-  configurationReady: boolean;
   stages: PreparationStage[];
 };
 
@@ -1058,6 +1056,42 @@ export type Coverage = {
   checked_at?: string;
 };
 
+export type GameUpdateValues = {
+  forge: Forge;
+  host: string;
+  owner: string;
+  repo: string;
+  branch: string;
+};
+
+/** Where a game's gameupdate/patch-config.txt stands.
+
+absent: the game has no GameUpdate; unconfigured: no owner in Settings;
+needs_repo: the game's repository is unknown; pending: DazedTL writes it
+next; edited: changed after DazedTL wrote it, with other values; ready;
+unavailable: its status could not be read (see message).
+ */
+export type GameUpdateStatus = {
+  state:
+    | "absent"
+    | "unconfigured"
+    | "needs_repo"
+    | "pending"
+    | "edited"
+    | "ready"
+    | "unavailable";
+  message: string;
+  repo: string;
+  suggested: string;
+  values: GameUpdateValues | null;
+  file: GameUpdateValues | null;
+  placeholder: boolean;
+  differences: ("forge" | "host" | "owner" | "repo" | "branch")[];
+  overrides: ("forge" | "host" | "owner" | "branch")[];
+  committed: boolean;
+  remote: string;
+};
+
 export type TranslationState = ProjectOptions & {
   engine: string;
   legacyRun: LegacyRun | null;
@@ -1068,6 +1102,7 @@ export type TranslationState = ProjectOptions & {
   assistantSeenAt: string | null;
   coverage: Coverage | null;
   git: GitStatus | null;
+  gameUpdate: GameUpdateStatus;
   lifecycle: Lifecycle;
   storedOriginal?: BackupSnapshot;
   jobs: TranslationJob[];
@@ -1210,6 +1245,16 @@ export type SettingsDraft = {
   modelOptions: Record<string, ModelOptions>;
 };
 
+export type Forge = "gitlab" | "forgejo" | "github";
+
+/** Where players' GameUpdate downloads patches; each game adds its repository. */
+export type GameUpdateDefaults = {
+  forge: Forge;
+  host: string;
+  owner: string;
+  branch: string;
+};
+
 export type Settings = {
   revision: number;
   values: PreferenceValues;
@@ -1221,6 +1266,7 @@ export type Settings = {
   connections: Connection[];
   providers: SettingsProvider[];
   checksEnabled: boolean;
+  gameUpdate: GameUpdateDefaults;
   draft?: SettingsDraft;
 };
 
@@ -2323,6 +2369,20 @@ export type PreferencesRequest = {
   model_options: Record<string, ModelOptions>;
 };
 
+export type GameUpdateDefaultsRequest = {
+  revision: number;
+  forge: Forge;
+  host: string;
+  owner: string;
+  branch: string;
+};
+
+export type ProjectGameUpdateRequest = {
+  project_id: string;
+  action: "save" | "keep" | "replace" | "defaults";
+  repo?: string;
+};
+
 export type RpcContract = {
   workspace_snapshot: { request: NoParams; response: WorkspaceSnapshot };
   workspace_recheck: { request: ProjectRequest; response: Rechecked };
@@ -2338,6 +2398,10 @@ export type RpcContract = {
   settings_save: { request: PreferencesRequest; response: Settings };
   settings_draft: { request: PreferencesRequest; response: Saved };
   settings_revert: { request: ConnectionRequest; response: Settings };
+  settings_game_update: {
+    request: GameUpdateDefaultsRequest;
+    response: Settings;
+  };
   connection_save: { request: ConnectionSaveRequest; response: Settings };
   connection_select: { request: ConnectionRequest; response: Settings };
   connection_check: { request: ConnectionRequest; response: Settings };
@@ -2502,6 +2566,10 @@ export type RpcContract = {
     response: TranslationJob;
   };
   project_start_over: { request: StartOverRequest; response: TranslationJob };
+  project_game_update: {
+    request: ProjectGameUpdateRequest;
+    response: GameUpdateStatus;
+  };
   translation_attach_batch: {
     request: TranslationAttachBatchRequest;
     response: TranslationJob;

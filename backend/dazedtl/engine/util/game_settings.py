@@ -25,6 +25,9 @@ DEFAULT_WRAP_WIDTHS = {
     "listWidth": 100,
     "noteWidth": 75,
 }
+# The game's GameUpdate repository, the values it sets itself instead of
+# following Settings, and the digest of the config DazedTL last wrote.
+GAME_UPDATE_KEYS = ("repo", "forge", "host", "username", "branch", "written")
 MIN_WRAP_WIDTH = 20
 MAX_WRAP_WIDTH = 300
 
@@ -89,6 +92,9 @@ def load_game_wrap_widths(game_root: str | Path) -> dict[str, int] | None:
     if not path.is_file():
         return None
     data = _read_settings(path)
+    if "rpgmaker" not in data:
+        # The file holds only other per-game settings, such as GameUpdate's.
+        return None
     rpgmaker = data.get("rpgmaker")
     if not isinstance(rpgmaker, dict):
         raise GameSettingsError(f"Missing rpgmaker settings object in {path}")
@@ -144,9 +150,55 @@ def save_game_wrap_widths(
 ) -> Path:
     """Atomically save wrap widths while preserving unrelated game settings."""
     root = Path(game_root).expanduser().resolve()
+
+    def update(data: dict) -> None:
+        rpgmaker = data.get("rpgmaker")
+        if rpgmaker is None:
+            rpgmaker = {}
+            data["rpgmaker"] = rpgmaker
+        elif not isinstance(rpgmaker, dict):
+            raise GameSettingsError(
+                f"Expected rpgmaker to be an object in {game_settings_path(root)}"
+            )
+        rpgmaker["wrapWidths"] = normalize_wrap_widths(values)
+        ensure_game_tool_gitignore(root)
+
+    return _update_settings(root, update)
+
+
+def load_game_update(game_root: str | Path) -> dict[str, str]:
+    """The game's GameUpdate repository, the forge, host, owner and branch it
+    sets itself, and the digest of the config DazedTL last wrote; empty
+    before DazedTL has any."""
+    game_metadata_dir(game_root)
+    path = game_settings_path(game_root)
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise GameSettingsError(f"Game settings path is not a regular file: {path}")
+    if not path.is_file():
+        return {}
+    value = _read_settings(path).get("gameUpdate", {})
+    if not isinstance(value, dict):
+        raise GameSettingsError(f"Expected gameUpdate to be an object in {path}")
+    return {
+        key: item
+        for key, item in value.items()
+        if key in GAME_UPDATE_KEYS and isinstance(item, str) and item
+    }
+
+
+def save_game_update(game_root: str | Path, values: Mapping[str, str]) -> Path:
+    """Atomically replace the game's GameUpdate record, keeping other settings."""
+    record = {key: values[key] for key in GAME_UPDATE_KEYS if values.get(key)}
+
+    def update(data: dict) -> None:
+        data["gameUpdate"] = record
+
+    return _update_settings(Path(game_root).expanduser().resolve(), update)
+
+
+def _update_settings(root: Path, update) -> Path:
     if not root.is_dir():
         raise GameSettingsError(f"Game folder does not exist: {root}")
-
     try:
         game_metadata_dir(root)
     except Exception as exc:
@@ -155,18 +207,8 @@ def save_game_wrap_widths(
     if path.is_symlink() or (path.exists() and not path.is_file()):
         raise GameSettingsError(f"Game settings path is not a regular file: {path}")
     data = _read_settings(path) if path.is_file() else {}
-    normalized = normalize_wrap_widths(values)
-
-    rpgmaker = data.get("rpgmaker")
-    if rpgmaker is None:
-        rpgmaker = {}
-        data["rpgmaker"] = rpgmaker
-    elif not isinstance(rpgmaker, dict):
-        raise GameSettingsError(f"Expected rpgmaker to be an object in {path}")
-
     data["version"] = 1
-    rpgmaker["wrapWidths"] = normalized
-    ensure_game_tool_gitignore(root)
+    update(data)
     try:
         game_metadata_dir(root, create=True)
     except Exception as exc:

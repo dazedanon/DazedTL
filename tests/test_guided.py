@@ -223,6 +223,9 @@ class GuidedTests(unittest.TestCase):
             clean_drafts=lambda _: None,
             ready=Mock(),
             operation=Mock(return_value={"id": "operation"}),
+            game_update=SimpleNamespace(
+                sync=lambda _: None, require_ready=lambda _: None
+            ),
         )
         self.git_configured = False
         self.translation.project = lambda _: (

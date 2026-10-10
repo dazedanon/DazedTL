@@ -1,12 +1,10 @@
 /** Set up: back up the original, prepare the game files and save its version. */
-import { FolderOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Job } from "../../../../api/contracts";
 import { ActionControl } from "../../../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../../../ui/ActionList";
 import { Button } from "../../../../ui/Button";
 import { FieldRow } from "../../../../ui/FieldRow";
-import { Notice } from "../../../../ui/Notice";
 import { PathInput } from "../../../../ui/PathInput";
 import type { DisplayState } from "../../../../ui/displayStatus";
 import { StatusHeading } from "../../../../ui/StatusMark";
@@ -252,26 +250,6 @@ export function setupView(w: GuidedWorkspace): TaskView {
           detail={versionDetail}
         />
       </ActionList>
-      {preparation.configuration && (
-        <Notice tone={preparation.configurationReady ? "neutral" : "warning"}>
-          <span>{preparation.configuration}</span>
-          {!preparation.configurationReady && (
-            <Button
-              variant="link"
-              onClick={() =>
-                action.run(
-                  () => window.dazedtl.openFolder("project"),
-                  "Game folder opened.",
-                  "open-game",
-                )
-              }
-            >
-              <FolderOpen size={14} aria-hidden="true" />
-              Open game folder
-            </Button>
-          )}
-        </Notice>
-      )}
       <Button variant="link" onClick={() => setPanel("preparation")}>
         Preparation tools
       </Button>

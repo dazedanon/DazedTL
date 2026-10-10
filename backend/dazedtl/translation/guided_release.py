@@ -268,8 +268,6 @@ class GuidedRelease:
             runtime_asset(source, name)
             for name in self.saved_form(project_id)["release"]["assets"]
         )
-        if action == "release_patch":
-            paths.discard("gameupdate/patch-config.txt")
         return sorted(paths)
 
     def release_ready(self, project_id, native, value):
@@ -287,6 +285,7 @@ class GuidedRelease:
             )
         if not self.ace_packing(native)["current"]:
             raise ValueError(self.ace_packing(native)["message"])
+        self.guided.translation.game_update.require_ready(project_id)
         return status
 
     def patch_manifest(self, project_id, paths, action):

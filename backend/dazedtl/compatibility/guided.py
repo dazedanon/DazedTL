@@ -409,7 +409,7 @@ def rewrap_review(backend, native_id, token):
 
 def runtime_files(source):
     """Propose the standard RPG Maker patch; the user reviews the complete list."""
-    from util.len_patch_scope import patch_manifest
+    from util.len_patch_scope import CONFIG, patch_manifest, updater_config
     from util.paths import PROJECT_ROOT
     from util.project_preparation import RPG_GAMEUPDATE_COPY_SKIP_NAMES, rpgmaker_layout
     from util.version_update.git_workflow import _run_git
@@ -442,6 +442,9 @@ def runtime_files(source):
                 "gameupdate/previous_patch_sha.txt",
             }:
                 paths.append(target)
+    # The published patch tells players' GameUpdate where to download it from.
+    if updater_config(root):
+        paths.append(root / CONFIG)
     # Keep an existing reviewed patch's images, fonts and other runtime assets
     # when the user changes workflow. Repository metadata is handled by Git.
     tracked = _run_git(root, "ls-files", "-z", check=False)

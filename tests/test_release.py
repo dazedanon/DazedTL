@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from dazedtl.storage import write_json
 from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
+from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
 from dazedtl.translation.release import (
     applied_assets,
@@ -274,7 +275,10 @@ class ReleaseTests(unittest.TestCase):
                     engine.git_scope.assert_not_called()
             write_json(game / "data.json", {"line": "translated"})
 
-            def package(_source, _options, _manifest, target):
+            def package(_source, _options, _manifest, target, updater=True):
+                # The translation version keeps GameUpdate's config; the
+                # local patch leaves it out.
+                self.assertFalse(updater)
                 path = target / "patch.zip"
                 with zipfile.ZipFile(path, "w") as archive:
                     archive.write(game / "data.json", "data.json")
@@ -314,6 +318,43 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue(current(release, game))
             write_json(game / "data.json", {"line": "edited later"})
             self.assertFalse(current(release, game))
+
+    def test_releases_wait_only_for_a_gameupdate_config_that_cannot_be_written(self):
+        # Writing the config first means a repository origin just named is
+        # used; a game whose GameUpdate is off, or whose file was edited by
+        # hand, still builds.
+        calls, current = [], {}
+        engine = SimpleNamespace(
+            game_update=lambda _root, _defaults, action=None, _repo=None: (
+                calls.append(action) or current
+            )
+        )
+        busy = {"value": False}
+        update = GameUpdate(
+            SimpleNamespace(
+                project=lambda _: (None, SimpleNamespace(root=Path("game"))),
+                jobs=SimpleNamespace(running=lambda *_: busy["value"]),
+                settings=SimpleNamespace(
+                    game_update=dict,
+                    adapter=SimpleNamespace(running=lambda: False),
+                ),
+                engine=engine,
+            )
+        )
+        for state in ("needs_repo", "pending"):
+            current.update(ABSENT, state=state)
+            with self.assertRaises(ValueError):
+                update.require_ready("project")
+        for state in ("absent", "unconfigured", "edited", "ready"):
+            current.update(ABSENT, state=state)
+            update.require_ready("project")
+        self.assertEqual(calls.count("sync"), 6)
+        # A running operation owns the game, so nothing writes beside it.
+        busy["value"] = True
+        update.sync("project")
+        self.assertEqual(calls.count("sync"), 6)
+        with self.assertRaises(ValueError):
+            update.act("project", "save", "other")
 
     def test_destinations_and_atomic_publication_preserve_the_previous_release(self):
         with TemporaryDirectory() as folder:

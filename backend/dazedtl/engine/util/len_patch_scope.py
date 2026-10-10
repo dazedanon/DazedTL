@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from pathlib import Path, PurePosixPath
 
+from util.gameupdate_config import CONFIG, file_values
 from util.len_git import git_status
 from util.len_translation import LenProject, _write_atomic
 from util.paths import normalize_game_tool_gitignore_text
@@ -36,6 +37,16 @@ def _path(value: str) -> str:
             or parts[-1].endswith(("_key.txt", "_keys.txt", ".log", ".tmp"))):
         raise GitWorkflowError(f"Local state or unsafe path cannot enter the patch: {value!r}")
     return value
+
+
+def updater_config(root: Path) -> bool:
+    """Whether the game holds a GameUpdate config players' updates can use."""
+    path = root / CONFIG
+    return (
+        not path.is_symlink()
+        and path.is_file()
+        and file_values(path.read_text(encoding="utf-8", errors="replace")) is not None
+    )
 
 
 def _file(root: Path, relative: str) -> Path:
@@ -173,6 +184,10 @@ def sync_patch_scope(project: LenProject, document: object, *, original_game: Pa
     original_ref = state["original_commit"]
     head = state["translation_commit"]
     originals = _tree_files(repo, original_ref, "")
+    if updater_config(repo) and CONFIG not in selected:
+        # A working GameUpdate config joins every patch, so the published
+        # translation tells players' GameUpdate where to download it from.
+        selected[CONFIG] = {} if CONFIG in originals else {"original_sha256": None}
     assets = _load_asset_manifest(repo, "")
     asset_metadata = _load_asset_manifest_metadata(repo, "")
     metadata = {p for p in _METADATA if (repo / p).exists()} | {".gitignore"}

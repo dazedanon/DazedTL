@@ -419,7 +419,11 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             prefix=".dazedtl-patch-", dir=output.parent
         ) as temporary:
             manifest = read_json(project_path(source, payload["manifest"]))
-            packaged = engine.package(source, options, manifest, Path(temporary))
+            # The translation version keeps GameUpdate's config for publishing;
+            # a local patch leaves it out.
+            packaged = engine.package(
+                source, options, manifest, Path(temporary), updater=False
+            )
             verify_evidence(source, payload["evidence"])
             inputs = input_stamps(source, payload["evidence"])
             if (

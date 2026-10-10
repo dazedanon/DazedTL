@@ -19,6 +19,7 @@ from dazedtl.translation import delivery, progress_report
 from dazedtl.translation.backups import materialized, snapshot, store_path
 from dazedtl.translation.compilation import compile_requests
 from dazedtl.translation.files import digest, evidence, read_json
+from dazedtl.translation.game_update import ABSENT
 from dazedtl.translation.helper_command import helper_command
 from dazedtl.translation.operations import (
     execute,
@@ -96,6 +97,9 @@ class Engine:
 
     def detect(self, _source):
         return "MVMZ"
+
+    def game_update(self, _source, _defaults, _action=None, _repo=None):
+        return ABSENT
 
     def documents(self, _source):
         return {}
@@ -182,6 +186,7 @@ class WorkflowTests(unittest.TestCase):
             _configured=Settings._configured,
             model_defaults=lambda *_args, **_kwargs: {},
             translation_defaults=lambda: {"batch_supported": True},
+            game_update=dict,
             adapter=SimpleNamespace(
                 allow_providers=False,
                 running=lambda: False,

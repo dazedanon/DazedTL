@@ -1,5 +1,5 @@
 {
-  "version": "0508401c144124b8",
+  "version": "b3a186a6c44052b8",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -43,6 +43,10 @@
     },
     "settings_revert": {
       "refresh": false,
+      "duringClose": false
+    },
+    "settings_game_update": {
+      "refresh": true,
       "duringClose": false
     },
     "connection_save": {
@@ -302,6 +306,10 @@
       "duringClose": false
     },
     "project_start_over": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "project_game_update": {
       "refresh": true,
       "duringClose": false
     },

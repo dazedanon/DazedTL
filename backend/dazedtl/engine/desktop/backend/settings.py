@@ -53,7 +53,7 @@ FIELDS = (
     field("wolfDbIncludeTiers", "WOLF database tiers", "Advanced engine scope", "", help="Optional JSON array of tier names. Blank includes all tiers."),
     field("font_scale", "Interface scale", "Application", 1.0, minimum=0.5, maximum=3),
     field("translationCompletionAlert", "Notify when translation finishes", "Application", False),
-    field("gameUpdateForge", "GameUpdate forge", "Game updates", "gitlab", choices=["gitlab", "gitea", "github"]),
+    field("gameUpdateForge", "GameUpdate forge", "Game updates", "gitlab", choices=["gitlab", "forgejo", "github"]),
     field("gameUpdateHost", "GameUpdate host", "Game updates", "gitgud.io"),
     field("gameUpdateUsername", "GameUpdate username", "Game updates", ""),
     field("gameUpdateBranch", "GameUpdate branch", "Game updates", "main"),
@@ -76,6 +76,9 @@ def validate_values(values):
     schema = {item["key"]: item for item in FIELDS}
     if not isinstance(values, dict) or set(values) - schema.keys():
         raise ValueError("Unknown application setting.")
+    if values.get("gameUpdateForge") == "gitea":
+        # GameUpdate names the Forgejo and Gitea API forgejo; earlier versions saved gitea.
+        values = {**values, "gameUpdateForge": "forgejo"}
     result = {key: item["default"] for key, item in schema.items()}
     for key, value in values.items():
         item = schema[key]

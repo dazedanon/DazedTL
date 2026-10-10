@@ -12,7 +12,7 @@ from typing import Any
 
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
-from dazedtl.translation.git_status_cache import RepositoryStatusCache
+from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
 from dazedtl.translation.requests import output_schema
 
 from . import request_parameters
@@ -68,6 +68,8 @@ class TranslationEngine:
         self.profile = Path(profile).resolve()
         self.repository_status = RepositoryStatusCache()
         self.original_trees = RepositoryStatusCache()
+        # Its signature covers everything the GameUpdate status reads.
+        self.game_updates = RepositoryStatusCache(ttl=float("inf"))
 
     @contextmanager
     def context(self):
@@ -430,6 +432,31 @@ class TranslationEngine:
             lambda: git_status(project),
         )
 
+    def game_update(self, source, defaults, action=None, repo=None):
+        """GameUpdate's config status, or the result of reconciling it."""
+        from util import gameupdate_config
+
+        root = Path(source)
+        if action is not None:
+            return gameupdate_config.reconcile(root, defaults, action, repo)
+        # Each poll reads it; it changes only with Git's metadata, the config,
+        # GameUpdate's scripts, the game's settings and the defaults.
+        files = (
+            gameupdate_config.CONFIG,
+            "gameupdate/patch.ps1",
+            "gameupdate/patch.sh",
+            ".dazedtl/settings.json",
+        )
+        return self.game_updates.get(
+            str(root),
+            root,
+            lambda: gameupdate_config.status(root, defaults),
+            extra=(
+                tuple(sorted(defaults.items())),
+                *(file_signature(root / name) for name in files),
+            ),
+        )
+
     def source_bindings(self, source, paths):
         """Tracked source inputs follow original, so normal English injection is not source drift."""
         from util.version_update.git_workflow import _run_git
@@ -730,10 +757,14 @@ class TranslationEngine:
             _run_git(Path(source), *flags, "commit", "-m", message)
         return _run_git(Path(source), "rev-parse", "HEAD").stdout.strip()
 
-    def package(self, source, options, manifest, destination):
+    def package(self, source, options, manifest, destination, *, updater=True):
+        """A local ZIP of the committed patch. GameUpdate's config stays out
+        unless the commit is the verified public version, which the ZIP then
+        stamps; ``updater=False`` always leaves it out."""
         import zipfile
 
         from util.ace.actions import patch_archive
+        from util.gameupdate_config import CONFIG
         from util.len_patch_scope import patch_manifest
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
@@ -747,15 +778,13 @@ class TranslationEngine:
             raise ValueError(
                 "Commit reviewed changes on the translation branch before packaging."
             )
-        allowed = set(patch_manifest(manifest)) | {
-            ".gitignore",
-            ".gitattributes",
-            "README.md",
-        }
         tracked = set(
             _run_git(source, "ls-files", "-z").stdout.rstrip("\0").split("\0")
         )
-        if tracked - allowed or set(patch_manifest(manifest)) - tracked:
+        # Saving a translation version commits a working config with the patch.
+        scope = set(patch_manifest(manifest)) | ({CONFIG} & tracked)
+        allowed = scope | {".gitignore", ".gitattributes", "README.md"}
+        if tracked - allowed or scope - tracked:
             raise ValueError(
                 "The committed files do not match the reviewed runtime patch manifest."
             )
@@ -765,16 +794,22 @@ class TranslationEngine:
         rebuilt = output.with_suffix(".archive.tmp")
         try:
             patch_sha = (
-                _release_patch_sha(source)
-                if "gameupdate/patch-config.txt" in allowed
-                else None
+                _release_patch_sha(source) if updater and CONFIG in tracked else None
             )
         except ReleasePackageError:
             # Local delivery does not require publishing a remote branch.
             patch_sha = None
+        omitted = {CONFIG} & tracked if not patch_sha else set()
         try:
             _run_git(
-                source, "archive", "--format=zip", "--output=" + str(temporary), "HEAD"
+                source,
+                "archive",
+                "--format=zip",
+                "--output=" + str(temporary),
+                "HEAD",
+                "--",
+                ".",
+                *(":(exclude)" + path for path in sorted(omitted)),
             )
             # An encrypted game reads only its archive, so the patch carries
             # the archive rebuilt with the translated files.
@@ -795,7 +830,9 @@ class TranslationEngine:
         finally:
             temporary.unlink(missing_ok=True)
             rebuilt.unlink(missing_ok=True)
-        packaged = sorted(tracked | ({game_archive} if game_archive else set()))
+        packaged = sorted(
+            (tracked - omitted) | ({game_archive} if game_archive else set())
+        )
         write_json(
             output.with_suffix(".json"),
             {

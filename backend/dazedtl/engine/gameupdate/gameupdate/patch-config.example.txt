@@ -1,5 +1,9 @@
 # GameUpdate patch source (copy to patch-config.txt and edit).
 # Lines starting with # are comments. Keys are case-insensitive.
+#
+# Tip: DazedTL writes patch-config.txt for you from Settings > GameUpdate
+# (forge, host, owner, branch) and the game's repository on its Project
+# page, then commits it with each translation version.
 
 # Where the patch repo lives:
 #   gitlab  - GitLab / gitgud.io / self-hosted GitLab (default)
@@ -14,7 +18,7 @@ forge=gitlab
 # Examples: gitgud.io  gitlab.com  github.com  codeberg.org  git.example.com
 host=gitgud.io
 
-# Owner / org / group that owns the repo (rarely changes)
+# Owner / org / group that owns the repo (set in Settings; rarely changes)
 username=YOUR_ORG_OR_USER
 
 # Repository name (per game)

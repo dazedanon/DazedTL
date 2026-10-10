@@ -8,6 +8,7 @@ import { useSettingsDraft } from "./useSettingsDraft";
 import ConnectionEditor from "./ConnectionEditor";
 import { ModelMenu } from "./ModelMenu";
 import TranslationDefaults from "./TranslationDefaults";
+import GameUpdateSettings from "./GameUpdateSettings";
 import Updates from "./Updates";
 import { updateAttention, useUpdates } from "../../app/updates";
 import { RemoveConnection } from "./RemoveConnection";
@@ -19,26 +20,45 @@ import { Button } from "../../ui/Button";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
 import { Message } from "../../ui/Feedback";
+import type { GameUpdateDefaults } from "../../api/contracts";
 
 const sections = [
   { id: "api", label: "API connections" },
   { id: "preferences", label: "Translation defaults" },
+  { id: "gameupdate", label: "GameUpdate" },
   { id: "updates", label: "Updates" },
 ] as const;
-type SectionId = (typeof sections)[number]["id"];
+export type SettingsSection = (typeof sections)[number]["id"];
 
 export default function Settings({
   onDirty,
+  request,
 }: {
   /** Tells the shell about a kept draft, so it can mark Settings while hidden. */
   onDirty?: (dirty: boolean) => void;
+  /** A section another page opened Settings at. */
+  request?: { section: SettingsSection };
 }) {
   const application = useApplication();
   const action = useAction();
   const draft = useSettingsDraft(action.report);
-  useEffect(() => onDirty?.(draft.dirty), [onDirty, draft.dirty]);
   const { config } = draft;
-  const [section, setSection] = useState<SectionId>("api");
+  // Unsaved GameUpdate edits stay here, so switching tabs keeps them.
+  const [gameUpdate, setGameUpdate] = useState<GameUpdateDefaults | null>(null);
+  const gameUpdateDirty =
+    !!gameUpdate &&
+    !!config &&
+    JSON.stringify(gameUpdate) !== JSON.stringify(config.gameUpdate);
+  useEffect(
+    () => onDirty?.(draft.dirty || gameUpdateDirty),
+    [onDirty, draft.dirty, gameUpdateDirty],
+  );
+  const [section, setSection] = useState<SettingsSection>(
+    () => request?.section ?? "api",
+  );
+  useOnChange(request, (value) => {
+    if (value) setSection(value.section);
+  });
   const attention = updateAttention(useUpdates());
   const busy = action.busy || draft.committing;
   const running = !!application.snapshot?.application.running;
@@ -57,7 +77,7 @@ export default function Settings({
   const editConnection = config?.connections.find((item) => item.id === editId);
   const [removing, setRemoving] = useState<string | null>(null);
   const removal = config?.connections.find((item) => item.id === removing);
-  const move = (next: SectionId) =>
+  const move = (next: SettingsSection) =>
     action.run(async () => {
       await flushDrafts();
       setSection(next);
@@ -115,7 +135,33 @@ export default function Settings({
         </PageBody>
       ) : (
         <TabPanel id="settings" value={section}>
-          {section === "preferences" ? (
+          {section === "gameupdate" ? (
+            <GameUpdateSettings
+              values={gameUpdate || config.gameUpdate}
+              dirty={gameUpdateDirty}
+              busy={busy}
+              error={action.key === "gameupdate" ? action.error : ""}
+              notice={action.key === "gameupdate" ? action.notice : ""}
+              edit={(values) => {
+                if (action.key === "gameupdate") action.clear();
+                setGameUpdate(values);
+              }}
+              save={() =>
+                action.run(
+                  async () => {
+                    await draft.saveGameUpdate(gameUpdate || config.gameUpdate);
+                    setGameUpdate(null);
+                  },
+                  "GameUpdate settings saved.",
+                  "gameupdate",
+                )
+              }
+              revert={() => {
+                action.clear();
+                setGameUpdate(null);
+              }}
+            />
+          ) : section === "preferences" ? (
             <TranslationDefaults
               config={config}
               connection={current}

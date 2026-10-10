@@ -27,6 +27,15 @@ MARKERS = (
 TREES = ("refs", "dazedtl/version-update")
 
 
+def file_signature(path):
+    """A file's size and modification time, or None while it is missing."""
+    try:
+        value = os.stat(path)
+    except OSError:
+        return None
+    return (value.st_mtime_ns, value.st_size)
+
+
 def repository_signature(root):
     """What changes when the repository's metadata changes, from a few stats."""
     git = Path(root) / ".git"
@@ -67,8 +76,9 @@ class RepositoryStatusCache:
         self.clock = clock
         self.entries = {}
 
-    def get[T](self, key, root, compute: Callable[[], T]) -> T:
-        signature = repository_signature(root)
+    def get[T](self, key, root, compute: Callable[[], T], extra=()) -> T:
+        """`extra` adds what else the status reads, such as files Git ignores."""
+        signature = (repository_signature(root), extra)
         now = self.clock()
         entry = self.entries.get(key)
         if not (entry and entry[0] == signature and now - entry[1] < self.ttl):

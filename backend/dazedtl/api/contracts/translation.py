@@ -6,6 +6,7 @@ import typing_extensions
 
 from dazedtl.api.contracts.common import Documents
 from dazedtl.api.contracts.runs import LegacyRun
+from dazedtl.api.contracts.settings import Forge
 
 
 class TranslationOptions(TypedDict):
@@ -284,6 +285,50 @@ class Coverage(TypedDict):
     checked_at: NotRequired[str]
 
 
+class GameUpdateValues(TypedDict):
+    forge: Forge
+    host: str
+    owner: str
+    repo: str
+    branch: str
+
+
+class GameUpdateStatus(TypedDict):
+    """Where a game's gameupdate/patch-config.txt stands.
+
+    absent: the game has no GameUpdate; unconfigured: no owner in Settings;
+    needs_repo: the game's repository is unknown; pending: DazedTL writes it
+    next; edited: changed after DazedTL wrote it, with other values; ready;
+    unavailable: its status could not be read (see message).
+    """
+
+    state: Literal[
+        "absent",
+        "unconfigured",
+        "needs_repo",
+        "pending",
+        "edited",
+        "ready",
+        "unavailable",
+    ]
+    message: str
+    # The repository the game's settings keep, and the one origin suggests.
+    repo: str
+    suggested: str
+    # What DazedTL writes; its repository is empty while unknown.
+    values: GameUpdateValues | None
+    # The complete values in the file, which players get.
+    file: GameUpdateValues | None
+    placeholder: bool
+    differences: list[Literal["forge", "host", "owner", "repo", "branch"]]
+    # Values the game sets itself instead of following Settings.
+    overrides: list[Literal["forge", "host", "owner", "branch"]]
+    # The GameUpdate branch's commit carries the file's values.
+    committed: bool
+    # Why no Git remote is where players download from, or "".
+    remote: str
+
+
 class TranslationState(ProjectOptions):
     engine: str
     legacyRun: LegacyRun | None
@@ -297,6 +342,7 @@ class TranslationState(ProjectOptions):
     # The census coverage organize last found; None before a census.
     coverage: Coverage | None
     git: GitStatus | None
+    gameUpdate: GameUpdateStatus
     lifecycle: Lifecycle
     # The original backup the game folder already holds, offered to a project
     # without one, such as after the game was moved or copied.

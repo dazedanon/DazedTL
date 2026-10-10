@@ -72,6 +72,24 @@ class ExistingBackend:
             },
         }
 
+    @staticmethod
+    def check_game_update(values):
+        """GameUpdate's defaults normalized, or a ValueError naming the field."""
+        from util.gameupdate_config import check_defaults
+
+        if not isinstance(values, dict) or set(values) != {
+            "forge",
+            "host",
+            "username",
+            "branch",
+        }:
+            raise ValueError("Unknown GameUpdate setting.")
+        if any(
+            not isinstance(value, str) or len(value) > 2000 for value in values.values()
+        ):
+            raise ValueError("Enter GameUpdate settings as short text.")
+        return check_defaults(values, owner_required=False)
+
     def validate_preferences(self, values, engines):
         from desktop.backend.settings import validate_values
         from util.engine_options import validate_engine_options

@@ -712,6 +712,10 @@ def parse(codeList, i, headerString, jaString):
             (game / "img").mkdir()
             (game / "img/title.png").write_bytes(b"generated asset fixture")
             (game / "README.md").write_text("Repository metadata")
+            # A working GameUpdate config joins the proposal so the published
+            # patch carries it.
+            (game / "gameupdate").mkdir()
+            (game / "gameupdate/patch-config.txt").write_text("repo=fixture")
             preparation = ModuleType("util.project_preparation")
             preparation.rpgmaker_layout = lambda _: {
                 "engine": "MVMZ",
@@ -723,6 +727,8 @@ def parse(codeList, i, headerString, jaString):
             paths.PROJECT_ROOT = root / "engine"
             scope = ModuleType("util.len_patch_scope")
             scope.patch_manifest = lambda value: value
+            scope.CONFIG = "gameupdate/patch-config.txt"
+            scope.updater_config = lambda root: (root / scope.CONFIG).is_file()
             git = ModuleType("util.version_update.git_workflow")
             git._run_git = lambda *_args, **_kwargs: SimpleNamespace(
                 returncode=0, stdout="img/title.png\0README.md\0"
@@ -735,7 +741,12 @@ def parse(codeList, i, headerString, jaString):
                 },
             ):
                 self.assertEqual(
-                    runtime_files(game), ["data/Items.json", "img/title.png"]
+                    runtime_files(game),
+                    [
+                        "data/Items.json",
+                        "gameupdate/patch-config.txt",
+                        "img/title.png",
+                    ],
                 )
 
     def test_ace_packing_saves_a_receipt_only_when_every_export_was_packed(self):
