@@ -1,8 +1,9 @@
 // Publishes a DazedTL release from the dev branch: runs the checks, signs a
 // manifest of every file, tags it and pushes it to every mirror. A stable
 // release fast-forwards main to dev and commits there, once CI has passed for
-// that commit on GitHub; a prerelease such as 2.1.0-beta.1 is tagged on dev
-// for the beta channel.
+// that commit on GitHub, and files release/notes.md under its version in
+// CHANGELOG.md; a prerelease such as 2.1.0-beta.1 is tagged on dev for the
+// beta channel and leaves the notes pending.
 //
 //   node scripts/release.mjs key               create the signing key, once
 //   node scripts/release.mjs 2.0.0 [--local]   release; --local skips pushing
@@ -13,6 +14,14 @@ import crypto from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { root } from "./dependencies.mjs";
+import {
+  CHANGELOG,
+  NOTES,
+  addRelease,
+  formatSections,
+  notesTemplate,
+  parseNotes,
+} from "./changelog.mjs";
 import {
   compare,
   isVersion,
@@ -265,6 +274,24 @@ function manifestFor(version) {
   };
 }
 
+/** Today's date where the release is made, as Keep a Changelog writes it. */
+function today() {
+  const now = new Date();
+  return [now.getFullYear(), now.getMonth() + 1, now.getDate()]
+    .map((part) => String(part).padStart(2, "0"))
+    .join("-");
+}
+
+/** Where a changelog entry's version heading links: its changes on GitHub. */
+function compareLink(version, previous) {
+  const site = mirrors(root).find((mirror) => mirror.type === "github");
+  if (!site) throw new Error("release/mirrors.json names no GitHub mirror.");
+  const base = site.url.replace(/\/$/, "");
+  return previous
+    ? `${base}/compare/v${previous}...v${version}`
+    : `${base}/releases/tag/v${version}`;
+}
+
 function setVersion(version) {
   for (const file of ["app/package.json", "app/package-lock.json"]) {
     const target = path.join(root, file);
@@ -284,26 +311,34 @@ async function release(version, push) {
     throw new Error("Release from the dev branch.");
   if (git("status", "--porcelain"))
     throw new Error("Commit or stash your changes first.");
-  const newer = git("tag", "--list", "v*")
+  const released = git("tag", "--list", "v*")
     .split("\n")
     .map((tag) => tag.slice(1))
-    .filter((tag) => isVersion(tag) && compare(tag, version) >= 0);
+    .filter(isVersion);
+  const newer = released.filter((tag) => compare(tag, version) >= 0);
   if (newer.length)
     throw new Error(
       `Version ${version} must be newer than ${newer.join(", ")}.`,
+    );
+  const stable = !version.includes("-");
+  const notes = parseNotes(fs.readFileSync(path.join(root, NOTES), "utf8"));
+  if (stable && !notes.length)
+    throw new Error(
+      `Write what changed for users in ${NOTES} first; see docs/development.md#release-notes.`,
     );
   const key = signingKey();
   if (push) checkRemote();
   step(process.execPath, ["scripts/test.mjs"]);
   step(process.execPath, ["scripts/build.mjs"]);
 
-  const stable = !version.includes("-");
   if (stable) await requireCI(git("rev-parse", "HEAD"), push);
   const branch = stable ? "main" : "dev";
   const tag = `v${version}`;
   const touched = [
     "app/package.json",
     "app/package-lock.json",
+    CHANGELOG,
+    NOTES,
     "release/manifest.json",
     "release/manifest.sig",
   ];
@@ -320,6 +355,27 @@ async function release(version, push) {
     if (stable) git("merge", "--ff-only", "dev");
     setVersion(version);
     git("add", "app/package.json", "app/package-lock.json");
+    if (stable) {
+      const changelog = path.join(root, CHANGELOG);
+      const previous = released
+        .filter((tag) => !tag.includes("-"))
+        .sort(compare)
+        .at(-1);
+      fs.writeFileSync(
+        changelog,
+        addRelease(
+          fs.existsSync(changelog) ? fs.readFileSync(changelog, "utf8") : "",
+          {
+            version,
+            date: today(),
+            sections: notes,
+            link: compareLink(version, previous),
+          },
+        ),
+      );
+      fs.writeFileSync(path.join(root, NOTES), notesTemplate);
+      git("add", CHANGELOG, NOTES);
+    }
     const manifest = Buffer.from(
       `${JSON.stringify(manifestFor(version), null, 2)}\n`,
     );
@@ -332,14 +388,30 @@ async function release(version, push) {
     git(
       "commit",
       "-m",
-      `chore(release): ${version}\n\n- Set the version to ${version}\n- Sign the release manifest`,
+      [
+        `chore(release): ${version}`,
+        "",
+        `- Set the version to ${version}`,
+        ...(stable ? [`- File the release notes in ${CHANGELOG}`] : []),
+        "- Sign the release manifest",
+      ].join("\n"),
     );
-    git("tag", "-a", tag, "-m", `DazedTL ${version}`);
+    // Verbatim keeps the notes' "###" headings, which Git strips as comments.
+    git(
+      "tag",
+      "-a",
+      tag,
+      "--cleanup=verbatim",
+      "-m",
+      [`DazedTL ${version}`, ...(notes.length ? [formatSections(notes)] : [])]
+        .join("\n\n")
+        .trimEnd(),
+    );
   } catch (error) {
     spawnSync("git", ["restore", "--staged", "--worktree", "--", ...touched], {
       cwd: root,
     });
-    for (const file of touched.slice(2))
+    for (const file of touched)
       if (!git("ls-files", file))
         fs.rmSync(path.join(root, file), { force: true });
     git("switch", "dev");

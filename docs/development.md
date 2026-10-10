@@ -79,7 +79,7 @@ Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; t
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.
-From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
+From a clean `dev`, `node scripts/release.mjs 2.0.1` runs the tests and build checks, fast-forwards `main` to `dev`, sets the version, files the [release notes](#release-notes), signs a manifest of every file, commits and tags `v2.0.1`, pushes `main` and the tag to every mirror and fast-forwards `dev` again.
 Before `main` moves, the release requires [CI](#live-test) to have passed on GitHub for that `dev` commit.
 It pushes `dev` first when GitHub lacks the commit and waits for a run still in progress; a failed or cancelled run stops the release.
 A prerelease such as `2.1.0-beta.1` is tagged on `dev` for the Beta channel instead, without waiting for CI, and `--local` stops before pushing.
@@ -97,6 +97,26 @@ git remote set-url --add --push all git@git-ssh.dazedtl.dev:dazed/DazedTL.git
 Releases are signed with a key kept outside the checkout.
 Create it once with `node scripts/release.mjs key`, commit the public key it adds to `release/keys`, and back up the private key: installs reject releases signed by any key they do not trust.
 Set `DAZEDTL_RELEASE_KEY` to keep the private key somewhere else.
+
+### Release notes
+
+Every stable release needs notes for users, and `release.mjs` stops until [release/notes.md](../release/notes.md) has them.
+Write them just before releasing, from `git log` since the last tag, under the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) headings `### Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`, one `- ` line per change:
+
+```markdown
+### Fixed
+
+- **Set up:** saving the game's first version no longer stops with "Bundled GameUpdate .gitignore is unavailable".
+```
+
+- Start with where it happens, in bold: **Set up**, **Progress**, **Assistant-led**, **GameUpdate**, **Settings**.
+- Say what the user sees, in the app's own words, never internal names such as census, helper or baseline.
+- For a fix, name the old symptom so people recognize it, and quote an error only if users saw it.
+- Merge related commits into one line and leave out changes nobody would notice.
+
+The release moves the notes into [CHANGELOG.md](../CHANGELOG.md) under the version and date, links the version to its changes on GitHub, empties `release/notes.md` and uses the notes as the tag message.
+A prerelease leaves them pending, and the app shows a beta's pending notes as that version's.
+Never edit `CHANGELOG.md` by hand; [changelog.mjs](../scripts/changelog.mjs) reads and writes it.
 
 ## Not yet verified
 
