@@ -45,6 +45,18 @@ def refused(folder):
     assert data == {path: path.read_bytes() for path in folder.glob("data/*")}
 
 
+# Tools the assistant installs in its work folder, such as a Python
+# environment with symbolic links, are never part of the game's history.
+tooled = game("tooled")
+environment = tooled / ".dazedtl/len-method/work/.venv/bin"
+environment.mkdir(parents=True)
+try:
+    (environment / "python").symlink_to(sys.executable)
+except OSError:  # Windows without the symbolic link privilege
+    pass
+result = save(tooled)
+assert result["configured"] and result["worktree_clean"], result
+
 # A forced stop between git init and the first commit.
 stopped = game("stopped")
 git(stopped, "init", "-q", "-b", "main")

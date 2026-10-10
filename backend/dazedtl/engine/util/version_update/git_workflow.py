@@ -692,6 +692,13 @@ def _source_files(source: Path, *, format_json: bool) -> list[_SourceFile]:
         relative = candidate.relative_to(source)
         if relative.parts and relative.parts[0] == ".git":
             continue
+        # DazedTL keeps only its glossary, settings and skill notes in Git;
+        # its work, backups and tool environments there are never tracked.
+        if relative.parts[:1] == (".dazedtl",) and (
+            len(relative.parts) > 3
+            or (len(relative.parts) == 3 and relative.parts[1] != "skills")
+        ):
+            continue
         if candidate.is_symlink():
             raise GitWorkflowError(
                 f"Symbolic links are not supported in game trees: {relative.as_posix()}"
