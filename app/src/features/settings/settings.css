@@ -111,6 +111,54 @@
 .field-row + .connection-panel {
   margin-top: var(--space-5);
 }
+/* What's new: each kind of change labels its list, as detail rows do, and a
+   release's version and date head its rows when the notes span several. */
+.release-notes {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+.release-notes h2,
+.release-notes h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.release-notes h2 {
+  font-size: var(--font-heading);
+}
+.release-notes h3 {
+  margin-bottom: var(--space-2);
+  font-size: var(--font-body);
+  font-weight: var(--weight-medium);
+}
+.release-notes-date {
+  color: var(--color-muted);
+  font-size: var(--font-control);
+  font-weight: var(--weight-regular);
+}
+.release-notes-release + .release-notes-release {
+  margin-top: var(--space-2);
+}
+.release-notes-sections {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+.release-notes-sections .summary-row {
+  align-items: start;
+  min-height: 0;
+}
+.release-notes-sections ul {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--measure);
+  margin: 0;
+  padding-left: var(--space-4);
+}
 @media (max-width: 1050px) {
   .connection-keyless {
     margin-left: calc(min(var(--field-label-width), 45%) + var(--space-3));

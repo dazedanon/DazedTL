@@ -10,6 +10,7 @@ import http from "node:http";
 import https from "node:https";
 import { root as checkout } from "./dependencies.mjs";
 import { entries, relative } from "./tar.mjs";
+import { CHANGELOG, NOTES, parseChangelog, parseNotes } from "./changelog.mjs";
 
 const MANIFEST = "release/manifest.json";
 const SIGNATURE = "release/manifest.sig";
@@ -602,17 +603,68 @@ export function applyPending(root = checkout) {
   return record(root, { ok: true, version: manifest.version, from });
 }
 
-/** What the app shows: versions, a staged or requested swap, and its outcome. */
-export function status(root = checkout) {
+/**
+ * What changed after `after` up to `upTo`, newest first, as the changelog in
+ * `dir` lists it; without `after`, `upTo`'s own entry. A prerelease's entry is
+ * the pending notes it carries. Unreadable notes are left out, so they never
+ * stand in the way of an update.
+ * @param {string} dir
+ * @param {string | null} after
+ * @param {string} upTo
+ * @returns {import("./changelog.mjs").Release[]}
+ */
+export function releaseNotes(dir, after, upTo) {
+  if (!isVersion(upTo)) return [];
+  if (!isVersion(after) || compare(after, upTo) >= 0) after = null;
+  const read = (name) =>
+    fs.readFileSync(path.join(dir, ...name.split("/")), "utf8");
+  let releases = [];
+  try {
+    releases = parseChangelog(read(CHANGELOG));
+    if (upTo.includes("-"))
+      releases.unshift({
+        version: upTo,
+        date: "",
+        sections: parseNotes(read(NOTES)),
+      });
+  } catch {
+    // Keep what was readable.
+  }
+  return releases.filter(
+    ({ version, sections }) =>
+      sections.length &&
+      isVersion(version) &&
+      compare(version, upTo) <= 0 &&
+      (after ? compare(version, after) > 0 : compare(version, upTo) === 0),
+  );
+}
+
+/**
+ * What the app shows: versions, a staged or requested swap, its outcome, and
+ * the notes of the staged release and of the installed one. The installed
+ * notes reach back to `since`, the version an update replaced, which the last
+ * outcome names until the app has seen it.
+ */
+export function status(root = checkout, since = "") {
   const { next, previous, revert, result } = folders(root);
   const current = installed(root);
+  const outcome = readJson(result);
+  const staged = fs.existsSync(next) ? stagedVersion(root) : null;
   return {
     git: current.git,
     version: current.version,
-    staged: fs.existsSync(next) ? stagedVersion(root) : null,
+    staged,
     previous: readJson(path.join(previous, "meta.json"))?.version ?? null,
     revert: fs.existsSync(revert),
-    result: readJson(result),
+    result: outcome,
+    notes: {
+      staged: staged ? releaseNotes(next, current.version, staged) : [],
+      installed: releaseNotes(
+        root,
+        since || (outcome?.ok ? outcome.from : null),
+        current.version,
+      ),
+    },
   };
 }
 
@@ -621,7 +673,7 @@ if (import.meta.main) {
   const [command, value] = process.argv.slice(2);
   const say = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
   try {
-    if (command === "status") say(status());
+    if (command === "status") say(status(checkout, value));
     else if (command === "seen") {
       fs.rmSync(folders().result, { force: true });
       say({ seen: true });

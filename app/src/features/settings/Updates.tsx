@@ -6,6 +6,7 @@ import { DetailRow, FieldRow } from "../../ui/FieldRow";
 import { StatusIcon, type StatusKind } from "../../ui/StatusIcon";
 import { ActionBar } from "../../ui/ActionBar";
 import { ActionControl } from "../../ui/ActionControl";
+import { ReleaseNotes } from "./ReleaseNotes";
 
 /** Where this install stands; checks in progress show beside their button. */
 function describe(state: UpdateState): {
@@ -126,6 +127,12 @@ export default function Updates({ running }: { running: boolean }) {
           )}
           {note && <div className="connection-panel-note">{note}</div>}
         </section>
+        {!state.revert && (
+          <ReleaseNotes
+            version={state.staged || state.version}
+            releases={state.staged ? state.notes.staged : state.notes.installed}
+          />
+        )}
       </PageBody>
       {!state.git && (
         <ActionBar feedback={<div className="feedback" role="status" />}>

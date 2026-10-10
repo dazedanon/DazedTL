@@ -376,6 +376,7 @@ The app-owned clean packager uses one inventory for inspection and writing, reta
 Guided patches add current applied-image receipts and explicitly reviewed image/font paths to the runtime scope.
 Each game's GameUpdate config, `gameupdate/patch-config.txt`, belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py).
 It writes the compact file from Settings' GameUpdate defaults and the game's repository, which the game's `.dazedtl/settings.json` keeps with any values the game sets itself and the digest of the file it last wrote.
+The [action guard](../backend/dazedtl/engine/desktop/backend/workflow_actions.py) that binds saved runs, QA and reviews to the game's settings leaves that record out, so writing it never marks saved work Outdated.
 The repository comes from the `origin` remote when that names the configured owner; a placeholder is never written, and a working config it has not seen is adopted as the game's own.
 A file changed after that write keeps its values until the user keeps or replaces them on the Project page.
 Settings offer GameUpdate's own forge names, gitlab, forgejo and github; a saved gitea reads as forgejo.
@@ -1013,6 +1014,7 @@ Releases still keep `.node-version`, `.python-version` and the other files 2.0.0
 Files outside the manifest, such as `.venv`, `.runtime` and downloaded models, are never touched, and Git checkouts are left to Git.
 "Restart to update" closes through the usual save handshake, refuses while a run is active, and relaunches through START with the app's switches, which waits for the old process to exit.
 The backup also serves "Go back"; automatic checks skip the version the user went back from.
+Settings > Updates shows the [changelog](../CHANGELOG.md) entries from the staged copy, which its manifest covers, for every version after the installed one, and after an update the installed entries since the version it replaced.
 
 Every tracked path stays within 185 characters, checked by [paths.mjs](../scripts/paths.mjs).
 Windows Explorer and Python stop at 260 characters unless long paths are enabled, and Explorer unpacks a GitHub ZIP into a doubled top folder.

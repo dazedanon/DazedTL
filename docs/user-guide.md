@@ -246,7 +246,8 @@ Results DazedTL has downloaded stay available after OpenRouter deletes its copy.
 ## Updates
 
 DazedTL checks for a new version once a day and downloads it in the background.
-When one is ready, Settings shows a dot; **Settings > Updates** has **Restart to update**, which waits while a translation is running.
+When one is ready, Settings shows a dot; **Settings > Updates** shows what's new in it and has **Restart to update**, which waits while a translation is running.
+After the restart, the same tab shows what changed since the version you had; the [changelog](../CHANGELOG.md) covers every version.
 Projects, settings, API keys and runs are kept, and every file is checked against the release's signature first.
 If an update fails, DazedTL keeps the version you had and says why.
 

@@ -48,6 +48,17 @@ export type UpdateState = {
     from: string;
     message: string;
   } | null;
+  /**
+   * CHANGELOG.md entries, newest first: what the staged release brings, and
+   * what the installed version changed since the one an update replaced.
+   */
+  notes: { staged: ReleaseNotes[]; installed: ReleaseNotes[] };
+};
+/** One release's Keep a Changelog entry; a prerelease has no date. */
+export type ReleaseNotes = {
+  version: string;
+  date: string;
+  sections: { kind: string; items: string[] }[];
 };
 declare global {
   interface Window {

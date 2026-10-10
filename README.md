@@ -39,8 +39,9 @@ The [user guide](docs/user-guide.md) explains every step.
 ## Updates
 
 DazedTL updates itself.
-When a new version is ready, **Settings** shows a dot: open its **Updates** tab and click **Restart to update**.
+When a new version is ready, **Settings** shows a dot: open its **Updates** tab to see what's new and click **Restart to update**.
 Your projects, settings and API keys are kept.
+The [changelog](CHANGELOG.md) lists what changed in every version.
 
 ## Good to know
 

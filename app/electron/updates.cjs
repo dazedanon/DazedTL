@@ -18,7 +18,9 @@ const fs = require("node:fs");
  *   checkedAt: string,
  *   error: string,
  *   outcome: { ok: boolean, version: string, from: string, message: string } | null,
+ *   notes: { staged: Release[], installed: Release[] },
  * }} UpdateState
+ * @typedef {{ version: string, date: string, sections: { kind: string, items: string[] }[] }} Release
  */
 
 const day = 24 * 60 * 60 * 1000;
@@ -62,6 +64,7 @@ class Updates {
       checkedAt: typeof saved.checkedAt === "string" ? saved.checkedAt : "",
       error: "",
       outcome: null,
+      notes: { staged: [], installed: [] },
     };
     this.busy = false;
   }
@@ -126,7 +129,8 @@ class Updates {
   }
 
   async refresh() {
-    const status = await this.run(["status"]);
+    const { outcome } = this.state;
+    const status = await this.run(["status", outcome?.ok ? outcome.from : ""]);
     this.set({
       git: status.git,
       version: status.version,
@@ -134,6 +138,7 @@ class Updates {
       revert: status.revert,
       previous: status.previous || "",
       status: status.staged || status.revert ? "ready" : this.state.status,
+      notes: status.notes,
     });
     if (status.result) {
       const outcome = { message: "", ...status.result };
