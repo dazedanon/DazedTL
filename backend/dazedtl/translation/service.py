@@ -898,12 +898,20 @@ Additional project instructions:
             or not 0 <= index < len(plan["requests"])
         ):
             raise ValueError("Choose a request in this run.")
+        result = Results(plan["source"]).get(plan["requests"][index])
         return {
             "run_id": run_id,
             "index": index,
             "total": len(plan["requests"]),
             "request": plan["requests"][index],
-            "result": Results(plan["source"]).get(plan["requests"][index]),
+            # The saved record also holds its hashes and provenance; a reader
+            # needs the translations and the hash a correction replaces.
+            "result": result
+            and {
+                key: result[key]
+                for key in ("translations", "result_sha256", "reviewed")
+                if key in result
+            },
         }
 
     def results(self, project_id, run_id):

@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from dazedtl.api.contracts.validation import check_response
 from dazedtl.api.server import assistant_dispatch
 from dazedtl.projects.store import Projects
 from dazedtl.settings.execution import configuration, connection_summary, worker_secret
@@ -246,7 +247,10 @@ class WorkflowTests(unittest.TestCase):
         self.service.review(
             self.identity, run["id"], "scene", preview["request"]["fingerprint"]
         )
-        reviewed = self.service.request(self.identity, run["id"], 0)["result"]
+        preview = self.service.request(self.identity, run["id"], 0)
+        # The assistant reads an accepted request back for a correction.
+        check_response("translation_request", preview)
+        reviewed = preview["result"]
         self.assertIn("line", reviewed["reviewed"])
         exported = read_json(self.game / (WORK + "/work/translation-units.json"))[
             "units"
