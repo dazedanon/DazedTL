@@ -96,7 +96,9 @@ _run_git(raced, "read-tree", "main")
 # translation commit carries a working patch-config.txt that DazedTL writes
 # from the saved defaults and the origin remote, never a placeholder.
 from dazedtl.compatibility.translation import TranslationEngine
+from desktop.backend.workflow_actions import action_guard
 from util import gameupdate_config as updater
+from util.game_settings import load_game_update, save_game_wrap_widths
 
 defaults = {
     "forge": "gitlab",
@@ -139,8 +141,16 @@ with engine.context():
         "origin",
         "git@ssh.gitgud.io:dazed-translations/published.git",
     )
+    save_game_wrap_widths(published, {"width": 64})
+    guard = action_guard({"source": str(published)}, temporary / "workflow")
     state = updater.reconcile(published, defaults)
     assert state["state"] == "ready" and not state["committed"], state
+    # The game's settings keep its repository beside the wrap widths; writing
+    # it must not make saved QA, runs or reviews read Outdated.
+    assert load_game_update(published)["repo"] == "published"
+    assert action_guard({"source": str(published)}, temporary / "workflow") == guard
+    save_game_wrap_widths(published, {"width": 70})
+    assert action_guard({"source": str(published)}, temporary / "workflow") != guard
     assert config.read_text().splitlines()[2:] == [
         "forge=gitlab",
         "host=gitgud.io",

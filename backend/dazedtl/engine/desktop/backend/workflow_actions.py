@@ -9,6 +9,7 @@ import shutil
 import uuid
 
 from util.ace import rgssad
+from util.game_settings import without_game_update
 from util.paths import PROJECT_ROOT
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest
@@ -52,6 +53,14 @@ def regular(root, path):
 def file_hash(root, path):
     path = regular(root, path)
     return digest(path.read_bytes()) if path.is_file() else None
+
+
+def settings_hash(root):
+    """The game's settings as translation work binds them; GameUpdate's record
+    is left out, so writing it never makes saved work read Outdated."""
+    path = regular(root, root / ".dazedtl/settings.json")
+    raw = without_game_update(path.read_bytes()) if path.is_file() else None
+    return digest(raw) if raw is not None else None
 
 
 def tree_hashes(root, folder):
@@ -104,7 +113,7 @@ def action_guard(project, folder):
             "archives": {str(path.relative_to(root)): file_hash(root, path) for path in archives} if archives is not None else None,
             "plugins": file_hash(root, Path(layout["plugins"])) if layout["plugins"] else None,
             "plugin_files": tree_hashes(root, Path(layout["plugins"]).parent / "plugins") if layout["plugins"] else None,
-            "settings": file_hash(root, root / ".dazedtl/settings.json"),
+            "settings": settings_hash(root),
             "glossary": file_hash(root, root / ".dazedtl/glossary.txt"),
             "legacy_glossary": file_hash(root, root / "glossary.txt"),
             "legacy_quirks": file_hash(root, root / "translation_quirks.txt"),

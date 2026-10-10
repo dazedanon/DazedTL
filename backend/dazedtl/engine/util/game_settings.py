@@ -196,6 +196,27 @@ def save_game_update(game_root: str | Path, values: Mapping[str, str]) -> Path:
     return _update_settings(Path(game_root).expanduser().resolve(), update)
 
 
+def without_game_update(raw: bytes) -> bytes | None:
+    """The settings file's bytes without the GameUpdate record, which DazedTL
+    rewrites on its own and no translation work reads: the bytes the file held
+    before the record was added, or None when nothing else is left."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return raw
+    if not isinstance(data, dict) or "gameUpdate" not in data:
+        return raw
+    data.pop("gameUpdate")
+    # Writing the record stamps a version on a file that did not exist yet.
+    if set(data) <= {"version"}:
+        return None
+    return _serialize(data).encode("utf-8")
+
+
+def _serialize(data: dict) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+
+
 def _update_settings(root: Path, update) -> Path:
     if not root.is_dir():
         raise GameSettingsError(f"Game folder does not exist: {root}")
@@ -223,8 +244,7 @@ def _update_settings(root: Path, update) -> Path:
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+            handle.write(_serialize(data))
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
