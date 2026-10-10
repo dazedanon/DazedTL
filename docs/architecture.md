@@ -735,6 +735,7 @@ Accepted fixes become findings and also apply on top of a deep correction of the
 A deep correction of a problem that recurs word for word can carry a sweep rule that reproduces it exactly; after deep review the engine finds every other line of the same display shape the rule changes, and reviewers accept or reject those as a group before findings are made.
 An editorial stage then confirms every reviewer-written correction: a reviewer accepts, revises or withdraws it, and a fluency, voice or wordplay correction goes only to a worker that wrote none of its bundle's corrections.
 Before each round, a consistency check marks corrections that contradict the translation quirks, a structured label, each other or the decision log, where reviewers record shared choices such as narration tense; a contradiction comes back in another round until it is resolved, and after four rounds it is reported as unverified instead of applied.
+Slips in the Japanese source have findings of their own: a Show Text header's face and name, which must be a face the game already shows, and a database text whose number its own entry contradicts, which may change only to a number that entry holds; apply and regression check both like any correction.
 The clipboard task stops before runtime publication.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 

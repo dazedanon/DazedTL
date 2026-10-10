@@ -41,6 +41,9 @@ def write(name, value):
 
 STRATUM = line("第1層で休む", "Rest on Stratum 1")
 AROUSAL = line("ムラムラが止まらない", "The Arousal won't stop.")
+# The source shows Arina's header on the owner's line.
+WELCOME = line("いらっしゃい、アリナちゃん", "Welcome, Arina-chan.")
+SWORD = "攻撃力+5の剣"
 write(
     "Map001.json",
     {
@@ -53,6 +56,10 @@ write(
                         speaker("アリナ", "Arina"),
                         STRATUM,
                         line("今日はいい天気だね", "Nice weather today."),
+                        speaker("店長", "Owner", face="owner"),
+                        line("よく来たね", "Glad you came."),
+                        speaker("アリナ", "Arina"),
+                        WELCOME,
                         # Japanese residue forces deep review, where it is declined.
                         line("朝だ", "It's 朝."),
                         # Two lint families, both accepted.
@@ -96,6 +103,20 @@ write(
             # A lint proposal the reviewer rejects.
             "description": "Restores HP.♥Yay",
             "_original": {"name": "ムラムラ", "description": "体力を回復する。♥"},
+        },
+    ],
+)
+write(
+    "Weapons.json",
+    [
+        None,
+        {
+            "id": 1,
+            "name": "Sword",
+            "description": "A sword with Attack +5",
+            "params": [0, 0, 8, 0, 0, 0, 0, 0],
+            "price": 300,
+            "_original": {"name": "剣", "description": SWORD},
         },
     ],
 )
@@ -183,7 +204,8 @@ while row := qa.next_bundle(task, "screen-a"):
             "note": "Stratum ordinal reads oddly.",
         }
         for target in screen_targets(bundle)
-        if target["source"] in {STRATUM["_original"], AROUSAL["_original"]}
+        if target["source"]
+        in {STRATUM["_original"], AROUSAL["_original"], WELCOME["_original"], SWORD}
     ]
     qa.accept_result(
         task,
@@ -263,6 +285,27 @@ def deep_result(row, corrections):
                 {"id": item["id"], "disposition": "declined", "reason": "Not reviewed."}
             )
             continue
+        if item["source"] == WELCOME["_original"]:
+            reviews.append(
+                {
+                    "id": item["id"],
+                    "disposition": "actionable",
+                    "severity": "high",
+                    "category": "speaker",
+                    "family_key": "",
+                    "motif_ids": [],
+                    "evidence": "The owner greets Arina; the header shows Arina.",
+                    "correction": None,
+                    "apply_identities": item["identities"][:1],
+                    "source_fix": {
+                        "kind": "show-text",
+                        "face_name": "owner",
+                        "face_index": 0,
+                        "name": "Owner",
+                    },
+                }
+            )
+            continue
         correction = corrections.get(item["source"])
         sweep = (
             {"find": "Arousal", "replace": "arousal", "source_has": "ムラムラ"}
@@ -277,6 +320,11 @@ def deep_result(row, corrections):
                 "category": ("voice" if sweep else "terminology") if correction else "",
                 "family_key": "term:ムラムラ" if sweep else "",
                 "sweep": sweep,
+                **(
+                    {"source_fix": {"kind": "database-numbers"}}
+                    if item["source"] == SWORD and correction
+                    else {}
+                ),
                 **(
                     {
                         "editorial_basis": {
@@ -328,6 +376,8 @@ qa.accept_result(
             {
                 STRATUM["_original"]: "Rest on the First Stratum",
                 AROUSAL["_original"]: "The arousal won't stop.",
+                # The entry's attack is 8, so the description may say so.
+                SWORD: "A sword with Attack +8",
             },
         ),
     ),
@@ -441,11 +491,24 @@ assert state["stage"] == "complete", state
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 # Accepted lint families combine into one correction; a rejected one is left out.
 assert sorted(row["correction"] for row in findings["findings"]) == [
+    "A sword with Attack +8",
     "Ah…♥ Amazing",
+    "Owner · owner 0",
     "Rest on the First Stratum",
     "The arousal is building…",
     "The arousal won't stop.",
 ], findings["findings"]
+# Source fixes go through the same correction map, apply and regression.
+qa.create_correction_map(task, [row["id"] for row in findings["findings"]])
+assert qa.apply_correction_map(task)["valid"]
+headers = [
+    command["parameters"]
+    for command in json.loads((data / "Map001.json").read_text())["events"][1]["pages"][
+        0
+    ]["list"]
+    if command["code"] == 101
+]
+assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
 assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3}
 # The declined scene is a coverage gap, reported once with its reasons.
 assert [item["reasons"] for item in findings["declined"]] == [

@@ -17,7 +17,7 @@ import shlex
 import shutil
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,6 +74,7 @@ DECLINE_REASON_LIMIT = 300
 DECLINES_TO_SET_ASIDE = 2
 SEVERITIES = frozenset({"critical", "high", "medium"})
 FINDING_CATEGORIES = frozenset({
+    "speaker",
     "meaning",
     "terminology",
     "fluency",
@@ -90,6 +91,9 @@ APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 # A Show Text window shows four rows; a correction may not need more than the
 # current text already uses.
 MESSAGE_WINDOW_LINES = 4
+# Fixes for slips in the Japanese source itself: the Show Text header's face
+# and name, or a database field's number that its own entry contradicts.
+SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers"})
 # Every module whose rules shape bundles, flags or findings.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
@@ -171,6 +175,8 @@ def _normalize_category(value: Any) -> str:
     """Collapse reviewer-specific labels into a stable report taxonomy."""
     label = re.sub(r"[^a-z0-9]+", "-", str(value or "").casefold()).strip("-")
     tokens = set(label.split("-"))
+    if tokens & {"speaker", "nameplate", "face"}:
+        return "speaker"
     if tokens & {"runtime", "control", "code"}:
         return "runtime"
     if "ui" in tokens:
@@ -220,6 +226,7 @@ def _consistency_conflicts(
     an editorial reviewer confirms the contexts differ.
     """
     conflicts: dict[str, list[dict[str, str]]] = defaultdict(list)
+    findings = [finding for finding in findings if finding.get("kind") != "show-text"]
     quirks = str((context.get("quirks") or {}).get("text") or "")
     canonical: dict[str, set[str]] = defaultdict(set)
     for source, translation in _CANONICAL_QUIRK_MAPPING_RE.findall(quirks):
@@ -311,6 +318,8 @@ def _simulate_apply(
     """Refuse findings whose corrections the post-apply regression would reject."""
     problems = []
     for finding in findings:
+        if finding.get("kind") == "show-text":
+            continue
         for identity in finding["target_identities"]:
             record = records[identity]
             found = correction_problems(
@@ -320,6 +329,7 @@ def _simulate_apply(
                 record.get("event_code"),
                 record["live_pointers"],
                 record["live_transform"],
+                frozenset(finding.get("allowed_flags") or ()),
             )
             if found:
                 problems.append(f"{finding['id']} at {identity}: " + "; ".join(found))
@@ -360,6 +370,7 @@ def correction_problems(
     event_code: int | None,
     live_pointers: list[str],
     live_transform: str,
+    allowed: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Why applying one correction would fail or trip the post-apply regression.
 
@@ -393,7 +404,9 @@ def correction_problems(
         problems.append("a name or choice cannot contain a line break")
     before = set(_mechanical_evidence(source, live, event_code)["flags"])
     after = set(_mechanical_evidence(source, correction, event_code)["flags"])
-    introduced = sorted(after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS)
+    introduced = sorted(
+        after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS - allowed
+    )
     if introduced:
         problems.append("introduces " + ", ".join(introduced))
     return problems
@@ -1436,6 +1449,16 @@ accepted example; review them as a group and return:
 A candidate you do not reject becomes a finding with the family's correction. Reject one where the
 rule does not fit its line, such as a sentence start or a system label, with a note.
 
+Some slips are in the Japanese source itself; fix them with `source_fix` on an actionable review:
+
+- `{{"kind":"show-text","face_name":"<face>","face_index":0,"name":"<nameplate>"}}` when a message
+  shows the wrong speaker's face or name. Use category `speaker`, `correction` null and exactly
+  one `apply_identities` entry, the message whose Show Text header is wrong. The face must be one
+  the game already shows; an empty name is for narration.
+- `{{"kind":"database-numbers"}}` when a database text states a number its own entry contradicts,
+  such as a description's attack bonus. The correction may change a number only to one of the
+  locator's `database_values`.
+
 A deep item's `lint` names the mechanical fixes accepted for its line. DazedTL applies them to your
 correction as well, so write the correction for meaning and voice.
 
@@ -2044,6 +2067,83 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
             )
 
 
+def _validate_show_text_fix(review: dict[str, Any], item: dict[str, Any]) -> None:
+    """A Show Text fix names one occurrence and the header it should have."""
+    identity = review["id"]
+    fix = review["source_fix"]
+    if set(fix) != {"kind", "face_name", "face_index", "name"}:
+        raise QAResultError(
+            f"A Show Text fix is {{kind, face_name, face_index, name}}: {identity}"
+        )
+    if (
+        not isinstance(fix["face_name"], str)
+        or not isinstance(fix["name"], str)
+        or type(fix["face_index"]) is not int
+        or not 0 <= fix["face_index"] <= 7
+        or any(len(fix[key]) > 100 or "\n" in fix[key] for key in ("face_name", "name"))
+    ):
+        raise QAResultError(f"The Show Text fix's face or name is invalid: {identity}")
+    if review.get("correction") is not None:
+        raise QAResultError(
+            f"A Show Text fix keeps the line's text; leave correction null: {identity}"
+        )
+    if _normalize_category(review.get("category")) != "speaker":
+        raise QAResultError(f"A Show Text fix uses the speaker category: {identity}")
+    targets = review.get("apply_identities") or []
+    locators = {locator["identity"]: locator for locator in item.get("locators") or []}
+    if len(targets) != 1 or locators.get(targets[0], {}).get("event_code") not in {101, 401}:
+        raise QAResultError(
+            f"A Show Text fix names exactly one message occurrence in "
+            f"apply_identities: {identity}"
+        )
+
+
+def _number_values(value: Any) -> set[str]:
+    """Every number a database entry holds, as the visible-number check writes them."""
+    if isinstance(value, bool):
+        return set()
+    if isinstance(value, (int, float)):
+        return {str(int(value)) if float(value).is_integer() else str(value)}
+    if isinstance(value, list):
+        return set().union(*(_number_values(item) for item in value)) if value else set()
+    if isinstance(value, dict):
+        return set().union(*(
+            _number_values(item) for key, item in value.items()
+            if key not in {"id", "_original"}
+        )) if value else set()
+    return set()
+
+
+def _database_number_allowance(
+    review: dict[str, Any], item: dict[str, Any]
+) -> frozenset[str]:
+    """A database text may change a number only to one its own entry holds."""
+    identity = review["id"]
+    targets = set(review.get("apply_identities") or []) or set(item["identities"])
+    for locator in item.get("locators") or []:
+        if locator["identity"] not in targets:
+            continue
+        values = locator.get("database_values")
+        if values is None:
+            raise QAResultError(
+                f"A database number fix needs a database field: {identity}"
+            )
+        evidence = _mechanical_evidence(
+            str(item["source"]), str(review["correction"]), locator.get("event_code")
+        )
+        added = Counter(evidence["live_visible_numbers"]) - Counter(
+            evidence["source_visible_numbers"]
+        )
+        if not added or any(
+            number.lstrip("+") not in values for number in added
+        ):
+            raise QAResultError(
+                f"A database number fix must change a number to one its entry "
+                f"holds ({', '.join(sorted(values)[:12])}): {identity}"
+            )
+    return frozenset({"visible-number-mismatch"})
+
+
 def _validate_sweep_rule(review: dict[str, Any], item: dict[str, Any]) -> None:
     """A sweep rule must reproduce its review's correction exactly."""
     identity = review["id"]
@@ -2145,11 +2245,22 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
                 raise QAResultError(f"Actionable review has invalid category for {identity}")
             if not str(review.get("evidence") or "").strip():
                 raise QAResultError(f"Actionable review has no evidence for {identity}")
+            _validate_editorial_basis(review, identity)
+            item = bundle_items[identity]
+            source_fix = review.get("source_fix")
+            kind = source_fix.get("kind") if isinstance(source_fix, dict) else None
+            if source_fix is not None and kind not in SOURCE_FIX_KINDS:
+                raise QAResultError(f"Unknown source fix for {identity}")
+            if kind == "show-text":
+                _validate_show_text_fix(review, item)
+                continue
             correction = review.get("correction")
             if not isinstance(correction, str) or not correction.strip():
                 raise QAResultError(f"Actionable review has no correction for {identity}")
-            _validate_editorial_basis(review, identity)
-            item = bundle_items[identity]
+            allowed = (
+                _database_number_allowance(review, item)
+                if kind == "database-numbers" else frozenset()
+            )
             targets = set(review.get("apply_identities") or []) or set(
                 item.get("identities") or []
             )
@@ -2163,12 +2274,15 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
                     locator.get("event_code"),
                     locator["live_pointers"],
                     locator.get("live_transform", "identity"),
+                    allowed,
                 )
                 if problems:
                     raise QAResultError(
                         f"The correction for {identity} would block apply at "
                         f"{locator['identity']}: " + "; ".join(problems)
                     )
+        elif review.get("source_fix") is not None:
+            raise QAResultError(f"Only an actionable review can fix the source: {identity}")
         elif review.get("severity") not in {None, ""}:
             raise QAResultError(f"Non-actionable review cannot have severity for {identity}")
         elif review.get("editorial_basis") is not None:
@@ -2408,6 +2522,17 @@ def _resolve_parts(value: Any, parts: Iterable[str]) -> Any:
         else:
             current = current[part]
     return current
+
+
+def _entry_numbers(data_root: Path, record: dict, cache: dict[str, Any]) -> set[str]:
+    """The numbers of the database entry that holds a record."""
+    parts = _decode_pointer(record["source_pointer"])
+    if "_original" not in parts:
+        return set()
+    filename = record["file"]
+    if filename not in cache:
+        cache[filename] = json.loads((data_root / filename).read_text(encoding="utf-8-sig"))
+    return _number_values(_resolve_parts(cache[filename], parts[: parts.index("_original")]))
 
 
 def _nearby_commands(data_root: Path, record: dict, cache: dict[str, Any]) -> list[dict]:
@@ -2762,7 +2887,10 @@ def _add_lint_findings(
     """
     records, clusters = _record_maps(manifest)
     titles = lint.title_map(manifest["clusters"])
-    by_cluster = {finding["cluster_id"]: finding for finding in findings}
+    by_cluster = {
+        finding["cluster_id"]: finding for finding in findings
+        if finding.get("kind") != "show-text"
+    }
     dropped = []
     for cluster_id, decision in sorted(accepted.items()):
         families = sorted(decision["families"], key=lint.ORDER.index)
@@ -2901,6 +3029,12 @@ def _deep_items(
                 "speaker": record.get("speaker"),
                 "database_entity": record.get("database_entity"),
                 "choice_context": record.get("choice_context"),
+                **(
+                    {"database_values": sorted(
+                        _entry_numbers(data_root, record, document_cache)
+                    )}
+                    if record.get("classification") == "database" else {}
+                ),
             } for record in member_records],
             "nearby_commands": _nearby_commands(data_root, representative, document_cache),
             "suspect_contexts": [{
@@ -3213,6 +3347,7 @@ def _draft_document(
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
     declined = _declined_scope(root, checkpoint, manifest)
+    faces = _face_names(Path(task["data_root"]))
     findings = []
     uncertain = []
     motif_families = []
@@ -3256,7 +3391,12 @@ def _draft_document(
                 if "motif_ids" in review
                 else None
             )
-            if review["disposition"] == "actionable":
+            kind = (review.get("source_fix") or {}).get("kind")
+            if review["disposition"] == "actionable" and kind == "show-text":
+                findings.append(_show_text_finding(
+                    review, records, task, faces, row, declined
+                ))
+            elif review["disposition"] == "actionable":
                 cluster = clusters[review["id"]]
                 target_ids = [
                     identity
@@ -3275,6 +3415,10 @@ def _draft_document(
                     "correction": review["correction"],
                     "target_identities": target_ids,
                     "authors": [str(row.get("assigned_to") or "")],
+                    **(
+                        {"source_fix": kind, "allowed_flags": ["visible-number-mismatch"]}
+                        if kind == "database-numbers" else {}
+                    ),
                     **(
                         {"editorial_basis": review["editorial_basis"]}
                         if _normalize_category(review.get("category"))
@@ -3377,6 +3521,103 @@ def _draft_document(
     }
 
 
+def _face_names(data_root: Path) -> set[str]:
+    """Face images the game's own Show Text headers use."""
+    faces: set[str] = set()
+    for path in data_root.glob("*.json"):
+        if not (path.name.startswith(("Map", "CommonEvents", "Troops"))):
+            continue
+        try:
+            document = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        stack = [document]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, dict):
+                parameters = value.get("parameters")
+                if (
+                    value.get("code") == 101 and isinstance(parameters, list)
+                    and parameters and isinstance(parameters[0], str)
+                ):
+                    faces.add(parameters[0])
+                stack.extend(child for key, child in value.items() if key != "_original")
+            elif isinstance(value, list):
+                stack.extend(value)
+    return faces
+
+
+def _show_text_finding(
+    review: dict[str, Any],
+    records: dict[str, dict[str, Any]],
+    task: dict[str, Any],
+    faces: set[str],
+    row: dict[str, Any],
+    declined: dict[str, Any],
+) -> dict[str, Any]:
+    """A Show Text header fix: the face and name of the message's own header."""
+    identity = review["apply_identities"][0]
+    if identity in declined["identities"]:
+        raise QAResultError(f"A Show Text fix targets a declined line: {review['id']}")
+    record = records[identity]
+    fix = review["source_fix"]
+    parts = _decode_pointer(record["source_pointer"])
+    list_index = len(parts) - 1 - parts[::-1].index("list")
+    document = json.loads(
+        (Path(task["data_root"]) / record["file"]).read_text(encoding="utf-8-sig")
+    )
+    commands = _resolve_parts(document, parts[: list_index + 1])
+    owner = int(parts[list_index + 1])
+    while commands[owner].get("code") == 401 and owner > 0:
+        owner -= 1
+    header = commands[owner]
+    parameters = header.get("parameters")
+    if header.get("code") != 101 or not isinstance(parameters, list) or len(parameters) < 5:
+        raise QAResultError(f"No Show Text header owns this message: {review['id']}")
+    if fix["face_name"] and fix["face_name"] not in faces:
+        raise QAResultError(
+            f"The Show Text fix names a face the game never shows: {review['id']}"
+        )
+    replacement = list(parameters)
+    replacement[0], replacement[1], replacement[4] = (
+        fix["face_name"], fix["face_index"], fix["name"]
+    )
+    pointer = "/" + "/".join(
+        part.replace("~", "~0").replace("/", "~1")
+        for part in [*parts[: list_index + 1], str(owner), "parameters"]
+    )
+    nameplate = next((
+        other["identity"] for other in records.values()
+        if other["file"] == record["file"]
+        and other["source_pointer"].startswith(pointer.rsplit("/", 1)[0] + "/_original")
+    ), "")
+
+    def header_text(values: list) -> str:
+        face = f"{values[0]} {values[1]}" if values[0] else "no face"
+        return f"{values[4] or '(no name)'} · {face}"
+
+    return {
+        "id": "",
+        "kind": "show-text",
+        "cluster_id": review["id"],
+        "severity": review["severity"],
+        "category": "speaker",
+        "family_key": _normalize_family_key(review.get("family_key")),
+        "evidence": review["evidence"],
+        "source": record["source"],
+        "current": header_text(parameters),
+        "correction": header_text(replacement),
+        "file": record["file"],
+        "pointer": pointer,
+        "current_parameters": parameters,
+        "parameters": replacement,
+        "line_identity": identity,
+        "nameplate_identity": nameplate,
+        "target_identities": [],
+        "authors": [str(row.get("assigned_to") or "")],
+    }
+
+
 def _finding_families(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     members_by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
@@ -3442,6 +3683,7 @@ def _editorial_items(
                 for key in (
                     "severity", "category", "family_key", "evidence", "source",
                     "current", "correction", "editorial_basis", "sweep_families",
+                    "kind", "current_parameters", "parameters", "allowed_flags",
                 )
                 if key in finding
             },
@@ -3453,7 +3695,11 @@ def _editorial_items(
                 "live_transform": record["live_transform"],
             } for record in targets],
             "nearby_commands": nearby.get(finding["cluster_id"])
-            or _nearby_commands(data_root, targets[0], cache),
+            or _nearby_commands(
+                data_root,
+                targets[0] if targets else records[finding["line_identity"]],
+                cache,
+            ),
             **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
             # The authors of a judgment correction cannot confirm it.
             "authors": sorted(set(finding.get("authors") or []) - {""}) if judgment else [],
@@ -3534,12 +3780,17 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
                 raise QAResultError(f"Only a revision has a replacement: {identity}")
             continue
         finding = item["finding"]
+        if finding.get("kind") == "show-text":
+            raise QAResultError(
+                f"A Show Text fix is accepted or withdrawn, not revised: {identity}"
+            )
         if not isinstance(replacement, str) or not replacement.strip():
             raise QAResultError(f"A revision needs its replacement text: {identity}")
         for target in item["targets"]:
             problems = correction_problems(
                 finding["source"], finding["current"], replacement,
                 target["event_code"], target["live_pointers"], target["live_transform"],
+                frozenset(finding.get("allowed_flags") or ()),
             )
             if problems:
                 raise QAResultError(
@@ -3840,6 +4091,19 @@ def create_correction_map(
     operations = []
     targets: dict[tuple[str, tuple[str, ...]], str] = {}
     for finding in selected:
+        if finding.get("kind") == "show-text":
+            operations.append({
+                "finding_id": finding["id"],
+                "kind": "show-text",
+                "identity": finding["nameplate_identity"],
+                "file": finding["file"],
+                "pointer": finding["pointer"],
+                "expected": finding["current_parameters"],
+                "replacement": finding["parameters"],
+                # Narration's header loses its name on purpose.
+                "allowed_flags": ["empty-live"] if finding["parameters"][4] == "" else [],
+            })
+            continue
         for identity in finding["target_identities"]:
             record = records[identity]
             target = (record["file"], tuple(record["live_pointers"]))
@@ -3859,6 +4123,7 @@ def create_correction_map(
                 "live_transform": record["live_transform"],
                 "expected": record["live"],
                 "replacement": finding["correction"],
+                "allowed_flags": list(finding.get("allowed_flags") or []),
             })
     correction_map = {
         "schema": CORRECTION_MAP_SCHEMA,
@@ -3891,6 +4156,27 @@ def create_release_correction_map(
         )
     finding_ids = [item["id"] for item in findings_doc.get("findings") or []]
     return create_correction_map(root, finding_ids)
+
+
+def _operation_writes(document: Any, operation: dict) -> list[tuple[str, Any]]:
+    """The pointers one operation writes, after checking it still finds the
+    value it was approved against."""
+    if operation.get("kind") == "show-text":
+        if resolve_pointer(document, operation["pointer"]) != operation["expected"]:
+            raise ValueError(
+                f"Expected Show Text header changed for {operation['finding_id']}; rebuild QA"
+            )
+        return [(operation["pointer"], operation["replacement"])]
+    values = _operation_values(document, operation)
+    current = "\n".join(values)
+    if operation["live_transform"] == "quoted-string":
+        match = _QUOTED_VALUE_RE.search(current)
+        current = match.group(2) if match else current
+    if current != operation["expected"]:
+        raise ValueError(
+            f"Expected value changed for {operation['identity']}; rebuild QA"
+        )
+    return list(zip(operation["live_pointers"], _operation_replacements(values, operation)))
 
 
 def _operation_values(document: Any, operation: dict) -> list[str]:
@@ -3963,30 +4249,28 @@ def _dry_run_loaded_correction_map(
             raise ValueError(f"Unsafe correction target: {path}")
         if filename not in documents:
             documents[filename] = json.loads(path.read_text(encoding="utf-8-sig"))
-        values = _operation_values(documents[filename], operation)
-        current = "\n".join(values)
-        if operation["live_transform"] == "quoted-string":
-            match = _QUOTED_VALUE_RE.search(current)
-            current = match.group(2) if match else current
-        if current != operation["expected"]:
-            raise ValueError(
-                f"Expected value changed for {operation['identity']}; rebuild QA"
-            )
-        replacements = _operation_replacements(values, operation)
-        for pointer, replacement in zip(operation["live_pointers"], replacements):
+        for pointer, replacement in _operation_writes(documents[filename], operation):
             target = (filename, pointer)
             previous = pointer_targets.get(target)
-            if previous is not None and previous != replacement:
+            overlapping = any(
+                other_file == filename and (
+                    other.startswith(pointer + "/") or pointer.startswith(other + "/")
+                )
+                for other_file, other in pointer_targets
+            )
+            if overlapping or previous is not None and previous != replacement:
                 raise ValueError(f"Conflicting approved corrections target {filename}#{pointer}")
             pointer_targets[target] = replacement
         preview.append({
             "finding_id": operation["finding_id"],
             "identity": operation["identity"],
             "file": filename,
-            "live_pointers": operation["live_pointers"],
+            "live_pointers": operation.get("live_pointers") or [operation["pointer"]],
             "expected": operation["expected"],
             "replacement": operation["replacement"],
         })
+        if operation.get("kind") == "show-text":
+            continue
         baseline = inventory_records.get(operation["identity"]) or {}
         baseline_flags = set(
             (baseline.get("mechanical") or {}).get("flags") or []
@@ -4079,17 +4363,7 @@ def _apply_loaded_correction_map(
         originals[path] = raw
         document = json.loads(raw.decode("utf-8-sig"))
         for operation in operations:
-            values = _operation_values(document, operation)
-            current = "\n".join(values)
-            if operation["live_transform"] == "quoted-string":
-                match = _QUOTED_VALUE_RE.search(current)
-                current = match.group(2) if match else current
-            if current != operation["expected"]:
-                raise ValueError(
-                    f"Expected value changed for {operation['identity']}; rebuild QA"
-                )
-            replacements = _operation_replacements(values, operation)
-            for pointer, replacement in zip(operation["live_pointers"], replacements):
+            for pointer, replacement in _operation_writes(document, operation):
                 _set_pointer(document, pointer, replacement)
             applied += 1
         rendered[path] = _render_json_like(raw, document)
@@ -4174,8 +4448,13 @@ def _regression_check_loaded(
             errors.append(f"preserved source changed: {identity}")
     if corrections is not None:
         for operation in corrections.get("operations") or []:
+            header = operation.get("kind") == "show-text"
+            if header and not operation["identity"]:
+                # A header without a translated name has no record to check.
+                continue
             record = after_records.get(operation["identity"])
-            if record is None or record["live"] != operation["replacement"]:
+            expected = operation["replacement"][4] if header else operation["replacement"]
+            if record is None or record["live"] != expected:
                 errors.append(f"approved correction is missing: {operation['identity']}")
                 continue
             before_record = before_records.get(operation["identity"], {})
@@ -4183,7 +4462,9 @@ def _regression_check_loaded(
                 before_record.get("mechanical", {}).get("flags") or []
             )
             after_flags = set(record.get("mechanical", {}).get("flags") or [])
-            introduced_flags = after_flags - before_flags
+            introduced_flags = after_flags - before_flags - set(
+                operation.get("allowed_flags") or ()
+            )
             warning_flags = sorted(
                 introduced_flags & nonblocking_introduced_flags
             )

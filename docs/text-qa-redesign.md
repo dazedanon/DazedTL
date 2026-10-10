@@ -51,10 +51,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Engine
 
-### Quality and coverage
-
-- New finding types cover Show Text face and name fixes for source slips, and database fields.
-
 ### Cost
 
 - Forced deep review keeps only checks that find defects: number checks ignore ordinals, kanji numerals and idioms such as 1番, and runtime-token checks skip codes that survive unchanged.
@@ -79,6 +75,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Order of work
 
-1. Quality and coverage: the single policy with automatic apply through the app, and inventory completeness.
+1. Quality and coverage: the single policy with automatic apply through the app.
 2. Cost: the forced-review filters and scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.
