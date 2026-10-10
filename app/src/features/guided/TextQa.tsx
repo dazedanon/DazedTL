@@ -133,9 +133,13 @@ export function QaQuestions({
   );
 }
 
+/** Rows a category shows before its explicit Show all. */
+const groupPreview = 10;
+
 /**
  * Every correction, by category: what the line said, what it says now, why,
- * and Undo for an applied one.
+ * and Undo for an applied one. A long category shows its first rows until
+ * the user asks for the rest.
  */
 export function QaAuditLog({
   findings,
@@ -151,6 +155,7 @@ export function QaAuditLog({
   undo: (finding: QaFinding) => void;
   feedback: Feedback;
 }) {
+  const [expanded, setExpanded] = useState<string[]>([]);
   return (
     <div className="text-qa-log">
       {qaGroups(findings).map((group) => (
@@ -159,7 +164,10 @@ export function QaAuditLog({
             {group.title} · {group.findings.length.toLocaleString()}
           </h3>
           <ActionList>
-            {group.findings.map((row) => (
+            {(expanded.includes(group.category)
+              ? group.findings
+              : group.findings.slice(0, groupPreview)
+            ).map((row) => (
               <ActionRow
                 key={row.id}
                 label={
@@ -180,7 +188,6 @@ export function QaAuditLog({
                     <small>
                       {[
                         qaOrigin(row),
-                        row.family,
                         row.files.join(", "),
                         row.places > 1 && `${row.places} places`,
                         row.editorial && `Editorial: ${row.editorial}`,
@@ -206,6 +213,17 @@ export function QaAuditLog({
               </ActionRow>
             ))}
           </ActionList>
+          {group.findings.length > groupPreview &&
+            !expanded.includes(group.category) && (
+              <Button
+                variant="link"
+                onClick={() =>
+                  setExpanded((value) => [...value, group.category])
+                }
+              >
+                Show all {group.findings.length.toLocaleString()}
+              </Button>
+            )}
         </section>
       ))}
     </div>

@@ -1118,6 +1118,10 @@
 .text-qa-log h3 {
   margin: 0 0 var(--space-2);
 }
+.text-qa-log .action-list + .link-button {
+  margin-top: var(--space-2);
+  font-size: var(--font-control);
+}
 .text-qa-choice {
   display: inline-flex;
   align-items: baseline;
