@@ -594,7 +594,7 @@ Required and optional tasks are marked in workflow.ts; optional work never holds
 The app sidebar stays global; every phase uses the same one-row stage strip, which compacts when narrow.
 The Translation screen has no header row; the top bar holds only the project switcher and app status.
 One task occupies the editing body and its action footer stays outside the scroll region.
-One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation.
+One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation, which also covers running jokes and recurring terms.
 Guidance review and layout settings follow before the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
 Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label and optional tasks marked until done; views inside one task (the Other event text steps) use secondary tabs below them.
@@ -682,12 +682,12 @@ The panel reads Needs review only while a result waits for the user's decision i
 Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Other event text's Source choices do.
 Outdated marks a saved result whose basis changed before it went into the game; edits after a task's result is applied are expected and leave it as it was.
 Other event text findings applied as source choices therefore stay current until the selection reaches event files they did not cover or the installed parser definitions change, a plugin file with nothing left to apply keeps its state until a copied task rescans every file, and Text QA reads Applied once corrections chosen from its own task are applied.
-The task's main copy action stays in its footer; optional companion tasks, such as layout measurement and the running-jokes investigation, keep theirs on their result row.
+The task's main copy action stays in its footer; an optional companion task, such as layout measurement, keeps its own on its result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.
 The snapshot lists the records with the newest time an expected file was saved, read from file times only, and [assistantTasks.ts](../app/src/features/assistant/assistantTasks.ts) derives each task's display state from that and its feature's observed state, so the Project page list, the top-bar count and each feature's panel agree.
 Dismissing marks a record abandoned: the task leaves the list and its feature stops showing Waiting until the next copy, while saved requests and reports stay.
-Tasks copied before records existed list only while their feature still waits; the running-jokes investigation saves no checked result, so it is not tracked and its row shows no state.
+Tasks copied before records existed list only while their feature still waits.
 Output availability, application to runtime files, assistant QA findings, and package availability are separate observations.
 Execution rechecks source, scope, destination, and ownership evidence.
 Application receipts distinguish later fitting or QA edits from new outputs that have not been applied.

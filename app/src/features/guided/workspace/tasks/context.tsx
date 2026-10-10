@@ -19,7 +19,6 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { shortcutKeys, shortcutLabel } from "../../../../state/useShortcut";
 import type { TaskView } from "./view";
 
-/** The optional investigation in Check follows the same choice. */
 const thoroughHelp =
   "Three independent passes look for names, running jokes and speech habits instead of one. They find more, and that step uses about three times as much of your assistant's plan.";
 

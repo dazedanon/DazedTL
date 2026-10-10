@@ -275,7 +275,6 @@ class Workflows:
         self.folder(project_id)
         project = self.projects[project_id]
         from util.skills import load_project_setup, load_clipboard_skill, load_walkthrough_skill, load_rpgmaker_qa_skill, build_known_speakers_context
-        from util.skills.setup import load_investigation_skill
         if name == "setup":
             text = self.documents(project_id)["glossary"]["text"]
             from util.reference_games import setup_reference_note
@@ -290,8 +289,6 @@ class Workflows:
             return load_walkthrough_skill(project["source"], "WOLF RPG" if project["engine"] == "WOLF" else "RPG Maker " + project["engine"])
         if name == "qa":
             return load_rpgmaker_qa_skill("release")
-        if name == "investigation":
-            return f"Selected game: `{project['source']}`\nData folder: `{project['data']}`\n\n" + load_investigation_skill(thorough=thorough)
         files = {"wolf_speakers": "wolf_speakers.md", "advanced": "risky_codes.md", "wrap": "wrap_config.md",
                  "plugins": "ace_script_translation.md" if project["engine"] == "ACE" else "plugin_translation.md"}
         if name not in files:

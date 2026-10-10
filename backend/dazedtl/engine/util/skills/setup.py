@@ -24,10 +24,6 @@ _RPGMAKER_QA_FILENAME = "rpgmaker_translation_qa.md"
 _WALKTHROUGH_SKILL_RELATIVE = Path("build-game-walkthrough") / "SKILL.md"
 _GENERIC_SETUP_SKILL_RELATIVE = Path("setup-generic-game") / "SKILL.md"
 _LOCALIZATION_INVESTIGATION_FILENAME = "localization_investigation.md"
-_INVESTIGATION_PHASE_MARKERS = (
-    "<!-- investigation-phase -->",
-    "<!-- /investigation-phase -->",
-)
 _INVESTIGATION_PHASE_PLACEHOLDER = "{{LOCALIZATION_INVESTIGATION_PHASE}}"
 # Investigation discovery runs as three blind subagent passes (thorough) or
 # one pass (standard); the file holds both and a prompt keeps the chosen one.
@@ -115,21 +111,6 @@ def _extract_engine_section(text: str, engine: str) -> str:
     return "".join(result_parts).strip() + "\n"
 
 
-def _extract_required_section(text: str, markers: tuple[str, str]) -> str:
-    """Return one marked section or reject an ambiguous skill."""
-    start_marker, end_marker = markers
-    start = text.find(start_marker)
-    if start == -1 or text.find(start_marker, start + len(start_marker)) != -1:
-        raise ValueError(f"Skill must contain exactly one marker: {start_marker}")
-    end = text.find(end_marker, start + len(start_marker))
-    if end == -1 or text.find(end_marker, end + len(end_marker)) != -1:
-        raise ValueError(f"Skill must contain exactly one marker: {end_marker}")
-    body = text[start + len(start_marker) : end].strip()
-    if not body:
-        raise ValueError(f"Skill section is empty: {start_marker}")
-    return body
-
-
 def _choose_discovery(text: str, thorough: bool) -> str:
     """Keep the chosen discovery section of the investigation and drop the other."""
     for choice, (start, end) in _DISCOVERY_MARKERS.items():
@@ -141,9 +122,9 @@ def _choose_discovery(text: str, thorough: bool) -> str:
     return text
 
 
-def load_investigation_skill(*, thorough: bool = False) -> str:
-    """Load the standalone investigation prompt with the chosen discovery."""
-    return _choose_discovery(_read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME), thorough).strip() + "\n"
+def _investigation_phase(thorough: bool) -> str:
+    """The investigation phase both setup prompts embed, with the chosen discovery."""
+    return _choose_discovery(_read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME).strip(), thorough)
 
 
 def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "", thorough: bool = False) -> str:
@@ -154,11 +135,7 @@ def load_project_setup(engine: str = "rpgmaker", *, prepend: str = "", thorough:
         raise ValueError(
             "Project Setup skill must contain exactly one investigation phase placeholder"
         )
-    investigation = _extract_required_section(
-        _read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME),
-        _INVESTIGATION_PHASE_MARKERS,
-    )
-    body = body.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _choose_discovery(investigation, thorough))
+    body = body.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _investigation_phase(thorough))
     body = _embed_identity_rules(body)
     marker_list = ", ".join(
         f"`{marker}`" for marker in sorted(SUPPORTED_CODE408_MARKERS)
@@ -225,10 +202,7 @@ def load_generic_project_setup(game_root: str | Path, *, thorough: bool = False)
         )
     if prompt.count(_INVESTIGATION_PHASE_PLACEHOLDER) != 1:
         raise ValueError("Generic setup must contain exactly one investigation phase placeholder")
-    investigation = _extract_required_section(
-        _read_skill_file(_LOCALIZATION_INVESTIGATION_FILENAME), _INVESTIGATION_PHASE_MARKERS,
-    )
-    prompt = _embed_identity_rules(prompt.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _choose_discovery(investigation, thorough)))
+    prompt = _embed_identity_rules(prompt.replace(_INVESTIGATION_PHASE_PLACEHOLDER, _investigation_phase(thorough)))
     return prompt.replace(
         placeholder, str(Path(root).expanduser().resolve())
     ).strip() + "\n"

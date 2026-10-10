@@ -70,7 +70,7 @@ export function ContextWorkspace({
               ? problem!.detail
               : taskState === "waiting"
                 ? "Results appear here as your assistant saves them."
-                : "Your assistant finds speaker formats and writes the glossary and game context; a local scan collects names."
+                : "Your assistant finds speaker formats, running jokes and terms, and writes the glossary and game context; a local scan collects names."
         }
         results={results.map((row) => ({
           id: row.id,

@@ -29,7 +29,6 @@ class GuidedContext:
             "wrap",
             "plugins",
             "walkthrough",
-            "investigation",
             "qa",
         }:
             raise ValueError("Choose a task-specific helper.")
