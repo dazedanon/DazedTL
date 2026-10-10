@@ -32,13 +32,22 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - Decisions, declined content and the editorial pass were visible only in the assistant's chat, and the user stepped in about fifteen times.
 - The run used about six million assistant tokens; deep items embedded whole scenes, so one set of deep drafts held 9.5 MB until scenes were grouped and printed once (2.3 MB).
 
-## How QA runs
+## User experience
 
-1. The user starts text QA, or the Assistant-led method reaches its QA phase; nothing is copied.
-2. The Text QA page shows the stages Preflight, Lint, Screen, Deep, Consistency, Editorial and Apply, with counts, the current activity and an estimate.
-   The engine's checkpoint feeds the page, so it stays current without assistant reports.
-3. A Needs you card appears only for an unresolved playtest or context question, a failed safeguard or a consequential action, each with its choices.
-4. Verified findings are applied and checkpointed, and coverage, including any declined items, is reported once.
+- Starting: in Assistant-led projects QA is a phase of the method, so the starting prompt runs it with no separate handoff.
+  In Guided projects the Text QA page has one primary action that prepares the task and copies it in a single click; after that the user needs to do nothing else.
+- Running: one stage strip (Preflight, Lint, Screen, Deep, Consistency, Editorial, Apply) marks the current stage, and one activity line gives its count and estimate, such as "Deep review 412 of 621 · about 25 min left".
+  The engine's checkpoint feeds the page and the assistant task list, so both stay current without assistant reports.
+  Bundle IDs, worker names and receipts belong in Report details, not the page.
+- Needs you: a card appears only when QA cannot continue without the user: an unresolved playtest or context question, a failed safeguard, or a consequential action such as pushing.
+  It states the decision plainly, shows its evidence (source, current text, proposal) and offers the choices as buttons; choosing resumes QA without another copy.
+- Declined items never raise a card; the coverage line reports them once, such as "9,857 lines checked · 15 not reviewed (declined by the reviewer)", with an optional link to review them.
+- Done: one summary line gives the applied count and coverage, followed by the audit log grouped by category or family, with before and after, the reason and Undo for each finding; undoing everything uses History.
+  There are no checkboxes before apply.
+- Outdated: when the game text changed after QA, one line says so and offers Run QA again.
+- Errors appear next to the control in plain language with the recovery action; an apply that failed and rolled back says so and offers the fix or a retry.
+- When QA finishes or needs the user, the app notifies them through its existing notification mechanism, if it has one.
+- The page follows the [UX principles](architecture.md#ux-principles) and [shared presentation](architecture.md#workflow-and-shared-presentation) rules: a compact layout, each status shown once, no zero counters or finished progress bars, and shared primitives.
 
 ## Engine
 
@@ -68,10 +77,10 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## App and helper
 
-- `project.py qa` exposes status, report, apply and undo through the running app, so every game write goes through the publication flow and appears in History.
+- `project.py qa` exposes status, report, apply, undo and the Needs you choices through the running app, so every game write goes through the publication flow and appears in History, and a choice resumes QA.
   No QA command writes game files directly.
 - The QA phase of the progress report takes its stage and counts from the engine checkpoint.
-- The Text QA page shows the stage strip, the Needs you card, the coverage summary and the audit log with undo, following the [UX principles](architecture.md#ux-principles).
+- The Text QA page and the starting flow implement the [user experience](#user-experience) above.
 
 ## Skill
 
