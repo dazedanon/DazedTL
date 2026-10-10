@@ -29,6 +29,8 @@ Move game text only with scripts; never paste, retype or summarize the Japanese 
 ```
 
 Run the helper's `census` first; `--complete` is accepted only once the units cover everything it counted, and API estimates require it.
+Coverage matches each counted run of Japanese by occurrence across the whole game: a unit's source must hold the text exactly as the game stores it, speaker prefixes and brackets included where the engine keeps them in the line, and each occurrence needs its own unit.
+Rules apply before units, so text a rule sets aside never takes the unit for the same words where the player reads them.
 When organize names text that isn't extracted, fix the extractor using the locations in `.dazedtl/len-method/work/census-uncovered.json`; set aside text players never see only with scope rules in `.dazedtl/len-method/work/scope-rules.json`.
 The reply holds counts only, and errors name unit IDs, so fix the extractor and organize again.
 Organize packs whole scenes of one group into requests sized for the mode (the model's entries per request for API work, about 250 lines in Assistant only), names the scenes in a packed request, splits larger scenes with their earlier lines as context, and binds the run to the units file.
