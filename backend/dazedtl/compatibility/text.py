@@ -53,6 +53,36 @@ def qa_handoff(task, helper="project.py qa"):
     return qa.handoff_text(task, helper)
 
 
+def qa_selection(state, action, options):
+    """The findings and chosen proposals an apply or undo names, each in the
+    state that step needs: not yet applied, or applied."""
+    chosen = options.get("findings", [])
+    proposals = options.get("proposals", [])
+    if (
+        not isinstance(chosen, list)
+        or not isinstance(proposals, list)
+        or not chosen + proposals
+        or len(set(chosen + proposals)) != len(chosen + proposals)
+        or any(not isinstance(value, str) for value in chosen + proposals)
+    ):
+        raise ValueError("Choose the corrections to apply or undo.")
+    states = {row["id"]: row.get("state", "") for row in state["findings"]}
+    # A proposal the user chose applies and undoes like a finding.
+    states.update(
+        (row["id"], row.get("state", ""))
+        for row in state["questions"]
+        if row.get("choice") == "use"
+    )
+    wanted = "applied" if action == "qa_undo" else ""
+    if any(states.get(value, "missing") != wanted for value in chosen + proposals):
+        raise ValueError(
+            "Only applied corrections can be undone."
+            if action == "qa_undo"
+            else "The chosen QA corrections changed. Refresh findings."
+        )
+    return chosen, proposals
+
+
 def qa_state(plan):
     from util import rpgmaker_qa as qa
 
@@ -401,24 +431,7 @@ def prepare_publication(plan):
                 "Undo is no longer available. Run QA again to check the text."
             )
         task_root, task, _checkpoint = qa._load_task(state["task"])
-        chosen = options.get("findings", [])
-        proposals = options.get("proposals", [])
-        if (
-            not isinstance(chosen, list)
-            or not isinstance(proposals, list)
-            or not chosen + proposals
-            or len(set(chosen + proposals)) != len(chosen + proposals)
-            or any(not isinstance(value, str) for value in chosen + proposals)
-        ):
-            raise ValueError("Choose the corrections to apply or undo.")
-        states = {row["id"]: row.get("state", "") for row in state["findings"]}
-        wanted = "applied" if action == "qa_undo" else ""
-        if any(states.get(value, "missing") != wanted for value in chosen + proposals):
-            raise ValueError(
-                "Only applied corrections can be undone."
-                if action == "qa_undo"
-                else "The chosen QA corrections changed. Refresh findings."
-            )
+        chosen, proposals = qa_selection(state, action, options)
         try:
             selected = qa.correction_map(
                 task_root, chosen, proposals, undo=action == "qa_undo"

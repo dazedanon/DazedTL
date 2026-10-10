@@ -204,6 +204,29 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source bindings changed"):
             p.publish(self.folder, self.root, plan)
 
+    def test_a_chosen_proposal_applies_and_undoes_like_a_finding(self):
+        # Applying with a proposal the user chose was refused as a changed
+        # correction, because only findings were looked up.
+        from dazedtl.compatibility.text import qa_selection
+
+        state = {
+            "findings": [{"id": "QA-0001"}],
+            "questions": [
+                {"id": "use", "choice": "use"},
+                {"id": "keep", "choice": "keep"},
+            ],
+        }
+        options = {"findings": ["QA-0001"], "proposals": ["use"]}
+        self.assertEqual(
+            qa_selection(state, "qa_apply", options), (["QA-0001"], ["use"])
+        )
+        with self.assertRaisesRegex(ValueError, "changed"):
+            qa_selection(state, "qa_apply", {"proposals": ["keep"]})
+        state["questions"][0]["state"] = "applied"
+        self.assertEqual(
+            qa_selection(state, "qa_undo", {"proposals": ["use"]}), ([], ["use"])
+        )
+
     def test_saved_qa_findings_reach_the_app_as_contract_findings(self):
         # Engine findings carry extra engine fields; passing them through broke
         # the workspace snapshot contract. Corrections come from the findings.
