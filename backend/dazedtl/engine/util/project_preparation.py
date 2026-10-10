@@ -8,7 +8,10 @@ import shutil
 from util.ace import rgssad
 from util.paths import PROJECT_ROOT
 
-GAMEUPDATE_COPY_SKIP_NAMES = frozenset({"previous_patch_sha.txt"})
+# The template README is every published repository's player page; WOLF games
+# get this section appended instead of a copy of the file.
+WOLF_README_SECTION = "README.wolf.md"
+GAMEUPDATE_COPY_SKIP_NAMES = frozenset({"previous_patch_sha.txt", WOLF_README_SECTION})
 WOLF_ONLY_GAMEUPDATE_NAMES = frozenset({"UberWolfCli.exe", "UberWolfCli.LICENSE.txt"})
 RPG_GAMEUPDATE_COPY_SKIP_NAMES = GAMEUPDATE_COPY_SKIP_NAMES | WOLF_ONLY_GAMEUPDATE_NAMES | {"patch-config.txt"}
 # Installing/updating the helper must not reset project-specific configuration.
@@ -63,6 +66,24 @@ def copy_files(src: str | Path, dst: str | Path, *, skip_names=frozenset(),
                 log(f"  copied {relative}")
         except Exception as exc:
             errors.append(f"{relative}: {exc}")
+    return copied, errors
+
+
+def install_gameupdate(game_root: str | Path, *, wolf: bool = False, source: str | Path | None = None,
+                       log=None) -> tuple[int, list[str]]:
+    """Copy the bundled GameUpdate files; only WOLF games get UberWolf and its README section."""
+    root = Path(game_root)
+    source = Path(source) if source is not None else PROJECT_ROOT / "gameupdate"
+    readme = root / "README.md"
+    new_readme = not readme.exists()
+    copied, errors = copy_files(source, root, skip_names=GAMEUPDATE_COPY_SKIP_NAMES if wolf else RPG_GAMEUPDATE_COPY_SKIP_NAMES,
+                                preserve_existing=GAMEUPDATE_PRESERVE_EXISTING, log=log)
+    if wolf and new_readme and readme.is_file():
+        try:
+            section = (source / WOLF_README_SECTION).read_bytes()
+            readme.write_bytes(readme.read_bytes().rstrip(b"\n") + b"\n\n" + section)
+        except OSError as exc:
+            errors.append(f"README.md: {exc}")
     return copied, errors
 
 
@@ -154,8 +175,7 @@ def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = No
     if plugins:
         format_plugins_js(plugins)
     emit("3. Install GameUpdate")
-    copied, errors = copy_files(source, root, skip_names=RPG_GAMEUPDATE_COPY_SKIP_NAMES,
-                                preserve_existing=GAMEUPDATE_PRESERVE_EXISTING, log=emit)
+    copied, errors = install_gameupdate(root, source=source, log=emit)
     if errors:
         raise ValueError("GameUpdate copy failed; Git setup must wait. " + "; ".join(errors))
     configured, config_message = write_gameupdate_config(root, env_path=env_path)

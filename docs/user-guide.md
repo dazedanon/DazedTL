@@ -119,6 +119,7 @@ If applying stops midway, **Review restore** puts the files back.
 Save it outside the game folder.
 Translations that aren't in the game yet need **Apply** first.
 The ZIP shows **Outdated** once the game changes; build it again to include the changes.
+To let players update from a public repository, see [Publishing with GameUpdate](#publishing-with-gameupdate).
 **Player walkthrough** copies an optional task for your assistant to write a walkthrough for players.
 
 ### RPG Maker VX Ace
@@ -158,6 +159,39 @@ Your assistant's session uses its own plan in every mode, so on a limited plan p
 
 Follow progress and check the translations in the Project page's **History**.
 Notes beside a translation flag text the AI wasn't sure about; check them against the original.
+
+## Publishing with GameUpdate
+
+GameUpdate lets players update to your latest translation from its public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
+It is separate from [Game updates](#game-updates), which merge a new official version of the game.
+
+Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `gameupdate` folder and a `README.md` that tells players how to patch and becomes the repository's front page.
+MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
+Set up never replaces a game's existing `README.md`; to get the current one, delete it and choose **Recreate GameUpdate files** under **Preparation tools**.
+
+To connect the game to its repository, copy `gameupdate/patch-config.example.txt` to `patch-config.txt` beside it and fill it in:
+
+```txt
+forge=gitlab
+host=gitgud.io
+username=YOUR_ORG_OR_USER
+repo=YOUR_PATCH_REPO
+branch=main
+```
+
+| Key | Meaning |
+| --- | --- |
+| `forge` | `gitlab` (the default), `github` or `forgejo` (`gitea` also works) |
+| `host` | The host name only; defaults to `gitgud.io`, `github.com` or `codeberg.org` to match `forge` |
+| `username` | The user, organization or group that owns the repository (`owner` and `org` also work) |
+| `repo` | The repository name |
+| `branch` | The branch players update from |
+
+A file with only `username`, `repo` and `branch` uses GitLab on `gitgud.io`.
+
+Before building a clean game ZIP for players, commit the game on that branch and push it to the repository branch it tracks.
+**Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
+Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
 
 ## Game updates
 

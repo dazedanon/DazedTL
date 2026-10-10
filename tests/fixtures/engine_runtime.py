@@ -98,6 +98,25 @@ try:
         count, errors = format_json_files(prepared)
         assert (count, len(errors)) == (1, 1)
         assert (prepared / "broken.json").read_bytes() == b"{invalid\r\n"
+        # The bundled README becomes every published repository's player page;
+        # only WOLF games, which get UberWolf, get its section, and only once.
+        from util.project_preparation import install_gameupdate
+
+        template = ENGINE_ROOT / "gameupdate"
+        player_readme = (template / "README.md").read_text("utf-8")
+        wolf_section = (template / "README.wolf.md").read_text("utf-8")
+        for wolf in (False, True):
+            installed = temporary / f"gameupdate-wolf-{wolf}"
+            for _ in range(2):
+                assert install_gameupdate(installed, wolf=wolf)[1] == []
+            expected = (
+                player_readme.rstrip("\n") + "\n\n" + wolf_section
+                if wolf
+                else player_readme
+            )
+            assert (installed / "README.md").read_text("utf-8") == expected
+            assert (installed / "UberWolfCli.exe").is_file() == wolf
+            assert not (installed / "README.wolf.md").exists()
         # Applying one image must add only that image to an allowlisted patch
         # repository; re-including its folder once exposed every game image.
         import subprocess

@@ -61,6 +61,21 @@ On Linux the app needs a display, such as `xvfb-run -a node scripts/e2e.mjs`.
 [CI](../.github/workflows/ci.yml) runs the build checks, the behavior tests and the live test on Windows and Linux for every pushed branch, every pull request and once a week, and attaches each live test's logs to the run.
 GitHub's Windows images include the Visual C++ runtime and other tools a fresh Windows lacks, so a change to what setup downloads or unpacks still needs a check on a fresh Windows.
 
+## GameUpdate
+
+[gameupdate](../backend/dazedtl/engine/gameupdate) is the player updater that Set up copies into each game's root folder; [project_preparation.py](../backend/dazedtl/engine/util/project_preparation.py) decides what is copied and which existing files are kept.
+Its `README.md` becomes the front page of every published translation repository, so it holds only player instructions; `README.wolf.md` is appended for WOLF games, the only ones that get the bundled UberWolf.
+Notes for translators belong in the [user guide](user-guide.md#publishing-with-gameupdate).
+
+In a game, `GameUpdate.bat` and `GameUpdate_linux.sh` find `patch.ps1` and `patch.sh` in the `gameupdate` folder beside them, so they work from any working directory.
+Set up also installs `gameupdate/TranslationUpdateCheck.js` as an MV and MZ plugin, the startup check; it records a manually installed update in the same `previous_patch_sha.txt` the scripts use.
+Test updater changes with both `patch.ps1` on Windows and `patch.sh` on Linux; these variables help:
+
+| Environment variable | Purpose |
+| --- | --- |
+| `GAMEUPDATE_PROMPT_PWSH` | `1` offers to install PowerShell 7 with winget when `GameUpdate.bat` can't find it |
+| `GAMEUPDATE_DL_ATTEMPTS` | Attempts for each repository check and download, 2 by default; fewer fail faster, more tolerate flaky networks |
+
 ## Branches and releases
 
 Work on `dev`; `main` always holds the latest stable release, so a ZIP of `main` from any mirror is a release.

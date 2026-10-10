@@ -175,8 +175,8 @@ def run_action(plan, log):
             shutil.rmtree(previous)
         return {"files": count, "selected": options["files"]}
     if action in {"prepare", "format_data", "format_plugins", "gameupdate"}:
-        from util.project_preparation import (prepare_rpgmaker, format_plugins_js, copy_files, write_gameupdate_config,
-                                             install_startup_check, RPG_GAMEUPDATE_COPY_SKIP_NAMES, GAMEUPDATE_COPY_SKIP_NAMES, GAMEUPDATE_PRESERVE_EXISTING)
+        from util.project_preparation import (prepare_rpgmaker, format_plugins_js, install_gameupdate, write_gameupdate_config,
+                                             install_startup_check)
         regular(folder, folder / "public-settings.env").write_text("\n".join(f"{key}={json.dumps(value)}" for key, value in options.get("public_settings", {}).items()), encoding="utf-8", newline="\n")
         if action == "prepare":
             return prepare_rpgmaker(root, data_path=data, env_path=folder / "public-settings.env", log=log)
@@ -190,9 +190,7 @@ def run_action(plan, log):
             if not project["plugins"]:
                 raise ValueError("Ace does not use plugins.js.")
             return {"characters": format_plugins_js(project["plugins"])}
-        skip_names = GAMEUPDATE_COPY_SKIP_NAMES if project["engine"] == "WOLF" else RPG_GAMEUPDATE_COPY_SKIP_NAMES
-        count, errors = copy_files(PROJECT_ROOT / "gameupdate", root, skip_names=skip_names,
-                                   preserve_existing=GAMEUPDATE_PRESERVE_EXISTING, log=log)
+        count, errors = install_gameupdate(root, wolf=project["engine"] == "WOLF", log=log)
         if errors:
             raise ValueError("; ".join(errors))
         configured, message = write_gameupdate_config(root, env_path=folder / "public-settings.env")
