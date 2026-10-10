@@ -61,6 +61,13 @@ write(
                         AROUSAL,
                         line("ムラムラしてきた…", "The Arousal is building…"),
                         line("ムラムラ！", "Arousal!"),
+                        # A message never translated, so outside QA's inventory.
+                        {"code": 101, "indent": 0, "parameters": ["", 0, 0, 2, ""]},
+                        {
+                            "code": 401,
+                            "indent": 0,
+                            "parameters": ["まだ訳されていない"],
+                        },
                     )
                 ],
             },
@@ -93,10 +100,33 @@ write(
     ],
 )
 write("System.json", {"gameTitle": "Test"})
+# Japanese QA cannot correct: a custom data file and a plugin parameter.
+write("Synopsis.json", [{"text": "あらすじ"}])
+(game / "js").mkdir()
+(game / "js/plugins.js").write_text(
+    "var $plugins =\n"
+    + json.dumps(
+        [
+            {
+                "name": "Prompt",
+                "status": True,
+                "parameters": {"text": "スキップしますか？"},
+            }
+        ],
+        ensure_ascii=False,
+    )
+    + ";\n",
+    encoding="utf-8",
+)
 
 storage = temporary / "storage"
 task, state = qa.prepare_task(game, data, "release", storage)
 assert state["stage"] == "screen", state
+assert state["preflight"] == {
+    "untranslated": 1,
+    "custom_data": 1,
+    "plugin_parameters": 1,
+}, state["preflight"]
 
 
 def result_path(name, value):

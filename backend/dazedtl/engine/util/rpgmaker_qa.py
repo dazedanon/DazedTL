@@ -38,6 +38,7 @@ from util.rpgmaker_qa_manifest import (
 )
 from util.rpgmaker_qa_verify import verify_manifest
 from util import rpgmaker_qa_lint as lint
+from util.rpgmaker_qa_preflight import preflight
 from util.reference_games import reference_context
 
 
@@ -92,6 +93,7 @@ MESSAGE_WINDOW_LINES = 4
 # Every module whose rules shape bundles, flags or findings.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
+    "rpgmaker_qa_preflight.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -1540,6 +1542,9 @@ def prepare_task(
         try:
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
+            # Japanese QA cannot correct is reported, never silently skipped.
+            reach = preflight(data, manifest)
+            _atomic_write_json(staging / "preflight.json", reach)
             _atomic_write_json(staging / "context.json", context)
             compact_items = _compact_items(manifest, context)
             forced_candidates = {
@@ -1597,6 +1602,7 @@ def prepare_task(
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
                 "counts": manifest["counts"],
+                "preflight": reach["counts"],
             }
             checkpoint = {
                 "schema": CHECKPOINT_SCHEMA,
@@ -1712,6 +1718,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "total": task["counts"]["records"],
             "unresolved": task["counts"]["unresolved"],
         },
+        "preflight": task.get("preflight") or {},
         "screen": {
             "accepted": screen["accepted_items"],
             "total": screen["total_items"],
@@ -3366,6 +3373,7 @@ def _draft_document(
         "declined": declined["items"],
         "not_reviewed": _not_reviewed(declined, records),
         "sweep_dropped": sweep_dropped,
+        "preflight": _read_json(root / "preflight.json"),
     }
 
 
