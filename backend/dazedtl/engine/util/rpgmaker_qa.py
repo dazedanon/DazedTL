@@ -2002,6 +2002,11 @@ def _next_unlocked(
         if bundle_id:
             raise ValueError(f"No bundle can be claimed in the {stage} stage")
         return None, False
+    if stage == "screen" and _stage_finished(checkpoint, ["screen"]):
+        # Screening ended while early deep bundles wait: deep review is the
+        # stage now, as advance would make it.
+        _advance_unlocked(root)
+        return None, True
     # Deep bundles open while screening continues; screening comes first.
     stages = ["screen", "deep"] if stage == "screen" else [stage]
     bundles = [row for name in stages for row in checkpoint[name]["bundles"]]
@@ -2045,13 +2050,10 @@ def _next_unlocked(
         if pending is None:
             if not _stage_finished(checkpoint, [stage]):
                 return None, False
-            # Every bundle of the stage is reviewed: move QA on, as advance
-            # and finalize would.
+            # Every bundle of the stage is reviewed: move QA on, as finalize
+            # would.
             before = stage
-            if stage == "screen":
-                _advance_unlocked(root)
-            else:
-                _finalize_unlocked(root)
+            _finalize_unlocked(root)
             return None, _read_json(root / "checkpoint.json")["stage"] != before or (
                 stage == "editorial"
                 and not _stage_finished(_read_json(root / "checkpoint.json"), ["editorial"])

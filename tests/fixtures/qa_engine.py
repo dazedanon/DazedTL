@@ -294,8 +294,10 @@ qa.accept_result(
     ),
 )
 assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 3}
-state = qa.advance(task)
-assert state["stage"] == "deep", state
+# Screening is over while early deep bundles wait, so the next claim makes
+# deep review the stage instead of leaving screening current.
+qa.next_bundle(task, "deep-a")
+assert qa.status(task)["stage"] == "deep"
 # Deep review and the context view leave the declined scene out, even its
 # Japanese residue, which would otherwise force deep review.
 try:
