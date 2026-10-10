@@ -30,7 +30,12 @@ from util.paths import (
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
 )
-from util.rpgmaker_qa_manifest import build_manifest, resolve_pointer, write_manifest
+from util.rpgmaker_qa_manifest import (
+    _mechanical_evidence,
+    build_manifest,
+    resolve_pointer,
+    write_manifest,
+)
 from util.rpgmaker_qa_verify import verify_manifest
 from util.reference_games import reference_context
 
@@ -68,6 +73,11 @@ FINDING_CATEGORIES = frozenset({
 })
 EDITORIAL_JUDGMENT_CATEGORIES = frozenset({"fluency", "voice", "wordplay"})
 APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
+# A Show Text window shows four rows; a correction may not need more than the
+# current text already uses.
+MESSAGE_WINDOW_LINES = 4
+# Every module whose rules shape bundles, flags or findings.
+_ENGINE_SOURCES = ("rpgmaker_qa.py", "rpgmaker_qa_manifest.py")
 
 QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-v13"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
@@ -244,6 +254,30 @@ def _audit_final_findings(
         )
 
 
+def _simulate_apply(
+    findings: list[dict[str, Any]], records: dict[str, dict[str, Any]]
+) -> None:
+    """Refuse findings whose corrections the post-apply regression would reject."""
+    problems = []
+    for finding in findings:
+        for identity in finding["target_identities"]:
+            record = records[identity]
+            found = correction_problems(
+                record["source"],
+                record["live"],
+                finding["correction"],
+                record.get("event_code"),
+                record["live_pointers"],
+                record["live_transform"],
+            )
+            if found:
+                problems.append(f"{finding['id']} at {identity}: " + "; ".join(found))
+    if problems:
+        raise QAResultError(
+            "These corrections would block apply: " + " | ".join(problems[:20])
+        )
+
+
 def _validate_editorial_basis(review: dict[str, Any], identity: str) -> None:
     """Require subjective findings to prove a defect rather than state a preference."""
     category = _normalize_category(review.get("category"))
@@ -268,11 +302,59 @@ def _validate_editorial_basis(review: dict[str, Any], identity: str) -> None:
         raise QAResultError(f"Editorial basis is only a preference for {identity}")
 
 
+def correction_problems(
+    source: str,
+    live: str,
+    correction: str,
+    event_code: int | None,
+    live_pointers: list[str],
+    live_transform: str,
+) -> list[str]:
+    """Why applying one correction would fail or trip the post-apply regression.
+
+    This simulates the apply step for one target: the line structure its
+    pointers need and the mechanical flags the regression treats as blocking.
+    """
+    problems = []
+    if correction == live:
+        problems.append("the correction matches the current text")
+    lines = correction.split("\n")
+    current_lines = live.split("\n")
+    if live_transform == "quoted-string":
+        # The text sits between quote marks in a script parameter, so a new
+        # kind of quote mark could end the string early.
+        if any(mark in correction and mark not in live for mark in "'\"`"):
+            problems.append("adds a quote mark to a script string")
+    elif len(live_pointers) > 1 and len(lines) != len(live_pointers):
+        problems.append(
+            f"needs {len(live_pointers)} lines like the current text, "
+            f"not {len(lines)}"
+        )
+    elif (
+        event_code == 401
+        and len(lines) > max(len(current_lines), MESSAGE_WINDOW_LINES)
+    ):
+        problems.append(
+            f"needs {len(lines)} lines; a message window shows "
+            f"{MESSAGE_WINDOW_LINES}"
+        )
+    elif event_code in {101, 102} and "\n" in correction:
+        problems.append("a name or choice cannot contain a line break")
+    before = set(_mechanical_evidence(source, live, event_code)["flags"])
+    after = set(_mechanical_evidence(source, correction, event_code)["flags"])
+    introduced = sorted(after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS)
+    if introduced:
+        problems.append("introduces " + ", ".join(introduced))
+    return problems
+
+
 def _engine_fingerprint() -> str:
     """Fingerprint every rule/configuration that affects reusable QA evidence."""
     contract = {
         "policy": QA_POLICY_VERSION,
-        "engine_source_sha256": _sha256(Path(__file__).read_bytes()),
+        "engine_source_sha256": _sha256(b"".join(
+            (Path(__file__).with_name(name)).read_bytes() for name in _ENGINE_SOURCES
+        )),
         "schemas": {
             "task": TASK_SCHEMA,
             "checkpoint": CHECKPOINT_SCHEMA,
@@ -1598,6 +1680,26 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
             if not isinstance(correction, str) or not correction.strip():
                 raise QAResultError(f"Actionable review has no correction for {identity}")
             _validate_editorial_basis(review, identity)
+            item = bundle_items[identity]
+            targets = set(review.get("apply_identities") or []) or set(
+                item.get("identities") or []
+            )
+            for locator in item.get("locators") or []:
+                if locator["identity"] not in targets:
+                    continue
+                problems = correction_problems(
+                    str(item["source"]),
+                    str(item["translation"]),
+                    correction,
+                    locator.get("event_code"),
+                    locator["live_pointers"],
+                    locator.get("live_transform", "identity"),
+                )
+                if problems:
+                    raise QAResultError(
+                        f"The correction for {identity} would block apply at "
+                        f"{locator['identity']}: " + "; ".join(problems)
+                    )
         elif review.get("severity") not in {None, ""}:
             raise QAResultError(f"Non-actionable review cannot have severity for {identity}")
         elif review.get("editorial_basis") is not None:
@@ -1935,6 +2037,7 @@ def _deep_items(
                 "file": record["file"],
                 "source_pointer": record["source_pointer"],
                 "live_pointers": record["live_pointers"],
+                "live_transform": record["live_transform"],
                 "event_code": record.get("event_code"),
                 "speaker": record.get("speaker"),
                 "database_entity": record.get("database_entity"),
@@ -2089,7 +2192,7 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
     if any(row["status"] != "accepted" for row in checkpoint["deep"]["bundles"]):
         raise ValueError("Every deep-review bundle must be accepted before finalizing")
     manifest = _read_json(root / "inventory.json")
-    _records, clusters = _record_maps(manifest)
+    records, clusters = _record_maps(manifest)
     findings = []
     uncertain = []
     motif_families = []
@@ -2156,6 +2259,7 @@ def _finalize_unlocked(task_dir: str | Path) -> dict[str, Any]:
     ))
     for index, finding in enumerate(findings, start=1):
         finding["id"] = f"QA-{index:04d}"
+    _simulate_apply(findings, records)
     _audit_final_findings(findings, _read_json(root / "context.json"))
     finding_by_cluster = {item["cluster_id"]: item for item in findings}
     uncertain_ids = {item["id"] for item in uncertain}

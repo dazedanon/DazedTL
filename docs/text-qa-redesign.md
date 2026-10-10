@@ -1,6 +1,6 @@
 # Text QA redesign
 
-This is the plan for the next version of text QA; nothing here is implemented yet.
+This is the plan for the next version of text QA; implemented parts move to [architecture](architecture.md#workflow-and-shared-presentation) and leave this plan.
 Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/rpgmaker_translation_qa.md), the [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py), the [copied handoff](../backend/dazedtl/compatibility/text.py) and the [Text QA page](../app/src/features/guided/workspace/tasks/check.tsx).
 
 ## Goals
@@ -62,8 +62,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - After deep review, a family sweep turns every line matching an accepted family into a candidate finding with the family's correction, reviewed as a group.
 - New finding types cover Show Text face and name fixes for source slips, and database fields.
 - A decision log shared by reviewers records choices such as narration tense or a quoted label, and a consistency check reports conflicting corrections before the editorial pass.
-- Finalize simulates the post-apply regression: each correction's mechanical flags and line counts are checked, so a correction that would block apply never reaches findings.
-  The visible-number check treats ordinal words as numbers.
 
 ### Cost
 
@@ -89,6 +87,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Order of work
 
-1. Quality and coverage: the single policy with automatic apply through the app, the declined disposition, the lint stage and family sweep, the regression simulation in finalize, and inventory completeness.
+1. Quality and coverage: the single policy with automatic apply through the app, the declined disposition, the lint stage and family sweep, and inventory completeness.
 2. Cost: the forced-review filters and scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.

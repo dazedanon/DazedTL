@@ -723,6 +723,8 @@ Reapplying saved translations discloses replacement of later runtime edits, inde
 Optional text QA retains the engine's project-scoped discovery inventory and findings, bound to current runtime text and original-source context.
 Copied tasks do not imply completed work, and a saved discovery stage does not certify current QA passed.
 Chosen corrections bind to the specific task and pass the engine's correction and regression checks on disposable copies before app-reviewed Apply.
+The [engine](../backend/dazedtl/engine/util/rpgmaker_qa.py) checks each correction when a reviewer submits it, and every finding again when findings are made, against what the post-apply regression rejects: a mechanical flag the correction adds, a line count its pointers can't hold, or more rows than a message window shows.
+So no finding can roll an apply back; an English ordinal such as "First" may stand for the source's number, as in "First Stratum" for 第1層.
 The clipboard task stops before runtime publication.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 

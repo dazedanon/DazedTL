@@ -95,6 +95,55 @@ _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 _VISIBLE_NUMBER_RE = re.compile(
     r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
 )
+_ORDINAL_WORDS = {
+    word: value
+    for value, word in enumerate(
+        (
+            "first second third fourth fifth sixth seventh eighth ninth tenth "
+            "eleventh twelfth thirteenth fourteenth fifteenth sixteenth "
+            "seventeenth eighteenth nineteenth twentieth"
+        ).split(),
+        start=1,
+    )
+}
+# English ordinals stand for a source number (第1層 as "First Stratum", 1番目 as
+# "1st"), so they may match one; an unmatched one ("wait a second") is prose.
+_ORDINAL_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:(\d+)(?:st|nd|rd|th)|("
+    + "|".join(_ORDINAL_WORDS)
+    + r"))(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+
+
+def _numbers_match(source_numbers: list[str], live: str) -> bool:
+    """Whether the live text shows the source's numbers in order.
+
+    Every plain number in the live text must match the next source number;
+    an ordinal may match one or be skipped.
+    """
+    tokens = [
+        (match.start(), match.group(0), False)
+        for match in _VISIBLE_NUMBER_RE.finditer(live)
+    ]
+    for match in _ORDINAL_RE.finditer(live):
+        digits, word = match.groups()
+        value = digits or str(_ORDINAL_WORDS[word.casefold()])
+        tokens.append((match.start(), value, True))
+    tokens.sort()
+    # matched[j]: the first j source numbers are matched by the tokens so far.
+    matched = [True] + [False] * len(source_numbers)
+    for _start, value, optional in tokens:
+        following = [False] * len(matched)
+        for count, reachable in enumerate(matched):
+            if not reachable:
+                continue
+            if optional:
+                following[count] = True
+            if count < len(source_numbers) and source_numbers[count] == value:
+                following[count + 1] = True
+        matched = following
+    return matched[-1]
 
 
 def _sha256(data: bytes | str) -> str:
@@ -372,7 +421,9 @@ def _mechanical_evidence(source: str, live: str, code: int | None) -> dict[str, 
         flags.append("missing-center-alignment")
     if _UNSAFE_BARE_CENTER_RE.search(live):
         flags.append("unsafe-bare-center-code")
-    if source_numbers != live_numbers and (source_numbers or live_numbers):
+    if source_numbers != live_numbers and not _numbers_match(
+        source_numbers, live_visible
+    ):
         flags.append("visible-number-mismatch")
     if len(source) >= 8 and len(live) >= 1:
         ratio = len(live) / len(source)

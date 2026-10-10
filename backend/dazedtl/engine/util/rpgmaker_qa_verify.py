@@ -76,6 +76,45 @@ _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
 _VISIBLE_NUMBER_RE = re.compile(
     r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
 )
+_ORDINALS = (
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+    "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth",
+    "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
+    "nineteenth", "twentieth",
+)
+_ORDINAL_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:\d+(?:st|nd|rd|th)|" + "|".join(_ORDINALS) + r")(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+
+
+def _ordinal_value(token: str) -> str:
+    lowered = token.casefold()
+    if lowered in _ORDINALS:
+        return str(_ORDINALS.index(lowered) + 1)
+    return lowered.rstrip("stndrh")
+
+
+def _numbers_shown(source_numbers: list[str], live: str) -> bool:
+    """Plain live numbers must equal the source's in order; ordinals may fill gaps."""
+    tokens = sorted(
+        [(m.start(), m.group(0), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
+        + [(m.start(), _ordinal_value(m.group(0)), True) for m in _ORDINAL_TOKEN_RE.finditer(live)]
+    )
+
+    def walk(token_index: int, number_index: int) -> bool:
+        if token_index == len(tokens):
+            return number_index == len(source_numbers)
+        _start, value, optional = tokens[token_index]
+        if (
+            number_index < len(source_numbers)
+            and source_numbers[number_index] == value
+            and walk(token_index + 1, number_index + 1)
+        ):
+            return True
+        return optional and walk(token_index + 1, number_index)
+
+    return walk(0, 0)
 
 
 def _hash(value: bytes | str) -> str:
@@ -214,7 +253,7 @@ def _mechanical(source: str, live: str, code: int | None) -> dict[str, Any]:
         flags.append("missing-center-alignment")
     if _UNSAFE_BARE_CENTER_RE.search(live):
         flags.append("unsafe-bare-center-code")
-    if source_numbers != live_numbers and (source_numbers or live_numbers):
+    if source_numbers != live_numbers and not _numbers_shown(source_numbers, live_visible):
         flags.append("visible-number-mismatch")
     if len(source) >= 8 and len(live) >= 1:
         ratio = len(live) / len(source)
