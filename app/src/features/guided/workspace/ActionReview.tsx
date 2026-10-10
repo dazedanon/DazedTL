@@ -148,8 +148,10 @@ export function ActionReview({ w }: { w: GuidedWorkspace }) {
           )}
         {!!preview.additions?.length && (
           <p>
-            {preview.additions.length} files are additions to the original
-            baseline.
+            {preview.additions.length === 1
+              ? "1 file is an addition"
+              : `${preview.additions.length.toLocaleString()} files are additions`}{" "}
+            to the original baseline.
           </p>
         )}
         {preview.action === "backup_source" &&
