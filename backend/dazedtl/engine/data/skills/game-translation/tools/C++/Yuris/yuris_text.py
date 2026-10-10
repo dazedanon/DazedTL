@@ -12,6 +12,8 @@ YPF 500 and YSTB 555. Requires `pip install murmurhash2`.
   yuris_text.py pack      <original.ypf> <changed ybn dir> <out.ypf>
 
 `decompile` writes the scripts' YST source as UTF-8, for DazedTL's census.
+A line break in text is the bytes EF F0, outside Shift-JIS; units show it as
+"\n" and patch writes "\n" (or "\r\n") in a translation back as those bytes.
 
 Text lines are the scripts' WORD commands. Japanese string literals in
 command arguments, such as choices, character names or confirmation
@@ -58,6 +60,13 @@ from yurislib.fileformat import (  # noqa: E402
 JAPANESE = re.compile("[぀-ヿ㐀-鿿ｦ-ﾟ]")
 SPEAKER = re.compile(r"^([^「『（]{1,12})[「『（]")
 STRING = 0x4D
+# The E-ris text engine breaks a line on these bytes (VNTextPatch writes them
+# for "\r\n").
+LINE_BREAK = b"\xef\xf0"
+
+
+def text_of(data):
+    return "\n".join(part.decode("cp932", "replace") for part in bytes(data).split(LINE_BREAK))
 
 
 @functools.cache
@@ -151,8 +160,10 @@ def units(ybn, out, *selectors):
     found = []
     for path, name, ystb, yscm in scripts(ybn):
         rows = list(chosen[name])
+        exp = expression(Path(ybn, name).read_bytes(), key(str(Path(ybn))))
         for command, cmd in enumerate(ystb.cmds):
-            text = cmd.args[0].dat if cmd.code == yscm.kcc.WORD else ""
+            word = cmd.args[0] if cmd.code == yscm.kcc.WORD else None
+            text = text_of(exp[word.off : word.off + word.len]) if word else ""
             if text.strip():
                 rows.append(((command,), f"{name}/{command}", text))
         for _place, unit_id, text in sorted(rows):
@@ -174,10 +185,11 @@ def units(ybn, out, *selectors):
 
 
 def encode(unit_id, text):
+    parts = text.replace("\r\n", "\n").split("\n")
     try:
-        return text.encode("cp932")
+        return LINE_BREAK.join(part.encode("cp932") for part in parts)
     except UnicodeEncodeError as error:
-        raise SystemExit(f"{unit_id}: {text[error.start]!r} is not in Shift-JIS; replace it.")
+        raise SystemExit(f"{unit_id}: {error.object[error.start]!r} is not in Shift-JIS; replace it.")
 
 
 def patch(ybn, translations, out):
