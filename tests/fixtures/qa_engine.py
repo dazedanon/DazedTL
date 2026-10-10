@@ -54,6 +54,8 @@ write(
                         line("今日はいい天気だね", "Nice weather today."),
                         # Japanese residue forces deep review, where it is declined.
                         line("朝だ", "It's 朝."),
+                        # Two lint families, both accepted.
+                        line("あっ…♥すごい", "Ah…h♥Amazing"),
                     )
                 ],
             },
@@ -78,8 +80,9 @@ write(
         {
             "id": 1,
             "name": "Potion",
-            "description": "Restores HP.",
-            "_original": {"name": "薬", "description": "体力を回復する。"},
+            # A lint proposal the reviewer rejects.
+            "description": "Restores HP.♥Yay",
+            "_original": {"name": "薬", "description": "体力を回復する。♥"},
         },
     ],
 )
@@ -123,6 +126,19 @@ while row := qa.next_bundle(task, "screen-a"):
         for item in bundle["items"]
         if declined_scene(item)
     ]
+    lint_reviews = [
+        {
+            "id": item["id"],
+            "rejected": [
+                proposal["id"]
+                for proposal in item["proposals"]
+                if proposal["current"] == "Restores HP.♥Yay"
+            ],
+            "note": "The item text keeps its house style.",
+        }
+        for item in bundle["items"]
+        if item["kind"] == "lint-family"
+    ]
     exceptions = [
         {
             "id": target["id"],
@@ -144,6 +160,7 @@ while row := qa.next_bundle(task, "screen-a"):
                 "reviewed_all": True,
                 "exceptions": exceptions,
                 "motif_reviews": [],
+                "lint_reviews": lint_reviews,
                 "declined": declined,
             },
         ),
@@ -266,9 +283,12 @@ else:
     raise AssertionError("Finalize skipped a declined bundle silently.")
 qa.finalize(task, skip_declined=True)
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
-assert [row["correction"] for row in findings["findings"]] == [
-    "Rest on the First Stratum"
+# Accepted lint families combine into one correction; a rejected one is left out.
+assert sorted(row["correction"] for row in findings["findings"]) == [
+    "Ah…♥ Amazing",
+    "Rest on the First Stratum",
 ], findings["findings"]
+assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3}
 # The declined scene is a coverage gap, reported once with its reasons.
 assert [item["reasons"] for item in findings["declined"]] == [
     ["Outside what this reviewer reviews.", "Also declined."],

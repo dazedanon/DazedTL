@@ -37,6 +37,7 @@ from util.rpgmaker_qa_manifest import (
     write_manifest,
 )
 from util.rpgmaker_qa_verify import verify_manifest
+from util import rpgmaker_qa_lint as lint
 from util.reference_games import reference_context
 
 
@@ -83,7 +84,11 @@ APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 # current text already uses.
 MESSAGE_WINDOW_LINES = 4
 # Every module whose rules shape bundles, flags or findings.
-_ENGINE_SOURCES = ("rpgmaker_qa.py", "rpgmaker_qa_manifest.py")
+_ENGINE_SOURCES = (
+    "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
+)
+# Lint proposals per review item, so a decline sets aside few of them.
+LINT_ITEM_LIMIT = 60
 
 QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-v13"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
@@ -717,7 +722,9 @@ def _pronoun_context_requirements(
 
 
 def _scene_items(
-    manifest: dict[str, Any], compact: dict[str, dict[str, Any]]
+    manifest: dict[str, Any],
+    compact: dict[str, dict[str, Any]],
+    lint_fixes: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], set[str], dict[str, dict[str, str]]]:
     """Build indivisible scenes that cover each dialogue cluster exactly once."""
     cluster_ids = _cluster_by_identity(manifest)
@@ -810,6 +817,8 @@ def _scene_items(
                 line["speaker"] = speaker
             if record.get("event_code") != 401:
                 line["event_code"] = record.get("event_code")
+            if cluster_id in lint_fixes:
+                line["lint"] = lint_fixes[cluster_id]
             if cluster_id in target_clusters and cluster_id not in emitted_clusters:
                 emitted_clusters.add(cluster_id)
                 cluster_item = compact[cluster_id]
@@ -936,8 +945,81 @@ def _motif_items(
     return items
 
 
+def _lint_items(
+    manifest: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Each lint family's proposals as review items, and every line's fixes.
+
+    A proposal the post-apply regression would reject is left out. Proposals
+    are grouped by scene and split into small items, so a declined item sets
+    aside only that part of a family.
+    """
+    records, _clusters = _record_maps(manifest)
+    titles = lint.title_map(manifest["clusters"])
+    by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    fixes: dict[str, dict[str, Any]] = {}
+    for cluster in manifest["clusters"]:
+        members = [records[identity] for identity in cluster["identities"]]
+        found = {
+            family: proposed
+            for family, proposed in lint.proposals(
+                cluster["source"], cluster["live"], titles
+            ).items()
+            if not any(
+                correction_problems(
+                    record["source"], record["live"], proposed,
+                    record.get("event_code"), record["live_pointers"],
+                    record["live_transform"],
+                )
+                for record in members
+            )
+        }
+        if not found:
+            continue
+        cluster_id = cluster["representative"]
+        fixes[cluster_id] = {
+            "families": sorted(found, key=lint.ORDER.index),
+            "proposed": lint.compose(cluster["source"], cluster["live"], found, titles),
+        }
+        position = _scene_position(members[0])
+        speaker = str((members[0].get("speaker") or {}).get("display_name") or "")
+        for family, proposed in found.items():
+            by_family[family].append({
+                "id": "lint-" + _sha256(f"{family}\0{cluster_id}")[:16],
+                "cluster_id": cluster_id,
+                "occurrences": len(members),
+                "scene": position[0] if position else members[0]["file"],
+                **({"speaker": speaker} if speaker else {}),
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "proposed": proposed,
+            })
+    items = []
+    for family in lint.ORDER:
+        proposals = sorted(
+            by_family.get(family) or [],
+            key=lambda row: (row["scene"], row["cluster_id"]),
+        )
+        for start in range(0, len(proposals), LINT_ITEM_LIMIT):
+            chunk = proposals[start : start + LINT_ITEM_LIMIT]
+            items.append({
+                "kind": "lint-family",
+                "id": "lint-family-" + _sha256(
+                    family + "\0" + "\0".join(row["id"] for row in chunk)
+                )[:20],
+                "family": family,
+                "description": lint.FAMILIES[family]["description"],
+                "target_count": len(chunk),
+                "proposals": chunk,
+            })
+    return items, fixes
+
+
 def _screen_items(
-    manifest: dict[str, Any], context: dict[str, Any], data_root: Path
+    manifest: dict[str, Any],
+    context: dict[str, Any],
+    data_root: Path,
+    lint_fixes: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, str]]]:
     compact_items = _compact_items(manifest, context)
     compact = {item["id"]: item for item in compact_items}
@@ -945,7 +1027,9 @@ def _screen_items(
     covered_dialogue: set[str] = set()
     screen_index: dict[str, dict[str, str]] = {}
     if manifest["focus"] in {"dialogue", "release"}:
-        scenes, covered_dialogue, screen_index = _scene_items(manifest, compact)
+        scenes, covered_dialogue, screen_index = _scene_items(
+            manifest, compact, lint_fixes
+        )
         items.extend(scenes)
 
     clusters = {
@@ -967,6 +1051,8 @@ def _screen_items(
             or (manifest["focus"] == "release" and has_non_scene_member)
         ):
             item = {**item, "kind": "cluster", "target_count": 1}
+            if item["id"] in lint_fixes:
+                item["lint"] = lint_fixes[item["id"]]
             items.append(item)
 
     if manifest["focus"] in {"dialogue", "release"}:
@@ -1019,7 +1105,8 @@ def _merge_candidate(
 
 
 def _bundle_items(
-    items: list[dict], *, stage: str, char_budget: int, item_limit: int
+    items: list[dict], *, stage: str, char_budget: int, item_limit: int,
+    first: int = 1,
 ) -> list[dict]:
     if char_budget < 2_000 or item_limit < 1:
         raise ValueError("QA bundle limits are too small")
@@ -1043,7 +1130,7 @@ def _bundle_items(
         groups.append(current)
     return [
         _make_bundle(stage, f"{stage}-{index:04d}", group)
-        for index, group in enumerate(groups, start=1)
+        for index, group in enumerate(groups, start=first)
     ]
 
 
@@ -1287,14 +1374,24 @@ nonliteral variant still reads as a callback to it; merely mentioning the same n
 Write:
 
 ```json
-{{"schema":"{SCREEN_RESULT_SCHEMA}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}}],"motif_reviews":[{{"id":"motif-...","disposition":"preserved","note":"The English variants retain the named joke and its function.","suspect_ids":[]}}]}}
+{{"schema":"{SCREEN_RESULT_SCHEMA}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}}],"motif_reviews":[{{"id":"motif-...","disposition":"preserved","note":"The English variants retain the named joke and its function.","suspect_ids":[]}}],"lint_reviews":[{{"id":"lint-family-...","rejected":[],"note":""}}]}}
 ```
+
+A `lint-family` item lists one lint family's proposals: deterministic fixes for a known mechanical
+defect, each with its source, current and proposed text. Check them as a group and return exactly
+one `lint_reviews` entry per lint item. A proposal you do not list in `rejected` is accepted; a
+note is required when you reject any. Reject a proposal that would harm its line, or a style this
+game deliberately keeps. A scene line or cluster with `lint` already has those mechanical fixes
+proposed: do not report them again, and judge the rest of the line.
 
 For a deep bundle, return exactly one review per item:
 
 ```json
 {{"schema":"{DEEP_RESULT_SCHEMA}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{{"id":"...","disposition":"clean","severity":null,"category":"","family_key":"","motif_ids":[],"evidence":"","correction":null,"apply_identities":[]}}]}}
 ```
+
+A deep item's `lint` names the mechanical fixes accepted for its line. DazedTL applies them to your
+correction as well, so write the correction for meaning and voice.
 
 Each deep item states the high-confidence `deep_reasons` that caused escalation. Do not expand the
 queue yourself. `screen_evidence` preserves the screening reviewer's concrete reason, and
@@ -1406,7 +1503,8 @@ def prepare_task(
                 for item in compact_items
                 if (forced_reasons := _forced_deep_reasons(item))
             }
-            items, screen_index = _screen_items(manifest, context, data)
+            lint_items, lint_fixes = _lint_items(manifest)
+            items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
                 "targets": screen_index,
@@ -1415,12 +1513,31 @@ def prepare_task(
                 _canonical_bytes(screen_index_document)
             )
             _atomic_write_json(staging / "screen-index.json", screen_index_document)
+            # Lint families come first, in bundles of their own.
+            ordinal = max(
+                [item["ordinal"] for item in items if "ordinal" in item]
+                + [
+                    line["ordinal"] for item in items
+                    for line in item.get("lines") or [] if "ordinal" in line
+                ]
+                + [0]
+            )
+            for ordinal, item in enumerate(lint_items, start=ordinal + 1):
+                item["ordinal"] = ordinal
             bundles = _bundle_items(
-                items,
+                lint_items,
                 stage="screen",
                 char_budget=screen_char_budget,
                 item_limit=screen_item_limit,
             )
+            bundles += _bundle_items(
+                items,
+                stage="screen",
+                char_budget=screen_char_budget,
+                item_limit=screen_item_limit,
+                first=len(bundles) + 1,
+            )
+            items += lint_items
             bundle_summaries = _write_bundles(
                 staging, bundles, recorded_root=task_dir
             )
@@ -1452,6 +1569,10 @@ def prepare_task(
                         item.get("kind") == "motif-family" for item in items
                     ),
                     "motif_accepted": 0,
+                    "lint_total": sum(
+                        item["target_count"] for item in lint_items
+                    ),
+                    "lint_accepted": 0,
                     "bundles": bundle_summaries,
                 },
                 "deep": {
@@ -1550,6 +1671,10 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "motif_families": {
                 "accepted": int(screen.get("motif_accepted", 0)),
                 "total": int(screen.get("motif_total", 0)),
+            },
+            "lint": {
+                "accepted": int(screen.get("lint_accepted", 0)),
+                "total": int(screen.get("lint_total", 0)),
             },
             **_stage_metrics(screen, active=checkpoint["stage"] == "screen"),
         },
@@ -1806,6 +1931,34 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
         if disposition != "preserved" and not suspect_ids:
             raise QAResultError(f"Non-clean motif must name suspects for {motif_id}")
 
+    expected_lint = {
+        item["id"]: item for item in bundle["items"]
+        if item.get("kind") == "lint-family" and item["id"] not in declined
+    }
+    lint_reviews = result.get("lint_reviews", [])
+    if not isinstance(lint_reviews, list) or not all(
+        isinstance(review, dict) for review in lint_reviews
+    ):
+        raise QAResultError("Screen result lint_reviews must be a list of objects")
+    reviewed = [str(review.get("id") or "") for review in lint_reviews]
+    if len(reviewed) != len(set(reviewed)) or set(reviewed) != set(expected_lint):
+        raise QAResultError(
+            "Screen result must review every assigned lint family exactly once"
+        )
+    for review in lint_reviews:
+        rejected = review.get("rejected")
+        allowed = {row["id"] for row in expected_lint[review["id"]]["proposals"]}
+        if (
+            not isinstance(rejected, list)
+            or len(rejected) != len(set(rejected))
+            or not set(rejected) <= allowed
+        ):
+            raise QAResultError(f"Lint rejections are invalid for {review['id']}")
+        if rejected and not str(review.get("note") or "").strip():
+            raise QAResultError(
+                f"A lint review that rejects proposals needs a note: {review['id']}"
+            )
+
 
 def _validate_deep_result(bundle: dict, result: dict) -> None:
     if result.get("schema") != DEEP_RESULT_SCHEMA:
@@ -1995,6 +2148,12 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             checkpoint["screen"]["motif_accepted"] = int(
                 checkpoint["screen"].get("motif_accepted", 0)
             ) + len(result["motif_reviews"])
+            checkpoint["screen"]["lint_accepted"] = int(
+                checkpoint["screen"].get("lint_accepted", 0)
+            ) + sum(
+                item["target_count"] for item in bundle["items"]
+                if item.get("kind") == "lint-family" and item["id"] not in declined
+            )
             checkpoint["deep"]["projected_items"] = len(candidate_reasons)
         checkpoint[stage]["accepted_items"] += int(row["item_count"]) - moved
         row["status"] = "accepted"
@@ -2326,6 +2485,113 @@ def _declined_scope(
     }
 
 
+def _lint_decisions(
+    checkpoint: dict[str, Any], declined: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """The lint families reviewers accepted for each cluster, with their notes."""
+    accepted: dict[str, dict[str, Any]] = {}
+    for row in checkpoint["screen"]["bundles"]:
+        if row["status"] != "accepted":
+            continue
+        result = _read_json(Path(row["result_path"]))
+        reviews = {review["id"]: review for review in result.get("lint_reviews") or []}
+        if not reviews:
+            continue
+        for item in _read_json(Path(row["path"]))["items"]:
+            review = reviews.get(item["id"])
+            if item.get("kind") != "lint-family" or review is None:
+                continue
+            rejected = set(review["rejected"])
+            for proposal in item["proposals"]:
+                cluster_id = proposal["cluster_id"]
+                if proposal["id"] in rejected or cluster_id in declined["clusters"]:
+                    continue
+                entry = accepted.setdefault(
+                    cluster_id, {"families": set(), "notes": []}
+                )
+                entry["families"].add(item["family"])
+                if str(review.get("note") or "").strip():
+                    entry["notes"].append(str(review["note"]).strip())
+    return accepted
+
+
+def _add_lint_findings(
+    findings: list[dict[str, Any]],
+    accepted: dict[str, dict[str, Any]],
+    manifest: dict[str, Any],
+    declined: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Apply accepted lint fixes on top of deep corrections, or as findings.
+
+    Returns the fixes left out because the combined text would block apply.
+    """
+    records, clusters = _record_maps(manifest)
+    titles = lint.title_map(manifest["clusters"])
+    by_cluster = {finding["cluster_id"]: finding for finding in findings}
+    dropped = []
+    for cluster_id, decision in sorted(accepted.items()):
+        families = sorted(decision["families"], key=lint.ORDER.index)
+        cluster = clusters[cluster_id]
+        reviewable = [
+            identity for identity in cluster["identities"]
+            if identity not in declined["identities"]
+        ]
+        finding = by_cluster.get(cluster_id)
+        parts = []
+        if finding:
+            parts.append((finding["correction"], finding["target_identities"], finding))
+        remaining = [
+            identity for identity in reviewable
+            if not finding or identity not in finding["target_identities"]
+        ]
+        if remaining:
+            parts.append((cluster["live"], remaining, None))
+        for base, targets, owner in parts:
+            composed = lint.compose(cluster["source"], base, families, titles)
+            if composed == base:
+                continue
+            problems = [
+                problem
+                for identity in targets
+                for problem in correction_problems(
+                    records[identity]["source"], records[identity]["live"],
+                    composed, records[identity].get("event_code"),
+                    records[identity]["live_pointers"],
+                    records[identity]["live_transform"],
+                )
+            ]
+            if problems:
+                dropped.append({
+                    "cluster_id": cluster_id,
+                    "families": families,
+                    "problems": sorted(set(problems)),
+                })
+                continue
+            if owner:
+                owner["correction"] = composed
+                owner["lint_families"] = families
+                continue
+            findings.append({
+                "id": "",
+                "cluster_id": cluster_id,
+                "severity": "medium",
+                "category": (
+                    "ui" if families == ["lint:quoted-title"] else "formatting"
+                ),
+                "family_key": families[0],
+                "evidence": " ".join(
+                    lint.FAMILIES[family]["description"] for family in families
+                ) + "".join(" Reviewer: " + note for note in decision["notes"][:2]),
+                "source": cluster["source"],
+                "current": cluster["live"],
+                "correction": composed,
+                "target_identities": targets,
+                "lint_families": families,
+                "lint_only": True,
+            })
+    return dropped
+
+
 def _not_reviewed(
     scope: dict[str, Any], records: dict[str, dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -2347,9 +2613,10 @@ def _deep_items(
     manifest = _read_json(root / "inventory.json")
     context = _read_json(root / "context.json")
     records, clusters = _record_maps(manifest)
-    declined = _declined_scope(
-        root, _read_json(root / "checkpoint.json"), manifest
-    )
+    checkpoint = _read_json(root / "checkpoint.json")
+    declined = _declined_scope(root, checkpoint, manifest)
+    lint_accepted = _lint_decisions(checkpoint, declined)
+    titles = lint.title_map(manifest["clusters"])
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
     for cluster in manifest["clusters"]:
@@ -2412,6 +2679,14 @@ def _deep_items(
         }
         if screen_evidence.get(identity):
             item["screen_evidence"] = screen_evidence[identity]
+        if identity in lint_accepted:
+            families = sorted(lint_accepted[identity]["families"], key=lint.ORDER.index)
+            item["lint"] = {
+                "families": families,
+                "proposed": lint.compose(
+                    cluster["source"], cluster["live"], families, titles
+                ),
+            }
         scenes = [
             scene for scene in screen_scenes.get(identity) or []
             if scene["scene_id"] not in declined["scenes"]
@@ -2657,6 +2932,9 @@ def _finalize_unlocked(
                 })
             elif review["disposition"] == "uncertain-playtest":
                 uncertain.append(review)
+    lint_dropped = _add_lint_findings(
+        findings, _lint_decisions(checkpoint, declined), manifest, declined
+    )
     findings.sort(key=lambda item: (
         {"critical": 0, "high": 1, "medium": 2}[item["severity"]],
         item["cluster_id"],
@@ -2665,7 +2943,9 @@ def _finalize_unlocked(
         finding["id"] = f"QA-{index:04d}"
     _simulate_apply(findings, records)
     _audit_final_findings(findings, _read_json(root / "context.json"))
-    finding_by_cluster = {item["cluster_id"]: item for item in findings}
+    finding_by_cluster = {
+        item["cluster_id"]: item for item in findings if not item.get("lint_only")
+    }
     uncertain_ids = {item["id"] for item in uncertain}
     for motif in motif_families:
         variant_ids = set(motif.pop("_variant_ids"))
@@ -2761,6 +3041,7 @@ def _finalize_unlocked(
         # declined and the lines nobody judged.
         "declined": declined["items"],
         "not_reviewed": _not_reviewed(declined, records),
+        "lint_dropped": lint_dropped,
     }
     findings_path = root / "findings.json"
     _atomic_write_json(findings_path, document)

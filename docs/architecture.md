@@ -728,6 +728,9 @@ So no finding can roll an apply back; an English ordinal such as "First" may sta
 A reviewer that will not review an item declines it with a one-line reason, and the engine accepts the rest of its bundle and moves the declined items to a bundle of their own that only another reviewer can claim.
 They are set aside once a second reviewer declines them, or when the assistant reports no other reviewer, so content is never classified or excluded in advance.
 Set-aside lines stay out of deep review, corrections and the read-only context view, and findings report them once as not reviewed.
+Before screening, [lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) proposes exact fixes for known mechanical families: spacing after ♥, stray letters for the small っ, dakuten apostrophes on real words, list items merged onto one line, quoted titles that no longer match their title, duplicated labels and level-tag spacing.
+Screen lines show those fixes, so screening concentrates on meaning and voice, and each family's proposals are reviewed as a group in small items by scene.
+Accepted fixes become findings and also apply on top of a deep correction of the same line.
 The clipboard task stops before runtime publication.
 QA and opening the game are optional, with no playtest records or QA prerequisites for navigation or Guided Release.
 

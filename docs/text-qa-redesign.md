@@ -54,8 +54,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 ### Quality and coverage
 
 - Preflight reports Japanese left in custom data files and plugin parameters, even when the engine cannot correct it.
-- A deterministic lint stage proposes fixes for known families before screening, so screening concentrates on meaning and voice.
-  The first families are spacing after ♥, stray letters for the small っ, dakuten apostrophes on real words, list items merged onto one line, quoted titles that no longer match their target, duplicated labels and level-tag spacing.
 - After deep review, a family sweep turns every line matching an accepted family into a candidate finding with the family's correction, reviewed as a group.
 - New finding types cover Show Text face and name fixes for source slips, and database fields.
 - A decision log shared by reviewers records choices such as narration tense or a quoted label, and a consistency check reports conflicting corrections before the editorial pass.
@@ -84,6 +82,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 ## Order of work
 
-1. Quality and coverage: the single policy with automatic apply through the app, the lint stage and family sweep, and inventory completeness.
+1. Quality and coverage: the single policy with automatic apply through the app, the family sweep, and inventory completeness.
 2. Cost: the forced-review filters and scene-grouped deep bundles.
 3. Speed and presentation: early deep review, engine-managed workers, the stage strip, the Needs you card and undo.
