@@ -226,7 +226,7 @@ def _consistency_conflicts(
     """Corrections that contradict each other or the project's fixed wording.
 
     Hard conflicts (quirk mappings, recorded decisions, structured labels) must
-    be revised; a soft one, the same source corrected two ways, may stand when
+    be revised; a soft one, the same text corrected two ways, may stand when
     an editorial reviewer confirms the contexts differ.
     """
     conflicts: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -296,10 +296,12 @@ def _consistency_conflicts(
                     "message": f"The label 【{source_label}】 is corrected as {rendered}.",
                 })
 
-    by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # The same text corrected two ways; different translations of one source
+    # may keep different corrections.
+    by_text: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
-        by_source[str(finding["source"])].append(finding)
-    for source, members in sorted(by_source.items()):
+        by_text[(str(finding["source"]), str(finding["current"]))].append(finding)
+    for text, members in sorted(by_text.items()):
         corrections = sorted({str(member["correction"]) for member in members})
         if len(corrections) < 2:
             continue
@@ -307,9 +309,9 @@ def _consistency_conflicts(
         for member in members:
             conflicts[member["id"]].append({
                 "kind": "soft",
-                "key": "source:" + _sha256(source)[:16],
+                "key": "text:" + _sha256(_canonical_bytes(text))[:16],
                 "signature": signature,
-                "message": "The same source is corrected differently in "
+                "message": "The same text is corrected differently in "
                 + ", ".join(sorted(other["id"] for other in members if other is not member))
                 + "; keep the difference only when the contexts need it.",
             })
