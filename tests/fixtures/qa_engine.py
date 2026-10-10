@@ -244,9 +244,20 @@ def deep_result(row, corrections):
                 "id": item["id"],
                 "disposition": "actionable" if correction else "clean",
                 "severity": "medium" if correction else None,
-                "category": "terminology" if correction else "",
+                "category": ("voice" if sweep else "terminology") if correction else "",
                 "family_key": "term:ムラムラ" if sweep else "",
                 "sweep": sweep,
+                **(
+                    {
+                        "editorial_basis": {
+                            "defect": "A gauge name reads as a proper noun in speech.",
+                            "source_support": "ムラムラ is a feeling here.",
+                            "not_preference": True,
+                        }
+                    }
+                    if sweep
+                    else {}
+                ),
                 "motif_ids": [],
                 "evidence": "Checked against the source and scene.",
                 "correction": correction,
@@ -332,7 +343,71 @@ qa.accept_result(
         },
     ),
 )
-qa.finalize(task)
+qa.record_decision(
+    task,
+    "stratum names",
+    "Strata are ordinal titles",
+    "deep-a",
+    source="第1層",
+    translation="First Stratum",
+)
+state = qa.finalize(task)
+assert state["stage"] == "editorial", state
+
+
+def editorial(row, verdicts):
+    reviews = []
+    for item in bundle_of(row)["items"]:
+        verdict, replacement = verdicts.get(item["finding"]["source"], ("accept", None))
+        reviews.append(
+            {
+                "id": item["id"],
+                "verdict": verdict,
+                "note": "Checked."
+                if verdict != "accept" or item.get("conflicts")
+                else "",
+                **({"replacement": replacement} if replacement else {}),
+            }
+        )
+    qa.accept_result(
+        task,
+        result_path(
+            row["id"],
+            {
+                "schema": qa.EDITORIAL_RESULT_SCHEMA,
+                "bundle_id": row["id"],
+                "bundle_sha256": row["sha256"],
+                "reviews": reviews,
+            },
+        ),
+    )
+    return bundle_of(row)
+
+
+# The author of a voice correction, and of its sweep, never confirms it.
+rows = json.loads((task / "checkpoint.json").read_text())["editorial"]["bundles"]
+judged = next(row for row in rows if row["authors"])
+assert judged["authors"] == ["deep-a", "sweep-a"], judged
+assert qa.next_bundle(task, "deep-a")["id"] != judged["id"]
+qa.release_bundle(task, next(row["id"] for row in rows if not row["authors"]))
+try:
+    qa.next_bundle(task, "deep-a", judged["id"])
+except ValueError as error:
+    assert "independent" in str(error), error
+else:
+    raise AssertionError("A correction's author claimed its editorial pass.")
+# A revision that breaks the recorded decision comes back in a second round.
+while row := qa.next_bundle(task, "editor-a"):
+    editorial(row, {STRATUM["_original"]: ("revise", "Rest on the first stratum")})
+state = qa.finalize(task)
+assert state["stage"] == "editorial" and state["editorial"]["round"] == 2, state
+(second,) = editorial(
+    qa.next_bundle(task, "editor-a"),
+    {STRATUM["_original"]: ("revise", "Rest on the First Stratum")},
+)["items"]
+assert any("decision" in conflict["key"] for conflict in second["conflicts"]), second
+state = qa.finalize(task)
+assert state["stage"] == "complete", state
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 # Accepted lint families combine into one correction; a rejected one is left out.
 assert sorted(row["correction"] for row in findings["findings"]) == [

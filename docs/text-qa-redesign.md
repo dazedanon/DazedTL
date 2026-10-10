@@ -55,7 +55,6 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 
 - Preflight reports Japanese left in custom data files and plugin parameters, even when the engine cannot correct it.
 - New finding types cover Show Text face and name fixes for source slips, and database fields.
-- A decision log shared by reviewers records choices such as narration tense or a quoted label, and a consistency check reports conflicting corrections before the editorial pass.
 
 ### Cost
 

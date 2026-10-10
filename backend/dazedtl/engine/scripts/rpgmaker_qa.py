@@ -46,9 +46,17 @@ def main() -> int:
     rebuild = sub.add_parser("rebuild-deep")
     rebuild.add_argument("--task", required=True, type=Path)
     rebuild.add_argument("--output-root", type=Path)
-    rebuild_final = sub.add_parser("rebuild-final")
-    rebuild_final.add_argument("--task", required=True, type=Path)
-    rebuild_final.add_argument("--output-root", type=Path)
+    decide = sub.add_parser(
+        "decide", help="Record a choice every reviewer follows, such as narration tense."
+    )
+    decide.add_argument("--task", required=True, type=Path)
+    decide.add_argument("--worker", required=True)
+    decide.add_argument("--key", required=True)
+    decide.add_argument("--choice", required=True)
+    decide.add_argument("--source", default="")
+    decide.add_argument("--translation", default="")
+    decisions = sub.add_parser("decisions", help="Print the recorded decisions.")
+    decisions.add_argument("--task", required=True, type=Path)
     next_cmd = sub.add_parser("next")
     next_cmd.add_argument("--task", required=True, type=Path)
     next_cmd.add_argument("--worker", required=True)
@@ -81,13 +89,6 @@ def main() -> int:
         action="store_true",
         help="Leave unresolved playtest records unchanged after explicit user direction.",
     )
-    editorial = sub.add_parser("editorial-corrections")
-    editorial.add_argument("--task", required=True, type=Path)
-    editorial.add_argument("--review", required=True, type=Path)
-    editorial_dry_run = sub.add_parser("editorial-dry-run")
-    editorial_dry_run.add_argument("--task", required=True, type=Path)
-    editorial_apply = sub.add_parser("editorial-apply")
-    editorial_apply.add_argument("--task", required=True, type=Path)
     apply_cmd = sub.add_parser("apply")
     apply_cmd.add_argument("--task", required=True, type=Path)
     regress = sub.add_parser("regress")
@@ -117,11 +118,12 @@ def main() -> int:
             args.task, args.output_root
         )
         _print({"task": str(task), "status": state})
-    elif args.command == "rebuild-final":
-        task, state = rpgmaker_qa.rebuild_findings_from_results(
-            args.task, args.output_root
-        )
-        _print({"task": str(task), "status": state})
+    elif args.command == "decide":
+        _print(rpgmaker_qa.record_decision(
+            args.task, args.key, args.choice, args.worker, args.source, args.translation
+        ))
+    elif args.command == "decisions":
+        _print(rpgmaker_qa._decisions(Path(args.task).expanduser().resolve()))
     elif args.command == "finalize":
         _print(rpgmaker_qa.finalize(args.task, args.skip_declined))
     elif args.command == "corrections":
@@ -133,12 +135,6 @@ def main() -> int:
             ))
         else:
             _print(rpgmaker_qa.create_correction_map(args.task, args.approve))
-    elif args.command == "editorial-corrections":
-        _print(rpgmaker_qa.create_editorial_correction_map(args.task, args.review))
-    elif args.command == "editorial-dry-run":
-        _print(rpgmaker_qa.dry_run_editorial_correction_map(args.task))
-    elif args.command == "editorial-apply":
-        _print(rpgmaker_qa.apply_editorial_correction_map(args.task))
     elif args.command == "dry-run":
         _print(rpgmaker_qa.dry_run_correction_map(args.task))
     elif args.command == "apply":

@@ -48,11 +48,14 @@ SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
 DEEP_RESULT_SCHEMA = "rpgmaker-qa-deep-result-v3"
 SWEEP_RESULT_SCHEMA = "rpgmaker-qa-sweep-result-v1"
 # Stages whose bundles reviewers claim, in order.
-REVIEW_STAGES = ("screen", "deep", "sweep")
+REVIEW_STAGES = ("screen", "deep", "sweep", "editorial")
 FINDINGS_SCHEMA = "rpgmaker-qa-findings-v5"
 CORRECTION_MAP_SCHEMA = "rpgmaker-qa-correction-map-v1"
 REGRESSION_SCHEMA = "rpgmaker-qa-regression-v1"
-EDITORIAL_REVIEW_SCHEMA = "rpgmaker-qa-final-editorial-v1"
+EDITORIAL_RESULT_SCHEMA = "rpgmaker-qa-editorial-result-v1"
+EDITORIAL_VERDICTS = frozenset({"accept", "revise", "withdraw"})
+# Editorial rounds for conflicting corrections before they are left unverified.
+EDITORIAL_ROUND_LIMIT = 4
 
 DEFAULT_SCREEN_CHAR_BUDGET = 48_000
 DEFAULT_SCREEN_ITEM_LIMIT = 160
@@ -203,10 +206,18 @@ def _fixed_translation_key(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def _audit_final_findings(
-    findings: list[dict[str, Any]], context: dict[str, Any]
-) -> None:
-    """Stop publication when accepted corrections contradict fixed project wording."""
+def _consistency_conflicts(
+    findings: list[dict[str, Any]],
+    context: dict[str, Any],
+    decisions: list[dict[str, Any]],
+) -> dict[str, list[dict[str, str]]]:
+    """Corrections that contradict each other or the project's fixed wording.
+
+    Hard conflicts (quirk mappings, recorded decisions, structured labels) must
+    be revised; a soft one, the same source corrected two ways, may stand when
+    an editorial reviewer confirms the contexts differ.
+    """
+    conflicts: dict[str, list[dict[str, str]]] = defaultdict(list)
     quirks = str((context.get("quirks") or {}).get("text") or "")
     canonical: dict[str, set[str]] = defaultdict(set)
     for source, translation in _CANONICAL_QUIRK_MAPPING_RE.findall(quirks):
@@ -221,29 +232,36 @@ def _audit_final_findings(
             canonical[_fixed_source_key(mapped_source)].add(
                 _fixed_translation_key(mapped_translation)
             )
-
-    violations = []
     for finding in findings:
         expected = canonical.get(_fixed_source_key(finding.get("source"))) or set()
-        if len(expected) != 1:
-            continue
-        correction = _fixed_translation_key(finding.get("correction"))
-        if correction not in expected:
-            violations.append(
-                f"{finding['id']} conflicts with fixed wording "
-                f"{next(iter(expected))!r}"
-            )
+        if len(expected) == 1 and _fixed_translation_key(
+            finding.get("correction")
+        ) not in expected:
+            conflicts[finding["id"]].append({
+                "kind": "hard",
+                "key": "quirk:" + _fixed_source_key(finding["source"]),
+                "message": "The translation quirks fix this text as "
+                f"{next(iter(expected))!r}.",
+            })
+        for decision in decisions:
+            if (
+                decision.get("source")
+                and decision["source"] in str(finding["source"])
+                and decision.get("translation") not in str(finding["correction"])
+            ):
+                conflicts[finding["id"]].append({
+                    "kind": "hard",
+                    "key": "decision:" + decision["key"],
+                    "message": f"Decision {decision['key']!r} renders "
+                    f"{decision['source']!r} as {decision['translation']!r}.",
+                })
 
     field_labels: dict[str, dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
     for finding in findings:
-        source_labels = _JAPANESE_FIELD_LABEL_RE.findall(
-            str(finding.get("source") or "")
-        )
-        correction_labels = _ENGLISH_FIELD_LABEL_RE.findall(
-            str(finding.get("correction") or "")
-        )
+        source_labels = _JAPANESE_FIELD_LABEL_RE.findall(str(finding["source"]))
+        correction_labels = _ENGLISH_FIELD_LABEL_RE.findall(str(finding["correction"]))
         if not source_labels or len(source_labels) != len(correction_labels):
             continue
         for source_label, correction_label in zip(
@@ -254,18 +272,35 @@ def _audit_final_findings(
         if len(translations) < 2:
             continue
         rendered = ", ".join(
-            f"{translation!r} ({', '.join(sorted(finding_ids))})"
-            for translation, finding_ids in sorted(translations.items())
+            f"{translation!r} ({', '.join(sorted(ids))})"
+            for translation, ids in sorted(translations.items())
         )
-        violations.append(
-            f"structured field 【{source_label}】 has conflicting labels: {rendered}"
-        )
+        for ids in translations.values():
+            for finding_id in ids:
+                conflicts[finding_id].append({
+                    "kind": "hard",
+                    "key": "label:" + source_label,
+                    "message": f"The label 【{source_label}】 is corrected as {rendered}.",
+                })
 
-    if violations:
-        raise QAResultError(
-            "Final editorial consistency audit failed; revise the named deep "
-            "receipts and rebuild-final: " + "; ".join(violations)
-        )
+    by_source: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for finding in findings:
+        by_source[str(finding["source"])].append(finding)
+    for source, members in sorted(by_source.items()):
+        corrections = sorted({str(member["correction"]) for member in members})
+        if len(corrections) < 2:
+            continue
+        signature = _sha256(_canonical_bytes(corrections))[:16]
+        for member in members:
+            conflicts[member["id"]].append({
+                "kind": "soft",
+                "key": "source:" + _sha256(source)[:16],
+                "signature": signature,
+                "message": "The same source is corrected differently in "
+                + ", ".join(sorted(other["id"] for other in members if other is not member))
+                + "; keep the difference only when the contexts need it.",
+            })
+    return dict(conflicts)
 
 
 def _simulate_apply(
@@ -1254,7 +1289,7 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
         Path(task["game_root"]) / ".dazedtl" / "qa-receipts" / task_dir.name
     )
     if task["focus"] == "release":
-        correction_workflow = f"""9. After every actionable correction passes, continue automatically; do not ask the user to
+        correction_workflow = f"""9. Once finalize reports `complete`, continue automatically; do not ask the user to
    approve stable finding IDs. Run
    `{cli} corrections --task {task_argument} --approve-all`, followed by
    `{cli} dry-run --task {task_argument}`, then
@@ -1265,7 +1300,7 @@ def _task_instructions(task_dir: Path, task: dict[str, Any]) -> str:
    unchanged, rerun corrections with `--approve-all --allow-uncertain`. Pause and report any
    deterministic audit, dry-run, apply, or regression error; never bypass a failed safeguard."""
     else:
-        correction_workflow = f"""9. After every actionable correction passes, show the targeted findings to the user and wait
+        correction_workflow = f"""9. Once finalize reports `complete`, show the targeted findings to the user and wait
    for approval of specific stable IDs. Create and validate the selected correction map with
    `{cli} corrections --task {task_argument} --approve QA-0001 ...` and
    `{cli} dry-run --task {task_argument}`. Only then apply it with
@@ -1300,47 +1335,36 @@ redistribute a scene outside the claim/release commands.
 5. Submit it with `{cli} accept --task {task_argument} --result "<result.json>"`.
 6. Continue until `next` says the current stage is complete, then run
    `{cli} advance --task {task_argument}` and continue the next stage.
-7. When every deep bundle is accepted, run `{cli} finalize --task {task_argument}`. If it
-   reports the `sweep` stage, review the sweep bundles with `next` and `accept`, then run
-   finalize again.
-   Finalization audits exact mappings from the translation quirks and repeated structured UI
-   headers across all proposed corrections. If it reports a conflict, do not present a partial
-   report; reconcile the named deep receipts and run `rebuild-final` until the audit passes.
-8. Before showing findings to the user, perform a final editorial pass over every actionable
-   correction in `findings.json`. Prefer a reviewer who did not author the correction when another
-   reviewer is available. Compare the source, current translation, correction, evidence, and
-   supplied scene context. Confirm publication-ready meaning, natural English, speaker voice,
-   terminology and honorific policy, runtime controls, line breaks, and dialogue or UI fit. Keep
-   this pass scoped to the proposed findings; do not reopen clean inventory records. Do not edit
-   `findings.json` directly. Treat stylistic preference as clean: change a line only when you can
-   name a concrete defect, use the smallest natural correction that resolves it, and withdraw the
-   finding when the current and proposed wordings are merely equally valid stylistic alternatives.
-   For `fluency`, `voice`, and `wordplay`, require a reviewer who did not author the correction to
-   independently confirm the recorded `editorial_basis`: the reader-facing defect, its source or
-   scene support, and why the correction is not merely preferred wording. If independent review is
-   unavailable or does not agree, withdraw the finding as clean before presenting results.
-   If a correction needs revision, revise its corresponding deep result receipt, run
-   `{cli} rebuild-final --task {task_argument} --output-root
-   "<separate-output-root>"`, and repeat this pass on the returned task.
+7. When every deep bundle is accepted, run `{cli} finalize --task {task_argument}`. It moves to
+   the `sweep` stage when an accepted family's rule finds more lines, and then to the
+   `editorial` stage; review those bundles with `next` and `accept` as before, and run finalize
+   again after each stage until it reports `complete`.
+8. The editorial stage is the final pass over every reviewer-written correction before it can be
+   applied. Compare the source, current translation, correction, evidence and nearby game text,
+   and confirm publication-ready meaning, natural English, speaker voice, terminology and
+   honorific policy, runtime controls, line breaks, and dialogue or UI fit. Treat stylistic
+   preference as clean: `accept` a correction that fixes a concrete defect, `revise` it with a
+   `replacement` when a smaller or more natural correction fixes the same defect, and `withdraw`
+   it when the current and proposed wordings are equally valid. For `fluency`, `voice` and
+   `wordplay`, confirm the recorded `editorial_basis` independently; DazedTL never gives those
+   bundles to a worker that wrote one of their corrections. An item's `conflicts` name
+   corrections that contradict each other, the translation quirks, a recorded decision or a
+   structured label: revise until they agree, or accept with a note when the contexts need the
+   difference. Finalize repeats the check and opens another round for conflicts that remain.
+   Return:
+
+```json
+{{"schema":"{EDITORIAL_RESULT_SCHEMA}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{{"id":"QA-0001","verdict":"accept","note":""}},{{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"}},{{"id":"QA-0003","verdict":"withdraw","note":"why"}}]}}
+```
+
+   Record a choice every reviewer must follow, such as narration tense or a quoted label, with
+   `{cli} decide --task {task_argument} --worker "<name>" --key "<topic>" --choice "<choice>"`,
+   adding `--source "<Japanese>" --translation "<English>"` when a correction must use that exact
+   wording; read them with `{cli} decisions --task {task_argument}` before deciding the same
+   kind of question.
 {correction_workflow}
 
    DazedTL applies correction maps atomically and runs regression.
-   If a final editorial adjustment is needed after approval but before applying, write one
-   checksum-recorded review covering every approved finding exactly once, create its delta map
-   with `{cli} editorial-corrections --task {task_argument} --review
-   "<editorial-review.json>"`, then run `editorial-dry-run` and `editorial-apply` instead of the
-   ordinary `apply`. A rejected finding requires fresh user approval; use this route only for an
-   accepted correction or a publication-ready wording revision within the approved finding scope.
-
-   The editorial review format is:
-
-```json
-{{"schema":"{EDITORIAL_REVIEW_SCHEMA}","task":"{task_dir}","reviews":[{{"finding_id":"QA-0001","verdict":"accept"}},{{"finding_id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording."}}]}}
-```
-
-   Every approved finding must occur exactly once. Use `accept` without a `replacement` when the
-   approved correction is unchanged, `revise` with a replacement string for a wording adjustment,
-   or `reject` to stop and obtain fresh approval.
 
 For a screen bundle, inspect every target. A `scene` item contains one complete ordered `lines`
 array; lines with an `id` are required review targets and lines with `context_id` were targeted in
@@ -1603,6 +1627,9 @@ def prepare_task(
                     "bundles": [],
                 },
                 "sweep": {"total_items": 0, "accepted_items": 0, "bundles": []},
+                "editorial": {
+                    "total_items": 0, "accepted_items": 0, "bundles": [], "round": 0,
+                },
                 "findings_file": "",
             }
             _atomic_write_json(staging / "task.json", task)
@@ -1715,6 +1742,18 @@ def status(task_dir: str | Path) -> dict[str, Any]:
                 active=checkpoint["stage"] == "sweep",
             ),
         },
+        "editorial": {
+            "accepted": checkpoint.get("editorial", {}).get("accepted_items", 0),
+            "total": checkpoint.get("editorial", {}).get("total_items", 0),
+            "round": checkpoint.get("editorial", {}).get("round", 0),
+            **_stage_metrics(
+                checkpoint.get("editorial") or {
+                    "bundles": [], "accepted_items": 0, "total_items": 0,
+                },
+                active=checkpoint["stage"] == "editorial",
+            ),
+        },
+        "decisions": len(_decisions(root)),
         "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
     }
@@ -1767,6 +1806,11 @@ def next_bundle(
                 raise ValueError(
                     f"{worker} declined {bundle_id}; another reviewer must claim it"
                 )
+            if worker in (pending.get("authors") or []):
+                raise ValueError(
+                    f"{worker} wrote corrections in {bundle_id}; an independent "
+                    "reviewer must confirm them"
+                )
         else:
             for row in bundles:
                 if row["status"] == "assigned" and row.get("assigned_to") == worker:
@@ -1775,6 +1819,7 @@ def next_bundle(
                 row for row in bundles
                 if row["status"] == "pending"
                 and worker not in (row.get("declined_by") or [])
+                and worker not in (row.get("authors") or [])
             ), None)
         if pending is None:
             return None
@@ -2187,6 +2232,8 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             _validate_screen_result(bundle, result)
         elif stage == "sweep":
             _validate_sweep_result(bundle, result)
+        elif stage == "editorial":
+            _validate_editorial_result(bundle, result, str(row.get("assigned_to") or ""))
         else:
             _validate_deep_result(bundle, result)
         canonical_path = root / "results" / stage / f"{bundle_id}.json"
@@ -2201,7 +2248,7 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         _atomic_write_json(canonical_path, result)
         declined = (
             _declined_items(bundle, result)
-            if stage in {"screen", "sweep"}
+            if stage in {"screen", "sweep", "editorial"}
             else {
                 review["id"]: review["reason"]
                 for review in result["reviews"]
@@ -2546,8 +2593,8 @@ def _declined_scope(
                     reasons[item_id].append(reason)
             for item in _read_json(Path(row["path"]))["items"]:
                 kind = item.get("kind") or stage
-                if stage == "sweep":
-                    # Lines were reviewed; only the sweep's fixes are left out.
+                if stage in {"sweep", "editorial"}:
+                    # Lines were reviewed; only these fixes are left out.
                     pass
                 elif kind == "scene":
                     copies = set(item.get("scene_copies") or [item["scene_id"]])
@@ -2641,9 +2688,11 @@ def _add_sweep_findings(
                 continue
             for candidate in item["candidates"]:
                 if candidate["id"] not in review["rejected"]:
-                    by_cluster[candidate["cluster_id"]].append(
-                        (item, candidate, str(review.get("note") or "").strip())
-                    )
+                    by_cluster[candidate["cluster_id"]].append((
+                        {**item, "reviewer": str(row.get("assigned_to") or "")},
+                        candidate,
+                        str(review.get("note") or "").strip(),
+                    ))
     dropped = []
     for cluster_id, accepted in sorted(by_cluster.items()):
         accepted.sort(key=lambda entry: entry[0]["family_key"])
@@ -2684,6 +2733,11 @@ def _add_sweep_findings(
             "correction": correction,
             "target_identities": targets,
             "sweep_families": sorted({entry[0]["family_key"] for entry in accepted}),
+            "authors": sorted({
+                author
+                for entry in accepted
+                for author in (entry[0].get("author", ""), entry[0]["reviewer"])
+            }),
         })
     return dropped
 
@@ -2694,9 +2748,10 @@ def _add_lint_findings(
     manifest: dict[str, Any],
     declined: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Apply accepted lint fixes on top of deep corrections, or as findings.
+    """Mark reviewer corrections with their lines' accepted lint fixes, which
+    compose after the editorial pass, and add the rest as findings.
 
-    Returns the fixes left out because the combined text would block apply.
+    Returns the fixes left out because the fixed text would block apply.
     """
     records, clusters = _record_maps(manifest)
     titles = lint.title_map(manifest["clusters"])
@@ -2720,6 +2775,9 @@ def _add_lint_findings(
         if remaining:
             parts.append((cluster["live"], remaining, None))
         for base, targets, owner in parts:
+            if owner:
+                owner["lint_families"] = families
+                continue
             composed = lint.compose(cluster["source"], base, families, titles)
             if composed == base:
                 continue
@@ -2739,10 +2797,6 @@ def _add_lint_findings(
                     "families": families,
                     "problems": sorted(set(problems)),
                 })
-                continue
-            if owner:
-                owner["correction"] = composed
-                owner["lint_families"] = families
                 continue
             findings.append({
                 "id": "",
@@ -2935,6 +2989,7 @@ def _sweep_items(
                 },
                 "category": _normalize_category(review.get("category")),
                 "severity": review["severity"],
+                "author": str(row.get("assigned_to") or ""),
             })
     items = []
     for key, family in sorted(families.items()):
@@ -2994,6 +3049,7 @@ def _sweep_items(
                 "category": family["category"],
                 "severity": family["severity"],
                 "example": family["example"],
+                "author": family["author"],
                 "target_count": len(chunk),
                 "candidates": chunk,
             })
@@ -3143,21 +3199,10 @@ def rebuild_deep_from_screen(
     return rebuilt, status(rebuilt)
 
 
-def _finalize_unlocked(
-    task_dir: str | Path, skip_declined: bool = False
+def _draft_document(
+    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
 ) -> dict[str, Any]:
-    root, task, checkpoint = _load_task(task_dir)
-    if checkpoint["stage"] == "screen":
-        raise ValueError("Advance the completed screen stage first")
-    if checkpoint["stage"] == "deep":
-        state = _advance_unlocked(root, skip_declined)
-        if state["stage"] == "sweep":
-            # Reviewers check the family sweep before findings are made.
-            return state
-        root, task, checkpoint = _load_task(root)
-    if checkpoint["stage"] == "sweep":
-        _settle_declined(checkpoint, "sweep", skip_declined)
-    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    """Findings from deep review, the sweep and lint, before the editorial pass."""
     manifest = _read_json(root / "inventory.json")
     records, clusters = _record_maps(manifest)
     declined = _declined_scope(root, checkpoint, manifest)
@@ -3222,6 +3267,7 @@ def _finalize_unlocked(
                     "current": cluster["live"],
                     "correction": review["correction"],
                     "target_identities": target_ids,
+                    "authors": [str(row.get("assigned_to") or "")],
                     **(
                         {"editorial_basis": review["editorial_basis"]}
                         if _normalize_category(review.get("category"))
@@ -3232,17 +3278,17 @@ def _finalize_unlocked(
             elif review["disposition"] == "uncertain-playtest":
                 uncertain.append(review)
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
-    lint_dropped = _add_lint_findings(
+    _add_lint_findings(
         findings, _lint_decisions(checkpoint, declined), manifest, declined
     )
     findings.sort(key=lambda item: (
         {"critical": 0, "high": 1, "medium": 2}[item["severity"]],
         item["cluster_id"],
+        bool(item.get("lint_only")),
     ))
     for index, finding in enumerate(findings, start=1):
         finding["id"] = f"QA-{index:04d}"
     _simulate_apply(findings, records)
-    _audit_final_findings(findings, _read_json(root / "context.json"))
     finding_by_cluster = {
         item["cluster_id"]: item for item in findings
         if not item.get("lint_only") and not item.get("sweep_families")
@@ -3307,16 +3353,33 @@ def _finalize_unlocked(
             "cleared_screen_suspect_ids": cleared_screen_suspects,
             "finding_ids": finding_ids,
         }
-    family_members: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    return {
+        "schema": FINDINGS_SCHEMA,
+        "created_at": _utc_now(),
+        "task_sha256": checkpoint["task_sha256"],
+        "focus": task["focus"],
+        "findings": findings,
+        "uncertain_playtests": uncertain,
+        "motif_families": sorted(motif_families, key=lambda item: item["id"]),
+        # A coverage gap, never a review someone must attest: what reviewers
+        # declined and the lines nobody judged.
+        "declined": declined["items"],
+        "not_reviewed": _not_reviewed(declined, records),
+        "sweep_dropped": sweep_dropped,
+    }
+
+
+def _finding_families(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    members_by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
         if finding["family_key"]:
-            family_members[finding["family_key"]].append(finding)
-    finding_families = []
-    for family_key, members in sorted(family_members.items()):
+            members_by_key[finding["family_key"]].append(finding)
+    families = []
+    for family_key, members in sorted(members_by_key.items()):
         if len(members) < 2:
             continue
-        finding_families.append({
-            "id": f"QAF-{len(finding_families) + 1:04d}",
+        families.append({
+            "id": f"QAF-{len(families) + 1:04d}",
             "family_key": family_key,
             "severity": min(
                 (item["severity"] for item in members),
@@ -3328,250 +3391,417 @@ def _finalize_unlocked(
                 len(item["target_identities"]) for item in members
             ),
         })
+    return families
+
+
+def _needs_editorial(finding: dict[str, Any]) -> bool:
+    """Reviewer-written corrections get the editorial pass; group-reviewed
+    mechanical fixes only when a conflict names them."""
+    return not finding.get("lint_only") and (
+        not finding.get("sweep_families")
+        or finding["category"] in EDITORIAL_JUDGMENT_CATEGORIES
+    )
+
+
+def _editorial_items(
+    root: Path,
+    checkpoint: dict[str, Any],
+    findings: list[dict[str, Any]],
+    conflicts: dict[str, list[dict[str, str]]],
+) -> list[dict[str, Any]]:
+    """One editorial item per finding to confirm, with its nearby game text."""
+    task = _read_json(root / "task.json")
+    records, _clusters = _record_maps(_read_json(root / "inventory.json"))
+    data_root = Path(task["data_root"])
+    nearby: dict[str, list[dict]] = {}
+    for row in checkpoint["deep"]["bundles"]:
+        if row["status"] == "accepted":
+            for item in _read_json(Path(row["path"]))["items"]:
+                nearby[item["id"]] = item.get("nearby_commands") or []
+    cache: dict[str, Any] = {}
+    items = []
+    for finding in findings:
+        if finding["id"] not in conflicts and not _needs_editorial(finding):
+            continue
+        targets = [records[identity] for identity in finding["target_identities"]]
+        judgment = finding["category"] in EDITORIAL_JUDGMENT_CATEGORIES
+        items.append({
+            "kind": "editorial",
+            "id": finding["id"],
+            "ordinal": len(items) + 1,
+            "finding": {
+                key: finding[key]
+                for key in (
+                    "severity", "category", "family_key", "evidence", "source",
+                    "current", "correction", "editorial_basis", "sweep_families",
+                )
+                if key in finding
+            },
+            "occurrences": len(targets),
+            "targets": [{
+                "identity": record["identity"],
+                "event_code": record.get("event_code"),
+                "live_pointers": record["live_pointers"],
+                "live_transform": record["live_transform"],
+            } for record in targets],
+            "nearby_commands": nearby.get(finding["cluster_id"])
+            or _nearby_commands(data_root, targets[0], cache),
+            **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
+            # The authors of a judgment correction cannot confirm it.
+            "authors": sorted(set(finding.get("authors") or []) - {""}) if judgment else [],
+        })
+    return items
+
+
+def _open_editorial_round(
+    root: Path,
+    checkpoint: dict[str, Any],
+    findings: list[dict[str, Any]],
+    conflicts: dict[str, list[dict[str, str]]],
+) -> bool:
+    """Add one editorial round's bundles; False when nothing needs it."""
+    items = _editorial_items(root, checkpoint, findings, conflicts)
+    if not items:
+        return False
+    editorial = checkpoint.setdefault(
+        "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
+    )
+    editorial["round"] = int(editorial.get("round", 0)) + 1
+    first = len(editorial["bundles"]) + 1
+    judged = [item for item in items if item["authors"]]
+    rest = [item for item in items if not item["authors"]]
+    bundles = []
+    for group in (judged, rest):
+        if group:
+            bundles += _bundle_items(
+                group,
+                stage="editorial",
+                char_budget=DEFAULT_DEEP_CHAR_BUDGET,
+                item_limit=DEFAULT_DEEP_ITEM_LIMIT,
+                first=first + len(bundles),
+            )
+    rows = _write_bundles(root, bundles)
+    for row, bundle in zip(rows, bundles, strict=True):
+        row["round"] = editorial["round"]
+        row["authors"] = sorted({
+            author for item in bundle["items"] for author in item["authors"]
+        })
+    editorial["bundles"] += rows
+    editorial["total_items"] += sum(row["item_count"] for row in rows)
+    checkpoint["stage"] = "editorial"
+    return True
+
+
+def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
+    if result.get("schema") != EDITORIAL_RESULT_SCHEMA:
+        raise QAResultError("Editorial result has the wrong schema")
+    declined = _declined_items(bundle, result)
+    expected = {
+        item["id"]: item for item in bundle["items"] if item["id"] not in declined
+    }
+    reviews = result.get("reviews")
+    if not isinstance(reviews, list) or not all(
+        isinstance(review, dict) for review in reviews
+    ):
+        raise QAResultError("Editorial result reviews must be a list of objects")
+    reviewed = [str(review.get("id") or "") for review in reviews]
+    if len(reviewed) != len(set(reviewed)) or set(reviewed) != set(expected):
+        raise QAResultError("Editorial result must review every assigned finding once")
+    for review in reviews:
+        identity = review["id"]
+        item = expected[identity]
+        verdict = review.get("verdict")
+        if verdict not in EDITORIAL_VERDICTS:
+            raise QAResultError(f"Invalid editorial verdict for {identity}")
+        if worker in item["authors"]:
+            raise QAResultError(
+                f"An independent reviewer must confirm {identity}, not its author"
+            )
+        note = str(review.get("note") or "").strip()
+        if not note and (verdict != "accept" or item.get("conflicts")):
+            raise QAResultError(f"Editorial review needs a note for {identity}")
+        replacement = review.get("replacement")
+        if verdict != "revise":
+            if replacement is not None:
+                raise QAResultError(f"Only a revision has a replacement: {identity}")
+            continue
+        finding = item["finding"]
+        if not isinstance(replacement, str) or not replacement.strip():
+            raise QAResultError(f"A revision needs its replacement text: {identity}")
+        for target in item["targets"]:
+            problems = correction_problems(
+                finding["source"], finding["current"], replacement,
+                target["event_code"], target["live_pointers"], target["live_transform"],
+            )
+            if problems:
+                raise QAResultError(
+                    f"The revision of {identity} would block apply: "
+                    + "; ".join(problems)
+                )
+
+
+def _compose_lint(
+    findings: list[dict[str, Any]], records: dict[str, dict[str, Any]], titles: dict
+) -> list[dict[str, Any]]:
+    """Apply accepted lint fixes on top of final corrections; returns those
+    left out because the combined text would block apply."""
+    dropped = []
+    for finding in findings:
+        families = finding.get("lint_families")
+        if not families or finding.get("lint_only"):
+            continue
+        composed = lint.compose(
+            finding["source"], finding["correction"], families, titles
+        )
+        problems = sorted({
+            problem
+            for identity in finding["target_identities"]
+            for problem in correction_problems(
+                records[identity]["source"], records[identity]["live"], composed,
+                records[identity].get("event_code"), records[identity]["live_pointers"],
+                records[identity]["live_transform"],
+            )
+        })
+        if problems:
+            dropped.append({"id": finding["id"], "families": families, "problems": problems})
+        else:
+            finding["correction"] = composed
+    return dropped
+
+
+def _complete_editorial(
+    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
+) -> dict[str, Any]:
+    """Apply editorial verdicts, then finish or open another round for conflicts."""
+    draft = _read_json(root / "draft-findings.json")
+    manifest = _read_json(root / "inventory.json")
+    records, _clusters = _record_maps(manifest)
+    titles = lint.title_map(manifest["clusters"])
+    editorial = checkpoint.get("editorial") or {"bundles": []}
+    verdicts: dict[str, dict[str, Any]] = {}
+    shown: dict[str, dict[str, Any]] = {}
+    set_aside: set[str] = set()
+    for row in editorial["bundles"]:
+        items = _read_json(Path(row["path"]))["items"]
+        if row["status"] == "set-aside":
+            set_aside |= {item["id"] for item in items}
+            continue
+        if row["status"] != "accepted":
+            continue
+        for review in _read_json(Path(row["result_path"]))["reviews"]:
+            verdicts[review["id"]] = {**review, "reviewer": row.get("assigned_to") or ""}
+        shown.update({item["id"]: item for item in items})
+    acks = editorial.setdefault("acks", {})
+    for identity, item in shown.items():
+        if verdicts.get(identity, {}).get("verdict") == "accept":
+            for conflict in item.get("conflicts") or []:
+                if conflict["kind"] == "soft":
+                    acks[f"{conflict['key']}:{identity}"] = conflict["signature"]
+    final, withdrawn, unverified = [], [], []
+    for finding in draft["findings"]:
+        identity = finding["id"]
+        verdict = verdicts.get(identity)
+        if identity in set_aside and verdict is None:
+            unverified.append({"id": identity, "reason": "declined by editorial reviewers"})
+            continue
+        if verdict is None and _needs_editorial(finding):
+            raise ValueError(f"{identity} has no editorial review yet")
+        if verdict and verdict["verdict"] == "withdraw":
+            withdrawn.append({
+                "id": identity, "note": verdict["note"], "reviewer": verdict["reviewer"],
+            })
+            if finding.get("lint_families"):
+                # The line still gets the mechanical fixes it was given.
+                final.append({
+                    **{key: finding[key] for key in (
+                        "cluster_id", "source", "current", "target_identities",
+                        "lint_families",
+                    )},
+                    "id": "",
+                    "severity": "medium",
+                    "category": "formatting",
+                    "family_key": finding["lint_families"][0],
+                    "evidence": " ".join(
+                        lint.FAMILIES[family]["description"]
+                        for family in finding["lint_families"]
+                    ),
+                    "correction": finding["current"],
+                    "lint_only": True,
+                })
+            continue
+        finding = dict(finding)
+        if verdict:
+            if verdict["verdict"] == "revise":
+                finding["correction"] = verdict["replacement"]
+            finding["editorial"] = {
+                "verdict": verdict["verdict"],
+                "note": str(verdict.get("note") or ""),
+                "reviewer": verdict["reviewer"],
+            }
+        final.append(finding)
+    numbers = [int(row["id"].split("-")[1]) for row in draft["findings"]]
+    lint_dropped = []
+    for finding in final:
+        if finding["id"]:
+            continue
+        numbers.append(max(numbers, default=0) + 1)
+        finding["id"] = f"QA-{numbers[-1]:04d}"
+        composed = lint.compose(
+            finding["source"], finding["current"], finding["lint_families"], titles
+        )
+        problems = sorted({
+            problem
+            for identity in finding["target_identities"]
+            for problem in correction_problems(
+                records[identity]["source"], records[identity]["live"], composed,
+                records[identity].get("event_code"), records[identity]["live_pointers"],
+                records[identity]["live_transform"],
+            )
+        })
+        if problems:
+            lint_dropped.append({
+                "id": finding["id"], "families": finding["lint_families"],
+                "problems": problems,
+            })
+        else:
+            finding["correction"] = composed
+    lint_dropped += _compose_lint(final, records, titles)
+    final = [finding for finding in final if finding["correction"] != finding["current"]]
+    conflicts = _consistency_conflicts(
+        final, _read_json(root / "context.json"), _decisions(root)
+    )
+    open_conflicts = {
+        identity: [
+            conflict for conflict in found
+            if conflict["kind"] == "hard"
+            or acks.get(f"{conflict['key']}:{identity}") != conflict.get("signature")
+        ]
+        for identity, found in conflicts.items()
+    }
+    open_conflicts = {key: value for key, value in open_conflicts.items() if value}
+    if open_conflicts and int(editorial.get("round", 0)) < EDITORIAL_ROUND_LIMIT:
+        _open_editorial_round(
+            root,
+            checkpoint,
+            [finding for finding in final if finding["id"] in open_conflicts],
+            open_conflicts,
+        )
+        return checkpoint
+    for finding in final:
+        if finding["id"] in open_conflicts:
+            unverified.append({
+                "id": finding["id"],
+                "reason": "conflicting corrections stayed unresolved: "
+                + "; ".join(conflict["message"] for conflict in open_conflicts[finding["id"]]),
+            })
+    final = [finding for finding in final if finding["id"] not in open_conflicts]
+    _simulate_apply(final, records)
     document = {
-        "schema": FINDINGS_SCHEMA,
+        **draft,
         "created_at": _utc_now(),
-        "task_sha256": checkpoint["task_sha256"],
-        "focus": task["focus"],
-        "coverage": status(root),
-        "findings": findings,
-        "finding_families": finding_families,
-        "uncertain_playtests": uncertain,
-        "motif_families": sorted(motif_families, key=lambda item: item["id"]),
-        # A coverage gap, never a review someone must attest: what reviewers
-        # declined and the lines nobody judged.
-        "declined": declined["items"],
-        "not_reviewed": _not_reviewed(declined, records),
+        "findings": final,
+        "finding_families": _finding_families(final),
+        "withdrawn": withdrawn,
+        "unverified": unverified,
         "lint_dropped": lint_dropped,
-        "sweep_dropped": sweep_dropped,
+        "editorial_rounds": int(editorial.get("round", 0)),
     }
     findings_path = root / "findings.json"
-    _atomic_write_json(findings_path, document)
     checkpoint["stage"] = "complete"
     checkpoint["findings_file"] = str(findings_path)
     checkpoint["updated_at"] = _utc_now()
     _atomic_write_json(root / "checkpoint.json", checkpoint)
+    document["coverage"] = status(root)
+    _atomic_write_json(findings_path, document)
+    return checkpoint
+
+
+def _finalize_unlocked(
+    task_dir: str | Path, skip_declined: bool = False
+) -> dict[str, Any]:
+    root, task, checkpoint = _load_task(task_dir)
+    if checkpoint["stage"] == "screen":
+        raise ValueError("Advance the completed screen stage first")
+    if checkpoint["stage"] == "deep":
+        state = _advance_unlocked(root, skip_declined)
+        if state["stage"] == "sweep":
+            # Reviewers check the family sweep before findings are made.
+            return state
+        root, task, checkpoint = _load_task(root)
+    if checkpoint["stage"] in {"sweep", "ready-finalize"}:
+        if checkpoint["stage"] == "sweep":
+            _settle_declined(checkpoint, "sweep", skip_declined)
+        draft = _draft_document(root, task, checkpoint)
+        _atomic_write_json(root / "draft-findings.json", draft)
+        conflicts = _consistency_conflicts(
+            draft["findings"], _read_json(root / "context.json"), _decisions(root)
+        )
+        if not _open_editorial_round(root, checkpoint, draft["findings"], conflicts):
+            checkpoint["editorial"] = checkpoint.get("editorial") or {
+                "total_items": 0, "accepted_items": 0, "bundles": [], "round": 0,
+            }
+            _complete_editorial(root, task, checkpoint)
+            return status(root)
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        return status(root)
+    if checkpoint["stage"] == "editorial":
+        _settle_declined(checkpoint, "editorial", skip_declined)
+        _complete_editorial(root, task, checkpoint)
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
     return status(root)
+
+
+def _decisions(root: Path) -> list[dict[str, Any]]:
+    """The decision log's current entries, the latest one per key."""
+    path = root / "decisions.json"
+    if not path.is_file():
+        return []
+    latest: dict[str, dict[str, Any]] = {}
+    for entry in _read_json(path).get("decisions") or []:
+        latest[entry["key"]] = entry
+    return sorted(latest.values(), key=lambda entry: entry["key"])
+
+
+def record_decision(
+    task_dir: str | Path,
+    key: str,
+    choice: str,
+    worker: str,
+    source: str = "",
+    translation: str = "",
+) -> list[dict[str, Any]]:
+    """Record a choice every reviewer follows, such as narration tense or a
+    quoted label; with a source and translation it is also checked."""
+    root = Path(task_dir).expanduser().resolve()
+    key, choice = str(key).strip(), str(choice).strip()
+    if not 0 < len(key) <= 120 or not 0 < len(choice) <= 500 or "\n" in key + choice:
+        raise ValueError("A decision needs a one-line key and choice")
+    if bool(source) != bool(translation):
+        raise ValueError("A checked decision needs both its source and translation")
+    with _task_lock(root):
+        _load_task(root)
+        path = root / "decisions.json"
+        document = (
+            _read_json(path) if path.is_file()
+            else {"schema": "rpgmaker-qa-decisions-v1", "decisions": []}
+        )
+        document["decisions"].append({
+            "key": key,
+            "choice": choice,
+            "worker": str(worker or ""),
+            "at": _utc_now(),
+            **({"source": source, "translation": translation} if source else {}),
+        })
+        _atomic_write_json(path, document)
+    return _decisions(root)
 
 
 def finalize(task_dir: str | Path, skip_declined: bool = False) -> dict[str, Any]:
     root = Path(task_dir).expanduser().resolve()
     with _task_lock(root):
         return _finalize_unlocked(root, skip_declined)
-
-
-def rebuild_findings_from_results(
-    source_task_dir: str | Path, output_root: str | Path | None = None
-) -> tuple[Path, dict[str, Any]]:
-    """Re-finalize a completed task by replaying compatible deep receipts."""
-    source = Path(source_task_dir).expanduser().resolve()
-    source_task = _read_json(source / "task.json")
-    source_checkpoint = _read_json(source / "checkpoint.json")
-    if (
-        source_task.get("schema") != TASK_SCHEMA
-        or source_checkpoint.get("schema") != CHECKPOINT_SCHEMA
-        or source_checkpoint.get("task_sha256")
-        != _sha256(_canonical_bytes(source_task))
-    ):
-        raise ValueError(f"Unsupported or corrupt source QA task: {source}")
-    source_rows = source_checkpoint["deep"]["bundles"]
-    if (
-        not source_rows
-        or any(row.get("status") != "accepted" for row in source_rows)
-        or source_checkpoint["deep"]["accepted_items"]
-        != source_checkpoint["deep"]["total_items"]
-    ):
-        raise ValueError("The source task must have a fully accepted deep stage")
-
-    current_manifest = build_manifest(source_task["data_root"], source_task["focus"])
-    validation = verify_manifest(source_task["data_root"], current_manifest)
-    if not validation["valid"]:
-        raise ValueError(
-            "Current QA inventory validation failed: "
-            + "; ".join(validation.get("errors") or [])
-        )
-    source_manifest = _read_json(source / "inventory.json")
-    current_context = _context_pack(
-        Path(source_task["game_root"]),
-        (
-            str(record.get("source") or "")
-            for record in current_manifest["records"]
-        ),
-    )
-    mechanical_only_change = (
-        current_manifest["content_sha256"] != source_task.get("manifest_sha256")
-        and _semantic_manifest_sha256(current_manifest)
-        == _semantic_manifest_sha256(source_manifest)
-        and current_context["content_sha256"] == source_task.get("context_sha256")
-    )
-    if mechanical_only_change:
-        return _rebuild_final_from_frozen_semantics(
-            source,
-            source_task,
-            source_checkpoint,
-            current_manifest,
-            output_root,
-        )
-
-    destination_root = (
-        Path(output_root).expanduser().resolve()
-        if output_root is not None
-        else source.parents[2]
-    )
-    rebuilt, rebuilt_state = rebuild_deep_from_screen(source, destination_root)
-    if rebuilt_state["stage"] == "complete":
-        return rebuilt, rebuilt_state
-    if rebuilt_state["stage"] != "deep":
-        raise ValueError("The rebuilt task did not reach deep review")
-
-    _rebuilt_root, _rebuilt_task, rebuilt_checkpoint = _load_task(rebuilt)
-    source_summaries = {
-        row["id"]: (row["sha256"], int(row["item_count"]))
-        for row in source_rows
-    }
-    rebuilt_summaries = {
-        row["id"]: (row["sha256"], int(row["item_count"]))
-        for row in rebuilt_checkpoint["deep"]["bundles"]
-    }
-    if rebuilt_summaries != source_summaries:
-        raise ValueError("Current deep bundles differ; deep review cannot be reused")
-
-    for row in source_rows:
-        bundle_path = source / "bundles" / "deep" / f"{row['id']}.json"
-        result_path = source / "results" / "deep" / f"{row['id']}.json"
-        bundle = _read_json(bundle_path)
-        checksum_value = dict(bundle)
-        claimed = checksum_value.pop("content_sha256", "")
-        if (
-            bundle.get("schema") != BUNDLE_SCHEMA
-            or bundle.get("stage") != "deep"
-            or bundle.get("bundle_id") != row["id"]
-            or claimed != row.get("sha256")
-            or claimed != _sha256(_canonical_bytes(checksum_value))
-        ):
-            raise ValueError(f"Source deep bundle checksum is invalid: {row['id']}")
-        result = _read_json(result_path)
-        if result.get("bundle_sha256") != claimed:
-            raise ValueError(f"Source deep result checksum is invalid: {row['id']}")
-        _validate_deep_result(bundle, result)
-        accept_result(rebuilt, result_path)
-    return rebuilt, finalize(rebuilt)
-
-
-def _validate_completed_receipts(
-    source: Path, checkpoint: dict[str, Any]
-) -> list[str]:
-    """Validate immutable bundles/results and return their content fingerprints."""
-    fingerprints = []
-    for stage in ("screen", "deep"):
-        for row in checkpoint[stage]["bundles"]:
-            bundle_path = source / "bundles" / stage / f"{row['id']}.json"
-            result_path = source / "results" / stage / f"{row['id']}.json"
-            if bundle_path.is_symlink() or result_path.is_symlink():
-                raise ValueError(f"QA receipt cannot be a symbolic link: {row['id']}")
-            bundle = _read_json(bundle_path)
-            checksum_value = dict(bundle)
-            claimed = checksum_value.pop("content_sha256", "")
-            if (
-                bundle.get("schema") != BUNDLE_SCHEMA
-                or bundle.get("stage") != stage
-                or bundle.get("bundle_id") != row["id"]
-                or claimed != row.get("sha256")
-                or claimed != _sha256(_canonical_bytes(checksum_value))
-            ):
-                raise ValueError(f"Source {stage} bundle checksum is invalid: {row['id']}")
-            result = _read_json(result_path)
-            if result.get("bundle_sha256") != claimed:
-                raise ValueError(f"Source {stage} result checksum is invalid: {row['id']}")
-            if stage == "screen":
-                _validate_screen_result(bundle, result)
-            else:
-                _validate_deep_result(bundle, result)
-            fingerprints.append(_sha256(result_path.read_bytes()))
-    return fingerprints
-
-
-def _rebuild_final_from_frozen_semantics(
-    source: Path,
-    source_task: dict[str, Any],
-    source_checkpoint: dict[str, Any],
-    current_manifest: dict[str, Any],
-    output_root: str | Path | None,
-) -> tuple[Path, dict[str, Any]]:
-    """Re-finalize after a detector-only change without replaying semantic review."""
-    receipt_fingerprints = _validate_completed_receipts(source, source_checkpoint)
-    game = Path(source_task["game_root"]).resolve()
-    destination_root = (
-        Path(output_root).expanduser().resolve()
-        if output_root is not None
-        else source.parents[2]
-    )
-    storage = _safe_task_root(destination_root, game)
-    engine_fingerprint = _engine_fingerprint()
-    migration_key = _sha256(_canonical_bytes({
-        "kind": "mechanical-evidence-only-final-rebuild-v1",
-        "engine_fingerprint": engine_fingerprint,
-        "source_task_sha256": source_checkpoint["task_sha256"],
-        "current_manifest_sha256": current_manifest["content_sha256"],
-        "receipt_fingerprints": receipt_fingerprints,
-    }))[:16]
-    task_parent = storage / _slug(game.name) / source_task["focus"]
-    task_parent.mkdir(parents=True, exist_ok=True)
-    rebuilt = task_parent / migration_key
-    with _task_lock(task_parent):
-        if (rebuilt / "task.json").is_file():
-            return rebuilt, status(rebuilt)
-        staging = Path(tempfile.mkdtemp(prefix=f".{migration_key}.", dir=task_parent))
-        try:
-            for name in (
-                "inventory.json",
-                "inventory-validation.json",
-                "context.json",
-                "screen-index.json",
-            ):
-                path = source / name
-                if path.is_symlink() or not path.is_file():
-                    raise ValueError(f"Invalid frozen QA task file: {path}")
-                shutil.copy2(path, staging / name)
-            for name in ("bundles", "results"):
-                folder = source / name
-                if any(path.is_symlink() for path in folder.rglob("*")):
-                    raise ValueError(f"Frozen QA task contains a symbolic link: {folder}")
-                shutil.copytree(folder, staging / name)
-
-            task = dict(source_task)
-            task["created_at"] = _utc_now()
-            task["engine_fingerprint"] = engine_fingerprint
-            task["rebuilt_from"] = {
-                "kind": "mechanical-evidence-only-final-rebuild-v1",
-                "source_task": str(source),
-                "source_task_sha256": source_checkpoint["task_sha256"],
-                "current_manifest_sha256": current_manifest["content_sha256"],
-            }
-            checkpoint = json.loads(json.dumps(source_checkpoint))
-            checkpoint["stage"] = "ready-finalize"
-            checkpoint["findings_file"] = ""
-            checkpoint["updated_at"] = _utc_now()
-            for stage in ("screen", "deep"):
-                for row in checkpoint[stage]["bundles"]:
-                    row["path"] = str(
-                        rebuilt / "bundles" / stage / f"{row['id']}.json"
-                    )
-                    row["result_path"] = str(
-                        rebuilt / "results" / stage / f"{row['id']}.json"
-                    )
-            checkpoint["task_sha256"] = _sha256(_canonical_bytes(task))
-            _atomic_write_json(staging / "task.json", task)
-            _atomic_write_json(staging / "checkpoint.json", checkpoint)
-            _atomic_write_text(
-                staging / "README.md", _task_instructions(rebuilt, task)
-            )
-            staging.replace(rebuilt)
-        except Exception:
-            if staging.is_dir() and not staging.is_symlink():
-                shutil.rmtree(staging)
-            raise
-    return rebuilt, finalize(rebuilt)
 
 
 def _set_pointer(document: Any, pointer: str, value: str) -> None:
@@ -3653,199 +3883,6 @@ def create_release_correction_map(
         )
     finding_ids = [item["id"] for item in findings_doc.get("findings") or []]
     return create_correction_map(root, finding_ids)
-
-
-def _load_editorial_migration_source(
-    task_dir: str | Path,
-) -> tuple[Path, dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Load a completed frozen task without relaxing the normal fingerprint guard."""
-    root = Path(task_dir).expanduser().resolve()
-    required = [
-        root / "task.json",
-        root / "checkpoint.json",
-        root / "inventory.json",
-        root / "findings.json",
-        root / "correction-map.json",
-    ]
-    for path in required:
-        if path.is_symlink() or not path.is_file():
-            raise ValueError(f"Invalid frozen QA task file: {path}")
-
-    task = _read_json(root / "task.json")
-    checkpoint = _read_json(root / "checkpoint.json")
-    if (
-        task.get("schema") != TASK_SCHEMA
-        or checkpoint.get("schema") != CHECKPOINT_SCHEMA
-        or checkpoint.get("task_sha256") != _sha256(_canonical_bytes(task))
-    ):
-        raise ValueError(f"Unsupported or corrupt frozen QA task: {root}")
-    if checkpoint.get("stage") != "complete":
-        raise ValueError("Editorial migration requires a completed QA task")
-    for stage in ("screen", "deep"):
-        state = checkpoint.get(stage) or {}
-        rows = state.get("bundles") or []
-        if (
-            any(row.get("status") != "accepted" for row in rows)
-            or int(state.get("accepted_items", -1)) != int(state.get("total_items", -2))
-        ):
-            raise ValueError(f"Editorial migration requires complete {stage} receipts")
-    _validate_completed_receipts(root, checkpoint)
-
-    manifest = _read_json(root / "inventory.json")
-    manifest_checksum_value = dict(manifest)
-    claimed_manifest_checksum = manifest_checksum_value.pop("content_sha256", "")
-    if (
-        claimed_manifest_checksum != _sha256(_canonical_bytes(manifest_checksum_value))
-        or claimed_manifest_checksum != task.get("manifest_sha256")
-    ):
-        raise ValueError("Frozen QA inventory does not match its task")
-    findings = _read_json(root / "findings.json")
-    if (
-        findings.get("schema") != FINDINGS_SCHEMA
-        or findings.get("task_sha256") != checkpoint.get("task_sha256")
-    ):
-        raise ValueError("Frozen QA findings do not match their task")
-
-    correction_map = _read_json(root / "correction-map.json")
-    checksum_value = dict(correction_map)
-    claimed_checksum = checksum_value.pop("content_sha256", "")
-    if (
-        correction_map.get("schema") != CORRECTION_MAP_SCHEMA
-        or claimed_checksum != _sha256(_canonical_bytes(checksum_value))
-        or correction_map.get("manifest_sha256") != task.get("manifest_sha256")
-    ):
-        raise ValueError("Frozen approved correction map is invalid")
-    finding_ids = {item["id"] for item in findings.get("findings") or []}
-    approved_ids = set(correction_map.get("approved_finding_ids") or [])
-    if not approved_ids or not approved_ids <= finding_ids:
-        raise ValueError("Frozen approved correction map has invalid finding coverage")
-    return root, task, checkpoint, correction_map
-
-
-def create_editorial_correction_map(
-    task_dir: str | Path, editorial_review_path: str | Path
-) -> dict[str, Any]:
-    """Create a strict delta map from a completed final-editorial review."""
-    root, task, _checkpoint, base_map = _load_editorial_migration_source(task_dir)
-    review_path = Path(editorial_review_path).expanduser().resolve()
-    if review_path.is_symlink() or not review_path.is_file():
-        raise ValueError(f"Invalid editorial review file: {review_path}")
-    review_document = _read_json(review_path)
-    if review_document.get("schema") != EDITORIAL_REVIEW_SCHEMA:
-        raise ValueError("Editorial review has an unsupported schema")
-    recorded_task = str(review_document.get("task") or "")
-    if recorded_task and Path(recorded_task).expanduser().resolve() != root:
-        raise ValueError("Editorial review names a different QA task")
-
-    decisions: dict[str, dict[str, Any]] = {}
-    for review in review_document.get("reviews") or []:
-        finding_id = str(review.get("finding_id") or "")
-        if not finding_id or finding_id in decisions:
-            raise ValueError("Editorial review finding IDs must be nonempty and unique")
-        verdict = review.get("verdict")
-        replacement = review.get("replacement")
-        if verdict not in {"accept", "revise", "reject"}:
-            raise ValueError(f"Unsupported editorial verdict for {finding_id}")
-        if verdict == "accept" and replacement is not None:
-            raise ValueError(f"Accepted editorial review must not replace {finding_id}")
-        if verdict == "revise" and (
-            not isinstance(replacement, str) or not replacement
-        ):
-            raise ValueError(f"Revised editorial review needs text for {finding_id}")
-        decisions[finding_id] = review
-
-    approved_ids = set(base_map["approved_finding_ids"])
-    if set(decisions) != approved_ids:
-        raise ValueError("Editorial review must cover every approved finding exactly once")
-    counts = {
-        "approved_findings": len(decisions),
-        "accepted_as_written": sum(
-            review["verdict"] == "accept" for review in decisions.values()
-        ),
-        "revisions_required": sum(
-            review["verdict"] == "revise" for review in decisions.values()
-        ),
-        "rejected": sum(review["verdict"] == "reject" for review in decisions.values()),
-    }
-    for key, expected in counts.items():
-        if key in review_document and int(review_document[key]) != expected:
-            raise ValueError(f"Editorial review count is inconsistent: {key}")
-    if counts["rejected"]:
-        raise ValueError("Rejected editorial findings require new user approval")
-
-    data_root = Path(task["data_root"]).resolve()
-    documents: dict[str, Any] = {}
-    operations = []
-    for operation in base_map.get("operations") or []:
-        finding_id = operation["finding_id"]
-        filename = operation["file"]
-        path = (data_root / filename).resolve()
-        if data_root not in path.parents or not path.is_file() or path.is_symlink():
-            raise ValueError(f"Unsafe editorial correction target: {path}")
-        if filename not in documents:
-            documents[filename] = json.loads(path.read_text(encoding="utf-8-sig"))
-        values = _operation_values(documents[filename], operation)
-        current = "\n".join(values)
-        if operation["live_transform"] == "quoted-string":
-            match = _QUOTED_VALUE_RE.search(current)
-            current = match.group(2) if match else current
-        if current not in {operation["expected"], operation["replacement"]}:
-            raise ValueError(
-                f"Live value is outside the frozen approval states: {operation['identity']}"
-            )
-        decision = decisions[finding_id]
-        final_replacement = (
-            decision["replacement"]
-            if decision["verdict"] == "revise"
-            else operation["replacement"]
-        )
-        if current == final_replacement:
-            continue
-        revised = dict(operation)
-        revised["expected"] = current
-        revised["replacement"] = final_replacement
-        operations.append(revised)
-
-    editorial_map = {
-        "schema": CORRECTION_MAP_SCHEMA,
-        "mode": "final-editorial-delta",
-        "created_at": _utc_now(),
-        "manifest_sha256": task["manifest_sha256"],
-        "base_correction_map_sha256": base_map["content_sha256"],
-        "editorial_review_sha256": _sha256(review_path.read_bytes()),
-        "approved_finding_ids": sorted(approved_ids),
-        "operations": operations,
-    }
-    editorial_map["content_sha256"] = _sha256(_canonical_bytes(editorial_map))
-    _atomic_write_json(root / "editorial-correction-map.json", editorial_map)
-    return editorial_map
-
-
-def _load_editorial_correction_map(
-    task_dir: str | Path,
-) -> tuple[Path, dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Load an editorial delta only when it remains tied to its approved map."""
-    root, task, checkpoint, base_map = _load_editorial_migration_source(task_dir)
-    path = root / "editorial-correction-map.json"
-    if path.is_symlink() or not path.is_file():
-        raise ValueError(f"Invalid editorial correction map: {path}")
-    editorial_map = _read_json(path)
-    _validate_correction_map(editorial_map, task)
-    if editorial_map.get("mode") != "final-editorial-delta":
-        raise ValueError("Editorial correction map has an unsupported mode")
-    if editorial_map.get("base_correction_map_sha256") != base_map.get("content_sha256"):
-        raise ValueError("Editorial correction map does not match approved corrections")
-    if set(editorial_map.get("approved_finding_ids") or []) != set(
-        base_map.get("approved_finding_ids") or []
-    ):
-        raise ValueError("Editorial correction map does not match approved finding IDs")
-    approved_ids = set(base_map.get("approved_finding_ids") or [])
-    if any(
-        operation.get("finding_id") not in approved_ids
-        for operation in editorial_map.get("operations") or []
-    ):
-        raise ValueError("Editorial correction map contains an unapproved finding")
-    return root, task, checkpoint, base_map, editorial_map
 
 
 def _operation_values(document: Any, operation: dict) -> list[str]:
@@ -3982,19 +4019,6 @@ def dry_run_correction_map(task_dir: str | Path) -> dict[str, Any]:
     )
 
 
-def dry_run_editorial_correction_map(task_dir: str | Path) -> dict[str, Any]:
-    """Validate a frozen task's editorial delta without writing game files."""
-    root, task, _checkpoint, _base_map, editorial_map = _load_editorial_correction_map(
-        task_dir
-    )
-    return _dry_run_loaded_correction_map(
-        root,
-        task,
-        editorial_map,
-        "editorial-correction-dry-run.json",
-    )
-
-
 def _render_json_like(raw: bytes, document: Any) -> bytes:
     """Render JSON using the file's existing BOM, indentation, and final newline."""
     has_bom = raw.startswith(b"\xef\xbb\xbf")
@@ -4122,29 +4146,6 @@ def apply_correction_map(task_dir: str | Path) -> dict[str, Any]:
     )
 
 
-def apply_editorial_correction_map(task_dir: str | Path) -> dict[str, Any]:
-    """Apply a completed frozen task's validated final-editorial delta."""
-    root, task, _checkpoint, _base_map, editorial_map = _load_editorial_correction_map(
-        task_dir
-    )
-    before = build_manifest(task["data_root"], task["focus"])
-    validation = verify_manifest(task["data_root"], before)
-    if not validation["valid"]:
-        raise ValueError(
-            "Current QA inventory validation failed: "
-            + "; ".join(validation.get("errors") or [])
-        )
-    return _apply_loaded_correction_map(
-        root,
-        task,
-        editorial_map,
-        before,
-        dry_run_name="editorial-correction-dry-run.json",
-        regression_name="editorial-regression.json",
-        nonblocking_introduced_flags=APPROVED_NONBLOCKING_MECHANICAL_FLAGS,
-    )
-
-
 def _regression_check_loaded(
     task: dict[str, Any],
     before: dict[str, Any],
@@ -4227,43 +4228,3 @@ def find_latest_task(
     return max(tasks, key=lambda path: path.stat().st_mtime) if tasks else None
 
 
-def find_latest_completed_task(
-    output_root: str | Path, game_root: str | Path, focus: str
-) -> Path | None:
-    """Find a completed pass even when newer QA rules make its status stale."""
-    game = Path(game_root).expanduser().resolve()
-    base = Path(output_root).expanduser().resolve() / _slug(game.name) / focus
-    if not base.is_dir():
-        return None
-    completed = []
-    for path in base.iterdir():
-        if path.is_symlink():
-            continue
-        try:
-            task = _read_json(path / "task.json")
-            checkpoint = _read_json(path / "checkpoint.json")
-        except (OSError, ValueError):
-            continue
-        if (
-            task.get("schema") != TASK_SCHEMA
-            or checkpoint.get("schema") != CHECKPOINT_SCHEMA
-            or checkpoint.get("task_sha256") != _sha256(_canonical_bytes(task))
-            or Path(str(task.get("game_root") or "")).expanduser().resolve() != game
-            or task.get("focus") != focus
-            or checkpoint.get("stage") != "complete"
-        ):
-            continue
-        screen = checkpoint.get("screen") or {}
-        deep = checkpoint.get("deep") or {}
-        if any(
-            int(stage.get("accepted_items", -1))
-            != int(stage.get("total_items", -2))
-            or any(
-                row.get("status") != "accepted"
-                for row in stage.get("bundles") or []
-            )
-            for stage in (screen, deep)
-        ) or not deep.get("bundles"):
-            continue
-        completed.append(path)
-    return max(completed, key=lambda path: path.stat().st_mtime) if completed else None

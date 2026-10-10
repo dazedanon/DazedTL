@@ -21,14 +21,14 @@ LABELS = {
     "git_setup": "Set up Git version tracking", "ace_decrypt": "Decrypt Ace archive", "ace_extract": "Convert Ace data to JSON",
     "ace_pack": "Pack translated Ace data", "export_selected": "Export selected files to game", "export_all": "Export all translated files to game",
     "rewrap_preview": "Scan text fitting", "rewrap_apply": "Apply text fitting", "qa_prepare": "Prepare or resume translation QA",
-    "qa_status": "Refresh translation QA", "qa_rebuild": "Create final QA rebuild handoff", "playtest_status": "Refresh playtest plugins",
+    "qa_status": "Refresh translation QA", "playtest_status": "Refresh playtest plugins",
     "inspector_install": "Install TL Inspector", "inspector_remove": "Remove TL Inspector", "forge_install": "Install Forge",
     "forge_remove": "Remove Forge", "playtest_install": "Install both playtest plugins", "playtest_apply": "Apply playtest settings",
     "release": "Build public release ZIP", "editors": "Find code editors",
     "reference_add": "Add DazedTL reference translation", "reference_pair": "Add Japanese / English reference pair",
     "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
 }
-READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "qa_rebuild", "playtest_status", "editors", "images_status"}
+READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "playtest_status", "editors", "images_status"}
 LABELS.update(wolf.LABELS)
 READ_ONLY.update(wolf.READ_ONLY)
 
@@ -249,20 +249,14 @@ def run_action(plan, log):
             raise ValueError("; ".join(report.errors))
         return json_value(report)
     if action.startswith("qa_"):
-        from util import rpgmaker_qa
-        from util.rpgmaker_qa import prepare_task, find_latest_task, find_latest_completed_task, status
+        from util.rpgmaker_qa import prepare_task, find_latest_task, status
         storage = folder.parent.parent / "qa"
         focus = options["focus"]
         if action == "qa_prepare":
             task, state = prepare_task(root, data, focus, storage)
             return {"task": str(task), "status": state, "handoff": "Continue this DazedTL-managed RPG Maker QA task. Follow its README exactly; do not invent a separate pipeline or edit game files during discovery.\n\n" + (task / "README.md").read_text(encoding="utf-8")}
         task = find_latest_task(storage, root, focus)
-        completed = find_latest_completed_task(storage, root, focus)
-        if action == "qa_status":
-            return {"task": str(task or ""), "status": status(task) if task else {}, "completed": str(completed or "")}
-        if completed is None:
-            raise ValueError("No completed QA pass is available for this game and focus.")
-        return {"handoff": f'Rebuild only the final report for the completed DazedTL-managed QA task `{completed}`. Do not run prepare or repeat screen/deep review.\n\nRun:\n`{rpgmaker_qa.runtime_command(PROJECT_ROOT / "scripts/rpgmaker_qa.py")} rebuild-final --task {rpgmaker_qa.shell_argument(completed)} --output-root "<new directory under {storage / "final_rebuilds"}>"`\n\nUse a new output root for every attempt. Reuse checksum-validated screen and deep receipts. Reconcile only conflicts named by the final consistency audit. After finalization, complete the final editorial pass and follow the rebuilt task\'s release-approval and safeguard workflow.'}
+        return {"task": str(task or ""), "status": status(task) if task else {}}
     if action == "editors":
         from util.tl_inspector.config import detect_editors
         return {"editors": json_value(detect_editors())}
