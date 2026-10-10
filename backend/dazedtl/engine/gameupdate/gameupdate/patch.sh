@@ -288,7 +288,7 @@ invoke_wolf_pre_setup() {
     cli="$(find_uberwolf_cli || true)"
     if [ -z "$cli" ]; then
         echo "[Pre-Setup] Data.wolf found but UberWolfCli.exe is missing."
-        echo "            Copy UberWolfCli.exe into the game root (Step 1 gameupdate/) and re-run."
+        echo "            Unpack Data.wolf once with UberWolf (https://github.com/Sinflower/UberWolf/releases), then run GameUpdate again."
         return 0
     fi
 
@@ -336,7 +336,7 @@ if [ -f "$ROOT_DIR/data.dts" ]; then
     if [ -f "$UNPACKER" ]; then
         echo "[Pre-Setup] Running SRPG_Unpacker preparation steps..."
 
-        # Step 1: Unpack (once) — mirror patch.ps1: unpack if no data/ or no data/project.dat
+        # Step 1: Unpack (once), mirroring patch.ps1: unpack if no data/ or no data/project.dat
         if [ ! -d "$ROOT_DIR/data" ] || [ ! -f "$ROOT_DIR/data/project.dat" ]; then
             if [ -f "$ROOT_DIR/data.dts" ]; then
                 echo "[Pre-Setup] Step 1: Unpacking data.dts -> data"

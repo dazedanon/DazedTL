@@ -449,7 +449,7 @@ function Invoke-WolfPreSetup {
     $cli = Find-UberWolfCli -Root $Root
     if (-not $cli) {
         Write-Host '[Pre-Setup] Data.wolf found but UberWolfCli.exe is missing.'
-        Write-Host '            Copy UberWolfCli.exe into the game root (Step 1 gameupdate/) and re-run.'
+        Write-Host '            Unpack Data.wolf once with UberWolf (https://github.com/Sinflower/UberWolf/releases), then run GameUpdate again.'
         return
     }
 
