@@ -288,8 +288,12 @@ class TextQA:
             following = "Run qa --prepare."
         elif qa["applied"]:
             following = (
-                "Findings are applied; save their checkpoint with qa --checkpoint "
-                "if it has not run."
+                "Findings are applied and saved as a version; report the qa phase "
+                "complete."
+                if operation
+                and operation["kind"] == "checkpoint"
+                and operation["status"] == "complete"
+                else "Findings are applied; save their checkpoint with qa --checkpoint."
             )
         elif not qa["current"]:
             following = qa["message"] + " Run qa --prepare."

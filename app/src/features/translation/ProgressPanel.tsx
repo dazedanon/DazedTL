@@ -161,11 +161,8 @@ export function ProgressPanel({
         {!!qaQuestions && (
           <Notice tone="warning">
             <span>
-              <strong>Needs you:</strong> text QA has{" "}
-              {qaQuestions === 1
-                ? "a question"
-                : `${qaQuestions.toLocaleString()} questions`}{" "}
-              only you can answer; it applies its corrections after.
+              <strong>Needs you:</strong> answer text QA's questions; it applies
+              its corrections once you have.
             </span>
             <Button variant="link" onClick={openQa}>
               Answer in Text QA
