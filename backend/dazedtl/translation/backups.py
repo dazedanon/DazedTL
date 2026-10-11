@@ -679,6 +679,33 @@ def original(game):
     }
 
 
+def game_files(game, records=()):
+    """Every file name the game's saved snapshots hold: its original, the
+    prepared game, each update and each game backup, plus the snapshots
+    `records` name in an older profile store. Unreadable snapshots add none.
+    """
+    folders = []
+    root = store_path(game) / "snapshots"
+    if not _linked(root) and root.is_dir():
+        folders.extend(
+            folder for folder in root.iterdir() if _ID.fullmatch(folder.name)
+        )
+    for record in records:
+        try:
+            folders.append(lookup(game, Path(record["path"]).parent, record["id"]))
+        except OSError, ValueError, KeyError, TypeError:
+            continue
+    names = set()
+    for folder in folders:
+        try:
+            value = manifest(folder)
+        except OSError, ValueError, TypeError:
+            continue
+        if value["kind"] == "source":
+            names.update(value["files"])
+    return names
+
+
 def catalog(game, legacy_root):
     rows, warnings = [], []
     for root in (store_path(game) / "snapshots", Path(legacy_root)):

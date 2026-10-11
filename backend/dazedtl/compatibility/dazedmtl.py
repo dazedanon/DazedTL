@@ -374,11 +374,11 @@ class ExistingBackend:
             "workspaceFolder": "auto",
         }
 
-    def guided_release_preview(self, token):
+    def guided_release_preview(self, token, known):
         from .guided import release_scope
 
         plan = self.workflows.previews[token]
-        scope = release_scope(plan["project"]["source"])
+        scope = release_scope(plan["project"]["source"], known)
         plan["release_scope"] = scope
         return {
             "label": "Build clean game ZIP",
@@ -405,7 +405,8 @@ class ExistingBackend:
         plan = self.workflows.previews.get(token)
         if (
             not plan
-            or release_scope(plan["project"]["source"]) != plan["release_scope"]
+            or release_scope(plan["project"]["source"], plan["release_scope"]["known"])
+            != plan["release_scope"]
         ):
             raise ValueError(
                 "The archive contents or public version changed. Inspect and build again."

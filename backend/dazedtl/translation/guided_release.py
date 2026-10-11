@@ -270,6 +270,26 @@ class GuidedRelease:
         )
         return sorted(paths)
 
+    def release_known(self, project_id, source):
+        """The files a clean game ZIP may hold: the game's, as its saved
+        snapshots have them, and the translation's runtime files. None when
+        either is unknown, so the ZIP then keeps every other file; an applied
+        image edited outside Images, for one, still packages."""
+        state = lifecycle(self.guided.translation.workspace, project_id)
+        names = backups.game_files(
+            source,
+            [
+                state[key]
+                for key in ("source_backup", "prepared_source", "game_backup")
+                if state.get(key)
+            ],
+        )
+        try:
+            translation = self.release_paths(project_id, source, "release")
+        except ValueError:
+            return None
+        return sorted(names | set(translation)) if names else None
+
     def release_ready(self, project_id, native, value):
         status = self.guided.translation.ready(project_id)
         self.guided.pending_run(value)

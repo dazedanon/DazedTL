@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from dazedtl.storage import write_json
-from dazedtl.translation.backups import snapshot, store_path
+from dazedtl.translation.backups import game_files, snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.game_update import ABSENT, GameUpdate
 from dazedtl.translation.operations import execute, lifecycle, lifecycle_path
@@ -100,6 +100,32 @@ class ReleaseTests(unittest.TestCase):
             (root / "www/data/Items.json").write_text("changed after inspection")
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None)
+            # Only the game, as its snapshots have it, and the translation's
+            # files ship; files added while working stay out, and a folder of
+            # only such files is one entry. A spelling's case doesn't matter.
+            snapshot(root, store_path(root), source_game=True)
+            for name in (
+                "ci.html",
+                "Dictionaries/en-US-9-0.bdic",
+                "www/data/notes.txt",
+                "www/data/Map001.json",
+            ):
+                (root / name).parent.mkdir(exist_ok=True)
+                (root / name).write_text("added while translating")
+            scope = inventory(root, None, game_files(root) | {"www/data/map001.json"})
+            self.assertLessEqual(
+                {"ci.html", "Dictionaries/", "www/data/notes.txt"},
+                {row["path"] for row in scope["exclusions"]},
+            )
+            write_archive(root, output, scope, lambda _: None)
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(
+                    set(archive.namelist()),
+                    {
+                        "generated-game/" + name
+                        for name in included | {"www/data/Map001.json"}
+                    },
+                )
             # Windows can't extract these names, such as a pager's stray
             # "\x1bq" file, so they never ship; they can't be made on Windows.
             for name in ("\x1bq", "notes?.txt", "aux.json", "data/old./Map001.json"):

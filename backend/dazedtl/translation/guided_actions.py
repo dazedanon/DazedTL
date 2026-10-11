@@ -622,7 +622,11 @@ class GuidedActions:
                 raise ValueError("Choose hotkeys for the playtest tools.")
             self.guided.backend.guided_configure_tools(token, configured)
         if action == "release":
-            result.update(self.guided.backend.guided_release_preview(token))
+            result.update(
+                self.guided.backend.guided_release_preview(
+                    token, self.guided.release_known(project_id, project["source"])
+                )
+            )
         if action == "rewrap_apply":
             result["rewrap"] = self.guided.backend.guided_rewrap_review(
                 native["id"], token

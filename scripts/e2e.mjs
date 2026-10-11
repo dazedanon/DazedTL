@@ -846,6 +846,45 @@ try {
         throw new Error(`data/${file} gained Windows line endings.`);
   });
 
+  await step("Build a clean game ZIP of the game alone", async () => {
+    const archive = path.join(
+      path.dirname(game),
+      `${path.basename(game)}-game.zip`,
+    );
+    // A translator's notes and a browser's spellcheck download sit beside the
+    // game's files without being part of it.
+    fs.writeFileSync(path.join(game, "notes.txt"), "Check the title screen.");
+    fs.mkdirSync(path.join(game, "Dictionaries"));
+    fs.writeFileSync(path.join(game, "Dictionaries/en-US-10-1.bdic"), "words");
+    await page.click(/^Clean game ZIP/);
+    await page.click("Build clean game ZIP");
+    await until(
+      "the build to finish",
+      async () =>
+        fs.existsSync(archive) &&
+        !(await page.call("workspace_snapshot")).application.running,
+      5 * 60_000,
+    );
+    const prefix = `${path.basename(game)}/`;
+    const files = new Map(
+      [...entries(fs.readFileSync(archive))].map((entry) => [
+        entry.path.slice(prefix.length),
+        entry,
+      ]),
+    );
+    const actors = files.get("data/Actors.json");
+    if (
+      !actors ||
+      !translated(JSON.parse(actors.data.toString("utf8"))[1].name)
+    )
+      throw new Error("The game ZIP lacks the translated database.");
+    for (const name of ["index.html", "img/pictures/看板.png"])
+      if (!files.has(name)) throw new Error(`The game ZIP lacks ${name}.`);
+    for (const name of files.keys())
+      if (name === "notes.txt" || name.startsWith("Dictionaries/"))
+        throw new Error(`The game ZIP holds ${name}, added while translating.`);
+  });
+
   await step(
     "Closing ends every app process without recorded failures",
     async () => {

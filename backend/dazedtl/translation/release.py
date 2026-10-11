@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sqlite3
+import unicodedata
 import zipfile
 from contextlib import closing
 from datetime import UTC, datetime
@@ -81,6 +82,7 @@ _TEMP_SUFFIXES = (
     ".swo",
     "~",
 )
+_ADDED = "Not part of the game or its translation"
 _UPDATER_CONFIG = "gameupdate/patch-config.txt"
 _UPDATER_STATE = "gameupdate/previous_patch_sha.txt"
 # Windows refuses these names, so extracting a ZIP that holds one fails there.
@@ -121,10 +123,26 @@ def exclusion(relative, *, directory=False):
     return None
 
 
-def inventory(source, updater_stamp=None):
-    """The same inventory drives inspection, writing and freshness verification."""
+def _known_key(name):
+    # A snapshot may spell a name in another case or Unicode form than the folder.
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def inventory(source, updater_stamp=None, known=None):
+    """The same inventory drives inspection, writing and freshness verification.
+
+    `known` names the files a clean ZIP may hold, the game's and its
+    translation's. Anything else was added to the folder while working there,
+    such as notes, downloads or a browser's cache, and stays out.
+    """
     root = Path(source)
     files, omitted = {}, []
+    if known is not None:
+        known = sorted(known)
+        keys = {_known_key(name) for name in known}
+        folders = {
+            parent.as_posix() for name in keys for parent in PurePosixPath(name).parents
+        }
     for current, directories, names in os.walk(
         root,
         topdown=True,
@@ -141,6 +159,8 @@ def inventory(source, updater_stamp=None):
                 if (path.is_symlink() or getattr(path, "is_junction", lambda: False)())
                 else exclusion(relative, directory=True)
             )
+            if not reason and known is not None and _known_key(relative) not in folders:
+                reason = _ADDED
             if reason:
                 omitted.append({"path": relative + "/", "reason": reason})
             else:
@@ -158,6 +178,8 @@ def inventory(source, updater_stamp=None):
                 reason = (
                     "GameUpdate disabled in this local ZIP: no verified public version"
                 )
+            if not reason and known is not None and _known_key(relative) not in keys:
+                reason = _ADDED
             if reason:
                 omitted.append({"path": relative, "reason": reason})
                 continue
@@ -169,11 +191,16 @@ def inventory(source, updater_stamp=None):
                 stat.st_mtime_ns,
                 stat.st_ctime_ns,
             ]
-    return {"files": files, "exclusions": omitted, "updater_stamp": updater_stamp}
+    return {
+        "files": files,
+        "exclusions": omitted,
+        "updater_stamp": updater_stamp,
+        "known": known,
+    }
 
 
 def write_archive(source, target, scope, log, *, prefix=True):
-    if inventory(source, scope["updater_stamp"]) != scope:
+    if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError("The archive contents changed. Inspect and build again.")
     if not scope["files"]:
         raise ValueError("No runtime files are available to package.")
@@ -194,7 +221,7 @@ def write_archive(source, target, scope, log, *, prefix=True):
                 (Path(source).name + "/" if prefix else "") + _UPDATER_STATE,
                 scope["updater_stamp"] + "\n",
             )
-    if inventory(source, scope["updater_stamp"]) != scope:
+    if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError(
             "The game changed during packaging. Its partial archive was discarded."
         )

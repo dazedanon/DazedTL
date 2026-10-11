@@ -114,6 +114,7 @@ class Guided:
         self.saved_form = self.release.saved_form
         self.release_artifacts = self.release.release_artifacts
         self.release_paths = self.release.release_paths
+        self.release_known = self.release.release_known
         self.release_ready = self.release.release_ready
         self.patch_manifest = self.release.patch_manifest
         self.ace_packing = self.release.ace_packing

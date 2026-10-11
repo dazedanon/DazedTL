@@ -68,7 +68,7 @@ def tools_state(native):
     return result
 
 
-def release_scope(source):
+def release_scope(source, known):
     from util.release_package import ReleasePackageError, _release_patch_sha
 
     from dazedtl.translation.release import inventory
@@ -77,7 +77,7 @@ def release_scope(source):
         public_version = _release_patch_sha(Path(source))
     except ReleasePackageError:
         public_version = None
-    return inventory(source, public_version)
+    return inventory(source, public_version, known)
 
 
 def run_release(plan, log):
@@ -100,7 +100,7 @@ def run_release(plan, log):
     expected = plan["release_scope"]
     if not packing_state(plan["project"], plan["folder"])["current"]:
         raise ValueError("Pack and verify current Ace data before packaging.")
-    if release_scope(source) != expected:
+    if release_scope(source, expected["known"]) != expected:
         raise ValueError(
             "The package contents or public version changed. Build a new release preview."
         )
@@ -113,7 +113,7 @@ def run_release(plan, log):
             raise ValueError(
                 "Ace packing evidence changed during packaging. Its partial archive was discarded."
             )
-        if release_scope(source) != expected:
+        if release_scope(source, expected["known"]) != expected:
             raise ValueError(
                 "The game or public version changed during packaging. Its partial archive was discarded."
             )

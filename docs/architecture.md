@@ -377,7 +377,8 @@ Their controller exposes specific engine actions through one-use, project-bound 
 Explicit full-overwrite Apply does not track runtime JSON conflicts.
 Guided release freezes the current runtime scope and original-source bindings through an app-only, one-use preview.
 Patch packaging saves its checkpoint and workspace restore point as part of the same operation.
-The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material, and verifies the source and destination before atomically replacing a ZIP.
+The app-owned clean packager uses one inventory for inspection and writing, retains player documentation, excludes known private and translator material and names Windows can't extract, and verifies the source and destination before atomically replacing a ZIP.
+Of the other files it ships only those a saved game snapshot holds (the original, the prepared game, an update or a game backup) or the translation's runtime scope names, so a translator's notes, downloads and browser caches stay out; when either list can't be read, it ships them all.
 Guided patches add current applied-image receipts and explicitly reviewed image/font paths to the runtime scope.
 Each game's GameUpdate config, `gameupdate/patch-config.txt`, belongs to the engine's [gameupdate_config](../backend/dazedtl/engine/util/gameupdate_config.py).
 It writes the compact file from Settings' GameUpdate defaults and the game's repository, which the game's `.dazedtl/settings.json` keeps with any values the game sets itself and the digest of the file it last wrote.
