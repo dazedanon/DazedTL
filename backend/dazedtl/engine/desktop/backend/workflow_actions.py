@@ -278,7 +278,4 @@ def run_action(plan, log):
                 raise ValueError(message)
             messages.append(message)
         return {"messages": messages, "inspector": inspector.status(root), "forge": forge.status(root)}
-    if action == "release":
-        from util.release_package import create_release_zip
-        return json_value(create_release_zip(root, options["output"], progress=lambda current, total, name: log(f"{current}/{total} · {name}")))
     raise ValueError("Unsupported guided action.")
