@@ -950,4 +950,60 @@ except ValueError as error:
     assert "rules changed" in str(error), error
 else:
     raise AssertionError("Corrections from older rules were applied.")
+
+# Database checks send what reviewers read apart to deep review with their
+# evidence: two skills that show one name, and an MZ state message that prints
+# without its subject.
+checks_game = temporary / "checks-game"
+(checks_game / "data").mkdir(parents=True)
+(checks_game / "js").mkdir()
+(checks_game / "js/rmmz_core.js").write_text("")
+for name, value in {
+    "Skills.json": [
+        None,
+        {"id": 1, "name": "Sweeping Slash", "_original": {"name": "払い斬り"}},
+        {"id": 2, "name": "Sweeping Slash", "_original": {"name": "薙ぎ払い"}},
+    ],
+    "States.json": [
+        None,
+        {
+            "id": 1,
+            "name": "Illusion",
+            "message4": "was freed from the Illusion.",
+            "_original": {"name": "幻惑", "message4": "の幻惑が解けた"},
+        },
+    ],
+}.items():
+    (checks_game / "data" / name).write_text(
+        json.dumps(value, ensure_ascii=False), encoding="utf-8"
+    )
+checked, _state = qa.prepare_task(
+    checks_game, checks_game / "data", "release", temporary / "checks-storage"
+)
+sources = {
+    cluster["representative"]: cluster["source"]
+    for cluster in json.loads((checked / "inventory.json").read_text())["clusters"]
+}
+reasons = {
+    sources[identity]: candidate["reasons"]
+    for identity, candidate in json.loads((checked / "checkpoint.json").read_text())[
+        "deep"
+    ]["candidate_reasons"].items()
+}
+assert reasons == {
+    "払い斬り": ["name-collision"],
+    "薙ぎ払い": ["name-collision"],
+    "の幻惑が解けた": ["battler-name"],
+}, reasons
+for worker in ("screen-a", "screen-b"):
+    row = qa.next_bundle(checked, worker)
+    assert row["id"].startswith("screen"), row
+    qa.accept_result(checked, screen(row, set()))
+row = qa.next_bundle(checked, "deep-a")
+items = {item["source"]: item for item in bundle_of(row)["items"]}
+assert set(items) == {"払い斬り", "薙ぎ払い", "の幻惑が解けた"}, items
+assert items["払い斬り"]["deep_reasons"] == ["name-collision"], items
+assert "Skills.json 2 薙ぎ払い" in items["払い斬り"]["checks"][0]["note"], items
+assert items["の幻惑が解けた"]["checks"][0]["check"] == "battler-name", items
+assert "check battler-name: RPG Maker MZ" in qa.render_bundle(checked, row["id"])
 print("ok")

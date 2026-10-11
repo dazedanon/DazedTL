@@ -39,6 +39,7 @@ from util.rpgmaker_qa_manifest import (
     write_manifest,
 )
 from util.rpgmaker_qa_verify import verify_manifest
+from util import rpgmaker_qa_checks as checks
 from util import rpgmaker_qa_lint as lint
 from util.rpgmaker_qa_preflight import (
     REASON as NOT_TRANSLATED_REASON,
@@ -132,12 +133,12 @@ SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers"})
 # Every module whose rules shape bundles, flags or findings.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
-    "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py",
+    "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
-QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-v14"
+QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v15"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
@@ -1332,6 +1333,17 @@ def _forced_deep_reasons(item: dict[str, Any]) -> list[str]:
     return sorted(reasons)
 
 
+def _database_checks(
+    manifest: dict[str, Any], context: dict[str, Any], data_root: Path
+) -> dict[str, list[dict[str, str]]]:
+    """Database text that deterministic checks send to deep review, by cluster."""
+    return checks.database_checks(
+        manifest,
+        _glossary_pairs(context["glossary"]["text"]),
+        checks.runtime(data_root),
+    )
+
+
 def _candidate(reasons: Iterable[str], identities: Iterable[str] = ()) -> dict[str, Any]:
     return {
         "reasons": sorted(set(reasons)),
@@ -2011,6 +2023,10 @@ def prepare_task(
                 for item in compact_items
                 if (forced_reasons := _forced_deep_reasons(item))
             }
+            for cluster_id, failed in _database_checks(manifest, context, data).items():
+                _merge_candidate(
+                    forced_candidates, cluster_id, [entry["check"] for entry in failed]
+                )
             lint_items, lint_fixes = _lint_items(manifest)
             items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
@@ -3745,7 +3761,10 @@ def _render_commands(commands: list[dict], indent: str) -> list[str]:
 
 
 def _render_hints(entry: dict, indent: str) -> list[str]:
-    out = []
+    out = [
+        indent + f"check {failed['check']}: " + _context_text(failed["note"])
+        for failed in entry.get("checks") or []
+    ]
     if entry.get("glossary"):
         out.append(indent + "glossary: " + "; ".join(f"{a}={b}" for a, b in entry["glossary"]))
     for alternative in entry.get("same_source_alternatives") or []:
@@ -4769,6 +4788,7 @@ def _deep_items(
     for cluster in manifest["clusters"]:
         by_source[cluster["source"]].append(cluster)
     data_root = Path(_read_json(root / "task.json")["data_root"])
+    failed_checks = _database_checks(manifest, context, data_root)
     document_cache: dict[str, Any] = {}
     candidate_reasons = basis["candidates"]
     screen_evidence, screen_scenes = basis["evidence"], basis["scenes"]
@@ -4835,6 +4855,8 @@ def _deep_items(
         }
         if screen_evidence.get(identity):
             item["screen_evidence"] = screen_evidence[identity]
+        if failed_checks.get(identity):
+            item["checks"] = failed_checks[identity]
         if identity in lint_accepted:
             families = sorted(lint_accepted[identity]["families"], key=lint.ORDER.index)
             item["lint"] = {

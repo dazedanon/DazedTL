@@ -14,6 +14,7 @@ scenes = Probe("qa_scene.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
+checks = engine_module("util/rpgmaker_qa_checks.py")
 
 
 class QAEngineTests(unittest.TestCase):
@@ -75,3 +76,84 @@ class QAEngineTests(unittest.TestCase):
             ),
             {"lint:level-tag-spacing": "[Rumor Lv.] 3 for \\c[14]25000G"},
         )
+
+    def test_database_checks_find_what_reviewers_read_apart(self):
+        # Defects a release's reviewers found only by luck: a skill named like
+        # another, a dropped glossary word and an MZ message without its subject.
+        rows = [
+            ("Skills.json", 42, "name", "払い斬り", "Sweeping Slash"),
+            ("Skills.json", 173, "name", "薙ぎ払い", "Sweeping Slash"),
+            (
+                "Skills.json",
+                338,
+                "description",
+                "敵全体へ大なぎ払い。",
+                "A sweeping strike.",
+            ),
+            ("Skills.json", 2, "name", "手当て", "Tend Wounds"),
+            (
+                "States.json",
+                42,
+                "message4",
+                "の幻惑が解けた",
+                "was freed from the Illusion.",
+            ),
+            # Map names players never see, a short term inside another word,
+            # a complete sentence and a message with its %1 all pass.
+            ("MapInfos.json", 1, "name", "森", "Sweeping Slash"),
+            ("MapInfos.json", 2, "name", "林", "Sweeping Slash"),
+            ("Armors.json", 1, "name", "疾風の足環", "Gale Anklet"),
+            ("States.json", 43, "message4", "の毒が消えた", "The poison wore off."),
+            ("States.json", 44, "message1", "%1は倒れた！", "%1 fell!"),
+        ]
+        records = [
+            {
+                "identity": f"{file}#{entry}/{field}",
+                "file": file,
+                "classification": "database",
+                "database_entity": {"id": entry, "field": field},
+                "source": source,
+                "live": live,
+            }
+            for file, entry, field, source, live in rows
+        ]
+        manifest = {
+            "records": records,
+            "clusters": [
+                {
+                    "representative": record["identity"],
+                    "identities": [record["identity"]],
+                }
+                for record in records
+            ],
+        }
+        glossary = [
+            ("薙ぎ払い", "Sweeping Strike"),
+            ("大なぎ払い", "Grand Sweeping Strike"),
+            ("なぎ払い", "Sweeping Strike"),
+            ("手当て", "First Aid"),
+            ("風", "Wind"),
+        ]
+        found = checks.database_checks(manifest, glossary, "MZ")
+        self.assertEqual(
+            {
+                identity: [entry["check"] for entry in entries]
+                for identity, entries in found.items()
+            },
+            {
+                "Skills.json#42/name": ["name-collision"],
+                "Skills.json#173/name": ["name-collision", "glossary-missing"],
+                "Skills.json#338/description": ["glossary-missing"],
+                "Skills.json#2/name": ["glossary-missing"],
+                "States.json#42/message4": ["battler-name"],
+            },
+        )
+        self.assertIn(
+            "Skills.json 173 薙ぎ払い", found["Skills.json#42/name"][0]["note"]
+        )
+        self.assertIn("大なぎ払い", found["Skills.json#338/description"][0]["note"])
+        # MV writes the name right before the message, so only a glued one fails.
+        for live, failing in (("collapsed!", True), (" collapsed!", False)):
+            records[4]["live"] = live
+            found = checks.database_checks(manifest, [], "MV")
+            self.assertEqual("States.json#42/message4" in found, failing, live)

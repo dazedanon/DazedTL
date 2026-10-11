@@ -1,7 +1,7 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v14
-single-policy role-briefs app-owned-inventory immutable-review-bundles
+<!-- qa-contract:rpgmaker-qa-v15
+single-policy role-briefs app-owned-inventory immutable-review-bundles database-checks
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
@@ -127,6 +127,14 @@ occurrences. Deep bundles open while
 screening continues; an item whose screen evidence grew after its deep review comes back with
 that `prior_review`, and your review replaces it.
 
+- `checks` are deterministic findings that escalated the item, each with its evidence:
+  `name-collision` (another entry of the same database shows the same English name),
+  `glossary-missing` (the source holds a glossary term whose English this text lacks) and
+  `battler-name` (the way RPG Maker adds the battler's name leaves this battle message without
+  a subject, or runs the name into it). Correct it, or review it `clean` with `evidence` that
+  says why it stands, such as a glossary term used as an ordinary word. A correction cannot add
+  a `%1` the source lacks, so an MZ message becomes a complete sentence and an MV message keeps
+  a leading space.
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
   reach it; an `observation` is the reason a reviewer gave for a line outside its own items,
   and the `observation` deep reason marks an item it escalated. A `clean` review of such an
