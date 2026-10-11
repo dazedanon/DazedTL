@@ -253,7 +253,7 @@ def run_action(plan, log):
         storage = folder.parent.parent / "qa"
         focus = options["focus"]
         if action == "qa_prepare":
-            task, state = prepare_task(root, data, focus, storage)
+            task, state = prepare_task(root, data, focus, storage, fit=options.get("fit"))
             return {"task": str(task), "status": state, "handoff": "Continue this DazedTL-managed RPG Maker QA task. Follow its README exactly; do not invent a separate pipeline or edit game files during discovery.\n\n" + (task / "README.md").read_text(encoding="utf-8")}
         task = find_latest_task(storage, root, focus)
         return {"task": str(task or ""), "status": status(task) if task else {}}

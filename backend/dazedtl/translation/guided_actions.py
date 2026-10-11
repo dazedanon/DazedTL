@@ -574,6 +574,16 @@ class GuidedActions:
                     "No saved translation output is available for these files yet."
                 )
             options = {"files": paths}
+        if action == "qa_prepare":
+            # QA fits its corrections with the line width check's settings.
+            text = self.guided.saved_form(project_id)["text"]
+            options = {
+                **options,
+                "check": {
+                    key: text[key]
+                    for key in ("categories", "codes", "max_rows", "protect_rows")
+                },
+            }
         if action == "release":
             from .release import destination
 

@@ -174,6 +174,24 @@ class Workflows:
         return self.state(project_id)
 
     @staticmethod
+    def _check_settings(options, project):
+        """The line width check's settings an action names, with the project's widths."""
+        from util.rpgmaker_rewrap import ALL_CATEGORIES, parse_event_codes
+        categories = options.get("categories", list(ALL_CATEGORIES))
+        if not isinstance(categories, list) or not categories or any(value not in ALL_CATEGORIES for value in categories):
+            raise ValueError("Choose at least one rewrap category.")
+        codes = options.get("codes", "401,405")
+        parse_event_codes(codes)
+        rows = options.get("max_rows", 4)
+        if type(rows) is not int or not 1 <= rows <= 100:
+            raise ValueError("Choose a protected row limit from 1 to 100.")
+        widths = options.get("widths", project["widths"])
+        if not valid_line_widths(widths):
+            raise ValueError("Line widths must be whole numbers from 20 to 300, and message rows from 1 to 20.")
+        return {"widths": normalize_wrap_widths(widths, defaults=project["widths"]), "categories": categories, "codes": codes, "max_rows": rows,
+                "protect_rows": options.get("protect_rows", True) is True}
+
+    @staticmethod
     def _names(names, available, *, allow_empty=False):
         if not isinstance(names, list) or not allow_empty and not names or any(not isinstance(name, str) or name not in available for name in names) or len(set(names)) != len(names):
             raise ValueError("Select files from this project's current list.")
@@ -196,25 +214,19 @@ class Workflows:
             selected["files"] = options["files"]
         if action.startswith("rewrap_"):
             self._names(options.get("files"), current_names)
-            from util.rpgmaker_rewrap import ALL_CATEGORIES, parse_event_codes
-            categories = options.get("categories", list(ALL_CATEGORIES))
-            if not isinstance(categories, list) or not categories or any(value not in ALL_CATEGORIES for value in categories):
-                raise ValueError("Choose at least one rewrap category.")
-            codes = options.get("codes", "401,405")
-            parse_event_codes(codes)
-            rows = options.get("max_rows", 4)
-            if type(rows) is not int or not 1 <= rows <= 100:
-                raise ValueError("Choose a protected row limit from 1 to 100.")
-            widths = options.get("widths", project["widths"])
-            if not valid_line_widths(widths):
-                raise ValueError("Line widths must be whole numbers from 20 to 300, and message rows from 1 to 20.")
-            selected = {"files": options["files"], "widths": normalize_wrap_widths(widths, defaults=project["widths"]), "categories": categories, "codes": codes, "max_rows": rows,
-                        "protect_rows": options.get("protect_rows", True) is True, "over_limit": options.get("over_limit", False) is True}
+            selected = {"files": options["files"], **self._check_settings(options, project), "over_limit": options.get("over_limit", False) is True}
         if action.startswith("qa_"):
             from util.skills import RPGMAKER_QA_FOCUSES
             if options.get("focus") not in dict(RPGMAKER_QA_FOCUSES):
                 raise ValueError("Choose an existing QA focus.")
             selected["focus"] = options["focus"]
+        if action == "qa_prepare":
+            # QA fits its corrections to the Line widths as the line width check would.
+            from util.rpgmaker_rewrap import SUPPORTED_EVENT_CODES, parse_event_codes
+            check = self._check_settings(options.get("check", {}), project)
+            selected["fit"] = {"widths": check["widths"], "categories": check["categories"],
+                               "codes": sorted(parse_event_codes(check["codes"]) or SUPPORTED_EVENT_CODES),
+                               "row_limit": check["max_rows"] if check["protect_rows"] else 0}
         if action.startswith(("playtest_", "inspector_", "forge_")) and action != "playtest_status":
             values = SettingsStore(self.workspace).read()["values"]
             selected["playtest"] = {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],

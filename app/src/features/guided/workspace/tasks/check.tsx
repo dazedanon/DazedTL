@@ -77,7 +77,8 @@ export function fittingView(w: GuidedWorkspace): TaskView {
                 Line widths{" "}
                 <HelpPopover label="Line widths">
                   Widths count characters. They do not measure rendered fonts or
-                  substitutions.
+                  substitutions. Text QA keeps its corrections within the
+                  message rows.
                 </HelpPopover>
               </strong>
               <small>

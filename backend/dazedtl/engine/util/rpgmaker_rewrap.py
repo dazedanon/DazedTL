@@ -29,7 +29,7 @@ ALL_CATEGORIES = frozenset({DIALOGUE, FACE_DIALOGUE, LIST_HELP, NOTES})
 SUPPORTED_EVENT_CODES = frozenset({122, 324, 325, 357, 401, 405})
 STANDARD_MESSAGE_CODES = frozenset({401, 405})
 
-_LIST_FIELDS_BY_FILE = {
+LIST_FIELDS_BY_FILE = {
     "Actors.json": ("profile",),
     "Armors.json": ("description",),
     "Items.json": ("description",),
@@ -183,7 +183,7 @@ class _Collector:
     ) -> bool:
         if before == after:
             return False
-        rows = _rendered_rows(after)
+        rows = rendered_rows(after)
         overflow = bool(
             row_limited
             and self.options.max_protected_rows
@@ -313,7 +313,7 @@ def _rewrap_database_lists(
     options: RewrapOptions,
     collector: _Collector,
 ) -> None:
-    fields = _LIST_FIELDS_BY_FILE.get(file_name, ())
+    fields = LIST_FIELDS_BY_FILE.get(file_name, ())
     if not fields or not isinstance(document, list):
         return
     for index, entry in enumerate(document):
@@ -613,36 +613,60 @@ def _rewrap_note_bodies(document, options: RewrapOptions, collector: _Collector)
         if not isinstance(note, str) or not note.strip():
             continue
         edits: list[tuple[int, int, str]] = []
-        occupied: list[tuple[int, int]] = []
-        for pattern, structured in _NOTE_BODY_PATTERNS:
-            for match in pattern.finditer(note):
-                start, end = match.span(1)
-                if any(start < used_end and end > used_start for used_start, used_end in occupied):
-                    continue
-                before = match.group(1)
-                if not before.strip():
-                    continue
-                if not _should_rewrap(before, options.note_width, options):
-                    continue
-                after = (
-                    dazedwrap.wrapSGDesc(before, options.note_width)
-                    if structured
-                    else _rewrap_text(before, options.note_width)
-                )
-                if collector.offer(
-                    category=NOTES,
-                    locator=f"{locator}/note[{start}:{end}]",
-                    code=None,
-                    before=before,
-                    after=after,
-                    row_limited=True,
-                ):
-                    edits.append((start, end, after))
-                occupied.append((start, end))
-        for start, end, replacement in sorted(edits, reverse=True):
-            note = note[:start] + replacement + note[end:]
+        for start, end, before, after in _note_bodies(
+            note, options.note_width, options.only_over_limit
+        ):
+            if collector.offer(
+                category=NOTES,
+                locator=f"{locator}/note[{start}:{end}]",
+                code=None,
+                before=before,
+                after=after,
+                row_limited=True,
+            ):
+                edits.append((start, end, after))
         if edits:
-            owner["note"] = note
+            owner["note"] = _replace_spans(note, edits)
+
+
+def _note_bodies(note: str, width: int, only_over_limit: bool):
+    """Each known tag body in *note* to rewrap: its span, text and rewrapped text."""
+    occupied: list[tuple[int, int]] = []
+    for pattern, structured in _NOTE_BODY_PATTERNS:
+        for match in pattern.finditer(note):
+            start, end = match.span(1)
+            if any(start < used_end and end > used_start for used_start, used_end in occupied):
+                continue
+            before = match.group(1)
+            if not before.strip() or only_over_limit and not over_width(before, width):
+                continue
+            after = (
+                dazedwrap.wrapSGDesc(before, width)
+                if structured
+                else _rewrap_text(before, width)
+            )
+            yield start, end, before, after
+            occupied.append((start, end))
+
+
+def _replace_spans(text: str, edits: list[tuple[int, int, str]]) -> str:
+    for start, end, replacement in sorted(edits, reverse=True):
+        text = text[:start] + replacement + text[end:]
+    return text
+
+
+def rewrap_value(text: str, width: int, *, note: bool = False) -> str:
+    """One value as the line width check rewraps it when a line is wider than
+    *width*: text keeps a leading speaker line and ``<br>`` breaks, and a
+    note rewraps only its known tag bodies."""
+    if note:
+        return _replace_spans(
+            text,
+            [(start, end, after) for start, end, _before, after in _note_bodies(text, width, True)],
+        )
+    if not text.strip() or not over_width(text, width):
+        return text
+    return _rewrap_text(text, width)
 
 
 def _iter_note_owners(node, locator: str = ""):
@@ -677,20 +701,27 @@ def _rewrap_text(text: str, width: int) -> str:
 
 
 def _should_rewrap(text: str, width: int, options: RewrapOptions) -> bool:
-    """Return whether *text* belongs in the selected rewrap mode.
+    """Return whether *text* belongs in the selected rewrap mode."""
+    return not options.only_over_limit or over_width(text, width)
+
+
+def widest_line(text: str) -> int:
+    """The visible length of *text*'s widest rendered line.
 
     Escaped newlines used by stored RPG Maker strings and ``<br>`` plugin
-    breaks are rendered line boundaries.  Measure each current rendered line
-    with the same control-code-aware character count used by ``wrapText``.
+    breaks are rendered line boundaries.  Measure each rendered line with the
+    same control-code-aware character count used by ``wrapText``.
     """
-    if not options.only_over_limit:
-        return True
     rendered = str(text).replace("<br>", "\n")
     rendered = re.sub(r"\\n(?!\[)", "\n", rendered)
-    return dazedwrap.max_line_visible_length(rendered) > int(width)
+    return dazedwrap.max_line_visible_length(rendered)
 
 
-def _rendered_rows(text: str) -> int:
+def over_width(text: str, width: int) -> bool:
+    return widest_line(text) > int(width)
+
+
+def rendered_rows(text: str) -> int:
     if not text:
         return 0
     body = text

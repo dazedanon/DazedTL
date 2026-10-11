@@ -180,8 +180,16 @@ def source(identity):
 
 
 storage = temporary / "storage"
-# Small screen bundles give the first reviewer several to have checked.
-task, state = qa.prepare_task(game, data, "release", storage, screen_item_limit=3)
+# Small screen bundles give the first reviewer several to have checked. The
+# game's message windows show three rows.
+task, state = qa.prepare_task(
+    game,
+    data,
+    "release",
+    storage,
+    screen_item_limit=3,
+    fit={"widths": {"messageRows": 3}},
+)
 assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
 # Japanese residue forces deep review, and so does a likely header slip.
@@ -607,6 +615,27 @@ except qa.QAResultError as error:
     assert "visible-number-mismatch" in str(error), error
 else:
     raise AssertionError("A correction that changes a number was accepted.")
+# A correction is rewrapped to its message's portrait width before its rows
+# count, and this one needs a fourth row.
+try:
+    qa.accept_result(
+        task,
+        result_path(
+            "too-tall",
+            deep_result(
+                row,
+                {
+                    STRATUM["_original"]: "Let us rest here on Stratum 1 for a while. "
+                    "The long climb left every one of us tired, hungry and sore from "
+                    "all the fighting, so nobody should argue."
+                },
+            ),
+        ),
+    )
+except qa.QAResultError as error:
+    assert "needs 4 rows; a message window shows 3" in str(error), error
+else:
+    raise AssertionError("A correction taller than its message window was accepted.")
 # An ordinal word stands for the source's number.
 qa.accept_result(
     task,
@@ -831,7 +860,10 @@ qa.accept_result(
         row["id"],
         deep_result(
             row,
-            {POWER["_original"]: "My power, at 100%!"},
+            {
+                POWER["_original"]: "My power, at a full 100%, is more than enough "
+                "to beat anyone!"
+            },
             declined={AROUSAL["_original"]},
         ),
     ),
@@ -868,7 +900,8 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "A sword with Attack +8",
     "Ah…♥ Amazing",
     "Let's leave the forest.",
-    "My power, at 100%!",
+    # Wider than Arina's portrait message, so it is rewrapped there.
+    "My power, at a full 100%, is more than enough to\nbeat anyone!",
     "Owner · owner 0",
     "Rest on the first stratum",
     "The arousal is building…",

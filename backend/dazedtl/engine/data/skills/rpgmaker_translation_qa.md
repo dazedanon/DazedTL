@@ -153,8 +153,13 @@ that `prior_review`, and your review replaces it.
 - `actionable` is for a concrete, source-supported defect with a correction: severity
   `critical`, `high` or `medium`, and one category from {{CATEGORIES}}. A correction must pass
   apply's regression: DazedTL refuses one that adds a flag, changes a number, breaks a line
-  structure or needs more rows than the window shows. An English ordinal ("First Stratum") may
+  structure or needs more rows than its `box` shows. An English ordinal ("First Stratum") may
   stand for a source number.
+- A target's `box` is the text box it shows in, from the game's Line widths: `width`
+  characters per line, `rows` it shows, and `wraps` when DazedTL rewraps a correction that has a
+  line wider than the box, as the line width check does. Where it does not rewrap, keep each line
+  within `width`. A longer wording that needs more rows than the box and the current text is
+  refused, so shorten it instead.
 - Actionable `fluency`, `voice` and `wordplay` reviews carry `editorial_basis`: the concrete
   reader-facing defect, the source, scene or guidance that makes it defective, and
   `not_preference: true`.
@@ -193,7 +198,7 @@ Every proposal you neither reject nor decline becomes a finding.
 This is the last pass before corrections are applied. For each finding compare the source,
 current text, correction, evidence and nearby game text, and confirm publication-ready meaning,
 natural English, speaker voice, terminology and honorific policy, runtime controls, line breaks
-and fit. `accept` a correction that fixes a concrete defect, `revise` it with a smaller or more
+and fit; each target's `box` gives the width and rows it shows in. `accept` a correction that fixes a concrete defect, `revise` it with a smaller or more
 natural `replacement` for the same defect, and `withdraw` it when the current and proposed
 wordings are equally valid. For `fluency`, `voice` and `wordplay`, confirm the `editorial_basis`
 independently. An item's `conflicts` name corrections that contradict each other, the

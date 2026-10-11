@@ -48,7 +48,23 @@ from util.rpgmaker_qa_preflight import (
     preflight,
     read_sources,
 )
+from util.game_settings import (
+    MESSAGE_ROWS_KEY,
+    load_game_wrap_widths,
+    normalize_wrap_widths,
+)
 from util.reference_games import reference_context
+from util.rpgmaker_rewrap import (
+    DIALOGUE,
+    FACE_DIALOGUE,
+    LIST_FIELDS_BY_FILE,
+    LIST_HELP,
+    NOTES,
+    RewrapOptions,
+    rendered_rows,
+    rewrap_value,
+    widest_line,
+)
 from util.skills import rpgmaker_qa_skill_parts
 
 
@@ -126,9 +142,6 @@ FINDING_CATEGORIES = frozenset({
 })
 EDITORIAL_JUDGMENT_CATEGORIES = frozenset({"fluency", "voice", "wordplay"})
 APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
-# A Show Text window shows four rows; a correction may not need more than the
-# current text already uses.
-MESSAGE_WINDOW_LINES = 4
 # Fixes for slips in the Japanese source itself: the Show Text header's face
 # and name, a database field's number that its own entry contradicts, or an
 # MZ battle message without the %1 that shows its battler's name.
@@ -145,7 +158,7 @@ SOURCE_FIX_ALLOWED_FLAGS = {
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
-    "rpgmaker_header_check.py",
+    "rpgmaker_header_check.py", "rpgmaker_rewrap.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -409,7 +422,9 @@ def _consistency_conflicts(
 
 
 def _simulate_apply(
-    findings: list[dict[str, Any]], records: dict[str, dict[str, Any]]
+    findings: list[dict[str, Any]],
+    records: dict[str, dict[str, Any]],
+    layout: dict[str, Any],
 ) -> None:
     """Refuse findings whose corrections the post-apply regression would reject."""
     problems = []
@@ -418,14 +433,10 @@ def _simulate_apply(
             continue
         for change in _changes(finding):
             for identity in change["identities"]:
-                record = records[identity]
-                found = correction_problems(
-                    record["source"],
-                    record["live"],
+                found = _record_problems(
+                    records[identity],
                     change["correction"],
-                    record.get("event_code"),
-                    record["live_pointers"],
-                    record["live_transform"],
+                    layout,
                     frozenset(finding.get("allowed_flags") or ()),
                 )
                 if found:
@@ -462,6 +473,150 @@ def _validate_editorial_basis(review: dict[str, Any], identity: str) -> None:
         raise QAResultError(f"Editorial basis is only a preference for {identity}")
 
 
+# The text area each event command's text shows in, as the line width check
+# reads it; a message under a face graphic has the portrait width.
+_COMMAND_AREAS = {
+    401: DIALOGUE, 405: DIALOGUE, 324: LIST_HELP, 325: DIALOGUE, 357: DIALOGUE,
+}
+_AREA_WIDTHS = {
+    DIALOGUE: "width", FACE_DIALOGUE: "faceWidth", LIST_HELP: "listWidth",
+    NOTES: "noteWidth",
+}
+# The plugin command fields the line width check rewraps.
+_PLUGIN_TEXT_KEYS = frozenset({"comment", "text", "messageText"})
+
+
+def task_layout(
+    game_root: str | Path, fit: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """The Line widths and line width check settings a task fits corrections
+    to: the text areas and event codes the check reads, and its row limit for
+    fixed-size text, 0 for none. The app passes its own; without them a task
+    reads the game's saved widths and the check's defaults."""
+    fit = fit or {}
+    defaults = RewrapOptions(1, 1, 1, 1)
+    return {
+        "widths": normalize_wrap_widths(
+            fit.get("widths") or load_game_wrap_widths(game_root)
+        ),
+        "categories": sorted(fit.get("categories", defaults.categories)),
+        "codes": sorted(fit.get("codes", defaults.event_codes)),
+        "row_limit": int(fit.get("row_limit", defaults.max_protected_rows)),
+    }
+
+
+def _box(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any] | None:
+    """The box a record's text shows in, by the task's layout: its width where
+    the line width check reads it, whether DazedTL rewraps a correction to it,
+    and the rows it shows. None when nothing limits the text."""
+    code = record.get("event_code")
+    field = (record.get("database_entity") or {}).get("field")
+    if code in _COMMAND_AREAS:
+        area = _COMMAND_AREAS[code]
+        if code == 401 and str(
+            (record.get("speaker") or {}).get("face_name") or ""
+        ).strip():
+            area = FACE_DIALOGUE
+        # A DTextPicture caption keeps per-line centering QA does not rebuild.
+        if code == 357 and (
+            (record.get("risky_context") or {}).get("plugin_header") == "DTextPicture"
+            or record["live_pointers"][0].rsplit("/", 1)[-1] not in _PLUGIN_TEXT_KEYS
+        ):
+            return None
+    elif code is None and field in LIST_FIELDS_BY_FILE.get(record["file"], ()):
+        area = LIST_HELP
+    elif code is None and field == "note":
+        area = NOTES
+    else:
+        return None
+    checked = area in layout["categories"] and (code is None or code in layout["codes"])
+    # A message continues in a new window after its rows; other text shows in
+    # a window of fixed height, limited where the check limits it.
+    rows = (
+        layout["widths"][MESSAGE_ROWS_KEY]
+        if code == 401
+        else layout["row_limit"] if checked else 0
+    )
+    box: dict[str, Any] = {"rows": rows} if rows else {}
+    if checked:
+        box["width"] = layout["widths"][_AREA_WIDTHS[area]]
+        # Text spread over several commands keeps its line structure.
+        box["wraps"] = (
+            len(record["live_pointers"]) == 1 and record["live_transform"] == "identity"
+        )
+        if area == NOTES:
+            box["note"] = True
+    return box or None
+
+
+def _widens(correction: str, live: str, width: int) -> bool:
+    """Whether a correction has a line wider than both its box and the current
+    text; a line that was already wider is the line width check's to fix."""
+    return widest_line(correction) > max(width, widest_line(live))
+
+
+def _fit(correction: str, live: str, box: dict[str, Any] | None) -> str:
+    """A correction as DazedTL writes it: rewrapped to its box's width, as the
+    line width check would, when it widens a line past the box."""
+    if not box or not box.get("wraps") or not _widens(correction, live, box["width"]):
+        return correction
+    return rewrap_value(correction, box["width"], note=bool(box.get("note")))
+
+
+def _fitted(correction: str, live: str, boxes: list[dict[str, Any] | None]) -> str:
+    """One correction for every target it reaches, rewrapped to the narrowest
+    box when each target takes a rewrapped value."""
+    if not boxes or not all(box and box.get("wraps") for box in boxes):
+        return correction
+    return _fit(correction, live, min(boxes, key=lambda box: box["width"]))
+
+
+def _fit_corrections(
+    findings: list[dict[str, Any]],
+    questions: list[dict[str, Any]],
+    records: dict[str, dict[str, Any]],
+    clusters: dict[str, dict[str, Any]],
+    layout: dict[str, Any],
+) -> None:
+    """Write each correction and proposal as DazedTL applies it, so findings
+    show the text the game gets."""
+    for finding in findings:
+        if finding.get("kind") == "show-text":
+            continue
+        scene = finding.get("kind") == "scene"
+        for change in finding["lines"] if scene else [finding]:
+            identities = change["identities"] if scene else finding["target_identities"]
+            change["correction"] = _fitted(
+                change["correction"],
+                change["current"],
+                [_box(records[identity], layout) for identity in identities],
+            )
+    for question in questions:
+        if question.get("correction"):
+            question["correction"] = _fitted(
+                question["correction"],
+                question["current"],
+                [
+                    _box(records[identity], layout)
+                    for identity in clusters[question["id"]]["identities"]
+                ],
+            )
+
+
+def _record_problems(
+    record: dict[str, Any],
+    correction: str,
+    layout: dict[str, Any],
+    allowed: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Why one correction of an inventory record would block apply."""
+    return correction_problems(
+        record["source"], record["live"], correction, record.get("event_code"),
+        record["live_pointers"], record["live_transform"], allowed,
+        box=_box(record, layout),
+    )
+
+
 def correction_problems(
     source: str,
     live: str,
@@ -470,17 +625,23 @@ def correction_problems(
     live_pointers: list[str],
     live_transform: str,
     allowed: frozenset[str] = frozenset(),
+    *,
+    box: dict[str, Any] | None,
 ) -> list[str]:
     """Why applying one correction would fail or trip the post-apply regression.
 
     This simulates the apply step for one target: the line structure its
-    pointers need and the mechanical flags the regression treats as blocking.
+    pointers need, the rows its box shows, and the mechanical flags the
+    regression treats as blocking. DazedTL writes the correction rewrapped to
+    the box, which may not need more rows than the box shows or the current
+    text uses; a correction it cannot rewrap may not have a line wider than
+    both the box and the current text.
     """
     problems = []
-    if correction == live:
+    written = _fit(correction, live, box)
+    if written == live:
         problems.append("the correction matches the current text")
     lines = correction.split("\n")
-    current_lines = live.split("\n")
     if live_transform == "quoted-string":
         # The text sits between quote marks in a script parameter, so a new
         # kind of quote mark could end the string early.
@@ -491,21 +652,26 @@ def correction_problems(
             f"needs {len(live_pointers)} lines like the current text, "
             f"not {len(lines)}"
         )
-    elif (
-        event_code == 401
-        and len(lines) > max(len(current_lines), MESSAGE_WINDOW_LINES)
-    ):
-        problems.append(
-            f"needs {len(lines)} lines; a message window shows "
-            f"{MESSAGE_WINDOW_LINES}"
-        )
     elif event_code in {101, 102} and "\n" in correction:
         problems.append("a name or choice cannot contain a line break")
+    elif box and box.get("rows"):
+        rows = rendered_rows(written)
+        if rows > max(rendered_rows(live), box["rows"]):
+            window = "a message window" if event_code == 401 else "its window"
+            problems.append(f"needs {rows} rows; {window} shows {box['rows']}")
+    if (
+        box and box.get("width") and not box.get("wraps")
+        and _widens(correction, live, box["width"])
+    ):
+        problems.append(
+            f"has a line {widest_line(correction)} characters wide; its line "
+            f"width is {box['width']}"
+        )
     before = set(_mechanical_evidence(source, live, event_code)["flags"])
-    after = set(_mechanical_evidence(source, correction, event_code)["flags"])
+    after = set(_mechanical_evidence(source, written, event_code)["flags"])
     introduced = sorted(_disallowed_flags(
         after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS, allowed,
-        source, correction,
+        source, written,
     ))
     if introduced:
         problems.append("introduces " + ", ".join(introduced))
@@ -1168,7 +1334,7 @@ def _motif_items(
 
 
 def _lint_items(
-    manifest: dict[str, Any],
+    manifest: dict[str, Any], layout: dict[str, Any]
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     """Each reviewed lint family's proposals as review items, and every line's
     fixes, the automatic families' included.
@@ -1189,12 +1355,7 @@ def _lint_items(
                 cluster["source"], cluster["live"], titles
             ).items()
             if not any(
-                correction_problems(
-                    record["source"], record["live"], proposed,
-                    record.get("event_code"), record["live_pointers"],
-                    record["live_transform"],
-                )
-                for record in members
+                _record_problems(record, proposed, layout) for record in members
             )
         }
         if not found:
@@ -1509,6 +1670,35 @@ def _make_bundle(
     return bundle
 
 
+def _target_shape(locator: dict[str, Any]) -> dict[str, Any]:
+    """The line structure and box of one place an item's text shows."""
+    return {
+        "event_code": locator.get("event_code"),
+        "pointers": len(locator["live_pointers"]),
+        "transform": locator.get("live_transform", "identity"),
+        **({"box": locator["box"]} if locator.get("box") else {}),
+    }
+
+
+def _shape_problems(
+    item: dict[str, Any],
+    correction: str,
+    shape: dict[str, Any],
+    allowed: frozenset[str] = frozenset(),
+) -> list[str]:
+    """Why a correction of a bundle item would block apply at one shape."""
+    return correction_problems(
+        str(item["source"]),
+        str(item["translation"]),
+        correction,
+        shape["event_code"],
+        ["/"] * shape["pointers"],
+        shape["transform"],
+        allowed,
+        box=shape.get("box"),
+    )
+
+
 def _compact_deep_item(
     item: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1519,16 +1709,10 @@ def _compact_deep_item(
     motifs = item.pop("motif_contexts", None) or []
     locators = item["locators"]
     item["occurrences"] = len(locators)
-    item["target_shapes"] = [
-        dict(shape) for shape in sorted({
-            (
-                ("event_code", locator.get("event_code")),
-                ("pointers", len(locator["live_pointers"])),
-                ("transform", locator.get("live_transform", "identity")),
-            )
-            for locator in locators
-        }, key=lambda shape: json.dumps(shape))
-    ]
+    shapes = {
+        json.dumps(shape): shape for shape in map(_target_shape, locators)
+    }
+    item["target_shapes"] = [shapes[key] for key in sorted(shapes)]
     if len(locators) > DEEP_LOCATOR_LIMIT:
         first = set(item.get("screen_context_identities") or [])
         kept = sorted(locators, key=lambda row: row["identity"] not in first)
@@ -2035,13 +2219,19 @@ def prepare_task(
     *,
     screen_char_budget: int = DEFAULT_SCREEN_CHAR_BUDGET,
     screen_item_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
+    fit: dict[str, Any] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
-    """Create or reuse one immutable QA task and its exhaustive screen bundles."""
+    """Create or reuse one immutable QA task and its exhaustive screen bundles.
+
+    *fit* holds the Line widths and line width check settings the task fits
+    corrections to; a task already prepared keeps the ones it was made with.
+    """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     if not game.is_dir() or not data.is_dir() or game not in data.parents:
         raise ValueError("The QA data folder must be inside the selected game folder")
     storage = _safe_task_root(output_root, game)
+    layout = task_layout(game, fit)
     manifest = build_manifest(data, focus)
     validation = verify_manifest(data, manifest)
     if not validation["valid"]:
@@ -2099,7 +2289,7 @@ def prepare_task(
                         forced_candidates, clusters[flag["identity"]],
                         ["show-text-header"], [flag["identity"]],
                     )
-            lint_items, lint_fixes = _lint_items(manifest)
+            lint_items, lint_fixes = _lint_items(manifest, layout)
             items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
                 "schema": "rpgmaker-qa-screen-index-v1",
@@ -2148,6 +2338,7 @@ def prepare_task(
                 "focus": focus,
                 "engine_fingerprint": engine_fingerprint,
                 "screen_configuration": screen_configuration,
+                "layout": layout,
                 "manifest_sha256": manifest["content_sha256"],
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
@@ -3245,6 +3436,7 @@ def _scene_check(
         "clusters": _cluster_by_identity(manifest),
         "declined_identities": identities,
         "declined_scenes": scenes,
+        "layout": _read_json(root / "task.json")["layout"],
     }
 
 
@@ -3341,10 +3533,7 @@ def _validate_scene_correction(
                 f"A reviewer declined line #{command} of scene {key}, so no "
                 f"correction may change it: {identity}"
             )
-        problems = correction_problems(
-            record["source"], record["live"], correction, record.get("event_code"),
-            record["live_pointers"], record["live_transform"],
-        )
+        problems = _record_problems(record, correction, check["layout"])
         if problems:
             raise QAResultError(
                 f"Line #{command} of the scene correction for {identity} would block "
@@ -3376,24 +3565,12 @@ def _validate_correction(
     # capped item lists only some of them.
     chosen = set(review.get("apply_identities") or [])
     shapes = [
-        {
-            "event_code": locator.get("event_code"),
-            "pointers": len(locator["live_pointers"]),
-            "transform": locator.get("live_transform", "identity"),
-        }
+        _target_shape(locator)
         for locator in item.get("locators") or []
         if locator["identity"] in chosen
     ] if chosen else item.get("target_shapes") or []
     for shape in shapes:
-        problems = correction_problems(
-            str(item["source"]),
-            str(item["translation"]),
-            correction,
-            shape["event_code"],
-            ["/"] * shape["pointers"],
-            shape["transform"],
-            allowed,
-        )
+        problems = _shape_problems(item, correction, shape, allowed)
         if problems:
             raise QAResultError(
                 f"The correction for {identity} would block apply: "
@@ -3492,10 +3669,7 @@ def _validate_deep_result(
             if not isinstance(proposal, str) or not proposal.strip():
                 raise QAResultError(f"A question's proposal must be text: {identity}")
             for shape in item.get("target_shapes") or []:
-                problems = correction_problems(
-                    str(item["source"]), str(item["translation"]), proposal,
-                    shape["event_code"], ["/"] * shape["pointers"], shape["transform"],
-                )
+                problems = _shape_problems(item, proposal, shape)
                 if problems:
                     raise QAResultError(
                         f"The proposal for {identity} would block apply: "
@@ -3970,6 +4144,22 @@ def _render_screen_item(
     return ["### " + json.dumps(item, ensure_ascii=False)]
 
 
+def _render_boxes(places: list[dict] | None) -> list[str]:
+    """The boxes an item's text shows in, such as 50 chars x 4 rows."""
+    shown = []
+    for place in places or []:
+        box = place.get("box") or {}
+        size = " x ".join(
+            f"{box[key]} {unit}"
+            for key, unit in (("width", "chars"), ("rows", "rows"))
+            if box.get(key)
+        )
+        text = size + (", rewrapped" if box.get("wraps") else "")
+        if size and text not in shown:
+            shown.append(text)
+    return ["  box: " + " | ".join(shown)] if shown else []
+
+
 def _render_deep(bundle: dict) -> list[str]:
     out = []
     numbers = {item["id"]: number for number, item in enumerate(bundle["items"], 1)}
@@ -3993,7 +4183,7 @@ def _render_deep(bundle: dict) -> list[str]:
         out += [
             "  JP: " + _context_text(item["source"]),
             "  EN: " + _context_text(item["translation"]),
-        ] + _render_hints(item, "  ")
+        ] + _render_boxes(item.get("target_shapes")) + _render_hints(item, "  ")
         for evidence in item.get("screen_evidence") or []:
             source = (
                 "observed at " + evidence["identity"].split("@", 1)[0]
@@ -4090,6 +4280,7 @@ def _render_editorial(item: dict) -> list[str]:
             "  EN:  " + _context_text(finding["current"]),
             "  FIX: " + _context_text(finding["correction"]),
         ]
+    out += _render_boxes(item.get("targets"))
     out.append("  evidence: " + _context_text(finding["evidence"]))
     basis = finding.get("editorial_basis")
     if basis:
@@ -4611,7 +4802,7 @@ def _open_follow_ups(
         item["id"]: item
         for item in _compact_items(manifest, _read_json(root / "context.json"))
     }
-    _lint, lint_fixes = _lint_items(manifest)
+    _lint, lint_fixes = _lint_items(manifest, task["layout"])
     screen = checkpoint["screen"]
     # Ordinals continue past every target the task has offered.
     ordinal = int(screen["total_items"])
@@ -4652,13 +4843,16 @@ def _open_follow_ups(
 
 
 def _lint_decisions(
-    checkpoint: dict[str, Any], declined: dict[str, Any], manifest: dict[str, Any]
+    checkpoint: dict[str, Any],
+    declined: dict[str, Any],
+    manifest: dict[str, Any],
+    layout: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     """The lint families accepted for each cluster, with reviewers' notes:
     the automatic families wherever they fix a line, which needs no reviewer,
     and the others where reviewers accepted them."""
     accepted: dict[str, dict[str, Any]] = {}
-    for cluster_id, fixes in _lint_items(manifest)[1].items():
+    for cluster_id, fixes in _lint_items(manifest, layout)[1].items():
         automatic = {family for family in fixes["families"] if family in lint.AUTOMATIC}
         if automatic:
             accepted[cluster_id] = {"families": automatic, "notes": []}
@@ -4693,6 +4887,7 @@ def _add_sweep_findings(
     findings: list[dict[str, Any]],
     checkpoint: dict[str, Any],
     records: dict[str, dict[str, Any]],
+    layout: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Accepted sweep candidates as findings, one per line, rules combined.
 
@@ -4738,11 +4933,7 @@ def _add_sweep_findings(
         problems = sorted({
             problem
             for identity in targets
-            for problem in correction_problems(
-                records[identity]["source"], records[identity]["live"],
-                correction, records[identity].get("event_code"),
-                records[identity]["live_pointers"], records[identity]["live_transform"],
-            )
+            for problem in _record_problems(records[identity], correction, layout)
         })
         if problems or not targets:
             dropped.append({"cluster_id": cluster_id, "problems": problems})
@@ -4777,6 +4968,7 @@ def _add_lint_findings(
     accepted: dict[str, dict[str, Any]],
     manifest: dict[str, Any],
     declined: dict[str, Any],
+    layout: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Mark reviewer corrections with their lines' accepted lint fixes, which
     compose after the editorial pass, and add the rest as findings.
@@ -4830,12 +5022,7 @@ def _add_lint_findings(
             problems = [
                 problem
                 for identity in targets
-                for problem in correction_problems(
-                    records[identity]["source"], records[identity]["live"],
-                    composed, records[identity].get("event_code"),
-                    records[identity]["live_pointers"],
-                    records[identity]["live_transform"],
-                )
+                for problem in _record_problems(records[identity], composed, layout)
             ]
             if problems:
                 dropped.append({
@@ -4893,14 +5080,15 @@ def _deep_items(
     """Deep items for the `only` candidates of the basis; a cluster reviewed
     before carries that `prior_review` to reconcile with newer evidence."""
     context = _read_json(root / "context.json")
+    task = _read_json(root / "task.json")
     records, clusters = _record_maps(manifest)
-    lint_accepted = _lint_decisions(checkpoint, declined, manifest)
+    lint_accepted = _lint_decisions(checkpoint, declined, manifest, task["layout"])
     titles = lint.title_map(manifest["clusters"])
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
     for cluster in manifest["clusters"]:
         by_source[cluster["source"]].append(cluster)
-    data_root = Path(_read_json(root / "task.json")["data_root"])
+    data_root = Path(task["data_root"])
     failed_checks = _database_checks(manifest, context, data_root)
     document_cache: dict[str, Any] = {}
     candidate_reasons = basis["candidates"]
@@ -4956,6 +5144,10 @@ def _deep_items(
                 "speaker": record.get("speaker"),
                 "database_entity": record.get("database_entity"),
                 "choice_context": record.get("choice_context"),
+                **(
+                    {"box": box}
+                    if (box := _box(record, task["layout"])) else {}
+                ),
                 **(
                     {"database_values": sorted(
                         _entry_numbers(data_root, record, document_cache)
@@ -5193,6 +5385,7 @@ def _sweep_items(
     manifest: dict[str, Any],
     declined: dict[str, Any],
     offered: set[str],
+    layout: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Every other line an accepted family's sweep rule changes, for group
     review, leaving out the candidates an earlier sweep `offered`."""
@@ -5248,12 +5441,7 @@ def _sweep_items(
             ]
             proposed = cluster["live"].replace(find, replace)
             if not members or any(
-                correction_problems(
-                    record["source"], record["live"], proposed,
-                    record.get("event_code"), record["live_pointers"],
-                    record["live_transform"],
-                )
-                for record in members
+                _record_problems(record, proposed, layout) for record in members
             ):
                 continue
             position = _scene_position(members[0])
@@ -5313,7 +5501,11 @@ def _advance_unlocked(
             for candidate in item["candidates"]
         }
         items = _sweep_items(
-            checkpoint, manifest, _declined_scope(root, checkpoint, manifest), offered
+            checkpoint,
+            manifest,
+            _declined_scope(root, checkpoint, manifest),
+            offered,
+            task["layout"],
         )
         bundles = _bundle_items(
             items,
@@ -5417,6 +5609,7 @@ def rebuild_deep_from_screen(
                 "item_limit", DEFAULT_SCREEN_ITEM_LIMIT
             )
         ),
+        fit=source_task.get("layout"),
     )
     if rebuilt == source:
         raise ValueError("The source task already uses the current QA rules")
@@ -5572,9 +5765,14 @@ def _draft_document(
                 "current": cluster["live"],
                 "places": len(places),
             })
-    sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
+    layout = task["layout"]
+    sweep_dropped = _add_sweep_findings(findings, checkpoint, records, layout)
     _add_lint_findings(
-        findings, _lint_decisions(checkpoint, declined, manifest), manifest, declined
+        findings,
+        _lint_decisions(checkpoint, declined, manifest, layout),
+        manifest,
+        declined,
+        layout,
     )
     findings.sort(key=lambda item: (
         {"critical": 0, "high": 1, "medium": 2}[item["severity"]],
@@ -5582,7 +5780,7 @@ def _draft_document(
         bool(item.get("lint_only")),
     ))
     _number_findings(checkpoint, findings)
-    _simulate_apply(findings, records)
+    _simulate_apply(findings, records, layout)
     finding_by_cluster = {
         item["cluster_id"]: item for item in findings
         if not item.get("lint_only") and not item.get("sweep_families")
@@ -5929,6 +6127,17 @@ def _needs_editorial(finding: dict[str, Any]) -> bool:
     )
 
 
+def _editorial_target(record: dict[str, Any], layout: dict[str, Any]) -> dict[str, Any]:
+    """One place an editorial finding changes, with the box it shows in."""
+    return {
+        "identity": record["identity"],
+        "event_code": record.get("event_code"),
+        "live_pointers": record["live_pointers"],
+        "live_transform": record["live_transform"],
+        **({"box": box} if (box := _box(record, layout)) else {}),
+    }
+
+
 def _editorial_items(
     root: Path,
     checkpoint: dict[str, Any],
@@ -5982,10 +6191,7 @@ def _editorial_items(
                 "occurrences": len(finding["target_identities"]),
                 "targets": [{
                     "position": line["position"],
-                    "identity": identity,
-                    "event_code": records[identity].get("event_code"),
-                    "live_pointers": records[identity]["live_pointers"],
-                    "live_transform": records[identity]["live_transform"],
+                    **_editorial_target(records[identity], task["layout"]),
                 } for line in finding["lines"] for identity in line["identities"]],
                 "scene": [{
                     "command": (_scene_position(record) or ("", None))[1],
@@ -6019,12 +6225,9 @@ def _editorial_items(
                 if key in finding
             },
             "occurrences": len(targets),
-            "targets": [{
-                "identity": record["identity"],
-                "event_code": record.get("event_code"),
-                "live_pointers": record["live_pointers"],
-                "live_transform": record["live_transform"],
-            } for record in targets],
+            "targets": [
+                _editorial_target(record, task["layout"]) for record in targets
+            ],
             "nearby_commands": nearby.get(finding["cluster_id"])
             or _nearby_commands(
                 data_root,
@@ -6148,6 +6351,7 @@ def _validate_scene_revision(review: dict[str, Any], item: dict[str, Any]) -> No
             problems = correction_problems(
                 line["source"], line["current"], row["replacement"],
                 target["event_code"], target["live_pointers"], target["live_transform"],
+                box=target.get("box"),
             )
             if problems:
                 raise QAResultError(
@@ -6208,6 +6412,7 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
                 finding["source"], finding["current"], replacement,
                 target["event_code"], target["live_pointers"], target["live_transform"],
                 frozenset(finding.get("allowed_flags") or ()),
+                box=target.get("box"),
             )
             if problems:
                 raise QAResultError(
@@ -6217,7 +6422,10 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
 
 
 def _compose_lint(
-    findings: list[dict[str, Any]], records: dict[str, dict[str, Any]], titles: dict
+    findings: list[dict[str, Any]],
+    records: dict[str, dict[str, Any]],
+    titles: dict,
+    layout: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Apply accepted lint fixes on top of final corrections, a scene
     correction's line by line; returns those left out because the combined
@@ -6239,11 +6447,8 @@ def _compose_lint(
                 for identity in (
                     change["identities"] if scene else finding["target_identities"]
                 )
-                for problem in correction_problems(
-                    records[identity]["source"], records[identity]["live"], composed,
-                    records[identity].get("event_code"),
-                    records[identity]["live_pointers"],
-                    records[identity]["live_transform"],
+                for problem in _record_problems(
+                    records[identity], composed, layout,
                     frozenset(finding.get("allowed_flags") or ()),
                 )
             })
@@ -6302,7 +6507,8 @@ def _complete_editorial(
     conflicts, or finish."""
     draft = _read_json(root / "draft-findings.json")
     manifest = _read_json(root / "inventory.json")
-    records, _clusters = _record_maps(manifest)
+    records, clusters = _record_maps(manifest)
+    layout = task["layout"]
     titles = lint.title_map(manifest["clusters"])
     editorial = checkpoint.setdefault(
         "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
@@ -6396,11 +6602,7 @@ def _complete_editorial(
         problems = sorted({
             problem
             for identity in finding["target_identities"]
-            for problem in correction_problems(
-                records[identity]["source"], records[identity]["live"], composed,
-                records[identity].get("event_code"), records[identity]["live_pointers"],
-                records[identity]["live_transform"],
-            )
+            for problem in _record_problems(records[identity], composed, layout)
         })
         if problems:
             lint_dropped.append({
@@ -6409,7 +6611,7 @@ def _complete_editorial(
             })
         else:
             finding["correction"] = composed
-    lint_dropped += _compose_lint(final, records, titles)
+    lint_dropped += _compose_lint(final, records, titles, layout)
     final = [
         finding for finding in final
         if any(change["correction"] != change["current"] for change in _changes(finding))
@@ -6452,11 +6654,14 @@ def _complete_editorial(
             })
     final = [finding for finding in final if finding["id"] not in open_conflicts]
     final, superseded = _supersede(final)
-    _simulate_apply(final, records)
+    questions = copy.deepcopy(draft.get("uncertain_playtests") or [])
+    _fit_corrections(final, questions, records, clusters, layout)
+    _simulate_apply(final, records, layout)
     document = {
         **draft,
         "created_at": _utc_now(),
         "findings": final,
+        "uncertain_playtests": questions,
         "finding_families": _finding_families(final),
         "withdrawn": withdrawn,
         "unverified": unverified,
