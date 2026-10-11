@@ -310,7 +310,8 @@ Reuse verified current findings and inspect only the source needed to resolve mi
 For layout, prioritize System resolution/font settings and the relevant window/plugin code.
 Inspect font metrics, window skins, portrait or other image dimensions only when they establish an actual
 text area's geometry. Skip unrelated artwork, image inventories, broad OCR and image text translation;
-those belong to the separate Images stage. Do not edit images or execute the game here.
+those belong to the separate Images stage. Do not edit images here, and run the game only to confirm
+the measured limits on screen as the layout analysis describes.
 
 After the local speaker scan, finish the glossary, voice, game context and width investigation.
 Keep the shared glossary's category headers and `source (translation)` entry format; character notes stay on that entry's line.
@@ -320,7 +321,7 @@ you investigated. An empty file is fine when there is nothing to add. Their pres
 completes guidance setup; no document hashes, completion report or review receipts are required.
 Read `{command}` to confirm the saved files are available.
 
-Do not execute translation, paid name translation, API submission, or playtesting as part of this setup task.
+Do not execute translation, paid name translation or API submission as part of this setup task.
 """ + layout_instructions(value, command)
 
 
@@ -345,10 +346,11 @@ Replace layout null with the measured values and their evidence:
 "reason": "Actual measurement method, confidence, font and exceptions.",
 "evidence": [{{"file": "js/rpg_windows.js", "sha256": "FINAL_FILE_HASH", "location": "Inspected window functions"}}]}}.
 Those values are schema examples, not measurements. `messageRows` is the rows one message window
-shows before the game starts a new window. Use only measured values with source evidence;
-otherwise omit the optional layout record and report the unresolved geometry.
+shows before the game starts a new window. Use only measured values with source evidence, confirmed
+on screen as the measurement steps describe, and say in `reason` what the captures showed or what
+could not be seen; otherwise omit the optional layout record and report the unresolved geometry.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.
 An active operation or pending option edits may defer the save. Later manual width edits are retained.
-Do not change unrelated guidance, translate text, submit API work or execute the game as part of remeasurement.
+Do not change unrelated guidance, translate text or submit API work as part of remeasurement.
 """

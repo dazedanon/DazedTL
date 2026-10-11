@@ -34,7 +34,14 @@ I need `width`, `faceWidth`, `listWidth`, and `noteWidth`, the rows a message wi
    extra row. If no readable font and wrap width satisfies both, recommend
    pagination/manual reflow or a game-side window change. Do not claim that reducing the wrap
    width fixes vertical overflow; narrower wrapping usually creates more lines.
-7. Recommend a readable font for each category. Use `keep current (<N>px)` when no game-side font
+7. Confirm the result on screen: run the game without changing its files (a scratch copy or
+   its script console can show test text), show a message whose widest line is exactly `width`
+   characters and fills `messageRows` rows, the same under a face graphic at `faceWidth`, and a
+   help or list text at `listWidth`, and capture each. Calculated geometry often differs
+   from what the player sees, so correct any value whose text is clipped, squeezed or wrapped by
+   the game, and capture again. When the game cannot run or be captured, keep the measured values
+   and say what was not seen.
+8. Recommend a readable font for each category. Use `keep current (<N>px)` when no game-side font
    change is needed; otherwise cite the exact plugin parameter or function that would change it.
 </instructions>
 
@@ -47,7 +54,7 @@ List/Help: listWidth=<N> ; font=<Npx or keep current (Npx)> ; rows=<N or varies>
 Notes    : noteWidth=<N> ; font=<Npx or keep current (Npx)> ; rows=<N or varies>
 
 Evidence:
-- <window/font/plugin locator, horizontal capacity, visible-row limit, and tested fit>
+- <window/font/plugin locator, horizontal capacity, visible-row limit, tested fit, and what the captures showed>
 
 Exceptions / playtests:
 - <plugin portraits, variant windows, or messages requiring pagination>

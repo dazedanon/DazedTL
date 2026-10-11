@@ -296,6 +296,13 @@ geometry rather than generic RPG Maker defaults whenever project code is availab
 8. Recommend one conservative shared width and one readable font size for each category. If the
    current font should remain unchanged, say `keep current` and report its measured size. Cite the
    files/functions/plugin parameters supporting every recommendation and give a confidence level.
+9. Confirm the result on screen: run the game without changing its files (a scratch copy or
+   its script console can show test text), show a message whose widest line is exactly `width`
+   characters and fills `messageRows` rows, the same under a face graphic at `faceWidth`, and a
+   help or list text at `listWidth`, and capture each. Calculated geometry often differs
+   from what the player sees, so correct any value whose text is clipped, squeezed or wrapped by
+   the game, and capture again. When the game cannot run or be captured, keep the measured values
+   and say what was not seen.
 
 Report these recommendations under **Manual changes > RPG Maker settings**. They are settings the
 user must review or change, so do not put them in a code fence:
@@ -310,8 +317,8 @@ user must review or change, so do not put them in a code fence:
   varies>`.
 - `Notes    : noteWidth=<DazedTL width> ; font=<px or keep current (measured px)> ; rows=<count or
   varies>`.
-- Evidence: resolution/window/font/plugin locators, horizontal capacity, visible-row limit, and
-  tested fit.
+- Evidence: resolution/window/font/plugin locators, horizontal capacity, visible-row limit,
+  tested fit, and what the captures showed.
 - Exceptions/playtests: variant windows, uncertain plugin behavior, or messages requiring manual
   pagination or reflow.
 
@@ -477,9 +484,9 @@ For RPG Maker, include **Speaker settings** first:
 - `FACENAME101`: ENABLE or SKIP. When enabled, list only proven filename-to-speaker mappings.
 
 Then include **RPG Maker settings** with the code-408 decision, unsupported marker support requests,
-and Dialogue, List/Help, and Notes wrap/font values specified above. Tell the user to enter the
-recommended widths in Workflow and click **Save line widths**; DazedTL stores them with the selected
-game and reloads them automatically when switching projects.
+and Dialogue, List/Help, and Notes wrap/font values specified above. When this task names a
+layout report, save the widths and message rows there and DazedTL applies them to the selected game;
+otherwise report them for **Line widths**.
 
 For Wolf, include **Speaker settings** with `LOWCONF_FIRSTLINE: ENABLE|SKIP` and representative
 examples. Do not emit RPG Maker settings.
