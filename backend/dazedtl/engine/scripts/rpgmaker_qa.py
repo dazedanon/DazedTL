@@ -57,6 +57,14 @@ def main() -> int:
     decide.add_argument("--translation", default="")
     decisions = sub.add_parser("decisions", help="Print the recorded decisions.")
     decisions.add_argument("--task", required=True, type=Path)
+    observe = sub.add_parser(
+        "observe", help="Send a line to deep review with a concrete reason."
+    )
+    observe.add_argument("--task", required=True, type=Path)
+    observe.add_argument("--worker", required=True)
+    observe.add_argument("--identity", required=True)
+    observe.add_argument("--category", required=True, action="append")
+    observe.add_argument("--note", required=True)
     next_cmd = sub.add_parser("next")
     next_cmd.add_argument("--task", required=True, type=Path)
     next_cmd.add_argument("--worker", required=True)
@@ -119,6 +127,10 @@ def main() -> int:
         ))
     elif args.command == "decisions":
         _print(rpgmaker_qa._decisions(Path(args.task).expanduser().resolve()))
+    elif args.command == "observe":
+        _print(rpgmaker_qa.record_observation(
+            args.task, args.worker, args.identity, args.category, args.note
+        ))
     elif args.command == "finalize":
         _print(rpgmaker_qa.finalize(args.task, args.skip_declined))
     return 0

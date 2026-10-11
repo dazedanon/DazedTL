@@ -21,6 +21,12 @@ do not call a model-provider API.
   reason that does not repeat game text; never skip, soften or shorten it. Nothing is classified
   or excluded in advance: declining is the only way an item goes unreviewed, and DazedTL offers
   it to another reviewer before reporting it as not reviewed.
+- Never leave a concrete defect you notice outside your own items in prose alone, whether in
+  `nearby_commands`, `context` output, another scene or after your result was accepted. Add an
+  observation to that result or your next one, naming the line and a short concrete reason.
+  DazedTL sends the line to deep review with your reason as its screen evidence, in a follow-up
+  deep round when deep review is over, so its correction still gets the editorial pass. A line
+  in a scene reviewers declined stays out.
 - Treat stylistic preference as clean. Change a line only for a concrete defect, with the
   smallest natural correction that resolves it; equally faithful and fluent alternatives stay as
   they are. Extra slang, jokes, hostility or explanation are not repairs, and deliberate
@@ -68,7 +74,8 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use
    that wording. Reviewers read them with `{{CLI}} decisions --task {{TASK}}`.
-7. When `status` reports `complete`, apply with the project helper's `qa --apply --wait 60`
+7. When a worker reports a defect outside its items in prose instead of an observation, record it with `{{CLI}} observe --task {{TASK}} --worker <name> --identity <line> --category <category> --note <reason>`; QA returns to deep review for it by itself.
+8. When `status` reports `complete`, apply with the project helper's `qa --apply --wait 60`
    from your handoff. It applies every finding, and each question's proposal the user chose, as
    one reviewed text batch and saves a checkpoint commit. Open playtest or context questions
    wait for the user, who answers them in DazedTL's Text QA task; apply follows once every one
@@ -116,10 +123,11 @@ screening continues; an item whose screen evidence grew after its deep review co
 that `prior_review`, and your review replaces it.
 
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
-  reach it. A `clean` review of such an item rebuts that reason concretely in its
-  `evidence`; do not clear it because the problem is absent from the small `nearby_commands`
-  window. Use `{{CLI}} context --task {{TASK}} --worker <name> --at <identity>` for more
-  surrounding text.
+  reach it; an `observation` is the reason a reviewer gave for a line outside its own items,
+  and the `observation` deep reason marks an item it escalated. A `clean` review of such an
+  item rebuts that reason concretely in its `evidence`; do not clear it because the problem is
+  absent from the small `nearby_commands` window. Use
+  `{{CLI}} context --task {{TASK}} --worker <name> --at <identity>` for more surrounding text.
 - `motifs` names the family-level wordplay reviews; reconcile scene and family evidence.
   `motif-scene-contradiction` means a scene reviewer disputed a variant of a family called
   preserved, so every variant was reopened. Set `motif_ids` only when your correction or
@@ -180,6 +188,8 @@ Prefix every command with `{{CLI}}`:
   surrounding text; scenes a reviewer declined are left out unless your assigned bundle prints
   them
 - `decide --task {{TASK}} ...` and `decisions --task {{TASK}}`
+- `observe --task {{TASK}} --worker <name> --identity <line> --category <category> --note <reason>`,
+  with `--category` repeated for more, to observe a line outside every result
 - `rebuild-deep --task <earlier task>` when DazedTL reports that its QA rules changed after an earlier task's screen was complete: it reuses that screen's validated results and checks in a new task, where any check the current rules add waits for a reviewer
 
 ## Result formats
@@ -188,16 +198,24 @@ Every result names its `bundle_id` and the `bundle_sha256` that `next` returned.
 is `{"id": "<item id>", "reason": "<one line, no game text>"}` in a screen, group or editorial
 result's `declined` list, and a deep review with `"disposition": "declined"` and a `reason`.
 
+Every result may carry `observations`, each
+`{"identity": "<line>", "categories": ["speaker"], "note": "<one-line concrete reason>"}`. The
+line is an inventory identity, with or without its `@` checksum, or the event command or
+database field that holds it: a command list from `context` with the command number, such as
+`Map007.json#/events/14/pages/2/list/217`, or a field such as `States.json#/42/message1`. An
+observation cannot name a line the result judges itself, such as a screen target, a deep item's
+listed occurrences, a sweep candidate or a finding's targets.
+
 Screen:
 
 ```json
-{"schema":"{{SCREEN_SCHEMA}}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}],"motif_reviews":[{"id":"motif-...","disposition":"preserved","note":"The joke mechanism and why every variant keeps it.","suspect_ids":[]}],"lint_reviews":[{"id":"lint-family-...","rejected":[],"note":""}],"declined":[]}
+{"schema":"{{SCREEN_SCHEMA}}","bundle_id":"screen-0001","bundle_sha256":"...","reviewed_all":true,"exceptions":[{"id":"scene-target-...","verdict":"suspect","categories":["meaning"],"note":"short concrete reason"}],"motif_reviews":[{"id":"motif-...","disposition":"preserved","note":"The joke mechanism and why every variant keeps it.","suspect_ids":[]}],"lint_reviews":[{"id":"lint-family-...","rejected":[],"note":""}],"declined":[],"observations":[]}
 ```
 
 Deep:
 
 ```json
-{"schema":"{{DEEP_SCHEMA}}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{"id":"...","disposition":"actionable","severity":"medium","category":"voice","family_key":"term:...","motif_ids":[],"evidence":"concrete reason","correction":"Corrected text.","apply_identities":[],"editorial_basis":{"defect":"...","source_support":"...","not_preference":true},"sweep":{"find":"exact current text","replace":"exact corrected text","source_has":"optional Japanese"}}]}
+{"schema":"{{DEEP_SCHEMA}}","bundle_id":"deep-0001","bundle_sha256":"...","reviews":[{"id":"...","disposition":"actionable","severity":"medium","category":"voice","family_key":"term:...","motif_ids":[],"evidence":"concrete reason","correction":"Corrected text.","apply_identities":[],"editorial_basis":{"defect":"...","source_support":"...","not_preference":true},"sweep":{"find":"exact current text","replace":"exact corrected text","source_has":"optional Japanese"}}],"observations":[]}
 ```
 
 A clean review keeps `severity` null, `category` and `family_key` empty and `correction` null.
@@ -209,13 +227,13 @@ its locator's `database_values`.
 Group (lint items go in the screen result's `lint_reviews`):
 
 ```json
-{"schema":"{{SWEEP_SCHEMA}}","bundle_id":"sweep-0001","bundle_sha256":"...","reviews":[{"id":"sweep-family-...","rejected":[],"note":""}],"declined":[]}
+{"schema":"{{SWEEP_SCHEMA}}","bundle_id":"sweep-0001","bundle_sha256":"...","reviews":[{"id":"sweep-family-...","rejected":[],"note":""}],"declined":[],"observations":[]}
 ```
 
 Editorial:
 
 ```json
-{"schema":"{{EDITORIAL_SCHEMA}}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{"id":"QA-0001","verdict":"accept","note":""},{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"},{"id":"QA-0003","verdict":"withdraw","note":"why"}],"declined":[]}
+{"schema":"{{EDITORIAL_SCHEMA}}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{"id":"QA-0001","verdict":"accept","note":""},{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"},{"id":"QA-0003","verdict":"withdraw","note":"why"}],"declined":[],"observations":[]}
 ```
 
 ## Handoff

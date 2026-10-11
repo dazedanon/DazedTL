@@ -62,8 +62,9 @@ CORRECTION_MAP_SCHEMA = "rpgmaker-qa-correction-map-v1"
 REGRESSION_SCHEMA = "rpgmaker-qa-regression-v1"
 EDITORIAL_RESULT_SCHEMA = "rpgmaker-qa-editorial-result-v1"
 EDITORIAL_VERDICTS = frozenset({"accept", "revise", "withdraw"})
-# Editorial rounds for conflicting corrections before they are left unverified.
-EDITORIAL_ROUND_LIMIT = 4
+# Editorial rounds that only settle conflicting corrections, before those are
+# left unverified.
+EDITORIAL_CONFLICT_ROUNDS = 3
 
 DEFAULT_SCREEN_CHAR_BUDGET = 48_000
 DEFAULT_SCREEN_ITEM_LIMIT = 160
@@ -96,6 +97,9 @@ SCREEN_CHECK_SHARE = 0.25
 # A reviewer has every bundle checked once checks found at least this many
 # problems it missed, and more than it found in the same lines.
 SCREEN_CHECK_MISSES = 2
+# An observation's reason, for a line outside the reviewer's own items, is one
+# short line.
+OBSERVATION_NOTE_LIMIT = 500
 SEVERITIES = frozenset({"critical", "high", "medium"})
 FINDING_CATEGORIES = frozenset({
     "speaker",
@@ -2159,6 +2163,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             ),
         },
         "decisions": len(_decisions(root)),
+        "observations": len(checkpoint.get("observations") or []),
         "estimate": _estimate(checkpoint),
         "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
@@ -2286,11 +2291,12 @@ def _next_unlocked(
                 return None, False
             # Every bundle of the stage is reviewed: move QA on, as finalize
             # would.
-            before = stage
             _finalize_unlocked(root)
-            return None, _read_json(root / "checkpoint.json")["stage"] != before or (
-                stage == "editorial"
-                and not _stage_finished(_read_json(root / "checkpoint.json"), ["editorial"])
+            after = _read_json(root / "checkpoint.json")
+            # QA moved to another stage, or opened more bundles of this one.
+            return None, after["stage"] != stage or (
+                after["stage"] in REVIEW_STAGES
+                and not _stage_finished(after, [after["stage"]])
             )
     pending["status"] = "assigned"
     pending["assigned_to"] = worker
@@ -2405,6 +2411,118 @@ def _item_targets(item: dict[str, Any]) -> set[str]:
             if "id" in line or "context_id" in line
         }
     return {item["id"]}
+
+
+def _encode_pointer(parts: Iterable[str]) -> str:
+    return "".join("/" + part.replace("~", "~0").replace("/", "~1") for part in parts)
+
+
+def _line_names(manifest: dict[str, Any]) -> dict[str, set[str]]:
+    """Every shorter name an observation may give a line: its identity without
+    the checksum, its event command or database entry, and where its English
+    lives, such as `Map007.json#/events/14/pages/2/list/217` or
+    `States.json#/42/message1`."""
+    names: dict[str, set[str]] = defaultdict(set)
+    for record in manifest["records"]:
+        identity, prefix = record["identity"], record["file"] + "#"
+        names[prefix + record["source_pointer"]].add(identity)
+        parts = _decode_pointer(record["source_pointer"])
+        if "_original" in parts:
+            names[prefix + _encode_pointer(parts[: parts.index("_original")])].add(identity)
+        for pointer in record["live_pointers"]:
+            names[prefix + pointer].add(identity)
+    return names
+
+
+def _resolve_line(
+    records: dict[str, dict[str, Any]], names: dict[str, set[str]], text: Any
+) -> str:
+    """The inventory identity an observation names."""
+    text = str(text or "").strip()
+    if text in records:
+        return text
+    found = sorted(names.get(text.split("@", 1)[0], ()))
+    if len(found) == 1:
+        return found[0]
+    if found:
+        raise QAResultError(
+            f"{text} holds {len(found)} lines; name one of: "
+            + ", ".join(identity.split("@", 1)[0] for identity in found[:6])
+        )
+    raise QAResultError(f"{text!r} names no line of this task's inventory")
+
+
+def _own_lines(
+    stage: str,
+    bundle: dict[str, Any],
+    screen_index: dict[str, dict[str, str]],
+    clusters: dict[str, dict[str, Any]],
+) -> set[str]:
+    """The lines a bundle gives its reviewer to judge in place, which an
+    observation cannot name."""
+    own: set[str] = set()
+    for item in bundle["items"]:
+        if stage == "screen" and item.get("kind") == "scene":
+            own |= {
+                _target_entry(screen_index, bundle, line["id"])["representative_identity"]
+                for line in item["lines"] if "id" in line
+            }
+        elif stage == "screen" and item.get("kind") == "cluster":
+            own |= set(clusters[item["id"]]["identities"])
+        elif stage == "deep":
+            own |= set(item.get("identities") or [])
+        elif stage == "sweep":
+            own |= {
+                identity for candidate in item["candidates"]
+                for identity in candidate["identities"]
+            }
+        elif stage == "editorial":
+            own |= {target["identity"] for target in item.get("targets") or []}
+    return own
+
+
+def _read_observations(
+    entries: Any,
+    manifest: dict[str, Any],
+    own: set[str] | frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
+    """Validate observations: each names one inventory line outside the
+    reviewer's own items, with categories and a short concrete reason."""
+    if not isinstance(entries, list):
+        raise QAResultError("Observations must be a list")
+    records, _clusters = _record_maps(manifest)
+    names = _line_names(manifest)
+    cluster_ids = _cluster_by_identity(manifest)
+    observations = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise QAResultError("An observation must be an object")
+        identity = _resolve_line(records, names, entry.get("identity"))
+        if identity in own:
+            raise QAResultError(
+                f"{identity} is one of this bundle's own lines; judge it in this "
+                "result instead of observing it"
+            )
+        if any(observation["identity"] == identity for observation in observations):
+            raise QAResultError(f"Duplicate observation of {identity}")
+        categories = entry.get("categories")
+        if not isinstance(categories, list) or not categories or not all(
+            isinstance(value, str) and value.strip() for value in categories
+        ):
+            raise QAResultError(f"An observation needs its categories: {identity}")
+        note = str(entry.get("note") or "").strip()
+        if not note or "\n" in note or len(note) > OBSERVATION_NOTE_LIMIT:
+            raise QAResultError(
+                f"An observation needs a one-line reason of at most "
+                f"{OBSERVATION_NOTE_LIMIT} characters: {identity}"
+            )
+        observations.append({
+            "identity": identity,
+            "cluster_id": cluster_ids[identity],
+            "categories": [value.strip() for value in categories],
+            "note": note,
+        })
+    return observations
 
 
 def _validate_screen_result(bundle: dict, result: dict) -> None:
@@ -2823,6 +2941,19 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             _validate_editorial_result(bundle, result, str(row.get("assigned_to") or ""))
         else:
             _validate_deep_result(bundle, result)
+        observations = []
+        if result.get("observations", []) != []:
+            manifest = _read_json(root / "inventory.json")
+            observations = _read_observations(
+                result["observations"],
+                manifest,
+                _own_lines(
+                    stage,
+                    bundle,
+                    _load_screen_index(root, task) if stage == "screen" else {},
+                    _record_maps(manifest)[1],
+                ),
+            )
         canonical_path = root / "results" / stage / f"{bundle_id}.json"
         if row["status"] == "accepted" and canonical_path.is_file():
             if _read_json(canonical_path) != result:
@@ -2853,6 +2984,9 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         moved = (
             _split_declined(root, checkpoint, stage, row, bundle, declined)
             if declined and not check else 0
+        )
+        _note_observations(
+            checkpoint, observations, stage, str(row.get("assigned_to") or ""), bundle_id
         )
         if stage == "screen":
             exception_ids = checkpoint["screen"].setdefault("exception_ids", [])
@@ -2898,7 +3032,13 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
                 item["target_count"] for item in bundle["items"]
                 if item.get("kind") == "lint-family" and item["id"] not in declined
             )
-            checkpoint["deep"]["projected_items"] = len(candidate_reasons)
+            checkpoint["deep"]["projected_items"] = len(
+                set(candidate_reasons)
+                | {
+                    observation["cluster_id"]
+                    for observation in checkpoint.get("observations") or []
+                }
+            )
             if check:
                 _record_check(checkpoint, row, bundle, result, declined)
             else:
@@ -2924,10 +3064,64 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             ).total_seconds()
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
-        if stage == "screen" and checkpoint["stage"] == "screen":
-            if _issue_deep(root, checkpoint, final=False):
-                _atomic_write_json(root / "checkpoint.json", checkpoint)
+        if stage == "screen" or observations:
+            _issue_new_evidence(root, checkpoint)
     return status(root)
+
+
+def _note_observations(
+    checkpoint: dict[str, Any],
+    observations: list[dict[str, Any]],
+    stage: str,
+    worker: str,
+    bundle_id: str = "",
+) -> None:
+    checkpoint.setdefault("observations", []).extend(
+        {
+            **observation,
+            "stage": stage,
+            "worker": worker,
+            **({"bundle": bundle_id} if bundle_id else {}),
+            "at": _utc_now(),
+        }
+        for observation in observations
+    )
+
+
+def _issue_new_evidence(root: Path, checkpoint: dict[str, Any]) -> None:
+    """Open deep items for new evidence while QA still takes them: in early
+    batches while screening continues and at once during deep review. Later
+    stages leave it for a follow-up deep round."""
+    stage = checkpoint["stage"]
+    if stage in {"screen", "deep"} and _issue_deep(
+        root, checkpoint, final=stage == "deep"
+    ):
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+
+
+def record_observation(
+    task_dir: str | Path,
+    worker: str,
+    identity: str,
+    categories: Iterable[str],
+    note: str,
+) -> dict[str, Any]:
+    """Send a line to deep review with a reviewer's reason, such as a defect
+    a reviewer reported outside its own bundle."""
+    root = Path(task_dir).expanduser().resolve()
+    with _task_lock(root):
+        root, _task, checkpoint = _load_task(root)
+        if checkpoint["stage"] == "complete":
+            raise ValueError("QA is complete; run QA again to review more text")
+        (observation,) = _read_observations(
+            [{"identity": identity, "categories": list(categories), "note": note}],
+            _read_json(root / "inventory.json"),
+        )
+        _note_observations(checkpoint, [observation], checkpoint["stage"], str(worker or ""))
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        _issue_new_evidence(root, checkpoint)
+    return observation
 
 
 # Commands the context view leaves out: flow, waits, sound and picture moves.
@@ -3155,8 +3349,13 @@ def _render_deep(bundle: dict) -> list[str]:
             "  EN: " + _context_text(item["translation"]),
         ] + _render_hints(item, "  ")
         for evidence in item.get("screen_evidence") or []:
+            source = (
+                "observed at " + evidence["identity"].split("@", 1)[0]
+                if evidence["verdict"] == "observation"
+                else f"screen [{evidence['verdict']}]"
+            )
             out.append(
-                f"  screen [{evidence['verdict']}] ({','.join(evidence['categories'])}): "
+                f"  {source} ({','.join(evidence['categories'])}): "
                 + _context_text(evidence["note"])
             )
         prior = item.get("prior_review")
@@ -3335,20 +3534,28 @@ def _nearby_commands(data_root: Path, record: dict, cache: dict[str, Any]) -> li
     return compact
 
 
-def _screen_handoff_context(
+def _deep_basis(
     root: Path,
-) -> tuple[
-    dict[str, list[dict[str, Any]]],
-    dict[str, list[dict[str, Any]]],
-    dict[str, list[dict[str, Any]]],
-]:
-    """Recover accepted screen rationale, full scenes, and motif adjudication."""
-    task = _read_json(root / "task.json")
-    checkpoint = _read_json(root / "checkpoint.json")
-    screen_index = _load_screen_index(root, task)
+    checkpoint: dict[str, Any],
+    manifest: dict[str, Any],
+    declined: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """What deep items are made from: each candidate's reasons, with the
+    accepted screen rationale, full scenes and motif adjudication behind it.
+
+    An observation is screen evidence too, except on a line reviewers
+    declined, which stays out of deep review.
+    """
+    screen_index = _load_screen_index(root, _read_json(root / "task.json"))
+    records, _clusters = _record_maps(manifest)
+    candidates = copy.deepcopy(checkpoint["deep"].get("candidate_reasons") or {})
     evidence: dict[str, list[dict[str, Any]]] = defaultdict(list)
     scenes: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     motifs: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # Every screened scene by its command list, and by each of its copies',
+    # with the cluster of each of its lines.
+    screened: dict[str, dict[str, Any]] = {}
+    line_clusters: dict[str, str] = {}
 
     for row in checkpoint["screen"]["bundles"]:
         if row.get("status") != "accepted" or not row.get("result_path"):
@@ -3365,10 +3572,16 @@ def _screen_handoff_context(
                 "line_count": item["line_count"],
                 "lines": item["lines"],
             }
+            for copy_id in item.get("scene_copies") or [item["scene_id"]]:
+                screened[copy_id] = scene
             for line in item["lines"]:
                 target_id = line.get("id") or line.get("context_id")
                 if target_id:
                     target_scenes[target_id] = scene
+                    line_clusters[target_id] = str(
+                        _target_entry(screen_index, bundle, target_id).get("cluster_id")
+                        or ""
+                    )
 
         for exception in result["exceptions"]:
             target_id = exception["id"]
@@ -3399,11 +3612,37 @@ def _screen_handoff_context(
             for variant in motif["variants"]:
                 motifs[variant["id"]].append(context)
 
-    return (
-        {key: value for key, value in evidence.items()},
-        {key: list(value.values()) for key, value in scenes.items()},
-        {key: value for key, value in motifs.items()},
-    )
+    for observation in checkpoint.get("observations") or []:
+        identity, cluster_id = observation["identity"], observation["cluster_id"]
+        if identity in declined["identities"]:
+            continue
+        _merge_candidate(candidates, cluster_id, ["observation"], [identity])
+        position = _scene_position(records[identity])
+        scene = screened.get(position[0]) if position else None
+        # The scene line the observation names, which its deep item marks.
+        target_id = next((
+            line_id
+            for line in (scene or {}).get("lines") or []
+            if (line_id := line.get("id") or line.get("context_id"))
+            and line_clusters.get(line_id) == cluster_id
+        ), "")
+        evidence[cluster_id].append({
+            "target_id": target_id or identity,
+            "verdict": "observation",
+            "identity": identity,
+            "categories": list(observation["categories"]),
+            "note": observation["note"],
+        })
+        if scene and target_id:
+            scenes[cluster_id][scene["scene_id"]] = scene
+
+    _reopen_disputed_preserved_motifs(candidates, evidence, motifs)
+    return {
+        "candidates": candidates,
+        "evidence": dict(evidence),
+        "scenes": {key: list(value.values()) for key, value in scenes.items()},
+        "motifs": dict(motifs),
+    }
 
 
 def _reopen_disputed_preserved_motifs(
@@ -3769,8 +4008,14 @@ def _add_sweep_findings(
                         candidate,
                         str(review.get("note") or "").strip(),
                     ))
+    # A line a follow-up deep review corrected keeps that correction.
+    corrected = {
+        finding["cluster_id"] for finding in findings if finding.get("kind") != "show-text"
+    }
     dropped = []
     for cluster_id, accepted in sorted(by_cluster.items()):
+        if cluster_id in corrected:
+            continue
         accepted.sort(key=lambda entry: entry[0]["family_key"])
         item, candidate, note = accepted[0]
         correction = candidate["current"]
@@ -3915,17 +4160,17 @@ def _not_reviewed(
 
 def _deep_items(
     root: Path,
-    candidate_reasons: dict[str, dict[str, Any]],
-    only: set[str] | None = None,
-    prior: dict[str, dict[str, Any]] | None = None,
+    checkpoint: dict[str, Any],
+    manifest: dict[str, Any],
+    declined: dict[str, Any],
+    basis: dict[str, dict[str, Any]],
+    only: set[str],
+    prior: dict[str, dict[str, Any]],
 ) -> list[dict]:
-    """Deep items for the candidates, or for `only` those; a cluster reviewed
+    """Deep items for the `only` candidates of the basis; a cluster reviewed
     before carries that `prior_review` to reconcile with newer evidence."""
-    manifest = _read_json(root / "inventory.json")
     context = _read_json(root / "context.json")
     records, clusters = _record_maps(manifest)
-    checkpoint = _read_json(root / "checkpoint.json")
-    declined = _declined_scope(root, checkpoint, manifest)
     lint_accepted = _lint_decisions(checkpoint, declined)
     titles = lint.title_map(manifest["clusters"])
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
@@ -3934,17 +4179,16 @@ def _deep_items(
         by_source[cluster["source"]].append(cluster)
     data_root = Path(_read_json(root / "task.json")["data_root"])
     document_cache: dict[str, Any] = {}
-    screen_evidence, screen_scenes, motif_contexts = _screen_handoff_context(root)
-    _reopen_disputed_preserved_motifs(
-        candidate_reasons, screen_evidence, motif_contexts
-    )
+    candidate_reasons = basis["candidates"]
+    screen_evidence, screen_scenes = basis["evidence"], basis["scenes"]
+    motif_contexts = basis["motifs"]
     items = []
     for identity in manifest["review_sequence"]:
         # Lines in scenes a reviewer declined stay out of deep review.
         if (
             identity not in candidate_reasons
             or identity in declined["clusters"]
-            or only is not None and identity not in only
+            or identity not in only
         ):
             continue
         cluster = clusters[identity]
@@ -4019,7 +4263,7 @@ def _deep_items(
             if "motif-scene-contradiction" in item["deep_reasons"]:
                 contexts = [_motif_translation_roster(value) for value in contexts]
             item["motif_contexts"] = contexts
-        if prior and identity in prior:
+        if identity in prior:
             item["prior_review"] = prior[identity]
         items.append(item)
     return items
@@ -4064,12 +4308,12 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
 
     While screening continues, a batch opens once enough clusters are ready:
     their target bundle, its check and motif reviews are accepted. When
-    screening ends, every remaining candidate opens, and a cluster whose
+    screening ends, and again whenever QA would leave deep review or new
+    observations wait, every remaining candidate opens, and a cluster whose
     evidence grew after its deep review opens again with that review beside
     it. Returns how many items opened.
     """
     deep = checkpoint["deep"]
-    candidates = deep.setdefault("candidate_reasons", {})
     issued = deep.setdefault("issued", {})
     rows = deep.setdefault("bundles", [])
     open_clusters = {
@@ -4077,9 +4321,11 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         for row in rows if row["status"] in {"pending", "assigned"}
         for item in _read_json(Path(row["path"]))["items"]
     }
-    if final:
-        ready = set(candidates)
-    else:
+    if not final:
+        candidates = set(deep.get("candidate_reasons") or {}) | {
+            observation["cluster_id"]
+            for observation in checkpoint.get("observations") or []
+        }
         index = _read_json(root / "screen-targets.json")
         screen_rows = {row["id"]: row for row in checkpoint["screen"]["bundles"]}
         statuses = {key: row["status"] for key, row in screen_rows.items()}
@@ -4115,10 +4361,13 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     manifest = _read_json(root / "inventory.json")
     declined = _declined_scope(root, checkpoint, manifest, waiting=not final)
-    evidence, scenes, motifs = _screen_handoff_context(root)
-    _reopen_disputed_preserved_motifs(candidates, evidence, motifs)
+    basis = _deep_basis(root, checkpoint, manifest, declined)
+    candidates, evidence = basis["candidates"], basis["evidence"]
+    scenes, motifs = basis["scenes"], basis["motifs"]
     if final:
         ready = set(candidates)
+        # The observations this round has considered.
+        deep["observed"] = len(checkpoint.get("observations") or [])
 
     def signature(cluster_id):
         return _sha256(_canonical_bytes([
@@ -4132,7 +4381,7 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         ]))[:20]
 
     fresh = {
-        cluster_id for cluster_id in ready
+        cluster_id for cluster_id in ready & set(candidates)
         if cluster_id not in declined["clusters"]
         and cluster_id not in open_clusters
         and issued.get(cluster_id) != signature(cluster_id)
@@ -4148,7 +4397,7 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         for cluster_id, (review, _item, _row) in latest.items()
         if cluster_id in fresh
     }
-    items = _deep_items(root, candidates, only=fresh, prior=prior)
+    items = _deep_items(root, checkpoint, manifest, declined, basis, fresh, prior)
     if not items:
         return 0
     bundles = _bundle_deep(items, first=len(rows) + 1)
@@ -4198,9 +4447,13 @@ def _settle_declined(
 
 
 def _sweep_items(
-    checkpoint: dict[str, Any], manifest: dict[str, Any], declined: dict[str, Any]
+    checkpoint: dict[str, Any],
+    manifest: dict[str, Any],
+    declined: dict[str, Any],
+    offered: set[str],
 ) -> list[dict[str, Any]]:
-    """Every other line an accepted family's sweep rule changes, for group review."""
+    """Every other line an accepted family's sweep rule changes, for group
+    review, leaving out the candidates an earlier sweep `offered`."""
     records, _clusters = _record_maps(manifest)
     corrected: set[str] = set()
     families: dict[str, dict[str, Any]] = {}
@@ -4234,9 +4487,11 @@ def _sweep_items(
         candidates = []
         for cluster in manifest["clusters"]:
             cluster_id = cluster["representative"]
+            candidate_id = "sweep-" + _sha256(f"{key}\0{cluster_id}")[:16]
             if (
                 cluster_id in corrected
                 or cluster_id in declined["clusters"]
+                or candidate_id in offered
                 or find not in cluster["live"]
                 or source_has not in cluster["source"]
             ):
@@ -4262,7 +4517,7 @@ def _sweep_items(
             position = _scene_position(members[0])
             speaker = str((members[0].get("speaker") or {}).get("display_name") or "")
             candidates.append({
-                "id": "sweep-" + _sha256(f"{key}\0{cluster_id}")[:16],
+                "id": candidate_id,
                 "cluster_id": cluster_id,
                 "identities": [record["identity"] for record in members],
                 "scene": position[0] if position else members[0]["file"],
@@ -4298,21 +4553,35 @@ def _advance_unlocked(
     root, task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] == "deep":
         _settle_declined(checkpoint, "deep", skip_declined)
+        if _issue_deep(root, checkpoint, final=True):
+            # Evidence that grew during deep review, such as an observation,
+            # opens more of it first.
+            checkpoint["updated_at"] = _utc_now()
+            _atomic_write_json(root / "checkpoint.json", checkpoint)
+            return status(root)
         manifest = _read_json(root / "inventory.json")
+        sweep = checkpoint.setdefault(
+            "sweep", {"total_items": 0, "accepted_items": 0, "bundles": []}
+        )
+        # A follow-up deep round adds only the lines no sweep offered yet.
+        offered = {
+            candidate["id"]
+            for row in sweep["bundles"]
+            for item in _read_json(Path(row["path"]))["items"]
+            for candidate in item["candidates"]
+        }
         items = _sweep_items(
-            checkpoint, manifest, _declined_scope(root, checkpoint, manifest)
+            checkpoint, manifest, _declined_scope(root, checkpoint, manifest), offered
         )
         bundles = _bundle_items(
             items,
             stage="sweep",
             char_budget=DEFAULT_DEEP_CHAR_BUDGET,
             item_limit=DEFAULT_DEEP_ITEM_LIMIT,
+            first=len(sweep["bundles"]) + 1,
         ) if items else []
-        checkpoint["sweep"] = {
-            "total_items": sum(item["target_count"] for item in items),
-            "accepted_items": 0,
-            "bundles": _write_bundles(root, bundles) if bundles else [],
-        }
+        sweep["bundles"] += _write_bundles(root, bundles) if bundles else []
+        sweep["total_items"] += sum(item["target_count"] for item in items)
         checkpoint["stage"] = "sweep" if bundles else "ready-finalize"
         checkpoint["updated_at"] = _utc_now()
         _atomic_write_json(root / "checkpoint.json", checkpoint)
@@ -4493,17 +4762,25 @@ def _draft_document(
             else None
         )
         kind = (review.get("source_fix") or {}).get("kind")
+        cluster = clusters[review["id"]]
+        # A follow-up review that reviewers declined leaves the lines unreviewed.
+        places = [
+            identity for identity in cluster["identities"]
+            if identity not in declined["identities"]
+        ]
         if review["disposition"] == "actionable" and kind == "show-text":
-            findings.append(_show_text_finding(
-                review, records, task, faces, row, declined
-            ))
+            if review["apply_identities"][0] not in declined["identities"]:
+                findings.append(_show_text_finding(
+                    review, records, task, faces, row, declined
+                ))
         elif review["disposition"] == "actionable":
-            cluster = clusters[review["id"]]
             target_ids = [
                 identity
                 for identity in review.get("apply_identities") or cluster["identities"]
                 if identity not in declined["identities"]
             ]
+            if not target_ids:
+                continue
             findings.append({
                 "id": "",
                 "cluster_id": review["id"],
@@ -4527,16 +4804,12 @@ def _draft_document(
                     else {}
                 ),
             })
-        elif review["disposition"] == "uncertain-playtest":
-            cluster = clusters[review["id"]]
+        elif review["disposition"] == "uncertain-playtest" and places:
             uncertain.append({
                 **review,
                 "source": cluster["source"],
                 "current": cluster["live"],
-                "places": len([
-                    identity for identity in cluster["identities"]
-                    if identity not in declined["identities"]
-                ]),
+                "places": len(places),
             })
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
     _add_lint_findings(
@@ -4547,8 +4820,7 @@ def _draft_document(
         item["cluster_id"],
         bool(item.get("lint_only")),
     ))
-    for index, finding in enumerate(findings, start=1):
-        finding["id"] = f"QA-{index:04d}"
+    _number_findings(checkpoint, findings)
     _simulate_apply(findings, records)
     finding_by_cluster = {
         item["cluster_id"]: item for item in findings
@@ -4639,6 +4911,35 @@ def _draft_document(
             ],
         },
     }
+
+
+def _number_findings(
+    checkpoint: dict[str, Any], findings: list[dict[str, Any]]
+) -> None:
+    """Give each finding the ID an identical finding had in an earlier draft,
+    so editorial verdicts keep applying after a follow-up deep round, or the
+    next unused one."""
+    ids = checkpoint.setdefault("finding_ids", {})
+    used = max((int(value.split("-")[1]) for value in ids.values()), default=0)
+    seen: Counter[str] = Counter()
+    for finding in findings:
+        key = _sha256(_canonical_bytes([
+            finding["cluster_id"],
+            finding.get("kind") or "",
+            bool(finding.get("lint_only")),
+            finding.get("sweep_families") or [],
+            finding["source"],
+            finding["current"],
+            finding["correction"],
+            finding["target_identities"],
+            finding.get("parameters"),
+        ]))[:24]
+        seen[key] += 1
+        key = f"{key}:{seen[key]}"
+        if key not in ids:
+            used += 1
+            ids[key] = f"QA-{used:04d}"
+        finding["id"] = ids[key]
 
 
 def _face_names(data_root: Path) -> set[str]:
@@ -4951,12 +5252,16 @@ def _compose_lint(
 def _complete_editorial(
     root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
 ) -> dict[str, Any]:
-    """Apply editorial verdicts, then finish or open another round for conflicts."""
+    """Apply editorial verdicts, then open a round for the findings no
+    editorial reviewer has judged, such as a follow-up deep round's, or for
+    conflicts, or finish."""
     draft = _read_json(root / "draft-findings.json")
     manifest = _read_json(root / "inventory.json")
     records, _clusters = _record_maps(manifest)
     titles = lint.title_map(manifest["clusters"])
-    editorial = checkpoint.get("editorial") or {"bundles": []}
+    editorial = checkpoint.setdefault(
+        "editorial", {"total_items": 0, "accepted_items": 0, "bundles": [], "round": 0}
+    )
     # Each finding's verdicts in round order; a later round judged the text
     # the earlier ones left.
     verdicts: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -4980,7 +5285,8 @@ def _complete_editorial(
             for conflict in item.get("conflicts") or []:
                 if conflict["kind"] == "soft":
                     acks[f"{conflict['key']}:{identity}"] = conflict["signature"]
-    final, withdrawn, unverified = [], [], []
+    final, withdrawn, unverified, remnants = [], [], [], []
+    unjudged: set[str] = set()
     for finding in draft["findings"]:
         identity = finding["id"]
         history = verdicts.get(identity) or []
@@ -4989,14 +5295,14 @@ def _complete_editorial(
             unverified.append({"id": identity, "reason": "declined by editorial reviewers"})
             continue
         if verdict is None and _needs_editorial(finding):
-            raise ValueError(f"{identity} has no editorial review yet")
+            unjudged.add(identity)
         if verdict and verdict["verdict"] == "withdraw":
             withdrawn.append({
                 "id": identity, "note": verdict["note"], "reviewer": verdict["reviewer"],
             })
             if finding.get("lint_families"):
                 # The line still gets the mechanical fixes it was given.
-                final.append({
+                remnants.append({
                     **{key: finding[key] for key in (
                         "cluster_id", "source", "current", "target_identities",
                         "lint_families",
@@ -5012,6 +5318,7 @@ def _complete_editorial(
                     "correction": finding["current"],
                     "lint_only": True,
                 })
+                final.append(remnants[-1])
             continue
         finding = dict(finding)
         for earlier in history:
@@ -5024,13 +5331,9 @@ def _complete_editorial(
                 "reviewer": verdict["reviewer"],
             }
         final.append(finding)
-    numbers = [int(row["id"].split("-")[1]) for row in draft["findings"]]
+    _number_findings(checkpoint, remnants)
     lint_dropped = []
-    for finding in final:
-        if finding["id"]:
-            continue
-        numbers.append(max(numbers, default=0) + 1)
-        finding["id"] = f"QA-{numbers[-1]:04d}"
+    for finding in remnants:
         composed = lint.compose(
             finding["source"], finding["current"], finding["lint_families"], titles
         )
@@ -5064,13 +5367,22 @@ def _complete_editorial(
         for identity, found in conflicts.items()
     }
     open_conflicts = {key: value for key, value in open_conflicts.items() if value}
-    if open_conflicts and int(editorial.get("round", 0)) < EDITORIAL_ROUND_LIMIT:
+    unjudged &= {finding["id"] for finding in final}
+    conflict_rounds = int(editorial.get("conflict_rounds", 0))
+    if unjudged or open_conflicts and conflict_rounds < EDITORIAL_CONFLICT_ROUNDS:
+        if not unjudged:
+            editorial["conflict_rounds"] = conflict_rounds + 1
         _open_editorial_round(
             root,
             checkpoint,
-            [finding for finding in final if finding["id"] in open_conflicts],
+            [
+                finding for finding in final
+                if finding["id"] in unjudged or finding["id"] in open_conflicts
+            ],
             open_conflicts,
         )
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
         return checkpoint
     for finding in final:
         if finding["id"] in open_conflicts:
@@ -5109,33 +5421,36 @@ def _finalize_unlocked(
         raise ValueError("Advance the completed screen stage first")
     if checkpoint["stage"] == "deep":
         state = _advance_unlocked(root, skip_declined)
-        if state["stage"] == "sweep":
-            # Reviewers check the family sweep before findings are made.
+        if state["stage"] != "ready-finalize":
+            # Reviewers check more deep items or the family sweep first.
             return state
         root, task, checkpoint = _load_task(root)
-    if checkpoint["stage"] in {"sweep", "ready-finalize"}:
-        if checkpoint["stage"] == "sweep":
-            _settle_declined(checkpoint, "sweep", skip_declined)
-        draft = _draft_document(root, task, checkpoint)
-        _atomic_write_json(root / "draft-findings.json", draft)
-        conflicts = _consistency_conflicts(
-            draft["findings"], _read_json(root / "context.json"), _decisions(root)
-        )
-        if not _open_editorial_round(root, checkpoint, draft["findings"], conflicts):
-            checkpoint["editorial"] = checkpoint.get("editorial") or {
-                "total_items": 0, "accepted_items": 0, "bundles": [], "round": 0,
-            }
-            _complete_editorial(root, task, checkpoint)
+    stage = checkpoint["stage"]
+    if stage in {"sweep", "ready-finalize", "editorial"}:
+        if stage != "ready-finalize":
+            _settle_declined(checkpoint, stage, skip_declined)
+        if _follow_up(root, checkpoint):
             return status(root)
-        checkpoint["updated_at"] = _utc_now()
-        _atomic_write_json(root / "checkpoint.json", checkpoint)
-        return status(root)
-    if checkpoint["stage"] == "editorial":
-        _settle_declined(checkpoint, "editorial", skip_declined)
+        if stage != "editorial":
+            # Findings are made, or made again after a follow-up deep round.
+            _atomic_write_json(
+                root / "draft-findings.json", _draft_document(root, task, checkpoint)
+            )
         _complete_editorial(root, task, checkpoint)
-        checkpoint["updated_at"] = _utc_now()
-        _atomic_write_json(root / "checkpoint.json", checkpoint)
     return status(root)
+
+
+def _follow_up(root: Path, checkpoint: dict[str, Any]) -> bool:
+    """Return QA to deep review for observations made after its last deep round."""
+    observations = len(checkpoint.get("observations") or [])
+    if observations <= int(checkpoint["deep"].get("observed", 0)):
+        return False
+    if not _issue_deep(root, checkpoint, final=True):
+        return False
+    checkpoint["stage"] = "deep"
+    checkpoint["updated_at"] = _utc_now()
+    _atomic_write_json(root / "checkpoint.json", checkpoint)
+    return True
 
 
 def _decisions(root: Path) -> list[dict[str, Any]]:

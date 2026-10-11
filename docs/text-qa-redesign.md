@@ -18,6 +18,8 @@ Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/r
 - After apply, QA records a [checkpoint](translation-contract.md#delivery-and-future-versions) commit; pushing and publishing stay user-approved.
 - Screening is measured instead of trusted: another reviewer screens a quarter of every reviewer's lines again, whatever either reports goes to deep review, and a reviewer whose checks show it missed more than it found is screened again in full.
   Seeded known-defect probes and per-reviewer yield tracking were rejected, for the [reasons](#screen-checks) below.
+- A defect a reviewer notices outside its own items reaches the engine as an [observation](#observations), never only as prose: the engine checks the line against the inventory and sends it to deep review, in a follow-up round when deep review is over, so its correction still passes the editorial stage.
+  Observations on lines in declined scenes stay out, like the lines themselves.
 
 ## Why
 
@@ -44,6 +46,11 @@ The second complete run of the same game, after the redesign, showed that one sc
 - Seeded probes would put synthetic lines into immutable bundles, where the context view gives them away, and would test only the defects planted; the missed problems were echoes, voice, speakers and terminology.
 - Screen bundles were 4.4 MB of the 6.4 MB reviewers read, so a quarter checked in whole bundles adds about a fifth.
   In a model of the second run's reviewers, escalation raised that to about two fifths and doubled the misses recovered; it checked the reviewer with 1 exception in full in 92% of runs and the one with 21 in none.
+
+### Observations
+
+The same second run showed that reviewers could report what they noticed outside their own items only in prose, to the coordinator, so none of it reached deep review.
+Among others, they found a state message missing its subject like the one just corrected, a broken echo corrected on one event page but not on the next, and a wrong nameplate corrected at one command but likely repeated two commands later.
 
 ## Order of work
 

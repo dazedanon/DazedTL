@@ -43,6 +43,8 @@ def write(name, value):
 
 
 STRATUM = line("第1層で休む", "Rest on Stratum 1")
+WEATHER = line("今日はいい天気だね", "Nice weather today.")
+POWER = line("100%の力", "100% power")
 AROUSAL = line("ムラムラが止まらない", "The Arousal won't stop.")
 # The source shows Arina's header on the owner's line.
 WELCOME = line("いらっしゃい、アリナちゃん", "Welcome, Arina-chan.")
@@ -60,10 +62,10 @@ write(
                     page(
                         speaker("アリナ", "Arina"),
                         STRATUM,
-                        line("今日はいい天気だね", "Nice weather today."),
+                        WEATHER,
                         # Flags that are style, not defects, force no deep review.
                         line("討伐3体", "Three defeated."),
-                        line("100%の力", "100% power"),
+                        POWER,
                         speaker("店長", "Owner", face="owner"),
                         line("よく来たね", "Glad you came."),
                         speaker("アリナ", "Arina"),
@@ -222,7 +224,7 @@ def checkpoint():
     return json.loads((task / "checkpoint.json").read_text())
 
 
-def screen(row, flagged, declined=()):
+def screen(row, flagged, declined=(), observations=()):
     bundle = bundle_of(row)
     return result_path(
         row["id"],
@@ -260,15 +262,30 @@ def screen(row, flagged, declined=()):
                 for item in bundle["items"]
                 if declined_scene(item) or item["id"] in declined
             ],
+            "observations": list(observations),
         },
     )
 
 
 # The first reviewer declines the forest scene and passes everything else but
-# the stratum line.
+# the stratum line. Reviewing lint families, it notices a defect in a scene
+# line outside its own items and names it by its event command.
+OBSERVATION = {
+    "identity": "Map001.json#/events/1/pages/0/list/2",
+    "categories": ["voice"],
+    "note": "Idle small talk right after deciding to rest.",
+}
 while row := qa.next_bundle(task, "screen-a"):
     assert row["id"].startswith("screen"), row
-    qa.accept_result(task, screen(row, {STRATUM["_original"]}))
+    lint_only = all(item["kind"] == "lint-family" for item in bundle_of(row)["items"])
+    qa.accept_result(
+        task,
+        screen(
+            row,
+            {STRATUM["_original"]},
+            observations=[OBSERVATION] if lint_only else [],
+        ),
+    )
 # Only its first bundle is checked, which covers a quarter of its lines, and
 # deep review of those lines waits for the check. The declined scene and the
 # check wait for another reviewer, never this one, and the stage cannot end
@@ -506,6 +523,50 @@ assert "森の奥へ" not in {item["source"] for item in bundle_of(row)["items"]
 # The scene prints once, marking the lines its items' screen evidence names.
 shown = qa.render_bundle(task, row["id"])
 assert shown.count("## SCENE S1") == 1 and ">>ITEM" in shown, shown
+# The observation became a deep item with its reason as screen evidence, and
+# its line is marked in the scene.
+((observed, weather),) = [
+    (bundle, item)
+    for bundle in map(bundle_of, checkpoint()["deep"]["bundles"])
+    for item in bundle["items"]
+    if item["source"] == WEATHER["_original"]
+]
+assert weather["deep_reasons"] == ["observation"], weather
+assert [evidence["note"] for evidence in weather["screen_evidence"]] == [
+    OBSERVATION["note"]
+], weather
+assert any(
+    weather["id"] in line.get("items", [])
+    for scene in observed["scenes"].values()
+    for line in scene["lines"]
+    if line["source"] == WEATHER["_original"]
+), observed["scenes"]
+# A reviewer judges its own items in place; observing one would reopen it.
+try:
+    qa.accept_result(
+        task,
+        result_path(
+            "own-line",
+            {
+                **deep_result(row, {}),
+                "observations": [
+                    {
+                        **OBSERVATION,
+                        "identity": bundle_of(row)["items"][0]["identities"][0],
+                    }
+                ],
+            },
+        ),
+    )
+except qa.QAResultError as error:
+    assert "own lines" in str(error), error
+else:
+    raise AssertionError("An observation reopened the reviewer's own item.")
+# The coordinator relays an observation on the shared line's occurrence in the
+# declined scene, which stays out of deep review although the same text was
+# screened in another scene.
+FOREST_NOTE = "Reads as an order in the dark forest."
+qa.record_observation(task, "coordinator", FOREST + "/3", ["voice"], FOREST_NOTE)
 # A correction that would trip the post-apply regression is refused when it
 # is submitted, so it can never reach findings or roll back an apply.
 try:
@@ -581,6 +642,12 @@ state = qa.finalize(task, skip_declined=True)
 # The sweep rule found the other dialogue lines with the word, not the label;
 # its reviewer accepts one and rejects the sentence start.
 assert state["stage"] == "sweep", state
+assert FOREST_NOTE not in {
+    evidence["note"]
+    for row in checkpoint()["deep"]["bundles"]
+    for item in bundle_of(row)["items"]
+    for evidence in item.get("screen_evidence") or []
+}
 # A worker that stops answering loses its bundle to the next idle one.
 qa.STALL_MINIMUM_SECONDS = 0
 stalled = qa.next_bundle(task, "sweep-slow")
@@ -626,7 +693,7 @@ state = qa.finalize(task)
 assert state["stage"] == "editorial", state
 
 
-def editorial(row, verdicts):
+def editorial(row, verdicts, observations=()):
     reviews = []
     for item in bundle_of(row)["items"]:
         verdict, replacement = verdicts.get(item["finding"]["source"], ("accept", None))
@@ -649,6 +716,7 @@ def editorial(row, verdicts):
                 "bundle_id": row["id"],
                 "bundle_sha256": row["sha256"],
                 "reviews": reviews,
+                "observations": list(observations),
             },
         ),
     )
@@ -684,8 +752,36 @@ qa.record_decision(
     source="第1層",
     translation="first stratum",
 )
-(second,) = editorial(row, {})["items"]
+# The editor also notices a defect in a line no finding touches.
+(second,) = editorial(
+    row,
+    {},
+    [
+        {
+            "identity": "Map001.json#/events/1/pages/0/list/4",
+            "categories": ["fluency"],
+            "note": "A bare fragment where Arina boasts.",
+        }
+    ],
+)["items"]
 assert any("decision" in conflict["key"] for conflict in second["conflicts"]), second
+# It opens a follow-up deep round before QA completes.
+row = qa.next_bundle(task, "deep-a")
+assert qa.status(task)["stage"] == "deep"
+(power,) = bundle_of(row)["items"]
+assert power["source"] == POWER["_original"], power
+qa.accept_result(
+    task,
+    result_path(
+        row["id"], deep_result(row, {POWER["_original"]: "My power, at 100%!"})
+    ),
+)
+# Only its correction gets an editorial round; earlier verdicts stand.
+row = qa.next_bundle(task, "editor-a")
+assert [item["finding"]["source"] for item in bundle_of(row)["items"]] == [
+    POWER["_original"]
+], bundle_of(row)
+editorial(row, {})
 # With nothing left to review, next completes QA and the engine has timed it.
 assert qa.next_bundle(task, "editor-a") is None
 state = qa.status(task)
@@ -699,6 +795,7 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "A sword with Attack +8",
     "Ah…♥ Amazing",
     "Let's leave the forest.",
+    "My power, at 100%!",
     "Owner · owner 0",
     "Rest on the first stratum",
     "The arousal is building…",
