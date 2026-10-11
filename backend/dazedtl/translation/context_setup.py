@@ -12,7 +12,10 @@ from .files import digest, project_path, read_json
 REPORT = ".dazedtl/guided/context-findings.json"
 CORE = ("glossary", "quirks", "game")
 WIDTHS = ("width", "faceWidth", "listWidth", "noteWidth")
-DEFAULT_WIDTHS = dict(zip(WIDTHS, (60, 50, 100, 75)))
+# The rows a message window shows, measured with the widths; a report or
+# request from before it existed leaves the saved rows as they are.
+ROWS = "messageRows"
+DEFAULT_WIDTHS = {**dict(zip(WIDTHS, (60, 50, 100, 75))), ROWS: 4}
 # The speaker request a line width task records when no Names & glossary task
 # was copied; such a request waits for widths, never for guidance files.
 LAYOUT_REQUEST = "layout"
@@ -104,7 +107,10 @@ def inspect(
         }
     complete = all(document_states.get(name, {}).get("exists") for name in CORE)
     receipt = native.get("guided_layout", {})
-    applied = bool(receipt.get("applied") and native["widths"] == receipt.get("widths"))
+    applied = bool(
+        receipt.get("applied")
+        and native["widths"] == {**native["widths"], **receipt.get("widths", {})}
+    )
     names_request = (
         bool(request_value)
         and request_value.get("speaker_request_id") != LAYOUT_REQUEST
@@ -163,15 +169,16 @@ def inspect(
                 not isinstance(layout, dict)
                 or set(layout) != {"widths", "reason", "evidence"}
                 or not isinstance(layout["widths"], dict)
-                or set(layout["widths"]) != set(WIDTHS)
+                or not set(WIDTHS) <= set(layout["widths"]) <= {*WIDTHS, ROWS}
             ):
                 raise ValueError(
                     "Layout recommendations need four widths, a reason and source evidence."
                 )
             if (
                 any(
-                    type(value) is not int or not 20 <= value <= 300
-                    for value in layout["widths"].values()
+                    type(value) is not int
+                    or not (1 <= value <= 20 if key == ROWS else 20 <= value <= 300)
+                    for key, value in layout["widths"].items()
                 )
                 or layout["widths"]["faceWidth"] > layout["widths"]["width"]
             ):
@@ -236,22 +243,27 @@ def layout_update(native, setup, request_value):
     if not layout or not report_id or previous.get("reportId") == report_id:
         return None
     same_request = previous.get("requestId") == setup["requestId"]
-    baseline = (
-        previous.get("widths", native["widths"])
-        if same_request
-        else request_value.get("widths", native["widths"])
-    )
+    current = native["widths"]
+    baseline = {
+        **current,
+        **(
+            previous.get("widths", current)
+            if same_request
+            else request_value.get("widths", current)
+        ),
+    }
+    measured = {**current, **layout["widths"]}
     manual = bool(
         same_request
         and not previous.get("applied")
-        or native["widths"] != baseline
-        and native["widths"] != layout["widths"]
+        or current != baseline
+        and current != measured
     )
     return {
         "reportId": report_id,
         "requestId": setup["requestId"],
         "applied": not manual,
-        "widths": dict(native["widths"] if manual else layout["widths"]),
+        "widths": dict(current if manual else measured),
     }
 
 
@@ -329,10 +341,11 @@ Atomically save measured layout recommendations to `{REPORT}` with these identit
 ```
 
 Replace layout null with the measured values and their evidence:
-{{"widths": {{"width": 60, "faceWidth": 50, "listWidth": 100, "noteWidth": 75}},
+{{"widths": {{"width": 60, "faceWidth": 50, "listWidth": 100, "noteWidth": 75, "messageRows": 4}},
 "reason": "Actual measurement method, confidence, font and exceptions.",
 "evidence": [{{"file": "js/rpg_windows.js", "sha256": "FINAL_FILE_HASH", "location": "Inspected window functions"}}]}}.
-Those values are schema examples, not measurements. Use only measured values with source evidence;
+Those values are schema examples, not measurements. `messageRows` is the rows one message window
+shows before the game starts a new window. Use only measured values with source evidence;
 otherwise omit the optional layout record and report the unresolved geometry.
 The app automatically saves verified widths as the project’s character limits; the user does not
 need to accept them in Layout. Read `{command}` to confirm `layoutApplication` is `applied`.

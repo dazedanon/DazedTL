@@ -327,6 +327,7 @@ export type LayoutWidths = {
   faceWidth: number;
   listWidth: number;
   noteWidth: number;
+  messageRows: number;
 };
 
 export type GuidedOptions = {

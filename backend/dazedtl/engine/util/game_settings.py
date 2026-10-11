@@ -19,17 +19,23 @@ from util.paths import (
 
 GAME_SETTINGS_RELATIVE = Path(".dazedtl") / "settings.json"
 WRAP_WIDTH_KEYS = ("width", "faceWidth", "listWidth", "noteWidth")
+# The rows a message window shows, measured and saved with the widths.
+MESSAGE_ROWS_KEY = "messageRows"
+LINE_WIDTH_KEYS = (*WRAP_WIDTH_KEYS, MESSAGE_ROWS_KEY)
 DEFAULT_WRAP_WIDTHS = {
     "width": 60,
     "faceWidth": 50,
     "listWidth": 100,
     "noteWidth": 75,
+    MESSAGE_ROWS_KEY: 4,
 }
 # The game's GameUpdate repository, the values it sets itself instead of
 # following Settings, and the digest of the config DazedTL last wrote.
 GAME_UPDATE_KEYS = ("repo", "forge", "host", "username", "branch", "written")
 MIN_WRAP_WIDTH = 20
 MAX_WRAP_WIDTH = 300
+MIN_MESSAGE_ROWS = 1
+MAX_MESSAGE_ROWS = 20
 
 
 class GameSettingsError(ValueError):
@@ -41,16 +47,35 @@ def game_settings_path(game_root: str | Path) -> Path:
     return Path(game_root).expanduser().resolve() / GAME_SETTINGS_RELATIVE
 
 
-def _coerce_width(value, fallback: int) -> int:
+def _in_range(key: str, value: int) -> bool:
+    if key == MESSAGE_ROWS_KEY:
+        return MIN_MESSAGE_ROWS <= value <= MAX_MESSAGE_ROWS
+    return MIN_WRAP_WIDTH <= value <= MAX_WRAP_WIDTH
+
+
+def _coerce_width(value, fallback: int, key: str = "width") -> int:
     if isinstance(value, bool):
         return fallback
     try:
         width = int(value)
     except (TypeError, ValueError):
         return fallback
-    if not MIN_WRAP_WIDTH <= width <= MAX_WRAP_WIDTH:
+    if not _in_range(key, width):
         return fallback
     return width
+
+
+def valid_line_widths(value) -> bool:
+    """Whether *value* holds Line widths as a person or a measurement gives
+    them: the four widths, and the message rows when given, each a whole
+    number in its range."""
+    return (
+        isinstance(value, Mapping)
+        and set(WRAP_WIDTH_KEYS) <= set(value) <= set(LINE_WIDTH_KEYS)
+        and all(
+            type(item) is int and _in_range(key, item) for key, item in value.items()
+        )
+    )
 
 
 def normalize_wrap_widths(
@@ -58,16 +83,16 @@ def normalize_wrap_widths(
     *,
     defaults: Mapping | None = None,
 ) -> dict[str, int]:
-    """Return complete bounded wrap widths, clamping face width to dialogue."""
+    """Return complete bounded Line widths, clamping face width to dialogue."""
     fallback = dict(DEFAULT_WRAP_WIDTHS)
     if defaults:
-        for key in WRAP_WIDTH_KEYS:
-            fallback[key] = _coerce_width(defaults.get(key), fallback[key])
+        for key in LINE_WIDTH_KEYS:
+            fallback[key] = _coerce_width(defaults.get(key), fallback[key], key)
 
     source = values if isinstance(values, Mapping) else {}
     normalized = {
-        key: _coerce_width(source.get(key), fallback[key])
-        for key in WRAP_WIDTH_KEYS
+        key: _coerce_width(source.get(key), fallback[key], key)
+        for key in LINE_WIDTH_KEYS
     }
     normalized["faceWidth"] = min(normalized["width"], normalized["faceWidth"])
     return normalized

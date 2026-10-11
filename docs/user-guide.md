@@ -63,6 +63,7 @@ Edit what it wrote in **Guidance**.
 **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.
 
 **Line widths** fills in from your assistant's measurements, and you can change them.
+Message rows is how many rows one message window shows.
 
 ### 3. Translate
 

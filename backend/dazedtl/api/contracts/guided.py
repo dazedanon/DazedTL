@@ -37,6 +37,7 @@ class LayoutWidths(TypedDict):
     faceWidth: int
     listWidth: int
     noteWidth: int
+    messageRows: int
 
 
 class GuidedOptions(TypedDict):

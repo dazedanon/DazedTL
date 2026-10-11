@@ -3,8 +3,8 @@ You are an expert RPGMaker MV/MZ configuration analyst.
 <task>
 Calculate the correct text-wrap and font recommendations for a Japanese-to-English RPGMaker
 MV/MZ translation tool. The tool wraps translated English using character-count limits, not pixels.
-I need `width`, `faceWidth`, `listWidth`, and `noteWidth`, plus a font recommendation for dialogue,
-list/help text, and notes.
+I need `width`, `faceWidth`, `listWidth`, and `noteWidth`, the rows a message window shows
+(`messageRows`), plus a font recommendation for dialogue, list/help text, and notes.
 </task>
 
 --- open the game repository and inspect its data/ and js/ folders before continuing ---
@@ -42,7 +42,7 @@ list/help text, and notes.
 Output the recommendations followed by compact evidence and exceptions:
 
 ```
-Dialogue : width=<N> ; faceWidth=<N> ; font=<Npx or keep current (Npx)> ; rows=<N>
+Dialogue : width=<N> ; faceWidth=<N> ; font=<Npx or keep current (Npx)> ; messageRows=<N>
 List/Help: listWidth=<N> ; font=<Npx or keep current (Npx)> ; rows=<N or varies>
 Notes    : noteWidth=<N> ; font=<Npx or keep current (Npx)> ; rows=<N or varies>
 

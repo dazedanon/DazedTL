@@ -189,7 +189,7 @@ def phased_workflows(workspace, lock, operations, manual):
             return updated
 
         def apply_layout_settings(self, identity, revision, receipt):
-            from util.game_settings import save_game_wrap_widths
+            from util.game_settings import save_game_wrap_widths, valid_line_widths
 
             project = self.projects[identity]
             if project["revision"] != revision:
@@ -197,14 +197,7 @@ def phased_workflows(workspace, lock, operations, manual):
                     "The guided settings changed before the measured layout was saved."
                 )
             widths = receipt["widths"]
-            if (
-                set(widths) != {"width", "faceWidth", "listWidth", "noteWidth"}
-                or any(
-                    type(value) is not int or not 20 <= value <= 300
-                    for value in widths.values()
-                )
-                or widths["faceWidth"] > widths["width"]
-            ):
+            if not valid_line_widths(widths) or widths["faceWidth"] > widths["width"]:
                 raise ValueError(
                     "The measured layout contains invalid character limits."
                 )

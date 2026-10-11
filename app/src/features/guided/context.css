@@ -114,7 +114,7 @@
   margin-bottom: var(--space-4);
 }
 .context-layout .guided-widths {
-  grid-template-columns: repeat(4, minmax(0, 10rem));
+  grid-template-columns: repeat(5, minmax(0, 10rem));
 }
 .context-layout .ui-section {
   margin: var(--space-3) 0;

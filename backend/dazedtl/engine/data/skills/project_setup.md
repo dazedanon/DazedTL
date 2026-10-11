@@ -305,7 +305,7 @@ user must review or change, so do not put them in a code fence:
   line counts, example locators, confidence, and an explicit request to add tool support; otherwise
   state that none were found.
 - `Dialogue : width=<full width> ; faceWidth=<code-101 face width> ; font=<px or keep current
-  (measured px)> ; rows=<count>`.
+  (measured px)> ; messageRows=<rows one message window shows>`.
 - `List/Help: listWidth=<DazedTL width> ; font=<px or keep current (measured px)> ; rows=<count or
   varies>`.
 - `Notes    : noteWidth=<DazedTL width> ; font=<px or keep current (measured px)> ; rows=<count or

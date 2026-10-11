@@ -76,14 +76,15 @@ export function fittingView(w: GuidedWorkspace): TaskView {
               <strong>
                 Line widths{" "}
                 <HelpPopover label="Line widths">
-                  Widths count characters. They do not measure rendered fonts,
-                  substitutions or window height.
+                  Widths count characters. They do not measure rendered fonts or
+                  substitutions.
                 </HelpPopover>
               </strong>
               <small>
                 Dialogue {values.widths.width} · portrait{" "}
                 {values.widths.faceWidth} · list {values.widths.listWidth} ·
-                notes {values.widths.noteWidth}
+                notes {values.widths.noteWidth} · {values.widths.messageRows}{" "}
+                message rows
               </small>
             </>
           }

@@ -1118,21 +1118,27 @@ export function useGuidedWorkspace({
     : 0;
   const widths = (
     <fieldset disabled={disabled} className="guided-widths">
+      {/* Four character limits, then the rows one message window shows. */}
       {(
         [
-          ["width", "Dialogue"],
-          ["faceWidth", "With portrait"],
-          ["listWidth", "List / help"],
-          ["noteWidth", "Notes"],
+          ["width", "Dialogue", 20, 300],
+          ["faceWidth", "With portrait", 20, values.widths.width],
+          ["listWidth", "List / help", 20, 300],
+          ["noteWidth", "Notes", 20, 300],
+          ["messageRows", "Message rows", 1, 20],
         ] as const
-      ).map(([key, label]) => (
+      ).map(([key, label, min, max]) => (
         <label key={key}>
           {label}
           <input
-            aria-label={label + " width in characters"}
+            aria-label={
+              key === "messageRows"
+                ? "Rows a message window shows"
+                : label + " width in characters"
+            }
             type="number"
-            min={20}
-            max={key === "faceWidth" ? values.widths.width : 300}
+            min={min}
+            max={max}
             value={values.widths[key]}
             onChange={(event) =>
               edit("widths", {

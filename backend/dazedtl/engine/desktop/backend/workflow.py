@@ -8,7 +8,7 @@ import shutil
 import uuid
 
 from util.engine_options import validate_engine_options, engine_options
-from util.game_settings import load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths
+from util.game_settings import load_game_wrap_widths, normalize_wrap_widths, save_game_wrap_widths, valid_line_widths
 from util.rpgmaker_profiles import DB_FILES, EVENT_FILES_EXACT, PHASE0_CONFIG, PHASE1_CONFIG, PHASE1B_CONFIG, PHASE2_CONFIG
 from .project import atomic_json, digest
 from .settings import SettingsStore
@@ -26,6 +26,8 @@ class Workflows:
         self.current = ""
         for path in self.root.glob("*/project.json"):
             project = json.loads(path.read_text(encoding="utf-8"))
+            # Projects saved before message rows existed gain the default.
+            project["widths"] = normalize_wrap_widths(project.get("widths"))
             self.projects[project["id"]] = project
         selection = self.root / "selection.json"
         if selection.is_file():
@@ -47,7 +49,7 @@ class Workflows:
         existing = next((item for item in self.projects.values() if item["source"] == game["source"]), None)
         if existing:
             existing.update(game)
-            existing["widths"] = load_game_wrap_widths(root) or existing["widths"]
+            existing["widths"] = load_game_wrap_widths(root) or normalize_wrap_widths(existing["widths"])
             project = existing
         else:
             settings = SettingsStore(self.workspace).describe()
@@ -143,9 +145,10 @@ class Workflows:
             if key == "engine_options":
                 value = {**project["engine_options"], **validate_engine_options({"rpgmakermvmz": value})["rpgmakermvmz"]}
             if key == "widths":
-                if not isinstance(value, dict) or set(value) != {"width", "faceWidth", "listWidth", "noteWidth"} or any(type(v) is not int or not 20 <= v <= 300 for v in value.values()):
-                    raise ValueError("Line widths must be whole numbers from 20 to 300.")
-                value = normalize_wrap_widths(value)
+                if not valid_line_widths(value):
+                    raise ValueError("Line widths must be whole numbers from 20 to 300, and message rows from 1 to 20.")
+                # A draft from before message rows keeps the saved rows.
+                value = normalize_wrap_widths(value, defaults=project["widths"])
             if key == "mode" and value not in {"translate", "batch", "estimate", "offline"}:
                 raise ValueError("Choose a translation mode.")
             if key == "phase1_comments" and type(value) is not bool:
@@ -203,9 +206,9 @@ class Workflows:
             if type(rows) is not int or not 1 <= rows <= 100:
                 raise ValueError("Choose a protected row limit from 1 to 100.")
             widths = options.get("widths", project["widths"])
-            if not isinstance(widths, dict) or set(widths) != {"width", "faceWidth", "listWidth", "noteWidth"} or any(type(value) is not int or not 20 <= value <= 300 for value in widths.values()):
-                raise ValueError("Line widths must be whole numbers from 20 to 300.")
-            selected = {"files": options["files"], "widths": normalize_wrap_widths(widths), "categories": categories, "codes": codes, "max_rows": rows,
+            if not valid_line_widths(widths):
+                raise ValueError("Line widths must be whole numbers from 20 to 300, and message rows from 1 to 20.")
+            selected = {"files": options["files"], "widths": normalize_wrap_widths(widths, defaults=project["widths"]), "categories": categories, "codes": codes, "max_rows": rows,
                         "protect_rows": options.get("protect_rows", True) is True, "over_limit": options.get("over_limit", False) is True}
         if action.startswith("qa_"):
             from util.skills import RPGMAKER_QA_FOCUSES

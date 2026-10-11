@@ -272,7 +272,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
           }
         />
         <Section
-          title="Characters per line"
+          title="Characters and rows"
           hint={
             widthsDirty
               ? "Unsaved edits"
@@ -307,7 +307,7 @@ export function layoutView(w: GuidedWorkspace): TaskView {
               title: "Measured widths",
               state: taskState,
               detail:
-                "Dialogue, portrait, list and note widths from the game's own layout.",
+                "Dialogue, portrait, list and note widths and message rows from the game's own layout.",
               action: copyTask(
                 "wrap",
                 discovery.layout

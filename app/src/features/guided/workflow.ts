@@ -53,7 +53,7 @@ export const workflow: WorkflowStage[] = [
         id: "speakers",
         title: "Line widths",
         description:
-          "Set how many characters fit on a line of dialogue and interface text.",
+          "Set how many characters fit on a line, and how many rows fit in a message window.",
       },
     ],
   },
