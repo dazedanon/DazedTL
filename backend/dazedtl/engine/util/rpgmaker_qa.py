@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -85,6 +86,12 @@ DEEP_DISPOSITIONS = frozenset({
 DECLINE_REASON_LIMIT = 300
 # Distinct reviewers that must decline an item before it is set aside unreviewed.
 DECLINES_TO_SET_ASIDE = 2
+# Another reviewer screens at least this share of each reviewer's scene and
+# line targets again, starting with its first bundle.
+SCREEN_CHECK_SHARE = 0.25
+# A reviewer has every bundle checked once checks found at least this many
+# problems it missed, and more than it found in the same lines.
+SCREEN_CHECK_MISSES = 2
 SEVERITIES = frozenset({"critical", "high", "medium"})
 FINDING_CATEGORIES = frozenset({
     "speaker",
@@ -115,7 +122,7 @@ _ENGINE_SOURCES = (
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
-QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-v13"
+QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-v14"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
@@ -1528,6 +1535,133 @@ def _split_declined(
     return split["item_count"]
 
 
+def _checkable(bundle: dict[str, Any], declined: Iterable[str]) -> list[dict[str, Any]]:
+    """The scenes and lines a screen result reviewed, which a check repeats;
+    lint and motif families are group reviews and are not repeated."""
+    declined = set(declined)
+    return [
+        item for item in bundle["items"]
+        if item.get("kind") in {"scene", "cluster"} and item["id"] not in declined
+    ]
+
+
+def _check_row(root: Path, row: dict[str, Any]) -> dict[str, Any]:
+    """A second screen of one accepted bundle's reviewed lines, for another reviewer."""
+    bundle = _read_json(Path(row["path"]))
+    result = _read_json(Path(row["result_path"]))
+    items = _checkable(bundle, _declined_items(bundle, result))
+    check = _make_bundle(
+        "screen", f"{row['id']}-c1", items, _own_index(items, bundle.get("screen_index"))
+    )
+    path = root / "bundles" / "screen" / f"{check['bundle_id']}.json"
+    _atomic_write_json(path, check)
+    return {
+        "id": check["bundle_id"],
+        "path": str(path),
+        "sha256": check["content_sha256"],
+        "item_count": check["item_count"],
+        "status": "pending",
+        "assigned_to": "",
+        "result_path": "",
+        "check_of": row["id"],
+        # Anyone but the reviewer that screened these lines may check them; a
+        # reviewer that declined them can decline them again.
+        "independent_of": [str(row.get("assigned_to") or "")],
+    }
+
+
+def _issue_checks(root: Path, checkpoint: dict[str, Any]) -> int:
+    """Open checks until each reviewer has its share of targets checked, its
+    earliest bundles first; an escalated reviewer has every bundle checked.
+
+    An accepted check counts the targets it compared, so lines its reviewer
+    declined send another bundle to be checked. Returns how many opened.
+    """
+    rows = checkpoint["screen"]["bundles"]
+    escalated = set((checkpoint["screen"].get("checks") or {}).get("escalated") or [])
+    checks = {row["check_of"]: row for row in rows if row.get("check_of")}
+    by_worker: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if row["status"] == "accepted" and row.get("checkable"):
+            by_worker[str(row.get("assigned_to") or "")].append(row)
+    opened = 0
+    for worker, accepted in sorted(by_worker.items()):
+        share = 1.0 if worker in escalated else SCREEN_CHECK_SHARE
+        total = sum(row["checkable"] for row in accepted)
+        done = sum(
+            checks[row["id"]]["compared"]
+            if checks[row["id"]]["status"] == "accepted" else row["checkable"]
+            for row in accepted if row["id"] in checks
+        )
+        for row in sorted(accepted, key=lambda row: row["accepted_at"]):
+            if done >= share * total:
+                break
+            if row["id"] not in checks:
+                rows.append(_check_row(root, row))
+                done += row["checkable"]
+                opened += 1
+    return opened
+
+
+def _record_check(
+    checkpoint: dict[str, Any], row: dict[str, Any], bundle: dict, result: dict,
+    declined: dict[str, str],
+) -> None:
+    """Compare a check with the screen it repeats, in the lines both reviewed.
+
+    Each reviewer is tallied with what it found and what the other found that
+    it did not; one that missed enough, and more than it found, is escalated.
+    """
+    _stage, original_row = _bundle_row(checkpoint, row["check_of"])
+    original = _read_json(Path(original_row["result_path"]))
+    reviewed = [item for item in bundle["items"] if item["id"] not in declined]
+    row["compared"] = sum(int(item.get("target_count", 1)) for item in reviewed)
+    compared = {target for item in reviewed for target in _item_targets(item)}
+    first = {exception["id"] for exception in original["exceptions"]} & compared
+    second = {exception["id"] for exception in result["exceptions"]}
+    state = checkpoint["screen"].setdefault(
+        "checks", {"added": 0, "escalated": [], "reviewers": {}}
+    )
+    state["added"] += len(second - first)
+    for worker, found, missed in (
+        (str(original_row.get("assigned_to") or ""), first, second - first),
+        (str(row.get("assigned_to") or ""), second, first - second),
+    ):
+        tally = state["reviewers"].setdefault(worker, {"found": 0, "missed": 0})
+        tally["found"] += len(found)
+        tally["missed"] += len(missed)
+        if (
+            tally["missed"] >= SCREEN_CHECK_MISSES
+            and tally["missed"] > tally["found"]
+            and worker not in state["escalated"]
+        ):
+            state["escalated"].append(worker)
+
+
+def _check_counts(screen: dict[str, Any]) -> dict[str, Any]:
+    """Second screens in targets: compared, opened and expected in all, the
+    problems only a check found, and the reviewers checked in full."""
+    rows = [row for row in screen["bundles"] if row.get("check_of")]
+    state = screen.get("checks") or {}
+    total = sum(int(row["item_count"]) for row in rows)
+    set_aside = sum(
+        int(row["item_count"]) for row in screen["bundles"]
+        if row["status"] == "set-aside"
+    )
+    unscreened = max(
+        0, int(screen["total_items"]) - int(screen["accepted_items"]) - set_aside
+    )
+    return {
+        "accepted": sum(
+            int(row.get("compared", 0)) for row in rows if row["status"] == "accepted"
+        ),
+        "total": total,
+        "projected": total + math.ceil(SCREEN_CHECK_SHARE * unscreened),
+        "added": int(state.get("added", 0)),
+        "escalated": sorted(state.get("escalated") or []),
+    }
+
+
 def _write_bundles(
     task_dir: Path, bundles: list[dict], *, recorded_root: Path | None = None
 ) -> list[dict]:
@@ -1900,6 +2034,9 @@ def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
             if row["status"] == "set-aside"
         )
         remaining[stage] = max(0, total - int(state.get("accepted_items", 0)) - set_aside)
+        if stage == "screen":
+            checks = _check_counts(state)
+            remaining[stage] += checks["projected"] - checks["accepted"]
     seconds = sum(
         remaining[stage] * _seconds_per_item(checkpoint, stage) for stage in remaining
     )
@@ -1983,6 +2120,8 @@ def status(task_dir: str | Path) -> dict[str, Any]:
                 "accepted": int(screen.get("lint_accepted", 0)),
                 "total": int(screen.get("lint_total", 0)),
             },
+            # Second screens add no coverage, so they are counted apart.
+            "checks": _check_counts(screen),
             **_stage_metrics(screen, active=checkpoint["stage"] == "screen"),
         },
         "deep": {
@@ -2099,6 +2238,11 @@ def _next_unlocked(
                 f"{worker} wrote corrections in {bundle_id}; an independent "
                 "reviewer must confirm them"
             )
+        if worker in (pending.get("independent_of") or []):
+            raise ValueError(
+                f"{worker} screened the lines {bundle_id} checks; an independent "
+                "reviewer must check them"
+            )
     else:
         for row in bundles:
             if row["status"] == "assigned" and row.get("assigned_to") == worker:
@@ -2107,6 +2251,7 @@ def _next_unlocked(
             (name, row) for name in stages for row in checkpoint[name]["bundles"]
             if worker not in (row.get("declined_by") or [])
             and worker not in (row.get("authors") or [])
+            and worker not in (row.get("independent_of") or [])
         ]
         pending = next(
             (row for _name, row in eligible if row["status"] == "pending"), None
@@ -2670,6 +2815,12 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             raise QAResultError(
                 f"{bundle_id} was set aside after reviewers declined it"
             )
+        check = bool(row.get("check_of"))
+        if check and row["status"] != "assigned":
+            raise QAResultError(
+                f"Claim {bundle_id} with next before submitting it, so the check "
+                "records its own reviewer"
+            )
         _atomic_write_json(canonical_path, result)
         declined = (
             _declined_items(bundle, result)
@@ -2680,9 +2831,11 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
                 if review["disposition"] == "declined"
             }
         )
+        # The checked lines were screened already, so a check's declines
+        # leave coverage as it is.
         moved = (
             _split_declined(root, checkpoint, stage, row, bundle, declined)
-            if declined else 0
+            if declined and not check else 0
         )
         if stage == "screen":
             exception_ids = checkpoint["screen"].setdefault("exception_ids", [])
@@ -2692,11 +2845,13 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
             screen_targets = _screen_target_map(
                 bundle, _load_screen_index(root, task)
             )
+            # Whatever either screen reports goes to deep review.
             for exception in result["exceptions"]:
                 review_id = exception["id"]
                 target = screen_targets[review_id]
                 cluster_id = target.get("cluster_id") or review_id
-                exception_ids.append(review_id)
+                if not check:
+                    exception_ids.append(review_id)
                 _merge_candidate(
                     candidate_reasons,
                     cluster_id,
@@ -2727,10 +2882,20 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
                 if item.get("kind") == "lint-family" and item["id"] not in declined
             )
             checkpoint["deep"]["projected_items"] = len(candidate_reasons)
-        checkpoint[stage]["accepted_items"] += int(row["item_count"]) - moved
+            if check:
+                _record_check(checkpoint, row, bundle, result, declined)
+            else:
+                row["checkable"] = sum(
+                    int(item.get("target_count", 1))
+                    for item in _checkable(bundle, declined)
+                )
+        if not check:
+            checkpoint[stage]["accepted_items"] += int(row["item_count"]) - moved
         row["status"] = "accepted"
         row["result_path"] = str(canonical_path)
         row["accepted_at"] = _utc_now()
+        if stage == "screen":
+            _issue_checks(root, checkpoint)
         worker = checkpoint.setdefault("workers", {}).setdefault(
             str(row.get("assigned_to") or ""), {"bundles": 0, "seconds": 0.0}
         )
@@ -3515,7 +3680,10 @@ def _open_follow_ups(
         stage="screen",
         char_budget=int(configuration.get("char_budget", DEFAULT_SCREEN_CHAR_BUDGET)),
         item_limit=int(configuration.get("item_limit", DEFAULT_SCREEN_ITEM_LIMIT)),
-        first=1 + sum(not row.get("origin") for row in screen["bundles"]),
+        first=1 + sum(
+            not row.get("origin") and not row.get("check_of")
+            for row in screen["bundles"]
+        ),
         screen_index=screen_index,
     ))
     for row in rows:
@@ -3878,10 +4046,10 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
     """Open deep bundles for candidates whose screen evidence is complete.
 
     While screening continues, a batch opens once enough clusters are ready:
-    their target bundle and motif reviews are accepted. When screening ends,
-    every remaining candidate opens, and a cluster whose evidence grew after
-    its deep review opens again with that review beside it. Returns how many
-    items opened.
+    their target bundle, its check and motif reviews are accepted. When
+    screening ends, every remaining candidate opens, and a cluster whose
+    evidence grew after its deep review opens again with that review beside
+    it. Returns how many items opened.
     """
     deep = checkpoint["deep"]
     candidates = deep.setdefault("candidate_reasons", {})
@@ -3896,7 +4064,18 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         ready = set(candidates)
     else:
         index = _read_json(root / "screen-targets.json")
-        statuses = {row["id"]: row["status"] for row in checkpoint["screen"]["bundles"]}
+        screen_rows = {row["id"]: row for row in checkpoint["screen"]["bundles"]}
+        statuses = {key: row["status"] for key, row in screen_rows.items()}
+        # Bundles whose lines await a check: the checked bundle, which a
+        # follow-up's targets name, and the bundle it split from, which the
+        # task's targets name.
+        unchecked = {
+            name
+            for row in screen_rows.values()
+            if row.get("check_of") and row["status"] != "accepted"
+            for name in (row["check_of"], screen_rows[row["check_of"]].get("origin"))
+            if name
+        }
         screen_index = _load_screen_index(root, _read_json(root / "task.json"))
         cluster_bundle = {
             cluster_id: bundle
@@ -3908,6 +4087,7 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
             cluster_id for cluster_id in candidates
             if cluster_id not in issued
             and statuses.get(cluster_bundle.get(cluster_id, "")) == "accepted"
+            and cluster_bundle.get(cluster_id, "") not in unchecked
             and all(
                 statuses.get(bundle) == "accepted"
                 for bundle in index["motifs"].get(cluster_id, [])
@@ -3973,6 +4153,16 @@ def _settle_declined(
         row for row in rows
         if row["status"] == "pending" and row.get("declined_by")
     ]
+    checks = [
+        row["id"] for row in rows
+        if row.get("check_of") and row["status"] in {"pending", "assigned"}
+    ]
+    if checks:
+        raise ValueError(
+            f"{len(checks)} check bundle(s) wait for a reviewer that did not "
+            f"screen their lines ({', '.join(checks)}): claim each with next "
+            "under another worker name"
+        )
     if any(
         row["status"] not in {"accepted", "set-aside"} and row not in waiting
         for row in rows
@@ -4176,7 +4366,8 @@ def rebuild_deep_from_screen(
             raise ValueError(f"Source screen result checksum is invalid: {row['id']}")
         _validate_screen_result(bundle, result)
         reusable_results[row["id"]] = result_path
-        reusable_summaries[row["id"]] = (claimed, int(row["item_count"]))
+        if not row.get("check_of"):
+            reusable_summaries[row["id"]] = (claimed, int(row["item_count"]))
 
     destination_root = (
         Path(output_root).expanduser().resolve()
@@ -4208,14 +4399,34 @@ def rebuild_deep_from_screen(
     rebuilt_summaries = {
         row["id"]: (row["sha256"], int(row["item_count"]))
         for row in rebuilt_checkpoint["screen"]["bundles"]
+        if not row.get("check_of")
     }
     if rebuilt_summaries != reusable_summaries:
         raise ValueError("Current screen bundles differ; screening cannot be reused")
 
     if rebuilt_checkpoint["stage"] == "screen":
-        for bundle_id in sorted(reusable_results):
-            accept_result(rebuilt, reusable_results[bundle_id])
-        return rebuilt, advance(rebuilt)
+        # Accepted in their order under the same reviewers, the results open
+        # the same checks, which take their own results in turn.
+        for source_row in sorted(source_rows, key=lambda row: row.get("accepted_at") or ""):
+            with _task_lock(rebuilt):
+                _rebuilt_root, _task, checkpoint = _load_task(rebuilt)
+                try:
+                    _stage, row = _bundle_row(checkpoint, source_row["id"])
+                except QAResultError as error:
+                    raise ValueError(
+                        "Current screen checks differ; screening cannot be reused"
+                    ) from error
+                if row["sha256"] != source_row["sha256"]:
+                    raise ValueError(
+                        "Current screen checks differ; screening cannot be reused"
+                    )
+                if row["status"] != "accepted":
+                    row["status"] = "assigned"
+                    row["assigned_to"] = str(source_row.get("assigned_to") or "")
+                    _atomic_write_json(rebuilt / "checkpoint.json", checkpoint)
+            accept_result(rebuilt, reusable_results[source_row["id"]])
+        if _stage_finished(_read_task(rebuilt)[2], ["screen"]):
+            return rebuilt, advance(rebuilt)
     return rebuilt, status(rebuilt)
 
 

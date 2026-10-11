@@ -173,7 +173,8 @@ def source(identity):
 
 
 storage = temporary / "storage"
-task, state = qa.prepare_task(game, data, "release", storage)
+# Small screen bundles give the first reviewer several to have checked.
+task, state = qa.prepare_task(game, data, "release", storage, screen_item_limit=3)
 assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
 assert {source(identity) for identity in forced} == {"朝だ", "森の奥へ"}, forced
@@ -208,91 +209,96 @@ def declined_scene(item):
     return item["kind"] == "scene" and "/events/2/" in item["scene_id"]
 
 
-# Screening flags the stratum line and declines the forest scene; everything
-# else is clean.
-while row := qa.next_bundle(task, "screen-a"):
-    if not row["id"].startswith("screen"):
-        # A deep bundle opened early; it waits for the deep reviewer.
-        qa.release_bundle(task, row["id"])
-        break
+# The lines deep review needs, 朝だ so that it has a scene; the first reviewer
+# flags only the stratum line.
+FLAGGED = {
+    STRATUM["_original"],
+    AROUSAL["_original"],
+    WELCOME["_original"],
+    SWORD,
+    "よく来たね",
+    "朝だ",
+}
+
+
+def checkpoint():
+    return json.loads((task / "checkpoint.json").read_text())
+
+
+def screen(row, flagged, declined=()):
     bundle = bundle_of(row)
-    declined = [
-        {"id": item["id"], "reason": "Outside what this reviewer reviews."}
-        for item in bundle["items"]
-        if declined_scene(item)
-    ]
-    lint_reviews = [
+    return result_path(
+        row["id"],
         {
-            "id": item["id"],
-            "rejected": [
-                proposal["id"]
-                for proposal in item["proposals"]
-                if proposal["current"] == "Restores HP.♥Yay"
+            "schema": qa.SCREEN_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviewed_all": True,
+            "exceptions": [
+                {
+                    "id": target["id"],
+                    "verdict": "suspect",
+                    "categories": ["meaning"],
+                    "note": "Reads oddly against the source.",
+                }
+                for target in screen_targets(bundle)
+                if target["source"] in flagged
             ],
-            "note": "The item text keeps its house style.",
-        }
-        for item in bundle["items"]
-        if item["kind"] == "lint-family"
-    ]
-    exceptions = [
-        {
-            "id": target["id"],
-            "verdict": "suspect",
-            "categories": ["meaning"],
-            "note": "Stratum ordinal reads oddly.",
-        }
-        for target in screen_targets(bundle)
-        if target["source"]
-        in {
-            STRATUM["_original"],
-            AROUSAL["_original"],
-            WELCOME["_original"],
-            SWORD,
-            "よく来たね",
-            "朝だ",
-        }
-    ]
-    qa.accept_result(
-        task,
-        result_path(
-            row["id"],
-            {
-                "schema": qa.SCREEN_RESULT_SCHEMA,
-                "bundle_id": row["id"],
-                "bundle_sha256": row["sha256"],
-                "reviewed_all": True,
-                "exceptions": exceptions,
-                "motif_reviews": [],
-                "lint_reviews": lint_reviews,
-                "declined": declined,
-            },
-        ),
+            "motif_reviews": [],
+            "lint_reviews": [
+                {
+                    "id": item["id"],
+                    "rejected": [
+                        proposal["id"]
+                        for proposal in item["proposals"]
+                        if proposal["current"] == "Restores HP.♥Yay"
+                    ],
+                    "note": "The item text keeps its house style.",
+                }
+                for item in bundle["items"]
+                if item["kind"] == "lint-family"
+            ],
+            "declined": [
+                {"id": item["id"], "reason": "Outside what this reviewer reviews."}
+                for item in bundle["items"]
+                if declined_scene(item) or item["id"] in declined
+            ],
+        },
     )
-# Deep review started before screening ended.
-assert qa.status(task)["stage"] == "screen"
-assert json.loads((task / "checkpoint.json").read_text())["deep"]["bundles"]
-# The declined scene moved to a bundle of its own that waits for another
-# reviewer: never the one that declined it, and the stage cannot end early.
-waiting = [
-    row
-    for row in json.loads((task / "checkpoint.json").read_text())["screen"]["bundles"]
-    if row["status"] == "pending"
-]
-assert [row["declined_by"] for row in waiting] == [["screen-a"]], waiting
+
+
+# The first reviewer declines the forest scene and passes everything else but
+# the stratum line.
+while row := qa.next_bundle(task, "screen-a"):
+    assert row["id"].startswith("screen"), row
+    qa.accept_result(task, screen(row, {STRATUM["_original"]}))
+# Only its first bundle is checked, which covers a quarter of its lines, and
+# deep review of those lines waits for the check. The declined scene and the
+# check wait for another reviewer, never this one, and the stage cannot end
+# early.
+assert not checkpoint()["deep"]["bundles"]
+rows = checkpoint()["screen"]["bundles"]
+(check,) = [row for row in rows if row.get("check_of")]
+(forest,) = [row for row in rows if row.get("declined_by")]
+assert check["independent_of"] == forest["declined_by"] == ["screen-a"], rows
 assert qa.status(task)["declined"]["waiting"] == 4
-for attempt in (
-    lambda: qa.next_bundle(task, "screen-a", waiting[0]["id"]),
-    lambda: qa.advance(task),
+for bundle_id, reason in (
+    (forest["id"], "declined"),
+    (check["id"], "independent"),
+    (None, "check"),
 ):
     try:
-        attempt()
+        if bundle_id:
+            qa.next_bundle(task, "screen-a", bundle_id)
+        else:
+            qa.advance(task)
     except ValueError as error:
-        assert "declined" in str(error), error
+        assert reason in str(error), error
     else:
-        raise AssertionError("A declined bundle was handed back or skipped.")
-# A second reviewer claims it by ID, and only that reviewer reads the scene in
-# context, then declines too, which sets it aside.
-row = qa.next_bundle(task, "screen-b", waiting[0]["id"])
+        raise AssertionError("A bundle went to its own reviewer or was skipped.")
+# A second reviewer claims the declined scene by ID, and only that reviewer
+# reads the scene in context, then declines too, which sets it aside.
+row = qa.next_bundle(task, "screen-b", forest["id"])
 FOREST = "Map001.json#/events/2/pages/0/list"
 assert "森の奥へ" in qa.context_view(task, FOREST + "/2", worker="screen-b")
 for attempt in (
@@ -324,6 +330,20 @@ qa.accept_result(
     ),
 )
 assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 4}
+# The second reviewer's check finds what the first missed, which goes to deep
+# review while screening continues. Checks add no coverage, and a reviewer
+# that missed more than it found has every bundle checked.
+covered = qa.status(task)["screen"]["accepted"]
+row = qa.next_bundle(task, "screen-b", check["id"])
+qa.accept_result(task, screen(row, FLAGGED))
+state = qa.status(task)
+assert state["stage"] == "screen" and checkpoint()["deep"]["bundles"], state
+assert state["screen"]["accepted"] == covered, state["screen"]
+assert state["screen"]["checks"]["escalated"] == ["screen-a"], state["screen"]
+for row in checkpoint()["screen"]["bundles"]:
+    if row.get("check_of") and row["status"] == "pending":
+        row = qa.next_bundle(task, "screen-b", row["id"])
+        qa.accept_result(task, screen(row, FLAGGED))
 # Screening does not end there: the set-aside scene's line that another scene
 # shows is screened there in a follow-up bundle. Its first reviewer declines
 # it too, and another reviewer flags the line.
@@ -333,21 +353,7 @@ assert follow_up["scene_id"] == "Map001.json#/events/3/pages/0/list", follow_up
 assert [line["source"] for line in screen_targets(bundle_of(row))] == [
     FOREST_EXIT["_original"]
 ], follow_up
-qa.accept_result(
-    task,
-    result_path(
-        row["id"],
-        {
-            "schema": qa.SCREEN_RESULT_SCHEMA,
-            "bundle_id": row["id"],
-            "bundle_sha256": row["sha256"],
-            "reviewed_all": True,
-            "exceptions": [],
-            "motif_reviews": [],
-            "declined": [{"id": follow_up["id"], "reason": "Declined."}],
-        },
-    ),
-)
+qa.accept_result(task, screen(row, set(), declined={follow_up["id"]}))
 row = qa.next_bundle(task, "screen-b", row["id"] + "-d1")
 qa.accept_result(
     task,
@@ -372,6 +378,23 @@ qa.accept_result(
         },
     ),
 )
+# That is the second reviewer's first screen, so it is checked, and the line's
+# deep review waits for the check. The reviewer that declined the line may take
+# it, and declining it again leaves coverage and the comparison as they were.
+assert FOREST_EXIT["_original"] not in {
+    item["source"]
+    for row in checkpoint()["deep"]["bundles"]
+    for item in bundle_of(row)["items"]
+}
+row = qa.next_bundle(task, "screen-a")
+assert row["check_of"] == row["id"].removesuffix("-c1"), row
+qa.accept_result(task, screen(row, set(), declined={follow_up["id"]}))
+assert not any(
+    other.get("origin") == row["id"] for other in checkpoint()["screen"]["bundles"]
+)
+checks = qa.status(task)["screen"]["checks"]
+assert checks["total"] == checks["projected"] == checks["accepted"] + 1, checks
+assert checks["added"] == len(FLAGGED) - 1, checks
 # Screening is over while early deep bundles wait, so the next claim makes
 # deep review the stage instead of leaving screening current.
 qa.next_bundle(task, "deep-a")

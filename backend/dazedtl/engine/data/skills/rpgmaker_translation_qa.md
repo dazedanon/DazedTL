@@ -1,8 +1,8 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v11
+<!-- qa-contract:rpgmaker-qa-v12
 single-policy role-briefs app-owned-inventory immutable-review-bundles
-scene-affine-screen lint-group-review declined-disposition evidence-preserving-deep
+scene-affine-screen sampled-screen-checks lint-group-review declined-disposition evidence-preserving-deep
 family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api
 -->
@@ -43,8 +43,7 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
 
 1. Use two to four reviewers when the helper can run parallel workers, each with a unique name.
    Give each the brief for its role: `{{CLI}} brief --task {{TASK}} --role <screen|deep|group|editorial>`.
-   One worker may take every role in turn, except that an editorial bundle never goes to a
-   worker that wrote one of its judgment corrections.
+   One worker may take every role in turn, except that a check never goes to the worker that screened its lines, and an editorial bundle never goes to a worker that wrote one of its judgment corrections.
 2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
    bundle; `next` moves QA through its stages by itself. Write results only in `{{RECEIPTS}}`,
    one file per bundle named after its ID; DazedTL keeps the accepted copy. A worker that cannot
@@ -56,15 +55,20 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    If no other worker is available, continue with `--skip-declined`.
    Screening then goes on in follow-up bundles for set-aside lines that other scenes also show, which `next` hands out like any other.
    Set-aside items are reported as not reviewed; never ask the user to review them.
-4. Deep bundles open while screening continues, and `next` hands them out once no screen
+4. A check bundle, whose ID ends in `-c1`, screens another reviewer's accepted lines again.
+   DazedTL checks at least a quarter of each reviewer's scene and line targets, starting with its first bundle, and every bundle of a reviewer whose checks found at least two problems it missed and more than it found there.
+   What either screen reports goes to deep review, and `status` counts checks apart from coverage under `screen.checks`.
+   Lines a check declines stay screened once and count as unchecked, so another bundle is checked in their place.
+   Screening ends only when every check is accepted, so keep a second screen worker until then.
+5. Deep bundles open while screening continues, and `next` hands them out once no screen
    bundle is waiting. QA then moves through the sweep and editorial stages until `status`
    reports `complete`. `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}`
    take the same steps by hand, which `--skip-declined` needs.
-5. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
+6. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use
    that wording. Reviewers read them with `{{CLI}} decisions --task {{TASK}}`.
-6. When `status` reports `complete`, apply with the project helper's `qa --apply --wait 60`
+7. When `status` reports `complete`, apply with the project helper's `qa --apply --wait 60`
    from your handoff. It applies every finding, and each question's proposal the user chose, as
    one reviewed text batch and saves a checkpoint commit. Open playtest or context questions
    wait for the user, who answers them in DazedTL's Text QA task; apply follows once every one
@@ -73,8 +77,9 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
 
 ## Screen reviewer
 
-Inspect every target in your bundle and report only exceptions; one accepted result covers the
-clean targets.
+Inspect every target in your bundle and report only exceptions; one accepted result covers the clean targets.
+Another reviewer screens a sample of every reviewer's bundles again, and DazedTL compares the two; a reviewer whose checks found more problems it missed than it reported has every bundle screened again.
+Review a check bundle like any other, without reading the result it repeats.
 
 - A `scene` item is one complete command-list scene in order. Lines with an `id` are your
   targets; lines with a `context_id` were targeted in another scene, but report a problem this
@@ -171,8 +176,7 @@ Prefix every command with `{{CLI}}`:
   surrounding text; scenes a reviewer declined are left out unless your assigned bundle prints
   them
 - `decide --task {{TASK}} ...` and `decisions --task {{TASK}}`
-- `rebuild-deep --task <earlier task>` when DazedTL reports that its QA rules changed after an
-  earlier task's screen was complete: it reuses that screen's checked results in a new task
+- `rebuild-deep --task <earlier task>` when DazedTL reports that its QA rules changed after an earlier task's screen was complete: it reuses that screen's validated results and checks in a new task, where any check the current rules add waits for a reviewer
 
 ## Result formats
 

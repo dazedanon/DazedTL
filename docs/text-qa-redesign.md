@@ -16,6 +16,8 @@ Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/r
 - Content handling starts only when a reviewer declines an item; QA never classifies or excludes content in advance, because which models decline what is not known beforehand.
   A declined item is offered to another reviewer, and if none will review it, finalize reports it as a coverage gap and never asks the user to attest a review; an optional queue lets the user review it.
 - After apply, QA records a [checkpoint](translation-contract.md#delivery-and-future-versions) commit; pushing and publishing stay user-approved.
+- Screening is measured instead of trusted: another reviewer screens a quarter of every reviewer's lines again, whatever either reports goes to deep review, and a reviewer whose checks show it missed more than it found is screened again in full.
+  Seeded known-defect probes and per-reviewer yield tracking were rejected, for the [reasons](#screen-checks) below.
 
 ## Why
 
@@ -30,6 +32,18 @@ The first complete release QA, of Arina and the Succubus Curse with 102 screen b
 - Corrections, supplementary fixes and source fixes were applied from the command line, outside the publication flow, so History cannot restore them and the app still showed QA as pending.
 - Decisions, declined content and the editorial pass were visible only in the assistant's chat, and the user stepped in about fifteen times.
 - The run used about six million assistant tokens; deep items embedded whole scenes, so one set of deep drafts held 9.5 MB until scenes were grouped and printed once (2.3 MB).
+
+### Screen checks
+
+The second complete run of the same game, after the redesign, showed that one screen per bundle reports only exceptions, so a shallow pass looks like a clean bundle:
+
+- Reviewers with comparable lists of about 1,000 targets each raised between 1 and 21 exceptions, and deep review confirmed 72 of all 78, at least 83% for every reviewer, so the high counts were real problems rather than noise.
+- 8,825 distinct texts were unchanged between the runs and screened in both; the second run's screen flagged 70 that the first had passed, and deep review corrected 65 of them.
+- The first run's bundles raised from 2 to 89 exceptions per 1,000 targets between the lowest and highest quarter, yet the problems the second run found stayed between 6 and 8 per 1,000 in every quarter.
+  Yield tracking would reopen bundles that hide no more misses than the rest; only a second screen of the same lines measures what a screen missed, and its flags are precise enough to send straight to deep review.
+- Seeded probes would put synthetic lines into immutable bundles, where the context view gives them away, and would test only the defects planted; the missed problems were echoes, voice, speakers and terminology.
+- Screen bundles were 4.4 MB of the 6.4 MB reviewers read, so a quarter checked in whole bundles adds about a fifth.
+  In a model of the second run's reviewers, escalation raised that to about two fifths and doubled the misses recovered; it checked the reviewer with 1 exception in full in 92% of runs and the one with 21 in none.
 
 ## Order of work
 

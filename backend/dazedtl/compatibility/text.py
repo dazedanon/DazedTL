@@ -224,18 +224,24 @@ def qa_state(plan):
     activity = {}
     if stage in ACTIVITY_STAGES:
         counts = engine_status[stage]
+        done = counts["accepted"]
         total = (
             max(counts["total"], counts.get("projected", 0))
             if stage == "deep"
             else counts["total"]
         )
+        if stage == "screen":
+            # Second screens of accepted lines are screening work too.
+            checks = counts.get("checks") or {}
+            done += checks.get("accepted", 0)
+            total += checks.get("projected", 0)
         lint = engine_status["screen"]["lint"]
         if stage == "screen" and lint["accepted"] < lint["total"]:
             # Lint families lead the screen bundles; the line names them.
-            stage, counts, total = "lint", lint, lint["total"]
+            stage, done, total = "lint", lint["accepted"], lint["total"]
         activity = {
             "stage": stage,
-            "done": counts["accepted"],
+            "done": done,
             "total": total,
             **(
                 {"eta_seconds": int(engine_status["estimate"]["eta_seconds"])}
