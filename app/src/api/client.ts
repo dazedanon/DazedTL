@@ -117,6 +117,8 @@ export const api = {
 
     backups: (project_id: string) =>
       request("translation_backups", { project_id }),
+    release: (project_id: string, folder: string) =>
+      request("translation_release", { project_id, folder }),
     compile: (project_id: string, input_path: string) =>
       request("translation_compile", { project_id, input_path }),
     request: (project_id: string, run_id: string, index: number) =>

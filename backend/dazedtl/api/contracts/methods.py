@@ -74,6 +74,7 @@ from dazedtl.api.contracts.translation import (
     OrganizedRun,
     PreparedHandoff,
     ProjectOptions,
+    ReleaseInspection,
     RequestPreview,
     TranslationJob,
     TranslationOptions,
@@ -262,6 +263,11 @@ class SaveDocumentRequest(TypedDict):
     name: str
     revision: str
     text: str
+
+
+class TranslationReleaseRequest(TypedDict):
+    project_id: str
+    folder: str
 
 
 class InputPathRequest(TypedDict):
@@ -651,6 +657,10 @@ METHODS: dict[str, Method] = {
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
+    # How a new official release's folder lines up with the game, before staging.
+    "translation_release": Method(
+        TranslationReleaseRequest, ReleaseInspection, refresh=False
+    ),
     "translation_start": Method(TranslationStartRequest, TranslationJob),
     "translation_stop": Method(TranslationStopRequest, TranslationJob),
     "translation_accept": Method(TranslationAcceptRequest, TranslationJob),

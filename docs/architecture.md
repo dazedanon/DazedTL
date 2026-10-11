@@ -991,6 +991,8 @@ The MV/MZ writer retains source metadata on ordinary corrections.
 The explicit rebase route proves its source matches a reviewed original-branch blob before rebuilding metadata for a new source version.
 Official update operations reuse the existing preview hashes, conflict recovery and native-byte rules.
 New originals are staged separately for engine preparation.
+Staging lays the copy out as the game ([release_layout](../backend/dazedtl/engine/util/version_update/release_layout.py)): the release folder that lines up with the game's paths, compared case-insensitively, supplies the files, and a patch takes the game's spelling of each path it replaces.
+A release holding fewer than half of the game's files is a patch, copied over the previous version so the files it leaves out stay; an MV/MZ patch gets the same data and plugin formatting as the game's own files, so it merges line by line.
 A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.

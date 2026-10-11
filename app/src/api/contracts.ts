@@ -1221,6 +1221,27 @@ export type TranslationState = ProjectOptions & {
   legacyAvailable: boolean;
 };
 
+/** How a release lines up with the game as one kind; see the engine's
+util/version_update/release_layout.py. */
+export type ReleaseLayout = {
+  kind: "game" | "patch";
+  source: string;
+  target: string;
+  files: number;
+  replaced: number;
+  outside: number;
+  left_out: string[];
+  game_files: number;
+  covered: number;
+};
+
+export type ReleaseInspection = {
+  detected: "game" | "patch";
+  version: string;
+  game: ReleaseLayout;
+  patch: ReleaseLayout;
+};
+
 export type BackupRecord = {
   id: string;
   path: string;
@@ -2226,6 +2247,11 @@ export type SaveDocumentRequest = {
   text: string;
 };
 
+export type TranslationReleaseRequest = {
+  project_id: string;
+  folder: string;
+};
+
 export type InputPathRequest = {
   project_id: string;
   input_path: string;
@@ -2661,6 +2687,10 @@ export type RpcContract = {
   translation_request: { request: RunIndexRequest; response: RequestPreview };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
+  translation_release: {
+    request: TranslationReleaseRequest;
+    response: ReleaseInspection;
+  };
   translation_start: {
     request: TranslationStartRequest;
     response: TranslationJob;

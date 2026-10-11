@@ -98,6 +98,10 @@ class Engine:
     def detect(self, _source):
         return "MVMZ"
 
+    def release_stage(self, _source, copy, kind, destination):
+        shutil.move(copy, destination)
+        return {"kind": kind or "game", "source": "", "target": ""}
+
     def game_update(self, _source, _defaults, _action=None, _repo=None):
         return ABSENT
 
@@ -1287,6 +1291,43 @@ class WorkflowTests(unittest.TestCase):
                 "reused_snapshot"
             ]
         )
+        # A staged patch compares only as a patch: as a complete game it
+        # would remove every file it leaves out.
+        patched = execute(
+            self.engine,
+            self.profile,
+            {**job, "id": "c" * 32},
+            {
+                "source": str(self.game),
+                "options": DEFAULTS,
+                "action": "stage_update",
+                "arguments": {
+                    "official": str(official),
+                    "version": "1.1",
+                    "patch": True,
+                },
+            },
+            lambda: False,
+        )
+        self.assertTrue(patched["patch"])
+        store = self.service.jobs.store
+        stage = store.create(
+            self.identity,
+            {"version": 1, "kind": "operation", "source": str(self.game)},
+        )
+        store.save(
+            {**stage, "action": "stage_update", "status": "complete", "result": patched}
+        )
+        with self.assertRaisesRegex(ValueError, "staged as a patch"):
+            self.service.operation(
+                self.identity,
+                "version_preview",
+                {
+                    "official": patched["official"],
+                    "version": "1.1",
+                    "patch_overlay": False,
+                },
+            )
 
     def test_runtime_changes_invalidate_delivery_even_if_qa_report_is_unchanged(self):
         for action in ("guided_review", "guided_package", "release_patch"):

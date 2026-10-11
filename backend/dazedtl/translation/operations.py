@@ -1,5 +1,6 @@
 """Preparation and delivery compose preserved engine operations with backups."""
 
+import shutil
 import tempfile
 import uuid
 from contextlib import ExitStack, contextmanager
@@ -540,10 +541,29 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
         )
         progress("Creating an isolated working copy of the new original.")
         staged.parent.mkdir(parents=True, exist_ok=True)
-        backups.restore(pristine["path"], staged, stopped=stopped)
-        kind = engine.detect(staged)
+        copy = staged.with_name(job["id"] + ".release")
+        backups.restore(pristine["path"], copy, stopped=stopped)
+        try:
+            # The copy is laid out as the game: a release inside an extra
+            # folder, or a patch for the game's www folder, lines up with it.
+            layout = engine.release_stage(
+                source,
+                copy,
+                {True: "patch", False: "game"}.get(arguments.get("patch")),
+                staged,
+            )
+        finally:
+            shutil.rmtree(copy, ignore_errors=True)
+        patch = layout["kind"] == "patch"
+        # A patch holds only some of the game's files, so the game says which engine it is.
+        kind = engine.detect(source if patch else staged)
         prepared = False
-        if kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir():
+        if patch and kind == "MVMZ":
+            engine.rpgmaker_prepare_patch(staged, source, log=progress)
+            prepared = True
+        elif not patch and (
+            kind == "MVMZ" or kind == "ACE" and (staged / "ace_json").is_dir()
+        ):
             engine.rpgmaker_prepare(staged, options, log=progress)
             prepared = True
         result = {
@@ -551,6 +571,8 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
             "version": arguments["version"],
             "source_backup": pristine,
             "engine": kind,
+            "patch": patch,
+            "layout": layout,
             "preparation_required": not prepared,
         }
     elif action == "restore_backup":

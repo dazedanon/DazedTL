@@ -357,6 +357,28 @@ class TranslationState(ProjectOptions):
     legacyAvailable: bool
 
 
+class ReleaseLayout(TypedDict):
+    """How a release lines up with the game as one kind; see the engine's
+    util/version_update/release_layout.py."""
+
+    kind: Literal["game", "patch"]
+    source: str
+    target: str
+    files: int
+    replaced: int
+    outside: int
+    left_out: list[str]
+    game_files: int
+    covered: int
+
+
+class ReleaseInspection(TypedDict):
+    detected: Literal["game", "patch"]
+    version: str
+    game: ReleaseLayout
+    patch: ReleaseLayout
+
+
 class BackupRecord(TypedDict):
     id: str
     path: str

@@ -234,6 +234,7 @@ It does not create remotes, push, or upload.
 A checkpoint commits the game's complete `gameupdate/patch-config.txt` with the patch, so manifests need not list it; the package leaves it out unless the existing GameUpdate checks find the commit is the verified public version, which they then stamp.
 
 For an official update, stage_update preserves the new original and creates a separate working copy.
+A folder holding fewer than half of the game's files is staged as a patch unless `patch` says otherwise, and version_preview then compares a staged release only as what it was staged as.
 Complete the relevant engine preparation there, then use version_preview and version_apply with its saved preview ID.
 Continue/abort operate on the preserved Git recovery state.
 After a completed update, version_handoff supplies the shared follow-up instructions.

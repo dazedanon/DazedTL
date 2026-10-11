@@ -108,7 +108,7 @@ OPERATIONS = {
     "package": ("Package local translation patch", set()),
     "stage_update": (
         "Stage a new original for engine preparation",
-        {"official", "version"},
+        {"official", "version", "patch"},
     ),
     "version_preview": (
         "Preview official game update",
@@ -560,7 +560,7 @@ After a connection failure, inspect state and the relevant run before retrying a
 {injection}. Get the translations with results --run <id>, which writes them by line ID to a file, and inject from that file with scripts. Fit using the actual engine/renderer. For MV/MZ, stage translated JSON and use operation write_rpgmaker with matching source, translated and output paths (or a registered backup_id). This preserves _original and refuses unsafe structural remapping. After an official source update, use rebase_rpgmaker with the current expected_original_commit when old metadata needs rebasing; it requires source bytes matching that exact original-branch file. Ordinary corrections keep their existing Japanese. Other engines retain native source/injection sidecars and use their own verified reconstruction tools. Record unresolved extraction explicitly.
 {qa}. Inject and verify the actual installed game. Use operation checkpoint with the complete runtime manifest to align original/main and create a local checkpoint plus a deduplicated workspace snapshot. Packaging reuses that snapshot when its contents are unchanged. Complete targeted structural, source/live and runtime QA; unavailable checks remain pending. For RPG Maker MV/MZ and VX Ace, text QA is DazedTL's own: after the checkpoint, run qa --prepare and follow the README of the task it names until qa reports the task complete, then run qa --apply --wait 60, which applies the findings through DazedTL and saves their checkpoint. The user answers QA's open questions in DazedTL while apply waits. DazedTL shows QA's stage and counts on Progress from its task, so report the qa phase without QA counts. Use operation package for a local Git patch after QA is complete; it needs organize --complete after the latest census, with every unit it accepted in your text export. Public publishing, uploads, remotes and pushes remain separate requests.
 
-For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
+For official updates, use stage_update with the new official folder/version to preserve it and create a working copy. A folder holding fewer than half of the game's files is staged as a patch, whose files are copied over the game while every file it leaves out stays; pass patch true or false to override that, and check the returned layout for the folder that lined up with the game. It applies shared preparation to MV/MZ; complete the relevant skill's decryption, conversion or other prerequisites for other engines in the returned copy. Preview that prepared original with version_preview, inspect its saved result, then version_apply with that preview_id. Preserve conflict recovery and continue/abort through the helper. Use version_handoff after a completed update. Extract the updated game's units with current source mappings and organize them again; requests whose lines and context are unchanged keep their translations, and positional offsets alone are not stable across releases.
 
 Use backups to list restore points, including older profile backups. operation restore_backup accepts backup_id and an absolute destination for a new folder outside the game; it verifies all restored bytes and never overwrites an existing folder.
 
@@ -624,6 +624,26 @@ Additional project instructions:
     def backups(self, project_id):
         _record, project = self.project(project_id)
         return backups.catalog(project.root, self.workspace / "backups" / project_id)
+
+    def release(self, project_id, folder):
+        """How a new official release's folder lines up with the game, as a
+        complete game and as a patch, before anything is copied."""
+        _record, project = self.project(project_id)
+        if not isinstance(folder, str) or not folder.strip() or "\0" in folder:
+            raise ValueError("Choose the new release's folder.")
+        release = Path(folder).expanduser()
+        if not release.is_absolute():
+            raise ValueError("Choose the new release's folder.")
+        release = release.resolve()
+        if not release.is_dir():
+            raise ValueError("That folder doesn't exist.")
+        if (
+            release == project.root
+            or release.is_relative_to(project.root)
+            or project.root.is_relative_to(release)
+        ):
+            raise ValueError("Choose a separate new official game folder.")
+        return self.engine.release_inspect(project.root, release)
 
     def compile(self, project_id, input_path):
         return self._compile(project_id, input_path)
@@ -1340,7 +1360,7 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 "Required operation arguments: " + ", ".join(sorted(required))
             )
         for key, value in arguments.items():
-            if key in {"untranslated", "patch_overlay", "keep_context"}:
+            if key in {"untranslated", "patch", "patch_overlay", "keep_context"}:
                 if type(value) is not bool:
                     raise ValueError("Operation flags must be true or false.")
             elif not isinstance(value, str) or len(value) > 10000 or "\0" in value:
@@ -1356,6 +1376,30 @@ If you won't translate a request, skip it and go on; it stays declined. Use the 
                 self.workspace,
                 self.engine,
             )
+        if action == "version_preview":
+            # A staged release compares as what it was staged as: a patch
+            # compared as a complete game would remove every file it leaves out.
+            official = Path(arguments["official"]).expanduser().resolve()
+            stage = next(
+                (
+                    job["result"]
+                    for job in self.jobs.store.list(project_id)
+                    if job["action"] == "stage_update"
+                    and job["status"] == "complete"
+                    and isinstance(job.get("result"), dict)
+                    and Path(job["result"]["official"]).resolve() == official
+                ),
+                None,
+            )
+            if stage is not None:
+                patch = stage.get("patch", False)
+                if arguments.get("patch_overlay", patch) != patch:
+                    raise ValueError(
+                        "This release was staged as a patch."
+                        if patch
+                        else "This release was staged as a complete game."
+                    )
+                arguments = {**arguments, "patch_overlay": patch}
         if action == "version_apply":
             previous, preview = self.jobs.store.load(
                 arguments.get("preview_id", ""), project_id

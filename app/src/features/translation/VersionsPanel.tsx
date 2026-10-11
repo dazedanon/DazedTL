@@ -11,11 +11,17 @@ import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionControl } from "../../ui/ActionControl";
 import { BackupsPanel } from "./BackupsPanel";
 import { JobStatus } from "../../ui/JobStatus";
-import { FieldRow } from "../../ui/FieldRow";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
-import { updateSummary, versionSession } from "./versionState";
+import { ReleaseForm, emptyRelease } from "./ReleaseForm";
+import {
+  releaseEffect,
+  removedFiles,
+  stagedLayout,
+  updateSummary,
+  versionSession,
+} from "./versionState";
 import { displayText } from "../../ui/displayText";
 
 export function VersionsPanel({
@@ -39,8 +45,7 @@ export function VersionsPanel({
   const action = useAction({ after: application.settle });
   const [recovery, setRecovery] = useState(false);
   const [choosing, setChoosing] = useState(false);
-  const [official, setOfficial] = useState("");
-  const [nextVersion, setNextVersion] = useState("");
+  const [release, setRelease] = useState(emptyRelease);
   const [advanced, setAdvanced] = useState(false);
   const [dismissedAttempt, setDismissedAttempt] = useState<
     string | undefined
@@ -76,6 +81,9 @@ export function VersionsPanel({
     )
       ? session.latest
       : undefined;
+  const layout = stagedLayout(session.stage);
+  // A complete game missing most of the game's files is likely a patch.
+  const removed = layout ? removedFiles(layout) : 0;
   const resultVersion =
     displayText(preview?.result?.version) ||
     displayText(stage?.result?.version);
@@ -123,6 +131,8 @@ export function VersionsPanel({
     />
   );
   const chooseNew = () => {
+    // A finished update's release is not the next one.
+    if (done) setRelease(emptyRelease);
     setChoosing(true);
     setDismissedAttempt(undefined);
     action.clear();
@@ -267,9 +277,22 @@ export function VersionsPanel({
       ) : preview && !session.stale ? (
         <Section
           title={`Review update to ${resultVersion}`}
-          hint={updateSummary(preview.result!)}
+          hint={[
+            layout?.kind === "patch" && "Patch",
+            updateSummary(preview.result!),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           className="version-review"
         >
+          {removed * 2 > (layout?.game_files ?? 0) && (
+            <p className="banner">
+              This release leaves out {removed.toLocaleString()} of the game’s{" "}
+              {layout!.game_files.toLocaleString()} files, so applying it
+              removes them. If it’s a patch, choose a different release and pick
+              Patch.
+            </p>
+          )}
           <VersionChanges value={preview.result!} />
           <ActionSlot target={actionTarget}>
             {session.stage && (
@@ -299,8 +322,10 @@ export function VersionsPanel({
       ) : stage || (preview && session.stale) ? (
         <Section title={`Compare with version ${resultVersion}`}>
           <p>
-            The new release was copied for preparation. Preview its changes
-            before updating the working game.
+            {layout?.kind === "patch"
+              ? `The patch was copied for comparison. ${releaseEffect(layout)}`
+              : "The new release was copied for comparison."}{" "}
+            Preview its changes before updating the game.
           </p>
           {stage?.result?.preparation_required === true && (
             <>
@@ -353,60 +378,35 @@ export function VersionsPanel({
         (session.stage &&
           ["failed", "interrupted", "stopped"].includes(session.stage.status) &&
           session.stage.id !== dismissedAttempt) ? (
-        <Section title="Choose the new official release">
-          <p>
-            Choose an extracted, complete release from the game’s developer. The
-            app prepares a separate copy for comparison.
-          </p>
-          <fieldset className="version-form" disabled={disabled}>
-            <FieldRow
-              id="update-official-folder"
-              label="New official game folder"
-            >
-              {(props) => (
-                <div className="version-folder">
-                  <input
-                    {...props}
-                    value={official}
-                    onChange={(event) => setOfficial(event.target.value)}
-                  />
-                  <Button onClick={() => browse(setOfficial)}>
-                    Choose folder
-                  </Button>
-                </div>
+        <ReleaseForm
+          projectId={project.id}
+          value={release}
+          onChange={setRelease}
+          disabled={disabled}
+          browse={browse}
+          actionTarget={actionTarget}
+          footer={(request) => (
+            <>
+              <Button
+                variant="quiet"
+                disabled={disabled}
+                onClick={() => {
+                  setChoosing(false);
+                  setDismissedAttempt(session.stage?.id);
+                }}
+              >
+                Cancel
+              </Button>
+              {control(
+                "stage_update",
+                "Prepare new release",
+                request ?? {},
+                !request,
+                true,
               )}
-            </FieldRow>
-            <FieldRow id="update-version" label="New game version">
-              {(props) => (
-                <input
-                  {...props}
-                  value={nextVersion}
-                  onChange={(event) => setNextVersion(event.target.value)}
-                  placeholder="For example, 1.10"
-                />
-              )}
-            </FieldRow>
-          </fieldset>
-          <ActionSlot target={actionTarget}>
-            <Button
-              variant="quiet"
-              disabled={disabled}
-              onClick={() => {
-                setChoosing(false);
-                setDismissedAttempt(session.stage?.id);
-              }}
-            >
-              Cancel
-            </Button>
-            {control(
-              "stage_update",
-              "Prepare new release",
-              { official, version: nextVersion },
-              !official.trim() || !nextVersion.trim(),
-              true,
-            )}
-          </ActionSlot>
-        </Section>
+            </>
+          )}
+        />
       ) : (
         <Section title="Update this translation">
           <p>

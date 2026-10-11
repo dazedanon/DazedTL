@@ -1,4 +1,61 @@
-import type { TranslationJob, TranslationState } from "../../api/contracts.ts";
+import type {
+  ReleaseLayout,
+  TranslationJob,
+  TranslationState,
+} from "../../api/contracts.ts";
+
+const files = (count: number) =>
+  `${count.toLocaleString()} ${count === 1 ? "file" : "files"}`;
+
+/** The game's files a complete release leaves out, which applying it removes. */
+export const removedFiles = (layout: ReleaseLayout) =>
+  layout.kind === "game" ? layout.game_files - layout.covered : 0;
+
+/** What a release does to the game when applied as its layout's kind. */
+export function releaseEffect(layout: ReleaseLayout) {
+  if (layout.kind === "game") {
+    const removed = removedFiles(layout);
+    return removed
+      ? `Replaces the game. ${removed.toLocaleString()} of the game’s ${files(layout.game_files)} aren’t in it and would be removed.`
+      : "Replaces the game with this release.";
+  }
+  const added = layout.files - layout.replaced;
+  const copied = !layout.replaced
+    ? `Adds ${files(added)} to the game.`
+    : !added
+      ? `Replaces ${files(layout.replaced)} in the game.`
+      : `Replaces ${files(layout.replaced)} and adds ${added.toLocaleString()} new.`;
+  return `${copied} Everything else stays.`;
+}
+
+/** Where a release's files go when they don't line up with the game as chosen. */
+export function releasePlacement(layout: ReleaseLayout) {
+  // The layout names only the first few files it leaves out.
+  const leftOut =
+    layout.outside > 3
+      ? `${layout.left_out.slice(0, 2).join(", ")} and ${(layout.outside - 2).toLocaleString()} more`
+      : layout.left_out.join(", ");
+  const parts = [
+    layout.source && `uses the “${layout.source}” folder inside it`,
+    layout.target && `puts its files in the game’s “${layout.target}” folder`,
+    layout.outside &&
+      `leaves out ${layout.outside === 1 ? "the file" : `the ${files(layout.outside)}`} beside that folder: ${leftOut}`,
+  ].filter(Boolean) as string[];
+  if (!parts.length) return "";
+  const text =
+    parts.length > 1
+      ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`
+      : parts[0];
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+/** The layout a stage job used, which older stages do not record. */
+export function stagedLayout(job: TranslationJob | undefined) {
+  const layout = job?.result?.layout;
+  return layout && typeof layout === "object"
+    ? (layout as ReleaseLayout)
+    : undefined;
+}
 
 export const versionActions = new Set([
   "stage_update",

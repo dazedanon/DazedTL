@@ -587,6 +587,29 @@ class TranslationEngine:
         result["forge"] = setup_forge(self.project(source, options))
         return result
 
+    def rpgmaker_prepare_patch(self, patch, source, log=None):
+        from util.project_preparation import prepare_rpgmaker_patch
+
+        return prepare_rpgmaker_patch(patch, source, log=log)
+
+    def release_inspect(self, source, release):
+        from util.version_update import GitWorkflowError
+        from util.version_update.release_layout import inspect_release
+
+        try:
+            return asdict(inspect_release(source, release))
+        except GitWorkflowError as error:
+            raise ValueError(str(error)) from error
+
+    def release_stage(self, source, copy, kind, destination):
+        """Lays a release's private copy out as the game in `destination`, as
+        `kind` or as its files suggest, and returns the layout it used."""
+        from util.version_update.release_layout import inspect_release, stage_release
+
+        layout = inspect_release(source, copy).layout(kind)
+        stage_release(source, copy, destination, layout)
+        return asdict(layout)
+
     def git_setup(self, source, options, version, original, untranslated):
         from util.len_git import setup_git
 

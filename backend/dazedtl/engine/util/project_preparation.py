@@ -202,3 +202,38 @@ def prepare_rpgmaker(game_root: str | Path, *, data_path: str | Path | None = No
             "config_written": configured, "config_status": config_message,
             "startup_check": checker_message,
             "next_step": "Review preparation, then run git-setup before translating."}
+
+
+def prepare_rpgmaker_patch(patch_root: str | Path, game_root: str | Path, *, log=None) -> dict:
+    """Give an MV/MZ patch's files the preparation the game's own files had.
+
+    The patch must be laid out as the game. Its data and plugin configuration
+    then compare line by line with the prepared game, and the files it leaves
+    out keep their preparation in the game.
+    """
+    from util.dazedformat import format_json_files
+
+    root = Path(patch_root).expanduser().resolve()
+    game = Path(game_root).expanduser().resolve()
+    layout = rpgmaker_layout(game)
+    if layout is None or layout["engine"] != "MVMZ":
+        raise ValueError("Only RPG Maker MV/MZ patches are prepared here; other engines use their own preparation.")
+    emit = log or (lambda _message: None)
+    data = root / layout["data_path"].relative_to(game)
+    count = 0
+    if data.is_dir():
+        emit("1. Format the patch's game data")
+        count, errors = format_json_files(data, log=emit)
+        if errors:
+            raise ValueError("Patch data formatting failed. " + "; ".join(errors))
+    plugins = root / layout["plugins_js"].relative_to(game)
+    if plugins.is_file():
+        emit("2. Format the patch's plugin configuration")
+        _game_path(root, plugins)
+        format_plugins_js(plugins)
+        # The patch replaces plugins.js, so it needs the startup check again.
+        installed, message = install_startup_check(root)
+        if not installed:
+            raise ValueError(message)
+        emit(message)
+    return {"engine": "MVMZ", "formatted_json": count, "plugins_formatted": plugins.is_file()}

@@ -205,7 +205,9 @@ Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch
 ## Game updates
 
 When a game gets a new official version, open **Game updates** on the Project page.
+Choose the folder the developer released, either the complete game or a patch of files to copy over it; DazedTL says which it looks like, and you can change that.
 It sets the new version up as a separate copy, previews the changes, then applies the update to your translation.
+A patch keeps every game file it doesn't include, but it can't remove files the developer deleted.
 **Discard release** drops an update you don't want.
 
 ## Backups and recovery
