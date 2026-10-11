@@ -7,6 +7,7 @@ import uuid
 from dazedtl.storage import write_json
 
 from .files import digest, project_path, read_json
+from .header_review import REPORT as HEADER_REPORT
 
 REPORT = ".dazedtl/guided/speaker-findings.json"
 KEYS = (
@@ -131,6 +132,23 @@ not the legacy paid name-translation run. No provider connection is needed.
 The app must be running with this project initialized. If loopback access is blocked, use the
 assistant's normal permission flow for this helper and verify its read-only status before retrying
 a scan. Inspect saved status after a lost response; do not assume the scan failed to start.
+`headers.flags` lists likely slips in the game's own Show Text headers, such as another character's
+nameplate on a line or a nameplate on a sound effect, each with its `pointer` and `evidence`.
+Check each one in its scene by reading the boxes around it, then write
+`{HEADER_REPORT}` with one review per flag and run `{command} --fix-headers`:
+
+```json
+{{"version": 1, "reviews": [
+  {{"file": "Map002.json", "pointer": "/events/24/pages/0/list/146", "decision": "fix", "face_name": "", "face_index": 0, "name": "", "reason": "A sound effect; the moan after it is the heroine's."}},
+  {{"file": "Map007.json", "pointer": "/events/14/pages/1/list/121", "decision": "keep", "reason": "She says her own name in a song."}}
+]}}
+```
+
+Fix a header only when the scene shows who speaks; give the face and nameplate it should have,
+using a face the game already shows, and an empty face and nameplate for narration or a sound
+effect. Otherwise keep it with the reason. The command checks the review against the scan, fixes
+those headers in the game's files and records every decision for the user; then scan again.
+Until a flag is settled, do not take its line as evidence of its nameplate's voice.
 After collecting names, continue the full investigation below in this same task. Do not stop at
 the speaker report. Line widths and other settings retain their existing workflow.
 """

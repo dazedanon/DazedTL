@@ -117,6 +117,10 @@ def run_scan(plan, log):
         from modules import rpgmakermvmz as engine
 
         names = collect(engine, plan["options"]["files"], log)
+        from util.rpgmaker_header_check import check as check_headers
+
+        # The same copied files show where the game's headers likely slipped.
+        headers = check_headers(root / "files")
         actor_names = {
             str(key): name
             for key, name in engine._get_actor_map().items()
@@ -127,11 +131,15 @@ def run_scan(plan, log):
         }
         os.chdir(plan["folder"])
         validate_plan(plan)
-        log(f"Found {len(names)} unique speaker names. No API requests were made.")
+        log(
+            f"Found {len(names)} unique speaker names and {headers['total']} likely "
+            "speaker slips. No API requests were made."
+        )
         result = {
             "names": names,
             "actor_names": actor_names,
             "variable_actor_ids": variable_actors,
+            "headers": headers,
             "files": len(plan["options"]["files"]),
             "source_inputs": sources,
             "configuration": plan["options"]["configuration"],

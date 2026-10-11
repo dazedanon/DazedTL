@@ -233,6 +233,11 @@ def main():
         help="Read speaker discovery results; --scan applies evidenced rules and runs the local parser without API calls",
     )
     speakers.add_argument("--scan", action="store_true")
+    speakers.add_argument(
+        "--fix-headers",
+        action="store_true",
+        help="Apply your review of the scan's likely header slips from .dazedtl/guided/header-review.json",
+    )
     event_text = commands.add_parser(
         "event-text",
         help="Read the current Other event text investigation request and validated findings; --apply saves their recommendations as source choices",
@@ -440,6 +445,8 @@ def main():
                 method = "guided_context_status"
             if args.command == "speakers":
                 params["scan"] = args.scan
+                if args.fix_headers:
+                    params["fix_headers"] = True
             if args.command == "legacy":
                 params.update(
                     action=args.action, token=args.token, approved=args.approved

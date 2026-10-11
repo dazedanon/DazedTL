@@ -1,5 +1,6 @@
 """Guided approvals must retain scope, ownership and one-use submission intent."""
 
+import json
 import os
 import shutil
 import sys
@@ -12,7 +13,13 @@ from unittest.mock import Mock, patch
 
 from dazedtl.projects.store import Projects
 from dazedtl.storage import write_json
-from dazedtl.translation import context_setup, event_text, preparation, speaker_setup
+from dazedtl.translation import (
+    context_setup,
+    event_text,
+    header_review,
+    preparation,
+    speaker_setup,
+)
 from dazedtl.translation.backups import snapshot, store_path
 from dazedtl.translation.files import digest, evidence, read_json
 from dazedtl.translation.guided import Guided, retained_position
@@ -54,6 +61,102 @@ class RetainedPositionTests(unittest.TestCase):
         value = retained_position({"step": "check", "task": "apply"})
         self.assertEqual((value["step"], value["task"]), ("check", "fitting"))
         self.assertNotIn("step", retained_position({"positions": {}}))
+
+
+class HeaderReviewTests(unittest.TestCase):
+    def test_review_fixes_only_reviewed_headers_and_records_every_decision(self):
+        def header(name, text, face=""):
+            return [
+                {"code": 101, "indent": 0, "parameters": [face, 0, 0, 2, name]},
+                {"code": 401, "indent": 0, "parameters": [text]},
+            ]
+
+        def flag(index, name, text, face=""):
+            return {
+                "kind": "self-address",
+                "file": "Map001.json",
+                "pointer": f"/events/1/pages/0/list/{index}",
+                "face_name": face,
+                "face_index": 0,
+                "name": name,
+                "text": text,
+                "evidence": "Why it was flagged.",
+                "lines": [f"/events/1/pages/0/list/{index + 1}"],
+            }
+
+        with TemporaryDirectory() as folder:
+            game = Path(folder)
+            data = game / "data"
+            commands = [
+                *header("アリナ", "アリナちゃん、いらっしゃい！", "arina"),
+                *header("アリナ", "アリナちゃんの歌♪", "arina"),
+            ]
+            document = {"events": [None, {"pages": [{"list": commands}]}]}
+            path = data / "Map001.json"
+            path.parent.mkdir()
+            path.write_text(json.dumps(document, ensure_ascii=False, indent=4))
+            headers = {
+                "total": 2,
+                "flags": [
+                    flag(0, "アリナ", "アリナちゃん、いらっしゃい！", "arina"),
+                    flag(2, "アリナ", "アリナちゃんの歌♪", "arina"),
+                ],
+            }
+            fix = {
+                "file": "Map001.json",
+                "pointer": "/events/1/pages/0/list/0",
+                "decision": "fix",
+                "face_name": "",
+                "face_index": 0,
+                "name": "店主",
+                "reason": "The owner greets her.",
+            }
+            keep = {
+                "file": "Map001.json",
+                "pointer": "/events/1/pages/0/list/2",
+                "decision": "keep",
+                "reason": "She sings her own name.",
+            }
+            report = game / header_review.REPORT
+            # Every flag needs a decision, a fix a face the game shows, and
+            # nothing is written until the whole review holds.
+            for reviews in (
+                [fix],
+                [{**fix, "face_name": "nobody"}, keep],
+            ):
+                write_json(report, {"version": 1, "reviews": reviews})
+                with self.assertRaises(ValueError):
+                    header_review.apply(game, data, headers)
+            self.assertEqual(json.loads(path.read_text()), document)
+            write_json(report, {"version": 1, "reviews": [fix, keep]})
+            header_review.apply(game, data, headers)
+            commands[0]["parameters"][0] = ""
+            commands[0]["parameters"][4] = "店主"
+            # Only the fixed header changed, in the file's own formatting.
+            self.assertEqual(
+                path.read_text(), json.dumps(document, ensure_ascii=False, indent=4)
+            )
+            # A later scan no longer flags the fix; the sheet still lists it
+            # beside the kept flag, in the game's order.
+            rows = header_review.view(
+                {"total": 1, "flags": headers["flags"][1:]},
+                header_review.recorded(game),
+            )
+            self.assertEqual(
+                [
+                    (row["name"], row["decision"], row["reason"])
+                    for row in rows["flags"]
+                ],
+                [
+                    ("アリナ", "fixed", "The owner greets her."),
+                    ("アリナ", "kept", "She sings her own name."),
+                ],
+            )
+            self.assertEqual(rows["flags"][0]["fixedTo"]["name"], "店主")
+            # A header that changed since the scan is not overwritten.
+            write_json(report, {"version": 1, "reviews": [fix, keep]})
+            with self.assertRaisesRegex(ValueError, "changed"):
+                header_review.apply(game, data, headers)
 
 
 class GuidedTests(unittest.TestCase):
@@ -1883,6 +1986,9 @@ class GuidedTests(unittest.TestCase):
         self.assertTrue(value["current"])
         self.assertTrue(value["available"])
         self.assertEqual(value["names"], ["リーナ", "\\N[1]"])
+        # A scan saved before the header check has nothing to review.
+        with self.assertRaisesRegex(ValueError, "did not check headers"):
+            self.guided.speakers(self.identity, fix_headers=True)
         self.guided.speakers(self.identity, scan=True)
         self.assertEqual(self.backend.operations.start.call_count, 1)
         self.assertEqual(self.started, [])

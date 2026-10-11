@@ -204,6 +204,8 @@ class ImagesEditorTranslationActionRequest(TypedDict):
 class TranslationSpeakersRequest(TypedDict):
     project_id: str
     scan: bool
+    # Apply the setup assistant's review of the scan's likely header slips.
+    fix_headers: NotRequired[bool]
 
 
 class TranslationIdentifyRequest(TypedDict):

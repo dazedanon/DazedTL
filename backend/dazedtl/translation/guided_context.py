@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from dazedtl.storage import write_json
 
-from . import context_setup, reference_folders, speaker_setup
+from . import context_setup, header_review, reference_folders, speaker_setup
 from .files import digest, project_path, read_json
 from .helper_command import helper_command
 
@@ -346,10 +346,26 @@ class GuidedContext:
             }
         )
 
-    def speakers(self, project_id, scan=False):
-        if type(scan) is not bool:
+    def speakers(self, project_id, scan=False, fix_headers=False):
+        if type(scan) is not bool or type(fix_headers) is not bool:
             raise ValueError("Choose whether to run the local speaker scan.")
         _, native = self.guided.record(project_id)
+        if fix_headers:
+            if scan:
+                raise ValueError("Fix headers first, then scan again.")
+            self.guided.idle()
+            self.guided.clean_options(project_id)
+            if not self.speakers(project_id)["current"]:
+                raise ValueError(
+                    "The saved scan does not match the current files. Scan again, "
+                    "then review its flags."
+                )
+            artifact = project_path(native["source"], ".dazedtl/guided/speakers.json")
+            headers = read_json(artifact).get("headers")
+            if not isinstance(headers, dict):
+                raise ValueError("Scan again; this scan did not check headers.")
+            header_review.apply(native["source"], native["data"], headers)
+            return self.speakers(project_id)
         if scan:
             self.guided.clean_options(project_id)
             findings = self.speaker_findings(project_id, native)
@@ -465,6 +481,10 @@ class GuidedContext:
             "names": result.get("names", []),
             "actorNames": result.get("actor_names", {}),
             "variableActorIds": result.get("variable_actor_ids", {}),
+            "headers": header_review.view(
+                result.get("headers"),
+                header_review.recorded(native["source"]) if available else None,
+            ),
             "files": result.get("files", 0),
             "savedAt": (saved.get("updated") or saved.get("created"))
             if saved

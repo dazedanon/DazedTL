@@ -793,6 +793,33 @@ export type GuidedState = {
   provider: GuidedProvider;
 };
 
+export type ShowTextHeader = {
+  faceName: string;
+  faceIndex: number;
+  name: string;
+};
+
+export type HeaderFlag = {
+  kind: "face" | "self-address" | "pronoun" | "sound-effect" | "unnamed-line";
+  file: string;
+  pointer: string;
+  faceName: string;
+  faceIndex: number;
+  name: string;
+  text: string;
+  evidence: string;
+  decision: "fixed" | "kept" | null;
+  reason: string;
+  fixedTo: ShowTextHeader | null;
+};
+
+export type HeaderCheck = {
+  total: number;
+  fixed: number;
+  kept: number;
+  flags: HeaderFlag[];
+};
+
 export type SpeakerScan = {
   job: Job | null;
   available: boolean;
@@ -800,6 +827,7 @@ export type SpeakerScan = {
   names: string[];
   actorNames: Record<string, string>;
   variableActorIds: Record<string, number>;
+  headers: HeaderCheck | null;
   files: number;
   path: string | null;
   savedAt: string | null;
@@ -2188,6 +2216,7 @@ export type ImagesEditorTranslationActionRequest = {
 export type TranslationSpeakersRequest = {
   project_id: string;
   scan: boolean;
+  fix_headers?: boolean;
 };
 
 export type TranslationIdentifyRequest = {

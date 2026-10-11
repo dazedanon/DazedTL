@@ -10,6 +10,19 @@ export interface InvestigationResult {
   detail: string;
 }
 
+/** What the assistant did about the scan's likely header slips, or how many wait. */
+function speakerSlips(scan: GuidedState["speakerScan"]) {
+  const headers = scan.headers;
+  if (!headers) return "";
+  const reviewed = headers.fixed + headers.kept > 0;
+  const count = reviewed ? headers.fixed : headers.flags.length;
+  const noun = count === 1 ? "slip" : "slips";
+  if (!count) return "";
+  return reviewed
+    ? ` · ${count} speaker ${noun} fixed`
+    : ` · ${count} possible speaker ${noun}`;
+}
+
 /** Saved artifacts and the latest local attempt are separate observations. */
 export function investigationResults(
   state: Pick<GuidedState, "speakerSetup" | "speakerScan" | "contextSetup">,
@@ -58,7 +71,7 @@ export function investigationResults(
       detail: scanning
         ? scan.job!.message || "Scanning local event files…"
         : scanSaved
-          ? `${scan.names.length} nameplates · ${scan.files} event files${failed ? " · latest scan did not finish" : ""}.`
+          ? `${scan.names.length} nameplates · ${scan.files} event files${speakerSlips(scan)}${failed ? " · latest scan did not finish" : ""}.`
           : failed
             ? scan.job!.message ||
               "The local scan did not finish. Open the scan to retry."

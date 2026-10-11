@@ -646,6 +646,8 @@ A copied setup task binds its report to this project and request.
 The app verifies source hashes before enabling only confirmed, high-confidence rules; prose reports and partial, stale or foreign findings cannot configure options.
 The agent's scoped `speakers --scan` helper applies the rules and launches the preserved parser's scan phase in an isolated worker without credentials or network access.
 It never translates names; literal nameplates and the native actor/variable lookup tables feed the rest of the setup investigation.
+The scan also runs text QA's [header check](../backend/dazedtl/engine/util/rpgmaker_header_check.py), described with QA below, on its copied files.
+The setup task checks each flag in its scene and writes a [review](../backend/dazedtl/translation/header_review.py), which `speakers --fix-headers` checks against the current scan and the game's files before writing only the fixed headers' face and nameplate; it records every decision in the game's `.dazedtl/guided/header-fixes.json`, and the Speaker names sheet lists each flag with what the assistant fixed or kept and why, so the user reviews nothing.
 Preferences and the consumed report are saved atomically through the compatibility boundary.
 Pending option drafts and actively running workers defer application; dormant API runs do not block speaker setup or local scanning and retain their frozen settings and receipts.
 The shared observer reports scanner results; manual overrides survive new findings until explicitly reset.

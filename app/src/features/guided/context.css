@@ -75,10 +75,17 @@
   flex: 1;
   min-width: 0;
 }
+/* A tab's own note takes room from its rows, so switching tabs never
+   resizes the sheet. */
 .context-names-list {
   height: min(24em, 45dvh);
   display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   min-height: 8em;
+}
+.context-names-list > p {
+  margin: 0;
 }
 .context-name-row {
   display: flex;
@@ -90,6 +97,17 @@
   overflow-wrap: anywhere;
 }
 .context-name-row > span:first-child:not(:last-child) {
+  color: var(--color-muted);
+}
+.context-slip-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  font-size: var(--font-control);
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+.context-slip-row > small {
   color: var(--color-muted);
 }
 .context-detection-tabs {

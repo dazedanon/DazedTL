@@ -517,6 +517,34 @@ class GuidedState(TypedDict):
     provider: GuidedProvider
 
 
+class ShowTextHeader(TypedDict):
+    faceName: str
+    faceIndex: int
+    name: str
+
+
+class HeaderFlag(TypedDict):
+    kind: Literal["face", "self-address", "pronoun", "sound-effect", "unnamed-line"]
+    file: str
+    pointer: str
+    faceName: str
+    faceIndex: int
+    name: str
+    text: str
+    evidence: str
+    # The setup assistant's decision after checking the scene, and its reason.
+    decision: Literal["fixed", "kept"] | None
+    reason: str
+    fixedTo: ShowTextHeader | None
+
+
+class HeaderCheck(TypedDict):
+    total: int
+    fixed: int
+    kept: int
+    flags: list[HeaderFlag]
+
+
 class SpeakerScan(TypedDict):
     job: Job | None
     available: bool
@@ -524,6 +552,8 @@ class SpeakerScan(TypedDict):
     names: list[str]
     actorNames: dict[str, str]
     variableActorIds: dict[str, int]
+    # Likely Show Text header slips; null for a scan saved before the check.
+    headers: HeaderCheck | None
     files: int
     path: str | None
     savedAt: str | None

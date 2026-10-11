@@ -56,6 +56,8 @@ If a step fails, the reason appears beside the button and **Finish setup** carri
 
 **Names & glossary**: copy the task to your assistant.
 It finds the speakers, running jokes and recurring terms, lists the names with a free local scanner, and writes the glossary, character notes and game context.
+In RPG Maker MZ games the scanner also finds likely **Speaker slips**: boxes in the original game whose nameplate or face likely shows the wrong speaker, such as a nameplate on a sound effect.
+Your assistant checks each one in its scene and fixes the real ones; **View names** shows what it fixed and why it kept the rest.
 Edit what it wrote in **Guidance**.
 **Add game folder** lets an earlier game in a series supply terms; copy the task again afterwards.
 **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.

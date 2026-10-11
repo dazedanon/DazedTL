@@ -3,13 +3,17 @@ import { useMemo, useState, type ReactNode } from "react";
 import type {
   GuidedState,
   ReferenceFolder,
+  ShowTextHeader,
   SpeakerScan,
 } from "../../api/contracts";
+import type { DisplayState } from "../../ui/displayStatus";
+import { StatusHeading } from "../../ui/StatusMark";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask } from "../../ui/AssistantTask";
 import { Tabs } from "../../ui/Tabs";
 import { VirtualList } from "../../ui/VirtualList";
 import type { InvestigationPart, InvestigationResult } from "./contextView";
+import { textLocation } from "./textLocation";
 import { withHandoff } from "../assistant/assistantTasks";
 import { useHandoff } from "../assistant/useAssistantTasks";
 
@@ -157,32 +161,64 @@ export function ContextWorkspace({
 }
 
 const rowKey = (row: { id: string }) => row.id;
+/** A saved name, or a likely speaker slip with its header, reason and the
+ * assistant's decision. */
+interface ResultRow {
+  id: string;
+  label: string;
+  text: string;
+  header?: string;
+  evidence?: string;
+  state?: DisplayState;
+  reason?: string;
+}
+const showHeader = (header: ShowTextHeader) =>
+  (header.name || "No nameplate") +
+  (header.faceName ? ` · face ${header.faceName} ${header.faceIndex}` : "");
 export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
   const [tab, setTab] = useState("nameplates");
   const [query, setQuery] = useState("");
-  const rows = useMemo(
+  const rows = useMemo<ResultRow[]>(
     () =>
-      tab === "actors"
-        ? Object.entries(scan.actorNames).map(([id, text]) => ({
-            id,
-            label: `Actor ${id}`,
-            text,
+      tab === "slips"
+        ? (scan.headers?.flags || []).map((flag) => ({
+            id: flag.file + flag.pointer,
+            label: `${flag.file} · ${textLocation(flag.pointer)}`,
+            text: flag.text,
+            header:
+              showHeader(flag) +
+              (flag.fixedTo ? ` → ${showHeader(flag.fixedTo)}` : ""),
+            evidence: flag.evidence,
+            state:
+              flag.decision === "fixed"
+                ? "applied"
+                : flag.decision === "kept"
+                  ? "done"
+                  : undefined,
+            reason: flag.reason,
           }))
-        : tab === "variables"
-          ? Object.entries(scan.variableActorIds).map(([id, actor]) => ({
+        : tab === "actors"
+          ? Object.entries(scan.actorNames).map(([id, text]) => ({
               id,
-              label: `Variable ${id}`,
-              text: `Actor ${actor}${scan.actorNames[String(actor)] ? " · " + scan.actorNames[String(actor)] : ""}`,
-            }))
-          : scan.names.map((text, index) => ({
-              id: String(index),
-              label: "",
+              label: `Actor ${id}`,
               text,
-            })),
+            }))
+          : tab === "variables"
+            ? Object.entries(scan.variableActorIds).map(([id, actor]) => ({
+                id,
+                label: `Variable ${id}`,
+                text: `Actor ${actor}${scan.actorNames[String(actor)] ? " · " + scan.actorNames[String(actor)] : ""}`,
+              }))
+            : scan.names.map((text, index) => ({
+                id: String(index),
+                label: "",
+                text,
+              })),
     [scan, tab],
   );
   const matching = rows.filter((row) =>
-    `${row.label} ${row.text}`
+    Object.values(row)
+      .join(" ")
       .toLocaleLowerCase()
       .includes(query.toLocaleLowerCase()),
   );
@@ -210,13 +246,21 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
               Object.keys(scan.variableActorIds).length,
             ),
           },
+          {
+            id: "slips",
+            label: counted("Speaker slips", scan.headers?.flags.length || 0),
+          },
         ]}
       />
       <div className="context-names-toolbar">
         <input
           type="search"
           aria-label="Find speaker names"
-          placeholder="Find a name or ID…"
+          placeholder={
+            tab === "slips"
+              ? "Find a name, line or place…"
+              : "Find a name or ID…"
+          }
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -229,24 +273,54 @@ export function SpeakerNames({ scan }: { scan: SpeakerScan }) {
         id={`speaker-results-panel-${tab}`}
         aria-labelledby={`speaker-results-tab-${tab}`}
       >
+        {tab === "slips" && !!scan.headers?.flags.length && (
+          <p className="muted">
+            {scan.headers.fixed + scan.headers.kept
+              ? `Your assistant checked these in their scenes, fixed ${scan.headers.fixed} and kept ${scan.headers.kept}; Text QA looks at the kept ones again after translation.`
+              : "Nameplates and faces in the original game that likely show the wrong speaker. Your assistant checks each in its scene during this task and fixes the slips."}
+          </p>
+        )}
         <VirtualList
           items={matching}
           itemKey={rowKey}
-          label="Saved speaker names"
+          label={
+            tab === "slips" ? "Likely speaker slips" : "Saved speaker names"
+          }
           empty={
             <p className="muted">
               {query
-                ? "No matching names."
-                : "No entries in this saved result."}
+                ? "No matching results."
+                : tab !== "slips"
+                  ? "No entries in this saved result."
+                  : scan.headers
+                    ? "No likely speaker slips in the game's nameplates and faces."
+                    : "Scan again to check the game's nameplates and faces for speaker slips."}
             </p>
           }
         >
-          {(row) => (
-            <div className="context-name-row">
-              {row.label && <span>{row.label}</span>}
-              <span>{row.text}</span>
-            </div>
-          )}
+          {(row) =>
+            row.evidence ? (
+              <div className="context-slip-row">
+                <small>{row.label}</small>
+                <StatusHeading state={row.state} title={row.header} />
+                <span lang="ja">{row.text}</span>
+                <span className="muted">{row.evidence}</span>
+                {row.reason && (
+                  <span className="muted">
+                    {row.state === "applied"
+                      ? "Your assistant fixed it: "
+                      : "Your assistant kept it: "}
+                    {row.reason}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="context-name-row">
+                {row.label && <span>{row.label}</span>}
+                <span>{row.text}</span>
+              </div>
+            )
+          }
         </VirtualList>
       </div>
     </div>
