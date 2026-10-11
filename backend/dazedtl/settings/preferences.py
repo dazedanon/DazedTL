@@ -13,7 +13,13 @@ GENERATION_PARAMETERS = "provider-defaults-v1"
 CHOICE_COLLECTION = "event-choices-once-v1"
 SPEAKER_CONTEXT = "event-speaker-context-v1"
 SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
-BATTLE_MESSAGE_USERS = "battle-message-users-v1"
+BATTLE_MESSAGE_USERS = "battle-message-users-v2"
+# Each battle-message-users policy a saved run may hold, by the parser level it
+# enables: v2 also treats a party of one actor as that actor.
+BATTLE_MESSAGE_USERS_LEVELS = {
+    "battle-message-users-v1": 1,
+    BATTLE_MESSAGE_USERS: 2,
+}
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,

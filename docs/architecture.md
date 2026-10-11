@@ -153,7 +153,9 @@ Implicit square-bracket nameplates must pass short-name plausibility checks, so 
 Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
 A separate same-line speaker policy, `SAME_LINE_SPEAKERS`, sends a nameplate sharing its line with the text, such as `【Name】：text` or `Name「text`, only as the `[Speaker]:` prefix, so the model does not write it into the message a second time.
 New MV/MZ runs also freeze a battle-message-users policy, the database parser's `BATTLE_MESSAGE_USERS`: a skill's battle messages carry a note naming the actors that learn the skill, through their starting class, an Add Skill trait or a Change Skill command, and the enemies whose actions use it, and those names bring their glossary entries, so the model can choose pronouns for the battler.
-A skill granted any other way, such as by a plugin, has no users, and its battler stays gender neutral; state messages carry no users either, since their subject is whichever battler has the state.
+A skill granted any other way, such as by a plugin, has no users, and its battler stays gender neutral, as does a state message's, whose subject is whichever battler has the state.
+Its second version also reads the party: when System's starting party and every actor a Change Party Member command or an `addActor` script adds come to one named actor, that actor uses every skill no enemy uses, other actors are left out of the notes, and a state's message1, which shows when a party member gains the state, names that actor; an `addActor` whose actor is not a number leaves the party unknown.
+Runs frozen with the first version keep its requests.
 Estimates, Live and Batch use these policies; older frozen runs retain their original parser and request identities.
 
 ### Batch execution and recovery

@@ -2507,11 +2507,14 @@ def parseScenario(data, filename):
     return [data, totalTokens, None]
 
 
-# Skill-user notes on battle messages, enabled by the run's frozen request
-# policy. Older runs keep the single request they were prepared with.
-BATTLE_MESSAGE_USERS = False
-_SKILL_USERS_CACHE: dict[int, tuple[list[str], list[str]]] | None = None
-_SKILL_USERS_LOCK = threading.Lock()
+# Battle message context by the run's frozen request policy: 1 names each
+# skill's users, and 2 also treats a party that can only ever hold one actor as
+# that actor. Older runs keep the requests they were prepared with.
+BATTLE_MESSAGE_USERS = 0
+_BATTLE_USERS_CACHE: (
+    tuple[dict[int, tuple[list[str], list[str]]], str | None] | None
+) = None
+_BATTLE_USERS_LOCK = threading.Lock()
 # Enemies a note names before it only counts the rest.
 _SKILL_NOTE_ENEMIES = 6
 _SKILL_MESSAGE_INSTRUCTION = (
@@ -2519,6 +2522,14 @@ _SKILL_MESSAGE_INSTRUCTION = (
     "the battler using the skill. For messages starting with Taro, always start the "
     "sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'"
 )
+_STATE_PARTY_INSTRUCTION = (
+    "reply with only the {language} translation. For messages starting with Taro, "
+    "always start the sentence with Taro. For example, translate 'Taroを倒した！' as "
+    "'Taro was defeated!'. The party is always {actor}, so in a state's message1, "
+    "shown when a party member gains the state, Taro or %1 is {actor}; keep other "
+    "battlers gender neutral."
+)
+_ADD_ACTOR_RE = re.compile(r"addActor\s*\(\s*(\d+)\s*\)")
 
 
 def _run_data(name: str):
@@ -2529,30 +2540,35 @@ def _run_data(name: str):
         return None
 
 
-def _event_commands(value, code: int):
-    """Every event command with this code in a map, common-event or troop file."""
+def _event_commands(value, codes: frozenset[int]):
+    """Every event command with one of these codes in a map, common-event or
+    troop file."""
     if isinstance(value, dict):
-        if value.get("code") == code:
+        if value.get("code") in codes:
             yield value
         for child in value.values():
-            yield from _event_commands(child, code)
+            yield from _event_commands(child, codes)
     elif isinstance(value, list):
         for child in value:
-            yield from _event_commands(child, code)
+            yield from _event_commands(child, codes)
 
 
-def _skill_users() -> dict[int, tuple[list[str], list[str]]]:
-    """Each skill's actors and enemies, by their source names.
+def _battle_users() -> tuple[dict[int, tuple[list[str], list[str]]], str | None]:
+    """Each skill's actors and enemies by their source names, and the party's
+    actor when the game shows the party can only ever hold that one.
 
     An actor learns a skill from its starting class's learnings, an Add Skill
     trait on the actor or that class, or a Change Skill command naming it; an
     enemy uses the skills its action patterns list. A skill granted any other
-    way, such as by a plugin, has no users here.
+    way, such as by a plugin, has no users here. The party holds System's
+    starting members and every actor a Change Party Member command or an
+    addActor script adds; a script that names its actor any other way leaves
+    the party unknown.
     """
-    global _SKILL_USERS_CACHE
-    with _SKILL_USERS_LOCK:
-        if _SKILL_USERS_CACHE is not None:
-            return _SKILL_USERS_CACHE
+    global _BATTLE_USERS_CACHE
+    with _BATTLE_USERS_LOCK:
+        if _BATTLE_USERS_CACHE is not None:
+            return _BATTLE_USERS_CACHE
 
         def entries(name):
             data = _run_data(name)
@@ -2584,23 +2600,43 @@ def _skill_users() -> dict[int, tuple[list[str], list[str]]]:
             }
             for skill in learned:
                 actor_ids.setdefault(skill, set()).add(actor["id"])
+        system = _run_data("System.json")
+        party_known = isinstance(system, dict) and isinstance(
+            system.get("partyMembers"), list
+        )
+        party = set(system["partyMembers"]) if party_known else set()
         events = [
             path.name
             for path in sorted(Path("files").glob("Map*.json"))
             if re.fullmatch(r"Map\d+\.json", path.name)
         ] + ["CommonEvents.json", "Troops.json"]
         for name in events:
-            for command in _event_commands(_run_data(name), 318):
-                # [fixed actor (0) or variable, actor (0 is the whole party),
-                #  learn (0) or forget, skill]
+            for command in _event_commands(
+                _run_data(name), frozenset({129, 318, 355, 655})
+            ):
                 parameters = command.get("parameters") or []
-                if (
-                    len(parameters) >= 4
-                    and parameters[0] == 0
-                    and parameters[2] == 0
-                    and parameters[1] in actor_names
-                ):
-                    actor_ids.setdefault(parameters[3], set()).add(parameters[1])
+                if command["code"] == 318:
+                    # [fixed actor (0) or variable, actor (0 is the whole
+                    #  party), learn (0) or forget, skill]
+                    if (
+                        len(parameters) >= 4
+                        and parameters[0] == 0
+                        and parameters[2] == 0
+                        and parameters[1] in actor_names
+                    ):
+                        actor_ids.setdefault(parameters[3], set()).add(parameters[1])
+                elif command["code"] == 129:
+                    # [actor, add (0) or remove, initialize]
+                    if len(parameters) >= 2 and parameters[1] == 0:
+                        party.add(parameters[0])
+                else:
+                    script = " ".join(
+                        value for value in parameters if isinstance(value, str)
+                    )
+                    added = _ADD_ACTOR_RE.findall(script)
+                    party.update(int(actor) for actor in added)
+                    if script.count("addActor") > len(added):
+                        party_known = False
         enemy_names: dict[int, list[str]] = {}
         for enemy in entries("Enemies.json"):
             name = _entry_field_source(enemy, "name").strip()
@@ -2611,7 +2647,7 @@ def _skill_users() -> dict[int, tuple[list[str], list[str]]]:
                     users = enemy_names.setdefault(action.get("skillId"), [])
                     if name not in users:
                         users.append(name)
-        _SKILL_USERS_CACHE = {
+        skills = {
             skill: (
                 list(dict.fromkeys(
                     actor_names[actor] for actor in sorted(actor_ids.get(skill, ()))
@@ -2621,7 +2657,9 @@ def _skill_users() -> dict[int, tuple[list[str], list[str]]]:
             for skill in set(actor_ids) | set(enemy_names)
             if isinstance(skill, int)
         }
-        return _SKILL_USERS_CACHE
+        only = next(iter(party)) if party_known and len(party) == 1 else None
+        _BATTLE_USERS_CACHE = (skills, actor_names.get(only))
+        return _BATTLE_USERS_CACHE
 
 
 def _skill_user_note(actors: list[str], enemies: list[str]) -> str:
@@ -2655,7 +2693,9 @@ def _translate_skill_messages(texts: list[str], skills: list[int]):
     users' names also bring their glossary entries, such as a character's
     gender.
     """
-    users = _skill_users()
+    users, party_actor = _battle_users()
+    if BATTLE_MESSAGE_USERS < 2:
+        party_actor = None
     unsent = [
         index for index, text in enumerate(texts)
         if "\ufffd" in text or not re.search(TRANSLATION_CONFIG.langRegex, text)
@@ -2674,6 +2714,10 @@ def _translate_skill_messages(texts: list[str], skills: list[int]):
         notes, names = [], []
         for line, index in enumerate(request if numbered else (), 1):
             actors, enemies = users.get(skills[index], ([], []))
+            if party_actor:
+                # Only the party's one actor fights: a skill no enemy uses is
+                # that actor's, and other actors never use theirs.
+                actors = [party_actor] if party_actor in actors or not enemies else []
             if actors or enemies:
                 notes.append(f"Line{line}: {_skill_user_note(actors, enemies)}")
                 names += [*actors, *enemies[:_SKILL_NOTE_ENEMIES]]
@@ -5623,11 +5667,21 @@ def searchSS(state, pbar):
     message4Response = ""
     
     if batch_texts:
-        response = translateAI(
-            batch_texts,
-            "reply with only the gender neutral " + LANGUAGE + " translation. For messages starting with Taro, always start the sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'",
-            False,
-        )
+        party_actor = _battle_users()[1] if BATTLE_MESSAGE_USERS >= 2 else None
+        if party_actor:
+            # Every message1 shows when the party's one actor gains the state.
+            response = translateAI(
+                batch_texts,
+                _STATE_PARTY_INSTRUCTION.format(language=LANGUAGE, actor=party_actor),
+                False,
+                glossary_names=(party_actor,),
+            )
+        else:
+            response = translateAI(
+                batch_texts,
+                "reply with only the gender neutral " + LANGUAGE + " translation. For messages starting with Taro, always start the sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'",
+                False,
+            )
         translated_batch = response[0]
         totalTokens[0] += response[1][0]
         totalTokens[1] += response[1][1]
@@ -6630,15 +6684,15 @@ def _restore_actor_names(text: str, reverse_map: dict[str, str]) -> str:
 def resetActorMapCache():
     """Invalidate the cached actor and variable-actor maps so they reload on next use."""
     global _ACTOR_MAP_CACHE, _VAR_ACTOR_MAP_CACHE, _EMPTY_ACTOR_NAME_CACHE, _EMPTY_ACTOR_IDS_CACHE
-    global _AUTONAMEPOPUP_CACHE, _SKILL_USERS_CACHE
+    global _AUTONAMEPOPUP_CACHE, _BATTLE_USERS_CACHE
     with _ACTOR_MAP_CACHE_LOCK:
         _ACTOR_MAP_CACHE = None
         _VAR_ACTOR_MAP_CACHE = None
         _EMPTY_ACTOR_IDS_CACHE = None
         _EMPTY_ACTOR_NAME_CACHE = {}
         _AUTONAMEPOPUP_CACHE = None
-    with _SKILL_USERS_LOCK:
-        _SKILL_USERS_CACHE = None
+    with _BATTLE_USERS_LOCK:
+        _BATTLE_USERS_CACHE = None
 
 
 @extensions.point

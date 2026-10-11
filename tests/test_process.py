@@ -1431,6 +1431,8 @@ class ProcessTests(unittest.TestCase):
     ):
         # Protect the 45 calls / 112 fields -> 8 compatible calls case, including
         # exact writer association, glossary separation and no duplicate consume.
+        # The party actor's name rides along so its glossary entry reaches the
+        # grouped requests.
         counts = [1] * 15 + [3] * 20 + [5] * 3 + [2] + [3] * 4 + [4] * 2
         fields = ["name", "description", "message1", "message2", "message3", "message4"]
         data: list[Any] = [None] + [
@@ -1453,8 +1455,8 @@ class ProcessTests(unittest.TestCase):
             item.get(field, "")
         ).startswith("項目")
 
-        def translate(text, history, *extra):
-            emitted.append((deepcopy(text), history, extra))
+        def translate(text, history, *extra, **options):
+            emitted.append((deepcopy(text), history, extra, options))
             values = ["EN:" + value for value in text]
             return [values[:-1] if malformed[0] else values, [len(text), len(text) * 2]]
 
@@ -1469,7 +1471,9 @@ class ProcessTests(unittest.TestCase):
             if not keys:
                 return [0, 0]
             source = [item.get("_original", {}).get(key, item[key]) for key in keys]
-            output, tokens = module.translateAI(source, "State instructions", False)
+            output, tokens = module.translateAI(
+                source, "State instructions", False, glossary_names=("ミカ",)
+            )
             item.setdefault("_original", {}).update(zip(keys, source))
             item.update(zip(keys, output))
             return tokens
@@ -1484,7 +1488,8 @@ class ProcessTests(unittest.TestCase):
 
         module.parseSS = point(parse)
 
-        def context(_config, payload, _format, _history):
+        def context(_config, payload, _format, _history, speaker_names=()):
+            assert speaker_names == ("ミカ",), speaker_names
             values = list(json.loads(payload).values())
             glossary = next(
                 (value.split("語彙")[1] for value in values if "語彙" in value), ""
@@ -1502,6 +1507,9 @@ class ProcessTests(unittest.TestCase):
             self.assertTrue(all(len(row[0]) <= 50 for row in emitted))
             self.assertIn('"stateId": 1', emitted[0][1])
             self.assertIn('"field": "name"', emitted[0][1])
+            self.assertEqual(
+                {tuple(row[3]["glossary_names"]) for row in emitted}, {("ミカ",)}
+            )
             for before, after in zip(data[1:], actual[1:]):
                 self.assertEqual(after["id"], before["id"])
                 for field in before.keys() - {"id"}:

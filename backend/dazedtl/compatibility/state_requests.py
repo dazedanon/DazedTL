@@ -12,6 +12,22 @@ from dazedtl.translation.files import digest, read_json
 POLICY = "compatible-states-v1"
 
 
+def stored(options):
+    """A call's keyword options as saved JSON; tuples of names become lists."""
+    return {
+        key: list(value) if isinstance(value, tuple) else value
+        for key, value in options.items()
+    }
+
+
+def replayed(options):
+    """Saved keyword options as the native call takes them."""
+    return {
+        key: tuple(value) if isinstance(value, list) else value
+        for key, value in options.items()
+    }
+
+
 def groups(calls, limit, context):
     result = []
     for index, call in enumerate(calls):
@@ -59,6 +75,7 @@ def remaining_calls(current, frozen):
             or call["text"] != [original["text"][offset] for offset in offsets]
             or call["history"] != original["history"]
             or call["extra"] != original["extra"]
+            or call.get("options", {}) != original.get("options", {})
         ):
             raise ValueError(
                 "Saved state grouping no longer matches the frozen source. Prepare a new run."
@@ -96,10 +113,15 @@ def configure(module, translation, root, limit):
             indent=4,
             ensure_ascii=False,
         )
+        options = call.get("options", {})
         system, glossary, sfx, _ = translation.createContextParts(
-            module.TRANSLATION_CONFIG, payload, "json", []
+            module.TRANSLATION_CONFIG,
+            payload,
+            "json",
+            [],
+            speaker_names=tuple(options.get("glossary_names", ())),
         )
-        return system, glossary, sfx, call["history"], call["extra"]
+        return system, glossary, sfx, call["history"], call["extra"], options
 
     def dispatch(native, text, history, *extra, **options):
         state = getattr(local, "state", None)
@@ -117,16 +139,19 @@ def configure(module, translation, root, limit):
                     "kind": "basic"
                     if state["fields"] and not state["seen"]
                     else "notes",
+                    # Saved only when present, as runs before options were.
+                    **({"options": stored(options)} if options else {}),
                 }
             )
             state["seen"] = True
             return [deepcopy(text), [0, 0]]
         index = state["index"]
         expected = state["calls"][index]
-        if (text, history, list(extra)) != (
+        if (text, history, list(extra), stored(options)) != (
             expected["text"],
             expected["history"],
             expected["extra"],
+            expected.get("options", {}),
         ):
             raise ValueError(
                 "The state request mapping changed. No fallback request was sent."
@@ -158,7 +183,12 @@ def configure(module, translation, root, limit):
                     "\n\nState field associations (context only; translate only the supplied source strings):\n"
                     + json.dumps(mapping, ensure_ascii=False)
                 )
-            response, tokens = native(sources, history, *extra)
+            response, tokens = native(
+                sources,
+                history,
+                *extra,
+                **replayed(state["frozen"][first].get("options", {})),
+            )
             if not isinstance(response, list) or len(response) != len(sources):
                 raise ValueError(
                     "Grouped state response IDs do not match the saved source mapping."

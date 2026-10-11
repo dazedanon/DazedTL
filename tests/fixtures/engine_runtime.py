@@ -462,7 +462,9 @@ try:
             # heroine learns is not translated with "their": an actor learns
             # it through its starting class or a Change Skill command, an
             # enemy uses its actions. Notes number lines within each request,
-            # and a line the translator leaves out of requests gets none.
+            # and a line the translator leaves out of requests gets none. When
+            # the party can only ever hold her, a skill no enemy uses and a
+            # state's message1 are hers too.
             run = temporary / "skill-users"
             (run / "files").mkdir(parents=True)
             (run / "log").mkdir()
@@ -487,16 +489,7 @@ try:
                     None,
                     {"id": 1, "name": "スライム", "actions": [{"skillId": 2}]},
                 ],
-                "Map001.json": {
-                    "events": [
-                        None,
-                        {
-                            "pages": [
-                                {"list": [command(318, [0, 1, 0, 4]), command(0, [])]}
-                            ]
-                        },
-                    ]
-                },
+                "System.json": {"partyMembers": [1]},
             }.items():
                 (run / "files" / file).write_text(
                     json.dumps(value, ensure_ascii=False), encoding="utf-8"
@@ -508,6 +501,10 @@ try:
                 for skill, message in enumerate(messages, 1)
             ]
             requests = []
+
+            def events(*commands, folder=run / "files"):
+                events = [None, {"pages": [{"list": [*commands, command(0, [])]}]}]
+                (folder / "Map001.json").write_text(json.dumps({"events": events}))
 
             def record(text, history, *_args, glossary_names=()):
                 requests.append((list(text), history, glossary_names))
@@ -522,8 +519,18 @@ try:
                     translateAI=extensions.point(record),
                     _request_size=lambda: 2,
                 ):
-                    users = {**policy, "battleMessageUsers": BATTLE_MESSAGE_USERS}
-                    for generation in (users, policy):
+                    older = {**policy, "battleMessageUsers": "battle-message-users-v1"}
+                    current = {**policy, "battleMessageUsers": BATTLE_MESSAGE_USERS}
+                    learned = command(318, [0, 1, 0, 4])
+                    # A second actor joining makes the party more than her.
+                    joined = command(129, [2, 0, False])
+                    for generation, commands, alone in (
+                        (older, [learned], False),
+                        (current, [learned], True),
+                        (current, [learned, joined], False),
+                        (policy, [learned], False),
+                    ):
+                        events(*commands)
                         configure_states({"engine": "MVMZ"}, temporary, generation)
                         parser.resetActorMapCache()
                         requests.clear()
@@ -548,10 +555,23 @@ try:
                             "Line1: actor アリナ\nLine2: enemy スライム"
                         ), first
                         assert first[2] == ("アリナ", "スライム"), first
-                        assert second[1].endswith("\nLine2: actor アリナ"), second
-                        assert "Line1" not in second[1] and second[2] == ("アリナ",)
+                        # Her party's skill 3 is hers; an enemy's skill stays its.
+                        notes = "\nLine1: actor アリナ\nLine2: actor アリナ"
+                        if alone:
+                            assert second[1].endswith(notes), second
+                        else:
+                            assert second[1].endswith("\nLine2: actor アリナ"), second
+                            assert "Line1" not in second[1], second
+                        assert second[2] == ("アリナ",), second
                         assert unsent[1].endswith("Keep the battler gender neutral.")
                         assert unsent[2] == (), unsent
+                        requests.clear()
+                        parser.searchSS(
+                            {"id": 1, "message1": "は幻惑に囚われた！"}, None
+                        )
+                        ((_text, instruction, names),) = requests
+                        assert ("The party is always アリナ" in instruction) == alone
+                        assert names == (("アリナ",) if alone else ()), names
             finally:
                 os.chdir(directory)
                 parser.resetActorMapCache()

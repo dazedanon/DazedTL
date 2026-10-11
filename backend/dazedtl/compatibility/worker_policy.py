@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dazedtl.settings.preferences import (
-    BATTLE_MESSAGE_USERS,
+    BATTLE_MESSAGE_USERS_LEVELS,
     CHOICE_COLLECTION,
     GENERATION_PARAMETERS,
     SAME_LINE_SPEAKERS,
@@ -58,8 +58,9 @@ def configure_states(plan, root, policy):
         cast(Any, module).CHOICE_COLLECTION = bool(
             policy and policy.get("choiceCollection") == CHOICE_COLLECTION
         )
-        cast(Any, module).BATTLE_MESSAGE_USERS = bool(
-            policy and policy.get("battleMessageUsers") == BATTLE_MESSAGE_USERS
+        users = (policy or {}).get("battleMessageUsers")
+        cast(Any, module).BATTLE_MESSAGE_USERS = (
+            BATTLE_MESSAGE_USERS_LEVELS.get(users, 0) if isinstance(users, str) else 0
         )
         if policy and policy.get("stateGrouping") == state_requests.POLICY:
             state_requests.configure(
@@ -146,7 +147,8 @@ def install(*, coordinator=False):
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
             or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
-            or policy.get("battleMessageUsers") not in (None, BATTLE_MESSAGE_USERS)
+            or policy.get("battleMessageUsers")
+            not in (None, *BATTLE_MESSAGE_USERS_LEVELS)
             or policy.get("openrouterStructuredOutputs")
             not in (None, STRUCTURED_OUTPUTS)
             or type(policy.get("entriesPerRequest")) is not int
