@@ -126,6 +126,14 @@ A preflight over `["コア1Ａ", "二ーナ", "クィーン"]` against a glossar
 For a slash row such as `ニーナ / ネーナ・エヴァンス (Nena Evans)`, register both aliases, give the short alias the short gloss `Nena` while the long alias keeps `Nena Evans`, carry an English title only when the source alias carries one (`ニーナ様` -> `Lady Nena`, plain `ニーナ` -> `Nena`), and protect surname particles so `ヴァン` against `van Helsing` does not collapse to `van`.
 Without this, every font variant of a name becomes a new glossary row with its own model-invented spelling and one character ships under three English names.
 
+### Address forms are their own rows
+
+**A role label row does not teach the model how characters address that role.**
+In one game the tavern keeper's row was `店長 (Tavern Owner)` with a note to distinguish direct address from the label, and the cast calls him `店長さん`, established in the scene as "Owner-san".
+A pure-kanji term still matches before hiragana, so that row reaches every `店長さん` line, and the model copies its parenthesized English: after the system prompt gained a title-only address rule, about two thirds of those lines still read "Tavern Owner-san".
+The setup identity rules therefore record each observed address as its own row, such as `店長さん (Owner-san)`, which the matcher sends beside the label row whenever that form appears.
+Character sections keep one row per exact source, so a second `店長` row would be dropped; a bare-title call goes in the label row's note instead.
+
 ### Disputed spellings: six-tier evidence hierarchy
 
 Score a contested name highest tier first.
