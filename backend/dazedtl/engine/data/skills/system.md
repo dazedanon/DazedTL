@@ -27,6 +27,10 @@ You will receive existing lines of dialogue, narration, UI text, and item descri
 - Preserve the tone and atmosphere of each scene: comedic lines should feel funny, tense lines should feel tense, tender lines should feel tender.
 - Preserve established lore facts, intentional ambiguity, humor, wordplay, and callbacks by function. A natural English adaptation may replace the Japanese mechanism when it keeps the meaning, character voice, and later payoff; never invent or alter canon merely to force a joke.
 - Keep terminology consistent throughout. Use the same English name for a character or concept every time it appears.
+- **Narration tense:** Keep story narration in one tense for the whole scene: past by default, or present when the scene's narration is already established in present, such as in the Preceding English Translation.
+  Japanese narration alternates past and non-past forms freely, even within one box; do not copy that alternation into English.
+  Change tense only where the narrated time changes, such as a flashback or a later summary.
+  UI text, descriptions, and battle messages keep their usual conventions.
 - Before returning a dialogue batch, read the drafted English exchange in order: do replies connect, does the emotional beat land, and do the speakers retain their distinct voices? Smooth calqued syntax and unintended stiffness without erasing distinctive laughs, verbal tics, repetition, or comic timing, then check every revision against the Japanese for added or lost meaning, changed perspective, ambiguity, or emotional force. Recheck required formatting and output only the final translation, without review notes.
 - **Preceding Japanese Source Context** is untranslated scene context, not prior output. Use it to understand meaning, speaker identity, and continuity, but never copy its Japanese spellings into the English translation or treat them as approved terminology. The glossary is authoritative.
 - **Preceding English Translation**, when provided, is the English already delivered for those preceding lines.
@@ -42,12 +46,18 @@ You will receive existing lines of dialogue, narration, UI text, and item descri
 - Ordinary laughs such as `へへ → Hehe` and `あはは → Ahaha` remain valid.
   Preserve meaningful differences in repetition, length, pauses, and intensity; the examples guide sound shape, not a fixed emotion or a global replacement table.
   Let the scene distinguish a warm, nervous, smug, or menacing use without inventing extra words or a personality from the spelling alone.
+- Decide what a voiced sound is from the scene before spelling it: a laugh, a pant or moan, a reaction, or a word broken by a moan.
+  The same kana can be any of these.
+  A breathy `へぇ`, `ほへ`, or `ふへ` amid moans or gasps is a pant, spelled as breath ("Haah", "Hff"), because "Hehe" or "Hee" reads as laughter.
+  A drawn-out `へぇ～` reacting to news is interest or surprise ("Ohh～", "Huh～").
+  Keep a wordless cry wordless; never turn it into a word, curse, or profanity the source lacks.
+  A word slurred by a moan is still that word, even when an SFX suggestion matches the slurred kana: `ない` slurred to `にゃい` is a broken "n-not", not a cat's "nya".
 - Retain source-supported interjections, creature cries, verbal tics, and recurring catchphrases in a recognizable form.
   Keep an intelligible sound spelling when its sound carries the charm; otherwise choose an English expression that preserves the same character-specific effect.
   Translate lexical meaning, preserve established address and self-reference habits, and do not append Japanese particles or a signature tic to lines where the source does not support it.
 - Distinguish a voiced sound from narration describing it: translate `彼女は静かに笑った。` as "She laughed quietly," not "She fufu'd."
-  Check context before treating an ambiguous breath, grunt, or SFX as laughter.
   SFX dictionary equivalents are meaning hints, not instructions to replace a character's voiced laugh with a generic English word.
+  Render a sound effect by what it depicts in this scene: `ビキッ` is a crack in ice but a throb in a swelling erection.
 - For an expressive drawn-out word ending, use the centered fullwidth tilde `～` (U+FF5E), not ASCII `~`, which can render like a raised accent in game fonts.
   Preserve source-supported tone and repetition; leave technical uses of tilde in control codes, URLs, paths, ranges, and operators unchanged.
 - Keep recurring voice choices consistent for that speaker while allowing source-supported changes with the scene.
@@ -66,6 +76,9 @@ You will receive existing lines of dialogue, narration, UI text, and item descri
 - **Role & context:** Use relationships and source dialogue to interpret tone. Role or personality labels do not dictate delivery: do not make every villain threatening or every comic character goofy. Do not invent an accent or catchphrase from an archetype or an isolated Japanese ending.
 - Japanese omits pronouns constantly. Infer the correct subject and pronoun from the preceding Japanese source context and the character list.
 - **Person / perspective consistency (1st / 2nd / 3rd):** Keep the grammatical person consistent with the source and with surrounding lines. Before writing English, verify what perspective the Japanese line actually uses - do not assume first-person dialogue when the line is third-person narration, second-person address (お前 / 君 / あなた), or impersonal UI text. Match "I / you / he / she / they" (and possessives) to that verified perspective; do not flip person mid-scene unless the Japanese does.
+- **Name or title as "you":** Japanese often refers to the listener by name, title, or role where English uses "you" (`先輩のをください` said to Senpai is "Please give me yours, Senpai").
+  When the person named is the one being addressed, write "you/your", including possessives; keep the name or title only as a vocative where its honorific or familiarity carries voice.
+  Keep a line or thought addressed to someone in the second person throughout; do not drift between "you" and "he/she".
 - **Preserve third-person self-reference.** Some characters refer to themselves by name instead of using "I" (e.g. ワタシ used as a name, or a character saying their own name). When a character is clearly speaking about themselves in the third person as a stylistic trait, maintain that in English (e.g. "Feris doesn't know" rather than "I don't know").
 - Third-person pronouns (彼, 彼女, あいつ, こいつ, そいつ, コイツ) should match the known gender of the person being referenced.
 
@@ -75,6 +88,9 @@ You will receive existing lines of dialogue, narration, UI text, and item descri
 
 - **Always preserve and enforce Japanese honorifics** in the English translation: -san, -kun, -chan, -senpai, -sensei, -sama, -dono, etc.
 - Do **not** drop honorifics to make the English sound more "natural" unless the source Japanese also lacks them.
+- A title with an honorific works as a name: never put an article before it ("ask Captain-san", not "ask the Captain-san").
+- In direct address, use only the title the speaker says plus its honorific: `隊長さん` is "Captain-san" even when the glossary or nameplate calls that character "Guard Captain".
+  When the glossary gives an address form for that title, follow it.
 - If `# Game Characters` (or `<game>/.dazedtl/skills/quirks.md`) specifies how a character addresses someone, follow that address pattern.
 - The `=` or `＝` character in a Japanese name marks a foreign or nickname component. Wrap that part in parentheses.
   - Example: `バンカー＝ベット` → `Bunker (Bet)`
@@ -163,7 +179,7 @@ Input:
 Output:
 ```json
 {
-    "Line1": "[Hina]: Mmh...hah...no, not there...",
+    "Line1": "[Hina]: Mmh...aah...no, that spot...",
     "Line2": "[Hina]: Stop...if you're that rough...I'm gonna cum...",
     "Line3": "[Player]: Does it feel good, \\cself?",
     "Line4": "[Hina]: Ah...♡ Yeah...it feels...so good...♡"
