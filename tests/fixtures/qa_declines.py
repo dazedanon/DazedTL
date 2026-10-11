@@ -226,4 +226,18 @@ assert {row["source"] for row in findings["not_reviewed"]} == {
     "ムラムラ！",
     WEATHER,
 }, findings["not_reviewed"]
+
+# A declined editorial item keeps the authors of its judgment correction, who
+# still may not confirm it.
+checkpoint = {"editorial": {"bundles": []}}
+qa._split_declined(
+    temporary,
+    checkpoint,
+    "editorial",
+    {"id": "editorial-0001", "assigned_to": "editor-a", "round": 1},
+    {"items": [{"id": "QA-0001", "ordinal": 1, "authors": ["deep-a"]}]},
+    {"QA-0001": "Not reviewed."},
+)
+(split,) = checkpoint["editorial"]["bundles"]
+assert (split["authors"], split["round"]) == (["deep-a"], 1), split
 print("ok")

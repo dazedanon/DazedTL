@@ -1547,6 +1547,16 @@ def _split_declined(
             *(row.get("declines") or []),
             {"worker": worker, "helper": helper, "reasons": reasons},
         ],
+        **(
+            # The authors of its judgment corrections still cannot confirm them.
+            {
+                "round": row.get("round"),
+                "authors": sorted({
+                    author for item in items for author in item["authors"]
+                }),
+            }
+            if stage == "editorial" else {}
+        ),
     })
     return split["item_count"]
 
