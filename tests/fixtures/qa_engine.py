@@ -66,7 +66,8 @@ write(
                         line("よく来たね", "Glad you came."),
                         speaker("アリナ", "Arina"),
                         WELCOME,
-                        # Japanese residue forces deep review, where it is declined.
+                        # Japanese residue forces deep review, where it is
+                        # declined; screening flags it too, so it has a scene.
                         line("朝だ", "It's 朝."),
                         # Two lint families, both accepted.
                         line("あっ…♥すごい", "Ah…h♥Amazing"),
@@ -233,6 +234,7 @@ while row := qa.next_bundle(task, "screen-a"):
             WELCOME["_original"],
             SWORD,
             "よく来たね",
+            "朝だ",
         }
     ]
     qa.accept_result(
@@ -451,6 +453,24 @@ qa.accept_result(
         ),
     ),
 )
+# The declined item takes its scene to its own bundle, and only the reviewer
+# that claims it reads that scene in context.
+(split,) = [
+    row
+    for row in json.loads((task / "checkpoint.json").read_text())["deep"]["bundles"]
+    if row.get("declined_by")
+]
+assert "## SCENE S1" in qa.render_bundle(task, split["id"])
+scene = "Map001.json#/events/1/pages/0/list"
+try:
+    qa.context_view(task, scene, worker="deep-a")
+except ValueError as error:
+    assert "declined" in str(error), error
+else:
+    raise AssertionError("The context view showed a declined deep item's scene.")
+qa.next_bundle(task, "deep-b", split["id"])
+assert "朝だ" in qa.context_view(task, scene, worker="deep-b")
+qa.release_bundle(task, split["id"])
 assert qa.next_bundle(task, "deep-a") is None
 # With no other reviewer for the declined deep item, finalize reports it as
 # not reviewed only when asked to.

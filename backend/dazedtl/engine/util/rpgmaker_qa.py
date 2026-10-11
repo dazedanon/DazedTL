@@ -1442,7 +1442,15 @@ def _split_declined(
     number = 1 + sum(
         other.get("origin") == origin for other in checkpoint[stage]["bundles"]
     )
-    split = _make_bundle(stage, f"{origin}-d{number}", items)
+    # Deep items name the scenes and motif reviews their bundle prints once.
+    extra = {}
+    for key in ("scenes", "motifs"):
+        named = {name for item in items for name in item.get(key) or []}
+        if named:
+            extra[key] = {
+                name: value for name, value in bundle[key].items() if name in named
+            }
+    split = _make_bundle(stage, f"{origin}-d{number}", items, extra)
     path = root / "bundles" / stage / f"{split['bundle_id']}.json"
     _atomic_write_json(path, split)
     checkpoint[stage]["bundles"].append({
@@ -3247,7 +3255,8 @@ def _declined_scope(
             for decline in row.get("declines") or []:
                 for item_id, reason in decline["reasons"].items():
                     reasons[item_id].append(reason)
-            for item in _read_json(Path(row["path"]))["items"]:
+            bundle = _read_json(Path(row["path"]))
+            for item in bundle["items"]:
                 kind = item.get("kind") or stage
                 if stage in {"sweep", "editorial"}:
                     # Lines were reviewed; only these fixes are left out.
@@ -3263,8 +3272,8 @@ def _declined_scope(
                 elif kind in {"cluster", "deep"} or stage == "deep":
                     unreviewed.add(item["id"])
                     context_scenes |= {
-                        scene["scene_id"]
-                        for scene in item.get("screen_scene_contexts") or []
+                        bundle["scenes"][key]["scene_id"]
+                        for key in item.get("scenes") or []
                     }
                 items.append({
                     "stage": stage,
