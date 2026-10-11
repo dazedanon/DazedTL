@@ -85,7 +85,7 @@ export function TextQaWork({
   onCoverage: () => void;
   /** Opens the task's report, where the page has an inspector. */
   report?: ReactNode;
-  /** How the user has an outdated task checked again. */
+  /** How the user has an outdated or unreadable task checked again. */
   rerun?: string;
   /** History on the Project page can restore a whole batch. */
   restorable?: boolean;
@@ -109,8 +109,8 @@ export function TextQaWork({
       ? applied
         ? "applied"
         : "done"
-      : phase === "outdated"
-        ? "outdated"
+      : phase === "outdated" || phase === "blocked"
+        ? phase
         : phase === "questions"
           ? "needs_review"
           : phase === "clean"
@@ -138,13 +138,15 @@ export function TextQaWork({
               ? (qa.rules_changed
                   ? "An update changed QA's rules after this task was prepared. "
                   : "The game text changed after QA. ") + rerun
-              : phase === "running"
-                ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
-                : phase === "questions"
-                  ? "QA applies its corrections once you answer the questions below."
-                  : phase === "ready"
-                    ? "Your assistant applies these corrections next; you can also apply them here."
-                    : qaSummary(qa)
+              : phase === "blocked"
+                ? `${qa.message} ${rerun}`
+                : phase === "running"
+                  ? "Your assistant is reviewing. Corrections apply on their own once they pass the editorial pass."
+                  : phase === "questions"
+                    ? "QA applies its corrections once you answer the questions below."
+                    : phase === "ready"
+                      ? "Your assistant applies these corrections next; you can also apply them here."
+                      : qaSummary(qa)
         }
         help={
           "Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction and Apply again redoes it" +

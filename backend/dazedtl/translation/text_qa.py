@@ -36,6 +36,17 @@ CHECKPOINT_MESSAGE = "qa: apply text QA corrections"
 UNDO_MESSAGE = "qa: undo text QA corrections"
 
 
+def _unreadable_step(qa) -> str:
+    """What the assistant does about a prepared task the app can't read."""
+    problem = qa["unreadable"]
+    return (
+        f"DazedTL can't use the QA task {problem['path']}: {problem['error']}. "
+        "If its files lost DazedTL's access, such as files saved from an elevated "
+        "shell, restore that access and run qa again; otherwise run qa --prepare, "
+        "which sets the task aside and prepares a fresh one."
+    )
+
+
 def _save_task_record(folder: Path, name: str, task: str, value) -> None:
     """Saves one QA task's entry in a per-game record, such as its choices."""
     path = folder / name
@@ -100,6 +111,8 @@ class TextQA:
         """Every finding, and each proposal the user chose, as one reviewed
         text batch, once no question waits for the user."""
         qa = self.qa(project_id, native)
+        if qa.get("unreadable"):
+            raise ValueError(_unreadable_step(qa))
         if not qa.get("task") or qa["status"].get("stage") != "complete":
             raise ValueError("Finish QA review first; apply follows a complete task.")
         if not qa["current"]:
@@ -289,7 +302,9 @@ class TextQA:
         stage = str(qa["status"].get("stage") or "")
         waiting = [row for row in qa["questions"] if "choice" not in row]
         operation = self.operation(project_id)
-        if not qa.get("task"):
+        if qa.get("unreadable"):
+            following = _unreadable_step(qa)
+        elif not qa.get("task"):
             following = "Run qa --prepare."
         elif qa["applied"]:
             following = (

@@ -17,9 +17,12 @@ export type QaPhase =
   | "ready"
   | "applied"
   | "clean"
-  | "outdated";
+  | "outdated"
+  | "blocked";
 
 export function qaPhase(qa: QaState): QaPhase {
+  // A prepared task the app can't read still holds QA's place.
+  if (qa.unreadable) return "blocked";
   if (!qa.task) return "not_started";
   // Applying changes the text QA checked; later edits are expected.
   if (qa.applied) return "applied";

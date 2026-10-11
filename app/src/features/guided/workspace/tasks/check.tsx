@@ -260,14 +260,16 @@ export function qaView(w: GuidedWorkspace): TaskView {
     );
   const unsaved = qaUnsaved(qa, action);
   // "Paste it into your coding assistant" stops describing a next step once
-  // the QA it handed over finishes; a copy of QA that had already finished
-  // keeps it as that click's acknowledgment.
+  // the QA it handed over finishes, goes out of date or can't be read; a copy
+  // of QA that had already finished keeps it as that click's acknowledgment.
   const copiedFinished =
     preparing?.status === "complete" &&
     preparing.result?.task === qa.task &&
     (preparing.result?.status as { stage?: string } | undefined)?.stage ===
       "complete";
-  const staleCopy = ["applied", "clean"].includes(phase) && !copiedFinished;
+  const staleCopy =
+    ["outdated", "blocked"].includes(phase) ||
+    (["applied", "clean"].includes(phase) && !copiedFinished);
   const start = (label: string, variant: "primary" | "default" = "primary") => (
     <ActionControl
       label={label}
@@ -350,7 +352,8 @@ export function qaView(w: GuidedWorkspace): TaskView {
     />
   ) : phase === "not_started" ? (
     start("Start text QA")
-  ) : phase === "outdated" ? (
+  ) : phase === "outdated" || phase === "blocked" ? (
+    // Preparing again sets aside a task the app can't read.
     start("Run QA again")
   ) : phase === "applied" || phase === "clean" ? (
     // Text edited since, such as new translation, can take another pass.

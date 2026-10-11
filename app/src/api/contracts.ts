@@ -628,6 +628,14 @@ export type QaActivity = {
   eta_seconds?: number;
 };
 
+/** A prepared task the app can't read or trust, for the helper's next step. */
+export type QaUnreadable = {
+  /** The task folder, or the file naming it when that fails. */
+  path: string;
+  /** The error as raised. */
+  error: string;
+};
+
 export type QaReportLine = {
   identity: string;
   file: string;
@@ -702,6 +710,7 @@ export type QaState = {
   not_translated?: QaNotTranslated;
   activity?: QaActivity;
   rules_changed?: boolean;
+  unreadable?: QaUnreadable;
 };
 
 export type Readiness = {

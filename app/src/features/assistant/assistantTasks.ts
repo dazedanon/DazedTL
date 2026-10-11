@@ -180,6 +180,7 @@ function standing(
   if (kind === "qa") {
     if (!guided || !copied) return { state: "idle" };
     const qa = guided.readiness.qa;
+    if (qa.unreadable) return { state: "blocked", detail: qa.message };
     if (!qa.task) return { state: "idle" };
     // Applied corrections change the text the task checked, and later edits
     // are expected; only findings not applied yet go out of date.

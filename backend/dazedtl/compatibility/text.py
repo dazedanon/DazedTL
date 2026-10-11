@@ -3,6 +3,7 @@
 import difflib
 import shutil
 import tempfile
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -88,26 +89,54 @@ def qa_selection(state, action, options):
     return chosen, proposals
 
 
-def qa_state(plan):
-    from util import rpgmaker_qa as qa
-
-    pointer = Path(plan["folder"]) / (
+def _pointer(plan):
+    """The record naming the focus's prepared task."""
+    return Path(plan["folder"]) / (
         "text-qa-" + plan["options"].get("focus", "release") + ".json"
     )
-    if not pointer.exists():
-        return {
-            "current": False,
-            "applied": False,
-            "status": {},
-            "findings": [],
-            "questions": [],
-            "message": "No QA task prepared for this focus.",
-        }
-    saved = read_json(pointer)
+
+
+def _task_folder(plan, saved):
+    """The task folder a pointer names, inside QA's storage."""
     storage = Path(plan["folder"]) / "text-qa"
-    task_path = project_path(
-        storage, (Path(saved["task"]).relative_to(storage) / "task.json").as_posix()
-    ).parent
+    relative = Path(saved["task"]).relative_to(storage)
+    return project_path(storage, relative.as_posix(), exists=False)
+
+
+def _failure(error):
+    """An error as raised, such as "PermissionError: [Errno 13] ..."."""
+    return "".join(traceback.format_exception_only(error)).strip()
+
+
+def qa_unreadable(plan, error):
+    """A prepared task the app can't use, which reads as blocked: why, in the
+    user's words, and for the helper where and what failed."""
+    try:
+        path = str(_task_folder(plan, read_json(_pointer(plan))))
+    except ValueError, OSError, KeyError, TypeError:
+        path = str(_pointer(plan))
+    return {
+        "current": False,
+        "applied": False,
+        "status": {},
+        "findings": [],
+        "questions": [],
+        "unreadable": {"path": path, "error": _failure(error)},
+        "message": "DazedTL isn't allowed to read this QA task's files."
+        if isinstance(error, PermissionError)
+        else "This QA task's files are missing."
+        if isinstance(error, FileNotFoundError)
+        else "This QA task's files are damaged or were changed outside DazedTL.",
+    }
+
+
+def _prepared(plan):
+    """The task the pointer names and its saved findings, once its evidence
+    checks out; raises when the app can't read or trust it."""
+    from util import rpgmaker_qa as qa
+
+    saved = read_json(_pointer(plan))
+    task_path = _task_folder(plan, saved)
     immutable = saved.get("immutable", {})
     if set(immutable) != {
         "task.json",
@@ -115,7 +144,7 @@ def qa_state(plan):
         "context.json",
         "screen-index.json",
     } or any(
-        digest(project_path(task_path, name).read_bytes()) != expected
+        digest((task_path / name).read_bytes()) != expected
         for name, expected in immutable.items()
     ):
         raise ValueError(
@@ -129,8 +158,6 @@ def qa_state(plan):
         or task["data_root"] != plan["project"]["data"]
     ):
         raise ValueError("The QA task belongs to another project.")
-    rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
-    current = saved["binding"] == binding(plan) and not rules_changed
     document = (
         read_json(root / "findings.json") if (root / "findings.json").exists() else {}
     )
@@ -139,6 +166,55 @@ def qa_state(plan):
         or document.get("task_sha256") != qa._sha256(qa._canonical_bytes(task))
     ):
         raise ValueError("Saved findings belong to another QA task.")
+    return saved, root, task, document
+
+
+def _set_aside(plan, log):
+    """Moves a prepared task the app can't use beside the others, so
+    preparing again makes a fresh task instead of returning that one."""
+    if not _pointer(plan).exists():
+        return
+    try:
+        _prepared(plan)
+        return
+    except (ValueError, OSError, KeyError, TypeError) as error:
+        failure = _failure(error)
+    try:
+        folder = _task_folder(plan, read_json(_pointer(plan)))
+    except ValueError, OSError, KeyError, TypeError:
+        # Preparing replaces a pointer that can't be read.
+        return
+    if not folder.is_dir():
+        return
+    number, target = 1, folder.with_name(folder.name + "-unreadable")
+    while target.exists():
+        number += 1
+        target = folder.with_name(f"{folder.name}-unreadable-{number}")
+    try:
+        folder.rename(target)
+    except OSError as error:
+        raise ValueError(
+            "Couldn't set the unreadable QA task aside. Close programs using its "
+            "files, then try again."
+        ) from error
+    log(f"Set aside {folder} as {target.name}: {failure}")
+
+
+def qa_state(plan):
+    from util import rpgmaker_qa as qa
+
+    if not _pointer(plan).exists():
+        return {
+            "current": False,
+            "applied": False,
+            "status": {},
+            "findings": [],
+            "questions": [],
+            "message": "No QA task prepared for this focus.",
+        }
+    saved, root, task, document = _prepared(plan)
+    rules_changed = task["engine_fingerprint"] != qa._engine_fingerprint()
+    current = saved["binding"] == binding(plan) and not rules_changed
     # Batches applied or undone from this task, oldest first; a restored one
     # counts for neither. Records saved before batches named their task count
     # when made after it was prepared.
@@ -324,6 +400,7 @@ def run_qa(plan, log):
     validate_plan(plan)
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
+        _set_aside(plan, log)
         task, _state = qa.prepare_task(
             plan["project"]["source"],
             plan["project"]["data"],

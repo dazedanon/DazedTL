@@ -105,7 +105,10 @@ function Workspace({
   // Text QA runs in the Guided game workspace its first use opens.
   const guided = application.snapshot?.guided;
   const own = guided?.projectId === project.id ? guided : null;
-  const qa = own?.readiness.qa.task ? own.readiness.qa : null;
+  const qa =
+    own?.readiness.qa.task || own?.readiness.qa.unreadable
+      ? own.readiness.qa
+      : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
   const finished = useOperationEnd(
     [...(own?.operations || []), ...state.jobs],
@@ -133,13 +136,22 @@ function Workspace({
           {
             id: "qa" as const,
             label: "Text QA",
-            status: questions > 0 && (
-              <StatusIcon
-                status={displayMarks.needs_review}
-                label={displayLabels.needs_review}
-                size={14}
-              />
-            ),
+            status:
+              questions > 0 ? (
+                <StatusIcon
+                  status={displayMarks.needs_review}
+                  label={displayLabels.needs_review}
+                  size={14}
+                />
+              ) : (
+                qa.unreadable && (
+                  <StatusIcon
+                    status={displayMarks.blocked}
+                    label={displayLabels.blocked}
+                    size={14}
+                  />
+                )
+              ),
           },
         ]
       : []),

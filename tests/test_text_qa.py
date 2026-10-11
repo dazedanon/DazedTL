@@ -131,3 +131,21 @@ class TextQATests(unittest.TestCase):
             )
             service.run("project", "checkpoint")
             self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})
+            # A task the app can't read sent the assistant to prepare again,
+            # which returned it, and apply said to finish review; both name
+            # the task and its error instead.
+            qa.clear()
+            qa.update(
+                current=False,
+                applied=False,
+                message="DazedTL isn't allowed to read this QA task's files.",
+                findings=[],
+                questions=[],
+                status={},
+                unreadable={"path": str(task), "error": "PermissionError: denied"},
+            )
+            step = service.run("project", "status")["next"]
+            self.assertIn(f"{task}: PermissionError: denied", step)
+            with self.assertRaises(ValueError) as refused:
+                service.run("project", "apply")
+            self.assertEqual(str(refused.exception), step)

@@ -22,15 +22,19 @@ const phaseSteps: Record<string, { state: StepState; detail?: string }> = {
 
 /**
  * QA's stage and counts come from its task while it runs, and its questions
- * hold it for the user. Whether QA is done stays the assistant's report:
- * new translation after an apply reopens it.
+ * or a task the app can't read hold it. Whether QA is done stays the
+ * assistant's report: new translation after an apply reopens it.
  */
 function qaStep(
   qa: QaState | null,
   reported: StepState,
 ): { state: StepState; detail?: string } | null {
-  if (!qa?.task) return null;
+  if (!qa) return null;
   const phase = qaPhase(qa);
+  if (phase === "blocked")
+    return reported === "done"
+      ? null
+      : { state: "blocked", detail: displayLabels.blocked };
   if (phase === "questions") {
     const open = qa.questions.filter((row) => !row.choice).length;
     return {

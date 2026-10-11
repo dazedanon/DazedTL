@@ -82,4 +82,11 @@ test("only the assistant's reported phase reads as current, and Images shows onl
     )?.state,
     "next",
   );
+  // A task the app can't read holds QA, unless the report says it is done.
+  const unreadable = qa(
+    {},
+    { task: undefined, current: false, unreadable: { path: "", error: "" } },
+  );
+  assert.equal(qaStep(unreadable)?.state, "blocked");
+  assert.equal(qaStep(unreadable, "patch", "complete")?.state, "done");
 });

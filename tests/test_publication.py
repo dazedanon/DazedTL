@@ -239,7 +239,7 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Only undone"):
             qa_selection(state, "qa_apply", {"findings": ["QA-0001"]})
 
-    def test_saved_qa_findings_reach_the_app_as_contract_findings(self):
+    def test_saved_qa_findings_and_unreadable_tasks_reach_the_app_by_contract(self):
         # Engine findings carry extra engine fields; passing them through broke
         # the workspace snapshot contract. Corrections come from the findings.
         import json
@@ -388,3 +388,26 @@ class PublicationTests(unittest.TestCase):
             with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
                 applied.append(text.qa_state(plan)["applied"])
         self.assertEqual(applied, [False, True, True])
+
+        # A task the app couldn't read read as Not started with no reason, and
+        # preparing again returned the same task; it reads as blocked, and
+        # preparing sets it aside, never a task the app can read.
+        def denied(path):
+            raise PermissionError(13, "Permission denied", str(path))
+
+        log = []
+        with patch.dict(sys.modules, {"util": package, "util.rpgmaker_qa": engine}):
+            text._set_aside(plan, log.append)
+            self.assertEqual((log, task_dir.is_dir()), ([], True))
+            engine._read_task = denied
+            with self.assertRaises(PermissionError) as raised:
+                text.qa_state(plan)
+            state = text.qa_unreadable(plan, raised.exception)
+            text._set_aside(plan, log.append)
+        TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
+        self.assertEqual(
+            (state["message"], state["unreadable"]["path"]),
+            ("DazedTL isn't allowed to read this QA task's files.", str(task_dir)),
+        )
+        self.assertTrue((task_dir.parent / "task-unreadable/findings.json").is_file())
+        self.assertIn("PermissionError", log[0])

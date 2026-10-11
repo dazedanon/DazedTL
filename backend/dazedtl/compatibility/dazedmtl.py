@@ -443,7 +443,7 @@ class ExistingBackend:
     def guided_text_state(self, native, focus="release"):
         from dazedtl.translation.publication import history
 
-        from .text import qa_state
+        from .text import qa_state, qa_unreadable
 
         folder = self.workflows.folder(native["id"])
         recent = [
@@ -459,25 +459,18 @@ class ExistingBackend:
             "questions": [],
             "message": "No QA task prepared for this focus.",
         }
-        try:
-            if (folder / ("text-qa-" + focus + ".json")).exists():
-                plan = {
-                    "project_id": native["id"],
-                    "project": native,
-                    "folder": str(folder),
-                    "guard": self.guided_guard(native, folder),
-                    "options": {"focus": focus},
-                }
-                qa = qa_state(plan)
-        except (ValueError, OSError, KeyError) as exc:
-            qa = {
-                "current": False,
-                "applied": False,
-                "status": {},
-                "findings": [],
-                "questions": [],
-                "message": str(exc),
+        if (folder / ("text-qa-" + focus + ".json")).exists():
+            plan = {
+                "project_id": native["id"],
+                "project": native,
+                "folder": str(folder),
+                "options": {"focus": focus},
             }
+            try:
+                plan["guard"] = self.guided_guard(native, folder)
+                qa = qa_state(plan)
+            except (ValueError, OSError, KeyError, TypeError) as exc:
+                qa = qa_unreadable(plan, exc)
         return {
             "qa": qa,
             "publications": [

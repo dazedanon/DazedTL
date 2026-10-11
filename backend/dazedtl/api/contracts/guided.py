@@ -348,6 +348,13 @@ class QaActivity(TypedDict):
     eta_seconds: NotRequired[int]
 
 
+class QaUnreadable(TypedDict):
+    """A prepared task the app can't read or trust, for the helper's next step."""
+
+    path: Annotated[str, "The task folder, or the file naming it when that fails."]
+    error: Annotated[str, "The error as raised."]
+
+
 class QaReportLine(TypedDict):
     identity: str
     file: str
@@ -426,6 +433,9 @@ class QaState(TypedDict):
     # An update changed QA's rules after this task was prepared: it is
     # outdated, and its applied corrections can no longer be undone here.
     rules_changed: NotRequired[bool]
+    # The prepared task can't be read or trusted, so QA is blocked; message
+    # says why, and preparing again sets it aside.
+    unreadable: NotRequired[QaUnreadable]
 
 
 class Readiness(TypedDict):
