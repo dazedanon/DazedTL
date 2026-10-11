@@ -299,7 +299,14 @@ export const api = {
     /** One text QA step, shared with the assistant's project helper. */
     qa: (
       project_id: string,
-      step: "status" | "prepare" | "apply" | "checkpoint" | "undo" | "choose",
+      step:
+        | "status"
+        | "prepare"
+        | "apply"
+        | "checkpoint"
+        | "undo"
+        | "reapply"
+        | "choose",
       details: {
         findings?: string[];
         question?: string;

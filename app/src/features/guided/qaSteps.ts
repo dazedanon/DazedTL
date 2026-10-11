@@ -2,7 +2,7 @@
 
 import { api } from "../../api/client";
 
-export type QaStepName = "prepare" | "apply" | "undo" | "choose";
+export type QaStepName = "prepare" | "apply" | "undo" | "reapply" | "choose";
 export type QaStepDetails = Parameters<typeof api.guided.qa>[2];
 /** How an operation started here ended, from the page's observed state. */
 export type OperationEnd = (
@@ -20,7 +20,8 @@ export async function saveQaVersion(projectId: string, finished: OperationEnd) {
     );
 }
 
-/** Runs one QA step; an apply or undo goes on to its checkpoint commit. */
+/** Runs one QA step; an apply, undo or reapply goes on to its checkpoint
+ * commit. */
 export async function runQaStep(
   projectId: string,
   name: QaStepName,

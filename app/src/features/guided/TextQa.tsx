@@ -78,7 +78,7 @@ export function TextQaWork({
   applyFailed: string;
   run: (
     key: string,
-    name: "undo" | "choose",
+    name: "undo" | "reapply" | "choose",
     details: QaStepDetails,
     success?: string,
   ) => void;
@@ -100,10 +100,10 @@ export function TextQaWork({
     ? qa.questions.filter((row) => row.choice === "use")
     : qa.questions;
   // Corrections in the game; with every one undone, QA reads as done.
-  const applied = qaCorrections(qa).applied;
-  // New QA rules leave applied corrections without Undo; the page says so
-  // once, above the rows.
-  const undoUnavailable = !!qa.rules_changed && applied > 0;
+  const { applied, undone } = qaCorrections(qa);
+  // New QA rules leave applied corrections without Undo, and undone ones
+  // without Apply again; the page says so once, above the rows.
+  const unavailable = !!qa.rules_changed && applied + undone > 0;
   const state: AssistantTaskState =
     phase === "applied"
       ? applied
@@ -122,6 +122,8 @@ export function TextQaWork({
                 : "not_started";
   const undo = (id: string) =>
     run("qa-undo:" + id, "undo", { findings: [id] }, "Undone.");
+  const reapply = (id: string) =>
+    run("qa-reapply:" + id, "reapply", { findings: [id] }, "Applied again.");
   return (
     <>
       {phase === "not_started" && children}
@@ -145,7 +147,7 @@ export function TextQaWork({
                     : qaSummary(qa)
         }
         help={
-          "Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction" +
+          "Verified corrections go into the game as one text batch, saved as a version. Undo puts back one correction and Apply again redoes it" +
           (restorable
             ? ", and History on the Project page restores a whole batch."
             : ".")
@@ -182,22 +184,28 @@ export function TextQaWork({
           </div>
         ) : undefined}
       </AssistantTask>
-      {undoUnavailable && (
+      {unavailable && (
         <Notice>
-          An update changed QA's rules after these corrections were applied, so
-          Undo is no longer available. {rerun}
+          An update changed QA's rules after these corrections were applied, so{" "}
+          {applied && undone
+            ? "Undo and Apply again are"
+            : applied
+              ? "Undo is"
+              : "Apply again is"}{" "}
+          no longer available. {rerun}
         </Notice>
       )}
       {questions.length > 0 && phase !== "outdated" && (
         <QaQuestions
           questions={questions}
           disabled={disabled}
-          undoUnavailable={undoUnavailable}
+          unavailable={unavailable}
           feedback={feedback}
           choose={(question, choice) =>
             run(`qa-${choice}:` + question, "choose", { question, choice })
           }
-          undo={(row) => undo(row.id)}
+          undo={undo}
+          reapply={reapply}
         />
       )}
       {applyFailed && (
@@ -212,9 +220,10 @@ export function TextQaWork({
         <QaAuditLog
           findings={qa.findings}
           disabled={disabled}
-          undoUnavailable={undoUnavailable}
+          unavailable={unavailable}
           feedback={feedback}
-          undo={(row) => undo(row.id)}
+          undo={undo}
+          reapply={reapply}
         />
       )}
     </>
@@ -287,24 +296,70 @@ function Change({
 }
 
 /**
+ * Undo for an applied correction, and Apply again for an undone one; each
+ * runs as a text batch of its own and saves a version.
+ */
+function AppliedControl({
+  row,
+  disabled,
+  unavailable,
+  feedback,
+  undo,
+  reapply,
+}: {
+  row: { id: string; state?: "applied" | "undone" };
+  disabled: boolean;
+  /** Neither can run; the page says why once, above the rows. */
+  unavailable: boolean;
+  feedback: Feedback;
+  undo: (id: string) => void;
+  reapply: (id: string) => void;
+}) {
+  if (row.state === "applied")
+    return (
+      <ActionControl
+        label="Undo"
+        variant="link"
+        disabled={disabled || unavailable}
+        {...feedback("qa-undo:" + row.id, "Undoing…")}
+        onClick={() => undo(row.id)}
+      />
+    );
+  return (
+    <>
+      <span className="text-qa-choice">Undone</span>
+      <ActionControl
+        label="Apply again"
+        variant="link"
+        disabled={disabled || unavailable}
+        {...feedback("qa-reapply:" + row.id, "Applying…")}
+        onClick={() => reapply(row.id)}
+      />
+    </>
+  );
+}
+
+/**
  * The lines QA cannot settle from the game's text. Each choice saves at
  * once; QA applies once every line has one, and an applied proposal can be
- * undone like a correction.
+ * undone and applied again like a correction.
  */
 export function QaQuestions({
   questions,
   disabled,
-  undoUnavailable,
+  unavailable,
   choose,
   undo,
+  reapply,
   feedback,
 }: {
   questions: QaQuestion[];
   disabled: boolean;
-  /** Undo cannot run; the page says why once, above the rows. */
-  undoUnavailable: boolean;
+  /** Undo and Apply again cannot run; the page says why once, above the rows. */
+  unavailable: boolean;
   choose: (question: string, choice: "keep" | "use") => void;
-  undo: (question: QaQuestion) => void;
+  undo: (id: string) => void;
+  reapply: (id: string) => void;
   feedback: Feedback;
 }) {
   const open = questions.filter((row) => !row.choice).length;
@@ -337,16 +392,15 @@ export function QaQuestions({
               </>
             }
           >
-            {row.state === "applied" ? (
-              <ActionControl
-                label="Undo"
-                variant="link"
-                disabled={disabled || undoUnavailable}
-                {...feedback("qa-undo:" + row.id, "Undoing…")}
-                onClick={() => undo(row)}
+            {row.state ? (
+              <AppliedControl
+                row={row}
+                disabled={disabled}
+                unavailable={unavailable}
+                feedback={feedback}
+                undo={undo}
+                reapply={reapply}
               />
-            ) : row.state === "undone" ? (
-              <span className="text-qa-choice">Undone</span>
             ) : row.choice ? (
               <span className="text-qa-choice">
                 {row.choice === "use"
@@ -429,21 +483,23 @@ function FindingChange({ row }: { row: QaFinding }) {
 
 /**
  * Every correction, by category: what the line said, what it says now, why,
- * and Undo for an applied one. A long category shows its first rows until
- * the user asks for the rest.
+ * and Undo for an applied one or Apply again for one undone. A long category
+ * shows its first rows until the user asks for the rest.
  */
 export function QaAuditLog({
   findings,
   disabled,
-  undoUnavailable,
+  unavailable,
   undo,
+  reapply,
   feedback,
 }: {
   findings: QaFinding[];
   disabled: boolean;
-  /** Undo cannot run; the page says why once, above the rows. */
-  undoUnavailable: boolean;
-  undo: (finding: QaFinding) => void;
+  /** Undo and Apply again cannot run; the page says why once, above the rows. */
+  unavailable: boolean;
+  undo: (id: string) => void;
+  reapply: (id: string) => void;
   feedback: Feedback;
 }) {
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -478,17 +534,16 @@ export function QaAuditLog({
                   </>
                 }
               >
-                {row.state === "applied" ? (
-                  <ActionControl
-                    label="Undo"
-                    variant="link"
-                    disabled={disabled || undoUnavailable}
-                    {...feedback("qa-undo:" + row.id, "Undoing…")}
-                    onClick={() => undo(row)}
+                {row.state && (
+                  <AppliedControl
+                    row={row}
+                    disabled={disabled}
+                    unavailable={unavailable}
+                    feedback={feedback}
+                    undo={undo}
+                    reapply={reapply}
                   />
-                ) : row.state === "undone" ? (
-                  <span className="text-qa-choice">Undone</span>
-                ) : null}
+                )}
               </ActionRow>
             ))}
           </ActionList>

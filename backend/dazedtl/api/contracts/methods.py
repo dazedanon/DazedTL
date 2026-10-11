@@ -223,7 +223,14 @@ class TranslationImagesRequest(TypedDict):
 class TranslationQaRequest(TypedDict):
     project_id: str
     step: Literal[
-        "status", "report", "prepare", "apply", "checkpoint", "undo", "choose"
+        "status",
+        "report",
+        "prepare",
+        "apply",
+        "checkpoint",
+        "undo",
+        "reapply",
+        "choose",
     ]
     findings: NotRequired[list[str]]
     question: NotRequired[str]

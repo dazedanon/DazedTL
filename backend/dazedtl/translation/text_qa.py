@@ -4,8 +4,8 @@ Text QA task in the app.
 The engine reviews and makes findings; the app applies them as a reviewed
 text batch through the Guided publication flow, which History can restore,
 then records a checkpoint commit. Open questions wait for the user's choice,
-and an applied correction can be undone one at a time. No step writes game
-files itself, and pushing or publishing stays the user's.
+and an applied correction can be undone, and applied again, one at a time.
+No step writes game files itself, and pushing or publishing stays the user's.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ STEPS = (
     "apply",
     "checkpoint",
     "undo",
+    "reapply",
     "choose",
 )
 CHOICES = ("keep", "use")
@@ -56,8 +57,8 @@ class TextQA:
             self.apply(project_id, native)
         elif step == "checkpoint":
             self.checkpoint(project_id)
-        elif step == "undo":
-            self.undo(project_id, native, findings)
+        elif step in {"undo", "reapply"}:
+            self.batch(project_id, native, findings, step)
         elif step == "choose":
             self.choose(project_id, native, question, choice)
         return self.status(project_id, native, report=step == "report")
@@ -130,19 +131,23 @@ class TextQA:
             project_id, "apply", self.guided.execute(project_id, preview["token"])
         )
 
-    def undo(self, project_id, native, findings):
-        """Puts back the lines of applied corrections, as a batch of its own."""
+    def batch(self, project_id, native, findings, kind):
+        """Puts back the lines of applied corrections, or applies undone ones
+        again, as a batch of its own."""
         qa = self.qa(project_id, native)
         if (
             not isinstance(findings, list)
             or not findings
             or any(not isinstance(value, str) for value in findings)
         ):
-            raise ValueError("Choose the corrections to undo.")
+            raise ValueError(
+                "Choose the corrections to "
+                + ("undo." if kind == "undo" else "apply again.")
+            )
         questions = {row["id"] for row in qa["questions"]}
         preview = self.guided.preview(
             project_id,
-            "qa_undo",
+            "qa_undo" if kind == "undo" else "qa_apply",
             None,
             {
                 "focus": self.focus(project_id),
@@ -152,7 +157,7 @@ class TextQA:
             },
         )
         self.started(
-            project_id, "undo", self.guided.execute(project_id, preview["token"])
+            project_id, kind, self.guided.execute(project_id, preview["token"])
         )
 
     def choose(self, project_id, native, question, choice):
@@ -209,8 +214,8 @@ class TextQA:
         )
 
     def checkpoint(self, project_id):
-        """The commit that records applied or undone corrections in the
-        game's history."""
+        """The commit that records applied, undone or reapplied corrections
+        in the game's history."""
         saved = self.operation(project_id)
         # A checkpoint that did not finish runs again for the step before it.
         kind = (
@@ -218,11 +223,11 @@ class TextQA:
             if saved and saved["kind"] == "checkpoint" and saved["status"] != "complete"
             else saved and saved["status"] == "complete" and saved["kind"]
         )
-        if kind not in {"apply", "undo"}:
+        if kind not in {"apply", "reapply", "undo"}:
             raise ValueError(
                 "Apply or undo QA corrections before saving their checkpoint."
             )
-        message = CHECKPOINT_MESSAGE if kind == "apply" else UNDO_MESSAGE
+        message = UNDO_MESSAGE if kind == "undo" else CHECKPOINT_MESSAGE
         record, _project = self.guided.translation.project(project_id)
         if record.get("method") == "len":
             # The assistant's own checkpoints name the runtime files of its patch.

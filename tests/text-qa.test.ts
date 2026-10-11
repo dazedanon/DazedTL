@@ -4,6 +4,7 @@ import {
   qaActivity,
   qaPhase,
   qaStages,
+  qaUnsaved,
 } from "../app/src/features/guided/qaView.ts";
 import { changedWords } from "../app/src/ui/changedWords.ts";
 
@@ -68,6 +69,14 @@ test("the QA strip marks one current stage and the activity line reads the engin
     "applying changes the text QA checked without making it outdated",
   );
   assert.equal(qaPhase(qa({ stage: "deep" }, { current: false })), "outdated");
+  // An Apply again whose checkpoint failed leaves its correction applied and
+  // nothing else to report the failure, so the page offers saving the version.
+  const applied = qa(
+    { stage: "complete" },
+    { applied: true, findings: [{ id: "QA-0001", state: "applied" }] },
+  );
+  assert.ok(qaUnsaved(applied, { key: "qa-reapply:QA-0001", error: "failed" }));
+  assert.ok(!qaUnsaved(applied, { key: "qa-undo:QA-0001", error: "failed" }));
 });
 
 test("an applied correction marks only the words it changed", () => {

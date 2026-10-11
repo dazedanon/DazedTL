@@ -204,12 +204,15 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source bindings changed"):
             p.publish(self.folder, self.root, plan)
 
-    def test_a_chosen_proposal_applies_and_undoes_like_a_finding(self):
+    def test_a_chosen_proposal_applies_undoes_and_applies_again_like_a_finding(
+        self,
+    ):
         # Applying with a proposal the user chose was refused as a changed
         # correction, because only findings were looked up.
         from dazedtl.compatibility.text import qa_selection
 
         state = {
+            "applied": False,
             "findings": [{"id": "QA-0001"}],
             "questions": [
                 {"id": "use", "choice": "use"},
@@ -226,6 +229,15 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(
             qa_selection(state, "qa_undo", {"proposals": ["use"]}), ([], ["use"])
         )
+        # After the task's first apply, an undone correction applies again;
+        # the first apply's rule refused it as a changed correction.
+        state["applied"] = True
+        state["questions"][0]["state"] = "undone"
+        self.assertEqual(
+            qa_selection(state, "qa_apply", {"proposals": ["use"]}), ([], ["use"])
+        )
+        with self.assertRaisesRegex(ValueError, "Only undone"):
+            qa_selection(state, "qa_apply", {"findings": ["QA-0001"]})
 
     def test_saved_qa_findings_reach_the_app_as_contract_findings(self):
         # Engine findings carry extra engine fields; passing them through broke

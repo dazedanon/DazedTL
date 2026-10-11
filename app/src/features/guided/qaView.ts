@@ -257,9 +257,9 @@ export function qaOrigin(row: QaFinding) {
 }
 
 /**
- * An apply or undo whose checkpoint failed has no control left to report
- * it; saving the version again takes its place and reports its own result,
- * under the "qa-save" key.
+ * An apply, undo or reapply whose checkpoint failed has no control left to
+ * report it; saving the version again takes its place and reports its own
+ * result, under the "qa-save" key.
  */
 export function qaUnsaved(qa: QaState, action: { key: string; error: string }) {
   return (
@@ -267,7 +267,9 @@ export function qaUnsaved(qa: QaState, action: { key: string; error: string }) {
     (!!action.error &&
       ((action.key === "qa-apply" && qaPhase(qa) === "applied") ||
         [...qa.findings, ...qa.questions].some(
-          (row) => action.key === "qa-undo:" + row.id && row.state === "undone",
+          (row) =>
+            (action.key === "qa-undo:" + row.id && row.state === "undone") ||
+            (action.key === "qa-reapply:" + row.id && row.state === "applied"),
         )))
   );
 }

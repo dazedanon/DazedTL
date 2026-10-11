@@ -112,3 +112,22 @@ class TextQATests(unittest.TestCase):
             _close_contracts()
             TypeAdapter(TextQaStatus).validate_json(json.dumps(undone), strict=True)
             self.assertEqual(undone["operation"]["kind"], "undo")
+            # Apply again runs an apply batch of its own, and its checkpoint
+            # records an apply.
+            again = service.run("project", "reapply", findings=["QA-0001"])
+            TypeAdapter(TextQaStatus).validate_json(json.dumps(again), strict=True)
+            self.assertEqual(
+                calls[-2],
+                (
+                    "preview",
+                    "qa_apply",
+                    {
+                        "focus": "release",
+                        "task": str(task),
+                        "findings": ["QA-0001"],
+                        "proposals": [],
+                    },
+                ),
+            )
+            service.run("project", "checkpoint")
+            self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})

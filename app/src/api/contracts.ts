@@ -663,7 +663,7 @@ export type QaReport = {
 };
 
 export type TextQaOperation = {
-  kind: "prepare" | "apply" | "undo" | "checkpoint";
+  kind: "prepare" | "apply" | "undo" | "reapply" | "checkpoint";
   id: string;
   status: string;
   message: string;
@@ -2244,6 +2244,7 @@ export type TranslationQaRequest = {
     | "apply"
     | "checkpoint"
     | "undo"
+    | "reapply"
     | "choose";
   findings?: string[];
   question?: string;

@@ -57,7 +57,8 @@ def qa_handoff(task, helper="project.py qa"):
 
 def qa_selection(state, action, options):
     """The findings and chosen proposals an apply or undo names, each in the
-    state that step needs: not yet applied, or applied."""
+    state that step needs: not yet applied before the task's first apply,
+    undone after it, or applied for an undo."""
     chosen = options.get("findings", [])
     proposals = options.get("proposals", [])
     if (
@@ -75,11 +76,13 @@ def qa_selection(state, action, options):
         for row in state["questions"]
         if row.get("choice") == "use"
     )
-    wanted = "applied" if action == "qa_undo" else ""
+    wanted = "applied" if action == "qa_undo" else "undone" if state["applied"] else ""
     if any(states.get(value, "missing") != wanted for value in chosen + proposals):
         raise ValueError(
             "Only applied corrections can be undone."
             if action == "qa_undo"
+            else "Only undone corrections can be applied again."
+            if state["applied"]
             else "The chosen QA corrections changed. Refresh findings."
         )
     return chosen, proposals
@@ -432,7 +435,11 @@ def prepare_publication(plan):
         from util import rpgmaker_qa as qa
 
         state = qa_state(plan)
-        if action == "qa_apply" and not state["current"]:
+        # Applying an undone correction again checks each of its lines against
+        # the text QA reviewed, as Undo does, so edits elsewhere since the
+        # first apply do not stop it.
+        again = action == "qa_apply" and state["applied"]
+        if action == "qa_apply" and not again and not state["current"]:
             raise ValueError(state["message"])
         if options.get("task") != state["task"]:
             raise ValueError(
@@ -441,7 +448,7 @@ def prepare_publication(plan):
         if state.get("rules_changed"):
             raise ValueError(
                 "An update changed QA's rules after these corrections were applied, so "
-                "Undo is no longer available. Run QA again to check the text."
+                "they can't be undone or applied again. Run QA again to check the text."
             )
         task_root, task, _checkpoint = qa._load_task(state["task"])
         chosen, proposals = qa_selection(state, action, options)
@@ -481,6 +488,11 @@ def prepare_publication(plan):
                     raise ValueError(
                         "A line changed in the game since QA corrected it, so the "
                         "correction can't be undone here. Use History or edit it."
+                    ) from exc
+                if again and "Expected" in str(exc):
+                    raise ValueError(
+                        "A line changed in the game since QA reviewed it, so the "
+                        "correction can't be applied again. Run QA again to check it."
                     ) from exc
                 raise
             for name in {row["file"] for row in selected["operations"]}:
