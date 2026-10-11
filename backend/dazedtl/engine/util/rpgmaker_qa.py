@@ -42,6 +42,7 @@ from util.rpgmaker_qa_manifest import (
 from util.rpgmaker_qa_verify import verify_manifest
 from util import rpgmaker_qa_checks as checks
 from util import rpgmaker_qa_lint as lint
+from util.rpgmaker_header_check import check as check_headers
 from util.rpgmaker_qa_preflight import (
     REASON as NOT_TRANSLATED_REASON,
     preflight,
@@ -135,6 +136,7 @@ SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers"})
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
+    "rpgmaker_header_check.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -1345,6 +1347,22 @@ def _database_checks(
     )
 
 
+def _header_flags(data: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    """The header check's likely Show Text slips, each beside the first line of
+    its box the inventory holds, or none when the box was never translated."""
+    result = check_headers(data)
+    records = {
+        (record["file"], record["source_pointer"]): record["identity"]
+        for record in manifest["records"]
+    }
+    for flag in result["flags"]:
+        flag["identity"] = next((
+            records[(flag["file"], line + "/_original")] for line in flag["lines"]
+            if (flag["file"], line + "/_original") in records
+        ), "")
+    return result
+
+
 def _candidate(reasons: Iterable[str], identities: Iterable[str] = ()) -> dict[str, Any]:
     return {
         "reasons": sorted(set(reasons)),
@@ -2028,6 +2046,17 @@ def prepare_task(
                 _merge_candidate(
                     forced_candidates, cluster_id, [entry["check"] for entry in failed]
                 )
+            # A likely slip in a line's Show Text header goes to deep review,
+            # where a reviewer fixes the header or says why it is right.
+            headers = _header_flags(data, manifest)
+            _atomic_write_json(staging / "header-check.json", headers)
+            clusters = _cluster_by_identity(manifest)
+            for flag in headers["flags"]:
+                if flag["identity"]:
+                    _merge_candidate(
+                        forced_candidates, clusters[flag["identity"]],
+                        ["show-text-header"], [flag["identity"]],
+                    )
             lint_items, lint_fixes = _lint_items(manifest)
             items, screen_index = _screen_items(manifest, context, data, lint_fixes)
             screen_index_document = {
@@ -4794,6 +4823,12 @@ def _deep_items(
     candidate_reasons = basis["candidates"]
     screen_evidence, screen_scenes = basis["evidence"], basis["scenes"]
     motif_contexts = basis["motifs"]
+    # The header check read the game's files when the task was made, before
+    # any apply could change them.
+    header_notes: dict[str, list[str]] = defaultdict(list)
+    if (root / "header-check.json").is_file():
+        for flag in _read_json(root / "header-check.json")["flags"]:
+            header_notes[flag["identity"]].append(flag["evidence"])
     items = []
     for identity in manifest["review_sequence"]:
         # Lines in scenes a reviewer declined stay out of deep review.
@@ -4856,8 +4891,13 @@ def _deep_items(
         }
         if screen_evidence.get(identity):
             item["screen_evidence"] = screen_evidence[identity]
-        if failed_checks.get(identity):
-            item["checks"] = failed_checks[identity]
+        failed = [*failed_checks.get(identity, []), *(
+            {"check": "show-text-header", "note": note}
+            for record in member_records
+            for note in header_notes.get(record["identity"], [])
+        )]
+        if failed:
+            item["checks"] = failed
         if identity in lint_accepted:
             families = sorted(lint_accepted[identity]["families"], key=lint.ORDER.index)
             item["lint"] = {

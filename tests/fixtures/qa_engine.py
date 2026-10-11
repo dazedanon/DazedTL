@@ -67,7 +67,7 @@ write(
                         line("討伐3体", "Three defeated."),
                         POWER,
                         speaker("店長", "Owner", face="owner"),
-                        line("よく来たね", "Glad you came."),
+                        line("よく来たね、アリナちゃん", "Glad you came, Arina-chan."),
                         speaker("アリナ", "Arina"),
                         WELCOME,
                         # Japanese residue forces deep review, where it is
@@ -180,7 +180,14 @@ storage = temporary / "storage"
 task, state = qa.prepare_task(game, data, "release", storage, screen_item_limit=3)
 assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
-assert {source(identity) for identity in forced} == {"朝だ", "森の奥へ"}, forced
+# Japanese residue forces deep review, and so does a likely header slip.
+assert {
+    source(identity): candidate["reasons"] for identity, candidate in forced.items()
+} == {
+    "朝だ": ["source-language-residue"],
+    "森の奥へ": ["source-language-residue"],
+    WELCOME["_original"]: ["show-text-header"],
+}, forced
 assert state["not_translated"] == {"total": 3, "may_show": 2}, state["not_translated"]
 # Assistants write into the task, so it keeps its parent's permissions instead
 # of tempfile's private ones, which on Windows lock the app out of the files an
@@ -219,7 +226,7 @@ FLAGGED = {
     AROUSAL["_original"],
     WELCOME["_original"],
     SWORD,
-    "よく来たね",
+    "よく来たね、アリナちゃん",
     "朝だ",
 }
 
@@ -440,7 +447,7 @@ def deep_result(row, corrections, declined=("朝だ",)):
                 {"id": item["id"], "disposition": "declined", "reason": "Not reviewed."}
             )
             continue
-        if item["source"] == "よく来たね":
+        if item["source"] == "よく来たね、アリナちゃん":
             # A question no evidence settles, with a proposal the user may use.
             reviews.append(
                 {
@@ -457,6 +464,13 @@ def deep_result(row, corrections, declined=("朝だ",)):
             )
             continue
         if item["source"] == WELCOME["_original"]:
+            # The header check sent the line too, and says why.
+            assert "show-text-header" in item["deep_reasons"], item
+            assert any(
+                failed["check"] == "show-text-header"
+                and "アリナちゃん" in failed["note"]
+                for failed in item["checks"]
+            ), item
             reviews.append(
                 {
                     "id": item["id"],
@@ -858,7 +872,9 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
 # app runs on its disposable copy; this game is the test's own copy.
 # The user chose the open question's proposal, so it applies too.
 (question,) = findings["uncertain_playtests"]
-assert question["source"] == "よく来たね" and question["places"] == 1, question
+assert question["source"] == "よく来たね、アリナちゃん" and question["places"] == 1, (
+    question
+)
 inventory = json.loads((task / "inventory.json").read_text(encoding="utf-8"))
 
 
@@ -890,7 +906,7 @@ def message(source):
     )
 
 
-assert message("よく来たね") == "Welcome back."
+assert message("よく来たね、アリナちゃん") == "Welcome back."
 # The correction of the re-screened line applies only outside the declined scene.
 assert [
     command["parameters"][0]

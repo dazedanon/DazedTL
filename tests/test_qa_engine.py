@@ -1,6 +1,9 @@
 """Text QA's engine: its mechanical rules, and its pipeline on a generated game."""
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests.engine import engine_module
 from tests.probe import Probe
@@ -15,6 +18,107 @@ manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
 checks = engine_module("util/rpgmaker_qa_checks.py")
+headers = engine_module("util/rpgmaker_header_check.py")
+
+WORDS = (
+    "りんご",
+    "みかん",
+    "さくら",
+    "うみ",
+    "やま",
+    "かぜ",
+    "ほし",
+    "つき",
+    "はな",
+    "くも",
+)
+
+
+def box(name, *lines, face=""):
+    return [
+        {"code": 101, "parameters": [face, 0, 0, 2, name]},
+        *({"code": 401, "parameters": [line]} for line in lines),
+    ]
+
+
+def header_game():
+    """Scenes in one game's conventions, with a slip of each kind beside the
+    ordinary boxes each rule must leave alone."""
+    arina = lambda word: box("アリナ", f"あたし、{word}が好きだよ！♥", face="arina")
+    yuki = lambda word: box("ユーキ", f"ぼくは{word}が苦手なんだよね…", face="yuki")
+    narration = lambda word: box("", f"{word}の部屋は静かだった。")
+    effect = lambda word, name="": box(name, f"\\NK[1]{word}ぬちゅ\\NK[0]")
+    common = [
+        command
+        for word in WORDS
+        for command in (
+            *arina(word),
+            *box("アリナ", f"あたしも{word}を見たよ！♥", face="arina"),
+            *box("アリナ", f"\\C[2]あたし\\C[0]、{word}が欲しいな！♥", face="arina"),
+            *box("エリカ", f"私は{word}が好きよ！", face="erika"),
+            *box("旅人", f"{word}を探しているの。", face="traveler"),
+            *yuki(word),
+            *narration(word),
+            *effect(word),
+            *effect(word),
+            *effect(word),
+            # A speaker who calls themself by name does it on purpose, even
+            # when others call them the same.
+            *box("ミナ", f"ミナちゃんはね、{word}が好き！", face="mina"),
+            *box("エリカ", f"ミナちゃん、{word}よ！", face="erika"),
+        )
+    ]
+    pages = [
+        common,
+        [
+            *box("ユーキ", "ぼくもりんごが好きだよ！", face="arina"),  # face
+            *box("ユーキ", "アリナちゃん、また明日ね…", face="yuki"),
+            *box(
+                "アリナ", "アリナちゃん、いらっしゃい！", face="arina"
+            ),  # self-address, said as ユーキ says it
+            *box("ユーキ", "私、もう帰るね…♥", face="yuki"),  # pronoun
+            *effect("さくら", "ユーキ"),  # sound-effect
+            *box("", "あたし、もうだめだよ！♥"),  # unnamed-line
+            *arina("やま"),
+            *yuki("ほし"),
+        ],
+        [
+            # Names before a reveal, one shared by several characters, an
+            # alias that recurs with another's face, a speaker naming or
+            # introducing themself, 私 from a speaker who says あたし, a
+            # pronoun no one in the scene says, unnamed speech and narration
+            # between named boxes, and named boxes beside them.
+            *box("謎の少年", "ぼくは誰でしょう…", face="yuki"),
+            *box("？？？", "ぼくは誰でしょう…", face="yuki"),
+            *box("？？？", "私は誰かしら…", face="erika"),
+            *box("？？？", "ミナは誰でしょう！", face="mina"),
+            *[
+                command
+                for word in WORDS[:3]
+                for command in box("旅人", f"{word}を探しているの。", face="arina")
+            ],
+            *box("ユーキ", "おれについて来い！なんてね", face="yuki"),
+            *box("エリカ", "ユーキ…どこ？", face="erika"),
+            *box("ユーキ", "ユーキ、参上！", face="yuki"),
+            *box("ユーキ", "エリカ様、お願い！", face="yuki"),
+            *box("アリナ", "エリカちゃん、おはよう！♥", face="arina"),
+            *box("エリカ", "このエリカ様に任せなさい！", face="erika"),
+            *box("エリカ", "エリカちゃん、言うな！", face="erika"),
+            *box("アリナ", "アリナはね、元気だよ！", face="arina"),
+            *box("アリナ", "アリナちゃんがお手伝いするね！", face="arina"),
+            *box("エリカ", "私はりんごが好きよ！", face="erika"),
+            *box("アリナ", "私もりんごが好きだよ！♥", face="arina"),
+            *box("アリナ", "\\C[2]あたし\\C[0]もだよ！♥", face="arina"),
+            *box("", "あたし、うみに行きたいな！♥"),
+            *arina("かぜ"),
+            *narration("つき"),
+            *effect("ほし", "アリナ"),
+            *yuki("はな"),
+            *effect("くも", "アリナ"),
+            *arina("くも"),
+        ],
+    ]
+    return {"events": [None, {"id": 1, "pages": [{"list": page} for page in pages]}]}
 
 
 class QAEngineTests(unittest.TestCase):
@@ -50,6 +154,50 @@ class QAEngineTests(unittest.TestCase):
             "\\V[5]でHP30回復、EV024", "Restores 30 HP with \\V[5], EV024", None
         )
         self.assertEqual(evidence["source_visible_numbers"], ["30"])
+
+    def test_header_check_flags_slips_but_not_the_games_conventions(self):
+        game = header_game()
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            (data / "Map001.json").write_text(json.dumps(game), encoding="utf-8")
+            found = headers.check(data)
+            flagged = {
+                (flag["pointer"].rsplit("/", 1)[-1], flag["kind"])
+                for flag in found["flags"]
+                if flag["pointer"].startswith("/events/1/pages/1/")
+            }
+            self.assertEqual(
+                flagged,
+                {
+                    ("0", "face"),
+                    ("4", "self-address"),
+                    ("6", "pronoun"),
+                    ("8", "sound-effect"),
+                    ("10", "unnamed-line"),
+                },
+                found["flags"],
+            )
+            self.assertEqual(found["total"], len(flagged), found["flags"])
+            # Once translated, the check reads each header's and line's
+            # Japanese, and a nameplate the translation already gave another
+            # speaker is not flagged again.
+            for page in game["events"][1]["pages"]:
+                for command in page["list"]:
+                    parameters = command["parameters"]
+                    if command["code"] == 401:
+                        command["_original"] = parameters[0]
+                        parameters[0] = "English"
+                    elif command["code"] == 101 and parameters[4]:
+                        command["_original"] = parameters[4]
+                        parameters[4] = "Speaker " + parameters[4]
+            game["events"][1]["pages"][1]["list"][4]["parameters"][4] = "Speaker 店主"
+            (data / "Map001.json").write_text(json.dumps(game), encoding="utf-8")
+            again = headers.check(data)
+            self.assertEqual(
+                [flag["kind"] for flag in again["flags"]],
+                ["face", "pronoun", "sound-effect", "unnamed-line"],
+                again["flags"],
+            )
 
     def test_dakuten_apostrophes_spare_slurs_and_moans(self):
         # Lines from a release whose reviewer rejected the proposed fixes.

@@ -134,7 +134,9 @@ that `prior_review`, and your review replaces it.
   a subject, or runs the name into it). Correct it, or review it `clean` with `evidence` that
   says why it stands, such as a glossary term used as an ordinary word. A correction cannot add
   a `%1` the source lacks, so an MZ message becomes a complete sentence and an MV message keeps
-  a leading space.
+  a leading space. A `show-text-header` check means the Show Text header of the line's box
+  likely shows the wrong speaker: settle it from the scene with a `source_fix`, or a `clean`
+  review that says why the header is right.
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
   reach it; an `observation` is the reason a reviewer gave for a line outside its own items,
   and the `observation` deep reason marks an item it escalated. A `clean` review of such an
