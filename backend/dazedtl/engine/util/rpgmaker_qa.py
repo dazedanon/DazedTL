@@ -130,8 +130,17 @@ APPROVED_NONBLOCKING_MECHANICAL_FLAGS = frozenset({"suspicious-length-ratio"})
 # current text already uses.
 MESSAGE_WINDOW_LINES = 4
 # Fixes for slips in the Japanese source itself: the Show Text header's face
-# and name, or a database field's number that its own entry contradicts.
-SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers"})
+# and name, a database field's number that its own entry contradicts, or an
+# MZ battle message without the %1 that shows its battler's name.
+SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers", "battler-name"})
+# A battler-name fix may add that one %1 and no other runtime code, which is
+# narrower than allowing the whole runtime-token-mismatch flag.
+ADDED_BATTLER_NAME = "added-battler-name"
+# The flags each correcting source fix may introduce.
+SOURCE_FIX_ALLOWED_FLAGS = {
+    "database-numbers": ("visible-number-mismatch",),
+    "battler-name": (ADDED_BATTLER_NAME,),
+}
 # Every module whose rules shape bundles, flags or findings.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
@@ -141,7 +150,7 @@ _ENGINE_SOURCES = (
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
 
-QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v15"
+QA_POLICY_VERSION = "rpgmaker-qa-scene-motif-editorial-reference-check-database-v16"
 FORCED_DEEP_MECHANICAL_FLAGS = frozenset({
     "empty-live",
     "unchanged-source",
@@ -494,12 +503,42 @@ def correction_problems(
         problems.append("a name or choice cannot contain a line break")
     before = set(_mechanical_evidence(source, live, event_code)["flags"])
     after = set(_mechanical_evidence(source, correction, event_code)["flags"])
-    introduced = sorted(
-        after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS - allowed
-    )
+    introduced = sorted(_disallowed_flags(
+        after - before - APPROVED_NONBLOCKING_MECHANICAL_FLAGS, allowed,
+        source, correction,
+    ))
     if introduced:
         problems.append("introduces " + ", ".join(introduced))
     return problems
+
+
+def _adds_only_battler_name(source: str, text: str) -> bool:
+    """Whether a text keeps its source's runtime codes and adds only the %1
+    the source lacks."""
+    evidence = _mechanical_evidence(source, text, None)
+    source_tokens = Counter(evidence["source_runtime_tokens"])
+    text_tokens = Counter(evidence["live_runtime_tokens"])
+    return (
+        "%1" not in source_tokens
+        and text_tokens - source_tokens == Counter({"%1": 1})
+        and not source_tokens - text_tokens
+    )
+
+
+def _disallowed_flags(
+    introduced: set[str], allowed: Iterable[str], source: str, text: str
+) -> set[str]:
+    """The introduced flags no allowance covers; a battler-name allowance
+    covers a runtime-token mismatch only from the one %1 it adds."""
+    allowed = set(allowed)
+    left = introduced - allowed
+    if (
+        ADDED_BATTLER_NAME in allowed
+        and "runtime-token-mismatch" in left
+        and _adds_only_battler_name(source, text)
+    ):
+        left.discard("runtime-token-mismatch")
+    return left
 
 
 def _engine_fingerprint() -> str:
@@ -3087,6 +3126,35 @@ def _database_number_allowance(
     return frozenset({"visible-number-mismatch"})
 
 
+def _battler_name_allowance(
+    review: dict[str, Any], item: dict[str, Any]
+) -> frozenset[str]:
+    """An MZ battle message the battler-name check found may gain the one %1
+    its source lacks, where RPG Maker writes the battler's name."""
+    identity = review["id"]
+    if not any(
+        entry.get("source_fix") == "battler-name" for entry in item.get("checks") or []
+    ):
+        raise QAResultError(
+            f"A battler-name fix is for an MZ battle message whose battler-name "
+            f"check offers it: {identity}"
+        )
+    for target in review.get("apply_identities") or item["identities"]:
+        file, pointer = target.split("#", 1)
+        field = pointer.rsplit("@", 1)[0].rsplit("/", 1)[-1]
+        if field not in checks.BATTLE_MESSAGES["MZ"].get(file, ()):
+            raise QAResultError(
+                f"A battler-name fix changes only battle messages; name them in "
+                f"apply_identities: {identity}"
+            )
+    if not _adds_only_battler_name(str(item["source"]), str(review["correction"])):
+        raise QAResultError(
+            f"A battler-name fix adds the one %1 its source lacks and changes no "
+            f"other code: {identity}"
+        )
+    return frozenset({ADDED_BATTLER_NAME})
+
+
 def _validate_sweep_rule(review: dict[str, Any], item: dict[str, Any]) -> None:
     """A sweep rule must reproduce its review's correction exactly."""
     identity = review["id"]
@@ -3298,10 +3366,12 @@ def _validate_correction(
     correction = review.get("correction")
     if not isinstance(correction, str) or not correction.strip():
         raise QAResultError(f"Actionable review has no correction for {identity}")
-    allowed = (
-        _database_number_allowance(review, item)
-        if kind == "database-numbers" else frozenset()
-    )
+    if kind == "database-numbers":
+        allowed = _database_number_allowance(review, item)
+    elif kind == "battler-name":
+        allowed = _battler_name_allowance(review, item)
+    else:
+        allowed = frozenset()
     # Every occurrence the correction reaches, by its line structure; a
     # capped item lists only some of them.
     chosen = set(review.get("apply_identities") or [])
@@ -5482,8 +5552,11 @@ def _draft_document(
                 "target_identities": target_ids,
                 "authors": [str(row.get("assigned_to") or "")],
                 **(
-                    {"source_fix": kind, "allowed_flags": ["visible-number-mismatch"]}
-                    if kind == "database-numbers" else {}
+                    {
+                        "source_fix": kind,
+                        "allowed_flags": list(SOURCE_FIX_ALLOWED_FLAGS[kind]),
+                    }
+                    if kind in SOURCE_FIX_ALLOWED_FLAGS else {}
                 ),
                 **(
                     {"editorial_basis": review["editorial_basis"]}
@@ -6885,8 +6958,9 @@ def _regression_check_loaded(
                 before_record.get("mechanical", {}).get("flags") or []
             )
             after_flags = set(record.get("mechanical", {}).get("flags") or [])
-            introduced_flags = after_flags - before_flags - set(
-                operation.get("allowed_flags") or ()
+            introduced_flags = _disallowed_flags(
+                after_flags - before_flags, operation.get("allowed_flags") or (),
+                record["source"], record["live"],
             )
             warning_flags = sorted(
                 introduced_flags & nonblocking_introduced_flags

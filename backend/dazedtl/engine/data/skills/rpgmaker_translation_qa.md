@@ -1,7 +1,8 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v15
+<!-- qa-contract:rpgmaker-qa-v16
 single-policy role-briefs app-owned-inventory immutable-review-bundles database-checks
+battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
@@ -132,9 +133,10 @@ that `prior_review`, and your review replaces it.
   `glossary-missing` (the source holds a glossary term whose English this text lacks) and
   `battler-name` (the way RPG Maker adds the battler's name leaves this battle message without
   a subject, or runs the name into it). Correct it, or review it `clean` with `evidence` that
-  says why it stands, such as a glossary term used as an ordinary word. A correction cannot add
-  a `%1` the source lacks, so an MZ message becomes a complete sentence and an MV message keeps
-  a leading space. A `show-text-header` check means the Show Text header of the line's box
+  says why it stands, such as a glossary term used as an ordinary word. An MZ message whose
+  check offers the `battler-name` source fix gets the `%1` its source forgot where the name
+  belongs ("%1 was freed from the Illusion."); no other correction adds a code, and an MV
+  message keeps a leading space. A `show-text-header` check means the Show Text header of the line's box
   likely shows the wrong speaker: settle it from the scene with a `source_fix`, or a `clean`
   review that says why the header is right.
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
@@ -174,7 +176,8 @@ that `prior_review`, and your review replaces it.
   be checked in `evidence`, and give a `correction` when you have a proposal the user may choose
   instead of the current text. These become the questions the user answers in DazedTL.
 - A slip in the Japanese source itself gets a `source_fix`: a Show Text header showing the wrong
-  speaker's face or name, or a database text stating a number its own entry contradicts.
+  speaker's face or name, a database text stating a number its own entry contradicts, or an MZ
+  battle message missing the `%1` that shows its battler's name.
 - A deep item's `lint` names mechanical fixes already accepted for the line; DazedTL applies
   them to your correction too, so write it for meaning and voice.
 
@@ -254,7 +257,8 @@ the item's scenes by the command numbers the bundle prints:
 Source fixes are `"source_fix":{"kind":"show-text","face_name":"<a face the game shows>","face_index":0,"name":"<nameplate, empty for narration>"}`
 with category `speaker`, `correction` null and exactly one `apply_identities` entry, or
 `"source_fix":{"kind":"database-numbers"}` on a correction that changes a number only to one of
-its locator's `database_values`.
+its locator's `database_values`, or `"source_fix":{"kind":"battler-name"}` on a correction that
+adds only the `%1` an MZ battle message's source lacks.
 
 Group (lint items go in the screen result's `lint_reviews`):
 

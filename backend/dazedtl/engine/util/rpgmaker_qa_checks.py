@@ -129,7 +129,8 @@ def _battler_names(records: list[dict[str, Any]], engine: str) -> dict[str, list
             if re.sub(r"^[\s\"“”'’….]+", "", live)[:1].islower():
                 notes[record["identity"]] = [
                     "RPG Maker MZ shows the battler's name only in place of %1, "
-                    "so this message prints without a subject."
+                    "so this message prints without a subject; a battler-name "
+                    "source fix may add the %1."
                 ]
         elif re.match(r"[A-Za-z0-9]", live):
             notes[record["identity"]] = [
@@ -143,7 +144,7 @@ def database_checks(
     manifest: dict[str, Any], glossary: list[tuple[str, str]], engine: str
 ) -> dict[str, list[dict[str, str]]]:
     """Each cluster's failed checks, by its representative identity, with the
-    evidence a reviewer needs."""
+    evidence a reviewer needs and the source fix a check allows."""
     records = [
         record for record in manifest["records"]
         if record.get("classification") == "database"
@@ -163,6 +164,10 @@ def database_checks(
             cluster = cluster_of[identity]
             for note in notes[identity]:
                 entry = {"check": check, "note": note}
+                if check == "battler-name" and engine == "MZ":
+                    # MZ formats the name into %1, so the message may gain the
+                    # one its source forgot.
+                    entry["source_fix"] = "battler-name"
                 if entry not in found[cluster]:
                     found[cluster].append(entry)
     return dict(found)

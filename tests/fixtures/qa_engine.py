@@ -1036,4 +1036,99 @@ assert items["払い斬り"]["deep_reasons"] == ["name-collision"], items
 assert "Skills.json 2 薙ぎ払い" in items["払い斬り"]["checks"][0]["note"], items
 assert items["の幻惑が解けた"]["checks"][0]["check"] == "battler-name", items
 assert "check battler-name: RPG Maker MZ" in qa.render_bundle(checked, row["id"])
+
+
+# The MZ message may gain the %1 its source forgot, as a battler-name source
+# fix and nothing else: not as a plain correction, with another code, or on a
+# text that is no battle message.
+def checked_deep(name, fixes):
+    reviews = [
+        {
+            "id": item["id"],
+            "disposition": "clean",
+            "severity": None,
+            "category": "",
+            "family_key": "",
+            "motif_ids": [],
+            "evidence": "Checked against the source.",
+            "correction": None,
+            "apply_identities": [],
+            **fixes.get(source, {}),
+        }
+        for source, item in items.items()
+    ]
+    return result_path(
+        name,
+        {
+            "schema": qa.DEEP_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviews": reviews,
+        },
+    )
+
+
+fix = {
+    "disposition": "actionable",
+    "severity": "medium",
+    "category": "runtime",
+    "correction": "%1 was freed from the Illusion.",
+    "source_fix": {"kind": "battler-name"},
+}
+for name, fixes, refusal in (
+    ("plain", {"の幻惑が解けた": {**fix, "source_fix": None}}, "runtime-token"),
+    (
+        "other-code",
+        {"の幻惑が解けた": {**fix, "correction": "%2 was freed from the Illusion."}},
+        "adds the one %1",
+    ),
+    ("name", {"払い斬り": {**fix, "correction": "%1 Sweeping Slash"}}, "check offers"),
+):
+    try:
+        qa.accept_result(checked, checked_deep(name, fixes))
+    except qa.QAResultError as error:
+        assert refusal in str(error), error
+    else:
+        raise AssertionError(f"The {name} correction added a code.")
+qa.accept_result(checked, checked_deep("battler-name", {"の幻惑が解けた": fix}))
+assert qa.finalize(checked)["stage"] == "editorial"
+row = qa.next_bundle(checked, "editor-a")
+qa.accept_result(
+    checked,
+    result_path(
+        row["id"],
+        {
+            "schema": qa.EDITORIAL_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviews": [
+                {"id": item["id"], "verdict": "accept", "note": ""}
+                for item in bundle_of(row)["items"]
+            ],
+        },
+    ),
+)
+assert qa.next_bundle(checked, "editor-a") is None
+(finding,) = json.loads((checked / "findings.json").read_text())["findings"]
+assert finding["source_fix"] == "battler-name", finding
+
+
+def message4():
+    return json.loads((checks_game / "data/States.json").read_text())[1]["message4"]
+
+
+# Apply and undo pass the regression, which allows only that one %1.
+for undo, expected in (
+    (False, fix["correction"]),
+    (True, "was freed from the Illusion."),
+):
+    assert qa._apply_loaded_correction_map(
+        checked,
+        json.loads((checked / "task.json").read_text(encoding="utf-8")),
+        qa.correction_map(checked, [finding["id"]], undo=undo),
+        json.loads((checked / "inventory.json").read_text(encoding="utf-8")),
+        dry_run_name="dry-run.json",
+        regression_name="regression.json",
+    )["valid"]
+    assert message4() == expected, message4()
 print("ok")
