@@ -128,7 +128,16 @@ def _inventory(source, source_game, stopped):
             entries = [name for name in entries if name not in excluded]
         for name in names + entries:
             path = Path(directory) / name
-            _relative(path.relative_to(source).as_posix())
+            entry = path.relative_to(source).as_posix()
+            try:
+                _relative(entry)
+            except ValueError:
+                # A stray file, such as a pager's "\x1bq", is easy to remove
+                # once named.
+                raise ValueError(
+                    f"Backups can't keep the name {entry!r}."
+                    " Rename it or move it out of the folder, then try again."
+                ) from None
             if _linked(path):
                 raise ValueError(
                     "Backup stopped at a symbolic link or junction. Preserve that source explicitly."
