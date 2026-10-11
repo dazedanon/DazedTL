@@ -1174,7 +1174,9 @@ pre {
     justify-content: flex-start;
     max-width: 100%;
   }
-  .action-row-actions > .action-control {
+  /* As specific as the wide rule it overrides, so feedback follows the
+     controls to the start. */
+  .action-row-actions > .action-control:not(.action-control--inline) {
     text-align: start;
   }
 }
