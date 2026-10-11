@@ -107,6 +107,7 @@ Both Check tasks are optional:
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
   Answer the questions it can't settle on the page; each correction is listed with **Undo**, and **Review them** lists the lines QA did not cover.
   That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
+  A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.

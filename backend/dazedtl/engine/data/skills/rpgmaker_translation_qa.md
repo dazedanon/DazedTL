@@ -1,10 +1,10 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v13
+<!-- qa-contract:rpgmaker-qa-v14
 single-policy role-briefs app-owned-inventory immutable-review-bundles
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
-family-sweep decision-log consistency-check editorial-stage regression-simulation
+scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api
 -->
 
@@ -149,6 +149,17 @@ that `prior_review`, and your review replaces it.
   problem recurs word for word, add a `sweep` rule that reproduces your correction exactly;
   DazedTL then finds every other line it changes for group review.
 - `apply_identities` may limit a context-specific correction to some of the item's identities.
+- A defect of a whole scene, such as narration that changes tense partway through, can need
+  several of its lines changed together, since changing one line only moves the problem.
+  Then give `scene_correction` instead of `correction`: one of the item's scenes, and each line to
+  change by the command number the scene prints for it, with its exact current text and its
+  correction.
+  Include the item's own line there; the lines apply and undo as one correction, and each must
+  pass the regression checks above.
+  DazedTL refuses a line in a scene or item a reviewer declined, and applies each line's accepted
+  lint fixes on top.
+  Review another item whose line it changes as usual; when the scene correction already fixes
+  it, call it clean and say so in `evidence`.
 - `uncertain-playtest` is for runtime or context uncertainty no evidence settles; say what must
   be checked in `evidence`, and give a `correction` when you have a proposal the user may choose
   instead of the current text. These become the questions the user answers in DazedTL.
@@ -175,6 +186,12 @@ independently. An item's `conflicts` name corrections that contradict each other
 translation quirks, a recorded decision or a structured label: revise until they agree, or
 accept with a note when the contexts need the difference. A Show Text header fix is accepted or
 withdrawn, never revised.
+
+A scene correction changes several lines of one scene together, and its item prints the whole
+scene with each changed line's fix.
+Judge the lines together and accept or withdraw them as one correction, or `revise` with
+`replacements` for the lines that need it, each by its command number and exact current text; a
+line's current text as its replacement leaves that line as it is.
 
 ## Commands
 
@@ -221,6 +238,9 @@ Deep:
 ```
 
 A clean review keeps `severity` null, `category` and `family_key` empty and `correction` null.
+A scene correction keeps `correction` null and `apply_identities` empty, and names lines of one of
+the item's scenes by the command numbers the bundle prints:
+`"scene_correction":{"scene":"S1","lines":[{"command":197,"current":"exact current text","correction":"Corrected text."},{"command":210,"current":"exact current text","correction":"Corrected text."}]}`.
 Source fixes are `"source_fix":{"kind":"show-text","face_name":"<a face the game shows>","face_index":0,"name":"<nameplate, empty for narration>"}`
 with category `speaker`, `correction` null and exactly one `apply_identities` entry, or
 `"source_fix":{"kind":"database-numbers"}` on a correction that changes a number only to one of
@@ -235,7 +255,7 @@ Group (lint items go in the screen result's `lint_reviews`):
 Editorial:
 
 ```json
-{"schema":"{{EDITORIAL_SCHEMA}}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{"id":"QA-0001","verdict":"accept","note":""},{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"},{"id":"QA-0003","verdict":"withdraw","note":"why"}],"declined":[],"observations":[]}
+{"schema":"{{EDITORIAL_SCHEMA}}","bundle_id":"editorial-0001","bundle_sha256":"...","reviews":[{"id":"QA-0001","verdict":"accept","note":""},{"id":"QA-0002","verdict":"revise","replacement":"Publication-ready wording.","note":"why"},{"id":"QA-0003","verdict":"withdraw","note":"why"},{"id":"QA-0004","verdict":"revise","replacements":[{"command":215,"current":"exact current text","replacement":"Publication-ready wording."}],"note":"why"}],"declined":[],"observations":[]}
 ```
 
 ## Handoff

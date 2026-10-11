@@ -278,7 +278,49 @@ class PublicationTests(unittest.TestCase):
                         "severity": "medium",
                         "source": "アージリー高原",
                         "target_identities": ["MapInfos.json#/1/name@a"],
-                    }
+                    },
+                    # A scene correction has lines instead of one text.
+                    {
+                        "id": "QA-0002",
+                        "kind": "scene",
+                        "category": "fluency",
+                        "cluster_id": "Map001.json#/list/1@b",
+                        "evidence": "The narration turns present.",
+                        "family_key": "narration-tense",
+                        "severity": "medium",
+                        "scene_id": "Map001.json#/list",
+                        "lines": [
+                            {
+                                "position": number - 1,
+                                "command": number,
+                                "cluster_id": identity,
+                                "source": source,
+                                "current": current,
+                                "correction": correction,
+                                "identities": [identity],
+                            }
+                            for number, identity, source, current, correction in (
+                                (
+                                    2,
+                                    "Map001.json#/list/1@b",
+                                    "扉",
+                                    "It opens.",
+                                    "It opened.",
+                                ),
+                                (
+                                    3,
+                                    "Map001.json#/list/2@c",
+                                    "中",
+                                    "She goes.",
+                                    "She went.",
+                                ),
+                            )
+                        ],
+                        "target_identities": [
+                            "Map001.json#/list/1@b",
+                            "Map001.json#/list/2@c",
+                        ],
+                    },
                 ],
             },
         )
@@ -313,6 +355,11 @@ class PublicationTests(unittest.TestCase):
         TypeAdapter(QaState).validate_json(json.dumps(state), strict=True)
         self.assertEqual(state["findings"][0]["correction"], "Arjilee Plateau")
         self.assertEqual(state["findings"][0]["files"], ["MapInfos.json"])
+        scene = state["findings"][1]
+        self.assertEqual((scene["kind"], scene["places"]), ("scene", 2))
+        self.assertEqual(
+            [line["correction"] for line in scene["lines"]], ["It opened.", "She went."]
+        )
         # Corrections applied from this task, and only this task, stay applied
         # once something else is applied later.
         applied = []

@@ -1130,6 +1130,21 @@
 .text-qa-change del {
   background: var(--color-error-surface);
 }
+/* A scene correction's lines, each a change of its own; the row's reason
+   sits as far below the last line as the lines sit apart, so it reads as
+   the whole correction's. */
+.text-qa-scene {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+/* Its row is tall, so Undo stays beside the first line, not mid-scene. */
+.action-row:has(> .action-row-label > .text-qa-scene) {
+  align-items: start;
+}
+.text-qa-scene > .link-button {
+  justify-self: start;
+}
 .text-qa-log {
   display: grid;
   gap: var(--space-5);

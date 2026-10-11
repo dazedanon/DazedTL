@@ -283,6 +283,14 @@ class PublicationStatus(TypedDict):
     recovery_errors: list[str]
 
 
+class QaLineChange(TypedDict):
+    """One line of a scene correction."""
+
+    source: str
+    current: str
+    correction: str
+
+
 class QaFinding(TypedDict):
     id: str
     source: str
@@ -292,12 +300,18 @@ class QaFinding(TypedDict):
     severity: str
     family: Annotated[str, "The family a reviewer or lint named, or empty."]
     kind: Annotated[
-        Literal["review", "lint", "sweep", "source"],
-        "How the finding came to be: a reviewer, lint, the family sweep or a source fix.",
+        Literal["review", "lint", "sweep", "source", "scene"],
+        "How the finding came to be: a reviewer, lint, the family sweep, a source fix, or a reviewer's correction of several lines of one scene.",
     ]
     places: Annotated[int, "Lines the correction changes."]
     files: list[str]
     reason: str
+    lines: NotRequired[
+        Annotated[
+            list[QaLineChange],
+            "A scene correction's lines, which apply and undo together; source, current and correction join them.",
+        ]
+    ]
     editorial: NotRequired[Annotated[str, "The editorial reviewer's note."]]
     state: NotRequired[Literal["applied", "undone"]]
 

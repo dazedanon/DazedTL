@@ -10,6 +10,7 @@ from tests.probe import Probe
 # install.
 probe = Probe("qa_engine.py")
 declines = Probe("qa_declines.py")
+scenes = Probe("qa_scene.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
@@ -22,6 +23,10 @@ class QAEngineTests(unittest.TestCase):
 
     def test_declined_items_stay_within_their_helper(self):
         returncode, output = declines.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_scene_corrections_apply_and_undo_as_one(self):
+        returncode, output = scenes.result()
         self.assertEqual(returncode, 0, output)
 
     def test_numbers_beside_stat_letters_count(self):

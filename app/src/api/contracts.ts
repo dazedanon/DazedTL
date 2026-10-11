@@ -566,6 +566,13 @@ export type PublicationStatus = {
   recovery_errors: string[];
 };
 
+/** One line of a scene correction. */
+export type QaLineChange = {
+  source: string;
+  current: string;
+  correction: string;
+};
+
 export type QaFinding = {
   id: string;
   source: string;
@@ -575,12 +582,14 @@ export type QaFinding = {
   severity: string;
   /** The family a reviewer or lint named, or empty. */
   family: string;
-  /** How the finding came to be: a reviewer, lint, the family sweep or a source fix. */
-  kind: "review" | "lint" | "sweep" | "source";
+  /** How the finding came to be: a reviewer, lint, the family sweep, a source fix, or a reviewer's correction of several lines of one scene. */
+  kind: "review" | "lint" | "sweep" | "source" | "scene";
   /** Lines the correction changes. */
   places: number;
   files: string[];
   reason: string;
+  /** A scene correction's lines, which apply and undo together; source, current and correction join them. */
+  lines?: QaLineChange[];
   /** The editorial reviewer's note. */
   editorial?: string;
   state?: "applied" | "undone";

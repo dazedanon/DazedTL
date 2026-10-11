@@ -53,14 +53,14 @@ TASK_SCHEMA = "rpgmaker-qa-task-v3"
 CHECKPOINT_SCHEMA = "rpgmaker-qa-checkpoint-v3"
 BUNDLE_SCHEMA = "rpgmaker-qa-bundle-v3"
 SCREEN_RESULT_SCHEMA = "rpgmaker-qa-screen-result-v2"
-DEEP_RESULT_SCHEMA = "rpgmaker-qa-deep-result-v3"
+DEEP_RESULT_SCHEMA = "rpgmaker-qa-deep-result-v4"
 SWEEP_RESULT_SCHEMA = "rpgmaker-qa-sweep-result-v1"
 # Stages whose bundles reviewers claim, in order.
 REVIEW_STAGES = ("screen", "deep", "sweep", "editorial")
 FINDINGS_SCHEMA = "rpgmaker-qa-findings-v5"
 CORRECTION_MAP_SCHEMA = "rpgmaker-qa-correction-map-v1"
 REGRESSION_SCHEMA = "rpgmaker-qa-regression-v1"
-EDITORIAL_RESULT_SCHEMA = "rpgmaker-qa-editorial-result-v1"
+EDITORIAL_RESULT_SCHEMA = "rpgmaker-qa-editorial-result-v2"
 EDITORIAL_VERDICTS = frozenset({"accept", "revise", "withdraw"})
 # Editorial rounds that only settle conflicting corrections, before those are
 # left unverified.
@@ -277,41 +277,45 @@ def _consistency_conflicts(
                 _fixed_translation_key(mapped_translation)
             )
     for finding in findings:
-        expected = canonical.get(_fixed_source_key(finding.get("source"))) or set()
-        if len(expected) == 1 and _fixed_translation_key(
-            finding.get("correction")
-        ) not in expected:
-            conflicts[finding["id"]].append({
-                "kind": "hard",
-                "key": "quirk:" + _fixed_source_key(finding["source"]),
-                "message": "The translation quirks fix this text as "
-                f"{next(iter(expected))!r}.",
-            })
-        for decision in decisions:
-            if (
-                decision.get("source")
-                and decision["source"] in str(finding["source"])
-                and decision.get("translation") not in str(finding["correction"])
-            ):
+        for change in _changes(finding):
+            expected = canonical.get(_fixed_source_key(change["source"])) or set()
+            if len(expected) == 1 and _fixed_translation_key(
+                change["correction"]
+            ) not in expected:
                 conflicts[finding["id"]].append({
                     "kind": "hard",
-                    "key": "decision:" + decision["key"],
-                    "message": f"Decision {decision['key']!r} renders "
-                    f"{decision['source']!r} as {decision['translation']!r}.",
+                    "key": "quirk:" + _fixed_source_key(change["source"]),
+                    "message": "The translation quirks fix this text as "
+                    f"{next(iter(expected))!r}.",
                 })
+            for decision in decisions:
+                if (
+                    decision.get("source")
+                    and decision["source"] in str(change["source"])
+                    and decision.get("translation") not in str(change["correction"])
+                ):
+                    conflicts[finding["id"]].append({
+                        "kind": "hard",
+                        "key": "decision:" + decision["key"],
+                        "message": f"Decision {decision['key']!r} renders "
+                        f"{decision['source']!r} as {decision['translation']!r}.",
+                    })
 
     field_labels: dict[str, dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
     for finding in findings:
-        source_labels = _JAPANESE_FIELD_LABEL_RE.findall(str(finding["source"]))
-        correction_labels = _ENGLISH_FIELD_LABEL_RE.findall(str(finding["correction"]))
-        if not source_labels or len(source_labels) != len(correction_labels):
-            continue
-        for source_label, correction_label in zip(
-            source_labels, correction_labels, strict=True
-        ):
-            field_labels[source_label][correction_label].add(finding["id"])
+        for change in _changes(finding):
+            source_labels = _JAPANESE_FIELD_LABEL_RE.findall(str(change["source"]))
+            correction_labels = _ENGLISH_FIELD_LABEL_RE.findall(
+                str(change["correction"])
+            )
+            if not source_labels or len(source_labels) != len(correction_labels):
+                continue
+            for source_label, correction_label in zip(
+                source_labels, correction_labels, strict=True
+            ):
+                field_labels[source_label][correction_label].add(finding["id"])
     for source_label, translations in sorted(field_labels.items()):
         if len(translations) < 2:
             continue
@@ -328,10 +332,12 @@ def _consistency_conflicts(
                 })
 
     # The same text corrected two ways; different translations of one source
-    # may keep different corrections.
+    # may keep different corrections. A scene correction's lines are meant
+    # for their scene, so only the lines it shares count, below.
     by_text: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
-        by_text[(str(finding["source"]), str(finding["current"]))].append(finding)
+        if finding.get("kind") != "scene":
+            by_text[(str(finding["source"]), str(finding["current"]))].append(finding)
     for text, members in sorted(by_text.items()):
         corrections = sorted({str(member["correction"]) for member in members})
         if len(corrections) < 2:
@@ -346,6 +352,46 @@ def _consistency_conflicts(
                 + ", ".join(sorted(other["id"] for other in members if other is not member))
                 + "; keep the difference only when the contexts need it.",
             })
+
+    # A scene correction replaces another correction of a line it changes,
+    # so it keeps that fix when it still applies; two scene corrections
+    # cannot share a line.
+    owners: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+    for finding in findings:
+        if finding.get("lint_only"):
+            continue
+        for change in _changes(finding):
+            for identity in change["identities"]:
+                owners[identity].append((finding, change))
+    reported: set[tuple[str, str]] = set()
+    for identity, found in sorted(owners.items()):
+        scenes = [
+            (finding, change) for finding, change in found
+            if finding.get("kind") == "scene"
+        ]
+        for scene, line in scenes:
+            for other, change in found:
+                if other is scene or (scene["id"], other["id"]) in reported:
+                    continue
+                reported.add((scene["id"], other["id"]))
+                if other.get("kind") == "scene":
+                    conflicts[scene["id"]].append({
+                        "kind": "hard",
+                        "key": "scene-overlap:" + other["id"],
+                        "message": f"{other['id']} also changes line #{line['command']} "
+                        f"({line['current']!r}); leave each line to one scene correction.",
+                    })
+                    continue
+                conflicts[scene["id"]].append({
+                    "kind": "soft",
+                    "key": "overlap:" + other["id"],
+                    "signature": _sha256(_canonical_bytes(
+                        [line["correction"], change["correction"]]
+                    ))[:16],
+                    "message": f"{other['id']} corrects line #{line['command']} "
+                    f"({line['current']!r}) as {change['correction']!r}; this scene "
+                    "correction replaces it there, so keep its fix if it still applies.",
+                })
     return dict(conflicts)
 
 
@@ -357,19 +403,22 @@ def _simulate_apply(
     for finding in findings:
         if finding.get("kind") == "show-text":
             continue
-        for identity in finding["target_identities"]:
-            record = records[identity]
-            found = correction_problems(
-                record["source"],
-                record["live"],
-                finding["correction"],
-                record.get("event_code"),
-                record["live_pointers"],
-                record["live_transform"],
-                frozenset(finding.get("allowed_flags") or ()),
-            )
-            if found:
-                problems.append(f"{finding['id']} at {identity}: " + "; ".join(found))
+        for change in _changes(finding):
+            for identity in change["identities"]:
+                record = records[identity]
+                found = correction_problems(
+                    record["source"],
+                    record["live"],
+                    change["correction"],
+                    record.get("event_code"),
+                    record["live_pointers"],
+                    record["live_transform"],
+                    frozenset(finding.get("allowed_flags") or ()),
+                )
+                if found:
+                    problems.append(
+                        f"{finding['id']} at {identity}: " + "; ".join(found)
+                    )
     if problems:
         raise QAResultError(
             "These corrections would block apply: " + " | ".join(problems[:20])
@@ -763,6 +812,28 @@ def _scene_position(record: dict[str, Any]) -> tuple[str, int] | None:
     return f"{record['file']}#{list_pointer}", command_index
 
 
+def _scene_records(manifest: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Each command list's dialogue records in command order: the scenes
+    screening reads, and the lines a scene correction numbers."""
+    scenes: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    for record in manifest["records"]:
+        if record.get("classification") != "dialogue":
+            continue
+        position = _scene_position(record)
+        if position is None:
+            continue
+        scene_id, command_index = position
+        scenes[scene_id].append((command_index, record))
+    return {
+        scene_id: [
+            record for _index, record in sorted(
+                positioned, key=lambda item: (item[0], item[1]["source_pointer"])
+            )
+        ]
+        for scene_id, positioned in scenes.items()
+    }
+
+
 def _scene_signature(records: list[dict[str, Any]]) -> str:
     content = [{
         "source": record["source"],
@@ -822,23 +893,8 @@ def _scene_groups(
     """Every dialogue command list as a scene, identical scenes as copies of
     one group, and each line's cluster."""
     cluster_ids = _cluster_by_identity(manifest)
-    scenes: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
-    for record in manifest["records"]:
-        if record.get("classification") != "dialogue":
-            continue
-        position = _scene_position(record)
-        if position is None:
-            continue
-        scene_id, command_index = position
-        scenes[scene_id].append((command_index, record))
-
     equivalent: dict[str, list[tuple[str, list[dict[str, Any]]]]] = defaultdict(list)
-    for scene_id, positioned in scenes.items():
-        ordered = [
-            record for _index, record in sorted(
-                positioned, key=lambda item: (item[0], item[1]["source_pointer"])
-            )
-        ]
+    for scene_id, ordered in _scene_records(manifest).items():
         equivalent[_scene_signature(ordered)].append((scene_id, ordered))
 
     groups = []
@@ -3043,7 +3099,192 @@ def _validate_sweep_result(bundle: dict, result: dict) -> None:
             )
 
 
-def _validate_deep_result(bundle: dict, result: dict) -> None:
+def _scene_check(
+    root: Path, checkpoint: dict[str, Any], bundle: dict, result: dict
+) -> dict[str, Any]:
+    """What a scene correction is checked against: each scene's records and
+    each line's cluster, and what reviewers declined, this result's declines
+    included."""
+    manifest = _read_json(root / "inventory.json")
+    _records, clusters = _record_maps(manifest)
+    declined = _declined_scope(root, checkpoint, manifest, waiting=True)
+    identities = set(declined["identities"])
+    scenes = set(declined["context_scenes"])
+    items = {item["id"]: item for item in bundle["items"]}
+    for review in result["reviews"]:
+        if (
+            not isinstance(review, dict)
+            or review.get("disposition") != "declined"
+            or review.get("id") not in items
+        ):
+            continue
+        identities |= set(clusters[review["id"]]["identities"])
+        scenes |= {
+            bundle["scenes"][key]["scene_id"]
+            for key in items[review["id"]].get("scenes") or []
+        }
+    return {
+        "scenes": _scene_records(manifest),
+        "clusters": _cluster_by_identity(manifest),
+        "declined_identities": identities,
+        "declined_scenes": scenes,
+    }
+
+
+def _scene_line(
+    records: list[dict[str, Any]], command: Any, current: Any
+) -> dict[str, Any] | None:
+    """The one line of a scene that the event command holds with this current
+    text; a command can hold several lines, such as a choice's options."""
+    found = [
+        record for record in records
+        if (_scene_position(record) or ("", None))[1] == command
+        and record["live"] == current
+    ]
+    return found[0] if len(found) == 1 else None
+
+
+def _validate_scene_correction(
+    review: dict[str, Any], item: dict[str, Any], bundle: dict,
+    check: dict[str, Any] | None,
+) -> None:
+    """A scene correction changes two or more lines of one of the item's
+    scenes, each named by its event command and exact current text, the
+    item's own line among them, each passing apply's checks."""
+    identity = review["id"]
+    scene = review["scene_correction"]
+    if (
+        not isinstance(scene, dict)
+        or set(scene) != {"scene", "lines"}
+        or not isinstance(scene["lines"], list)
+    ):
+        raise QAResultError(f"A scene correction is {{scene, lines}}: {identity}")
+    if any(
+        review.get(key)
+        for key in ("correction", "apply_identities", "sweep", "source_fix")
+    ):
+        raise QAResultError(
+            f"A scene correction replaces correction, apply_identities, sweep and "
+            f"source_fix; leave them empty: {identity}"
+        )
+    key = scene["scene"]
+    if not isinstance(key, str) or key not in (item.get("scenes") or []):
+        raise QAResultError(
+            f"A scene correction names one of the item's scenes, not {key!r}: {identity}"
+        )
+    if check is None:
+        raise QAResultError(f"A scene correction needs the task to check it: {identity}")
+    shown = bundle["scenes"][key]
+    if shown["scene_id"] in check["declined_scenes"]:
+        raise QAResultError(
+            f"A reviewer declined part of scene {key}, so no scene correction may "
+            f"change it: {identity}"
+        )
+    if len(scene["lines"]) < 2:
+        raise QAResultError(
+            f"A scene correction changes two or more lines; correct one line with "
+            f"correction: {identity}"
+        )
+    records = check["scenes"].get(shown["scene_id"]) or []
+    targets: set[str] = set()
+    own = False
+    for entry in scene["lines"]:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"command", "current", "correction"}
+            or type(entry["command"]) is not int
+        ):
+            raise QAResultError(
+                f"A scene correction's line is {{command, current, correction}}: "
+                f"{identity}"
+            )
+        command, current = entry["command"], entry["current"]
+        shows = any(
+            line.get("command") == command and line["translation"] == current
+            for line in shown["lines"]
+        )
+        record = _scene_line(records, command, current) if shows else None
+        if record is None:
+            raise QAResultError(
+                f"Scene {key} shows no single line #{command} with the current text "
+                f"given; check the command number and text: {identity}"
+            )
+        if record["identity"] in targets:
+            raise QAResultError(
+                f"A scene correction names line #{command} twice: {identity}"
+            )
+        targets.add(record["identity"])
+        correction = entry["correction"]
+        if not isinstance(correction, str) or not correction.strip():
+            raise QAResultError(
+                f"Line #{command} of the scene correction has no correction: {identity}"
+            )
+        if record["identity"] in check["declined_identities"]:
+            raise QAResultError(
+                f"A reviewer declined line #{command} of scene {key}, so no "
+                f"correction may change it: {identity}"
+            )
+        problems = correction_problems(
+            record["source"], record["live"], correction, record.get("event_code"),
+            record["live_pointers"], record["live_transform"],
+        )
+        if problems:
+            raise QAResultError(
+                f"Line #{command} of the scene correction for {identity} would block "
+                "apply: " + "; ".join(problems)
+            )
+        own = own or check["clusters"][record["identity"]] == identity
+    if not own:
+        raise QAResultError(
+            f"A scene correction changes the item's own line in scene {key}: {identity}"
+        )
+
+
+def _validate_correction(
+    review: dict[str, Any], item: dict[str, Any], kind: str | None
+) -> None:
+    """An item's correction passes apply's checks at every occurrence it
+    reaches."""
+    identity = review["id"]
+    correction = review.get("correction")
+    if not isinstance(correction, str) or not correction.strip():
+        raise QAResultError(f"Actionable review has no correction for {identity}")
+    allowed = (
+        _database_number_allowance(review, item)
+        if kind == "database-numbers" else frozenset()
+    )
+    # Every occurrence the correction reaches, by its line structure; a
+    # capped item lists only some of them.
+    chosen = set(review.get("apply_identities") or [])
+    shapes = [
+        {
+            "event_code": locator.get("event_code"),
+            "pointers": len(locator["live_pointers"]),
+            "transform": locator.get("live_transform", "identity"),
+        }
+        for locator in item.get("locators") or []
+        if locator["identity"] in chosen
+    ] if chosen else item.get("target_shapes") or []
+    for shape in shapes:
+        problems = correction_problems(
+            str(item["source"]),
+            str(item["translation"]),
+            correction,
+            shape["event_code"],
+            ["/"] * shape["pointers"],
+            shape["transform"],
+            allowed,
+        )
+        if problems:
+            raise QAResultError(
+                f"The correction for {identity} would block apply: "
+                + "; ".join(problems)
+            )
+
+
+def _validate_deep_result(
+    bundle: dict, result: dict, scene_check: dict[str, Any] | None = None
+) -> None:
     if result.get("schema") != DEEP_RESULT_SCHEMA:
         raise QAResultError("Deep result has the wrong schema")
     expected = {item["id"] for item in bundle["items"]}
@@ -3070,7 +3311,7 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
                 review.get(key) for key in (
                     "severity", "category", "family_key", "motif_ids",
                     "evidence", "correction", "apply_identities",
-                    "editorial_basis",
+                    "editorial_basis", "scene_correction",
                 )
             ):
                 raise QAResultError(
@@ -3090,43 +3331,15 @@ def _validate_deep_result(bundle: dict, result: dict) -> None:
             kind = source_fix.get("kind") if isinstance(source_fix, dict) else None
             if source_fix is not None and kind not in SOURCE_FIX_KINDS:
                 raise QAResultError(f"Unknown source fix for {identity}")
-            if kind == "show-text":
+            if review.get("scene_correction") is not None:
+                _validate_scene_correction(review, item, bundle, scene_check)
+            elif kind == "show-text":
                 _validate_show_text_fix(review, item)
                 continue
-            correction = review.get("correction")
-            if not isinstance(correction, str) or not correction.strip():
-                raise QAResultError(f"Actionable review has no correction for {identity}")
-            allowed = (
-                _database_number_allowance(review, item)
-                if kind == "database-numbers" else frozenset()
-            )
-            # Every occurrence the correction reaches, by its line structure;
-            # a capped item lists only some of them.
-            chosen = set(review.get("apply_identities") or [])
-            shapes = [
-                {
-                    "event_code": locator.get("event_code"),
-                    "pointers": len(locator["live_pointers"]),
-                    "transform": locator.get("live_transform", "identity"),
-                }
-                for locator in item.get("locators") or []
-                if locator["identity"] in chosen
-            ] if chosen else item.get("target_shapes") or []
-            for shape in shapes:
-                problems = correction_problems(
-                    str(item["source"]),
-                    str(item["translation"]),
-                    correction,
-                    shape["event_code"],
-                    ["/"] * shape["pointers"],
-                    shape["transform"],
-                    allowed,
-                )
-                if problems:
-                    raise QAResultError(
-                        f"The correction for {identity} would block apply: "
-                        + "; ".join(problems)
-                    )
+            else:
+                _validate_correction(review, item, kind)
+        elif review.get("scene_correction") is not None:
+            raise QAResultError(f"Only an actionable review can correct a scene: {identity}")
         elif review.get("source_fix") is not None:
             raise QAResultError(f"Only an actionable review can fix the source: {identity}")
         elif review.get("severity") not in {None, ""}:
@@ -3219,7 +3432,17 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         elif stage == "editorial":
             _validate_editorial_result(bundle, result, str(row.get("assigned_to") or ""))
         else:
-            _validate_deep_result(bundle, result)
+            reviews = result.get("reviews")
+            _validate_deep_result(
+                bundle,
+                result,
+                _scene_check(root, checkpoint, bundle, result)
+                if isinstance(reviews, list) and any(
+                    isinstance(review, dict) and review.get("scene_correction") is not None
+                    for review in reviews
+                )
+                else None,
+            )
         observations = []
         if result.get("observations", []) != []:
             manifest = _read_json(root / "inventory.json")
@@ -3733,14 +3956,19 @@ def _render_group(item: dict) -> list[str]:
 
 def _render_editorial(item: dict) -> list[str]:
     finding = item["finding"]
+    scene = finding.get("kind") == "scene"
     out = [
         f"### FINDING {item['id']} [{finding['severity']} {finding['category']}] "
-        f"{finding.get('family_key', '')} occurrences={item['occurrences']}",
-        "  JP:  " + _context_text(finding["source"]),
-        "  EN:  " + _context_text(finding["current"]),
-        "  FIX: " + _context_text(finding["correction"]),
-        "  evidence: " + _context_text(finding["evidence"]),
+        f"{finding.get('family_key', '')} occurrences={item['occurrences']}"
+        + (f" SCENE CORRECTION of {len(finding['lines'])} lines" if scene else ""),
     ]
+    if not scene:
+        out += [
+            "  JP:  " + _context_text(finding["source"]),
+            "  EN:  " + _context_text(finding["current"]),
+            "  FIX: " + _context_text(finding["correction"]),
+        ]
+    out.append("  evidence: " + _context_text(finding["evidence"]))
     basis = finding.get("editorial_basis")
     if basis:
         out += [
@@ -3749,7 +3977,16 @@ def _render_editorial(item: dict) -> list[str]:
         ]
     for conflict in item.get("conflicts") or []:
         out.append(f"  CONFLICT ({conflict['kind']}): " + conflict["message"])
-    return out + _render_commands(item.get("nearby_commands"), "    ")
+    if not scene:
+        return out + _render_commands(item.get("nearby_commands"), "    ")
+    # The whole scene, each changed line marked with its correction.
+    fixes = {line["position"]: line["correction"] for line in finding["lines"]}
+    out.append(f"  scene {finding['scene_id']} ({len(item['scene'])} lines):")
+    for position, line in enumerate(item["scene"]):
+        out += _render_line(line, ">>FIX" if position in fixes else "  ")
+        if position in fixes:
+            out.append(f"{'':>5}   FIX: {_context_text(fixes[position])}")
+    return out
 
 
 def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
@@ -4416,14 +4653,24 @@ def _add_lint_findings(
     """Mark reviewer corrections with their lines' accepted lint fixes, which
     compose after the editorial pass, and add the rest as findings.
 
+    A scene correction's lines take their own clusters' fixes; the findings
+    added here still cover those lines, should editorial withdraw it.
     Returns the fixes left out because the fixed text would block apply.
     """
     records, clusters = _record_maps(manifest)
     titles = lint.title_map(manifest["clusters"])
     by_cluster = {
         finding["cluster_id"]: finding for finding in findings
-        if finding.get("kind") != "show-text"
+        if finding.get("kind") not in {"show-text", "scene"}
     }
+    for finding in findings:
+        if finding.get("kind") != "scene":
+            continue
+        for line in finding["lines"]:
+            if line["cluster_id"] in accepted:
+                line["lint_families"] = sorted(
+                    accepted[line["cluster_id"]]["families"], key=lint.ORDER.index
+                )
     dropped = []
     for cluster_id, decision in sorted(accepted.items()):
         families = sorted(decision["families"], key=lint.ORDER.index)
@@ -5076,6 +5323,8 @@ def _draft_document(
     findings = []
     uncertain = []
     motif_families = []
+    scene_dropped = []
+    scenes: dict[str, Any] | None = None
     deep_dispositions: dict[str, str] = {}
     deep_motif_attributions: dict[str, set[str] | None] = {}
     for row in checkpoint["screen"]["bundles"]:
@@ -5128,6 +5377,14 @@ def _draft_document(
                 findings.append(_show_text_finding(
                     review, records, task, faces, row, declined
                 ))
+        elif review["disposition"] == "actionable" and review.get("scene_correction"):
+            if scenes is None:
+                scenes = _scene_index(manifest)
+            finding = _scene_finding(review, row, scenes, declined)
+            if "reason" in finding:
+                scene_dropped.append(finding)
+            else:
+                findings.append(finding)
         elif review["disposition"] == "actionable":
             target_ids = [
                 identity
@@ -5254,6 +5511,7 @@ def _draft_document(
         "declined": declined["items"],
         "not_reviewed": _not_reviewed(declined, records),
         "sweep_dropped": sweep_dropped,
+        "scene_dropped": scene_dropped,
         # Never a passing count: Japanese no reviewer read, by file and
         # plugin, with whether players can reach it; preflight.json lists
         # its text.
@@ -5283,9 +5541,10 @@ def _number_findings(
             finding.get("kind") or "",
             bool(finding.get("lint_only")),
             finding.get("sweep_families") or [],
-            finding["source"],
-            finding["current"],
-            finding["correction"],
+            [
+                [change["source"], change["current"], change["correction"]]
+                for change in _changes(finding)
+            ],
             finding["target_identities"],
             finding.get("parameters"),
         ]))[:24]
@@ -5394,6 +5653,99 @@ def _show_text_finding(
     }
 
 
+def _scene_index(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Scenes' records, which scenes are copies of each other, and each
+    line's cluster: what a scene correction's finding is made from."""
+    records = _scene_records(manifest)
+    copies: dict[str, list[str]] = defaultdict(list)
+    for scene_id, rows in sorted(records.items()):
+        copies[_scene_signature(rows)].append(scene_id)
+    return {
+        "records": records,
+        "copies": {
+            scene_id: same for same in copies.values() for scene_id in same
+        },
+        "clusters": _cluster_by_identity(manifest),
+    }
+
+
+def _scene_finding(
+    review: dict[str, Any],
+    row: dict[str, Any],
+    scenes: dict[str, Any],
+    declined: dict[str, Any],
+) -> dict[str, Any]:
+    """A scene correction as one finding: each line it changes, in that scene
+    and in every copy of it. A line reviewers declined since its deep review
+    leaves the whole correction out, with the reason."""
+    bundle = _read_json(Path(row["path"]))
+    shown = bundle["scenes"][review["scene_correction"]["scene"]]
+    scene_id = shown["scene_id"]
+    ordered = scenes["records"][scene_id]
+    copies = scenes["copies"][scene_id]
+    positions = {
+        record["identity"]: position for position, record in enumerate(ordered)
+    }
+    lines = []
+    for entry in review["scene_correction"]["lines"]:
+        record = _scene_line(ordered, entry["command"], entry["current"])
+        if record is None:
+            raise ValueError(f"Scene {scene_id} no longer matches its deep review")
+        position = positions[record["identity"]]
+        lines.append({
+            "position": position,
+            "command": entry["command"],
+            "cluster_id": scenes["clusters"][record["identity"]],
+            "source": record["source"],
+            "current": record["live"],
+            "correction": entry["correction"],
+            # The same line in every copy of the scene.
+            "identities": [
+                scenes["records"][other][position]["identity"] for other in copies
+            ],
+        })
+    # In scene order; the position also tells editorial which line it is.
+    lines.sort(key=lambda line: line["position"])
+    targets = [identity for line in lines for identity in line["identities"]]
+    if set(copies) & declined["context_scenes"] or set(targets) & declined["identities"]:
+        return {
+            "cluster_id": review["id"],
+            "scene_id": scene_id,
+            "reason": "Reviewers declined part of this scene after its deep review.",
+        }
+    category = _normalize_category(review.get("category"))
+    return {
+        "id": "",
+        "kind": "scene",
+        "cluster_id": review["id"],
+        "scene_id": scene_id,
+        "severity": review["severity"],
+        "category": category,
+        "family_key": _normalize_family_key(review.get("family_key")),
+        "evidence": review["evidence"],
+        "lines": lines,
+        "target_identities": targets,
+        "authors": [str(row.get("assigned_to") or "")],
+        **(
+            {"editorial_basis": review["editorial_basis"]}
+            if category in EDITORIAL_JUDGMENT_CATEGORIES else {}
+        ),
+    }
+
+
+def _changes(finding: dict[str, Any]) -> list[dict[str, Any]]:
+    """The text a finding changes, line by line: a scene correction's lines,
+    or one correction of every line it targets."""
+    if finding.get("kind") == "scene":
+        return finding["lines"]
+    return [{
+        "source": finding["source"],
+        "current": finding["current"],
+        "correction": finding["correction"],
+        "identities": finding["target_identities"],
+    }]
+
+
 def _finding_families(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     members_by_key: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
@@ -5434,9 +5786,15 @@ def _editorial_items(
     findings: list[dict[str, Any]],
     conflicts: dict[str, list[dict[str, str]]],
 ) -> list[dict[str, Any]]:
-    """One editorial item per finding to confirm, with its nearby game text."""
+    """One editorial item per finding to confirm, with its nearby game text,
+    or a scene correction's whole scene."""
     task = _read_json(root / "task.json")
-    records, _clusters = _record_maps(_read_json(root / "inventory.json"))
+    manifest = _read_json(root / "inventory.json")
+    records, _clusters = _record_maps(manifest)
+    scenes = (
+        _scene_records(manifest)
+        if any(finding.get("kind") == "scene" for finding in findings) else {}
+    )
     data_root = Path(task["data_root"])
     nearby: dict[str, list[dict]] = {}
     for row in checkpoint["deep"]["bundles"]:
@@ -5448,8 +5806,56 @@ def _editorial_items(
     for finding in findings:
         if finding["id"] not in conflicts and not _needs_editorial(finding):
             continue
-        targets = [records[identity] for identity in finding["target_identities"]]
         judgment = finding["category"] in EDITORIAL_JUDGMENT_CATEGORIES
+        if finding.get("kind") == "scene":
+            items.append({
+                "kind": "editorial",
+                "id": finding["id"],
+                "ordinal": len(items) + 1,
+                "finding": {
+                    key: finding[key]
+                    for key in (
+                        "severity", "category", "family_key", "evidence",
+                        "editorial_basis", "kind", "scene_id",
+                    )
+                    if key in finding
+                } | {
+                    "lines": [
+                        {
+                            key: line[key]
+                            for key in (
+                                "position", "command", "source", "current", "correction",
+                            )
+                        }
+                        for line in finding["lines"]
+                    ],
+                },
+                "occurrences": len(finding["target_identities"]),
+                "targets": [{
+                    "position": line["position"],
+                    "identity": identity,
+                    "event_code": records[identity].get("event_code"),
+                    "live_pointers": records[identity]["live_pointers"],
+                    "live_transform": records[identity]["live_transform"],
+                } for line in finding["lines"] for identity in line["identities"]],
+                "scene": [{
+                    "command": (_scene_position(record) or ("", None))[1],
+                    "source": record["source"],
+                    "translation": record["live"],
+                    **(
+                        {"speaker": record["speaker"]["display_name"]}
+                        if (record.get("speaker") or {}).get("display_name") else {}
+                    ),
+                    **(
+                        {"event_code": record.get("event_code")}
+                        if record.get("event_code") != 401 else {}
+                    ),
+                } for record in scenes[finding["scene_id"]]],
+                **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
+                "authors": sorted(set(finding.get("authors") or []) - {""}) if judgment else [],
+            })
+            continue
+        targets = [records[identity] for identity in finding["target_identities"]]
         items.append({
             "kind": "editorial",
             "id": finding["id"],
@@ -5522,6 +5928,85 @@ def _open_editorial_round(
     return True
 
 
+def _scene_revision(
+    lines: list[dict[str, Any]], replacements: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """A scene correction's lines after an editorial revision: a line named
+    by its command and current text takes its replacement, and one put back
+    to its current text is left out."""
+    revised = {
+        (row["command"], row["current"]): row["replacement"] for row in replacements
+    }
+    lines = [
+        {
+            **line,
+            "correction": revised.get(
+                (line["command"], line["current"]), line["correction"]
+            ),
+        }
+        for line in lines
+    ]
+    return [line for line in lines if line["correction"] != line["current"]]
+
+
+def _validate_scene_revision(review: dict[str, Any], item: dict[str, Any]) -> None:
+    """Revised lines are lines the correction changes, named by command and
+    current text, each passing apply's checks, and at least one line still
+    changes."""
+    identity = review["id"]
+    finding = item["finding"]
+    replacements = review.get("replacements")
+    if (
+        review.get("replacement") is not None
+        or not isinstance(replacements, list)
+        or not replacements
+        or not all(
+            isinstance(row, dict)
+            and set(row) == {"command", "current", "replacement"}
+            and type(row["command"]) is int
+            and isinstance(row["current"], str)
+            and isinstance(row["replacement"], str)
+            and row["replacement"].strip()
+            for row in replacements
+        )
+    ):
+        raise QAResultError(
+            f"A scene correction is revised with replacements, each "
+            f"{{command, current, replacement}}: {identity}"
+        )
+    lines = {(line["command"], line["current"]): line for line in finding["lines"]}
+    named = [(row["command"], row["current"]) for row in replacements]
+    if len(set(named)) != len(named):
+        raise QAResultError(f"A revision names a line twice: {identity}")
+    for command, current in named:
+        if (command, current) not in lines:
+            raise QAResultError(
+                f"Line #{command} with the current text given is not a line of "
+                f"{identity}; check the command number and text"
+            )
+    if not _scene_revision(finding["lines"], replacements):
+        raise QAResultError(
+            f"A revision leaves every line as it is; withdraw the correction "
+            f"instead: {identity}"
+        )
+    for row in replacements:
+        line = lines[(row["command"], row["current"])]
+        if row["replacement"] == line["current"]:
+            continue
+        for target in item["targets"]:
+            if target["position"] != line["position"]:
+                continue
+            problems = correction_problems(
+                line["source"], line["current"], row["replacement"],
+                target["event_code"], target["live_pointers"], target["live_transform"],
+            )
+            if problems:
+                raise QAResultError(
+                    f"The revision of line #{row['command']} of {identity} would "
+                    "block apply: " + "; ".join(problems)
+                )
+
+
 def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
     if result.get("schema") != EDITORIAL_RESULT_SCHEMA:
         raise QAResultError("Editorial result has the wrong schema")
@@ -5552,13 +6037,20 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
             raise QAResultError(f"Editorial review needs a note for {identity}")
         replacement = review.get("replacement")
         if verdict != "revise":
-            if replacement is not None:
+            if replacement is not None or review.get("replacements") is not None:
                 raise QAResultError(f"Only a revision has a replacement: {identity}")
             continue
         finding = item["finding"]
         if finding.get("kind") == "show-text":
             raise QAResultError(
                 f"A Show Text fix is accepted or withdrawn, not revised: {identity}"
+            )
+        if finding.get("kind") == "scene":
+            _validate_scene_revision(review, item)
+            continue
+        if review.get("replacements") is not None:
+            raise QAResultError(
+                f"Only a scene correction is revised line by line: {identity}"
             )
         if not isinstance(replacement, str) or not replacement.strip():
             raise QAResultError(f"A revision needs its replacement text: {identity}")
@@ -5578,30 +6070,78 @@ def _validate_editorial_result(bundle: dict, result: dict, worker: str) -> None:
 def _compose_lint(
     findings: list[dict[str, Any]], records: dict[str, dict[str, Any]], titles: dict
 ) -> list[dict[str, Any]]:
-    """Apply accepted lint fixes on top of final corrections; returns those
-    left out because the combined text would block apply."""
+    """Apply accepted lint fixes on top of final corrections, a scene
+    correction's line by line; returns those left out because the combined
+    text would block apply."""
     dropped = []
     for finding in findings:
-        families = finding.get("lint_families")
-        if not families or finding.get("lint_only"):
+        if finding.get("lint_only"):
             continue
-        composed = lint.compose(
-            finding["source"], finding["correction"], families, titles
-        )
-        problems = sorted({
-            problem
-            for identity in finding["target_identities"]
-            for problem in correction_problems(
-                records[identity]["source"], records[identity]["live"], composed,
-                records[identity].get("event_code"), records[identity]["live_pointers"],
-                records[identity]["live_transform"],
+        scene = finding.get("kind") == "scene"
+        for change in finding["lines"] if scene else [finding]:
+            families = change.get("lint_families")
+            if not families:
+                continue
+            composed = lint.compose(
+                change["source"], change["correction"], families, titles
             )
-        })
-        if problems:
-            dropped.append({"id": finding["id"], "families": families, "problems": problems})
-        else:
-            finding["correction"] = composed
+            problems = sorted({
+                problem
+                for identity in (
+                    change["identities"] if scene else finding["target_identities"]
+                )
+                for problem in correction_problems(
+                    records[identity]["source"], records[identity]["live"], composed,
+                    records[identity].get("event_code"),
+                    records[identity]["live_pointers"],
+                    records[identity]["live_transform"],
+                )
+            })
+            if problems:
+                dropped.append({
+                    "id": finding["id"],
+                    **({"command": change["command"]} if scene else {}),
+                    "families": families,
+                    "problems": problems,
+                })
+            else:
+                change["correction"] = composed
     return dropped
+
+
+def _supersede(
+    findings: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """A confirmed scene correction replaces other corrections of its lines,
+    which editorial saw as conflicts; returns the findings left and which
+    reviewer corrections it replaced where."""
+    covered = {
+        identity: finding["id"]
+        for finding in findings if finding.get("kind") == "scene"
+        for identity in finding["target_identities"]
+    }
+    kept, superseded = [], []
+    for finding in findings:
+        replaced = [
+            identity for identity in finding["target_identities"] if identity in covered
+        ]
+        if finding.get("kind") == "scene" or not replaced:
+            kept.append(finding)
+            continue
+        targets = [
+            identity for identity in finding["target_identities"]
+            if identity not in covered
+        ]
+        if targets:
+            kept.append({**finding, "target_identities": targets})
+        # A lint fix is not lost: it composes into the scene correction's line.
+        if not finding.get("lint_only"):
+            superseded.append({
+                "id": finding["id"],
+                "by": sorted({covered[identity] for identity in replaced}),
+                "places": len(replaced),
+            })
+    return kept, superseded
 
 
 def _complete_editorial(
@@ -5677,8 +6217,19 @@ def _complete_editorial(
             continue
         finding = dict(finding)
         for earlier in history:
-            if earlier["verdict"] == "revise":
+            if earlier["verdict"] != "revise":
+                continue
+            # A later round names only the scene lines it changes again.
+            if finding.get("kind") == "scene":
+                finding["lines"] = _scene_revision(
+                    finding["lines"], earlier["replacements"]
+                )
+            else:
                 finding["correction"] = earlier["replacement"]
+        if finding.get("kind") == "scene":
+            finding["target_identities"] = [
+                target for line in finding["lines"] for target in line["identities"]
+            ]
         if verdict:
             finding["editorial"] = {
                 "verdict": verdict["verdict"],
@@ -5709,7 +6260,10 @@ def _complete_editorial(
         else:
             finding["correction"] = composed
     lint_dropped += _compose_lint(final, records, titles)
-    final = [finding for finding in final if finding["correction"] != finding["current"]]
+    final = [
+        finding for finding in final
+        if any(change["correction"] != change["current"] for change in _changes(finding))
+    ]
     conflicts = _consistency_conflicts(
         final, _read_json(root / "context.json"), _decisions(root)
     )
@@ -5747,6 +6301,7 @@ def _complete_editorial(
                 + "; ".join(conflict["message"] for conflict in open_conflicts[finding["id"]]),
             })
     final = [finding for finding in final if finding["id"] not in open_conflicts]
+    final, superseded = _supersede(final)
     _simulate_apply(final, records)
     document = {
         **draft,
@@ -5755,6 +6310,7 @@ def _complete_editorial(
         "finding_families": _finding_families(final),
         "withdrawn": withdrawn,
         "unverified": unverified,
+        "superseded": superseded,
         "lint_dropped": lint_dropped,
         "editorial_rounds": int(editorial.get("round", 0)),
     }
@@ -5907,6 +6463,8 @@ def correction_map(
         cluster = manifest_clusters[question_id]
         selected.append({
             "id": question_id,
+            "source": question["source"],
+            "current": question["current"],
             "correction": question["correction"],
             "target_identities": [
                 identity for identity in cluster["identities"]
@@ -5933,27 +6491,29 @@ def correction_map(
                 "allowed_flags": ["empty-live"] if finding["parameters"][4] == "" else [],
             })
             continue
-        for identity in finding["target_identities"]:
-            record = records[identity]
-            target = (record["file"], tuple(record["live_pointers"]))
-            previous = targets.get(target)
-            if previous is not None and previous != finding["correction"]:
-                raise ValueError(
-                    f"Approved findings propose conflicting corrections for {identity}"
-                )
-            if previous is not None:
-                continue
-            targets[target] = finding["correction"]
-            operations.append({
-                "finding_id": finding["id"],
-                "identity": identity,
-                "file": record["file"],
-                "live_pointers": record["live_pointers"],
-                "live_transform": record["live_transform"],
-                "expected": record["live"],
-                "replacement": finding["correction"],
-                "allowed_flags": list(finding.get("allowed_flags") or []),
-            })
+        # A scene correction's lines apply and undo together as one finding.
+        for change in _changes(finding):
+            for identity in change["identities"]:
+                record = records[identity]
+                target = (record["file"], tuple(record["live_pointers"]))
+                previous = targets.get(target)
+                if previous is not None and previous != change["correction"]:
+                    raise ValueError(
+                        f"Approved findings propose conflicting corrections for {identity}"
+                    )
+                if previous is not None:
+                    continue
+                targets[target] = change["correction"]
+                operations.append({
+                    "finding_id": finding["id"],
+                    "identity": identity,
+                    "file": record["file"],
+                    "live_pointers": record["live_pointers"],
+                    "live_transform": record["live_transform"],
+                    "expected": record["live"],
+                    "replacement": change["correction"],
+                    "allowed_flags": list(finding.get("allowed_flags") or []),
+                })
     if undo:
         # Each operation puts back the text it replaced.
         for operation in operations:

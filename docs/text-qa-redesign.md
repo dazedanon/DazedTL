@@ -21,6 +21,8 @@ Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/r
   Seeded known-defect probes and per-reviewer yield tracking were rejected, for the [reasons](#screen-checks) below.
 - A defect a reviewer notices outside its own items reaches the engine as an [observation](#observations), never only as prose: the engine checks the line against the inventory and sends it to deep review, in a follow-up round when deep review is over, so its correction still passes the editorial stage.
   Observations on lines in declined scenes stay out, like the lines themselves.
+- A deep review can correct a scene as a unit: several of its lines, each with its own text, applied and undone together and reviewed together in editorial.
+  Single-line corrections and word-for-word sweep rules cannot fix a [defect that spans a scene](#scene-corrections), and the unit keeps such a fix from being half applied, half undone or left partly in declined text.
 
 ## Why
 
@@ -61,6 +63,13 @@ The same second run showed that declines must stay within a helper and reach sin
   To keep them away, the coordinator gave each sub-reviewer a fixed bundle list, hid the declined items from `show` and `context`, and wrote the declines into each sub-reviewer's result, so the checkpoint named sub-reviewers as the decliners.
 - A lint family mixes proposals from many scenes, and a motif family variants from many scenes, but only whole items could be declined.
   Proposals from declined scenes went into `rejected` with a note that nobody read them, and a motif family was called preserved with a note that two variants were unread.
+
+### Scene corrections
+
+The same second run left defects that span a scene.
+Map010 event 120 page 2 narrates in the past tense until the climax and in the present for its last five boxes.
+Deep review could retense only the box its item named, which moved the switch one box later, so editorial withdrew that correction as no better than the text it replaced (QA-0050).
+Map013 event 19 page 2 had the same shape (QA-0093).
 
 ## Order of work
 

@@ -233,6 +233,7 @@ export function qaOrigin(row: QaFinding) {
     lint: "Mechanical fix",
     sweep: "Same problem as an accepted correction",
     source: "Fix for a slip in the Japanese source",
+    scene: "One correction across a scene",
   }[row.kind];
 }
 

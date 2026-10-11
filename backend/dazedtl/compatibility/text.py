@@ -18,6 +18,8 @@ def _finding_kind(row):
     """How a finding came to be, for the audit log's grouping."""
     if row.get("kind") == "show-text" or row.get("source_fix"):
         return "source"
+    if row.get("kind") == "scene":
+        return "scene"
     if row.get("lint_only"):
         return "lint"
     if row.get("sweep_families"):
@@ -172,12 +174,18 @@ def qa_state(plan):
             {identity.split("#", 1)[0] for identity in targets}
             or ({row["file"]} if row.get("file") else set())
         )
+        # A scene correction's lines, which apply and undo together.
+        lines = [
+            {key: line[key] for key in ("source", "current", "correction")}
+            for line in row.get("lines") or []
+        ]
         findings.append(
             {
                 "id": row["id"],
-                "source": row["source"],
-                "current": row["current"],
-                "correction": row["correction"],
+                **{
+                    key: "\n".join(line[key] for line in lines) if lines else row[key]
+                    for key in ("source", "current", "correction")
+                },
                 "category": row["category"],
                 "severity": row["severity"],
                 "family": row.get("family_key") or "",
@@ -185,6 +193,7 @@ def qa_state(plan):
                 "places": max(1, len(targets)),
                 "files": files,
                 "reason": row.get("evidence") or "",
+                **({"lines": lines} if lines else {}),
                 **(
                     {"editorial": row["editorial"]["note"]}
                     if (row.get("editorial") or {}).get("note")

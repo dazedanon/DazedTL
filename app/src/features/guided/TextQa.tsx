@@ -388,6 +388,41 @@ export function QaQuestions({
 
 /** Rows a category shows before its explicit Show all. */
 const groupPreview = 10;
+/** Lines a scene correction shows before its explicit Show all. */
+const scenePreview = 3;
+
+/**
+ * What a correction changes, or each line of a scene correction, which
+ * applies and undoes as one; an applied one reads as a diff.
+ */
+function FindingChange({ row }: { row: QaFinding }) {
+  const [all, setAll] = useState(false);
+  const change = (
+    line: Pick<QaFinding, "source" | "current" | "correction">,
+    key?: number,
+  ) => (
+    <Change
+      key={key}
+      source={line.source}
+      before={line.current}
+      after={line.correction}
+      afterLabel="Correction"
+      applied={row.state === "applied"}
+    />
+  );
+  if (!row.lines) return change(row);
+  const lines = all ? row.lines : row.lines.slice(0, scenePreview);
+  return (
+    <div className="text-qa-scene">
+      {lines.map((line, index) => change(line, index))}
+      {lines.length < row.lines.length && (
+        <Button variant="link" onClick={() => setAll(true)}>
+          Show all {row.lines.length.toLocaleString()} lines
+        </Button>
+      )}
+    </div>
+  );
+}
 
 /**
  * Every correction, by category: what the line said, what it says now, why,
@@ -425,13 +460,7 @@ export function QaAuditLog({
                 key={row.id}
                 label={
                   <>
-                    <Change
-                      source={row.source}
-                      before={row.current}
-                      after={row.correction}
-                      afterLabel="Correction"
-                      applied={row.state === "applied"}
-                    />
+                    <FindingChange row={row} />
                     <small>{row.reason}</small>
                     <small>
                       {[
