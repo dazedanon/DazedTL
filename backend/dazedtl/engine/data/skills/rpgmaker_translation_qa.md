@@ -83,7 +83,8 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    one reviewed text batch and saves a checkpoint commit. Open playtest or context questions
    wait for the user, who answers them in DazedTL's Text QA task; apply follows once every one
    has an answer, so tell the user once and keep waiting. `qa --undo <finding>` puts back one
-   applied correction. Report a failed safeguard instead of working around it.
+   applied correction, and `qa --apply-again <finding>` applies an undone one again. Report a
+   failed safeguard instead of working around it.
 9. `not_translated` in `status` and `findings.json` counts Japanese that was never translated:
    no reviewer read it and QA did not correct it. When you report QA, name it as not reviewed,
    with what `findings.json` says about whether players can reach each file or plugin; never

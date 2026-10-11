@@ -106,8 +106,9 @@ def awaiting_answers(workspace, params, minutes):
 
 
 def settle_qa(workspace, params, result):
-    """Waits for the QA step the app started; an apply that succeeds goes on
-    to its checkpoint, so one command applies and records the corrections."""
+    """Waits for the QA step the app started; an apply, undo or apply again
+    that succeeds goes on to its checkpoint, so one command changes and
+    records the corrections."""
 
     def finish(result):
         while (result.get("operation") or {}).get("status") == "running":
@@ -115,11 +116,14 @@ def settle_qa(workspace, params, result):
             result = call(workspace, "translation_qa", {**params, "step": "status"})
         return result
 
-    if params["step"] not in {"prepare", "apply", "checkpoint", "undo"}:
+    if params["step"] not in {"prepare", "apply", "checkpoint", "undo", "reapply"}:
         return result
     result = finish(result)
     operation = result.get("operation") or {}
-    if params["step"] in {"apply", "undo"} and operation.get("status") == "complete":
+    if (
+        params["step"] in {"apply", "undo", "reapply"}
+        and operation.get("status") == "complete"
+    ):
         result = finish(
             call(
                 workspace,
@@ -191,7 +195,10 @@ def main():
         ),
         (
             "checkpoint",
-            "Save the checkpoint after an apply or undo whose checkpoint did not run",
+            (
+                "Save the checkpoint after an apply, undo or apply again whose "
+                "checkpoint did not run"
+            ),
         ),
     ):
         qa_step.add_argument(
@@ -202,6 +209,12 @@ def main():
         nargs="+",
         metavar="FINDING",
         help="Put back the lines of these applied corrections, then save a checkpoint",
+    )
+    qa_step.add_argument(
+        "--apply-again",
+        nargs="+",
+        metavar="FINDING",
+        help="Apply these undone corrections again, then save a checkpoint",
     )
     qa_step.add_argument(
         "--choose",
@@ -398,12 +411,14 @@ def main():
                 params["step"] = (
                     "undo"
                     if args.undo
+                    else "reapply"
+                    if args.apply_again
                     else "choose"
                     if args.choose
                     else args.qa_step or "status"
                 )
-                if args.undo:
-                    params["findings"] = args.undo
+                if args.undo or args.apply_again:
+                    params["findings"] = args.undo or args.apply_again
                 if args.choose:
                     params.update(question=args.choose[0], choice=args.choose[1])
                 if params["step"] == "apply" and args.wait > 0:
