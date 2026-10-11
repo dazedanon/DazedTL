@@ -62,3 +62,16 @@ class QAEngineTests(unittest.TestCase):
             lint.proposals("な゛んで…や゛めて", "Wh'y… Sto'p it'…", {}),
             {"lint:dakuten-apostrophe": "Why… Stop it…"},
         )
+
+    def test_label_numbers_spare_runtime_codes(self):
+        # Released lines put a color or plugin code right before a number,
+        # and lint used to space every one of them.
+        self.assertEqual(
+            lint.proposals("_PUM[0]1\\G 手に入れた！", "_PUM[0]1\\G obtained!", {}), {}
+        )
+        self.assertEqual(
+            lint.proposals(
+                "【噂Lv】3で\\c[14]25000G", "[Rumor Lv.]3 for \\c[14]25000G", {}
+            ),
+            {"lint:level-tag-spacing": "[Rumor Lv.] 3 for \\c[14]25000G"},
+        )

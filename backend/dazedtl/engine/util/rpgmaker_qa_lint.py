@@ -66,8 +66,12 @@ _BULLET = "・"
 _QUOTED_RE = re.compile(r'"([^"\n]{2,120})"|“([^”\n]{2,120})”')
 _TITLE_SOURCE_RE = re.compile(r"[「『]([^」』\n]{2,80})[」』]")
 _LEVEL_TAG_RE = re.compile(r"(?<=[a-z])(?=(?:Lv|LV)\.?\s?\d)")
-_LABEL_NUMBER_RE = re.compile(r"\](?=\d)")
-_SOURCE_LABEL_NUMBER_RE = re.compile(r"[】\]]\d")
+# A label right before a number. A code's bracket, as in \C[2]5 or _PUM[0]1,
+# follows the code's name instead.
+_LABEL_NUMBER_RE = re.compile(r"((?<![\\\w])\[[^\[\]\n]{1,40}\])(?=\d)")
+_SOURCE_LABEL_NUMBER_RE = re.compile(
+    r"(?:【[^】\n]{1,40}】|(?<![\\\w])\[[^\[\]\n]{1,40}\])\d"
+)
 _ENGLISH_LABEL_RE = re.compile(r"\[[^\]\n]{1,40}\]")
 _SOURCE_LABEL_RE = re.compile(r"【[^】\n]{1,40}】|\[[^\]\n]{1,40}\]")
 _DUPLICATED_LABEL_RE = re.compile(r"(\[[^\]\n]{1,40}\])\s*\1")
@@ -196,7 +200,7 @@ def _level_tag_spacing(source: str, text: str, titles: dict) -> str:
     text = _LEVEL_TAG_RE.sub(" ", text)
     # A label followed by its number, as in 【噂Lv】3, reads "[Rumor Lv.] 3".
     if _SOURCE_LABEL_NUMBER_RE.search(source):
-        return _LABEL_NUMBER_RE.sub("] ", text)
+        return _LABEL_NUMBER_RE.sub(r"\1 ", text)
     return text
 
 
