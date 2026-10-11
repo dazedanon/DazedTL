@@ -2248,7 +2248,7 @@ def _next_unlocked(
         if claimed_stage not in stages:
             raise ValueError(f"{bundle_id} belongs to the {claimed_stage} stage")
         if pending["status"] == "assigned" and pending.get("assigned_to") == worker:
-            return copy.deepcopy(pending)
+            return copy.deepcopy(pending), False
         if pending["status"] != "pending":
             raise ValueError(f"{bundle_id} is {pending['status']}, not waiting")
         if worker in (pending.get("declined_by") or []):

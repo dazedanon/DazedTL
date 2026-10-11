@@ -519,6 +519,8 @@ def deep_result(row, corrections, declined=("朝だ",)):
 
 
 row = qa.next_bundle(task, "deep-a")
+# Claiming it again by ID returns the same assignment.
+assert qa.next_bundle(task, "deep-a", row["id"]) == row
 assert "森の奥へ" not in {item["source"] for item in bundle_of(row)["items"]}
 # The scene prints once, marking the lines its items' screen evidence names.
 shown = qa.render_bundle(task, row["id"])
