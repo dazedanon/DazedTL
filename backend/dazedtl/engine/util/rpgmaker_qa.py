@@ -1411,7 +1411,7 @@ def _compact_scene(scene: dict[str, Any], marks: dict[str, list[str]]) -> dict:
     lines = []
     for line in scene["lines"]:
         compact = {"source": line["source"], "translation": line["translation"]}
-        for key in ("speaker", "event_code"):
+        for key in ("speaker", "event_code", "command"):
             if key in line:
                 compact[key] = line[key]
         named = marks.get(line.get("id") or line.get("context_id") or "")
@@ -3252,36 +3252,52 @@ def _render_hints(entry: dict, indent: str) -> list[str]:
     return out
 
 
-def _render_line(number: int, line: dict, mark: str) -> list[str]:
+def _command_number(identity: str) -> int | None:
+    """The event command that holds an identity's line, if any."""
+    filename, _, pointer = identity.split("@", 1)[0].partition("#")
+    position = _scene_position({"file": filename, "source_pointer": pointer})
+    return position[1] if position else None
+
+
+def _render_line(line: dict, mark: str) -> list[str]:
+    """One scene line, numbered by the event command that holds it, so an
+    observation can name it as the scene's command list and that number."""
+    number = f"#{line['command']}" if line.get("command") is not None else ""
     speaker = f"<{line['speaker']}> " if line.get("speaker") else ""
     code = f" c{line['event_code']}" if line.get("event_code") else ""
     out = [
-        f"{number:>4} {mark}{code} JP: {speaker}{_context_text(line['source'])}",
-        f"{'':>4}   EN: {_context_text(line['translation'])}",
+        f"{number:>5} {mark}{code} JP: {speaker}{_context_text(line['source'])}",
+        f"{'':>5}   EN: {_context_text(line['translation'])}",
     ]
     if line.get("risk"):
-        out.append(f"{'':>4}   risk: " + ",".join(line["risk"]))
+        out.append(f"{'':>5}   risk: " + ",".join(line["risk"]))
     if line.get("context_expansion"):
-        out.append(f"{'':>4}   repeated in: " + ",".join(line["context_expansion"]))
+        out.append(f"{'':>5}   repeated in: " + ",".join(line["context_expansion"]))
     if line.get("choice_context"):
         labels = " | ".join(
             f"{branch['index']}:{branch['label']}"
             for branch in line["choice_context"].get("branches", [])
         )
-        out.append(f"{'':>4}   choices: {labels}")
-    return out + _render_hints(line, "       ")
+        out.append(f"{'':>5}   choices: {labels}")
+    return out + _render_hints(line, "        ")
 
 
-def _render_screen_item(item: dict) -> list[str]:
+def _render_screen_item(
+    item: dict, screen_index: dict[str, dict[str, str]]
+) -> list[str]:
     kind = item.get("kind")
     if kind == "scene":
         out = [
             f"### SCENE {item['id']} {item['scene_id']} "
             f"({item['line_count']} lines, {item['target_count']} targets)"
         ]
-        for number, line in enumerate(item["lines"], 1):
+        for line in item["lines"]:
             mark = f"[T {line['id']}]" if "id" in line else "[ctx]"
-            out += _render_line(number, line, mark)
+            entry = screen_index[line.get("id") or line["context_id"]]
+            out += _render_line(
+                {**line, "command": _command_number(entry["representative_identity"])},
+                mark,
+            )
         return out
     if kind == "cluster":
         meta = [f"occ={item.get('occurrences', 1)}"]
@@ -3389,10 +3405,10 @@ def _render_deep(bundle: dict) -> list[str]:
             out += _render_commands(context["nearby_commands"], "    ")
     for key, scene in (bundle.get("scenes") or {}).items():
         out += ["", f"## SCENE {key} {scene['scene_id']} ({len(scene['lines'])} lines)"]
-        for number, line in enumerate(scene["lines"], 1):
+        for line in scene["lines"]:
             named = [str(numbers[item]) for item in line.get("items") or [] if item in numbers]
             mark = (">>ITEM " + ",".join(named)) if named else "  "
-            out += _render_line(number, line, mark)
+            out += _render_line(line, mark)
     for motif_id, motif in (bundle.get("motifs") or {}).items():
         out += [
             "",
@@ -3453,9 +3469,14 @@ def _render_editorial(item: dict) -> list[str]:
 
 def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
     """A bundle as compact text: what a reviewer reads instead of its JSON."""
-    _root, _task, checkpoint = _load_task(task_dir)
+    root, task, checkpoint = _load_task(task_dir)
     stage, row = _bundle_row(checkpoint, bundle_id)
     bundle = _read_json(Path(row["path"]))
+    # A follow-up or check bundle carries the index entries the task's lacks.
+    screen_index = (
+        {**_load_screen_index(root, task), **(bundle.get("screen_index") or {})}
+        if stage == "screen" else {}
+    )
     out = [
         f"BUNDLE {bundle_id} ({stage}, {bundle['item_count']} targets, "
         f"sha256 {bundle['content_sha256']}). Newlines show as ⏎."
@@ -3466,7 +3487,7 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
         for item in bundle["items"]:
             out.append("")
             if stage == "screen":
-                out += _render_screen_item(item)
+                out += _render_screen_item(item, screen_index)
             elif stage == "sweep":
                 out += _render_group(item)
             else:
@@ -3570,7 +3591,17 @@ def _deep_basis(
             scene = {
                 "scene_id": item["scene_id"],
                 "line_count": item["line_count"],
-                "lines": item["lines"],
+                "lines": [
+                    {
+                        **line,
+                        "command": _command_number(
+                            _target_entry(
+                                screen_index, bundle, line.get("id") or line["context_id"]
+                            )["representative_identity"]
+                        ),
+                    }
+                    for line in item["lines"]
+                ],
             }
             for copy_id in item.get("scene_copies") or [item["scene_id"]]:
                 screened[copy_id] = scene

@@ -92,10 +92,12 @@ Inspect every target in your bundle and report only exceptions; one accepted res
 Another reviewer screens a sample of every reviewer's bundles again, and DazedTL compares the two; a reviewer whose checks found more problems it missed than it reported has every bundle screened again.
 Review a check bundle like any other, without reading the result it repeats.
 
-- A `scene` item is one complete command-list scene in order. Lines with an `id` are your
-  targets; lines with a `context_id` were targeted in another scene, but report a problem this
-  scene exposes on them too. Read every line so speaker continuity, callbacks, pronouns and comic
-  timing stay visible. A `cluster` item is isolated non-dialogue text.
+- A `scene` item is one complete command-list scene in order, each line numbered by its event
+  command. Lines with an `id` are your targets; lines marked `[ctx]` were targeted in another
+  scene, so report a problem this scene exposes on one as an observation naming the scene's
+  command list and that number, such as `Map004.json#/events/9/pages/5/list/217`. Read every
+  line so speaker continuity, callbacks, pronouns and comic timing stay visible. A `cluster`
+  item is isolated non-dialogue text.
 - For every target verify who acts and to whom; pronouns, possessives and relationships;
   negation, conditions, certainty and obligation; quantities and chronology; omitted or invented
   information; and speaker voice and natural English. `context_expansion` marks a repeated
@@ -117,8 +119,9 @@ Review a check bundle like any other, without reading the result it repeats.
 ## Deep reviewer
 
 Each item states the `deep_reasons` that escalated it. Return exactly one review per item. A
-deep bundle prints each scene once after its items, marking the lines each item's screen
-evidence names, and lists at most twelve of an item's occurrences. Deep bundles open while
+deep bundle prints each scene once after its items, numbering each line by its event command
+and marking the lines each item's screen evidence names, and lists at most twelve of an item's
+occurrences. Deep bundles open while
 screening continues; an item whose screen evidence grew after its deep review comes back with
 that `prior_review`, and your review replaces it.
 

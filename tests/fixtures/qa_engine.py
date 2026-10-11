@@ -524,7 +524,7 @@ assert "森の奥へ" not in {item["source"] for item in bundle_of(row)["items"]
 shown = qa.render_bundle(task, row["id"])
 assert shown.count("## SCENE S1") == 1 and ">>ITEM" in shown, shown
 # The observation became a deep item with its reason as screen evidence, and
-# its line is marked in the scene.
+# its line is marked in the scene under the command number it was named by.
 ((observed, weather),) = [
     (bundle, item)
     for bundle in map(bundle_of, checkpoint()["deep"]["bundles"])
@@ -536,7 +536,7 @@ assert [evidence["note"] for evidence in weather["screen_evidence"]] == [
     OBSERVATION["note"]
 ], weather
 assert any(
-    weather["id"] in line.get("items", [])
+    weather["id"] in line.get("items", []) and line["command"] == 2
     for scene in observed["scenes"].values()
     for line in scene["lines"]
     if line["source"] == WEATHER["_original"]
