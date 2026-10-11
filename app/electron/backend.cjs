@@ -31,6 +31,8 @@ class Backend {
       PYTHONUTF8: "1",
       PYTHONIOENCODING: "utf-8",
       DAZEDTL_DESKTOP_WORKSPACE: path.join(this.workspace, "engine"),
+      // Text QA runs the game in this Electron to capture its screens.
+      DAZEDTL_ELECTRON: process.execPath,
     };
     delete env.PYTHONPATH;
     delete env.PYTHONHOME;

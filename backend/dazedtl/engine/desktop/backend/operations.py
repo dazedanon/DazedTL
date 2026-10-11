@@ -72,8 +72,10 @@ class Operations:
                 raise ValueError("The saved action changed. Preview it again.")
             environment = {key: value for key, value in os.environ.items() if key in {
                 "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
-                "LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "HOME", "USERPROFILE",
+                "LOCALAPPDATA", "APPDATA", "ProgramFiles", "ProgramFiles(x86)", "HOME", "USERPROFILE",
                 "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_ATTR_NOSYSTEM",
+                # Text QA runs the game in the app's Electron on this display.
+                "DAZEDTL_ELECTRON", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR",
             }}
             environment.update(DAZEDTL_DESKTOP_WORKSPACE=str(self.root.parent), PYTHONUTF8="1", PYTHONIOENCODING="utf-8", PYTHONNOUSERSITE="1", PYTHON_DOTENV_DISABLED="1")
             if os.getenv('DAZEDTL_TEST_OFFLINE') == '1':
