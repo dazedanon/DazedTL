@@ -71,6 +71,7 @@ class Workflows:
             identity = project_id or self.current
             project = self.projects.get(identity)
             if project:
+                self._refresh_files(project)
                 self._collect(project)
             jobs = sorted((job for job in self.operations.jobs.values() if job["project_id"] == identity), key=lambda job: job["created"], reverse=True)
             if project:
@@ -365,6 +366,25 @@ class Workflows:
         project["manual_job"] = job["id"]
         self.save(project)
         return job
+
+    def _refresh_files(self, project):
+        """Lists the data files a game update or a hand copy added or removed.
+
+        The folder's own modification time changes only when its entries do,
+        so one stat per observation tells when to describe the game again.
+        """
+        try:
+            marker = Path(project["data"]).stat().st_mtime_ns
+        except (KeyError, OSError):
+            return
+        if project.get("files_marker") == marker:
+            return
+        try:
+            project.update(describe_game(project["source"]))
+        except (OSError, ValueError):
+            return
+        project["files_marker"] = marker
+        self.save(project)
 
     def _collect(self, project):
         identity = project.get("manual_job")
