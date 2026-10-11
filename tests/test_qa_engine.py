@@ -11,6 +11,7 @@ from tests.probe import Probe
 probe = Probe("qa_engine.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
+lint = engine_module("util/rpgmaker_qa_lint.py")
 
 
 class QAEngineTests(unittest.TestCase):
@@ -38,3 +39,16 @@ class QAEngineTests(unittest.TestCase):
             "\\V[5]でHP30回復、EV024", "Restores 30 HP with \\V[5], EV024", None
         )
         self.assertEqual(evidence["source_visible_numbers"], ["30"])
+
+    def test_dakuten_apostrophes_spare_slurs_and_moans(self):
+        # Lines from a release whose reviewer rejected the proposed fixes.
+        for source, live in (
+            ("頭がぐるぐるしゅる゛…", "My head'sh shpinning"),
+            ("うおぉ゛…お゛ぉ", "Whoa'…o'oh"),
+        ):
+            self.assertEqual(lint.proposals(source, live, {}), {}, live)
+        # An apostrophe inside or after an ordinary word is still a leftover.
+        self.assertEqual(
+            lint.proposals("な゛んで…や゛めて", "Wh'y… Sto'p it'…", {}),
+            {"lint:dakuten-apostrophe": "Why… Stop it…"},
+        )

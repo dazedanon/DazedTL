@@ -54,6 +54,9 @@ _SPLIT_WORD_RE = re.compile(r"\b([A-Za-z]+)'([A-Za-z]*)")
 _OPENING_QUOTE_RE = re.compile(r"(?:^|[\s(\[\"“])'[A-Za-z]")
 # Letters of moans and interjections, which keep the apostrophe ("Oh'").
 _INTERJECTION_RE = re.compile(r"[aeiouhnmgy]+", re.IGNORECASE)
+# After a moan, an apostrophe marks its strain and w counts too ("Whoa'");
+# inside a word, w would spare real words ("Wh'y").
+_TRAILING_INTERJECTION_RE = re.compile(r"[aeiouhnmgyw]+", re.IGNORECASE)
 _CONTRACTION_PREFIXES = frozenset(
     "i you he she it we they that there here who what where when why how let "
     "can don won isn aren wasn weren didn doesn haven hasn hadn couldn wouldn "
@@ -97,15 +100,21 @@ def _split_word(prefix: str, suffix: str) -> bool:
     if _INTERJECTION_RE.fullmatch(prefix + suffix):
         return False
     before, after = prefix.casefold(), suffix.casefold()
-    if before in {"y", "o", "ma"} or after == "s":
+    # 's, also as slurred speech writes it ("head'sh").
+    if before in {"y", "o", "ma"} or after in {"s", "sh"}:
         return False
     if after == "t":
         return not before.endswith("n")
     if after in {"re", "ve", "ll", "d", "m"}:
         return before not in _CONTRACTION_PREFIXES
     if not after:
-        # Dropped g ("goin'") and plural possessives ("girls'") end a word.
-        return not (before.endswith("in") or before.endswith("s"))
+        # Dropped g ("goin'"), plural possessives ("girls'") and a moan's
+        # strain ("Whoa'") end a word.
+        return not (
+            before.endswith("in")
+            or before.endswith("s")
+            or _TRAILING_INTERJECTION_RE.fullmatch(before)
+        )
     return True
 
 
