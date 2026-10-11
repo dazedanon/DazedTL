@@ -273,6 +273,10 @@ class QAEngineTests(unittest.TestCase):
                 "の幻惑が解けた",
                 "was freed from the Illusion.",
             ),
+            # A capital hides a missing subject only after a source that
+            # starts with a particle.
+            ("Skills.json", 341, "message1", "は仲間を呼んだ！", "Called for allies!"),
+            ("Skills.json", 342, "message1", "仲間を呼んだ！", "Called for allies!"),
             # Map names players never see, a short term inside another word,
             # a complete sentence and a message with its %1 all pass.
             ("MapInfos.json", 1, "name", "森", "Sweeping Slash"),
@@ -321,6 +325,7 @@ class QAEngineTests(unittest.TestCase):
                 "Skills.json#338/description": ["glossary-missing"],
                 "Skills.json#2/name": ["glossary-missing"],
                 "States.json#42/message4": ["battler-name"],
+                "Skills.json#341/message1": ["battler-name"],
             },
         )
         self.assertIn(

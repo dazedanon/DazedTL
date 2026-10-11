@@ -34,6 +34,18 @@ BATTLE_MESSAGES = {
 }
 # Other entries a collision names before it only counts the rest.
 COLLISION_LIMIT = 6
+# A particle opening a battle message's source, as in は幻惑に囚われた！, shows
+# the game meant the battler's name to stand before it.
+_PARTICLE_START_RE = re.compile(r"^[はがのをにへともで](?![ぁ-ゖ])")
+# English opening with a verb has no subject of its own, as in "Was caught in
+# an Illusion!" or "Called for allies!".
+_VERB_START_RE = re.compile(
+    r"^(?:(?:was|were|is|are|has|have|had|will|would|can|could|cannot|can't|"
+    r"won't|isn't|wasn't|doesn't|didn't|does|did|gets|got|became|becomes|"
+    r"fell|falls|took|takes|lost|loses|began|begins|feels|felt|seems|looks)"
+    r"(?![\w'])|\w+ed\b)",
+    re.IGNORECASE,
+)
 
 
 def runtime(data_root: str | Path) -> str:
@@ -115,28 +127,43 @@ def _glossary_misses(
     return notes
 
 
+def battler_name_note(engine: str, live: str, source: str = "") -> str:
+    """Why a battle message reads wrong once RPG Maker adds the battler's
+    name, or "" when it reads right."""
+    if not live.strip() or "%1" in live:
+        return ""
+    if engine == "MZ":
+        # The name goes only where %1 is, so a predicate such as "was freed",
+        # "'s Illusion" or, after a source that starts with a particle,
+        # "Called for allies!" has no subject.
+        text = re.sub(r"^[\s\"“”'’….]+", "", live)
+        if text[:1].islower() or (
+            "%1" not in source
+            and _PARTICLE_START_RE.match(source.strip())
+            and _VERB_START_RE.match(text)
+        ):
+            return (
+                "RPG Maker MZ shows the battler's name only in place of %1, "
+                "so this message prints without a subject; a battler-name "
+                "source fix may add the %1."
+            )
+    elif engine == "MV" and re.match(r"[A-Za-z0-9]", live):
+        return (
+            "RPG Maker MV prints the battler's name directly before this "
+            f'message ("Name{live}"), so it needs a leading space or possessive.'
+        )
+    return ""
+
+
 def _battler_names(records: list[dict[str, Any]], engine: str) -> dict[str, list[str]]:
     fields = BATTLE_MESSAGES.get(engine, {})
     notes: dict[str, list[str]] = {}
     for record in records:
         field = (record.get("database_entity") or {}).get("field")
-        live = str(record["live"])
-        if field not in fields.get(record["file"], ()) or not live.strip() or "%1" in live:
+        if field not in fields.get(record["file"], ()):
             continue
-        if engine == "MZ":
-            # The name goes only where %1 is, so a predicate such as "was
-            # freed" or "'s Illusion" has no subject.
-            if re.sub(r"^[\s\"“”'’….]+", "", live)[:1].islower():
-                notes[record["identity"]] = [
-                    "RPG Maker MZ shows the battler's name only in place of %1, "
-                    "so this message prints without a subject; a battler-name "
-                    "source fix may add the %1."
-                ]
-        elif re.match(r"[A-Za-z0-9]", live):
-            notes[record["identity"]] = [
-                "RPG Maker MV prints the battler's name directly before this "
-                f'message ("Name{live}"), so it needs a leading space or possessive.'
-            ]
+        if note := battler_name_note(engine, str(record["live"]), str(record["source"])):
+            notes[record["identity"]] = [note]
     return notes
 
 
