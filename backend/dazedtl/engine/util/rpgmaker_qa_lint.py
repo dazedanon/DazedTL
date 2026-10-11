@@ -73,6 +73,8 @@ _CONTRACTION_PREFIXES = frozenset(
 _BULLET = "・"
 _QUOTED_RE = re.compile(r'"([^"\n]{2,120})"|“([^”\n]{2,120})”')
 _TITLE_SOURCE_RE = re.compile(r"[「『]([^」』\n]{2,80})[」』]")
+# A line that is one quotation from start to end is speech, not a title.
+_SPEECH_RE = re.compile(r"「[^「」]*」")
 _LEVEL_TAG_RE = re.compile(r"(?<=[a-z])(?=(?:Lv|LV)\.?\s?\d)")
 # A label right before a number. A code's bracket, as in \C[2]5 or _PUM[0]1,
 # follows the code's name instead.
@@ -177,7 +179,9 @@ def _quoted_title(source: str, text: str, titles: dict) -> str:
     quoted = match.group(group).rstrip(".,!?…")
     end = match.start(group) + len(quoted)
     named = set()
-    whole = source.strip(" \u3000")
+    if _SPEECH_RE.fullmatch(source.strip(" \u3000")):
+        return text
+    whole = source.strip(" \u3000「」『』")
     for piece in [*source.split("\n"), *_TITLE_SOURCE_RE.findall(source)]:
         key = piece.strip(" \u3000「」『』")
         # The line's own source is not a title it names.

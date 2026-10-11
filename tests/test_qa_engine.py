@@ -217,6 +217,28 @@ class QAEngineTests(unittest.TestCase):
             {"lint:dakuten-apostrophe": "Why… Stop it…"},
         )
 
+    def test_quoted_titles_spare_lines_that_are_speech(self):
+        # Released lines: speech in 「」 that another line's translation of a
+        # shorter source would have overwritten.
+        titles = {
+            "神！": {"God!!"},
+            "トレイタースライム！": {"The Traitor Slime!!"},
+            "魔法の書": {"Book of Magic"},
+        }
+        for source, live in (
+            ("「神！」", '"God!"'),
+            (
+                "「あ、そ、そうだ…！\n　トレイタースライム！」",
+                '"Oh, r-right...! The Traitor Slime!"',
+            ),
+        ):
+            self.assertEqual(lint.proposals(source, live, titles), {}, live)
+        # A title quoted inside a sentence still follows the title it names.
+        self.assertEqual(
+            lint.proposals("『魔法の書』を読んだ", 'I read "Book of Magics".', titles),
+            {"lint:quoted-title": 'I read "Book of Magic".'},
+        )
+
     def test_label_numbers_spare_runtime_codes(self):
         # Released lines put a color or plugin code right before a number,
         # and lint used to space every one of them.
