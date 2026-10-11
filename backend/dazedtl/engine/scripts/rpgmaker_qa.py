@@ -34,15 +34,12 @@ def main() -> int:
     prepare.add_argument("--focus", required=True, choices=sorted(FOCUSES))
     prepare.add_argument("--output-root", required=True, type=Path)
 
+    skip_declined = "Report declined bundles no other helper took as not reviewed."
     for name in ("status", "advance", "finalize"):
         command = sub.add_parser(name)
         command.add_argument("--task", required=True, type=Path)
         if name in {"advance", "finalize"}:
-            command.add_argument(
-                "--skip-declined",
-                action="store_true",
-                help="Report declined bundles no other reviewer took as not reviewed.",
-            )
+            command.add_argument("--skip-declined", action="store_true", help=skip_declined)
     rebuild = sub.add_parser("rebuild-deep")
     rebuild.add_argument("--task", required=True, type=Path)
     rebuild.add_argument("--output-root", type=Path)
@@ -69,7 +66,16 @@ def main() -> int:
     next_cmd.add_argument("--task", required=True, type=Path)
     next_cmd.add_argument("--worker", required=True)
     next_cmd.add_argument(
-        "--bundle", help="Claim this waiting bundle, such as one another reviewer declined."
+        "--bundle", help="Claim this waiting bundle, such as one another helper declined."
+    )
+    next_cmd.add_argument(
+        "--helper",
+        help="The AI helper this worker runs on, when it is not the coordinator's.",
+    )
+    next_cmd.add_argument(
+        "--skip-declined",
+        action="store_true",
+        help=skip_declined + " Applies when a stage is otherwise reviewed.",
     )
     show = sub.add_parser("show", help="Print a bundle compactly for review.")
     show.add_argument("--task", required=True, type=Path)
@@ -102,7 +108,13 @@ def main() -> int:
     elif args.command == "status":
         _print(rpgmaker_qa.status(args.task))
     elif args.command == "next":
-        bundle = rpgmaker_qa.next_bundle(args.task, args.worker, args.bundle)
+        bundle = rpgmaker_qa.next_bundle(
+            args.task,
+            args.worker,
+            args.bundle,
+            helper=args.helper,
+            skip_declined=args.skip_declined,
+        )
         _print(bundle or {"bundle": None, "status": rpgmaker_qa.status(args.task)})
     elif args.command == "accept":
         _print(rpgmaker_qa.accept_result(args.task, args.result))

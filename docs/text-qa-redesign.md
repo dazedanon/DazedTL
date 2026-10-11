@@ -14,7 +14,8 @@ Current behavior lives in the [QA skill](../backend/dazedtl/engine/data/skills/r
 - Release QA applies independently verified findings automatically through the app's publication flow, so History can restore them.
   The findings list becomes an audit log with per-finding undo instead of a checklist before apply.
 - Content handling starts only when a reviewer declines an item; QA never classifies or excludes content in advance, because which models decline what is not known beforehand.
-  A declined item is offered to another reviewer, and if none will review it, finalize reports it as a coverage gap and never asks the user to attest a review; an optional queue lets the user review it.
+  A declined item is offered only to a reviewer on another AI helper, because a helper's workers share its boundaries and offering it to another of them would ask the same helper again.
+  If none will review it, finalize reports it as a coverage gap and never asks the user to attest a review; an optional queue lets the user review it.
 - After apply, QA records a [checkpoint](translation-contract.md#delivery-and-future-versions) commit; pushing and publishing stay user-approved.
 - Screening is measured instead of trusted: another reviewer screens a quarter of every reviewer's lines again, whatever either reports goes to deep review, and a reviewer whose checks show it missed more than it found is screened again in full.
   Seeded known-defect probes and per-reviewer yield tracking were rejected, for the [reasons](#screen-checks) below.
@@ -51,6 +52,13 @@ The second complete run of the same game, after the redesign, showed that one sc
 
 The same second run showed that reviewers could report what they noticed outside their own items only in prose, to the coordinator, so none of it reached deep review.
 Among others, they found a state message missing its subject like the one just corrected, a broken echo corrected on one event page but not on the next, and a wrong nameplate corrected at one command but likely repeated two commands later.
+
+### Declines within a helper
+
+The same second run showed that declines must stay within a helper:
+
+- `next` offered the coordinator's declined scenes to its own sub-reviewers, which run on the same helper.
+  To keep them away, the coordinator gave each sub-reviewer a fixed bundle list, hid the declined items from `show` and `context`, and wrote the declines into each sub-reviewer's result, so the checkpoint named sub-reviewers as the decliners.
 
 ## Order of work
 

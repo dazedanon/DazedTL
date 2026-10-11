@@ -1,8 +1,9 @@
 # RPG Maker text QA
 
-<!-- qa-contract:rpgmaker-qa-v12
+<!-- qa-contract:rpgmaker-qa-v13
 single-policy role-briefs app-owned-inventory immutable-review-bundles
-scene-affine-screen sampled-screen-checks lint-group-review declined-disposition evidence-preserving-deep
+scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
+helper-scoped-declines evidence-preserving-deep
 family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api
 -->
@@ -17,10 +18,10 @@ do not call a model-provider API.
 - Quality and coverage come first, then cost, then speed.
 - Run QA from preparation to applied corrections without the user. Ask only when a playtest or
   context question blocks a correction and no source evidence settles it.
-- Review every item you are given. If you will not review an item, decline it with a one-line
-  reason that does not repeat game text; never skip, soften or shorten it. Nothing is classified
-  or excluded in advance: declining is the only way an item goes unreviewed, and DazedTL offers
-  it to another reviewer before reporting it as not reviewed.
+- Review every item you are given.
+  If you will not review an item, decline it with a one-line reason that does not repeat game text; never skip, soften or shorten it.
+  Nothing is classified or excluded in advance: declining is the only way an item goes unreviewed, and DazedTL offers it to a reviewer on another AI helper before reporting it as not reviewed.
+  Workers on one helper share its boundaries, so an item one of them declined never goes to another of them.
 - Never leave a concrete defect you notice outside your own items in prose alone, whether in
   `nearby_commands`, `context` output, another scene or after your result was accepted. Add an
   observation to that result or your next one, naming the line and a short concrete reason.
@@ -50,15 +51,15 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
 1. Use two to four reviewers when the helper can run parallel workers, each with a unique name.
    Give each the brief for its role: `{{CLI}} brief --task {{TASK}} --role <screen|deep|group|editorial>`.
    One worker may take every role in turn, except that a check never goes to the worker that screened its lines, and an editorial bundle never goes to a worker that wrote one of its judgment corrections.
+   A worker runs on your helper unless it names another, such as a different AI helper or model, with `--helper <name>` on its first `next`.
 2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
    bundle; `next` moves QA through its stages by itself. Write results only in `{{RECEIPTS}}`,
    one file per bundle named after its ID; DazedTL keeps the accepted copy. A worker that cannot
    finish a bundle releases it. A worker not seen for twenty minutes, or three times a typical
    bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
    `status` gives the engine's estimate of the time left.
-3. Declined items move to a bundle of their own.
-   Offer each to another worker, which claims it with `next --bundle <id>`; a second decline sets it aside.
-   If no other worker is available, continue with `--skip-declined`.
+3. Declined items move to a bundle of their own, which `next` offers only to workers on another helper; a decline there sets it aside.
+   When no worker on another helper will take them, give `next` `--skip-declined`, and it sets them aside once the rest of their stage is reviewed.
    Screening then goes on in follow-up bundles for set-aside lines that other scenes also show, which `next` hands out like any other.
    Set-aside items are reported as not reviewed; never ask the user to review them.
 4. A check bundle, whose ID ends in `-c1`, screens another reviewer's accepted lines again.
@@ -66,10 +67,9 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    What either screen reports goes to deep review, and `status` counts checks apart from coverage under `screen.checks`.
    Lines a check declines stay screened once and count as unchecked, so another bundle is checked in their place.
    Screening ends only when every check is accepted, so keep a second screen worker until then.
-5. Deep bundles open while screening continues, and `next` hands them out once no screen
-   bundle is waiting. QA then moves through the sweep and editorial stages until `status`
-   reports `complete`. `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}`
-   take the same steps by hand, which `--skip-declined` needs.
+5. Deep bundles open while screening continues, and `next` hands them out once no screen bundle is waiting.
+   QA then moves through the sweep and editorial stages until `status` reports `complete`.
+   `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}` take the same steps by hand.
 6. Record a choice every reviewer must follow, such as narration tense or a quoted label, with
    `{{CLI}} decide --task {{TASK}} --worker <name> --key <topic> --choice <choice>`; add
    `--source <Japanese> --translation <English>` when every correction of that text must use
@@ -181,12 +181,9 @@ withdrawn, never revised.
 Prefix every command with `{{CLI}}`:
 
 - `status --task {{TASK}}`, `brief --task {{TASK}} --role <role>`
-- `next --task {{TASK}} --worker <name> [--bundle <id>]`, then read the bundle with
-  `show --task {{TASK}} --bundle <id>`, which prints it compactly; the bundle file it names
-  holds the same content as JSON
+- `next --task {{TASK}} --worker <name> [--helper <name>] [--bundle <id>] [--skip-declined]`, then read the bundle with `show --task {{TASK}} --bundle <id>`, which prints it compactly; the bundle file it names holds the same content as JSON
 - `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
-- `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no
-  other reviewer will take a declined bundle
+- `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no worker on another helper will take a declined bundle
 - `context --task {{TASK}} --worker <name> --at <identity or command list>` for read-only
   surrounding text; scenes a reviewer declined are left out unless your assigned bundle prints
   them

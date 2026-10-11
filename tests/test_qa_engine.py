@@ -5,10 +5,11 @@ import unittest
 from tests.engine import engine_module
 from tests.probe import Probe
 
-# The journey runs in its own interpreter, alongside the rest of the suite,
+# The journeys run in their own interpreters, alongside the rest of the suite,
 # because the engine's `util` package would clash with the fakes other tests
 # install.
 probe = Probe("qa_engine.py")
+declines = Probe("qa_declines.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
@@ -17,6 +18,10 @@ lint = engine_module("util/rpgmaker_qa_lint.py")
 class QAEngineTests(unittest.TestCase):
     def test_review_journey_gates_and_findings(self):
         returncode, output = probe.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_declined_items_stay_within_their_helper(self):
+        returncode, output = declines.result()
         self.assertEqual(returncode, 0, output)
 
     def test_numbers_beside_stat_letters_count(self):

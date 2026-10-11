@@ -89,7 +89,11 @@ DEEP_DISPOSITIONS = frozenset({
 })
 # A reviewer that will not review an item says why in one line, without game text.
 DECLINE_REASON_LIMIT = 300
-# Distinct reviewers that must decline an item before it is set aside unreviewed.
+# Workers on one AI helper share its boundaries, so what one of them declined
+# goes only to workers on another helper; a worker names its helper when it
+# runs on a different one than the coordinator.
+DEFAULT_HELPER = "default"
+# Distinct helpers that must decline an item before it is set aside unreviewed.
 DECLINES_TO_SET_ASIDE = 2
 # Another reviewer screens at least this share of each reviewer's scene and
 # line targets again, starting with its first bundle.
@@ -1498,14 +1502,16 @@ def _split_declined(
     bundle: dict[str, Any],
     reasons: dict[str, str],
 ) -> int:
-    """Move declined items into their own bundle for another reviewer.
+    """Move declined items into their own bundle for a reviewer on another helper.
 
-    Returns how many targets moved. After enough distinct reviewers declined
+    Returns how many targets moved. After enough distinct helpers declined
     the same items, they are set aside unreviewed instead.
     """
     items = [item for item in bundle["items"] if item["id"] in reasons]
     worker = str(row.get("assigned_to") or "") or "unnamed reviewer"
+    helper = _helper_of(checkpoint, worker)
     declined_by = sorted({*(row.get("declined_by") or []), worker})
+    declined_helpers = sorted({*(row.get("declined_helpers") or []), helper})
     origin = row.get("origin") or row["id"]
     number = 1 + sum(
         other.get("origin") == origin for other in checkpoint[stage]["bundles"]
@@ -1528,16 +1534,18 @@ def _split_declined(
         "sha256": split["content_sha256"],
         "item_count": split["item_count"],
         "status": (
-            "set-aside" if len(declined_by) >= DECLINES_TO_SET_ASIDE else "pending"
+            "set-aside"
+            if len(declined_helpers) >= DECLINES_TO_SET_ASIDE else "pending"
         ),
         "assigned_to": "",
         "result_path": "",
         "origin": origin,
         **({"follow_up": True} if row.get("follow_up") else {}),
         "declined_by": declined_by,
+        "declined_helpers": declined_helpers,
         "declines": [
             *(row.get("declines") or []),
-            {"worker": worker, "reasons": reasons},
+            {"worker": worker, "helper": helper, "reasons": reasons},
         ],
     })
     return split["item_count"]
@@ -2197,38 +2205,78 @@ def _declined_counts(checkpoint: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _helper_of(checkpoint: dict[str, Any], worker: str) -> str:
+    return str(
+        ((checkpoint.get("workers") or {}).get(worker) or {}).get("helper")
+        or DEFAULT_HELPER
+    )
+
+
+def _register_worker(
+    checkpoint: dict[str, Any], worker: str, helper: str | None
+) -> str:
+    """Record the worker as seen and return its helper, which it keeps."""
+    record = checkpoint.setdefault("workers", {}).setdefault(
+        worker, {"bundles": 0, "seconds": 0.0}
+    )
+    named = " ".join(str(helper or "").split()).casefold()
+    if len(named) > 60:
+        raise ValueError("A helper name is one short line")
+    if named and record.get("helper", named) != named:
+        raise ValueError(
+            f"{worker} runs on the {record['helper']} helper; give a worker on "
+            "another helper a name of its own"
+        )
+    record["helper"] = record.get("helper") or named or DEFAULT_HELPER
+    record["last_seen"] = _utc_now()
+    return record["helper"]
+
+
 def next_bundle(
-    task_dir: str | Path, worker: str, bundle_id: str | None = None
+    task_dir: str | Path,
+    worker: str,
+    bundle_id: str | None = None,
+    *,
+    helper: str | None = None,
+    skip_declined: bool = False,
 ) -> dict[str, Any] | None:
     """Assign the worker its next bundle, or the named one.
 
-    A worker never receives a bundle it declined; another reviewer can claim
-    that bundle by its ID.
+    A worker never receives a bundle a worker on its helper declined; a worker
+    on another helper can claim that bundle. With `skip_declined`, declined
+    bundles nobody else took are set aside when their stage is otherwise
+    reviewed, as advance and finalize would with it.
     """
     root = Path(task_dir).expanduser().resolve()
     worker = str(worker or "worker")
     with _task_lock(root):
         for _transition in range(8):
-            row, moved = _next_unlocked(root, worker, bundle_id)
+            row, moved = _next_unlocked(root, worker, bundle_id, helper, skip_declined)
             if row is not None or not moved:
                 return row
         return None
 
 
-def _stage_finished(checkpoint: dict[str, Any], stages: list[str]) -> bool:
+def _stage_finished(
+    checkpoint: dict[str, Any], stages: list[str], skip_declined: bool = False
+) -> bool:
     return all(
         row["status"] in {"accepted", "set-aside"}
+        or skip_declined and row["status"] == "pending" and row.get("declined_by")
         for stage in stages for row in checkpoint[stage]["bundles"]
     )
 
 
 def _next_unlocked(
-    root: Path, worker: str, bundle_id: str | None
+    root: Path,
+    worker: str,
+    bundle_id: str | None,
+    helper: str | None = None,
+    skip_declined: bool = False,
 ) -> tuple[dict[str, Any] | None, bool]:
     """One assignment attempt; True when it moved QA to its next stage instead."""
     root, task, checkpoint = _load_task(root)
-    workers = checkpoint.setdefault("workers", {})
-    workers.setdefault(worker, {"bundles": 0, "seconds": 0.0})["last_seen"] = _utc_now()
+    helper = _register_worker(checkpoint, worker, helper)
     _atomic_write_json(root / "checkpoint.json", checkpoint)
     stage = checkpoint["stage"]
     if stage not in REVIEW_STAGES:
@@ -2251,9 +2299,10 @@ def _next_unlocked(
             return copy.deepcopy(pending), False
         if pending["status"] != "pending":
             raise ValueError(f"{bundle_id} is {pending['status']}, not waiting")
-        if worker in (pending.get("declined_by") or []):
+        if helper in (pending.get("declined_helpers") or []):
             raise ValueError(
-                f"{worker} declined {bundle_id}; another reviewer must claim it"
+                f"{worker} runs on the {helper} helper, which declined {bundle_id}; "
+                "only a worker on another helper can claim it"
             )
         if worker in (pending.get("authors") or []):
             raise ValueError(
@@ -2271,7 +2320,7 @@ def _next_unlocked(
                 return copy.deepcopy(row), False
         eligible = [
             (name, row) for name in stages for row in checkpoint[name]["bundles"]
-            if worker not in (row.get("declined_by") or [])
+            if helper not in (row.get("declined_helpers") or [])
             and worker not in (row.get("authors") or [])
             and worker not in (row.get("independent_of") or [])
         ]
@@ -2287,11 +2336,14 @@ def _next_unlocked(
             pending = stalled
             pending["reassigned_from"] = pending.get("assigned_to") or ""
         if pending is None:
-            if not _stage_finished(checkpoint, [stage]):
+            if not _stage_finished(checkpoint, [stage], skip_declined):
                 return None, False
-            # Every bundle of the stage is reviewed: move QA on, as finalize
-            # would.
-            _finalize_unlocked(root)
+            # Every bundle of the stage is reviewed: move QA on, as advance
+            # and finalize would.
+            if stage == "screen":
+                _advance_unlocked(root, skip_declined)
+            else:
+                _finalize_unlocked(root, skip_declined)
             after = _read_json(root / "checkpoint.json")
             # QA moved to another stage, or opened more bundles of this one.
             return None, after["stage"] != stage or (
@@ -3845,6 +3897,7 @@ def _declined_scope(
                     "kind": "deep" if stage == "deep" else kind,
                     "set_aside": row["status"] == "set-aside",
                     "reasons": reasons.get(item["id"], []),
+                    "declined_by": row["declined_by"],
                 })
     offered: dict[str, set[str]] = defaultdict(set)
     if declined_targets:
@@ -4473,10 +4526,10 @@ def _settle_declined(
         raise ValueError(f"Every {stage} bundle must be accepted first")
     if waiting and not skip_declined:
         raise ValueError(
-            f"{len(waiting)} declined {stage} bundle(s) wait for another reviewer "
-            f"({', '.join(row['id'] for row in waiting)}): claim each with next "
-            "--bundle ID under a different worker name, or use --skip-declined "
-            "to report them as not reviewed"
+            f"{len(waiting)} declined {stage} bundle(s) wait for a reviewer on "
+            f"another helper ({', '.join(row['id'] for row in waiting)}): such a "
+            "worker claims each with next --bundle ID --helper NAME, or use "
+            "--skip-declined to report them as not reviewed"
         )
     for row in waiting:
         row["status"] = "set-aside"

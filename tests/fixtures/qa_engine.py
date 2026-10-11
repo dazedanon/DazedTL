@@ -287,32 +287,34 @@ while row := qa.next_bundle(task, "screen-a"):
         ),
     )
 # Only its first bundle is checked, which covers a quarter of its lines, and
-# deep review of those lines waits for the check. The declined scene and the
-# check wait for another reviewer, never this one, and the stage cannot end
-# early.
+# deep review of those lines waits for the check. The declined scene waits for
+# a reviewer on another helper and the check for another reviewer, never this
+# one or, for the scene, another worker on its helper, and the stage cannot
+# end early.
 assert not checkpoint()["deep"]["bundles"]
 rows = checkpoint()["screen"]["bundles"]
 (check,) = [row for row in rows if row.get("check_of")]
 (forest,) = [row for row in rows if row.get("declined_by")]
 assert check["independent_of"] == forest["declined_by"] == ["screen-a"], rows
 assert qa.status(task)["declined"]["waiting"] == 4
-for bundle_id, reason in (
-    (forest["id"], "declined"),
-    (check["id"], "independent"),
-    (None, "check"),
+for worker, bundle_id, reason in (
+    ("screen-a", forest["id"], "declined"),
+    ("screen-c", forest["id"], "declined"),
+    ("screen-a", check["id"], "independent"),
+    (None, None, "check"),
 ):
     try:
         if bundle_id:
-            qa.next_bundle(task, "screen-a", bundle_id)
+            qa.next_bundle(task, worker, bundle_id)
         else:
             qa.advance(task)
     except ValueError as error:
         assert reason in str(error), error
     else:
         raise AssertionError("A bundle went to its own reviewer or was skipped.")
-# A second reviewer claims the declined scene by ID, and only that reviewer
-# reads the scene in context, then declines too, which sets it aside.
-row = qa.next_bundle(task, "screen-b", forest["id"])
+# A reviewer on another helper claims the declined scene by ID, and only that
+# reviewer reads the scene in context, then declines too, which sets it aside.
+row = qa.next_bundle(task, "screen-b", forest["id"], helper="other")
 FOREST = "Map001.json#/events/2/pages/0/list"
 assert "森の奥へ" in qa.context_view(task, FOREST + "/2", worker="screen-b")
 for attempt in (
@@ -600,7 +602,7 @@ qa.accept_result(
     ),
 )
 # The declined item takes its scene to its own bundle, and only the reviewer
-# that claims it reads that scene in context.
+# on another helper that claims it reads that scene in context.
 (split,) = [
     row
     for row in json.loads((task / "checkpoint.json").read_text())["deep"]["bundles"]
@@ -614,7 +616,7 @@ except ValueError as error:
     assert "declined" in str(error), error
 else:
     raise AssertionError("The context view showed a declined deep item's scene.")
-qa.next_bundle(task, "deep-b", split["id"])
+qa.next_bundle(task, "deep-b", split["id"], helper="other")
 assert "朝だ" in qa.context_view(task, scene, worker="deep-b")
 qa.release_bundle(task, split["id"])
 # The re-screened line opened deep review once its follow-up was screened,
