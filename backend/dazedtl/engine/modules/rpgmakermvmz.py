@@ -33,7 +33,7 @@ from util.translation import (
     translateAI as sharedtranslateAI,
 )
 from util.speakers import SPEAKER_BRACKET_INNER, strip_speaker_prefix
-from util import extensions
+from util import extensions, rpgmaker_qa_lint
 from util.skills import ctx, load_system_prompt
 from util.paths import (
     GLOSSARY_OVERRIDE_ENV,
@@ -6466,6 +6466,7 @@ def translateAI(text, history, history_ctx=None):
     actor_map = {} if AUTONAMEPOPUP101 else _get_actor_map()
     var_actor_map = {} if AUTONAMEPOPUP101 else _get_var_actor_map()
     reverse: dict[str, str] = {}  # actor_name -> "\\n[X]" / "\\v[X]"
+    sources = text
 
     if isinstance(text, list):
         item_reverses: list[dict[str, str]] = []
@@ -6502,7 +6503,30 @@ def translateAI(text, history, history_ctx=None):
             reverse_map = item_reverses[0] if item_reverses else reverse
             result[0] = _restore_actor_names(result[0], reverse_map)
 
+    # ── Exact QA lint fixes, before callers wrap the text ──────────────────
+    if isinstance(result[0], list):
+        if isinstance(sources, list) and len(sources) == len(result[0]):
+            result[0] = [
+                _normalized_translation(source, translated)
+                for source, translated in zip(sources, result[0])
+            ]
+    else:
+        result[0] = _normalized_translation(sources, result[0])
+
     return result
+
+
+def _normalized_translation(source, translated):
+    """A new translation with the lint fixes that need no reviewer.
+
+    Text the run left untranslated, as collect passes and rejected results
+    return it, stays as it is.
+    """
+    if not isinstance(source, str) or not isinstance(translated, str):
+        return translated
+    if translated == source:
+        return translated
+    return rpgmaker_qa_lint.normalize(source, translated)
 
 def resetSpeakerState():
     """Clear all speaker-related globals so a fresh run doesn't carry over stale data."""

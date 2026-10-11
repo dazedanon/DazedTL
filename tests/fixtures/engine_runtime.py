@@ -428,6 +428,26 @@ try:
             assert not worker.is_alive() and not errors, errors
             assert seen == ["選択", "", "選択"], seen
         configure_states({"engine": "MVMZ"}, temporary, None)
+
+        # New lines get the QA lint fixes that need no reviewer, keeping codes,
+        # line breaks and a dakuten apostrophe; a collect pass's untranslated
+        # text stays as it is.
+        def shared(text, **_kwargs):
+            return [
+                ["\\NK[1]Spluuurt……hhh♥♥Thwump♥\nSto'p……h!\\NK[0]", text[1]],
+                [0, 0],
+            ]
+
+        sources = [
+            "\\NK[1]ぶっぷぅ……っっっ♥♥どちゅっ♥\nや゛めて……っ！\\NK[0]",
+            "♥Hシーン",
+        ]
+        with patch.multiple(parser, AUTONAMEPOPUP101=True, sharedtranslateAI=shared):
+            output, _tokens = parser.translateAI(sources, "")
+        assert output == [
+            "\\NK[1]Spluuurt……♥♥ Thwump♥\nSto'p……!\\NK[0]",
+            "♥Hシーン",
+        ], output
     # A map call can contain a malformed attempt, an accepted retry, a refused
     # chunk, and another success. Keep every body and only its own validation;
     # refusal loops must preserve source without making more provider calls.

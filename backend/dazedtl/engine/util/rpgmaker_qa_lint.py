@@ -1,8 +1,9 @@
-"""Deterministic lint for RPG Maker translation QA.
+"""Deterministic lint for RPG Maker translations.
 
 Each family finds one known mechanical defect and fixes it exactly, so the
-screen reviewers can spend their attention on meaning and voice. A family's
-proposals are reviewed as a group; fixers are idempotent and run in a fixed
+screen reviewers can spend their attention on meaning and voice. Translation
+applies the automatic families to each new line, and QA proposes every
+family's fixes, reviewed as a group. Fixers are idempotent and run in a fixed
 order, so the fixes a reviewer accepted also apply on top of a deep correction.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 import difflib
 import re
 from collections import defaultdict
+from collections.abc import Collection
 from typing import Any
 
 FAMILIES: dict[str, dict[str, str]] = {
@@ -44,6 +46,10 @@ FAMILIES: dict[str, dict[str, str]] = {
     },
 }
 ORDER = tuple(FAMILIES)
+# Families whose fix was right on every line it matched in released games and
+# keeps the line's breaks and codes. The rest need a reviewer, the whole game,
+# or a change of line structure; see docs/architecture.md.
+AUTOMATIC = ("lint:heart-spacing", "lint:stray-sokuon")
 
 _HEART_RE = re.compile(r"♥(?=[A-Za-z(])")
 _SOKUON_SOURCE_RE = re.compile(r"[っッ]")
@@ -237,12 +243,17 @@ def title_map(clusters: list[dict[str, Any]]) -> dict[str, set[str]]:
     return titles
 
 
-def compose(source: str, text: str, families: list[str] | set[str], titles: dict) -> str:
+def compose(source: str, text: str, families: Collection[str], titles: dict) -> str:
     """Apply the named families' fixes to a text, in the fixed family order."""
     for family in ORDER:
         if family in families:
             text = FIXERS[family](source, text, titles)
     return text
+
+
+def normalize(source: str, text: str) -> str:
+    """A new translation of a source line, with the automatic families' fixes."""
+    return compose(source, text, AUTOMATIC, {})
 
 
 def proposals(source: str, live: str, titles: dict) -> dict[str, str]:
