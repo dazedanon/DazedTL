@@ -228,6 +228,8 @@ assert [
     "screen-0002-d3",
     "screen-0003-d3",
 ], rows("screen")
+# Lint review is over; the declined proposal waits for another helper.
+assert qa.status(task)["screen"]["lint"] == {"accepted": 1, "total": 2, "declined": 1}
 row = qa.next_bundle(task, "sub-2")
 assert row["check_of"] == "screen-0003-r2", row
 screen(row)

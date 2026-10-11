@@ -73,7 +73,9 @@ export function qaStages(qa: QaState): {
 }[] {
   const status = qa.status;
   const stage = typeof status.stage === "string" ? status.stage : "";
-  const screen = (status.screen || {}) as Counts & { lint?: Counts };
+  const screen = (status.screen || {}) as Counts & {
+    lint?: Counts & { declined?: number };
+  };
   const deep = (status.deep || {}) as Counts;
   const lint = screen.lint || {};
   const order = ["screen", "deep", "sweep", "editorial", "complete"];
@@ -81,7 +83,9 @@ export function qaStages(qa: QaState): {
     !!qa.task &&
     (order.indexOf(stage) > order.indexOf(name) ||
       (stage === "ready-finalize" && order.indexOf(name) < 2));
-  const lintDone = (lint.accepted || 0) >= (lint.total || 0);
+  // Declined proposals wait for another helper, not for lint review.
+  const lintDone =
+    (lint.accepted || 0) + (lint.declined || 0) >= (lint.total || 0);
   const states: [string, string, StepState][] = [
     ["preflight", "Preflight", qa.task ? "done" : "current"],
     [

@@ -909,7 +909,7 @@ headers = [
     if command["code"] == 101
 ]
 assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
-assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3}
+assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3, "declined": 0}
 # The declined scene and items are a coverage gap, reported once with their
 # reasons.
 assert [item["reasons"] for item in findings["declined"]] == [

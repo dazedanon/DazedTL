@@ -237,8 +237,9 @@ def qa_state(plan):
             done += checks.get("accepted", 0)
             total += checks.get("projected", 0)
         lint = engine_status["screen"]["lint"]
-        if stage == "screen" and lint["accepted"] < lint["total"]:
-            # Lint families lead the screen bundles; the line names them.
+        if stage == "screen" and lint["accepted"] + lint["declined"] < lint["total"]:
+            # Lint families lead the screen bundles; the line names them
+            # until every proposal is reviewed or declined.
             stage, done, total = "lint", lint["accepted"], lint["total"]
         activity = {
             "stage": stage,

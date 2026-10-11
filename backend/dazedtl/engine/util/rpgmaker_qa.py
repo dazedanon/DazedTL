@@ -2237,6 +2237,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "lint": {
                 "accepted": int(screen.get("lint_accepted", 0)),
                 "total": int(screen.get("lint_total", 0)),
+                "declined": _declined_lint(screen),
             },
             # Second screens add no coverage, so they are counted apart.
             "checks": _check_counts(screen),
@@ -2285,6 +2286,21 @@ def _not_translated(task: dict[str, Any]) -> dict[str, int]:
         return task["not_translated"]
     total = sum((task.get("preflight") or {}).values())
     return {"total": total, "may_show": total}
+
+
+def _declined_lint(screen: dict[str, Any]) -> int:
+    """Lint proposals declined and not reviewed since, which lint review no
+    longer waits for."""
+    if int(screen.get("lint_accepted", 0)) >= int(screen.get("lint_total", 0)):
+        return 0
+    return sum(
+        item["target_count"]
+        for row in screen["bundles"]
+        if row.get("declined_by")
+        and row["status"] in {"pending", "assigned", "set-aside"}
+        for item in _read_json(Path(row["path"]))["items"]
+        if item.get("kind") == "lint-family"
+    )
 
 
 def _declined_counts(checkpoint: dict[str, Any]) -> dict[str, int]:

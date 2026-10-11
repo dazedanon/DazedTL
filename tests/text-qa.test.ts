@@ -22,11 +22,15 @@ test("the QA strip marks one current stage and the activity line reads the engin
   const marks = (value: never) =>
     qaStages(value).map((step) => `${step.label}:${step.state}`);
   // Deep review that opened while screening continues reads as started,
-  // and lint finishes before screening is current.
+  // and lint finishes, with a proposal declined, before screening is current.
   const screening = qa(
     {
       stage: "screen",
-      screen: { accepted: 40, total: 100, lint: { accepted: 5, total: 5 } },
+      screen: {
+        accepted: 40,
+        total: 100,
+        lint: { accepted: 4, total: 5, declined: 1 },
+      },
       deep: { accepted: 3, total: 24 },
     },
     {
