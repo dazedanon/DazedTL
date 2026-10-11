@@ -267,6 +267,8 @@ class Reach:
         # MZ plugin commands by plugin: the count and the first one's
         # command and file.
         self._calls: dict[str, list] = {}
+        # Every command events call, by plugin.
+        self._called: dict[str, set[str]] = {}
         # MV plugin commands by their first word: the count and first file.
         self._words: dict[str, list] = {}
         # Names event scripts use, with the first file.
@@ -285,6 +287,7 @@ class Reach:
             ):
                 row = self._calls.setdefault(parameters[0], [0, parameters[1], name])
                 row[0] += 1
+                self._called.setdefault(parameters[0], set()).add(parameters[1])
             elif command["code"] == 356 and parameters and isinstance(parameters[0], str):
                 words = parameters[0].split()
                 if words:
@@ -293,6 +296,14 @@ class Reach:
                 if isinstance(value, str):
                     for token in _IDENTIFIER_RE.findall(value):
                         self._scripts.setdefault(token, name)
+
+    def commands(self, name: str) -> set[str]:
+        """The commands of an MZ plugin that events call."""
+        return set(self._called.get(name, ()))
+
+    def script_names(self) -> set[str]:
+        """Every name an event script uses."""
+        return set(self._scripts)
 
     def plugin(self, name: str) -> tuple[str, str]:
         """The reach of a turned-on plugin's settings."""

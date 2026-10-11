@@ -59,12 +59,18 @@ REASON = (
 _KINDS = {"untranslated": "data", "custom_data": "custom", "plugin_parameters": "plugin"}
 
 
-def _japanese(value: Any) -> bool:
+def japanese(value: Any) -> bool:
+    """Whether a value holds Japanese; ・ and ー alone do not count."""
     return isinstance(value, str) and bool(_JAPANESE_RE.search(value))
 
 
 def _escape(part: object) -> str:
     return str(part).replace("~", "~0").replace("/", "~1")
+
+
+def pointer(parts: tuple) -> str:
+    """A JSON pointer to a value from its path's parts."""
+    return "/" + "/".join(_escape(part) for part in parts)
 
 
 def _leaves(value: Any, path: tuple = ()):
@@ -101,54 +107,57 @@ def _command_lists(document: Any, path: tuple = ()):
                 yield from _command_lists(child, path + (key,))
 
 
-def _entry(rows: list, file: str, pointer: tuple, text: str, kind: str) -> None:
+def _entry(rows: list, file: str, path: tuple, text: str, kind: str) -> None:
     rows.append({
         "file": file,
-        "pointer": "/" + "/".join(_escape(part) for part in pointer),
+        "pointer": pointer(path),
         "kind": kind,
         "text": text if len(text) <= TEXT_LIMIT else text[:TEXT_LIMIT] + "…",
     })
 
 
-def _untranslated(name: str, document: Any, covered: set[str], rows: list) -> None:
-    def add(pointer: tuple, value: Any, kind: str) -> None:
-        if _japanese(value):
-            text = "/" + "/".join(_escape(part) for part in pointer)
-            if text not in covered:
-                _entry(rows, name, pointer, value, kind)
-
+def visible_texts(name: str, document: Any):
+    """Each text players read in one data file: its pointer's parts, its
+    value, its kind and whether the engine translated it, keeping its
+    Japanese in `_original`. Map names keep no `_original`."""
     for list_path, commands in _command_lists(document):
         for index, command in enumerate(commands):
-            if not isinstance(command, dict) or "_original" in command:
+            if not isinstance(command, dict):
                 continue
             code = command.get("code")
             parameters = command.get("parameters")
             if code not in COMMAND_TEXT or not isinstance(parameters, list):
                 continue
+            translated = "_original" in command
             base = list_path + (index, "parameters")
             if code == 102 and parameters and isinstance(parameters[0], list):
                 for choice, value in enumerate(parameters[0]):
-                    add(base + (0, choice), value, "choice")
+                    yield base + (0, choice), value, "choice", translated
                 continue
             position = COMMAND_TEXT[code]
             for at, value in enumerate(parameters):
                 if position is None or at == position:
-                    add(base + (at,), value, "event text")
+                    yield base + (at,), value, "event text", translated
     if _MAP_RE.fullmatch(name) and isinstance(document, dict):
-        add(("displayName",), document.get("displayName"), "map name")
+        yield ("displayName",), document.get("displayName"), "map name", False
     for field in DATABASE_FIELDS.get(name, ()):
         for index, entry in enumerate(document if isinstance(document, list) else []):
-            if isinstance(entry, dict) and not isinstance(entry.get("_original"), dict):
-                add((index, field), entry.get(field), "database field")
-            elif isinstance(entry, dict) and field not in entry["_original"]:
-                add((index, field), entry.get(field), "database field")
+            if isinstance(entry, dict):
+                original = entry.get("_original")
+                translated = isinstance(original, dict) and field in original
+                yield (index, field), entry.get(field), "database field", translated
     if name == "System.json" and isinstance(document, dict):
+        original = document.get("_original")
         for field in SYSTEM_FIELDS:
-            original = document.get("_original")
-            if isinstance(original, dict) and field in original:
-                continue
+            translated = isinstance(original, dict) and field in original
             for path, value in _leaves(document.get(field), (field,)):
-                add(path, value, "system term")
+                yield path, value, "system term", translated
+
+
+def _untranslated(name: str, document: Any, covered: set[str], rows: list) -> None:
+    for path, value, kind, translated in visible_texts(name, document):
+        if not translated and japanese(value) and pointer(path) not in covered:
+            _entry(rows, name, path, value, kind)
 
 
 def _plugin_entries(script: Path) -> list[Any]:
@@ -186,14 +195,14 @@ def preflight(data_root: str | Path, manifest: dict[str, Any]) -> dict[str, Any]
             reach.scan(path.name, document)
         else:
             for pointer, value in _leaves(document):
-                if _japanese(value):
+                if japanese(value):
                     _entry(rows["custom_data"], path.name, pointer, value, "custom data")
     for plugin in entries:
         if not isinstance(plugin, dict) or plugin.get("status") is not True:
             continue
         for pointer, value in _leaves(plugin.get("parameters") or {}):
             if (
-                _japanese(value)
+                japanese(value)
                 and not _SCRIPT_RE.search(value)
                 and not _ASSET_PATH_RE.match(value)
             ):
