@@ -31,6 +31,7 @@ import { StepProgress } from "../../ui/StepProgress";
 import type { QaStepDetails } from "./qaSteps";
 import {
   qaActivity,
+  qaCorrections,
   qaGroups,
   qaMayShow,
   qaNotTranslated,
@@ -98,14 +99,16 @@ export function TextQaWork({
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
     : qa.questions;
+  // Corrections in the game; with every one undone, QA reads as done.
+  const applied = qaCorrections(qa).applied;
   // New QA rules leave applied corrections without Undo; the page says so
   // once, above the rows.
-  const undoUnavailable =
-    !!qa.rules_changed &&
-    [...questions, ...qa.findings].some((row) => row.state === "applied");
+  const undoUnavailable = !!qa.rules_changed && applied > 0;
   const state: AssistantTaskState =
     phase === "applied"
-      ? "applied"
+      ? applied
+        ? "applied"
+        : "done"
       : phase === "outdated"
         ? "outdated"
         : phase === "questions"

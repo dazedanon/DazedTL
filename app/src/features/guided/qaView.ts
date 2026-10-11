@@ -136,23 +136,42 @@ export function qaStages(qa: QaState): {
   return states.map(([id, label, state]) => ({ id, label, state }));
 }
 
+/**
+ * The corrections QA proposes, and how many are in the game or were undone
+ * since. A proposal the user chose counts as a correction.
+ */
+export function qaCorrections(qa: QaState) {
+  const rows = [
+    ...qa.findings,
+    ...qa.questions.filter((row) => row.choice === "use"),
+  ];
+  const count = (state: string) =>
+    rows.filter((row) => row.state === state).length;
+  return {
+    total: rows.length,
+    applied: count("applied"),
+    undone: count("undone"),
+  };
+}
+
 /** The summary line once QA is done: corrections and what it covered. */
 export function qaSummary(qa: QaState) {
-  // A proposal the user chose counts as a correction.
-  const chosen = qa.questions.filter((row) => row.choice === "use");
-  const applied = [...qa.findings, ...chosen].filter(
-    (row) => row.state === "applied",
-  ).length;
+  const { total, applied, undone } = qaCorrections(qa);
   const lines = qa.coverage?.lines || 0;
   const missing = qa.coverage?.not_reviewed || 0;
   const corrections = (count: number) =>
     `${count.toLocaleString()} ${count === 1 ? "correction" : "corrections"}`;
   return [
     qa.applied
-      ? `${corrections(applied)} applied`
-      : qa.findings.length + chosen.length
-        ? `${corrections(qa.findings.length + chosen.length)} to apply`
+      ? applied
+        ? `${corrections(applied)} applied`
+        : undone
+          ? `${corrections(undone)} undone`
+          : "No corrections applied"
+      : total
+        ? `${corrections(total)} to apply`
         : "No corrections needed",
+    qa.applied && applied && undone && `${undone.toLocaleString()} undone`,
     lines && `${(lines - missing).toLocaleString()} lines checked`,
   ]
     .filter(Boolean)
