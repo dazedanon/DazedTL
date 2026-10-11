@@ -674,9 +674,17 @@ while row and row.get("round", 1) == 1:
     editorial(row, {STRATUM["_original"]: ("revise", "Rest on the first stratum")})
     row = qa.next_bundle(task, "editor-a")
 assert qa.status(task)["editorial"]["round"] == 2
-(second,) = editorial(
-    row, {STRATUM["_original"]: ("revise", "Rest on the First Stratum")}
-)["items"]
+# The reviewers convince the coordinator instead: the decision changes and
+# the second round accepts the revision, which then stands.
+qa.record_decision(
+    task,
+    "stratum names",
+    "Strata are ordinal titles",
+    "deep-a",
+    source="第1層",
+    translation="first stratum",
+)
+(second,) = editorial(row, {})["items"]
 assert any("decision" in conflict["key"] for conflict in second["conflicts"]), second
 # With nothing left to review, next completes QA and the engine has timed it.
 assert qa.next_bundle(task, "editor-a") is None
@@ -692,7 +700,7 @@ assert sorted(row["correction"] for row in findings["findings"]) == [
     "Ah…♥ Amazing",
     "Let's leave the forest.",
     "Owner · owner 0",
-    "Rest on the First Stratum",
+    "Rest on the first stratum",
     "The arousal is building…",
     "The arousal won't stop.",
 ], findings["findings"]

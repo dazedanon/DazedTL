@@ -4957,7 +4957,9 @@ def _complete_editorial(
     records, _clusters = _record_maps(manifest)
     titles = lint.title_map(manifest["clusters"])
     editorial = checkpoint.get("editorial") or {"bundles": []}
-    verdicts: dict[str, dict[str, Any]] = {}
+    # Each finding's verdicts in round order; a later round judged the text
+    # the earlier ones left.
+    verdicts: dict[str, list[dict[str, Any]]] = defaultdict(list)
     shown: dict[str, dict[str, Any]] = {}
     set_aside: set[str] = set()
     for row in editorial["bundles"]:
@@ -4968,18 +4970,21 @@ def _complete_editorial(
         if row["status"] != "accepted":
             continue
         for review in _read_json(Path(row["result_path"]))["reviews"]:
-            verdicts[review["id"]] = {**review, "reviewer": row.get("assigned_to") or ""}
+            verdicts[review["id"]].append(
+                {**review, "reviewer": row.get("assigned_to") or ""}
+            )
         shown.update({item["id"]: item for item in items})
     acks = editorial.setdefault("acks", {})
     for identity, item in shown.items():
-        if verdicts.get(identity, {}).get("verdict") == "accept":
+        if verdicts[identity] and verdicts[identity][-1]["verdict"] == "accept":
             for conflict in item.get("conflicts") or []:
                 if conflict["kind"] == "soft":
                     acks[f"{conflict['key']}:{identity}"] = conflict["signature"]
     final, withdrawn, unverified = [], [], []
     for finding in draft["findings"]:
         identity = finding["id"]
-        verdict = verdicts.get(identity)
+        history = verdicts.get(identity) or []
+        verdict = history[-1] if history else None
         if identity in set_aside and verdict is None:
             unverified.append({"id": identity, "reason": "declined by editorial reviewers"})
             continue
@@ -5009,9 +5014,10 @@ def _complete_editorial(
                 })
             continue
         finding = dict(finding)
+        for earlier in history:
+            if earlier["verdict"] == "revise":
+                finding["correction"] = earlier["replacement"]
         if verdict:
-            if verdict["verdict"] == "revise":
-                finding["correction"] = verdict["replacement"]
             finding["editorial"] = {
                 "verdict": verdict["verdict"],
                 "note": str(verdict.get("note") or ""),
