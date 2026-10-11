@@ -68,6 +68,9 @@ class ReleaseTests(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("synthetic fixture value")
+            # A temporary-file write leaves a game file owner-only; players
+            # still get ordinary permissions.
+            (root / "www/data/Items.json").chmod(0o600)
             scope = inventory(root)
             self.assertEqual(set(scope["files"]), included)
             output = Path(folder) / "clean.zip"
@@ -77,6 +80,8 @@ class ReleaseTests(unittest.TestCase):
                     set(archive.namelist()),
                     {"generated-game/" + name for name in included},
                 )
+                items = archive.getinfo("generated-game/www/data/Items.json")
+                self.assertEqual(items.external_attr >> 16, 0o100644)
             # Stopping after the first entry never publishes a partial replacement.
             previous = output.read_bytes()
             staged = Path(folder) / "partial.zip"
@@ -93,10 +98,11 @@ class ReleaseTests(unittest.TestCase):
                 self.assertIn(
                     "generated-game/gameupdate/patch-config.txt", archive.namelist()
                 )
-                self.assertEqual(
-                    archive.read("generated-game/gameupdate/previous_patch_sha.txt"),
-                    ("a" * 40 + "\n").encode(),
+                stamp = archive.getinfo(
+                    "generated-game/gameupdate/previous_patch_sha.txt"
                 )
+                self.assertEqual(archive.read(stamp), ("a" * 40 + "\n").encode())
+                self.assertEqual(stamp.external_attr >> 16, 0o100644)
             (root / "www/data/Items.json").write_text("changed after inspection")
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None)

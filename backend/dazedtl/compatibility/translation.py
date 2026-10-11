@@ -797,6 +797,8 @@ class TranslationEngine:
         from util.release_package import ReleasePackageError, _release_patch_sha
         from util.version_update.git_workflow import _run_git
 
+        from dazedtl.translation.release import player_permissions
+
         source = Path(source)
         status = self.git_status(source, options)
         if (
@@ -850,10 +852,14 @@ class TranslationEngine:
                         archive.writestr(
                             "gameupdate/previous_patch_sha.txt", patch_sha + "\n"
                         )
+                        player_permissions(
+                            archive.getinfo("gameupdate/previous_patch_sha.txt")
+                        )
                     if game_archive:
                         archive.write(
                             rebuilt, game_archive, compress_type=zipfile.ZIP_STORED
                         )
+                        player_permissions(archive.getinfo(game_archive))
             temporary.replace(output)
         finally:
             temporary.unlink(missing_ok=True)

@@ -10,6 +10,7 @@ import zipfile
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from stat import S_IFREG
 
 from .files import evidence, project_path, read_json
 
@@ -199,6 +200,16 @@ def inventory(source, updater_stamp=None, known=None):
     }
 
 
+def player_permissions(info):
+    """Gives an entry ordinary file permissions, whatever the game folder's
+    are, such as the owner-only files a temporary-file write leaves. Only the
+    central directory holds them, so this works after the entry is written."""
+    executable = info.external_attr >> 16 & 0o111
+    info.external_attr = (S_IFREG | (0o755 if executable else 0o644)) << 16 | (
+        info.external_attr & 0xFFFF
+    )
+
+
 def write_archive(source, target, scope, log, *, prefix=True):
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError("The archive contents changed. Inspect and build again.")
@@ -216,11 +227,11 @@ def write_archive(source, target, scope, log, *, prefix=True):
             log(f"{index}/{len(scope['files'])} · {relative}")
             name = (Path(source).name + "/" if prefix else "") + relative
             archive.write(project_path(source, relative), name)
+            player_permissions(archive.getinfo(name))
         if scope["updater_stamp"]:
-            archive.writestr(
-                (Path(source).name + "/" if prefix else "") + _UPDATER_STATE,
-                scope["updater_stamp"] + "\n",
-            )
+            name = (Path(source).name + "/" if prefix else "") + _UPDATER_STATE
+            archive.writestr(name, scope["updater_stamp"] + "\n")
+            player_permissions(archive.getinfo(name))
     if inventory(source, scope["updater_stamp"], scope["known"]) != scope:
         raise ValueError(
             "The game changed during packaging. Its partial archive was discarded."
