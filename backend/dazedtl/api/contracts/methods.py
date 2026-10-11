@@ -81,6 +81,7 @@ from dazedtl.api.contracts.translation import (
     TranslationProgress,
     TranslationResults,
     TranslationState,
+    VersionRecord,
 )
 from dazedtl.api.contracts.workspace import (
     AppState,
@@ -657,6 +658,8 @@ METHODS: dict[str, Method] = {
     "translation_request": Method(RunIndexRequest, RequestPreview, refresh=False),
     "translation_results": Method(RunRequest, TranslationResults, refresh=False),
     "translation_backups": Method(ProjectRequest, BackupCatalog, refresh=False),
+    # The game versions its version history recorded, newest first.
+    "translation_versions": Method(ProjectRequest, list[VersionRecord], refresh=False),
     # How a new official release's folder lines up with the game, before staging.
     "translation_release": Method(
         TranslationReleaseRequest, ReleaseInspection, refresh=False

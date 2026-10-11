@@ -357,6 +357,14 @@ class TranslationState(ProjectOptions):
     legacyAvailable: bool
 
 
+class VersionRecord(TypedDict):
+    version: str
+    recorded: str
+    kind: Literal["setup", "update"]
+    release: Literal["patch", "complete", ""]
+    commit: str
+
+
 class ReleaseLayout(TypedDict):
     """How a release lines up with the game as one kind; see the engine's
     util/version_update/release_layout.py."""

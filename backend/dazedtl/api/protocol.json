@@ -1,5 +1,5 @@
 {
-  "version": "57535fd46676e869",
+  "version": "2d37eaa5eec3afd1",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -266,6 +266,10 @@
       "duringClose": false
     },
     "translation_backups": {
+      "refresh": false,
+      "duringClose": false
+    },
+    "translation_versions": {
       "refresh": false,
       "duringClose": false
     },

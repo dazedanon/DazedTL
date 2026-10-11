@@ -11,6 +11,7 @@ from .git_workflow import (
     UpdateFileChange,
     UpdateImageChange,
     UpdatePreview,
+    VersionRecord,
     abort_update,
     apply_official_update,
     apply_registered_original,
@@ -23,6 +24,7 @@ from .git_workflow import (
     preview_official_update,
     record_version_metadata,
     register_translation_branch,
+    version_history,
 )
 
 __all__ = [
@@ -36,6 +38,7 @@ __all__ = [
     "UpdateFileChange",
     "UpdateImageChange",
     "UpdatePreview",
+    "VersionRecord",
     "abort_update",
     "apply_official_update",
     "apply_registered_original",
@@ -48,4 +51,5 @@ __all__ = [
     "preview_official_update",
     "record_version_metadata",
     "register_translation_branch",
+    "version_history",
 ]

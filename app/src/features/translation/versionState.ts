@@ -2,7 +2,9 @@ import type {
   ReleaseLayout,
   TranslationJob,
   TranslationState,
+  VersionRecord,
 } from "../../api/contracts.ts";
+import { displayText } from "../../ui/displayText.ts";
 
 const files = (count: number) =>
   `${count.toLocaleString()} ${count === 1 ? "file" : "files"}`;
@@ -173,4 +175,57 @@ export function versionSession(
         typeof job.result?.prompt === "string",
     ),
   };
+}
+
+/** How a recorded version came in, and when: "Patch · Oct 11, 2026". */
+export function versionLabel(record: VersionRecord) {
+  const kind =
+    record.kind === "setup"
+      ? "Set up"
+      : record.release === "patch"
+        ? "Patch"
+        : record.release === "complete"
+          ? "Complete release"
+          : "Update";
+  const date = new Date(record.recorded).toLocaleDateString(undefined, {
+    dateStyle: "medium",
+  });
+  return `${kind} · ${date}`;
+}
+
+/** An update's four steps, each finished one with what it did; `problem`
+ * marks the current step blocked. */
+export function updateSteps(
+  session: ReturnType<typeof versionSession>,
+  layout: ReleaseLayout | undefined,
+  current: number,
+  problem = "",
+) {
+  const staged =
+    session.stage?.status === "complete" ? session.stage : undefined;
+  const version = displayText(staged?.result?.version);
+  const compared = session.current.find(
+    (job) =>
+      job.action === "version_preview" &&
+      job.status === "complete" &&
+      !!job.result?.proposed_tree,
+  );
+  const results = [
+    staged &&
+      `${layout?.kind === "patch" ? "Patch" : "Complete game"} ${version}`.trim(),
+    compared && (updateSummary(compared.result!) || "No file changes"),
+    session.finished && `Updated to ${version}`,
+    "",
+  ];
+  return ["Choose release", "Compare", "Apply", "Translate new text"].map(
+    (label, index) => ({
+      id: label,
+      label,
+      ...(index === current && problem
+        ? { state: "blocked" as const, detail: problem }
+        : {
+            detail: index < current ? results[index] || undefined : undefined,
+          }),
+    }),
+  );
 }

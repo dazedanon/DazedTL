@@ -9,8 +9,8 @@ import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { ActionControl } from "../../ui/ActionControl";
-import { BackupsPanel } from "./BackupsPanel";
 import { JobStatus } from "../../ui/JobStatus";
+import { StepProgress } from "../../ui/StepProgress";
 import { ActionSlot } from "../../ui/ActionSlot";
 import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
@@ -19,16 +19,18 @@ import {
   releaseEffect,
   removedFiles,
   stagedLayout,
+  updateSteps,
   updateSummary,
+  versionLabel,
   versionSession,
 } from "./versionState";
-import { displayText } from "../../ui/displayText";
+import { displayText, sentence } from "../../ui/displayText";
+import { useRead } from "../../state/useRead";
 
 export function VersionsPanel({
   project,
   state,
   guided = false,
-  onBackups,
   onPrepare,
   onCheckpoint,
   actionTarget,
@@ -36,14 +38,12 @@ export function VersionsPanel({
   project: Project;
   state: TranslationState;
   guided?: boolean;
-  onBackups?: () => void;
   onPrepare?: () => void;
   onCheckpoint?: () => void;
   actionTarget?: HTMLElement | null;
 }) {
   const application = useApplication();
   const action = useAction({ after: application.settle });
-  const [recovery, setRecovery] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [release, setRelease] = useState(emptyRelease);
   const [advanced, setAdvanced] = useState(false);
@@ -138,25 +138,63 @@ export function VersionsPanel({
     action.clear();
   };
   const configured = !!state.git?.configured;
-  if (recovery)
-    return (
-      <>
-        <Button variant="link" onClick={() => setRecovery(false)}>
-          Back to game updates
-        </Button>
-        <BackupsPanel state={state} actionTarget={actionTarget} />
-      </>
-    );
+  // The versions the game's history recorded, read again once it records another.
+  const versions = useRead(
+    configured ? `${project.id}\n${state.git?.original_commit}` : null,
+    () => api.translation.versions(project.id),
+  );
+  const history = versions.value ?? [];
+  const latest =
+    history[0]?.version === state.git?.original_version
+      ? history[0]
+      : undefined;
+  const earlier = latest ? history.slice(1) : history;
+  // The update under way, from choosing its release to translating its text.
+  const step = !configured
+    ? null
+    : choosing
+      ? 0
+      : pending || assetsPending
+        ? 2
+        : active
+          ? ({ stage_update: 0, version_preview: 1, version_handoff: 3 }[
+              active.action || ""
+            ] ?? 2)
+          : done
+            ? 3
+            : preview && !session.stale
+              ? 2
+              : stage || preview
+                ? 1
+                : session.stage &&
+                    ["failed", "interrupted", "stopped"].includes(
+                      session.stage.status,
+                    ) &&
+                    session.stage.id !== dismissedAttempt
+                  ? 0
+                  : null;
+  // What holds the current step, said once beside it.
+  const problem = pending
+    ? "Conflicts to resolve"
+    : assetsPending
+      ? "Assets to recover"
+      : failedStep
+        ? sentence(failedStep.status)
+        : "";
   return (
     <div className="version-panel">
-      <p className="version-purpose">
-        Use this page when the developer releases a newer version of the game
-        and you want to carry your translation forward.
-      </p>
       <div className="version-current">
         <span>Current game version</span>
         <strong>{state.git?.original_version || "Not recorded yet"}</strong>
+        {latest && <small>{versionLabel(latest)}</small>}
       </div>
+      {step !== null && (
+        <StepProgress
+          label="Game update steps"
+          current={step}
+          steps={updateSteps(session, layout, step, problem)}
+        />
+      )}
       {action.key === "folder" && (
         <Message message={action.error} onDismiss={action.clear} />
       )}
@@ -408,11 +446,11 @@ export function VersionsPanel({
           )}
         />
       ) : (
-        <Section title="Update this translation">
+        <Section title="Update the game">
           <p>
             {aborted
               ? "The update was canceled. Choose another release when you’re ready."
-              : "Keep translating this version until you have a newer official release to import."}
+              : "When the developer releases a new version or a patch, bring it in here. Your translation carries over, so only new and changed text needs translating."}
           </p>
           <ActionSlot target={actionTarget}>
             <Button variant="primary" disabled={disabled} onClick={chooseNew}>
@@ -462,13 +500,18 @@ export function VersionsPanel({
           />
         </details>
       )}
-      <Button
-        variant="link"
-        disabled={action.busy}
-        onClick={() => (onBackups ? onBackups() : setRecovery(true))}
-      >
-        Backups & recovery
-      </Button>
+      {(step === null || done) && !!earlier.length && (
+        <Section title="Earlier versions" className="version-history">
+          <ol>
+            {earlier.map((record) => (
+              <li key={record.commit}>
+                <strong>{record.version}</strong>
+                <span>{versionLabel(record)}</span>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
       {!guided && !!session.history.length && (
         <details>
           <summary>Update history ({session.history.length})</summary>

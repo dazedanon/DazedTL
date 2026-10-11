@@ -10,6 +10,7 @@ import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
 import { StatusHeading } from "../../../../ui/StatusMark";
 import { sinceLabel } from "../../../assistant/assistantTasks";
+import { GameUpdatePanel } from "../../../project/GameUpdatePanel";
 
 export function packageView(w: GuidedWorkspace): TaskView {
   const {
@@ -38,124 +39,140 @@ export function packageView(w: GuidedWorkspace): TaskView {
     stopOperation,
     handoff,
     translation,
-    openProject,
+    settings,
+    review,
   } = w;
   // GameUpdate's config must be complete before a release; its repository is
-  // set on the Project page.
+  // set below the release's own options.
   const updaterBlocked = translation.gameUpdate.state === "needs_repo";
   const writing = handoff("walkthrough");
   let content: ReactNode;
   content = (
-    <ReleaseContent
-      value={release}
-      destinationError={destinationError}
-      disabled={disabled}
-      artifact={artifact}
-      unapplied={state.readiness.unapplied}
-      apply={task(
-        "export_selected",
-        `Apply (${state.readiness.unapplied.length.toLocaleString()})`,
-        {},
-        !baseline ||
-          !!state.collectionError ||
-          state.readiness.unapplied.some((name) => changed.includes(name)),
-        "default",
-        state.readiness.unapplied,
-      )}
-      edit={(change) =>
-        form.session.edit((current) => ({
-          ...current,
-          release: { ...current.release, ...change },
-        }))
-      }
-      chooseFolder={() => chooseFolder("release")}
-      assets={() => setPanel("release-assets")}
-      inspect={
-        <ActionControl
-          label="View files & exclusions"
-          // A patch lists packed Ace data, so it waits for packing, which
-          // the Native Ace data section above already asks for.
-          disabled={
-            disabled ||
-            !release.directory ||
-            !release.name ||
-            !!destinationError ||
-            !!state.readiness.unapplied.length ||
-            (release.kind === "patch" && !state.acePacking.current)
-          }
-          {...feedback("package:inspect", "Reading archive contents…")}
-          onClick={() =>
-            action.run(
-              async () => {
-                await save();
-                setInspectRelease(true);
-                setPreview(
-                  await api.preview(project.id, releaseAction, undefined, {
-                    output: releasePath,
-                  }),
-                );
-              },
-              "",
-              "package:inspect",
-            )
-          }
-        />
-      }
-      open={
-        <ActionControl
-          label="Open release folder"
-          icon={<FolderOpen size={16} aria-hidden="true" />}
-          disabled={!artifact?.available || action.busy}
-          {...feedback("open-release", "Opening…")}
-          onClick={() =>
-            action.run(
-              () => window.dazedtl.openFolder("output", artifact!.folder),
-              "Release folder opened.",
-              "open-release",
-            )
-          }
-        />
-      }
-      packing={
-        state.engine === "ACE" ? (
-          <>
-            <p className="muted">{state.acePacking.message}</p>
-            {task(
-              "ace_pack",
-              state.acePacking.current
-                ? "Review native packing again"
-                : "Review native Ace packing",
-              {},
-              !baseline || !state.files.length,
-            )}
-          </>
-        ) : undefined
-      }
-      extras={
-        <ActionRow
-          label={
+    <>
+      <ReleaseContent
+        value={release}
+        destinationError={destinationError}
+        disabled={disabled}
+        artifact={artifact}
+        unapplied={state.readiness.unapplied}
+        apply={task(
+          "export_selected",
+          `Apply (${state.readiness.unapplied.length.toLocaleString()})`,
+          {},
+          !baseline ||
+            !!state.collectionError ||
+            state.readiness.unapplied.some((name) => changed.includes(name)),
+          "default",
+          state.readiness.unapplied,
+        )}
+        edit={(change) =>
+          form.session.edit((current) => ({
+            ...current,
+            release: { ...current.release, ...change },
+          }))
+        }
+        chooseFolder={() => chooseFolder("release")}
+        assets={() => setPanel("release-assets")}
+        inspect={
+          <ActionControl
+            label="View files & exclusions"
+            // A patch lists packed Ace data, so it waits for packing, which
+            // the Native Ace data section above already asks for.
+            disabled={
+              disabled ||
+              !release.directory ||
+              !release.name ||
+              !!destinationError ||
+              !!state.readiness.unapplied.length ||
+              (release.kind === "patch" && !state.acePacking.current)
+            }
+            {...feedback("package:inspect", "Reading archive contents…")}
+            onClick={() =>
+              action.run(
+                async () => {
+                  await save();
+                  setInspectRelease(true);
+                  setPreview(
+                    await api.preview(project.id, releaseAction, undefined, {
+                      output: releasePath,
+                    }),
+                  );
+                },
+                "",
+                "package:inspect",
+              )
+            }
+          />
+        }
+        open={
+          <ActionControl
+            label="Open release folder"
+            icon={<FolderOpen size={16} aria-hidden="true" />}
+            disabled={!artifact?.available || action.busy}
+            {...feedback("open-release", "Opening…")}
+            onClick={() =>
+              action.run(
+                () => window.dazedtl.openFolder("output", artifact!.folder),
+                "Release folder opened.",
+                "open-release",
+              )
+            }
+          />
+        }
+        packing={
+          state.engine === "ACE" ? (
             <>
-              {writing.waiting ? (
-                <StatusHeading state="waiting" title="Player walkthrough" />
-              ) : writing.saved ? (
-                <StatusHeading state="done" title="Player walkthrough" />
-              ) : (
-                <strong>Player walkthrough</strong>
+              <p className="muted">{state.acePacking.message}</p>
+              {task(
+                "ace_pack",
+                state.acePacking.current
+                  ? "Review native packing again"
+                  : "Review native Ace packing",
+                {},
+                !baseline || !state.files.length,
               )}
-              <small>
-                {writing.waiting
-                  ? `Expecting WALKTHROUGH.html in the game folder · ${sinceLabel(writing.since)}`
-                  : writing.saved
-                    ? "Saved as WALKTHROUGH.html in the game folder."
-                    : "Optional. Your coding assistant writes a portable walkthrough for players."}
-              </small>
             </>
-          }
-        >
-          {copyTask("walkthrough", "Copy walkthrough task")}
-        </ActionRow>
-      }
-    />
+          ) : undefined
+        }
+        extras={
+          <ActionRow
+            label={
+              <>
+                {writing.waiting ? (
+                  <StatusHeading state="waiting" title="Player walkthrough" />
+                ) : writing.saved ? (
+                  <StatusHeading state="done" title="Player walkthrough" />
+                ) : (
+                  <strong>Player walkthrough</strong>
+                )}
+                <small>
+                  {writing.waiting
+                    ? `Expecting WALKTHROUGH.html in the game folder · ${sinceLabel(writing.since)}`
+                    : writing.saved
+                      ? "Saved as WALKTHROUGH.html in the game folder."
+                      : "Optional. Your coding assistant writes a portable walkthrough for players."}
+                </small>
+              </>
+            }
+          >
+            {copyTask("walkthrough", "Copy walkthrough task")}
+          </ActionRow>
+        }
+      />
+      <GameUpdatePanel
+        key={project.id}
+        projectId={project.id}
+        status={translation.gameUpdate}
+        disabled={disabled}
+        openSettings={() => settings("gameupdate")}
+        // A changed tracked file waits for the checkpoint review, which commits it.
+        onCheckpoint={
+          translation.git?.worktree_clean === false
+            ? undefined
+            : () => review("checkpoint")
+        }
+      />
+    </>
   );
   const build = task(
     releaseAction,
@@ -179,7 +196,14 @@ export function packageView(w: GuidedWorkspace): TaskView {
   const actionContext = destinationError ? undefined : updaterBlocked ? (
     <span>
       GameUpdate needs this game&apos;s repository.{" "}
-      <Button variant="link" onClick={() => openProject("versions")}>
+      <Button
+        variant="link"
+        onClick={() => {
+          const field = document.getElementById("gameupdate-repo");
+          field?.scrollIntoView({ block: "center" });
+          field?.focus();
+        }}
+      >
         Set repository
       </Button>
     </span>

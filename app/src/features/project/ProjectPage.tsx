@@ -27,14 +27,13 @@ import { BackupsPanel } from "../translation/BackupsPanel";
 import { RequestsPanel } from "../translation/RequestsPanel";
 import { VersionsPanel } from "../translation/VersionsPanel";
 import type { SettingsSection } from "../settings/Settings";
-import { GameUpdatePanel } from "./GameUpdatePanel";
 import { guidedEngines, methodLabels } from "./MethodDialog";
 
 export type ProjectTab = "status" | "history" | "versions" | "backups";
 type Amounts = ReturnType<typeof projectAmounts>;
 
 /**
- * The game's own page: where it stands, its history, game updates and
+ * The game's own page: where it stands, its history, versions and
  * backups. Both translation methods share these tools here.
  */
 export default function ProjectPage({
@@ -127,7 +126,7 @@ export default function ProjectPage({
           items={[
             { id: "status", label: "Status" },
             { id: "history", label: "History", disabled: !available },
-            { id: "versions", label: "Game updates", disabled: !available },
+            { id: "versions", label: "Versions", disabled: !available },
             { id: "backups", label: "Backups", disabled: !available },
           ]}
         />
@@ -158,10 +157,8 @@ export default function ProjectPage({
         {tab === "versions" && (
           <ProjectVersions
             project={project}
-            onBackups={() => onTab("backups")}
             openTask={openTask}
             openGuided={openGuided}
-            openSettings={() => settings("gameupdate")}
           />
         )}
         {tab === "backups" && <ProjectBackups />}
@@ -191,7 +188,7 @@ function ProjectStatus({
   openTask: (step: string, task: string) => void;
   openTranslation: (view?: "images") => void;
   chooseMethod: () => void;
-  settings: () => void;
+  settings: (section?: SettingsSection) => void;
 }) {
   const operation = project.operation;
   const active =
@@ -405,7 +402,11 @@ function ProjectStatus({
         {!state.provider_ready && (
           <Notice tone="warning">
             <span>Choose a connection and model before API translation.</span>
-            <Button variant="link" disabled={busy} onClick={() => settings()}>
+            <Button
+              variant="link"
+              disabled={busy}
+              onClick={() => settings("api")}
+            >
               Open Settings
             </Button>
           </Notice>
@@ -594,16 +595,12 @@ function ProjectHistory({
 
 function ProjectVersions({
   project,
-  onBackups,
   openTask,
   openGuided,
-  openSettings,
 }: {
   project: Project;
-  onBackups: () => void;
   openTask: (step: string, task: string) => void;
   openGuided: (intent: GuidedIntent) => void;
-  openSettings: () => void;
 }) {
   const { snapshot } = useApplication();
   const translation = snapshot?.translation;
@@ -620,21 +617,9 @@ function ProjectVersions({
           guided={guided}
           project={project}
           state={translation}
-          onBackups={onBackups}
           onPrepare={guided ? () => openTask("setup", "setup") : undefined}
           onCheckpoint={checkpoint}
           actionTarget={target}
-        />
-        <GameUpdatePanel
-          key={project.id}
-          projectId={project.id}
-          status={translation.gameUpdate}
-          disabled={translation.active || !!snapshot?.application.running}
-          openSettings={openSettings}
-          // A changed tracked file already shows the checkpoint above.
-          onCheckpoint={
-            translation.git?.worktree_clean === false ? undefined : checkpoint
-          }
         />
       </PageBody>
       <ActionBar feedback={null}>

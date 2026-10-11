@@ -107,6 +107,10 @@ export default function App() {
         await api.navigate(screen);
       }
     });
+  const openSettings = (section?: SettingsSection) => {
+    if (section) setSettingsRequest({ section });
+    void navigate("settings");
+  };
   // The one Translation entry opens the method the game uses, or asks.
   const [translationView, setTranslationView] = useState<TranslationView>();
   const openTranslation = (view?: TranslationView) => {
@@ -370,7 +374,7 @@ export default function App() {
                 key={project.id}
                 project={project}
                 opening={action.busy}
-                settings={() => navigate("settings")}
+                settings={openSettings}
                 openProject={openProject}
                 intent={intent}
                 intentHandled={() => setIntent(null)}
@@ -379,7 +383,7 @@ export default function App() {
               <Translation
                 key={project.id}
                 project={project}
-                settings={() => navigate("settings")}
+                settings={openSettings}
                 openProject={openProject}
                 view={translationView}
               />
@@ -404,10 +408,7 @@ export default function App() {
                 openTask={openTask}
                 openTranslation={openTranslation}
                 chooseMethod={() => setMethodOpen(true)}
-                settings={(section) => {
-                  if (section) setSettingsRequest({ section });
-                  void navigate("settings");
-                }}
+                settings={openSettings}
                 openGuided={openGuided}
               />
             )}

@@ -601,6 +601,11 @@ class TranslationEngine:
         except GitWorkflowError as error:
             raise ValueError(str(error)) from error
 
+    def versions(self, source):
+        from util.version_update import version_history
+
+        return [asdict(record) for record in version_history(source)]
+
     def release_stage(self, source, copy, kind, destination):
         """Lays a release's private copy out as the game in `destination`, as
         `kind` or as its files suggest, and returns the layout it used."""

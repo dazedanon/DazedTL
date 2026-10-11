@@ -22,6 +22,7 @@ import { retainOtherScope } from "./selection";
 import { StatusMark } from "../../ui/StatusMark";
 import { SegmentedControl } from "../../ui/SegmentedControl";
 import { ModelMenu } from "../settings/ModelMenu";
+import type { SettingsSection } from "../settings/Settings";
 
 export function TranslateWorkspace({
   state,
@@ -53,7 +54,7 @@ export function TranslateWorkspace({
     key: K,
     value: GuidedOptions[K],
   ) => void;
-  settings: () => void;
+  settings: (section?: SettingsSection) => void;
   options: () => void;
   history: () => void;
   inspect: (job: Job | null, target: RequestInspectionTarget) => void;
@@ -120,7 +121,7 @@ export function TranslateWorkspace({
             model={state.provider.model}
             connection={state.provider.connection}
             disabled={locked}
-            manage={settings}
+            manage={() => settings("api")}
           />
         </span>
         <div className="translation-tools">

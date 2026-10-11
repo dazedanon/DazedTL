@@ -240,7 +240,7 @@ export function ProgressPanel({
           Backups
         </Button>
         <Button variant="link" onClick={() => openProject("versions")}>
-          Game updates
+          Versions
         </Button>
         <StartOver
           state={state}

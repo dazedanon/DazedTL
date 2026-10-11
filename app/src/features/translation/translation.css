@@ -187,6 +187,35 @@
   font-size: var(--font-page-title);
   overflow-wrap: anywhere;
 }
+.version-current small {
+  color: var(--color-muted);
+  font-size: var(--font-control);
+}
+/* Earlier versions: a version column, then how and when it came in. */
+.version-history ol {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.version-history li {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+.version-history li strong {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+.version-history li span {
+  color: var(--color-muted);
+}
 .version-panel > .ui-section,
 .backup-panel > .ui-section {
   /* Span the panel so the divider lines up with the action rows above. */
@@ -263,13 +292,6 @@
   display: flex;
   flex-direction: column;
   flex: 1 0 0;
-}
-.version-panel:has(.version-review) > .version-current {
-  margin-bottom: 0;
-}
-.version-panel:has(.version-review) > button {
-  align-self: flex-start;
-  margin-top: var(--space-3);
 }
 .version-changes > p {
   margin: 0 0 var(--space-3);

@@ -107,18 +107,18 @@ OPERATIONS = {
     "checkpoint": ("Save translation version", {"manifest", "message"}),
     "package": ("Package local translation patch", set()),
     "stage_update": (
-        "Stage a new original for engine preparation",
+        "Copy the new release for comparison",
         {"official", "version", "patch"},
     ),
     "version_preview": (
-        "Preview official game update",
+        "Compare the new release with the game",
         {"official", "version", "baseline", "patch_overlay"},
     ),
-    "version_apply": ("Apply reviewed official update", {"preview_id"}),
-    "version_continue": ("Continue resolved official update", set()),
-    "version_abort": ("Abort official update", set()),
-    "version_handoff": ("Prepare post-update translation prompt", set()),
-    "discard_release": ("Discard a staged official release", {"stage"}),
+    "version_apply": ("Apply the game update", {"preview_id"}),
+    "version_continue": ("Finish the game update with the official files", set()),
+    "version_abort": ("Cancel the game update", set()),
+    "version_handoff": ("Prepare the post-update task", set()),
+    "discard_release": ("Discard the new release", {"stage"}),
 }
 
 GUIDED_OPERATIONS = {
@@ -624,6 +624,11 @@ Additional project instructions:
     def backups(self, project_id):
         _record, project = self.project(project_id)
         return backups.catalog(project.root, self.workspace / "backups" / project_id)
+
+    def versions(self, project_id):
+        """The game versions its version history recorded, newest first."""
+        _record, project = self.project(project_id)
+        return self.engine.versions(project.root)
 
     def release(self, project_id, folder):
         """How a new official release's folder lines up with the game, as a

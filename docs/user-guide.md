@@ -23,7 +23,7 @@ Optional tasks say so and never hold up the next step.
 **Assistant tasks** lists the tasks you copied to your assistant and where each one stands; the count in the top bar opens it.
 **Dismiss** clears a task you gave up on, and copying it again brings it back.
 
-The other tabs are **History** (runs, estimates and other activity), **Game updates** and **Backups**.
+The other tabs are **History** (runs, estimates and other activity), **Versions** and **Backups**.
 
 Lists everywhere use the same words:
 
@@ -168,7 +168,7 @@ Notes beside a translation flag text the AI wasn't sure about; check them agains
 ## Publishing with GameUpdate
 
 GameUpdate lets players update to your latest translation from its public Git repository on GitGud, GitHub or a Forgejo server such as Codeberg.
-It is separate from [Game updates](#game-updates), which merge a new official version of the game.
+It is separate from [Versions](#versions), which merge a new official version of the game.
 
 Set up adds `GameUpdate.bat` for Windows, `GameUpdate_linux.sh` for Linux, the `gameupdate` folder and a `README.md` that tells players how to patch and becomes the repository's front page.
 MV and MZ games also get a startup check that warns players when the repository has a newer version and links to it; offline or after an error, the game starts as usual.
@@ -178,7 +178,7 @@ DazedTL connects each game to its repository through `gameupdate/patch-config.tx
 
 1. In **Settings > GameUpdate**, choose the forge and host and enter the owner of your patch repositories, such as `dazed-translations`.
    Leave the owner empty if you don't publish with GameUpdate.
-2. Each game's repository is under **GameUpdate** on the Project page's **Game updates** tab.
+2. Each game's repository is under **GameUpdate** in the **Release** task, or on **Options** for Assistant-led.
    DazedTL fills it in from the game's `origin` remote when that belongs to the owner; otherwise type it and **Save**.
    Until it's known, Release waits for it.
 
@@ -202,12 +202,13 @@ Before building a clean game ZIP for players, save the translation version and p
 **Release** then writes that commit into the ZIP's `gameupdate/previous_patch_sha.txt`, so GameUpdate knows which version players start from; the game folder itself doesn't change.
 Without the pushed commit, the clean ZIP leaves out `patch-config.txt`, as patch ZIPs always do, so GameUpdate stays off in it.
 
-## Game updates
+## Versions
 
-When a game gets a new official version, open **Game updates** on the Project page.
+When a game gets a new official version, open **Versions** on the Project page.
 Choose the folder the developer released, either the complete game or a patch of files to copy over it; DazedTL says which it looks like, and you can change that.
 It sets the new version up as a separate copy, previews the changes, then applies the update to your translation.
 A patch keeps every game file it doesn't include, but it can't remove files the developer deleted.
+Steps above the update show where it stands, and the versions the game had are listed below.
 **Discard release** drops an update you don't want.
 
 ## Backups and recovery

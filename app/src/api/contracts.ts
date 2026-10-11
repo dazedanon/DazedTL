@@ -1221,6 +1221,14 @@ export type TranslationState = ProjectOptions & {
   legacyAvailable: boolean;
 };
 
+export type VersionRecord = {
+  version: string;
+  recorded: string;
+  kind: "setup" | "update";
+  release: "patch" | "complete" | "";
+  commit: string;
+};
+
 /** How a release lines up with the game as one kind; see the engine's
 util/version_update/release_layout.py. */
 export type ReleaseLayout = {
@@ -2687,6 +2695,7 @@ export type RpcContract = {
   translation_request: { request: RunIndexRequest; response: RequestPreview };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
+  translation_versions: { request: ProjectRequest; response: VersionRecord[] };
   translation_release: {
     request: TranslationReleaseRequest;
     response: ReleaseInspection;

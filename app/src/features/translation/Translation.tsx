@@ -22,9 +22,11 @@ import { Tabs, TabPanel, type Tab } from "../../ui/Tabs";
 import { Button } from "../../ui/Button";
 import { Feedback, Message } from "../../ui/Feedback";
 import type { ProjectLink } from "../guided/workspace/model";
+import type { SettingsSection } from "../settings/Settings";
 import { useProjectOptions } from "./useProjectOptions";
 import { ContextPanel } from "./ContextPanel";
 import { OptionsPanel } from "./OptionsPanel";
+import { GameUpdatePanel } from "../project/GameUpdatePanel";
 import {
   attemptJobs,
   awaitingQuote,
@@ -50,8 +52,8 @@ export default function Translation({
   view,
 }: {
   project: Project;
-  settings: () => void;
-  /** History, game updates and backups live on the Project page. */
+  settings: (section?: SettingsSection) => void;
+  /** History, versions and backups live on the Project page. */
   openProject: ProjectLink;
   /** The tab to open on, such as Images for a copied image task. */
   view?: View;
@@ -90,7 +92,7 @@ function Workspace({
 }: {
   project: Project;
   state: TranslationState;
-  settings: () => void;
+  settings: (section?: SettingsSection) => void;
   openProject: ProjectLink;
   initialView?: View;
 }) {
@@ -303,6 +305,13 @@ function Workspace({
                 edit={edit}
                 disabled={disabled}
                 settings={settings}
+              />
+              <GameUpdatePanel
+                key={project.id}
+                projectId={project.id}
+                status={state.gameUpdate}
+                disabled={disabled}
+                openSettings={() => settings("gameupdate")}
               />
             </PageBody>
             <ActionBar feedback={<Feedback dirty={draft.dirty} />}>

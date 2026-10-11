@@ -8,6 +8,7 @@ import { CheckField, CheckGroup, FieldRow } from "../../ui/FieldRow";
 import { Notice } from "../../ui/Notice";
 import { OptionCards, type OptionCard } from "../../ui/OptionCards";
 import { ModelMenu } from "../settings/ModelMenu";
+import type { SettingsSection } from "../settings/Settings";
 
 export type Mode = TranslationOptions["mode"];
 
@@ -37,7 +38,7 @@ export function OptionsPanel({
     value: TranslationOptions[K],
   ) => void;
   disabled: boolean;
-  settings: () => void;
+  settings: (section?: SettingsSection) => void;
 }) {
   const connected = !!state.connection?.model;
   // Batch unless the connection cannot run it, the default new projects get.
@@ -102,7 +103,7 @@ export function OptionsPanel({
                       model={state.connection.model}
                       connection={state.connection.name}
                       disabled={disabled}
-                      manage={settings}
+                      manage={() => settings("api")}
                     />
                   </dd>
                 </div>
@@ -113,7 +114,7 @@ export function OptionsPanel({
                   No API connection yet. Your assistant prepares the game
                   without one and asks for it before translating.
                 </span>
-                <Button variant="link" onClick={settings}>
+                <Button variant="link" onClick={() => settings("api")}>
                   Add a connection
                 </Button>
               </Notice>

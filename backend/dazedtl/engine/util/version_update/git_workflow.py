@@ -35,6 +35,8 @@ _TRANSLATION_BRANCH_CONFIG = "dazedtl.translationBranch"
 _PRESERVE_GAME_FILES_CONFIG = "dazedtl.preserveGameFiles"
 _PRESERVE_GAME_FILES_TRAILER = "DazedTL-Preserve-Game-Files: true"
 VERSION_TRAILER = "DazedTL-Version"
+# Whether an update commit came from a complete release or a patch copied over the game.
+RELEASE_TRAILER = "DazedTL-Release"
 _TOOL_NAME = "DazedMTLTool"
 _TOOL_EMAIL = "local@dazedmtl.invalid"
 _ZERO_OID = "0" * 40
@@ -484,6 +486,60 @@ def _version_from_history(repo: Path, ref: str, commit: str | None) -> str | Non
     subject = _run_git(repo, "log", "-1", "--format=%s", ref).stdout.strip()
     match = _VERSION_HINT.search(subject)
     return match.group(1) if match else None
+
+
+@dataclass(frozen=True)
+class VersionRecord:
+    version: str
+    # When the version was recorded, as an ISO 8601 time.
+    recorded: str
+    # "setup" for the first version, "update" for each one after it.
+    kind: str
+    # "patch" or "complete" for updates that record it; "" before that.
+    release: str
+    commit: str
+
+
+def version_history(game_root: str | Path) -> tuple[VersionRecord, ...]:
+    """Every version the original branch recorded, newest first."""
+    status = inspect_repository(Path(game_root).expanduser().resolve())
+    if not status.repo_root or not status.original_commit:
+        return ()
+    log = _run_git(
+        status.repo_root,
+        "log",
+        "--first-parent",
+        "--format=%H%x00%cI%x00%B%x1e",
+        ORIGINAL_BRANCH,
+    ).stdout
+    records = []
+    for entry in log.split("\x1e"):
+        parts = entry.strip("\n").split("\x00", 2)
+        if len(parts) != 3:
+            continue
+        commit, recorded, message = parts
+        subject = message.strip().splitlines()[0] if message.strip() else ""
+        version = _VERSION_LINE.search(message)
+        if not version:
+            continue
+        if subject.startswith("original: import clean game"):
+            kind = "setup"
+        elif subject.startswith("patch: "):
+            kind = "update"
+        else:
+            # Metadata and normalization commits record no new version.
+            continue
+        release = re.search(rf"^{RELEASE_TRAILER}:\s*(patch|complete)\s*$", message, re.MULTILINE)
+        records.append(
+            VersionRecord(
+                version.group(1).strip(),
+                recorded,
+                kind,
+                release.group(1) if release else "",
+                commit,
+            )
+        )
+    return tuple(records)
 
 
 def _applied_update_version(
@@ -2961,7 +3017,8 @@ def apply_official_update(
     original_commit = _commit_tree(
         repo,
         new_tree.tree,
-        _message(subject, version),
+        _message(subject, version)
+        + f"\n{RELEASE_TRAILER}: {'patch' if patch_overlay else 'complete'}",
         (baseline_parent,),
     )
     if baseline_was_missing:

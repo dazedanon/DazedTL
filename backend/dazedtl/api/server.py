@@ -736,6 +736,7 @@ def routes(app):
         "save_document",
         "prepare",
         "backups",
+        "versions",
         "release",
         "compile",
         "organize",

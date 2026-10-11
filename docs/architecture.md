@@ -519,7 +519,7 @@ Use the flat, compact [Settings](../app/src/features/settings/Settings.tsx) and 
 The sidebar has three places: the Project page holds everything about the game, Translation holds the work, and Settings holds the app.
 Each game has one translation method, chosen in [MethodDialog](../app/src/features/project/MethodDialog.tsx) when it is first opened and kept in the project registry; games opened before the choice keep the method they already have work in, and changing it keeps the other method's work.
 The one Translation entry opens that method's workspace.
-The Project page's Status, History, Game updates and Backups tabs serve both methods.
+The Project page's Status, History, Versions and Backups tabs serve both methods.
 Status shows where a Guided project stands from the observed snapshot through [guidedProgress](../app/src/features/guided/progress.ts): the next unfinished required task, every stage's tasks with their completion and the last activity.
 Its one Continue opens the next required task, and the saved workspace position appears beside it as a smaller Last opened link unless it is a finished task before the next one; with every required task done, Continue resumes that position.
 A one-task stage shows no done count, and an optional task not yet done says Optional instead of showing an empty mark.
@@ -683,8 +683,9 @@ The receipts leave out `gameupdate/patch-config.txt`, which follows Settings and
 New baselines require current preparation evidence at preview and execution; existing Git baselines remain usable without historical preparation receipts.
 A finished setup continues to speaker/context setup only after the saved operation and baseline are confirmed, without starting an assistant task.
 Recovery and official-version updates are project utilities, outside the normal preparation sequence.
-They are the Project page's Game updates and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
-Game updates also holds the game's GameUpdate repository and its config's status, below the version tools.
+They are the Project page's Versions and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
+Versions shows an update's steps with what each finished step did, and the versions the original branch recorded ([version_history](../backend/dazedtl/engine/util/version_update/git_workflow.py)), read when the tab opens and again once the branch moves; each update commit records whether it came from a patch or a complete release.
+The game's GameUpdate repository and its config's status belong to publishing, so they sit in the Guided Release task and on Assistant-led's Options.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.
 Guided keeps update steps in History's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
 Backup history is grouped by game versus project files and appears only after the user chooses recovery.

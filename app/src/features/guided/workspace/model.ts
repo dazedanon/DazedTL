@@ -1,5 +1,6 @@
 import type { Phase, Project } from "../../../api/contracts";
 import { displayText } from "../../../ui/displayText";
+import type { SettingsSection } from "../../settings/Settings";
 
 export const speakers = [
   "NAMES",
@@ -91,7 +92,7 @@ export type ProjectLink = (
 export type GuidedProps = {
   project: Project;
   opening?: boolean;
-  settings: () => void;
+  settings: (section?: SettingsSection) => void;
   openProject: ProjectLink;
   intent?: GuidedIntent | null;
   intentHandled?: () => void;
