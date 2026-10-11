@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
-from dazedtl.storage import WorkspaceLock, write_json
+from dazedtl.storage import WorkspaceLock, staging_folder, write_json
 
 from .files import digest, read_json
 
@@ -508,9 +508,7 @@ def restore(
         raise ValueError(
             "Restore into a separate directory outside the source and backup store."
         )
-    recovery = tempfile.TemporaryDirectory(prefix=".dazedtl-restore-", dir=parent)
-    temporary = Path(recovery.name)
-    try:
+    with staging_folder(parent, ".dazedtl-restore-") as temporary:
         for name in value.get("directories", []):
             _child(temporary, name).mkdir(parents=True, exist_ok=True)
         _extract(directory, value, temporary, list(value["files"]), stopped, progress)
@@ -520,15 +518,13 @@ def restore(
                 "The restore destination appeared during recovery. It was left unchanged."
             )
         temporary.rename(target)
-        return {
-            "path": str(target),
-            "files": len(value["files"]),
-            "kind": value["kind"],
-            "id": value["id"],
-            "restored": True,
-        }
-    finally:
-        recovery.cleanup()
+    return {
+        "path": str(target),
+        "files": len(value["files"]),
+        "kind": value["kind"],
+        "id": value["id"],
+        "restored": True,
+    }
 
 
 def reset(

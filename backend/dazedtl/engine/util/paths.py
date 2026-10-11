@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import secrets
+import shutil
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -292,6 +294,43 @@ def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:
     if create:
         metadata.mkdir(exist_ok=True)
     return metadata
+
+
+def new_folder(parent: str | Path, prefix: str) -> Path:
+    """Create a uniquely named folder in ``parent`` that keeps its permissions.
+
+    tempfile.mkdtemp's mode 0o700 becomes an owner-only ACL on Windows, which
+    locks the app out of files an elevated assistant writes there; see the
+    agent boundary in docs/architecture.md. The app's dazedtl.storage.new_folder
+    does the same.
+    """
+    parent = Path(parent)
+    for _attempt in range(100):
+        folder = parent / (prefix + secrets.token_hex(8))
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            continue
+        return folder
+    raise FileExistsError(f"No unused folder name in {parent}")
+
+
+@contextmanager
+def staging_folder(parent: str | Path, prefix: str):
+    """A new_folder that is removed on exit unless it was renamed away, like
+    tempfile.TemporaryDirectory."""
+    folder = new_folder(parent, prefix)
+    try:
+        yield folder
+    finally:
+        if folder.is_dir() and not folder.is_symlink():
+
+            def writable(function, path, _error):
+                # Windows refuses to delete read-only files.
+                os.chmod(path, stat.S_IWRITE)
+                function(path)
+
+            shutil.rmtree(folder, onexc=writable)
 
 
 migrate_root_data_files()

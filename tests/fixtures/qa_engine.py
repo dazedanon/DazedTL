@@ -182,6 +182,10 @@ assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
 assert {source(identity) for identity in forced} == {"朝だ", "森の奥へ"}, forced
 assert state["not_translated"] == {"total": 3, "may_show": 2}, state["not_translated"]
+# Assistants write into the task, so it keeps its parent's permissions instead
+# of tempfile's private ones, which on Windows lock the app out of the files an
+# elevated assistant writes.
+assert task.stat().st_mode == task.parent.stat().st_mode, oct(task.stat().st_mode)
 
 
 def result_path(name, value):

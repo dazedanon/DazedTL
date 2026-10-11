@@ -31,6 +31,7 @@ from util.paths import (
     GAME_SKILL_RELATIVE,
     GAME_SKILL_RESERVED_NAMES,
     GAME_SKILLS_RELATIVE,
+    new_folder,
 )
 from util.rpgmaker_qa_manifest import (
     _mechanical_evidence,
@@ -2009,7 +2010,7 @@ def prepare_task(
                 raise ValueError(f"Existing QA task has an unsupported schema: {task_dir}")
             return task_dir, status(task_dir)
 
-        staging = Path(tempfile.mkdtemp(prefix=f".{task_key}.", dir=task_parent))
+        staging = new_folder(task_parent, f".{task_key}.")
         try:
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)

@@ -48,6 +48,7 @@ from util.paths import (
     LEGACY_GAME_SKILLS_RELATIVE,
     read_active_glossary,
     read_game_glossary,
+    staging_folder,
 )
 from util.provider_costs import cache_write_multiplier
 from util.project_scanner import find_data_folder
@@ -2261,10 +2262,7 @@ def import_run_archive(
         other_root = work_root if completed else archive_root
         target = _unique_run_path(target_root, safe_id, other_root)
 
-        with tempfile.TemporaryDirectory(
-            prefix=".evaluation-import-", dir=target_root
-        ) as temporary:
-            staging = Path(temporary)
+        with staging_folder(target_root, ".evaluation-import-") as staging:
             for info in infos:
                 if info.filename == "evaluation_export.json":
                     continue

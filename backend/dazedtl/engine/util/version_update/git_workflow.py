@@ -25,7 +25,7 @@ from typing import Iterable, Mapping
 
 import jsbeautifier
 
-from util.paths import ensure_game_tool_gitignore
+from util.paths import ensure_game_tool_gitignore, staging_folder
 
 
 ORIGINAL_BRANCH = "original"
@@ -1370,8 +1370,7 @@ def _sync_external_assets(
         return ()
     state_dir = _asset_state_path(repo, "", "sync-stage").parent
     state_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="asset-sync-", dir=state_dir) as temporary:
-        stage_root = Path(temporary)
+    with staging_folder(state_dir, "asset-sync-") as stage_root:
         staged: dict[str, Path] = {}
         backups: dict[str, Path | None] = {}
         destinations = {}

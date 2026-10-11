@@ -117,6 +117,11 @@ class BackupTests(unittest.TestCase):
                 )
                 if os.name != "nt":
                     self.assertEqual((target / "tool.sh").stat().st_mode & 0o777, 0o755)
+                    # A restored game gets a plain folder's permissions, which on
+                    # Windows let the app open what an elevated assistant writes.
+                    plain = self.root / ("plain-" + identity)
+                    plain.mkdir()
+                    self.assertEqual(target.stat().st_mode, plain.stat().st_mode)
                 (target / "copied-asset.bin").write_bytes(b"independent restored edits")
                 backups.verify(saved)
                 with self.assertRaises(ValueError):

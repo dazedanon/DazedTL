@@ -1,10 +1,9 @@
 """Engine-owned guided capabilities, kept behind the migration boundary."""
 
 import re
-import tempfile
 from pathlib import Path
 
-from dazedtl.storage import write_json
+from dazedtl.storage import staging_folder, write_json
 from dazedtl.translation.files import digest, project_path, read_json
 
 
@@ -106,10 +105,8 @@ def run_release(plan, log):
             "The package contents or public version changed. Build a new release preview."
         )
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=".dazedtl-release-", dir=output.parent
-    ) as temporary:
-        staged = Path(temporary) / output.name
+    with staging_folder(output.parent, ".dazedtl-release-") as temporary:
+        staged = temporary / output.name
         write_archive(source, staged, expected, log)
         validate_plan(plan)
         if not packing_state(plan["project"], plan["folder"])["current"]:

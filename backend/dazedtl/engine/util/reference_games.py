@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from util.ace import rgssad, rv2json
-from util.paths import GAME_METADATA_RELATIVE, ensure_game_tool_gitignore
+from util.paths import GAME_METADATA_RELATIVE, ensure_game_tool_gitignore, new_folder
 from util.project_scanner import (
     detect_wolf_layout,
     find_data_folder,
@@ -475,7 +475,7 @@ def add_game_pair_reference(
     if target.is_symlink():
         raise ValueError(f"Unsafe reference cache path: {target}")
     if not (_has_json(source_data) and _has_json(translated_data)):
-        staging = Path(tempfile.mkdtemp(prefix=f".{cache_key}.", dir=cache_parent))
+        staging = new_folder(cache_parent, f".{cache_key}.")
         try:
             logger(f"Preparing Japanese {japanese['engine']} reference data …")
             _materialize_reference_game(japanese, staging / "source", logger)

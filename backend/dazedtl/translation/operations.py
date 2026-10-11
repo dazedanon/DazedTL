@@ -7,7 +7,7 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
-from dazedtl.storage import write_json
+from dazedtl.storage import staging_folder, write_json
 
 from . import backups
 from .files import digest, evidence, project_path, read_json, verify_evidence
@@ -416,14 +416,12 @@ def _execute(engine, workspace, job, plan, stopped, progress, resources):
                 "Release stopped. Its translation version and backup were kept."
             )
         output.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix=".dazedtl-patch-", dir=output.parent
-        ) as temporary:
+        with staging_folder(output.parent, ".dazedtl-patch-") as temporary:
             manifest = read_json(project_path(source, payload["manifest"]))
             # The translation version keeps GameUpdate's config for publishing;
             # a local patch leaves it out.
             packaged = engine.package(
-                source, options, manifest, Path(temporary), updater=False
+                source, options, manifest, temporary, updater=False
             )
             verify_evidence(source, payload["evidence"])
             inputs = input_stamps(source, payload["evidence"])

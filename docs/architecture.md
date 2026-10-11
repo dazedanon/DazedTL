@@ -956,6 +956,11 @@ Agent operations use the same locked dispatch and project/run ownership checks a
 The app controls its workers.
 External assistant activity is reported from saved artifacts and must not be represented as an app-owned process.
 
+An assistant may run elevated, for example from an administrator PowerShell, and on Windows the files it writes then belong to Administrators.
+The app's normal session can still open them where the folder grants the user access, but not where it grants access only to each file's owner.
+Python's `mode=0o700`, which `tempfile.mkdtemp` and `TemporaryDirectory` use, makes exactly that owner-only folder on Windows.
+So a folder that stays in the workspace, a game or an output folder, or whose files move there, comes from `new_folder` or `staging_folder` in [storage](../backend/dazedtl/storage.py) or the engine's [paths](../backend/dazedtl/engine/util/paths.py), and keeps the permissions of the folder it is made in; tempfile remains for scratch that nothing moves out of.
+
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates, and connection identity.
 Tracked game-source dependencies bind to their original-branch blobs; untracked source exports, project guidance and the plan file bind to their exact bytes.
 Both API transports consume the same logical request builder.

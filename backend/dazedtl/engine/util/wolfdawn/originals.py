@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import os
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Callable
 
 from util import wolfdawn
+from util.paths import staging_folder
 
 ProgressFn = Callable[[int, int, str], None]
 
@@ -99,10 +99,7 @@ def rebuild_originals_from_archives(
 
     emit("Rebuilding pristine originals from the game's .wolf archives…")
     originals_dir.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=".wolf-originals-", dir=originals_dir.parent
-    ) as tmp:
-        temp_root = Path(tmp)
+    with staging_folder(originals_dir.parent, ".wolf-originals-") as temp_root:
         unpacked = temp_root / "unpacked"
         inputs: list[str] = []
         for arc in archives:
