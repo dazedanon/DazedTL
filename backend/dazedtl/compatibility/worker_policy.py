@@ -10,6 +10,7 @@ from typing import Any, cast
 from dazedtl.settings.preferences import (
     CHOICE_COLLECTION,
     GENERATION_PARAMETERS,
+    SAME_LINE_SPEAKERS,
     SPEAKER_CONTEXT,
     batch_input_tokens,
     output_tokens,
@@ -49,6 +50,9 @@ def configure_states(plan, root, policy):
     if module is not None and plan.get("engine") in {"MVMZ", "RPG Maker MV/MZ"}:
         cast(Any, module).SPEAKER_CONTEXT = bool(
             policy and policy.get("speakerContext") == SPEAKER_CONTEXT
+        )
+        cast(Any, module).SAME_LINE_SPEAKERS = bool(
+            policy and policy.get("sameLineSpeakers") == SAME_LINE_SPEAKERS
         )
         cast(Any, module).CHOICE_COLLECTION = bool(
             policy and policy.get("choiceCollection") == CHOICE_COLLECTION
@@ -137,6 +141,7 @@ def install(*, coordinator=False):
             or policy.get("stateGrouping") not in (None, state_requests.POLICY)
             or policy.get("choiceCollection") not in (None, CHOICE_COLLECTION)
             or policy.get("speakerContext") not in (None, SPEAKER_CONTEXT)
+            or policy.get("sameLineSpeakers") not in (None, SAME_LINE_SPEAKERS)
             or policy.get("openrouterStructuredOutputs")
             not in (None, STRUCTURED_OUTPUTS)
             or type(policy.get("entriesPerRequest")) is not int

@@ -151,7 +151,8 @@ New MV/MZ runs also freeze a speaker-context policy, which enables the [event pa
 Existing translated code-101 nameplates still supply dialogue context; unnamed messages clear the preceding speaker.
 Implicit square-bracket nameplates must pass short-name plausibility checks, so bracketed tutorial prose receives normal text instructions instead of the nameplate prompt.
 Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
-Estimates, Live and Batch use the same policy; older frozen runs retain their original parser and request identities.
+A separate same-line speaker policy, `SAME_LINE_SPEAKERS`, sends a nameplate sharing its line with the text, such as `【Name】：text` or `Name「text`, only as the `[Speaker]:` prefix, so the model does not write it into the message a second time.
+Estimates, Live and Batch use these policies; older frozen runs retain their original parser and request identities.
 
 ### Batch execution and recovery
 

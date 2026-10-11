@@ -2972,6 +2972,11 @@ def searchNames(data, pbar, context, filename):
 # keep the parser behavior they were prepared with.
 SPEAKER_CONTEXT = False
 
+# Same-line nameplates (【Name】dialogue, Name「dialogue) travel only as the
+# [Speaker]: prefix, so the request body no longer repeats them. Also frozen
+# per run: older runs keep their request identities.
+SAME_LINE_SPEAKERS = False
+
 
 def _standalone_speaker(name):
     # Re-exported [Name] lines are implicit nameplates, unlike explicit 101
@@ -3100,6 +3105,7 @@ def _searchCodes(page, pbar, jobList, filename):
             sourceGroup = []
             currentSourceGroup = []
             nametag = ""
+            speakerPrefix = ""
 
             # Face layout affects the following message even when code-101 name
             # translation is disabled or face-to-speaker resolution exits early.
@@ -3295,7 +3301,7 @@ def _searchCodes(page, pbar, jobList, filename):
                             code_locked.append(False)
                     speakerList = resolved_speakers
                     # Check if speaker+dialogue are on same line
-                    sameLineMatch = re.match(r"^\s*【([^】]+)】(.+)", speakerWork, re.DOTALL)
+                    sameLineMatch = re.match(r"^\s*【([^】]+)】(?:\s*[：:])?(.+)", speakerWork, re.DOTALL)
                     if inlineSpeakerMatch and len(speakerList) == 1:
                         # Strip speaker prefix, keep everything after as dialogue
                         response = getSpeaker(speakerList[0])
@@ -3303,6 +3309,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[0] += response[1][0]
                         totalTokens[1] += response[1][1]
                         jaString = inlineSpeakerMatch.group(3)
+                        speakerPrefix = speakerWork[: inlineSpeakerMatch.start(3)]
                         if not setData:
                             nametag = f"[{speaker}]\n" + nametag
                     elif sameLineMatch and len(speakerList) == 1:
@@ -3313,6 +3320,7 @@ def _searchCodes(page, pbar, jobList, filename):
                         totalTokens[1] += response[1][1]
                         # Remove speaker bracket from jaString, let dialogue get translated
                         jaString = sameLineMatch.group(2)
+                        speakerPrefix = speakerWork[: sameLineMatch.start(2)]
                         # Store the translated bracket to add back later
                         if not setData:
                             nametag = f"[{speaker}]\n" + nametag
@@ -3404,6 +3412,15 @@ def _searchCodes(page, pbar, jobList, filename):
 
                     finalJAString = rawSource
                     oldjaString = rawSource
+                    # The [Speaker]: prefix already carries a same-line name.
+                    # A second copy in the body was echoed by the model and
+                    # written twice, e.g. "[Event 1]\n[Event 1]: title".
+                    if (
+                        SAME_LINE_SPEAKERS
+                        and speakerPrefix
+                        and rawSource.startswith(speakerPrefix)
+                    ):
+                        finalJAString = rawSource[len(speakerPrefix):]
                     centerLineFlag = bool(
                         re.search(r"\\ac", finalJAString, re.IGNORECASE)
                     )

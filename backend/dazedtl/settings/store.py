@@ -455,6 +455,7 @@ class Settings:
             "stateGrouping": "compatible-states-v1",
             "choiceCollection": preferences.CHOICE_COLLECTION,
             "speakerContext": preferences.SPEAKER_CONTEXT,
+            "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
         }
 
     def connection_summary(self):
@@ -1073,6 +1074,7 @@ class Settings:
                 "stateGrouping": "compatible-states-v1",
                 "choiceCollection": preferences.CHOICE_COLLECTION,
                 "speakerContext": preferences.SPEAKER_CONTEXT,
+                "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

@@ -223,7 +223,11 @@ try:
             }
         )
         from dazedtl.compatibility.worker_policy import configure_states
-        from dazedtl.settings.preferences import CHOICE_COLLECTION, SPEAKER_CONTEXT
+        from dazedtl.settings.preferences import (
+            CHOICE_COLLECTION,
+            SAME_LINE_SPEAKERS,
+            SPEAKER_CONTEXT,
+        )
         from modules import rpgmakermvmz as parser
         from util import extensions
 
@@ -277,6 +281,7 @@ try:
         policy = {
             "choiceCollection": CHOICE_COLLECTION,
             "speakerContext": SPEAKER_CONTEXT,
+            "sameLineSpeakers": SAME_LINE_SPEAKERS,
         }
         with patch.multiple(parser, **options):
             for generation in (policy, policy, {}, policy):
@@ -350,6 +355,22 @@ try:
                 )
                 assert calls == [(["[Hana]: こんにちは"], "")], calls
                 assert names, label
+            # A same-line nameplate travels only as the [Speaker]: prefix.
+            # Repeated in the body, the model kept it and a narration label
+            # was written twice. Older frozen runs keep their request bodies.
+            label = ["【ユウイベント1】：『ハルカとプールで特訓1』", "再生しますか？"]
+            for generation, body in (
+                ({}, '【ユウイベント1】："ハルカとプールで特訓1"'),
+                (policy, '"ハルカとプールで特訓1"'),
+            ):
+                configure_states({"engine": "MVMZ"}, temporary, generation)
+                result = parse([name(""), *(command(401, [line]) for line in label)])
+                assert calls == [([f"[Hana]: {body}\n再生しますか？"], "")], calls
+                assert result[1]["parameters"] == ["[Hana]\nHello."], result
+                assert result[1]["_original"] == "\n".join(label), result
+            with patch.object(parser, "INLINE401SPEAKERS", True):
+                parse([name(""), command(401, ["花「こんにちは」"])])
+                assert calls == [(['[Hana]: "こんにちは"'], "")], calls
             parse(
                 [
                     name("Hana"),

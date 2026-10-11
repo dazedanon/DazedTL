@@ -12,6 +12,7 @@ DEFAULT_BATCH_INPUT_TOKENS = 400_000
 GENERATION_PARAMETERS = "provider-defaults-v1"
 CHOICE_COLLECTION = "event-choices-once-v1"
 SPEAKER_CONTEXT = "event-speaker-context-v1"
+SAME_LINE_SPEAKERS = "event-same-line-speakers-v1"
 
 DEFAULT_OPTIONS = {
     "entriesPerRequest": None,
