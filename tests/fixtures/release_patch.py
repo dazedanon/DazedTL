@@ -148,8 +148,10 @@ assert sorted(
 ) == ["data"]
 assert (game / "data/Map002.json").is_file() and not (game / "readme.txt").exists()
 
-# A release whose line merge drops a translation says so in the line view:
-# a line inserted beside a translated one can make the merge take the whole file.
+# A line inserted beside a translated one: formatted JSON repeats each
+# command's lines, so Git lines the insertion up against the translated line
+# and conflicts. The merge by value keeps the translation, the preview and
+# the line view say so, and applying leaves it in the game.
 data = json.loads(map001.read_text(encoding="utf-8"))
 data.pop("_original", None)
 page = next(event for event in data["events"] if event)["pages"][0]["list"]
@@ -163,13 +165,31 @@ later.mkdir(parents=True)
     json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
 )
 preview = preview_official_update(game, later.parent, "1.02", patch_overlay=True)
-whole = next(
+change = next(
     change for change in preview.file_changes if change.path == "data/Map001.json"
-).whole_file_replaced
+)
+assert not change.whole_file_replaced, change
 entry = next(
     entry
     for entry in text_changes(game, preview).files
     if entry.path == "data/Map001.json"
 )
-assert (entry.replaced, entry.kept) == ((1, 0) if whole else (0, 1)), (whole, entry)
+assert (entry.replaced, entry.kept) == (0, 1), entry
+result = apply_official_update(
+    game,
+    later.parent,
+    "1.02",
+    expected_tree=preview.proposed_tree,
+    expected_original_commit=preview.original_commit,
+    expected_translation_commit=preview.translation_commit,
+    expected_asset_manifest=preview.proposed_asset_manifest,
+    expected_baseline_asset_manifest=preview.baseline_asset_manifest,
+    patch_overlay=True,
+)
+assert result.complete, result
+assert lines(map001)[:3] == [
+    "今日はいい天気じゃな。",
+    TRANSLATED,
+    "気をつけるのじゃぞ。",
+], lines(map001)
 print("ok")

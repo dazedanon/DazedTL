@@ -1010,7 +1010,10 @@ Official update operations reuse the existing preview hashes, conflict recovery 
 New originals are staged separately for engine preparation.
 Staging lays the copy out as the game ([release_layout](../backend/dazedtl/engine/util/version_update/release_layout.py)): the release folder that lines up with the game's paths, compared case-insensitively, supplies the files, and a patch takes the game's spelling of each path it replaces.
 A release holding fewer than half of the game's files is a patch, copied over the previous version so the files it leaves out stay; an MV/MZ patch gets the same data and plugin formatting as the game's own files, so it merges line by line.
-The preview also reads the changed JSON files' Japanese strings as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result, with conflicting hunks taking the new release's lines as applying does, says which translations survive, so the review counts what the merge will really drop.
+The preview also reads the changed JSON files' Japanese strings as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result says which translations survive, so the review counts what applying will really drop.
+Applying cherry-picks the release, and a file Git cannot merge cleanly is resolved by [merged_file](../backend/dazedtl/engine/util/version_update/git_workflow.py)'s rules, which the preview and the line view follow too: prepared game data merges by value ([json_merge](../backend/dazedtl/engine/util/version_update/json_merge.py)), anything else by hunk with the release winning.
+Formatted JSON repeats each command's lines, so Git can line a command the release inserted up against a translated one and conflict; by value, whatever the release left keeps its translation and source note, and whatever it changed comes from the release untranslated.
+A translation that added or removed data, or a release file not in the prepared format, falls back to the hunk merge.
 A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.

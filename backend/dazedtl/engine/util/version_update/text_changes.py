@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, _tree_files
+from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, merged_file, _tree_files
 
 JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # A file's lines a preview keeps for display, and all files' lines together;
@@ -113,17 +113,6 @@ def _blobs(repo: Path, objects: list[str]) -> dict[str, bytes]:
         blobs[identity] = output[end + 1 : end + 1 + size]
         offset = end + 2 + size
     return blobs
-
-
-def _merged(repo: Path, translated: str, base: str, official: str) -> bytes | None:
-    """The file the update leaves: a three-way merge whose conflicting hunks
-    take the new release's lines, as applying the update resolves them."""
-    result = subprocess.run(
-        ["git", "-C", str(repo), "merge-file", "-p", "--object-id", "--theirs", translated, base, official],
-        capture_output=True,
-        timeout=120,
-    )
-    return result.stdout if result.returncode == 0 else None
 
 
 def _pairs(old, new):
@@ -278,7 +267,7 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         if all(entries) and entries[0][1] not in (entries[1][1], entries[2][1]):
             # Both sides changed the file: what the merge keeps, or the new
             # release's file when Git cannot merge it, such as binary content.
-            merged = _parse(_merged(repo, *(entry[1] for entry in entries))) or official
+            merged = _parse(merged_file(repo, full(path), *(entry[1] for entry in entries))) or official
         files.append(_compare(path, base, translated, official, merged, budget))
     # Files outside Git, such as maps no translation version saved, replace
     # the game's copy whole, and no old release is kept to compare with.

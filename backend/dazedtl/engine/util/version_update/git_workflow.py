@@ -27,6 +27,8 @@ import jsbeautifier
 
 from util.paths import ensure_game_tool_gitignore, staging_folder
 
+from .json_merge import merge_json
+
 
 ORIGINAL_BRANCH = "original"
 TRANSLATION_BRANCH = "main"
@@ -2099,6 +2101,26 @@ def _resolve_conflicts_with_official(repo: Path, prefix: str) -> tuple[str, ...]
 
         if all(stage in stages for stage in (1, 2, 3)):
             official_mode, official_object = stages[3]
+            # Game data merges by value, so a translated line next to a line
+            # the release inserted keeps its translation.
+            merged_json = (
+                _merged_json(repo, stages[1][1], stages[2][1], official_object)
+                if path.casefold().endswith(".json")
+                else None
+            )
+            if merged_json is not None:
+                blob = _run_git(
+                    repo, "hash-object", "-w", "--no-filters", "--stdin", input_text=merged_json
+                ).stdout.strip()
+                _run_git(
+                    repo,
+                    "update-index",
+                    "--add",
+                    "--cacheinfo",
+                    f"{official_mode},{blob},{path}",
+                )
+                _run_git(repo, "checkout-index", "--force", "--", path)
+                continue
             merged = _run_git(
                 repo,
                 "merge-file",
@@ -2451,6 +2473,7 @@ def _preserve_unbased_translation_assets(
 
 def _replacement_outcome(
     repo: Path,
+    path: str,
     official_change: str,
     translation_change: str | None,
     base: tuple[str, str] | None,
@@ -2478,23 +2501,48 @@ def _replacement_outcome(
         return False, "Image replaced" if is_image else "Official changes applied"
     if translated[1] == official[1]:
         return False, "Official content already present; file metadata updated"
-    merged = _run_git(
-        repo,
-        "merge-file",
-        "--object-id",
-        "--theirs",
-        translated[1],
-        base[1],
-        official[1],
-        check=False,
-    )
-    merged_object = merged.stdout.strip()
-    if merged.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40,64}", merged_object):
+    merged = merged_file(repo, path, translated[1], base[1], official[1])
+    if merged is None:
         noun = "image" if is_image else "binary file"
         return True, f"Translated {noun} replaced by official {noun}"
-    if merged_object == official[1]:
+    if merged == _git_bytes(repo, "cat-file", "blob", official[1]).stdout:
         return True, "Entire translated file replaced by official content"
     return False, "Merged with translation edits"
+
+
+def _git_bytes(repo: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
+    """Runs Git for file content as bytes, which text decoding could alter."""
+    try:
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise GitWorkflowError(f"git {_command_name(args)} could not run") from exc
+
+
+def _merged_json(repo: Path, base: str, translated: str, official: str) -> str | None:
+    """Game data both sides changed, merged by value (see json_merge)."""
+    blobs = [_git_bytes(repo, "cat-file", "blob", identity) for identity in (base, translated, official)]
+    if any(blob.returncode for blob in blobs):
+        return None
+    return merge_json(*(blob.stdout for blob in blobs))
+
+
+def merged_file(repo: Path, path: str, translated: str, base: str, official: str) -> bytes | None:
+    """The file applying an update leaves where both the release and the
+    translation changed it, or None when Git cannot merge it, such as an image.
+
+    Applying cherry-picks the release: a clean line merge is what Git writes,
+    and a conflicted file is resolved as `_resolve_conflicts_with_official`
+    does, game data by value and anything else by hunk, the release winning.
+    """
+    clean = _git_bytes(repo, "merge-file", "-p", "--object-id", translated, base, official)
+    if clean.returncode == 0:
+        return clean.stdout
+    if path.casefold().endswith(".json"):
+        merged = _merged_json(repo, base, translated, official)
+        if merged is not None:
+            return merged.encode("utf-8")
+    theirs = _git_bytes(repo, "merge-file", "-p", "--object-id", "--theirs", translated, base, official)
+    return theirs.stdout if theirs.returncode == 0 else None
 
 
 def _display_path(path: str, game_prefix: str) -> str:
@@ -2681,6 +2729,7 @@ def preview_official_update(
         else:
             whole_file_replaced, result = _replacement_outcome(
                 status.repo_root,
+                path,
                 change_code,
                 translation_changes.get(path),
                 original_files.get(path),
