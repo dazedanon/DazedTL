@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from util.game_settings import WRAP_WIDTH_KEYS
 from util.paths import PROMPT_PATH, GLOSSARY_BASE_PATH, TRANSLATION_CONTEXTS_PATH, SFX_REFERENCE_PATH, runtime_data_file
 from util.translation_task import TRANSLATION_MODULE_SPECS, translation_module
 from .project import atomic_json, digest
@@ -176,7 +177,8 @@ class ManualJobs:
                 from util.engine_options import validate_engine_options
                 if engine == "RPG Maker MV/MZ":
                     described["engines"]["rpgmakermvmz"] = validate_engine_options({"rpgmakermvmz": workflow["engine_options"]})["rpgmakermvmz"]
-                values.update(workflow["widths"])
+                # The engine wraps to the four widths; QA alone reads the message rows.
+                values.update({key: workflow["widths"][key] for key in WRAP_WIDTH_KEYS})
             active_key = described["active_key"]
             environment = settings.runtime(values, active_key) if active_key else None
             if mode in {"translate", "batch", "speakers"} and environment is None:
