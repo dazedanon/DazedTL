@@ -6753,12 +6753,10 @@ def translateAI(text, history, history_ctx=None, *, glossary_names=()):
 def _normalized_translation(source, translated):
     """A new translation with the lint fixes that need no reviewer.
 
-    Text the run left untranslated, as collect passes and rejected results
-    return it, stays as it is.
+    Lint leaves text the run left untranslated, as collect passes and
+    rejected results return it, as it is.
     """
     if not isinstance(source, str) or not isinstance(translated, str):
-        return translated
-    if translated == source:
         return translated
     return rpgmaker_qa_lint.normalize(source, translated)
 

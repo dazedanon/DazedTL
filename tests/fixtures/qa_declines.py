@@ -48,13 +48,13 @@ SCENE = "Map001.json#/events/{}/pages/0/list"
                     1,
                     speaker("アリナ", "Arina"),
                     line(WEATHER, "Nice weather today."),
-                    line("あっ…♥すごい", "Ah…♥Amazing"),
+                    line("す゛ごい", "So ama'zing"),
                     line("ムラムラが止まらない", "The tingling won't stop."),
                 ),
                 event(
                     2,
                     speaker("店長", "Owner"),
-                    line("んっ…♥だめ", "Mm…♥No"),
+                    line("や゛めて", "Sto'p"),
                     line("ムラムラしてきた", "The urge is rising."),
                 ),
                 event(
@@ -180,7 +180,7 @@ task, _state = qa.prepare_task(game, data, "release", temporary / "storage")
 lint, motif, scenes = rows("screen")
 (lint_family,) = bundle_of(lint)["items"]
 (motif_family,) = bundle_of(motif)["items"]
-(owner_fix,) = [row for row in lint_family["proposals"] if row["current"] == "Mm…♥No"]
+(owner_fix,) = [row for row in lint_family["proposals"] if row["current"] == "Sto'p"]
 owner_scene = next(
     item["id"]
     for item in bundle_of(scenes)["items"]
@@ -207,7 +207,7 @@ qa.decline_items(
 refused(lambda: qa.render_bundle(task, scenes["id"]), "screen-0003-r2")
 refused(lambda: qa.context_view(task, SCENE.format(2)), "declined")
 shown = qa.render_bundle(task, "screen-0003-r2")
-assert WEATHER in shown and "んっ…♥だめ" not in shown, shown
+assert WEATHER in shown and "や゛めて" not in shown, shown
 assert "The urge is rising." not in qa.render_bundle(task, "screen-0002-r2")
 
 # A worker on the coordinator's helper reviews the rest and declines one more
@@ -282,9 +282,9 @@ assert qa.status(task)["stage"] == "complete"
 # Only the lint fix a reviewer judged became a finding, and the joke counts as
 # reviewed once, on the variants its reviews covered.
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
-assert [row["correction"] for row in findings["findings"]] == ["Ah…♥ Amazing"], (
-    findings["findings"]
-)
+assert [row["correction"] for row in findings["findings"]] == ["So amazing"], findings[
+    "findings"
+]
 assert [(row["id"], row["variant_count"]) for row in findings["motif_families"]] == [
     (motif_family["id"], 1),
     (motif_family["id"] + "-d1", 1),

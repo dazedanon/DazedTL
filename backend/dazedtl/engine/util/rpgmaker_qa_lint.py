@@ -2,9 +2,11 @@
 
 Each family finds one known mechanical defect and fixes it exactly, so the
 screen reviewers can spend their attention on meaning and voice. Translation
-applies the automatic families to each new line, and QA proposes every
-family's fixes, reviewed as a group. Fixers are idempotent and run in a fixed
-order, so the fixes a reviewer accepted also apply on top of a deep correction.
+applies the automatic families to each new line and QA accepts them without
+review; QA proposes the other families' fixes, reviewed as a group. Fixers are
+idempotent and run in a fixed order, so accepted fixes also apply on top of a
+deep correction. Text identical to its source was never translated and gets
+no fixes.
 """
 
 from __future__ import annotations
@@ -245,6 +247,8 @@ def title_map(clusters: list[dict[str, Any]]) -> dict[str, set[str]]:
 
 def compose(source: str, text: str, families: Collection[str], titles: dict) -> str:
     """Apply the named families' fixes to a text, in the fixed family order."""
+    if text == source:
+        return text
     for family in ORDER:
         if family in families:
             text = FIXERS[family](source, text, titles)
@@ -259,6 +263,8 @@ def normalize(source: str, text: str) -> str:
 def proposals(source: str, live: str, titles: dict) -> dict[str, str]:
     """Each family's own fix of one text, for the families that change it."""
     found = {}
+    if live == source:
+        return found
     for family in ORDER:
         fixed = FIXERS[family](source, live, titles)
         if fixed != live:

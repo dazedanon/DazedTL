@@ -1131,7 +1131,8 @@ def _motif_items(
 def _lint_items(
     manifest: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
-    """Each lint family's proposals as review items, and every line's fixes.
+    """Each reviewed lint family's proposals as review items, and every line's
+    fixes, the automatic families' included.
 
     A proposal the post-apply regression would reject is left out. Proposals
     are grouped by scene and split into small items, so a declined item sets
@@ -1167,6 +1168,8 @@ def _lint_items(
         position = _scene_position(members[0])
         speaker = str((members[0].get("speaker") or {}).get("display_name") or "")
         for family, proposed in found.items():
+            if family in lint.AUTOMATIC:
+                continue
             by_family[family].append({
                 "id": "lint-" + _sha256(f"{family}\0{cluster_id}")[:16],
                 "cluster_id": cluster_id,
@@ -4579,10 +4582,16 @@ def _open_follow_ups(
 
 
 def _lint_decisions(
-    checkpoint: dict[str, Any], declined: dict[str, Any]
+    checkpoint: dict[str, Any], declined: dict[str, Any], manifest: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
-    """The lint families reviewers accepted for each cluster, with their notes."""
+    """The lint families accepted for each cluster, with reviewers' notes:
+    the automatic families wherever they fix a line, which needs no reviewer,
+    and the others where reviewers accepted them."""
     accepted: dict[str, dict[str, Any]] = {}
+    for cluster_id, fixes in _lint_items(manifest)[1].items():
+        automatic = {family for family in fixes["families"] if family in lint.AUTOMATIC}
+        if automatic:
+            accepted[cluster_id] = {"families": automatic, "notes": []}
     for row in checkpoint["screen"]["bundles"]:
         if row["status"] != "accepted":
             continue
@@ -4724,26 +4733,29 @@ def _add_lint_findings(
     for cluster_id, decision in sorted(accepted.items()):
         families = sorted(decision["families"], key=lint.ORDER.index)
         cluster = clusters[cluster_id]
-        reviewable = [
-            identity for identity in cluster["identities"]
-            if identity not in declined["identities"]
-        ]
         finding = by_cluster.get(cluster_id)
-        parts = []
         if finding:
-            parts.append((finding["correction"], finding["target_identities"], finding))
+            finding["lint_families"] = families
         remaining = [
-            identity for identity in reviewable
+            identity for identity in cluster["identities"]
             if not finding or identity not in finding["target_identities"]
         ]
-        if remaining:
-            parts.append((cluster["live"], remaining, None))
-        for base, targets, owner in parts:
-            if owner:
-                owner["lint_families"] = families
+        # Automatic fixes need no reviewer, so they reach declined lines too.
+        parts = [
+            (families, [
+                identity for identity in remaining
+                if identity not in declined["identities"]
+            ]),
+            ([family for family in families if family in lint.AUTOMATIC], [
+                identity for identity in remaining
+                if identity in declined["identities"]
+            ]),
+        ]
+        for part, targets in parts:
+            if not part or not targets:
                 continue
-            composed = lint.compose(cluster["source"], base, families, titles)
-            if composed == base:
+            composed = lint.compose(cluster["source"], cluster["live"], part, titles)
+            if composed == cluster["live"]:
                 continue
             problems = [
                 problem
@@ -4758,26 +4770,27 @@ def _add_lint_findings(
             if problems:
                 dropped.append({
                     "cluster_id": cluster_id,
-                    "families": families,
+                    "families": part,
                     "problems": sorted(set(problems)),
                 })
                 continue
+            reviewed = any(family not in lint.AUTOMATIC for family in part)
             findings.append({
                 "id": "",
                 "cluster_id": cluster_id,
                 "severity": "medium",
-                "category": (
-                    "ui" if families == ["lint:quoted-title"] else "formatting"
-                ),
-                "family_key": families[0],
+                "category": "ui" if part == ["lint:quoted-title"] else "formatting",
+                "family_key": part[0],
                 "evidence": " ".join(
-                    lint.FAMILIES[family]["description"] for family in families
-                ) + "".join(" Reviewer: " + note for note in decision["notes"][:2]),
+                    lint.FAMILIES[family]["description"] for family in part
+                ) + "".join(
+                    " Reviewer: " + note for note in decision["notes"][:2] if reviewed
+                ),
                 "source": cluster["source"],
                 "current": cluster["live"],
                 "correction": composed,
                 "target_identities": targets,
-                "lint_families": families,
+                "lint_families": part,
                 "lint_only": True,
             })
     return dropped
@@ -4811,7 +4824,7 @@ def _deep_items(
     before carries that `prior_review` to reconcile with newer evidence."""
     context = _read_json(root / "context.json")
     records, clusters = _record_maps(manifest)
-    lint_accepted = _lint_decisions(checkpoint, declined)
+    lint_accepted = _lint_decisions(checkpoint, declined, manifest)
     titles = lint.title_map(manifest["clusters"])
     compact = {item["id"]: item for item in _compact_items(manifest, context)}
     by_source: dict[str, list[dict]] = defaultdict(list)
@@ -5488,7 +5501,7 @@ def _draft_document(
             })
     sweep_dropped = _add_sweep_findings(findings, checkpoint, records)
     _add_lint_findings(
-        findings, _lint_decisions(checkpoint, declined), manifest, declined
+        findings, _lint_decisions(checkpoint, declined, manifest), manifest, declined
     )
     findings.sort(key=lambda item: (
         {"critical": 0, "high": 1, "medium": 2}[item["severity"]],

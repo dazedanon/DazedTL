@@ -73,7 +73,7 @@ write(
                         # Japanese residue forces deep review, where it is
                         # declined; screening flags it too, so it has a scene.
                         line("朝だ", "It's 朝."),
-                        # Two lint families, both accepted.
+                        # Two automatic lint families, accepted without review.
                         line("あっ…♥すごい", "Ah…h♥Amazing"),
                         # A deep correction whose sweep finds two more lines.
                         AROUSAL,
@@ -95,7 +95,11 @@ write(
                 "pages": [
                     page(
                         speaker("案内人", "Guide"),
-                        line("ここは暗い森だ", "This is a dark forest."),
+                        # Automatic lint fixes reach a line no reviewer read.
+                        line(
+                            "ここは暗い森だ…っ♥離れないで",
+                            "A dark forest…h♥Stay close.",
+                        ),
                         line("森の奥へ", "Into the 森."),
                         FOREST_EXIT,
                     )
@@ -125,8 +129,8 @@ write(
             # The same word as a label, which the sweep leaves alone.
             "name": "Arousal",
             # A lint proposal the reviewer rejects.
-            "description": "Restores HP.♥Yay",
-            "_original": {"name": "ムラムラ", "description": "体力を回復する。♥"},
+            "description": "Resto'res HP.",
+            "_original": {"name": "ムラムラ", "description": "体力を回復す゛る。"},
         },
     ],
 )
@@ -261,7 +265,7 @@ def screen(row, flagged, declined=(), observations=()):
                     "rejected": [
                         proposal["id"]
                         for proposal in item["proposals"]
-                        if proposal["current"] == "Restores HP.♥Yay"
+                        if proposal["current"] == "Resto'res HP."
                     ],
                     "note": "The item text keeps its house style.",
                 }
@@ -857,8 +861,10 @@ assert (
     state["estimate"]["eta_seconds"] == 0 and "editor-a" in state["estimate"]["workers"]
 )
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
-# Accepted lint families combine into one correction; a rejected one is left out.
+# Automatic lint families combine into one correction, also in the declined
+# scene; the reviewed fix the reviewer rejected is left out.
 assert sorted(row["correction"] for row in findings["findings"]) == [
+    "A dark forest…♥ Stay close.",
     "A sword with Attack +8",
     "Ah…♥ Amazing",
     "Let's leave the forest.",
@@ -914,6 +920,10 @@ assert [
     for command in event["pages"][0]["list"]
     if command.get("_original") == FOREST_EXIT["_original"]
 ] == ["Let's get out of the forest.", "Let's leave the forest."]
+# The declined scene still gets its automatic lint fix.
+assert json.loads((data / "Map001.json").read_text())["events"][2]["pages"][0]["list"][
+    1
+]["parameters"] == ["A dark forest…♥ Stay close."]
 # Undoing one correction puts its line back and leaves the rest.
 stratum = next(
     row["id"] for row in findings["findings"] if row["source"] == STRATUM["_original"]
@@ -929,7 +939,7 @@ headers = [
     if command["code"] == 101
 ]
 assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
-assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3, "declined": 0}
+assert qa.status(task)["screen"]["lint"] == {"accepted": 1, "total": 1, "declined": 0}
 # The declined scene and items are a coverage gap, reported once with their
 # reasons.
 assert [item["reasons"] for item in findings["declined"]] == [
@@ -942,7 +952,7 @@ assert sorted(
     (row["source"], row["identity"].split("/pages")[0])
     for row in findings["not_reviewed"]
 ) == [
-    ("ここは暗い森だ", "Map001.json#/events/2"),
+    ("ここは暗い森だ…っ♥離れないで", "Map001.json#/events/2"),
     ("朝だ", "Map001.json#/events/1"),
     ("案内人", "Map001.json#/events/2"),
     ("森の奥へ", "Map001.json#/events/2"),
