@@ -132,8 +132,8 @@ class TextQATests(unittest.TestCase):
             service.run("project", "checkpoint")
             self.assertEqual(calls[-2][2], {"message": CHECKPOINT_MESSAGE})
             # A task the app can't read sent the assistant to prepare again,
-            # which returned it, and apply said to finish review; both name
-            # the task and its error instead.
+            # which returned it, apply said to finish review and undo failed
+            # without a reason; each names the task and its error instead.
             qa.clear()
             qa.update(
                 current=False,
@@ -146,6 +146,7 @@ class TextQATests(unittest.TestCase):
             )
             step = service.run("project", "status")["next"]
             self.assertIn(f"{task}: PermissionError: denied", step)
-            with self.assertRaises(ValueError) as refused:
-                service.run("project", "apply")
-            self.assertEqual(str(refused.exception), step)
+            for step_name in ("apply", "undo"):
+                with self.assertRaises(ValueError) as refused:
+                    service.run("project", step_name, findings=["QA-0001"])
+                self.assertEqual(str(refused.exception), step)

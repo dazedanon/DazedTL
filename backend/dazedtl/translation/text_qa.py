@@ -148,6 +148,14 @@ class TextQA:
         """Puts back the lines of applied corrections, or applies undone ones
         again, as a batch of its own."""
         qa = self.qa(project_id, native)
+        if qa.get("unreadable"):
+            raise ValueError(_unreadable_step(qa))
+        if not qa.get("task"):
+            raise ValueError("No QA task is prepared; run qa --prepare.")
+        if not qa["applied"]:
+            raise ValueError(
+                "QA has applied no corrections yet; run qa --apply once review is complete."
+            )
         if (
             not isinstance(findings, list)
             or not findings
