@@ -20,6 +20,7 @@ from dazedtl.translation.release import (
     available,
     current,
     destination,
+    exclusion,
     git_identity,
     inventory,
     output_hash,
@@ -99,6 +100,11 @@ class ReleaseTests(unittest.TestCase):
             (root / "www/data/Items.json").write_text("changed after inspection")
             with self.assertRaises(ValueError):
                 write_archive(root, output, scope, lambda _: None)
+            # Windows can't extract these names, such as a pager's stray
+            # "\x1bq" file, so they never ship; they can't be made on Windows.
+            for name in ("\x1bq", "notes?.txt", "aux.json", "data/old./Map001.json"):
+                self.assertIsNotNone(exclusion(name))
+            self.assertIsNone(exclusion("img/pictures/メニュー画面_ロゴ.png"))
 
     def test_patch_asset_receipts_and_explicit_fonts_bind_exact_safe_runtime_paths(
         self,

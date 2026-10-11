@@ -83,11 +83,23 @@ _TEMP_SUFFIXES = (
 )
 _UPDATER_CONFIG = "gameupdate/patch-config.txt"
 _UPDATER_STATE = "gameupdate/previous_patch_sha.txt"
+# Windows refuses these names, so extracting a ZIP that holds one fails there.
+_WINDOWS_DEVICE = re.compile(r"(?:con|prn|aux|nul|(?:com|lpt)[0-9¹²³])(?:\..*)?")
+
+
+def _windows_unsafe(name):
+    return (
+        any(ord(char) < 32 or char in '<>:"\\|?*' for char in name)
+        or name.endswith((" ", "."))
+        or bool(_WINDOWS_DEVICE.fullmatch(name.casefold()))
+    )
 
 
 def exclusion(relative, *, directory=False):
     parts = Path(relative).parts
     lowered = [part.casefold() for part in parts]
+    if any(_windows_unsafe(part) for part in parts):
+        return "A name Windows can't use"
     if any(part in _PRIVATE_DIRS for part in lowered):
         return "Private configuration, local state or tool cache"
     name = lowered[-1]
