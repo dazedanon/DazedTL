@@ -125,7 +125,7 @@ If applying stops midway, **Review restore** puts the files back.
 ### 5. Release
 
 **Release** builds a clean game ZIP or a patch ZIP with only the changed files.
-The clean game ZIP holds the game and its translation; files added to the game folder while you worked, such as notes or downloads, stay out, and the review lists them under **Excluded files and folders**.
+The clean game ZIP holds the game and its translation; files added to the game folder while you worked, such as notes or downloads, stay out; **View files & exclusions** lists them.
 Save it outside the game folder.
 Translations that aren't in the game yet need **Apply** first.
 The ZIP shows **Outdated** once the game changes; build it again to include the changes.
