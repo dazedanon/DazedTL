@@ -213,7 +213,7 @@ export function updateSteps(
   const results = [
     staged &&
       `${layout?.kind === "patch" ? "Patch" : "Complete game"} ${version}`.trim(),
-    compared && (updateSummary(compared.result!) || "No file changes"),
+    compared && compareResult(compared.result!),
     session.finished && `Updated to ${version}`,
     "",
   ];
@@ -228,4 +228,62 @@ export function updateSteps(
           }),
     }),
   );
+}
+
+export type TextLine = {
+  kind: "added" | "changed" | "removed" | "replaced";
+  before: string | null;
+  translation: string | null;
+  after: string | null;
+};
+export type FileText = {
+  path: string;
+  to_translate: number;
+  replaced: number;
+  kept: number;
+  lines: TextLine[];
+  more: number;
+};
+export type TextChanges = {
+  to_translate: number;
+  replaced: number;
+  kept: number;
+  files: FileText[];
+};
+
+/** A preview's line view, which previews from before it existed lack. */
+export function textChanges(value: Record<string, unknown>) {
+  const text = value.text;
+  return text &&
+    typeof text === "object" &&
+    Array.isArray((text as TextChanges).files)
+    ? (text as TextChanges)
+    : undefined;
+}
+
+const lines = (count: number) =>
+  `${count.toLocaleString()} ${count === 1 ? "line" : "lines"}`;
+
+/** What an update does to a file's text, or the whole update's, without zeros. */
+export function textSummary(
+  text: Pick<TextChanges, "to_translate" | "replaced" | "kept">,
+) {
+  return [
+    text.to_translate && `${lines(text.to_translate)} to translate`,
+    text.replaced &&
+      `${text.replaced.toLocaleString()} ${text.replaced === 1 ? "translation goes" : "translations go"} back to Japanese`,
+    text.kept &&
+      `${text.kept.toLocaleString()} ${text.kept === 1 ? "translation stays" : "translations stay"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** What a comparison found, in lines to translate when it read the text. */
+function compareResult(result: Record<string, unknown>) {
+  const text = textChanges(result);
+  if (!text) return updateSummary(result) || "No file changes";
+  return text.to_translate
+    ? `${text.to_translate.toLocaleString()} ${text.to_translate === 1 ? "line" : "lines"} to translate`
+    : "No new text";
 }

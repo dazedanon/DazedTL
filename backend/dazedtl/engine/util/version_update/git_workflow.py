@@ -268,6 +268,9 @@ class UpdatePreview:
     baseline_source_root: Path | None = None
     preserved_translation_asset_paths: tuple[str, ...] = ()
     patch_overlay: bool = False
+    # The tree the update was compared from: the original branch's, or the
+    # previous official folder's when one was given.
+    baseline_tree: str = ""
 
     @property
     def changed_paths(self) -> tuple[str, ...]:
@@ -2777,6 +2780,7 @@ def preview_official_update(
         baseline_source_root=baseline_source,
         preserved_translation_asset_paths=preserved_translation_assets,
         patch_overlay=patch_overlay,
+        baseline_tree=baseline_tree,
     )
 
 

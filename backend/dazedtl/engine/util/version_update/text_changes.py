@@ -1,0 +1,269 @@
+"""What an official update does to a game's text, line by line.
+
+A preview names the files an update changes; this reads the JSON among them
+as data, so its Japanese strings become lines: the old release's, the new
+release's, the translation's and what the game will hold once the update
+merges. Lines line up by text between the two releases, since a release that
+inserts a command shifts every position after it, and by position between a
+release and its translation, which only rewrites strings in place.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from pathlib import Path
+
+from .git_workflow import GitWorkflowError, UpdatePreview, inspect_repository, _tree_files
+
+JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
+# A file's lines a preview keeps for display, and all files' lines together;
+# the counts always cover every line.
+FILE_LINES = 200
+ALL_LINES = 2000
+# Engine metadata that keeps a translated line's source; it is not game text.
+_SOURCE_KEYS = frozenset({"_original"})
+
+
+@dataclass(frozen=True)
+class LineChange:
+    # "added", "changed", "removed", or "replaced" for an unchanged line whose
+    # translation the update drops anyway.
+    kind: str
+    # The old release's Japanese and the translation the game had for it.
+    before: str | None
+    translation: str | None
+    # The new release's Japanese.
+    after: str | None
+
+
+@dataclass
+class FileText:
+    path: str
+    # New or changed lines that will be Japanese in the game after the update.
+    to_translate: int = 0
+    # Translated lines the update replaces or removes.
+    replaced: int = 0
+    # Translated lines the update leaves as they are.
+    kept: int = 0
+    lines: list[LineChange] = field(default_factory=list)
+    # Lines left out of `lines` past the display limits.
+    more: int = 0
+
+
+@dataclass(frozen=True)
+class TextChanges:
+    to_translate: int
+    replaced: int
+    kept: int
+    files: tuple[FileText, ...]
+
+
+def _strings(document, path=()):
+    if isinstance(document, str):
+        yield path, document
+    elif isinstance(document, list):
+        for index, value in enumerate(document):
+            yield from _strings(value, (*path, index))
+    elif isinstance(document, dict):
+        for key, value in document.items():
+            if key not in _SOURCE_KEYS:
+                yield from _strings(value, (*path, key))
+
+
+def _parse(raw: bytes | None):
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def _blobs(repo: Path, objects: list[str]) -> dict[str, bytes]:
+    """Reads Git objects in one process, as raw bytes."""
+    unique = list(dict.fromkeys(objects))
+    if not unique:
+        return {}
+    try:
+        output = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "--batch"],
+            input=("\n".join(unique) + "\n").encode(),
+            capture_output=True,
+            check=True,
+            timeout=300,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise GitWorkflowError("Git could not read the update's files.") from exc
+    blobs, offset = {}, 0
+    for identity in unique:
+        end = output.index(b"\n", offset)
+        header = output[offset:end].split()
+        if len(header) < 3 or header[1] != b"blob":
+            offset = end + 1
+            continue
+        size = int(header[2])
+        blobs[identity] = output[end + 1 : end + 1 + size]
+        offset = end + 2 + size
+    return blobs
+
+
+def _merged(repo: Path, translated: str, base: str, official: str) -> bytes | None:
+    """The file a clean three-way merge gives, or None when it conflicts."""
+    result = subprocess.run(
+        ["git", "-C", str(repo), "merge-file", "-p", "--object-id", translated, base, official],
+        capture_output=True,
+        timeout=120,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def _compare(path, base, translated, official, merged, budget) -> FileText:
+    text = FileText(path)
+    before = [(key, value) for key, value in _strings(base) if JAPANESE.search(value)] if base is not None else []
+    after = [(key, value) for key, value in _strings(official) if JAPANESE.search(value)]
+    translation = dict(_strings(translated)) if translated is not None else {}
+    result = dict(_strings(merged)) if merged is not None else dict(_strings(official))
+
+    def translated_text(key, source):
+        value = translation.get(key)
+        return value if value is not None and value != source else None
+
+    def note(change: LineChange):
+        if len(text.lines) < FILE_LINES and budget[0] > 0:
+            text.lines.append(change)
+            budget[0] -= 1
+        else:
+            text.more += 1
+
+    matcher = SequenceMatcher(None, [value for _, value in before], [value for _, value in after], autojunk=False)
+    for operation, start, end, new_start, new_end in matcher.get_opcodes():
+        old = before[start:end]
+        new = after[new_start:new_end]
+        if operation == "equal":
+            for (key, source), (new_key, _value) in zip(old, new):
+                english = translated_text(key, source)
+                if english is None:
+                    continue
+                if result.get(new_key) == english:
+                    text.kept += 1
+                else:
+                    text.replaced += 1
+                    text.to_translate += 1
+                    note(LineChange("replaced", source, english, result.get(new_key)))
+            continue
+        for index in range(max(len(old), len(new))):
+            key, source = old[index] if index < len(old) else (None, None)
+            new_key, value = new[index] if index < len(new) else (None, None)
+            english = translated_text(key, source) if key is not None else None
+            if english is not None:
+                text.replaced += 1
+            if value is not None and JAPANESE.search(result.get(new_key, value)):
+                text.to_translate += 1
+            note(
+                LineChange(
+                    "changed" if source is not None and value is not None else "removed" if value is None else "added",
+                    source,
+                    english,
+                    value,
+                )
+            )
+    return text
+
+
+def _replace_whole(path, current, official, budget) -> FileText:
+    """A file the update copies over the game's, compared with the game's
+    copy, the only earlier version there is, string by string in order."""
+    text = FileText(path)
+    now = [value for _, value in _strings(current)] if current is not None else []
+    new = [value for _, value in _strings(official)]
+    matcher = SequenceMatcher(None, now, new, autojunk=False)
+    for operation, start, end, new_start, new_end in matcher.get_opcodes():
+        if operation == "equal":
+            continue
+        old = now[start:end]
+        for index, value in enumerate(new[new_start:new_end]):
+            if not JAPANESE.search(value):
+                continue
+            was = old[index] if index < len(old) else None
+            if was is not None and not JAPANESE.search(was):
+                change = LineChange("replaced", None, was, value)
+                text.replaced += 1
+            else:
+                change = LineChange("added" if was is None else "changed", was, None, value)
+            text.to_translate += 1
+            if len(text.lines) < FILE_LINES and budget[0] > 0:
+                text.lines.append(change)
+                budget[0] -= 1
+            else:
+                text.more += 1
+    return text
+
+
+def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
+    """The lines a previewed update adds, changes and removes in the game's JSON files."""
+    game = Path(game_root).expanduser().resolve()
+    status = inspect_repository(game)
+    if not status.repo_root:
+        raise GitWorkflowError("The game is not in a Git repository")
+    repo, prefix = status.repo_root, status.game_prefix
+    full = (lambda path: f"{prefix}/{path}") if prefix else (lambda path: path)
+    base_tree = preview.baseline_tree or f"{preview.original_commit}^{{tree}}"
+    trees = {
+        "base": _tree_files(repo, base_tree, prefix),
+        "translated": _tree_files(repo, preview.translation_commit, prefix),
+        "official": _tree_files(repo, preview.proposed_tree, prefix),
+    }
+    tracked = [
+        change.path
+        for change in preview.file_changes
+        if change.path.casefold().endswith(".json") and not change.already_present and change.change != "Removed"
+    ]
+    blobs = _blobs(
+        repo,
+        [trees[side][full(path)][1] for path in tracked for side in trees if full(path) in trees[side]],
+    )
+
+    def read(side, path):
+        entry = trees[side].get(full(path))
+        return blobs.get(entry[1]) if entry else None
+
+    budget = [ALL_LINES]
+    files = []
+    for path in tracked:
+        base, translated, official = (_parse(read(side, path)) for side in ("base", "translated", "official"))
+        if official is None:
+            continue
+        entries = [trees[side].get(full(path)) for side in ("translated", "base", "official")]
+        merged = official
+        if all(entries) and entries[0][1] not in (entries[1][1], entries[2][1]):
+            # Both sides changed the file: what the merge keeps, or the new
+            # release's file when the merge conflicts.
+            merged = _parse(_merged(repo, *(entry[1] for entry in entries))) or official
+        files.append(_compare(path, base, translated, official, merged, budget))
+    # Files outside Git, such as maps no translation version saved, replace
+    # the game's copy whole, and no old release is kept to compare with.
+    for change in preview.external_changes:
+        if not change.path.casefold().endswith(".json") or change.already_present or change.change == "Removed":
+            continue
+        official = _parse(_read_file(preview.source_root / change.path))
+        if official is not None:
+            current = _parse(_read_file(game / change.path))
+            files.append(_replace_whole(change.path, current, official, budget))
+    files = [entry for entry in files if entry.to_translate or entry.replaced or entry.lines]
+    return TextChanges(
+        sum(entry.to_translate for entry in files),
+        sum(entry.replaced for entry in files),
+        sum(entry.kept for entry in files),
+        tuple(files),
+    )
+
+
+def _read_file(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None

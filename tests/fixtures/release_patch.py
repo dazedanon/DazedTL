@@ -18,6 +18,7 @@ from util.len_translation import LenProject
 from util.project_preparation import prepare_rpgmaker_patch
 from util.version_update import apply_official_update, preview_official_update
 from util.version_update.release_layout import inspect_release, stage_release
+from util.version_update.text_changes import text_changes
 
 fixture = root / "tests/fixtures/mz-game"
 TRANSLATED = "Oh, Mika. Thank you for coming."
@@ -116,6 +117,13 @@ preview = preview_official_update(game, staged, "1.01", patch_overlay=True)
 assert not preview.deleted_paths, preview.deleted_paths
 outcome = {change.path: change.result for change in preview.file_changes}
 assert outcome["data/Map001.json"] == "Merged with translation edits", outcome
+# The review's line view: the inserted line is new, the translation beside it stays.
+text = {entry.path: entry for entry in text_changes(game, preview).files}
+assert (text["data/Map001.json"].kept, text["data/Map001.json"].replaced) == (1, 0)
+assert [(line.kind, line.after) for line in text["data/Map001.json"].lines] == [
+    ("added", "気をつけるのじゃぞ。")
+], text
+assert text["data/Map002.json"].to_translate, text
 result = apply_official_update(
     game,
     staged,
@@ -139,4 +147,29 @@ assert sorted(
     path.name for path in game.iterdir() if path.name.casefold() == "data"
 ) == ["data"]
 assert (game / "data/Map002.json").is_file() and not (game / "readme.txt").exists()
+
+# A release whose line merge drops a translation says so in the line view:
+# a line inserted beside a translated one can make the merge take the whole file.
+data = json.loads(map001.read_text(encoding="utf-8"))
+data.pop("_original", None)
+page = next(event for event in data["events"] if event)["pages"][0]["list"]
+for command in page:
+    if command["code"] == 401 and command["parameters"][0] == TRANSLATED:
+        command["parameters"][0] = "おお、ミカよ。よく来てくれた。"
+page.insert(1, {"code": 401, "indent": 0, "parameters": ["今日はいい天気じゃな。"]})
+later = temporary / "later/data"
+later.mkdir(parents=True)
+(later / "Map001.json").write_text(
+    json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+)
+preview = preview_official_update(game, later.parent, "1.02", patch_overlay=True)
+whole = next(
+    change for change in preview.file_changes if change.path == "data/Map001.json"
+).whole_file_replaced
+entry = next(
+    entry
+    for entry in text_changes(game, preview).files
+    if entry.path == "data/Map001.json"
+)
+assert (entry.replaced, entry.kept) == ((1, 0) if whole else (0, 1)), (whole, entry)
 print("ok")

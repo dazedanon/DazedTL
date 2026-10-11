@@ -359,3 +359,34 @@
   gap: var(--space-4);
   margin-top: var(--space-3);
 }
+.version-text-summary {
+  font-weight: var(--weight-medium);
+}
+/* A file's changed lines, each its kind above the line's versions. */
+.version-lines {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.version-lines > li {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 45%, transparent);
+}
+.version-lines > li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.version-lines > li > strong {
+  font-size: var(--font-control);
+  font-weight: var(--weight-medium);
+}
+.version-file > .ui-button {
+  justify-self: start;
+  overflow-wrap: anywhere;
+  text-align: start;
+}

@@ -1637,3 +1637,40 @@ pre {
   flex: none;
   white-space: nowrap;
 }
+/* A line and its other versions, labelled in a column; the side a change
+   added reads in the success color, the side it removed in the error one,
+   with the changed words tinted. */
+.line-change {
+  display: grid;
+  grid-template-columns: var(--change-label-width) minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--font-control);
+  line-height: 1.5;
+}
+.line-change dt {
+  color: var(--color-muted);
+}
+.line-change dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.line-change [data-change="added"] {
+  color: var(--color-success);
+}
+.line-change [data-change="removed"] {
+  color: var(--color-error-text);
+}
+.line-change :is(ins, del) {
+  padding: 0 var(--space-half);
+  border-radius: var(--control-radius);
+  text-decoration: none;
+  box-decoration-break: clone;
+}
+.line-change ins {
+  background: var(--color-success-surface);
+}
+.line-change del {
+  background: var(--color-error-surface);
+}

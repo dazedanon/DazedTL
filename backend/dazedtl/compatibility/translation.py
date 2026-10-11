@@ -890,15 +890,22 @@ class TranslationEngine:
             }
 
         if action == "preview":
-            return asdict(
-                git.preview_official_update(
-                    source,
-                    options["official"],
-                    options["version"],
-                    previous_official_game=options.get("baseline") or None,
-                    patch_overlay=options.get("patch_overlay", False),
-                )
+            from util.version_update.text_changes import text_changes
+
+            preview = git.preview_official_update(
+                source,
+                options["official"],
+                options["version"],
+                previous_official_game=options.get("baseline") or None,
+                patch_overlay=options.get("patch_overlay", False),
             )
+            try:
+                text = asdict(text_changes(source, preview))
+            except git.GitWorkflowError, OSError, ValueError:
+                # The line view only informs the review; the update itself
+                # stands on the file comparison.
+                text = None
+            return {**asdict(preview), "text": text}
         if action == "apply":
             preview = options["preview"]
             return value(
