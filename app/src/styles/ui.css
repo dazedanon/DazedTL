@@ -296,7 +296,7 @@ pre {
   color: var(--color-error-text);
 }
 .text-diff-line[data-kind="added"] {
-  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  background: var(--color-success-surface);
   color: var(--color-text);
 }
 .text-diff-mark {

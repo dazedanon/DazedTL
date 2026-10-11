@@ -39,6 +39,11 @@
   --color-accent-subtle: #163d3a;
   /* Status colors always accompany text or an icon. */
   --color-success: #a6d672;
+  --color-success-surface: color-mix(
+    in srgb,
+    var(--color-success) 14%,
+    transparent
+  );
   --color-warning: #e1bd78;
   --color-warning-border: #735e37;
   --color-warning-surface: #302a20;

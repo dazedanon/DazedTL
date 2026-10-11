@@ -5,6 +5,7 @@ import {
   qaPhase,
   qaStages,
 } from "../app/src/features/guided/qaView.ts";
+import { changedWords } from "../app/src/ui/changedWords.ts";
 
 test("the QA strip marks one current stage and the activity line reads the engine's counts", () => {
   const qa = (status: Record<string, unknown>, extra: object = {}) =>
@@ -63,4 +64,29 @@ test("the QA strip marks one current stage and the activity line reads the engin
     "applying changes the text QA checked without making it outdated",
   );
   assert.equal(qaPhase(qa({ stage: "deep" }, { current: false })), "outdated");
+});
+
+test("an applied correction marks only the words it changed", () => {
+  const marks = (before: string, after: string) => {
+    const words = changedWords(before, after);
+    const show = (side: typeof words.before) =>
+      side.map((run) => (run.changed ? `[${run.text}]` : run.text)).join("");
+    return [show(words.before), show(words.after)];
+  };
+  // Neighboring changed words join across the space between them, and the
+  // marks keep to the words on a wrapped line.
+  assert.deepEqual(
+    marks("When\nhe touches me there...♥", "When\nyou touch me there...♥"),
+    ["When\n[he touches] me there...♥", "When\n[you touch] me there...♥"],
+  );
+  // A space added inside a run of letters and digits is marked on its own.
+  assert.deepEqual(marks("BanditLv2", "Bandit Lv2"), [
+    "BanditLv2",
+    "Bandit[ ]Lv2",
+  ]);
+  // A rewrite sharing only punctuation is left unmarked.
+  assert.deepEqual(marks("The fox jumps.", "A cat sleeps."), [
+    "The fox jumps.",
+    "A cat sleeps.",
+  ]);
 });

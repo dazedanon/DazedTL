@@ -499,7 +499,7 @@ The current sidebar entry adds an accent bar on its start edge; the selected tab
 A panel whose first row names it and its state, such as the assistant task and the active connection, gives that row the shared `panel-header` tint.
 The dazed cat is the app's mark, drawn from the original icon: its teal tile as the window icon, and its accent outline in the top bar and leading the Project page's welcome row when no game is open.
 Inside the app the cat is always the outline, so the top bar does not repeat the tile that title bars show beside it; it appears nowhere else, so it stays distinctive.
-Green, amber and red mark status only; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
+Green, amber and red mark status, except that a text change shows its added side in green and its removed side in red; surfaces, lines and text each have a few named steps, and a new screen picks from them instead of adding a color.
 Image canvases keep their own `--color-canvas-*` checks and `--color-mark-*` box marks, because they are drawn over game images rather than the app's surfaces.
 Every literal size, weight, color, spacing step and radius lives in [tokens.css](../app/src/styles/tokens.css); [styles.mjs](../scripts/styles.mjs), part of the build checks, rejects literals in any other stylesheet, so a new value starts as a named token.
 The top bar, footers and sidebar take their sizes from tokens.css; below 1100px wide the sidebar becomes a rail of icons over short labels, so small windows give the task the width.

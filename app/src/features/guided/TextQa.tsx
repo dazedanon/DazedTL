@@ -3,7 +3,14 @@
  * user, its audit log and its coverage sheet.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type {
   QaFinding,
   QaQuestion,
@@ -14,6 +21,7 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
+import { changedWords } from "../../ui/changedWords";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
@@ -197,28 +205,65 @@ export function TextQaWork({
   );
 }
 
-/** Source, current text and the other side of a change, labelled. */
+/**
+ * The Japanese, the text now and the other side of a change, labelled. An
+ * applied change shows the text it replaced as Was, the two in the added and
+ * removed colors with the words that changed marked.
+ */
 function Change({
   source,
-  current,
-  other,
-  otherLabel,
+  before,
+  after,
+  afterLabel = "",
+  applied = false,
 }: {
   source: string;
-  current: string;
-  other?: string;
-  otherLabel: string;
+  /** The line as it was before the change. */
+  before: string;
+  /** The change's text, when it has one. */
+  after?: string;
+  /** What a change not yet in the game is called, such as "Correction". */
+  afterLabel?: string;
+  applied?: boolean;
 }) {
+  const words = useMemo(
+    () =>
+      applied && after !== undefined ? changedWords(before, after) : undefined,
+    [applied, before, after],
+  );
   return (
     <dl className="text-qa-change">
       <dt>Japanese</dt>
       <dd lang="ja">{source}</dd>
-      <dt>Now</dt>
-      <dd>{current}</dd>
-      {other !== undefined && (
+      {words ? (
         <>
-          <dt>{otherLabel}</dt>
-          <dd>{other}</dd>
+          <dt data-change="added">Now</dt>
+          <dd data-change="added">
+            {words.after.map((run, index) => (
+              <Fragment key={index}>
+                {run.changed ? <ins>{run.text}</ins> : run.text}
+              </Fragment>
+            ))}
+          </dd>
+          <dt data-change="removed">Was</dt>
+          <dd data-change="removed">
+            {words.before.map((run, index) => (
+              <Fragment key={index}>
+                {run.changed ? <del>{run.text}</del> : run.text}
+              </Fragment>
+            ))}
+          </dd>
+        </>
+      ) : (
+        <>
+          <dt>Now</dt>
+          <dd>{before}</dd>
+          {after !== undefined && (
+            <>
+              <dt>{afterLabel}</dt>
+              <dd>{after}</dd>
+            </>
+          )}
         </>
       )}
     </dl>
@@ -262,21 +307,13 @@ export function QaQuestions({
             key={row.id}
             label={
               <>
-                {row.state === "applied" ? (
-                  <Change
-                    source={row.source}
-                    current={row.proposal || row.current}
-                    other={row.current}
-                    otherLabel="Was"
-                  />
-                ) : (
-                  <Change
-                    source={row.source}
-                    current={row.current}
-                    other={row.proposal}
-                    otherLabel="Proposal"
-                  />
-                )}
+                <Change
+                  source={row.source}
+                  before={row.current}
+                  after={row.proposal}
+                  afterLabel="Proposal"
+                  applied={row.state === "applied"}
+                />
                 <small>{row.reason}</small>
                 {row.places > 1 && (
                   <small>{row.places} places in the game</small>
@@ -378,15 +415,10 @@ export function QaAuditLog({
                   <>
                     <Change
                       source={row.source}
-                      current={
-                        row.state === "applied" ? row.correction : row.current
-                      }
-                      other={
-                        row.state === "applied" ? row.current : row.correction
-                      }
-                      otherLabel={
-                        row.state === "applied" ? "Was" : "Correction"
-                      }
+                      before={row.current}
+                      after={row.correction}
+                      afterLabel="Correction"
+                      applied={row.state === "applied"}
                     />
                     <small>{row.reason}</small>
                     <small>
@@ -509,11 +541,7 @@ export function QaCoverage({
                       key={row.identity}
                       label={
                         <>
-                          <Change
-                            source={row.source}
-                            current={row.current}
-                            otherLabel=""
-                          />
+                          <Change source={row.source} before={row.current} />
                           <small>{row.file}</small>
                         </>
                       }

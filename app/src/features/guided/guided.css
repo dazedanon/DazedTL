@@ -1110,6 +1110,26 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* An applied change reads as a diff: the text now in the added color, what
+   it replaced in the removed one, and the words that changed tinted. */
+.text-qa-change [data-change="added"] {
+  color: var(--color-success);
+}
+.text-qa-change [data-change="removed"] {
+  color: var(--color-error-text);
+}
+.text-qa-change :is(ins, del) {
+  padding: 0 var(--space-half);
+  border-radius: var(--control-radius);
+  text-decoration: none;
+  box-decoration-break: clone;
+}
+.text-qa-change ins {
+  background: var(--color-success-surface);
+}
+.text-qa-change del {
+  background: var(--color-error-surface);
+}
 .text-qa-log {
   display: grid;
   gap: var(--space-5);
