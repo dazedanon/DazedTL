@@ -89,13 +89,15 @@ export function TextQaWork({
 }) {
   const phase = qaPhase(qa);
   const coverage = qa.coverage;
-  const undoUnavailable = qa.rules_changed
-    ? "An update changed QA's rules after these corrections were applied."
-    : "";
   // Once applied, only a proposal the user chose went into the game.
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
     : qa.questions;
+  // New QA rules leave applied corrections without Undo; the page says so
+  // once, above the rows.
+  const undoUnavailable =
+    !!qa.rules_changed &&
+    [...questions, ...qa.findings].some((row) => row.state === "applied");
   const state: AssistantTaskState =
     phase === "applied"
       ? "applied"
@@ -172,6 +174,12 @@ export function TextQaWork({
           </div>
         ) : undefined}
       </AssistantTask>
+      {undoUnavailable && (
+        <Notice>
+          An update changed QA's rules after these corrections were applied, so
+          Undo is no longer available. {rerun}
+        </Notice>
+      )}
       {questions.length > 0 && phase !== "outdated" && (
         <QaQuestions
           questions={questions}
@@ -285,8 +293,8 @@ export function QaQuestions({
 }: {
   questions: QaQuestion[];
   disabled: boolean;
-  /** Why Undo cannot run, such as rules an update changed. */
-  undoUnavailable: string;
+  /** Undo cannot run; the page says why once, above the rows. */
+  undoUnavailable: boolean;
   choose: (question: string, choice: "keep" | "use") => void;
   undo: (question: QaQuestion) => void;
   feedback: Feedback;
@@ -325,8 +333,7 @@ export function QaQuestions({
               <ActionControl
                 label="Undo"
                 variant="link"
-                disabled={disabled || !!undoUnavailable}
-                disabledReason={undoUnavailable}
+                disabled={disabled || undoUnavailable}
                 {...feedback("qa-undo:" + row.id, "Undoing…")}
                 onClick={() => undo(row)}
               />
@@ -391,8 +398,8 @@ export function QaAuditLog({
 }: {
   findings: QaFinding[];
   disabled: boolean;
-  /** Why Undo cannot run, such as rules an update changed. */
-  undoUnavailable: string;
+  /** Undo cannot run; the page says why once, above the rows. */
+  undoUnavailable: boolean;
   undo: (finding: QaFinding) => void;
   feedback: Feedback;
 }) {
@@ -438,8 +445,7 @@ export function QaAuditLog({
                   <ActionControl
                     label="Undo"
                     variant="link"
-                    disabled={disabled || !!undoUnavailable}
-                    disabledReason={undoUnavailable}
+                    disabled={disabled || undoUnavailable}
                     {...feedback("qa-undo:" + row.id, "Undoing…")}
                     onClick={() => undo(row)}
                   />
