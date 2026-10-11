@@ -94,8 +94,13 @@ _UNSAFE_BARE_CENTER_RE = re.compile(
 )
 _CENTER_ALIGNMENT_RE = re.compile(r"\\ac", re.IGNORECASE)
 _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
+# A stat or currency abbreviation beside a number is its unit, which English
+# may move ("TP24増加" is "Increases TP by 24"); other letters beside digits
+# make an identifier such as EV024, which shows no number.
+_NUMBER_UNIT = r"(?:[HMST]P|EXP|ATK|DEF|MAT|MDF|AGI|LUK|L[Vv]|G)"
 _VISIBLE_NUMBER_RE = re.compile(
-    r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
+    rf"(?<![A-Za-z0-9_])(?:{_NUMBER_UNIT}(?=\d))?([-+]?\d+(?:[.,]\d+)?)"
+    rf"{_NUMBER_UNIT}?(?![A-Za-z0-9_])"
 )
 _CARDINALS = (
     "one two three four five six seven eight nine ten eleven twelve thirteen "
@@ -143,7 +148,7 @@ def _numbers_match(source_numbers: list[str], live: str) -> bool:
     an ordinal may match one or be skipped.
     """
     tokens = [
-        (match.start(), _number(match.group(0)), False)
+        (match.start(1), _number(match.group(1)), False)
         for match in _VISIBLE_NUMBER_RE.finditer(live)
     ]
     for match in _ORDINAL_RE.finditer(live):

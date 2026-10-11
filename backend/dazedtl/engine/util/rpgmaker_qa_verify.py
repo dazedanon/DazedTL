@@ -75,8 +75,12 @@ _UNSAFE_BARE_CENTER_RE = re.compile(
 )
 _CENTER_ALIGNMENT_RE = re.compile(r"\\ac", re.IGNORECASE)
 _JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴー]")
+# Stat and currency abbreviations are a number's unit ("TP24", "100G"); other
+# letters beside digits make an identifier ("EV024").
+_NUMBER_UNIT = r"(?:[HMST]P|EXP|ATK|DEF|MAT|MDF|AGI|LUK|L[Vv]|G)"
 _VISIBLE_NUMBER_RE = re.compile(
-    r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
+    rf"(?<![A-Za-z0-9_])(?:{_NUMBER_UNIT}(?=\d))?([-+]?\d+(?:[.,]\d+)?)"
+    rf"{_NUMBER_UNIT}?(?![A-Za-z0-9_])"
 )
 _ORDINALS = (
     "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
@@ -120,7 +124,7 @@ def _plain_number(text: str) -> str:
 def _numbers_shown(source_numbers: list[str], live: str) -> bool:
     """Plain live numbers must equal the source's in order; ordinals may fill gaps."""
     tokens = sorted(
-        [(m.start(), _plain_number(m.group(0)), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
+        [(m.start(1), _plain_number(m.group(1)), False) for m in _VISIBLE_NUMBER_RE.finditer(live)]
         + [(m.start(), _ordinal_value(m.group(0)), True) for m in _ORDINAL_TOKEN_RE.finditer(live)]
     )
 

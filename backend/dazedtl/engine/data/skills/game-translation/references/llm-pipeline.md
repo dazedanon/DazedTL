@@ -820,7 +820,10 @@ NUM_RE  = r"(?<![A-Za-z0-9_])[-+]?\d+(?:[.,]\d+)?(?![A-Za-z0-9_])"
 # flag when source_numbers != live_numbers, guarded by (source_numbers or live_numbers)
 ```
 
-Stripping tokens first stops `\C[3]` and `\V[12]` contributing phantom digits. NFKC makes a fullwidth `３` equal an ASCII `3`. The lookarounds exempt `3rd`, `HP100` and `Lv5`. Compare **ordered**, so "3 of the 5" becoming "5 of the 3" is caught.
+Stripping tokens first stops `\C[3]` and `\V[12]` contributing phantom digits.
+NFKC makes a fullwidth `３` equal an ASCII `3`.
+The lookarounds exempt `3rd` and identifiers such as `EV024`, but not a stat abbreviation: English moves it (`TP24増加` is "Increases TP by 24"), so read `TP24`, `HP100` and `Lv5` as their numbers on both sides.
+Compare **ordered**, so "3 of the 5" becoming "5 of the 3" is caught.
 
 **That base alone is a false-positive machine, and a check that cries wolf gets switched off.** On a 2,866-unit game its first run produced **seven flags, all seven of them correct translations and none of them a real drift**. Every failure was the comparison's:
 
