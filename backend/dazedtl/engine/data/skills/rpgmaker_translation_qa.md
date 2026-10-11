@@ -51,10 +51,11 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    finish a bundle releases it. A worker not seen for twenty minutes, or three times a typical
    bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
    `status` gives the engine's estimate of the time left.
-3. Declined items move to a bundle of their own. Offer each to another worker, which claims it
-   with `next --bundle <id>`; a second decline sets it aside. If no other worker is available,
-   continue with `--skip-declined`. Set-aside items are reported as not reviewed; never ask the
-   user to review them.
+3. Declined items move to a bundle of their own.
+   Offer each to another worker, which claims it with `next --bundle <id>`; a second decline sets it aside.
+   If no other worker is available, continue with `--skip-declined`.
+   Screening then goes on in follow-up bundles for set-aside lines that other scenes also show, which `next` hands out like any other.
+   Set-aside items are reported as not reviewed; never ask the user to review them.
 4. Deep bundles open while screening continues, and `next` hands them out once no screen
    bundle is waiting. QA then moves through the sweep and editorial stages until `status`
    reports `complete`. `{{CLI}} advance --task {{TASK}}` and `{{CLI}} finalize --task {{TASK}}`

@@ -47,6 +47,8 @@ AROUSAL = line("ムラムラが止まらない", "The Arousal won't stop.")
 # The source shows Arina's header on the owner's line.
 WELCOME = line("いらっしゃい、アリナちゃん", "Welcome, Arina-chan.")
 SWORD = "攻撃力+5の剣"
+# A line of the declined scene that another scene shows too.
+FOREST_EXIT = line("森を抜けよう", "Let's get out of the forest.")
 write(
     "Map001.json",
     {
@@ -93,6 +95,19 @@ write(
                         speaker("案内人", "Guide"),
                         line("ここは暗い森だ", "This is a dark forest."),
                         line("森の奥へ", "Into the 森."),
+                        FOREST_EXIT,
+                    )
+                ],
+            },
+            # Screening targets the shared line in the declined scene, which
+            # has more lines to cover.
+            {
+                "id": 3,
+                "pages": [
+                    page(
+                        speaker("アリナ", "Arina"),
+                        FOREST_EXIT,
+                        line("ここで休もう", "Let's rest here."),
                     )
                 ],
             },
@@ -264,7 +279,7 @@ waiting = [
     if row["status"] == "pending"
 ]
 assert [row["declined_by"] for row in waiting] == [["screen-a"]], waiting
-assert qa.status(task)["declined"]["waiting"] == 3
+assert qa.status(task)["declined"]["waiting"] == 4
 for attempt in (
     lambda: qa.next_bundle(task, "screen-a", waiting[0]["id"]),
     lambda: qa.advance(task),
@@ -308,7 +323,55 @@ qa.accept_result(
         },
     ),
 )
-assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 3}
+assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 4}
+# Screening does not end there: the set-aside scene's line that another scene
+# shows is screened there in a follow-up bundle. Its first reviewer declines
+# it too, and another reviewer flags the line.
+row = qa.next_bundle(task, "screen-a")
+(follow_up,) = bundle_of(row)["items"]
+assert follow_up["scene_id"] == "Map001.json#/events/3/pages/0/list", follow_up
+assert [line["source"] for line in screen_targets(bundle_of(row))] == [
+    FOREST_EXIT["_original"]
+], follow_up
+qa.accept_result(
+    task,
+    result_path(
+        row["id"],
+        {
+            "schema": qa.SCREEN_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviewed_all": True,
+            "exceptions": [],
+            "motif_reviews": [],
+            "declined": [{"id": follow_up["id"], "reason": "Declined."}],
+        },
+    ),
+)
+row = qa.next_bundle(task, "screen-b", row["id"] + "-d1")
+qa.accept_result(
+    task,
+    result_path(
+        row["id"],
+        {
+            "schema": qa.SCREEN_RESULT_SCHEMA,
+            "bundle_id": row["id"],
+            "bundle_sha256": row["sha256"],
+            "reviewed_all": True,
+            "exceptions": [
+                {
+                    "id": target["id"],
+                    "verdict": "suspect",
+                    "categories": ["voice"],
+                    "note": "Stiff for Arina.",
+                }
+                for target in screen_targets(bundle_of(row))
+            ],
+            "motif_reviews": [],
+            "declined": [],
+        },
+    ),
+)
 # Screening is over while early deep bundles wait, so the next claim makes
 # deep review the stage instead of leaving screening current.
 qa.next_bundle(task, "deep-a")
@@ -471,6 +534,20 @@ else:
 qa.next_bundle(task, "deep-b", split["id"])
 assert "朝だ" in qa.context_view(task, scene, worker="deep-b")
 qa.release_bundle(task, split["id"])
+# The re-screened line opened deep review once its follow-up was screened,
+# without its occurrence in the declined scene.
+row = qa.next_bundle(task, "deep-a")
+(item,) = bundle_of(row)["items"]
+assert [identity.split("/pages")[0] for identity in item["identities"]] == [
+    "Map001.json#/events/3"
+], item
+qa.accept_result(
+    task,
+    result_path(
+        row["id"],
+        deep_result(row, {FOREST_EXIT["_original"]: "Let's leave the forest."}),
+    ),
+)
 assert qa.next_bundle(task, "deep-a") is None
 # With no other reviewer for the declined deep item, finalize reports it as
 # not reviewed only when asked to.
@@ -593,6 +670,7 @@ findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
 assert sorted(row["correction"] for row in findings["findings"]) == [
     "A sword with Attack +8",
     "Ah…♥ Amazing",
+    "Let's leave the forest.",
     "Owner · owner 0",
     "Rest on the First Stratum",
     "The arousal is building…",
@@ -635,6 +713,13 @@ def message(source):
 
 
 assert message("よく来たね") == "Welcome back."
+# The correction of the re-screened line applies only outside the declined scene.
+assert [
+    command["parameters"][0]
+    for event in json.loads((data / "Map001.json").read_text())["events"][2:]
+    for command in event["pages"][0]["list"]
+    if command.get("_original") == FOREST_EXIT["_original"]
+] == ["Let's get out of the forest.", "Let's leave the forest."]
 # Undoing one correction puts its line back and leaves the rest.
 stratum = next(
     row["id"] for row in findings["findings"] if row["source"] == STRATUM["_original"]
@@ -656,12 +741,17 @@ assert [item["reasons"] for item in findings["declined"]] == [
     ["Outside what this reviewer reviews.", "Also declined."],
     ["Not reviewed."],
 ], findings["declined"]
-assert {row["source"] for row in findings["not_reviewed"]} == {
-    "案内人",
-    "ここは暗い森だ",
-    "森の奥へ",
-    "朝だ",
-}, findings["not_reviewed"]
+# Only the shared line's occurrence in that scene goes unreviewed.
+assert sorted(
+    (row["source"], row["identity"].split("/pages")[0])
+    for row in findings["not_reviewed"]
+) == [
+    ("ここは暗い森だ", "Map001.json#/events/2"),
+    ("朝だ", "Map001.json#/events/1"),
+    ("案内人", "Map001.json#/events/2"),
+    ("森の奥へ", "Map001.json#/events/2"),
+    ("森を抜けよう", "Map001.json#/events/2"),
+], findings["not_reviewed"]
 # After an update changes the rules, the task still reports where it stood,
 # but nothing made under the old rules can be applied.
 qa._engine_fingerprint = lambda: "updated"

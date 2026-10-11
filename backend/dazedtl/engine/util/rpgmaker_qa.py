@@ -794,12 +794,11 @@ def _pronoun_context_requirements(
     return requirements
 
 
-def _scene_items(
+def _scene_groups(
     manifest: dict[str, Any],
-    compact: dict[str, dict[str, Any]],
-    lint_fixes: dict[str, dict[str, Any]],
-) -> tuple[list[dict[str, Any]], set[str], dict[str, dict[str, str]]]:
-    """Build indivisible scenes that cover each dialogue cluster exactly once."""
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Every dialogue command list as a scene, identical scenes as copies of
+    one group, and each line's cluster."""
     cluster_ids = _cluster_by_identity(manifest)
     scenes: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
     for record in manifest["records"]:
@@ -837,7 +836,101 @@ def _scene_items(
             "clusters": {cluster_ids[record["identity"]] for record in representative_records},
             "cluster_speakers": cluster_speakers,
         })
+    return groups, cluster_ids
 
+
+def _scene_item(
+    group: dict[str, Any],
+    targets: set[str],
+    compact: dict[str, dict[str, Any]],
+    lint_fixes: dict[str, dict[str, Any]],
+    cluster_ids: dict[str, str],
+    *,
+    item_id: str = "",
+    context_expansion: dict[str, set[str]] | None = None,
+) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
+    """One scene as a screen item, with the index of its lines' clusters: a
+    target cluster's first line carries an `id`, every other line a
+    `context_id`."""
+    signature = group["signature"]
+    emitted_clusters: set[str] = set()
+    lines = []
+    screen_index: dict[str, dict[str, str]] = {}
+    for position, record in enumerate(group["records"]):
+        cluster_id = cluster_ids[record["identity"]]
+        line = {
+            "source": record["source"],
+            "translation": record["live"],
+        }
+        speaker = str((record.get("speaker") or {}).get("display_name") or "")
+        if speaker:
+            line["speaker"] = speaker
+        if record.get("event_code") != 401:
+            line["event_code"] = record.get("event_code")
+        if cluster_id in lint_fixes:
+            line["lint"] = lint_fixes[cluster_id]
+        if cluster_id in targets and cluster_id not in emitted_clusters:
+            emitted_clusters.add(cluster_id)
+            cluster_item = compact[cluster_id]
+            review_id = "scene-target-" + _sha256(
+                f"{signature}\0{position}\0{cluster_id}"
+            )[:20]
+            line["id"] = review_id
+            if cluster_item["risk"]:
+                line["risk"] = cluster_item["risk"]
+            if cluster_item["glossary"]:
+                line["glossary"] = cluster_item["glossary"]
+            if cluster_item.get("same_source_alternatives"):
+                line["same_source_alternatives"] = cluster_item[
+                    "same_source_alternatives"
+                ]
+            if cluster_item.get("reference_translations"):
+                line["reference_translations"] = cluster_item[
+                    "reference_translations"
+                ]
+            if record.get("choice_context"):
+                line["choice_context"] = record["choice_context"]
+            expansion = sorted((context_expansion or {}).get(cluster_id, set()))
+            if expansion:
+                line["context_expansion"] = expansion
+            screen_index[review_id] = {
+                "cluster_id": cluster_id,
+                "representative_identity": record["identity"],
+            }
+        else:
+            context_id = "scene-context-" + _sha256(
+                f"{signature}\0{position}\0{cluster_id}\0context"
+            )[:20]
+            line["context_id"] = context_id
+            screen_index[context_id] = {
+                "cluster_id": cluster_id,
+                "representative_identity": record["identity"],
+            }
+        lines.append(line)
+    if emitted_clusters != targets:
+        raise ValueError("Scene target assignment lost a dialogue cluster")
+    return {
+        "kind": "scene",
+        "id": item_id or "scene-" + signature[:20],
+        "scene_id": group["scene_id"],
+        **(
+            {"scene_copies": [copy_id for copy_id, _records in group["copies"]]}
+            if len(group["copies"]) > 1 else {}
+        ),
+        "scene_occurrences": len(group["copies"]),
+        "target_count": len(targets),
+        "line_count": len(lines),
+        "lines": lines,
+    }, screen_index
+
+
+def _scene_items(
+    manifest: dict[str, Any],
+    compact: dict[str, dict[str, Any]],
+    lint_fixes: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], set[str], dict[str, dict[str, str]]]:
+    """Build indivisible scenes that cover each dialogue cluster exactly once."""
+    groups, cluster_ids = _scene_groups(manifest)
     uncovered = set().union(*(group["clusters"] for group in groups)) if groups else set()
     selected_by_signature: dict[str, dict[str, Any]] = {}
     while uncovered:
@@ -875,78 +968,12 @@ def _scene_items(
     items = []
     screen_index: dict[str, dict[str, str]] = {}
     for group in selected:
-        signature = group["signature"]
-        target_clusters = set(group["targets"])
-        emitted_clusters: set[str] = set()
-        lines = []
-        for position, record in enumerate(group["records"]):
-            cluster_id = cluster_ids[record["identity"]]
-            line = {
-                "source": record["source"],
-                "translation": record["live"],
-            }
-            speaker = str((record.get("speaker") or {}).get("display_name") or "")
-            if speaker:
-                line["speaker"] = speaker
-            if record.get("event_code") != 401:
-                line["event_code"] = record.get("event_code")
-            if cluster_id in lint_fixes:
-                line["lint"] = lint_fixes[cluster_id]
-            if cluster_id in target_clusters and cluster_id not in emitted_clusters:
-                emitted_clusters.add(cluster_id)
-                cluster_item = compact[cluster_id]
-                review_id = "scene-target-" + _sha256(
-                    f"{signature}\0{position}\0{cluster_id}"
-                )[:20]
-                line["id"] = review_id
-                if cluster_item["risk"]:
-                    line["risk"] = cluster_item["risk"]
-                if cluster_item["glossary"]:
-                    line["glossary"] = cluster_item["glossary"]
-                if cluster_item.get("same_source_alternatives"):
-                    line["same_source_alternatives"] = cluster_item[
-                        "same_source_alternatives"
-                    ]
-                if cluster_item.get("reference_translations"):
-                    line["reference_translations"] = cluster_item[
-                        "reference_translations"
-                    ]
-                if record.get("choice_context"):
-                    line["choice_context"] = record["choice_context"]
-                context_expansion = sorted(
-                    group["context_expansion"].get(cluster_id, set())
-                )
-                if context_expansion:
-                    line["context_expansion"] = context_expansion
-                screen_index[review_id] = {
-                    "cluster_id": cluster_id,
-                    "representative_identity": record["identity"],
-                }
-            else:
-                context_id = "scene-context-" + _sha256(
-                    f"{signature}\0{position}\0{cluster_id}\0context"
-                )[:20]
-                line["context_id"] = context_id
-                screen_index[context_id] = {
-                    "cluster_id": cluster_id,
-                    "representative_identity": record["identity"],
-                }
-            lines.append(line)
-        if emitted_clusters != target_clusters:
-            raise ValueError("Scene target assignment lost a dialogue cluster")
-        items.append({
-            "kind": "scene",
-            "id": "scene-" + group["signature"][:20],
-            "scene_id": group["scene_id"],
-            **(
-                {"scene_copies": [copy_id for copy_id, _records in group["copies"]]}
-                if len(group["copies"]) > 1 else {}
-            ),
-            "scene_occurrences": len(group["copies"]),
-            "target_count": len(target_clusters),
-            "line_count": len(lines),
-            "lines": lines,
-        })
+        item, item_index = _scene_item(
+            group, set(group["targets"]), compact, lint_fixes, cluster_ids,
+            context_expansion=group["context_expansion"],
+        )
+        items.append(item)
+        screen_index.update(item_index)
     items.sort(key=lambda item: _sha256("scene-screen-v1\0" + item["id"]))
     return items, {
         index_item["cluster_id"] for index_item in screen_index.values()
@@ -1246,7 +1273,7 @@ def _merge_candidate(
 
 def _bundle_items(
     items: list[dict], *, stage: str, char_budget: int, item_limit: int,
-    first: int = 1,
+    first: int = 1, screen_index: dict[str, dict[str, str]] | None = None,
 ) -> list[dict]:
     if char_budget < 2_000 or item_limit < 1:
         raise ValueError("QA bundle limits are too small")
@@ -1269,9 +1296,35 @@ def _bundle_items(
     if current:
         groups.append(current)
     return [
-        _make_bundle(stage, f"{stage}-{index:04d}", group)
+        _make_bundle(
+            stage, f"{stage}-{index:04d}", group, _own_index(group, screen_index)
+        )
         for index, group in enumerate(groups, start=first)
     ]
+
+
+def _own_index(
+    items: list[dict], screen_index: dict[str, dict[str, str]] | None
+) -> dict[str, Any]:
+    """A follow-up bundle's own screen index, for lines the task's index,
+    made before any review, does not hold."""
+    entries = {
+        target: screen_index[target]
+        for item in items for target in _item_targets(item)
+        if target in (screen_index or {})
+    }
+    return {"screen_index": entries} if entries else {}
+
+
+def _target_entry(
+    screen_index: dict[str, dict[str, str]], bundle: dict[str, Any], target: str
+) -> dict[str, str]:
+    """The cluster and representative line a screen target or context ID names."""
+    return (
+        (bundle.get("screen_index") or {}).get(target)
+        or screen_index.get(target)
+        or {}
+    )
 
 
 def _make_bundle(
@@ -1442,8 +1495,9 @@ def _split_declined(
     number = 1 + sum(
         other.get("origin") == origin for other in checkpoint[stage]["bundles"]
     )
-    # Deep items name the scenes and motif reviews their bundle prints once.
-    extra = {}
+    # Deep items name the scenes and motif reviews their bundle prints once,
+    # and a follow-up's lines keep its own screen index.
+    extra = _own_index(items, bundle.get("screen_index"))
     for key in ("scenes", "motifs"):
         named = {name for item in items for name in item.get(key) or []}
         if named:
@@ -1464,6 +1518,7 @@ def _split_declined(
         "assigned_to": "",
         "result_path": "",
         "origin": origin,
+        **({"follow_up": True} if row.get("follow_up") else {}),
         "declined_by": declined_by,
         "declines": [
             *(row.get("declines") or []),
@@ -2146,7 +2201,7 @@ def _screen_target_map(
                 raise QAResultError(f"Duplicate screen target {identity!r}")
             targets[identity] = {
                 **target,
-                **((screen_index or {}).get(identity) or {}),
+                **_target_entry(screen_index or {}, bundle, identity),
             }
     return targets
 
@@ -3135,7 +3190,7 @@ def _screen_handoff_context(
 
         for exception in result["exceptions"]:
             target_id = exception["id"]
-            target = screen_index.get(target_id) or {}
+            target = _target_entry(screen_index, bundle, target_id)
             cluster_id = target.get("cluster_id") or target_id
             evidence[cluster_id].append({
                 "target_id": target_id,
@@ -3226,6 +3281,48 @@ def _motif_translation_roster(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _screen_target_rows(
+    root: Path, checkpoint: dict[str, Any], screen_index: dict[str, dict[str, str]]
+) -> dict[str, tuple[str, str]]:
+    """Each screen target ID with its cluster and the bundle that offers it:
+    the task's own, or the latest follow-up that targets a set-aside line
+    again."""
+    targets = {
+        target: ((screen_index.get(target) or {}).get("cluster_id") or target, bundle_id)
+        for target, bundle_id in _read_json(root / "screen-targets.json")["targets"].items()
+    }
+    for row in checkpoint["screen"]["bundles"]:
+        if not row.get("follow_up"):
+            continue
+        bundle = _read_json(Path(row["path"]))
+        for item in bundle["items"]:
+            for line in item["lines"]:
+                if "id" in line:
+                    targets[line["id"]] = (
+                        _target_entry(screen_index, bundle, line["id"])["cluster_id"],
+                        row["id"],
+                    )
+    return targets
+
+
+def _read_scenes(checkpoint: dict[str, Any]) -> set[str]:
+    """Scenes a screen reviewer read: those of scene items whose latest
+    bundle, after any decline moved them, was accepted."""
+    latest: dict[tuple[str, str], tuple[str, list[str]]] = {}
+    for row in checkpoint["screen"]["bundles"]:
+        origin = row.get("origin") or row["id"]
+        for item in _read_json(Path(row["path"]))["items"]:
+            if item.get("kind") == "scene":
+                latest[(origin, item["id"])] = (
+                    row["status"], item.get("scene_copies") or [item["scene_id"]]
+                )
+    return {
+        scene
+        for status, copies in latest.values() if status == "accepted"
+        for scene in copies
+    }
+
+
 def _declined_scope(
     root: Path,
     checkpoint: dict[str, Any],
@@ -3235,16 +3332,21 @@ def _declined_scope(
 ) -> dict[str, Any]:
     """What reviewers declined: set aside, and with `waiting` also still offered.
 
-    `scenes` are scenes no screen reviewer read, `context_scenes` adds those of
-    declined deep items, and `identities` are the lines no reviewer judged,
-    which no correction may target.
+    `declined_scenes` are the scenes of declined screen items, `scenes` those
+    no screen reviewer read, and `context_scenes` adds the scenes of declined
+    deep items. A cluster stays screened while another target covers it, such
+    as a follow-up's: `unscreened` are the clusters every screen target of
+    which was declined, `clusters` adds those deep review declined, and
+    `identities` are the lines no correction may target: those clusters' and
+    every line of a scene no screen reviewer read.
     """
     task = _read_json(root / "task.json")
     screen_index = _load_screen_index(root, task)
     records, clusters = _record_maps(manifest)
     statuses = {"set-aside", "pending", "assigned"} if waiting else {"set-aside"}
-    scenes: set[str] = set()
+    declined_scenes: set[str] = set()
     context_scenes: set[str] = set()
+    declined_targets: dict[str, str] = {}
     unreviewed: set[str] = set()
     items = []
     for stage in REVIEW_STAGES:
@@ -3261,20 +3363,24 @@ def _declined_scope(
                 if stage in {"sweep", "editorial"}:
                     # Lines were reviewed; only these fixes are left out.
                     pass
-                elif kind == "scene":
-                    copies = set(item.get("scene_copies") or [item["scene_id"]])
-                    scenes |= copies
-                    context_scenes |= copies
-                    unreviewed |= {
-                        screen_index[line["id"]]["cluster_id"]
-                        for line in item["lines"] if "id" in line
-                    }
-                elif kind in {"cluster", "deep"} or stage == "deep":
+                elif stage == "deep":
                     unreviewed.add(item["id"])
                     context_scenes |= {
                         bundle["scenes"][key]["scene_id"]
                         for key in item.get("scenes") or []
                     }
+                elif kind == "scene":
+                    copies = set(item.get("scene_copies") or [item["scene_id"]])
+                    declined_scenes |= copies
+                    context_scenes |= copies
+                    declined_targets.update({
+                        line["id"]: _target_entry(
+                            screen_index, bundle, line["id"]
+                        )["cluster_id"]
+                        for line in item["lines"] if "id" in line
+                    })
+                elif kind == "cluster":
+                    declined_targets[item["id"]] = item["id"]
                 items.append({
                     "stage": stage,
                     "id": item["id"],
@@ -3282,6 +3388,25 @@ def _declined_scope(
                     "set_aside": row["status"] == "set-aside",
                     "reasons": reasons.get(item["id"], []),
                 })
+    offered: dict[str, set[str]] = defaultdict(set)
+    if declined_targets:
+        for target, (cluster_id, _bundle) in _screen_target_rows(
+            root, checkpoint, screen_index
+        ).items():
+            offered[cluster_id].add(target)
+    unscreened = {
+        cluster_id for cluster_id in set(declined_targets.values())
+        if offered[cluster_id].issubset(declined_targets)
+    }
+    unreviewed |= unscreened
+    # Only a follow-up shows a scene twice, so only then may another reviewer
+    # have read a declined scene.
+    scenes = declined_scenes - (
+        _read_scenes(checkpoint)
+        if declined_scenes
+        and any(row.get("follow_up") for row in checkpoint["screen"]["bundles"])
+        else set()
+    )
     identities = {
         identity
         for cluster_id in unreviewed if cluster_id in clusters
@@ -3293,7 +3418,9 @@ def _declined_scope(
     }
     return {
         "scenes": scenes,
+        "declined_scenes": declined_scenes,
         "context_scenes": context_scenes,
+        "unscreened": unscreened,
         "clusters": unreviewed,
         "identities": identities,
         "items": items,
@@ -3322,6 +3449,81 @@ def _assigned_scenes(checkpoint: dict[str, Any], worker: str) -> set[str]:
         if row["status"] == "assigned" and row.get("assigned_to") == worker
         for scene in _printed_scenes(_read_json(Path(row["path"])))
     }
+
+
+def _open_follow_ups(
+    root: Path, task: dict[str, Any], checkpoint: dict[str, Any]
+) -> int:
+    """Target set-aside lines again in scenes no reviewer declined.
+
+    A cluster whose every screen target was set aside gets a target in another
+    scene that shows it, chosen as screening chose its scenes, in follow-up
+    screen bundles. A line only declined scenes show stays set aside. Returns
+    how many targets opened.
+    """
+    manifest = _read_json(root / "inventory.json")
+    declined = _declined_scope(root, checkpoint, manifest)
+    if not declined["unscreened"]:
+        return 0
+    groups, cluster_ids = _scene_groups(manifest)
+    candidates = [
+        group for group in groups
+        if group["clusters"] & declined["unscreened"]
+        and not {copy_id for copy_id, _records in group["copies"]}
+        & declined["declined_scenes"]
+    ]
+    uncovered = declined["unscreened"] & set().union(
+        *(group["clusters"] for group in candidates)
+    )
+    chosen = []
+    while uncovered:
+        group = min(
+            (group for group in candidates if group["clusters"] & uncovered),
+            key=lambda group: (-len(group["clusters"] & uncovered), group["scene_id"]),
+        )
+        chosen.append((group, group["clusters"] & uncovered))
+        uncovered -= group["clusters"]
+    if not chosen:
+        return 0
+    compact = {
+        item["id"]: item
+        for item in _compact_items(manifest, _read_json(root / "context.json"))
+    }
+    _lint, lint_fixes = _lint_items(manifest)
+    screen = checkpoint["screen"]
+    # Ordinals continue past every target the task has offered.
+    ordinal = int(screen["total_items"])
+    items = []
+    screen_index: dict[str, dict[str, str]] = {}
+    for group, targets in sorted(chosen, key=lambda entry: entry[0]["scene_id"]):
+        item, item_index = _scene_item(
+            group, targets, compact, lint_fixes, cluster_ids,
+            item_id="scene-" + _sha256(
+                "follow-up\0" + group["signature"] + "\0" + "\0".join(sorted(targets))
+            )[:20],
+        )
+        item["ordinal"] = ordinal + 1
+        for line in item["lines"]:
+            if "id" in line:
+                ordinal += 1
+                line["ordinal"] = ordinal
+        items.append(item)
+        screen_index.update(item_index)
+    configuration = task.get("screen_configuration") or {}
+    rows = _write_bundles(root, _bundle_items(
+        items,
+        stage="screen",
+        char_budget=int(configuration.get("char_budget", DEFAULT_SCREEN_CHAR_BUDGET)),
+        item_limit=int(configuration.get("item_limit", DEFAULT_SCREEN_ITEM_LIMIT)),
+        first=1 + sum(not row.get("origin") for row in screen["bundles"]),
+        screen_index=screen_index,
+    ))
+    for row in rows:
+        row["follow_up"] = True
+    screen["bundles"] += rows
+    opened = sum(item["target_count"] for item in items)
+    screen["total_items"] = int(screen["total_items"]) + opened
+    return opened
 
 
 def _lint_decisions(
@@ -3697,8 +3899,10 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         statuses = {row["id"]: row["status"] for row in checkpoint["screen"]["bundles"]}
         screen_index = _load_screen_index(root, _read_json(root / "task.json"))
         cluster_bundle = {
-            screen_index[target]["cluster_id"] if target in screen_index else target: bundle
-            for target, bundle in index["targets"].items()
+            cluster_id: bundle
+            for cluster_id, bundle in _screen_target_rows(
+                root, checkpoint, screen_index
+            ).values()
         }
         ready = {
             cluster_id for cluster_id in candidates
@@ -3884,7 +4088,7 @@ def _sweep_items(
 def _advance_unlocked(
     task_dir: str | Path, skip_declined: bool = False
 ) -> dict[str, Any]:
-    root, _task, checkpoint = _load_task(task_dir)
+    root, task, checkpoint = _load_task(task_dir)
     if checkpoint["stage"] == "deep":
         _settle_declined(checkpoint, "deep", skip_declined)
         manifest = _read_json(root / "inventory.json")
@@ -3909,6 +4113,11 @@ def _advance_unlocked(
     if checkpoint["stage"] != "screen":
         return status(root)
     _settle_declined(checkpoint, "screen", skip_declined)
+    if _open_follow_ups(root, task, checkpoint):
+        # Screening goes on while set-aside lines wait in other scenes.
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        return status(root)
     _issue_deep(root, checkpoint, final=True)
     checkpoint["deep"]["projected_items"] = checkpoint["deep"]["total_items"]
     checkpoint["stage"] = "deep" if checkpoint["deep"]["bundles"] else "ready-finalize"
