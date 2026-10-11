@@ -24,6 +24,10 @@ JAPANESE = re.compile(r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]")
 # the counts always cover every line.
 FILE_LINES = 200
 ALL_LINES = 2000
+# How alike an old and a new line must be to read as one line changed, and
+# the largest replaced block paired that way.
+PAIRING_RATIO = 0.5
+PAIRING_LIMIT = 2500
 # Engine metadata that keeps a translated line's source; it is not game text.
 _SOURCE_KEYS = frozenset({"_original"})
 
@@ -112,13 +116,47 @@ def _blobs(repo: Path, objects: list[str]) -> dict[str, bytes]:
 
 
 def _merged(repo: Path, translated: str, base: str, official: str) -> bytes | None:
-    """The file a clean three-way merge gives, or None when it conflicts."""
+    """The file the update leaves: a three-way merge whose conflicting hunks
+    take the new release's lines, as applying the update resolves them."""
     result = subprocess.run(
-        ["git", "-C", str(repo), "merge-file", "-p", "--object-id", translated, base, official],
+        ["git", "-C", str(repo), "merge-file", "-p", "--object-id", "--theirs", translated, base, official],
         capture_output=True,
         timeout=120,
     )
     return result.stdout if result.returncode == 0 else None
+
+
+def _pairs(old, new):
+    """A replaced block's lines, the old and new versions of one line paired
+    by similarity in order, and every other line on its own side."""
+    if len(old) * len(new) > PAIRING_LIMIT:
+        # A long rewrite pairs by position; the counts are the same.
+        return [
+            (old[index] if index < len(old) else (None, None), new[index] if index < len(new) else (None, None))
+            for index in range(max(len(old), len(new)))
+        ]
+    matched, start = {}, 0
+    for index, (_key, source) in enumerate(old):
+        best, score = None, PAIRING_RATIO
+        for other in range(start, len(new)):
+            ratio = SequenceMatcher(None, source, new[other][1], autojunk=False).ratio()
+            if ratio > score:
+                best, score = other, ratio
+        if best is not None:
+            matched[best] = index
+            start = best + 1
+    pairs, index = [], 0
+    for other, line in enumerate(new):
+        if other in matched:
+            while index < matched[other]:
+                pairs.append((old[index], (None, None)))
+                index += 1
+            pairs.append((old[index], line))
+            index += 1
+        else:
+            pairs.append(((None, None), line))
+    pairs.extend((line, (None, None)) for line in old[index:])
+    return pairs
 
 
 def _compare(path, base, translated, official, merged, budget) -> FileText:
@@ -155,9 +193,7 @@ def _compare(path, base, translated, official, merged, budget) -> FileText:
                     text.to_translate += 1
                     note(LineChange("replaced", source, english, result.get(new_key)))
             continue
-        for index in range(max(len(old), len(new))):
-            key, source = old[index] if index < len(old) else (None, None)
-            new_key, value = new[index] if index < len(new) else (None, None)
+        for (key, source), (new_key, value) in _pairs(old, new):
             english = translated_text(key, source) if key is not None else None
             if english is not None:
                 text.replaced += 1
@@ -241,7 +277,7 @@ def text_changes(game_root: str | Path, preview: UpdatePreview) -> TextChanges:
         merged = official
         if all(entries) and entries[0][1] not in (entries[1][1], entries[2][1]):
             # Both sides changed the file: what the merge keeps, or the new
-            # release's file when the merge conflicts.
+            # release's file when Git cannot merge it, such as binary content.
             merged = _parse(_merged(repo, *(entry[1] for entry in entries))) or official
         files.append(_compare(path, base, translated, official, merged, budget))
     # Files outside Git, such as maps no translation version saved, replace

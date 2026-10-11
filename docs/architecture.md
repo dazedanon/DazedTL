@@ -1009,7 +1009,7 @@ Official update operations reuse the existing preview hashes, conflict recovery 
 New originals are staged separately for engine preparation.
 Staging lays the copy out as the game ([release_layout](../backend/dazedtl/engine/util/version_update/release_layout.py)): the release folder that lines up with the game's paths, compared case-insensitively, supplies the files, and a patch takes the game's spelling of each path it replaces.
 A release holding fewer than half of the game's files is a patch, copied over the previous version so the files it leaves out stay; an MV/MZ patch gets the same data and plugin formatting as the game's own files, so it merges line by line.
-The preview also reads the changed JSON files' Japanese strings as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result, or the new file when the merge conflicts, says which translations survive, so the review counts what the merge will really drop.
+The preview also reads the changed JSON files' Japanese strings as lines ([text_changes](../backend/dazedtl/engine/util/version_update/text_changes.py)): releases line up by text, a translation by position, and the merged result, with conflicting hunks taking the new release's lines as applying does, says which translations survive, so the review counts what the merge will really drop.
 A local delivery packages only reviewed Git files.
 Public publication remains a separate action.
 Guided rewrap application also requires a matching completed scan.
