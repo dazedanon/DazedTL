@@ -10,7 +10,6 @@ import uuid
 
 from util.ace import rgssad
 from util.game_settings import without_game_update
-from util.paths import PROJECT_ROOT
 from util.project_preparation import _game_path, rpgmaker_layout
 from .project import digest
 from . import wolf
