@@ -231,6 +231,14 @@ try:
         from modules import rpgmakermvmz as parser
         from util import extensions
 
+        # MV and Ace print the battler's name right before a particle-first
+        # battle message; stripping the space after Taro printed "Arinafell!".
+        assert parser._strip_taro_placeholder('"Taro fell!"') == " fell!"
+        assert (
+            parser._strip_taro_placeholder("Taro's Illusion wore off.")
+            == "'s Illusion wore off."
+        )
+
         def command(code, parameters, **extra):
             return {"code": code, "indent": 0, "parameters": parameters, **extra}
 

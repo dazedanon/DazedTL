@@ -948,6 +948,7 @@ def _text_needs_translation(current) -> bool:
 
 
 _TARO_PLACEHOLDER_RE = re.compile(r"\bTaro(?:['’]s)?\b", re.IGNORECASE)
+_LEADING_TARO_RE = re.compile(r"^[\s\"']*Taro\b", re.IGNORECASE)
 
 
 def _strip_taro_placeholder(text: str) -> str:
@@ -957,10 +958,22 @@ def _strip_taro_placeholder(text: str) -> str:
     model as ``Taro…`` so English gets a grammatical subject. The placeholder must
     always be removed afterward - including when the model inserts Taro without a
     particle prefix (prompt bleed) or varies casing (``taro`` / ``TARO``).
+    MV and Ace print the battler's name directly before such a message, so the
+    space or possessive that followed a leading Taro stays (" fell!", "'s turn").
     """
-    cleaned = _TARO_PLACEHOLDER_RE.sub("", str(text or ""))
+    text = str(text or "")
+    lead = _LEADING_TARO_RE.match(text)
+    if lead:
+        text = text[lead.end():]
+    cleaned = _TARO_PLACEHOLDER_RE.sub("", text)
     cleaned = re.sub(r" {2,}", " ", cleaned)
-    return cleaned.strip(" \t\"'")
+    if not lead:
+        return cleaned.strip(" \t\"'")
+    possessive = re.match(r"['’]s\b", cleaned)
+    prefix = possessive.group(0) if possessive else ""
+    body = cleaned[len(prefix):]
+    stripped = body.strip(" \t\"'")
+    return prefix + (" " if stripped and body[:1].isspace() else "") + stripped
 
 
 def _param_current(cmd, index: int) -> str:
