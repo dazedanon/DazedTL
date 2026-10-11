@@ -428,6 +428,7 @@ def run_qa(plan, log):
             folder / "text-qa",
             fit=plan["options"].get("fit"),
             interface=True,
+            progress=log,
         )
         manifest = qa.build_manifest(plan["project"]["data"], plan["options"]["focus"])
         descriptor = read_json(task / "task.json")

@@ -15,8 +15,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from util.paths import PROJECT_ROOT
 
@@ -26,6 +28,8 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_TIMEOUT = 600
 # The application's Electron, which the app names for its workers.
 ELECTRON_ENV = "DAZEDTL_ELECTRON"
+# How often a running capture reports which screen it is on.
+PROGRESS_SECONDS = 10
 
 
 class CaptureUnavailable(Exception):
@@ -136,13 +140,14 @@ def capture(
     choices: list[dict[str, Any]] | None = None,
     all_choices: bool = False,
     timeout: int = DEFAULT_TIMEOUT,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Capture the game's screens into *out_dir* and return what screens.json
     lists. *overlay* serves corrected data files, by path under the game's web
     folder such as ``data/Items.json``, in place of the game's own; *screens*
     limits the capture to those screens; *choices* replaces the game's choice
     lists, each captured with *all_choices* and otherwise only when the game
-    cuts it off."""
+    cuts it off. *progress* hears which screen the capture is on."""
     if not _has_display():
         raise CaptureUnavailable("There's no display to run the game on.")
     binary = electron()
@@ -178,24 +183,40 @@ def capture(
             else ["--ozone-platform=wayland"] if sys.platform.startswith("linux")
             else []
         )
-        try:
-            completed = subprocess.run(
+        errors_path = Path(temporary) / "errors.log"
+        with errors_path.open("wb") as errors:
+            process = subprocess.Popen(
                 [str(binary), *platform, str(HERE / "capture.cjs"), str(plan_path)],
                 cwd=temporary,
                 env=environment,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                timeout=timeout + 60,
-                check=False,
+                stdout=subprocess.PIPE,
+                stderr=errors,
             )
-        except subprocess.TimeoutExpired as error:
-            raise CaptureUnavailable("The game didn't finish its screens in time.") from error
+            # The capture stops itself at its timeout; this stops one that hangs.
+            timer = threading.Timer(timeout + 60, process.kill)
+            timer.start()
+            try:
+                reported = 0.0
+                for line in process.stdout:
+                    try:
+                        title = json.loads(line)["title"]
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                    if progress and time.monotonic() - reported >= PROGRESS_SECONDS:
+                        reported = time.monotonic()
+                        progress(f"Capturing the game's screens: {title}")
+                process.wait()
+            finally:
+                timer.cancel()
+                if process.poll() is None:
+                    process.kill()
+        tail = errors_path.read_text(encoding="utf-8", errors="replace").strip()
     listing = out / "screens.json"
     if not listing.is_file():
-        tail = completed.stderr.decode("utf-8", "replace").strip().splitlines()[-3:]
+        last = tail.splitlines()[-3:]
         raise CaptureUnavailable(
             "The capture stopped before writing its results"
-            + (": " + " ".join(tail) if tail else ".")
+            + (": " + " ".join(last) if last else ".")
         )
     return _load(listing)

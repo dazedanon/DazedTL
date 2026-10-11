@@ -126,6 +126,7 @@ def main() -> int:
         task, state = rpgmaker_qa.prepare_task(
             args.game_root, args.data, args.focus, args.output_root,
             interface=not args.no_interface,
+            progress=lambda message: print(message, file=sys.stderr, flush=True),
         )
         _print({"task": str(task), "status": state})
     elif args.command == "status":

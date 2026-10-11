@@ -23,7 +23,7 @@ from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from util.paths import (
     GAME_GLOSSARY_RELATIVE,
@@ -1575,11 +1575,13 @@ def _shown_text(text: Any) -> str:
     return _DRAW_CODE_RE.sub("", str(text or "")).strip()
 
 
-def _capture_interface(data: Path, folder: Path) -> dict[str, Any]:
+def _capture_interface(
+    data: Path, folder: Path, progress: Callable[[str], None] | None
+) -> dict[str, Any]:
     """Capture the game's interface screens into *folder*; how many, and why
     none or some could not be."""
     try:
-        listing = rpgmaker_screens.capture(data, folder)
+        listing = rpgmaker_screens.capture(data, folder, progress=progress)
     except rpgmaker_screens.CaptureUnavailable as error:
         return {"captured": 0, "error": str(error)}
     return {
@@ -2446,13 +2448,15 @@ def prepare_task(
     screen_item_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
     fit: dict[str, Any] | None = None,
     interface: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
     *fit* holds the Line widths and line width check settings the task fits
     corrections to; a task already prepared keeps the ones it was made with.
     With *interface*, the game's interface screens are captured, and text the
-    game squeezes or cuts off on them goes to deep review with its captures.
+    game squeezes or cuts off on them goes to deep review with its captures;
+    *progress* hears which screen the capture is on.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -2507,7 +2511,9 @@ def prepare_task(
                     forced_candidates, cluster_id, [entry["check"] for entry in failed]
                 )
             captured = (
-                _capture_interface(data, staging / INTERFACE_FOLDER) if interface else None
+                _capture_interface(data, staging / INTERFACE_FOLDER, progress)
+                if interface
+                else None
             )
             if captured is not None:
                 places, outside = _interface_places(staging / INTERFACE_FOLDER, manifest)

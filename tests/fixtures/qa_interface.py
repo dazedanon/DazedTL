@@ -41,7 +41,14 @@ captures = []
 
 
 def capture(
-    data_root, out_dir, *, overlay=None, screens=None, choices=None, all_choices=False
+    data_root,
+    out_dir,
+    *,
+    overlay=None,
+    screens=None,
+    choices=None,
+    all_choices=False,
+    progress=None,
 ):
     """What the capture writes: before corrections, a squeezed weapon name and
     plugin command; after, the weapon as the corrected data names it."""

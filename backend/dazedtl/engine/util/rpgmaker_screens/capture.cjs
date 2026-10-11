@@ -143,6 +143,8 @@ app.whenReady().then(() => {
     const file = `${name}.png`;
     fs.writeFileSync(path.join(out, file), image.toPNG());
     result.screens.push({ name, file, ...meta });
+    // Each capture is progress for whoever runs the capture.
+    process.stdout.write(JSON.stringify({ captured: name, title: meta.title }) + "\n");
     return true;
   });
   ipcMain.on("skip", (_event, screen, reason) => result.skipped.push({ screen, reason }));
