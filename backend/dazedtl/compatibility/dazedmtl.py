@@ -466,8 +466,15 @@ class ExistingBackend:
                 "folder": str(folder),
                 "options": {"focus": focus},
             }
+            # A game file the app can't read is no fault of the QA task, and
+            # stops the rest of the project the same way.
             try:
                 plan["guard"] = self.guided_guard(native, folder)
+            except OSError as exc:
+                raise ValueError(
+                    f"DazedTL can't read this game's files: {exc}"
+                ) from exc
+            try:
                 qa = qa_state(plan)
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 qa = qa_unreadable(plan, exc)

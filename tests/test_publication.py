@@ -244,11 +244,12 @@ class PublicationTests(unittest.TestCase):
         # the workspace snapshot contract. Corrections come from the findings.
         import json
         import sys
-        from types import ModuleType
+        from types import ModuleType, SimpleNamespace
 
         from dazedtl.api.contracts.guided import QaState
         from dazedtl.api.contracts.validation import _close_contracts
         from dazedtl.compatibility import text
+        from dazedtl.compatibility.dazedmtl import ExistingBackend
         from dazedtl.translation.files import digest
         from pydantic import TypeAdapter
 
@@ -411,3 +412,10 @@ class PublicationTests(unittest.TestCase):
         )
         self.assertTrue((task_dir.parent / "task-unreadable/findings.json").is_file())
         self.assertIn("PermissionError", log[0])
+        # A game file the app couldn't read was called this task's, and the
+        # assistant was told to set the task aside; the error names the game.
+        backend = ExistingBackend.__new__(ExistingBackend)
+        backend.workflows = SimpleNamespace(folder=lambda _id: self.folder)
+        backend.guided_guard = lambda *_: denied(self.root / "data/Map001.json")
+        with self.assertRaisesRegex(ValueError, "can't read this game's files.*Map001"):
+            backend.guided_text_state({**plan["project"], "id": "project"}, "database")
