@@ -44,10 +44,15 @@ def _header(command):
     }
 
 
+def _parts(pointer):
+    return tuple(
+        part.replace("~1", "/").replace("~0", "~") for part in pointer.split("/")[1:]
+    )
+
+
 def _command(document, pointer):
     value = document
-    for part in pointer.split("/")[1:]:
-        part = part.replace("~1", "/").replace("~0", "~")
+    for part in _parts(pointer):
         value = value[int(part)] if isinstance(value, list) else value[part]
     if (
         not isinstance(value, dict)
@@ -88,23 +93,59 @@ def _faces(data):
     return faces
 
 
-def _render_like(raw, document):
-    """JSON in the file's own indentation, byte order mark and final newline."""
-    decoded = raw.decode("utf-8-sig")
-    indent = re.search(r"\n([ \t]+)[\"\[\]{}]", decoded)
-    token = indent.group(1) if indent else None
-    rendered = json.dumps(
-        document,
-        ensure_ascii=False,
-        indent=(token if "\t" in token else len(token)) if token else None,
-        separators=None if token else (",", ":"),
-    )
-    if decoded.endswith("\r\n"):
-        rendered = rendered.replace("\n", "\r\n") + "\r\n"
-    elif decoded.endswith("\n"):
-        rendered += "\n"
-    payload = rendered.encode("utf-8")
-    return b"\xef\xbb\xbf" + payload if raw.startswith(b"\xef\xbb\xbf") else payload
+def _spans(text, pointers):
+    """Where each pointer's value sits in JSON text, in one pass that parses
+    only the values on the way to them."""
+    targets = {_parts(pointer): pointer for pointer in pointers}
+    ancestors = {target[:depth] for target in targets for depth in range(len(target))}
+    decoder = json.JSONDecoder()
+    spans = {}
+
+    def space(index):
+        while text[index] in " \t\r\n":
+            index += 1
+        return index
+
+    def walk(index, path):
+        index = space(index)
+        if path not in ancestors or text[index] not in "[{":
+            end = decoder.raw_decode(text, index)[1]
+            if path in targets:
+                spans[targets[path]] = (index, end)
+            return end
+        closing = "]" if text[index] == "[" else "}"
+        index = space(index + 1)
+        position = 0
+        while text[index] != closing:
+            part = str(position)
+            if closing == "}":
+                part, index = decoder.raw_decode(text, index)
+                index = space(index) + 1
+            index = space(walk(index, (*path, part)))
+            if text[index] == ",":
+                index = space(index + 1)
+            position += 1
+        return index + 1
+
+    walk(0, ())
+    return spans
+
+
+def _spliced(raw, document, values):
+    """The file with only these pointers' values replaced, so its layout,
+    escapes, line endings and byte order mark stay as they were."""
+    bom = b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+    text = raw[len(bom) :].decode("utf-8")
+    spans = _spans(text, values)
+    for pointer, (start, end) in sorted(
+        spans.items(), key=lambda item: item[1][0], reverse=True
+    ):
+        text = (
+            text[:start] + json.dumps(values[pointer], ensure_ascii=False) + text[end:]
+        )
+    if len(spans) != len(values) or decode_json(text.encode("utf-8")) != document:
+        raise ValueError("A header could not be written in place; scan again.")
+    return bom + text.encode("utf-8")
 
 
 def _reviews(report, flags, faces):
@@ -192,7 +233,7 @@ def apply(source, data, headers):
         path = project_path(source, f"{relative}/{flag['file']}")
         if path not in writes:
             raw = path.read_bytes()
-            writes[path] = (raw, decode_json(raw))
+            writes[path] = (raw, decode_json(raw), {})
         command = _command(writes[path][1], flag["pointer"])
         before = _header(command)
         if isinstance(command.get("_original"), str) or before != {
@@ -203,9 +244,9 @@ def apply(source, data, headers):
                 "translated since the scan; scan again."
             )
         after = {key: review[key] for key in ("face_name", "face_index", "name")}
-        command["parameters"][0] = after["face_name"]
-        command["parameters"][1] = after["face_index"]
-        command["parameters"][4] = after["name"]
+        for index, key in ((0, "face_name"), (1, "face_index"), (4, "name")):
+            command["parameters"][index] = after[key]
+            writes[path][2][f"{flag['pointer']}/parameters/{index}"] = after[key]
         fixed.append(
             {
                 "kind": flag["kind"],
@@ -218,8 +259,13 @@ def apply(source, data, headers):
                 "reason": review["reason"].strip(),
             }
         )
-    for path, (raw, document) in writes.items():
-        write_bytes(path, _render_like(raw, document))
+    # Every file is checked before any is written.
+    payloads = {
+        path: _spliced(raw, document, values)
+        for path, (raw, document, values) in writes.items()
+    }
+    for path, payload in payloads.items():
+        write_bytes(path, payload)
     # Fixes stay listed after a later scan stops flagging them; keeps
     # describe the latest review.
     earlier = recorded(source)

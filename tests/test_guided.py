@@ -94,7 +94,13 @@ class HeaderReviewTests(unittest.TestCase):
             document = {"events": [None, {"pages": [{"list": commands}]}]}
             path = data / "Map001.json"
             path.parent.mkdir()
-            path.write_text(json.dumps(document, ensure_ascii=False, indent=4))
+            # RPG Maker MV's own layout: one entry per line, no indentation,
+            # as a game has it before Set up formats its data.
+            event = json.dumps(
+                document["events"][1], ensure_ascii=False, separators=(",", ":")
+            )
+            original = f'{{\n"events":[\nnull,\n{event}\n]\n}}'
+            path.write_text(original)
             headers = {
                 "total": 2,
                 "flags": [
@@ -132,9 +138,10 @@ class HeaderReviewTests(unittest.TestCase):
             header_review.apply(game, data, headers)
             commands[0]["parameters"][0] = ""
             commands[0]["parameters"][4] = "店主"
-            # Only the fixed header changed, in the file's own formatting.
+            # Only the fixed header's values changed; the layout stays.
             self.assertEqual(
-                path.read_text(), json.dumps(document, ensure_ascii=False, indent=4)
+                path.read_text(),
+                original.replace('"arina",0,0,2,"アリナ"', '"",0,0,2,"店主"', 1),
             )
             # A later scan no longer flags the fix; the sheet still lists it
             # beside the kept flag, in the game's order.
