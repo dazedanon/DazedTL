@@ -1092,44 +1092,6 @@
   border-radius: var(--panel-radius);
   background: var(--color-surface);
 }
-/* A QA line: the Japanese, the text now and the other side of the change,
-   labelled in a column, with its reason and origin below. */
-.text-qa-change {
-  display: grid;
-  grid-template-columns: var(--change-label-width) minmax(0, 1fr);
-  gap: var(--space-1) var(--space-4);
-  margin: 0;
-  font-size: var(--font-control);
-  line-height: 1.5;
-}
-.text-qa-change dt {
-  color: var(--color-muted);
-}
-.text-qa-change dd {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-/* An applied change reads as a diff: the text now in the added color, what
-   it replaced in the removed one, and the words that changed tinted. */
-.text-qa-change [data-change="added"] {
-  color: var(--color-success);
-}
-.text-qa-change [data-change="removed"] {
-  color: var(--color-error-text);
-}
-.text-qa-change :is(ins, del) {
-  padding: 0 var(--space-half);
-  border-radius: var(--control-radius);
-  text-decoration: none;
-  box-decoration-break: clone;
-}
-.text-qa-change ins {
-  background: var(--color-success-surface);
-}
-.text-qa-change del {
-  background: var(--color-error-surface);
-}
 /* A scene correction's lines, each a change of its own; the row's reason
    sits as far below the last line as the lines sit apart, so it reads as
    the whole correction's. */

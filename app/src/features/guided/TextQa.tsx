@@ -3,14 +3,7 @@
  * user, its audit log and its coverage sheet.
  */
 
-import {
-  Fragment,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   QaFinding,
   QaQuestion,
@@ -22,8 +15,8 @@ import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
 import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
-import { changedWords } from "../../ui/changedWords";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
+import { LineChange } from "../../ui/LineChange";
 import { Modal } from "../../ui/Modal";
 import { Notice } from "../../ui/Notice";
 import { StatusMark } from "../../ui/StatusMark";
@@ -253,47 +246,25 @@ function Change({
   afterLabel?: string;
   applied?: boolean;
 }) {
-  const words = useMemo(
-    () =>
-      applied && after !== undefined ? changedWords(before, after) : undefined,
-    [applied, before, after],
-  );
+  const japanese = { label: "Japanese", text: source, lang: "ja" };
   return (
-    <dl className="text-qa-change">
-      <dt>Japanese</dt>
-      <dd lang="ja">{source}</dd>
-      {words ? (
-        <>
-          <dt data-change="added">Now</dt>
-          <dd data-change="added">
-            {words.after.map((run, index) => (
-              <Fragment key={index}>
-                {run.changed ? <ins>{run.text}</ins> : run.text}
-              </Fragment>
-            ))}
-          </dd>
-          <dt data-change="removed">Was</dt>
-          <dd data-change="removed">
-            {words.before.map((run, index) => (
-              <Fragment key={index}>
-                {run.changed ? <del>{run.text}</del> : run.text}
-              </Fragment>
-            ))}
-          </dd>
-        </>
-      ) : (
-        <>
-          <dt>Now</dt>
-          <dd>{before}</dd>
-          {after !== undefined && (
-            <>
-              <dt>{afterLabel}</dt>
-              <dd>{after}</dd>
-            </>
-          )}
-        </>
-      )}
-    </dl>
+    <LineChange
+      rows={
+        applied && after !== undefined
+          ? [
+              japanese,
+              { label: "Now", text: after, change: "added" },
+              { label: "Was", text: before, change: "removed" },
+            ]
+          : [
+              japanese,
+              { label: "Now", text: before },
+              ...(after === undefined
+                ? []
+                : [{ label: afterLabel, text: after }]),
+            ]
+      }
+    />
   );
 }
 

@@ -17,10 +17,15 @@ export type LineChangeRow = {
 export function LineChange({ rows }: { rows: readonly LineChangeRow[] }) {
   const removed = rows.find((row) => row.change === "removed");
   const added = rows.find((row) => row.change === "added");
+  // Keyed on the texts, since callers build their rows afresh each render.
+  const before = removed?.text;
+  const after = added?.text;
   const words = useMemo(
     () =>
-      removed && added ? changedWords(removed.text, added.text) : undefined,
-    [removed, added],
+      before !== undefined && after !== undefined
+        ? changedWords(before, after)
+        : undefined,
+    [before, after],
   );
   const marked = (row: LineChangeRow): WordRun[] | undefined =>
     !words
