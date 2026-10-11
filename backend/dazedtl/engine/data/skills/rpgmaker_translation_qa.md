@@ -105,12 +105,12 @@ evidence names, and lists at most twelve of an item's occurrences. Deep bundles 
 screening continues; an item whose screen evidence grew after its deep review comes back with
 that `prior_review`, and your review replaces it.
 
-- `screen_evidence` keeps the screening reviewer's reason and `screen_scene_contexts` every scene
-  used to reach it. A `clean` review of such an item rebuts that reason concretely in its
+- `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
+  reach it. A `clean` review of such an item rebuts that reason concretely in its
   `evidence`; do not clear it because the problem is absent from the small `nearby_commands`
   window. Use `{{CLI}} context --task {{TASK}} --worker <name> --at <identity>` for more
   surrounding text.
-- `motif_contexts` holds the family-level wordplay review; reconcile scene and family evidence.
+- `motifs` names the family-level wordplay reviews; reconcile scene and family evidence.
   `motif-scene-contradiction` means a scene reviewer disputed a variant of a family called
   preserved, so every variant was reopened. Set `motif_ids` only when your correction or
   question concerns that joke mechanism.
