@@ -101,10 +101,10 @@ def configure(module, translation, root, limit):
         )
         return system, glossary, sfx, call["history"], call["extra"]
 
-    def dispatch(native, text, history, *extra):
+    def dispatch(native, text, history, *extra, **options):
         state = getattr(local, "state", None)
         if state is None:
-            return native(text, history, *extra)
+            return native(text, history, *extra, **options)
         if state["capture"]:
             state["calls"].append(
                 {

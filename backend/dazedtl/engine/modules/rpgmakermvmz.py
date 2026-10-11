@@ -2507,6 +2507,199 @@ def parseScenario(data, filename):
     return [data, totalTokens, None]
 
 
+# Skill-user notes on battle messages, enabled by the run's frozen request
+# policy. Older runs keep the single request they were prepared with.
+BATTLE_MESSAGE_USERS = False
+_SKILL_USERS_CACHE: dict[int, tuple[list[str], list[str]]] | None = None
+_SKILL_USERS_LOCK = threading.Lock()
+# Enemies a note names before it only counts the rest.
+_SKILL_NOTE_ENEMIES = 6
+_SKILL_MESSAGE_INSTRUCTION = (
+    "reply with only the {language} translation of the action log. %1 or Taro is "
+    "the battler using the skill. For messages starting with Taro, always start the "
+    "sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'"
+)
+
+
+def _run_data(name: str):
+    """One data file from the run's files/, or None when it is absent or unreadable."""
+    try:
+        return json.loads(Path("files", name).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+
+
+def _event_commands(value, code: int):
+    """Every event command with this code in a map, common-event or troop file."""
+    if isinstance(value, dict):
+        if value.get("code") == code:
+            yield value
+        for child in value.values():
+            yield from _event_commands(child, code)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _event_commands(child, code)
+
+
+def _skill_users() -> dict[int, tuple[list[str], list[str]]]:
+    """Each skill's actors and enemies, by their source names.
+
+    An actor learns a skill from its starting class's learnings, an Add Skill
+    trait on the actor or that class, or a Change Skill command naming it; an
+    enemy uses the skills its action patterns list. A skill granted any other
+    way, such as by a plugin, has no users here.
+    """
+    global _SKILL_USERS_CACHE
+    with _SKILL_USERS_LOCK:
+        if _SKILL_USERS_CACHE is not None:
+            return _SKILL_USERS_CACHE
+
+        def entries(name):
+            data = _run_data(name)
+            if not isinstance(data, list):
+                return []
+            return [entry for entry in data if isinstance(entry, dict)]
+
+        def added_skills(entry):
+            return {
+                trait.get("dataId")
+                for trait in entry.get("traits") or []
+                if isinstance(trait, dict) and trait.get("code") == 43
+            }
+
+        classes = {entry.get("id"): entry for entry in entries("Classes.json")}
+        actor_names: dict[int, str] = {}
+        actor_ids: dict[int, set[int]] = {}
+        for actor in entries("Actors.json"):
+            name = _entry_field_source(actor, "name").strip()
+            # A player-named actor's slot says nothing about who it is.
+            if not name or not isinstance(actor.get("id"), int):
+                continue
+            actor_names[actor["id"]] = name
+            start = classes.get(actor.get("classId")) or {}
+            learned = added_skills(actor) | added_skills(start) | {
+                learning.get("skillId")
+                for learning in start.get("learnings") or []
+                if isinstance(learning, dict)
+            }
+            for skill in learned:
+                actor_ids.setdefault(skill, set()).add(actor["id"])
+        events = [
+            path.name
+            for path in sorted(Path("files").glob("Map*.json"))
+            if re.fullmatch(r"Map\d+\.json", path.name)
+        ] + ["CommonEvents.json", "Troops.json"]
+        for name in events:
+            for command in _event_commands(_run_data(name), 318):
+                # [fixed actor (0) or variable, actor (0 is the whole party),
+                #  learn (0) or forget, skill]
+                parameters = command.get("parameters") or []
+                if (
+                    len(parameters) >= 4
+                    and parameters[0] == 0
+                    and parameters[2] == 0
+                    and parameters[1] in actor_names
+                ):
+                    actor_ids.setdefault(parameters[3], set()).add(parameters[1])
+        enemy_names: dict[int, list[str]] = {}
+        for enemy in entries("Enemies.json"):
+            name = _entry_field_source(enemy, "name").strip()
+            if not name:
+                continue
+            for action in enemy.get("actions") or []:
+                if isinstance(action, dict):
+                    users = enemy_names.setdefault(action.get("skillId"), [])
+                    if name not in users:
+                        users.append(name)
+        _SKILL_USERS_CACHE = {
+            skill: (
+                list(dict.fromkeys(
+                    actor_names[actor] for actor in sorted(actor_ids.get(skill, ()))
+                )),
+                enemy_names.get(skill, []),
+            )
+            for skill in set(actor_ids) | set(enemy_names)
+            if isinstance(skill, int)
+        }
+        return _SKILL_USERS_CACHE
+
+
+def _skill_user_note(actors: list[str], enemies: list[str]) -> str:
+    parts = []
+    if actors:
+        parts.append(("actor " if len(actors) == 1 else "actors ") + ", ".join(actors))
+    if enemies:
+        named = ", ".join(enemies[:_SKILL_NOTE_ENEMIES])
+        more = len(enemies) - _SKILL_NOTE_ENEMIES
+        parts.append(
+            ("enemy " if len(enemies) == 1 else "enemies ") + named
+            + (f" and {more} more" if more > 0 else "")
+        )
+    return "; ".join(parts)
+
+
+def _request_size() -> int:
+    """Lines per request, as translateAI sets it before each call."""
+    try:
+        return max(1, int(getPricingConfig(MODEL)["batchSize"]))
+    except Exception:
+        return max(1, int(TRANSLATION_CONFIG.batchSize))
+
+
+def _translate_skill_messages(texts: list[str], skills: list[int]):
+    """Translate battle messages, telling the model who uses each line's skill.
+
+    Notes name lines by their request position, so each request holds at most
+    one request's lines, and lines the translator would leave out of a request
+    (no source text, or corrupted) go in one of their own without notes. The
+    users' names also bring their glossary entries, such as a character's
+    gender.
+    """
+    users = _skill_users()
+    unsent = [
+        index for index, text in enumerate(texts)
+        if "\ufffd" in text or not re.search(TRANSLATION_CONFIG.langRegex, text)
+    ]
+    sent = [index for index in range(len(texts)) if index not in unsent]
+    size = _request_size()
+    requests = [
+        (sent[start:start + size], True) for start in range(0, len(sent), size)
+    ]
+    if unsent:
+        requests.append((unsent, False))
+    instruction = _SKILL_MESSAGE_INSTRUCTION.format(language=LANGUAGE)
+    translated = list(texts)
+    tokens = [0, 0]
+    for request, numbered in requests:
+        notes, names = [], []
+        for line, index in enumerate(request if numbered else (), 1):
+            actors, enemies = users.get(skills[index], ([], []))
+            if actors or enemies:
+                notes.append(f"Line{line}: {_skill_user_note(actors, enemies)}")
+                names += [*actors, *enemies[:_SKILL_NOTE_ENEMIES]]
+        if notes:
+            history = (
+                instruction
+                + ". Where a line's skill users are listed below, use pronouns that"
+                " fit them; otherwise keep the battler gender neutral."
+                "\n\nSkill users (context, not text to translate):\n"
+                + "\n".join(notes)
+            )
+        else:
+            history = instruction + ". Keep the battler gender neutral."
+        response = translateAI(
+            [texts[index] for index in request],
+            history,
+            False,
+            glossary_names=tuple(dict.fromkeys(names)),
+        )
+        for index, value in zip(request, response[0]):
+            translated[index] = value
+        tokens[0] += response[1][0]
+        tokens[1] += response[1][1]
+    return translated, tokens
+
+
 def searchNames(data, pbar, context, filename):
     totalTokens = [0, 0]
     nameList = []
@@ -2667,14 +2860,20 @@ def searchNames(data, pbar, context, filename):
         
         # Batch translate all messages
         if messages_batch:
-            response = translateAI(
-                messages_batch,
-                "reply with only the gender neutral " + LANGUAGE + " translation of the action log. For messages starting with Taro, always start the sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'",
-                False,
-            )
-            translated_messages = response[0]
-            totalTokens[0] += response[1][0]
-            totalTokens[1] += response[1][1]
+            if BATTLE_MESSAGE_USERS:
+                translated_messages, tokens = _translate_skill_messages(
+                    messages_batch,
+                    [data[entry_idx].get("id") for entry_idx, *_rest in messages_map],
+                )
+            else:
+                response = translateAI(
+                    messages_batch,
+                    "reply with only the gender neutral " + LANGUAGE + " translation of the action log. For messages starting with Taro, always start the sentence with Taro. For example, translate 'Taroを倒した！' as 'Taro was defeated!'",
+                    False,
+                )
+                translated_messages, tokens = response[0], response[1]
+            totalTokens[0] += tokens[0]
+            totalTokens[1] += tokens[1]
             
             # Apply translations back to data
             for msg_idx, (entry_idx, msg_field, _needs_taro, raw_msg) in enumerate(messages_map):
@@ -6431,20 +6630,24 @@ def _restore_actor_names(text: str, reverse_map: dict[str, str]) -> str:
 def resetActorMapCache():
     """Invalidate the cached actor and variable-actor maps so they reload on next use."""
     global _ACTOR_MAP_CACHE, _VAR_ACTOR_MAP_CACHE, _EMPTY_ACTOR_NAME_CACHE, _EMPTY_ACTOR_IDS_CACHE
-    global _AUTONAMEPOPUP_CACHE
+    global _AUTONAMEPOPUP_CACHE, _SKILL_USERS_CACHE
     with _ACTOR_MAP_CACHE_LOCK:
         _ACTOR_MAP_CACHE = None
         _VAR_ACTOR_MAP_CACHE = None
         _EMPTY_ACTOR_IDS_CACHE = None
         _EMPTY_ACTOR_NAME_CACHE = {}
         _AUTONAMEPOPUP_CACHE = None
+    with _SKILL_USERS_LOCK:
+        _SKILL_USERS_CACHE = None
 
 
 @extensions.point
-def translateAI(text, history, history_ctx=None):
+def translateAI(text, history, history_ctx=None, *, glossary_names=()):
     """
     Legacy wrapper function for the new shared translation utility.
     This maintains compatibility with existing code while using the new shared implementation.
+    ``glossary_names`` adds the glossary entries of names the request mentions
+    only in its instructions.
     """
     global PBAR, MISMATCH, FILENAME
     
@@ -6518,6 +6721,7 @@ def translateAI(text, history, history_ctx=None):
         pbar=PBAR,
         lock=LOCK,
         mismatchList=MISMATCH,
+        glossary_names=glossary_names,
     )
     THREAD_CTX.last_translation_had_mismatch = last_translation_had_mismatch()
 

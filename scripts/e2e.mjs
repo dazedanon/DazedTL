@@ -796,8 +796,11 @@ try {
     await page.click("3Translate");
     await translateTask(page, "Database files", () => {
       const [, mika] = readJson("data/Actors.json");
+      // A skill's battle message goes out with a note on who learns it.
+      const [, fire] = readJson("data/Skills.json");
       return (
         translated(mika.name) &&
+        translated(fire.message1) &&
         translated(readJson("data/System.json").gameTitle)
       );
     });

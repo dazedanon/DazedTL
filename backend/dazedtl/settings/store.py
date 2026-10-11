@@ -456,6 +456,7 @@ class Settings:
             "choiceCollection": preferences.CHOICE_COLLECTION,
             "speakerContext": preferences.SPEAKER_CONTEXT,
             "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
+            "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
         }
 
     def connection_summary(self):
@@ -1075,6 +1076,7 @@ class Settings:
                 "choiceCollection": preferences.CHOICE_COLLECTION,
                 "speakerContext": preferences.SPEAKER_CONTEXT,
                 "sameLineSpeakers": preferences.SAME_LINE_SPEAKERS,
+                "battleMessageUsers": preferences.BATTLE_MESSAGE_USERS,
                 "entriesPerRequest": entries,
                 "inputRate": input_rate,
                 "outputRate": output_rate,

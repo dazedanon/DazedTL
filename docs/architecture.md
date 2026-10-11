@@ -152,6 +152,8 @@ Existing translated code-101 nameplates still supply dialogue context; unnamed m
 Implicit square-bracket nameplates must pass short-name plausibility checks, so bracketed tutorial prose receives normal text instructions instead of the nameplate prompt.
 Adjacent text with its own retained original remains a separate translation unit, preserving previously translated neighbors and source metadata.
 A separate same-line speaker policy, `SAME_LINE_SPEAKERS`, sends a nameplate sharing its line with the text, such as `【Name】：text` or `Name「text`, only as the `[Speaker]:` prefix, so the model does not write it into the message a second time.
+New MV/MZ runs also freeze a battle-message-users policy, the database parser's `BATTLE_MESSAGE_USERS`: a skill's battle messages carry a note naming the actors that learn the skill, through their starting class, an Add Skill trait or a Change Skill command, and the enemies whose actions use it, and those names bring their glossary entries, so the model can choose pronouns for the battler.
+A skill granted any other way, such as by a plugin, has no users, and its battler stays gender neutral; state messages carry no users either, since their subject is whichever battler has the state.
 Estimates, Live and Batch use these policies; older frozen runs retain their original parser and request identities.
 
 ### Batch execution and recovery

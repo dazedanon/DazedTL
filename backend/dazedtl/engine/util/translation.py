@@ -5437,13 +5437,16 @@ def _retry_live_translation(func):
 @_cache_reservation_scope()
 @_retry_live_translation
 def translateAI(text, history, config, filename=None, pbar=None, lock=None,
-                mismatchList=None, context_kind=None, request_instructions=None):
+                mismatchList=None, context_kind=None, request_instructions=None,
+                glossary_names=()):
     """
     Main translation entry point used by all modules.
 
     Returns [translatedText, [inputTokens, outputTokens]]. Legacy ``history``
     arguments are inferred by shape; ``request_instructions`` remains attached
     to every chunk while Japanese source context rolls forward independently.
+    ``glossary_names`` are names the instructions mention, such as who uses a
+    skill; their glossary entries join each chunk's matched glossary.
     """
     _thread_local.last_translation_had_mismatch = False
     if not text:
@@ -5683,7 +5686,8 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
         # fingerprint is part of the lookup key, so results produced under an
         # older relevant spelling cannot bypass the current glossary.
         static_system, glossary_text, sfx_text, user = createContextParts(
-            config, subbedT, formatType, request_history
+            config, subbedT, formatType, request_history,
+            speaker_names=tuple(glossary_names or ()),
         )
         vocab_text = glossary_text + sfx_text
         # Live prompts may use a growing glossary during sequential consume.

@@ -224,6 +224,7 @@ try:
         )
         from dazedtl.compatibility.worker_policy import configure_states
         from dazedtl.settings.preferences import (
+            BATTLE_MESSAGE_USERS,
             CHOICE_COLLECTION,
             SAME_LINE_SPEAKERS,
             SPEAKER_CONTEXT,
@@ -456,6 +457,104 @@ try:
                     worker.join(1)
             assert not worker.is_alive() and not errors, errors
             assert seen == ["選択", "", "選択"], seen
+
+            # Skill messages say who uses each skill, so a skill only the
+            # heroine learns is not translated with "their": an actor learns
+            # it through its starting class or a Change Skill command, an
+            # enemy uses its actions. Notes number lines within each request,
+            # and a line the translator leaves out of requests gets none.
+            run = temporary / "skill-users"
+            (run / "files").mkdir(parents=True)
+            (run / "log").mkdir()
+            for file, value in {
+                "Actors.json": [
+                    None,
+                    {"id": 1, "name": "アリナ", "classId": 1, "traits": []},
+                    # A player-named actor tells the model nothing.
+                    {
+                        "id": 2,
+                        "name": "",
+                        "classId": 2,
+                        "traits": [{"code": 43, "dataId": 3, "value": 1}],
+                    },
+                ],
+                "Classes.json": [
+                    None,
+                    {"id": 1, "learnings": [{"skillId": 1}], "traits": []},
+                    {"id": 2, "learnings": [], "traits": []},
+                ],
+                "Enemies.json": [
+                    None,
+                    {"id": 1, "name": "スライム", "actions": [{"skillId": 2}]},
+                ],
+                "Map001.json": {
+                    "events": [
+                        None,
+                        {
+                            "pages": [
+                                {"list": [command(318, [0, 1, 0, 4]), command(0, [])]}
+                            ]
+                        },
+                    ]
+                },
+            }.items():
+                (run / "files" / file).write_text(
+                    json.dumps(value, ensure_ascii=False), encoding="utf-8"
+                )
+            messages = ["%1は斬りかかった！", "%1は体当たりした！", "%1は祈った！"]
+            messages += ["は胸元をはだけた！", "%1!!"]
+            skills = [None] + [
+                {"id": skill, "name": "", "message1": message}
+                for skill, message in enumerate(messages, 1)
+            ]
+            requests = []
+
+            def record(text, history, *_args, glossary_names=()):
+                requests.append((list(text), history, glossary_names))
+                return [["EN:" + value for value in text], [0, 0]]
+
+            directory = os.getcwd()
+            os.chdir(run)
+            try:
+                with patch.multiple(
+                    parser,
+                    IGNORETLTEXT=False,
+                    translateAI=extensions.point(record),
+                    _request_size=lambda: 2,
+                ):
+                    users = {**policy, "battleMessageUsers": BATTLE_MESSAGE_USERS}
+                    for generation in (users, policy):
+                        configure_states({"engine": "MVMZ"}, temporary, generation)
+                        parser.resetActorMapCache()
+                        requests.clear()
+                        translated = deepcopy(skills)
+                        parser.searchNames(translated, None, "Skills", "Skills.json")
+                        assert translated[2]["message1"] == "EN:%1は体当たりした！"
+                        assert translated[5]["message1"] == "EN:%1!!"
+                        if generation is policy:
+                            # Older runs keep their single request.
+                            assert len(requests) == 1, requests
+                            assert "gender neutral" in requests[0][1], requests
+                            assert "Line1" not in requests[0][1], requests
+                            continue
+                        texts = [request[0] for request in requests]
+                        assert texts == [
+                            messages[:2],
+                            [messages[2], "Taro" + messages[3]],
+                            [messages[4]],
+                        ], texts
+                        first, second, unsent = requests
+                        assert first[1].endswith(
+                            "Line1: actor アリナ\nLine2: enemy スライム"
+                        ), first
+                        assert first[2] == ("アリナ", "スライム"), first
+                        assert second[1].endswith("\nLine2: actor アリナ"), second
+                        assert "Line1" not in second[1] and second[2] == ("アリナ",)
+                        assert unsent[1].endswith("Keep the battler gender neutral.")
+                        assert unsent[2] == (), unsent
+            finally:
+                os.chdir(directory)
+                parser.resetActorMapCache()
         configure_states({"engine": "MVMZ"}, temporary, None)
 
         # New lines get the QA lint fixes that need no reviewer, keeping codes,
