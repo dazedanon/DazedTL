@@ -5,6 +5,7 @@ import type {
   TranslationState,
 } from "../app/src/api/contracts.ts";
 import {
+  guidedUpdateTasks,
   versionSession,
   updateCounts,
 } from "../app/src/features/translation/versionState.ts";
@@ -115,5 +116,66 @@ test("a new or failed release attempt cannot offer an older comparison for appli
       ],
     }),
     { added: 1, changed: 2, removed: 1 },
+  );
+});
+
+test("a finished update opens the Guided tasks its files belong to", () => {
+  // MV keeps its data under www/, a new map is not listed by Guided yet, and
+  // removed or unchanged files need no translating.
+  const tasks = guidedUpdateTasks(
+    {
+      file_changes: [
+        { path: "www/data/Map001.json", change: "Modified" },
+        { path: "www/data/Actors.json", change: "Modified" },
+        { path: "www/data/Map003.json", change: "Removed" },
+        { path: "www/js/plugins.js", change: "Modified" },
+        {
+          path: "www/data/System.json",
+          change: "Modified",
+          already_present: true,
+        },
+      ],
+      external_changes: [
+        { path: "www/data/Map002.json", change: "Added" },
+        { path: "www/img/pictures/sign.png", change: "Replaced" },
+        { path: "www/audio/bgm/theme.ogg", change: "Replaced" },
+      ],
+      text: {
+        to_translate: 5,
+        replaced: 0,
+        kept: 0,
+        files: [
+          {
+            path: "www/data/Map001.json",
+            to_translate: 3,
+            replaced: 0,
+            kept: 0,
+            lines: [],
+            more: 0,
+          },
+          {
+            path: "www/data/Map002.json",
+            to_translate: 2,
+            replaced: 0,
+            kept: 0,
+            lines: [],
+            more: 0,
+          },
+        ],
+      },
+    },
+    new Map([
+      ["Map001.json", "dialogue"],
+      ["Actors.json", "database"],
+    ]),
+  );
+  assert.deepEqual(
+    tasks.map(({ task, files, lines }) => ({ task, files, lines })),
+    [
+      { task: "database", files: ["Actors.json"], lines: 0 },
+      { task: "dialogue", files: ["Map001.json", "Map002.json"], lines: 5 },
+      { task: "plugins", files: ["plugins.js"], lines: 0 },
+      { task: "images", files: ["www/img/pictures/sign.png"], lines: 0 },
+    ],
   );
 });

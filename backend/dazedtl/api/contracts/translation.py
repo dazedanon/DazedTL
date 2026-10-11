@@ -357,6 +357,11 @@ class TranslationState(ProjectOptions):
     legacyAvailable: bool
 
 
+class UpdateTask(TypedDict):
+    version: str
+    prompt: str
+
+
 class VersionRecord(TypedDict):
     version: str
     recorded: str

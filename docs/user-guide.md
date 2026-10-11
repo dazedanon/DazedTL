@@ -214,6 +214,10 @@ A patch keeps every game file it doesn't include, but it can't remove files the 
 Steps above the update show where it stands, and the versions the game had are listed below.
 **Discard release** drops an update you don't want.
 
+Once the update is in the game, Guided steps list the tasks it changed, such as **Maps & events**; each opens with the changed files selected.
+Files you translated before read **Outdated** there, so **Reload from game…** brings in their new text, and translating them again only sends the Japanese lines.
+For Assistant-led, **Copy post-update task** gives your assistant the update to translate.
+
 ## Backups and recovery
 
 The Project page's **Backups** saves copies of the game and of your project files.

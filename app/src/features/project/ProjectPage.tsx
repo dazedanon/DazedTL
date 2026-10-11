@@ -618,6 +618,12 @@ function ProjectVersions({
           project={project}
           state={translation}
           onPrepare={guided ? () => openTask("setup", "setup") : undefined}
+          openTask={guided ? openTask : undefined}
+          openFiles={
+            guided
+              ? (group, files) => openGuided({ kind: "select", group, files })
+              : undefined
+          }
           onCheckpoint={checkpoint}
           actionTarget={target}
         />

@@ -625,6 +625,11 @@ Additional project instructions:
         _record, project = self.project(project_id)
         return backups.catalog(project.root, self.workspace / "backups" / project_id)
 
+    def update_task(self, project_id):
+        """The assistant's task for an applied update's new and changed text."""
+        _record, project = self.project(project_id)
+        return self.engine.version(project.root, "handoff", {})
+
     def versions(self, project_id):
         """The game versions its version history recorded, newest first."""
         _record, project = self.project(project_id)

@@ -168,12 +168,6 @@ export function versionSession(
     stale,
     finished,
     aborted,
-    handoff: current.find(
-      (job) =>
-        job.action === "version_handoff" &&
-        job.status === "complete" &&
-        typeof job.result?.prompt === "string",
-    ),
   };
 }
 
@@ -286,4 +280,65 @@ function compareResult(result: Record<string, unknown>) {
   return text.to_translate
     ? `${text.to_translate.toLocaleString()} ${text.to_translate === 1 ? "line" : "lines"} to translate`
     : "No new text";
+}
+
+export type UpdateTask = {
+  task: "database" | "dialogue" | "plugins" | "images";
+  title: string;
+  /** The files the update changed for this task, by the names it lists. */
+  files: string[];
+  lines: number;
+};
+const taskTitles: Record<UpdateTask["task"], string> = {
+  database: "Database files",
+  dialogue: "Maps & events",
+  plugins: "Plugin files",
+  images: "Images",
+};
+const eventFile = /^(?:Map\d+|CommonEvents|Troops)\.json$/i;
+
+/**
+ * The Guided tasks an applied update's files belong to, in workflow order:
+ * data files by the group Guided lists them in, plugins and images by folder.
+ */
+export function guidedUpdateTasks(
+  result: Record<string, unknown>,
+  groups: Map<string, "database" | "dialogue">,
+): UpdateTask[] {
+  const changes = [
+    ...(Array.isArray(result.file_changes) ? result.file_changes : []),
+    ...(Array.isArray(result.external_changes) ? result.external_changes : []),
+  ] as { path?: unknown; change?: unknown; already_present?: unknown }[];
+  const lines = new Map(
+    textChanges(result)?.files.map((file) => [file.path, file.to_translate]),
+  );
+  const tasks = new Map<UpdateTask["task"], UpdateTask>();
+  for (const change of changes) {
+    if (typeof change.path !== "string" || change.already_present === true)
+      continue;
+    if (change.change === "Removed") continue;
+    const path = change.path.toLowerCase();
+    const name = change.path.split("/").pop()!;
+    const task: UpdateTask["task"] | undefined =
+      /(?:^|\/)(?:data|ace_json)\/[^/]+\.json$/.test(path)
+        ? (groups.get(name) ?? (eventFile.test(name) ? "dialogue" : "database"))
+        : /(?:^|\/)js\/plugins(?:\.js$|\/)/.test(path)
+          ? "plugins"
+          : /(?:^|\/)img\//.test(path)
+            ? "images"
+            : undefined;
+    if (!task) continue;
+    const entry = tasks.get(task) ?? {
+      task,
+      title: taskTitles[task],
+      files: [],
+      lines: 0,
+    };
+    entry.files.push(task === "images" ? change.path : name);
+    entry.lines += lines.get(change.path) ?? 0;
+    tasks.set(task, entry);
+  }
+  return (["database", "dialogue", "plugins", "images"] as const).flatMap(
+    (task) => tasks.get(task) ?? [],
+  );
 }

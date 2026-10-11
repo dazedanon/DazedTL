@@ -688,6 +688,7 @@ Recovery and official-version updates are project utilities, outside the normal 
 They are the Project page's Versions and Backups tabs, whose primary actions use the shared [ActionSlot](../app/src/ui/ActionSlot.tsx) to stay in the tab's footer while content scrolls.
 Versions shows an update's steps with what each finished step did, and the versions the original branch recorded ([version_history](../backend/dazedtl/engine/util/version_update/git_workflow.py)), read when the tab opens and again once the branch moves; each update commit records whether it came from a patch or a complete release.
 The game's GameUpdate repository and its config's status belong to publishing, so they sit in the Guided Release task and on Assistant-led's Options.
+A finished update hands Guided its own tasks: the applied comparison's files map to Database files, Maps & events, Plugin files and Images, and the data tasks open through a `select` intent that selects the changed files and keeps the other group's selection; Assistant-led reads its post-update task in one call and copies it.
 The update view shows one current preparation/comparison at a time; a later attempt or changed Git state prevents an old comparison from being offered for application.
 Guided keeps update steps in History's other activity, so the view lists no second history and its comparison omits the saved result; a failed step without its own control appears beside the interrupted-update recovery.
 Backup history is grouped by game versus project files and appears only after the user chooses recovery.

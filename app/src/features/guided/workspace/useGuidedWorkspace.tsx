@@ -666,6 +666,25 @@ export function useGuidedWorkspace({
   const openIntent = useEffectEvent((request: GuidedIntent) => {
     if (request.kind === "checkpoint")
       checkpointReturn.current = request.returnTo ?? null;
+    if (request.kind === "select") {
+      const group = new Map(state.files.map((file) => [file.name, file.group]));
+      draft.session.edit((current) => ({
+        ...current,
+        values: {
+          ...current.values,
+          selected: [
+            ...current.values.selected.filter(
+              (name) => group.get(name) !== request.group,
+            ),
+            ...request.files.filter(
+              (name) => group.get(name) === request.group,
+            ),
+          ],
+        },
+      }));
+      intentHandled?.();
+      return;
+    }
     const opened =
       request.kind === "checkpoint"
         ? review("checkpoint")

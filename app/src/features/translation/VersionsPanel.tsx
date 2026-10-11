@@ -16,15 +16,18 @@ import { VersionChanges } from "./VersionChanges";
 import { VersionTools } from "./VersionTools";
 import { ReleaseForm, emptyRelease } from "./ReleaseForm";
 import {
+  guidedUpdateTasks,
   releaseEffect,
   removedFiles,
   stagedLayout,
+  textChanges,
+  textSummary,
   updateSteps,
   updateSummary,
   versionLabel,
   versionSession,
 } from "./versionState";
-import { displayText, sentence } from "../../ui/displayText";
+import { displayText, selectionNames, sentence } from "../../ui/displayText";
 import { useRead } from "../../state/useRead";
 
 export function VersionsPanel({
@@ -32,6 +35,8 @@ export function VersionsPanel({
   state,
   guided = false,
   onPrepare,
+  openTask,
+  openFiles,
   onCheckpoint,
   actionTarget,
 }: {
@@ -39,6 +44,10 @@ export function VersionsPanel({
   state: TranslationState;
   guided?: boolean;
   onPrepare?: () => void;
+  /** Opens a Guided task, where a finished update's new text is translated. */
+  openTask?: (step: string, task: string) => void;
+  /** Opens a Guided translate task with the given files selected. */
+  openFiles?: (group: "database" | "dialogue", files: string[]) => void;
   onCheckpoint?: () => void;
   actionTarget?: HTMLElement | null;
 }) {
@@ -82,6 +91,22 @@ export function VersionsPanel({
       ? session.latest
       : undefined;
   const layout = stagedLayout(session.stage);
+  // The comparison the update applied, for the text it brought in.
+  const compared = session.current.find(
+    (job) => job.action === "version_preview" && job.status === "complete",
+  )?.result;
+  const guidedState = application.snapshot?.guided;
+  const updateTasks =
+    done && guided && compared
+      ? guidedUpdateTasks(
+          compared,
+          new Map(
+            guidedState?.projectId === project.id
+              ? guidedState.files.map((file) => [file.name, file.group])
+              : [],
+          ),
+        )
+      : [];
   // A complete game missing most of the game's files is likely a patch.
   const removed = layout ? removedFiles(layout) : 0;
   const resultVersion =
@@ -273,15 +298,68 @@ export function VersionsPanel({
           </ActionSlot>
         </Section>
       ) : done ? (
-        <Section title="Game version updated">
-          <p>
-            Continue by having your coding assistant identify new or changed
-            text and preserve translations that still apply.
-          </p>
+        <Section title="Translate the new text">
+          {guided ? (
+            <>
+              <p>
+                {compared && textChanges(compared)
+                  ? `${textSummary(textChanges(compared)!) || "No new text"}. `
+                  : ""}
+                Each task opens with the files the update changed selected.
+                Files you translated before read Outdated there, and Reload from
+                game brings in their new text; lines that kept their translation
+                aren’t translated again.
+              </p>
+              {updateTasks.length ? (
+                <ActionList>
+                  {updateTasks.map((task) => (
+                    <ActionRow
+                      key={task.task}
+                      label={
+                        <>
+                          <strong>{task.title}</strong>
+                          <small>
+                            {[
+                              selectionNames(task.files),
+                              task.lines &&
+                                `${task.lines.toLocaleString()} ${task.lines === 1 ? "line" : "lines"} to translate`,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </small>
+                        </>
+                      }
+                    >
+                      <Button
+                        disabled={!openTask}
+                        onClick={() =>
+                          task.task === "database" || task.task === "dialogue"
+                            ? openFiles?.(task.task, task.files)
+                            : openTask?.("translate", task.task)
+                        }
+                      >
+                        Open {task.title}
+                      </Button>
+                    </ActionRow>
+                  ))}
+                </ActionList>
+              ) : (
+                <p className="muted">
+                  The update changed no files these tasks translate.
+                </p>
+              )}
+            </>
+          ) : (
+            <p>
+              Your coding assistant translates what the update added or changed
+              and keeps the translations that still apply.
+            </p>
+          )}
           <ActionSlot target={actionTarget}>
-            {session.handoff ? (
+            {!guided && (
               <ActionControl
                 label="Copy post-update task"
+                variant="primary"
                 disabled={disabled}
                 pending={action.busy && action.key === "copy-update"}
                 pendingText="Copying…"
@@ -289,23 +367,15 @@ export function VersionsPanel({
                 notice={action.key === "copy-update" ? action.notice : ""}
                 onClick={() =>
                   action.run(
-                    () =>
+                    async () =>
                       window.dazedtl.copyText(
-                        String(session.handoff!.result!.prompt),
+                        (await api.translation.updateTask(project.id)).prompt,
                       ),
                     "Task copied. Run it in your coding assistant.",
                     "copy-update",
                   )
                 }
               />
-            ) : (
-              control(
-                "version_handoff",
-                "Prepare post-update task",
-                {},
-                false,
-                true,
-              )
             )}
             <Button variant="quiet" disabled={disabled} onClick={chooseNew}>
               Start another game update

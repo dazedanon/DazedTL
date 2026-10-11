@@ -158,6 +158,11 @@ export default function App() {
   const openGuided = (request: GuidedIntent) =>
     void action.run(async () => {
       await flushDrafts();
+      if (request.kind === "select")
+        application.navigateGuided(project!.id, {
+          step: "translate",
+          task: request.group,
+        });
       application.navigate("guided");
       setIntent(request);
     });

@@ -83,7 +83,10 @@ export type GuidedIntent =
   | { kind: "reapply"; runId: string }
   | { kind: "resume"; runId: string }
   // History restores a text batch, such as QA's corrections, through its review.
-  | { kind: "restore"; publication: string };
+  | { kind: "restore"; publication: string }
+  // A finished game update opens its task with the files it changed selected,
+  // leaving the other group's selection as it was.
+  | { kind: "select"; group: "database" | "dialogue"; files: string[] };
 /** Project tools live on the Project page; tasks link to their tab. */
 export type ProjectLink = (
   tab: "history" | "versions" | "backups",

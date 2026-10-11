@@ -1249,6 +1249,11 @@ export type TranslationState = ProjectOptions & {
   legacyAvailable: boolean;
 };
 
+export type UpdateTask = {
+  version: string;
+  prompt: string;
+};
+
 export type VersionRecord = {
   version: string;
   recorded: string;
@@ -2724,6 +2729,7 @@ export type RpcContract = {
   translation_request: { request: RunIndexRequest; response: RequestPreview };
   translation_results: { request: RunRequest; response: TranslationResults };
   translation_backups: { request: ProjectRequest; response: BackupCatalog };
+  translation_update_task: { request: ProjectRequest; response: UpdateTask };
   translation_versions: { request: ProjectRequest; response: VersionRecord[] };
   translation_release: {
     request: TranslationReleaseRequest;

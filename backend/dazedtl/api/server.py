@@ -737,6 +737,7 @@ def routes(app):
         "prepare",
         "backups",
         "versions",
+        "update_task",
         "release",
         "compile",
         "organize",
