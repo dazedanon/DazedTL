@@ -143,7 +143,8 @@ write(
     ],
 )
 write("System.json", {"gameTitle": "Test"})
-# Japanese QA cannot correct: a custom data file and a plugin parameter.
+# Japanese never translated: a custom data file no plugin reads, and a
+# plugin setting whose plugin file is missing, so nothing rules it out.
 write("Synopsis.json", [{"text": "あらすじ"}])
 (game / "js").mkdir()
 (game / "js/plugins.js").write_text(
@@ -178,11 +179,7 @@ task, state = qa.prepare_task(game, data, "release", storage, screen_item_limit=
 assert state["stage"] == "screen", state
 forced = json.loads((task / "checkpoint.json").read_text())["deep"]["candidate_reasons"]
 assert {source(identity) for identity in forced} == {"朝だ", "森の奥へ"}, forced
-assert state["preflight"] == {
-    "untranslated": 1,
-    "custom_data": 1,
-    "plugin_parameters": 1,
-}, state["preflight"]
+assert state["not_translated"] == {"total": 3, "may_show": 2}, state["not_translated"]
 
 
 def result_path(name, value):
@@ -775,6 +772,18 @@ assert sorted(
     ("森の奥へ", "Map001.json#/events/2"),
     ("森を抜けよう", "Map001.json#/events/2"),
 ], findings["not_reviewed"]
+# Japanese never translated is its own gap, never a passing count: each file
+# or plugin with whether players can reach it, those that may show first.
+untranslated = findings["not_translated"]
+assert "never translated" in untranslated["reason"], untranslated
+assert [
+    (row["kind"], row.get("plugin") or row["file"], row["count"], row.get("reach"))
+    for row in untranslated["sources"]
+] == [
+    ("data", "Map001.json", 1, None),
+    ("plugin", "Prompt", 1, "unknown"),
+    ("custom", "Synopsis.json", 1, "unread"),
+], untranslated["sources"]
 # After an update changes the rules, the task still reports where it stood,
 # but nothing made under the old rules can be applied.
 qa._engine_fingerprint = lambda: "updated"

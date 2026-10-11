@@ -40,7 +40,11 @@ from util.rpgmaker_qa_manifest import (
 )
 from util.rpgmaker_qa_verify import verify_manifest
 from util import rpgmaker_qa_lint as lint
-from util.rpgmaker_qa_preflight import preflight
+from util.rpgmaker_qa_preflight import (
+    REASON as NOT_TRANSLATED_REASON,
+    preflight,
+    read_sources,
+)
 from util.reference_games import reference_context
 from util.skills import rpgmaker_qa_skill_parts
 
@@ -117,7 +121,7 @@ SOURCE_FIX_KINDS = frozenset({"show-text", "database-numbers"})
 # Every module whose rules shape bundles, flags or findings.
 _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
-    "rpgmaker_qa_preflight.py",
+    "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -1831,9 +1835,9 @@ def prepare_task(
         try:
             write_manifest(manifest, staging / "inventory.json")
             _atomic_write_json(staging / "inventory-validation.json", validation)
-            # Japanese QA cannot correct is reported, never silently skipped.
-            reach = preflight(data, manifest)
-            _atomic_write_json(staging / "preflight.json", reach)
+            # Japanese never translated is reported, never silently skipped.
+            untranslated = preflight(data, manifest)
+            _atomic_write_json(staging / "preflight.json", untranslated)
             _atomic_write_json(staging / "context.json", context)
             compact_items = _compact_items(manifest, context)
             forced_candidates = {
@@ -1894,7 +1898,10 @@ def prepare_task(
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
                 "counts": manifest["counts"],
-                "preflight": reach["counts"],
+                "not_translated": {
+                    "total": sum(untranslated["counts"].values()),
+                    "may_show": untranslated["may_show"],
+                },
             }
             checkpoint = {
                 "schema": CHECKPOINT_SCHEMA,
@@ -2107,7 +2114,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "total": task["counts"]["records"],
             "unresolved": task["counts"]["unresolved"],
         },
-        "preflight": task.get("preflight") or {},
+        "not_translated": _not_translated(task),
         "screen": {
             "accepted": screen["accepted_items"],
             "total": screen["total_items"],
@@ -2156,6 +2163,16 @@ def status(task_dir: str | Path) -> dict[str, Any]:
         "declined": _declined_counts(checkpoint),
         "findings_file": checkpoint.get("findings_file") or "",
     }
+
+
+def _not_translated(task: dict[str, Any]) -> dict[str, int]:
+    """Japanese never translated, which QA did not review: all of it, and
+    what players may see. A task prepared before reach was read counts it
+    all as what players may see."""
+    if "not_translated" in task:
+        return task["not_translated"]
+    total = sum((task.get("preflight") or {}).values())
+    return {"total": total, "may_show": total}
 
 
 def _declined_counts(checkpoint: dict[str, Any]) -> dict[str, int]:
@@ -4610,7 +4627,17 @@ def _draft_document(
         "declined": declined["items"],
         "not_reviewed": _not_reviewed(declined, records),
         "sweep_dropped": sweep_dropped,
-        "preflight": _read_json(root / "preflight.json"),
+        # Never a passing count: Japanese no reviewer read, by file and
+        # plugin, with whether players can reach it; preflight.json lists
+        # its text.
+        "not_translated": {
+            "reason": NOT_TRANSLATED_REASON,
+            **_not_translated(task),
+            "sources": [
+                {key: value for key, value in source.items() if key != "texts"}
+                for source in read_sources(_read_json(root / "preflight.json"))
+            ],
+        },
     }
 
 

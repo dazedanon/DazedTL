@@ -16,6 +16,7 @@ import type {
   QaQuestion,
   QaReport,
   QaState,
+  QaUntranslatedSource,
 } from "../../api/contracts";
 import { ActionControl } from "../../ui/ActionControl";
 import { ActionList, ActionRow } from "../../ui/ActionList";
@@ -31,8 +32,11 @@ import type { QaStepDetails } from "./qaSteps";
 import {
   qaActivity,
   qaGroups,
+  qaMayShow,
+  qaNotTranslated,
   qaOrigin,
   qaPhase,
+  qaSource,
   qaStages,
   qaSummary,
 } from "./qaView";
@@ -89,6 +93,7 @@ export function TextQaWork({
 }) {
   const phase = qaPhase(qa);
   const coverage = qa.coverage;
+  const notTranslated = qa.not_translated;
   // Once applied, only a proposal the user chose went into the game.
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
@@ -151,16 +156,16 @@ export function TextQaWork({
             )}
             <p>
               {phase !== "outdated" &&
-              (coverage?.not_reviewed || coverage?.preflight) ? (
+              (coverage?.not_reviewed || notTranslated) ? (
                 <>
                   {[
                     // The summary that describes finished QA counts them.
-                    !["applied", "clean"].includes(phase) &&
+                    coverage &&
+                      !["applied", "clean"].includes(phase) &&
                       `${(coverage.lines - coverage.not_reviewed).toLocaleString()} lines checked`,
-                    coverage.not_reviewed &&
+                    coverage?.not_reviewed &&
                       `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
-                    coverage.preflight &&
-                      `${coverage.preflight.toLocaleString()} Japanese QA can't correct`,
+                    notTranslated && qaNotTranslated(notTranslated),
                   ]
                     .filter(Boolean)
                     .join(" · ")}{" "}
@@ -472,9 +477,64 @@ export function QaAuditLog({
   );
 }
 
+/** Texts a source shows before its explicit Show all. */
+const sourcePreview = 3;
+
+/**
+ * One file's or plugin's Japanese that was never translated: what it is,
+ * whether players can reach it and why, then its first texts.
+ */
+function UntranslatedSource({ source }: { source: QaUntranslatedSource }) {
+  const [expanded, setExpanded] = useState(false);
+  const { title, kind } = qaSource(source);
+  const listed = source.texts.length;
+  return (
+    <li>
+      <span className="text-qa-source">
+        <strong>{title}</strong>
+        <small>
+          {kind} · {source.count.toLocaleString()}
+        </small>
+      </span>
+      {source.reach && (
+        <p>
+          <strong>
+            {qaMayShow(source)
+              ? "Players may see this."
+              : "Players don't see this now."}
+          </strong>{" "}
+          {source.evidence}
+        </p>
+      )}
+      <ul className="text-qa-texts">
+        {(expanded ? source.texts : source.texts.slice(0, sourcePreview)).map(
+          (row) => (
+            <li key={row.pointer} lang="ja">
+              {row.text}
+            </li>
+          ),
+        )}
+      </ul>
+      {listed > sourcePreview && !expanded && (
+        <Button variant="link" onClick={() => setExpanded(true)}>
+          {listed < source.count
+            ? `Show the first ${listed.toLocaleString()}`
+            : `Show all ${listed.toLocaleString()}`}
+        </Button>
+      )}
+      {expanded && listed < source.count && (
+        <p className="muted">
+          QA lists the first {listed.toLocaleString()} of{" "}
+          {source.count.toLocaleString()}.
+        </p>
+      )}
+    </li>
+  );
+}
+
 /**
  * What QA did not cover: lines reviewers declined, which the user may read
- * and mark, and Japanese QA cannot correct.
+ * and mark, and Japanese that was never translated.
  */
 export function QaCoverage({
   load,
@@ -503,7 +563,7 @@ export function QaCoverage({
     <Modal label="What QA did not cover" onDismiss={onClose} size="lg">
       <DialogHeader
         title="What QA did not cover"
-        description="Lines no reviewer judged, and Japanese outside what QA can correct."
+        description="Lines no reviewer judged, and Japanese that was never translated."
         onClose={onClose}
       />
       <DialogBody className="text-qa-coverage">
@@ -558,33 +618,27 @@ export function QaCoverage({
                 </ActionList>
               </section>
             )}
-            {report.preflight_total > 0 && (
-              <section aria-label="Japanese QA cannot correct">
+            {report.not_translated.length > 0 && (
+              <section aria-label="Never translated">
                 <h3>
-                  Japanese QA can't correct ·{" "}
-                  {report.preflight_total.toLocaleString()}
+                  Never translated ·{" "}
+                  {report.not_translated
+                    .reduce((total, source) => total + source.count, 0)
+                    .toLocaleString()}
                 </h3>
                 <p className="muted">
-                  Custom data files, plugin settings and lines without a saved
-                  original are outside QA's inventory; translate them in their
-                  own tasks.
+                  QA reviews translations, so no reviewer read this Japanese and
+                  QA did not correct it. Translate what players can see in its
+                  own task.
                 </p>
-                <ul className="text-qa-preflight">
-                  {report.preflight.map((row) => (
-                    <li key={row.file + row.pointer}>
-                      <small>
-                        {row.file} · {row.kind}
-                      </small>
-                      <span lang="ja">{row.text}</span>
-                    </li>
+                <ul className="text-qa-untranslated">
+                  {report.not_translated.map((source) => (
+                    <UntranslatedSource
+                      key={source.kind + source.file + (source.plugin || "")}
+                      source={source}
+                    />
                   ))}
                 </ul>
-                {report.preflight.length < report.preflight_total && (
-                  <p className="muted">
-                    The first {report.preflight.length.toLocaleString()} are
-                    listed.
-                  </p>
-                )}
               </section>
             )}
           </>

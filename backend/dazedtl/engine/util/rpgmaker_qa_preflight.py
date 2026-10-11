@@ -1,9 +1,11 @@
-"""Preflight for RPG Maker translation QA: Japanese text QA cannot correct.
+"""Preflight for RPG Maker translation QA: Japanese that was never translated.
 
 The QA inventory holds only text the engine translated, which keeps its
 Japanese in `_original`. This reports the rest that players may read: lines
 and fields without `_original`, custom data files, and plugin parameters.
-QA never corrects these; they need translation or a plugin task instead.
+QA has no translation of these to review and never corrects them; they need
+translation or a plugin task instead. Each file or plugin is one source, with
+whether players can reach a custom file's or plugin's text.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+
+from util.rpgmaker_qa_reach import MAY_SHOW, Reach
 
 _JAPANESE_RE = re.compile(r"[ぁ-ゔァ-ヴ一-龠々〆〤]")
 _MAP_RE = re.compile(r"Map\d+\.json")
@@ -42,8 +46,17 @@ SYSTEM_FIELDS = (
 # Event commands whose parameters players read: the parameter index, or None
 # for every string parameter.
 COMMAND_TEXT = {101: 4, 102: 0, 105: None, 320: 1, 324: 1, 325: 1, 401: 0, 405: 0}
-SAMPLE_LIMIT = 200
+SCHEMA = "rpgmaker-qa-preflight-v2"
+# Texts each source lists; its count covers them all.
+SOURCE_TEXT_LIMIT = 50
 TEXT_LIMIT = 160
+REASON = (
+    "This Japanese was never translated, so QA had no translation to review "
+    "and did not correct it. Translate what players can see in its own task."
+)
+# Sources by kind: game data without `_original`, custom data files and
+# plugin settings.
+_KINDS = {"untranslated": "data", "custom_data": "custom", "plugin_parameters": "plugin"}
 
 
 def _japanese(value: Any) -> bool:
@@ -138,56 +151,113 @@ def _untranslated(name: str, document: Any, covered: set[str], rows: list) -> No
                 add(path, value, "system term")
 
 
+def _plugin_entries(script: Path) -> list[Any]:
+    """The game's plugin list in js/plugins.js, or none it can read."""
+    try:
+        text = script.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        return []
+    match = re.search(r"\$plugins\s*=\s*(\[.*\])\s*;?\s*$", text, re.S)
+    try:
+        entries = json.loads(match.group(1)) if match else []
+    except ValueError:
+        return []
+    return entries if isinstance(entries, list) else []
+
+
 def preflight(data_root: str | Path, manifest: dict[str, Any]) -> dict[str, Any]:
     """Japanese that players may read and the QA inventory does not hold."""
     data = Path(data_root).expanduser().resolve()
     covered: dict[str, set[str]] = {}
     for record in manifest["records"]:
         covered.setdefault(record["file"], set()).update(record["live_pointers"])
-    untranslated: list[dict[str, Any]] = []
-    custom: list[dict[str, Any]] = []
+    entries = _plugin_entries(data.parent / "js" / "plugins.js")
+    reach = Reach(data, entries)
+    rows: dict[str, list[dict[str, Any]]] = {name: [] for name in _KINDS}
     for path in sorted(data.glob("*.json"), key=lambda item: item.name):
         try:
             document = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, UnicodeDecodeError, ValueError):
             continue
         if path.name in STANDARD_FILES or _MAP_RE.fullmatch(path.name):
-            _untranslated(path.name, document, covered.get(path.name, set()), untranslated)
+            _untranslated(
+                path.name, document, covered.get(path.name, set()), rows["untranslated"]
+            )
+            reach.scan(path.name, document)
         else:
             for pointer, value in _leaves(document):
                 if _japanese(value):
-                    _entry(custom, path.name, pointer, value, "custom data")
-    plugins: list[dict[str, Any]] = []
-    script = data.parent / "js" / "plugins.js"
-    if script.is_file():
-        text = script.read_text(encoding="utf-8-sig")
-        match = re.search(r"\$plugins\s*=\s*(\[.*\])\s*;?\s*$", text, re.S)
-        try:
-            entries = json.loads(match.group(1)) if match else []
-        except ValueError:
-            entries = []
-        for plugin in entries if isinstance(entries, list) else []:
-            if not isinstance(plugin, dict) or plugin.get("status") is not True:
-                continue
-            for pointer, value in _leaves(plugin.get("parameters") or {}):
-                if (
-                    _japanese(value)
-                    and not _SCRIPT_RE.search(value)
-                    and not _ASSET_PATH_RE.match(value)
-                ):
-                    _entry(
-                        plugins, "js/plugins.js",
-                        (str(plugin.get("name") or ""), *pointer), value,
-                        "plugin parameter",
-                    )
+                    _entry(rows["custom_data"], path.name, pointer, value, "custom data")
+    for plugin in entries:
+        if not isinstance(plugin, dict) or plugin.get("status") is not True:
+            continue
+        for pointer, value in _leaves(plugin.get("parameters") or {}):
+            if (
+                _japanese(value)
+                and not _SCRIPT_RE.search(value)
+                and not _ASSET_PATH_RE.match(value)
+            ):
+                _entry(
+                    rows["plugin_parameters"], "js/plugins.js",
+                    (str(plugin.get("name") or ""), *pointer), value,
+                    "plugin parameter",
+                )
+    sources = _sources(rows, reach)
     return {
-        "schema": "rpgmaker-qa-preflight-v1",
-        "counts": {
-            "untranslated": len(untranslated),
-            "custom_data": len(custom),
-            "plugin_parameters": len(plugins),
-        },
-        "untranslated": untranslated[:SAMPLE_LIMIT],
-        "custom_data": custom[:SAMPLE_LIMIT],
-        "plugin_parameters": plugins[:SAMPLE_LIMIT],
+        "schema": SCHEMA,
+        "counts": {name: len(rows[name]) for name in _KINDS},
+        "may_show": sum(item["count"] for item in sources if may_show(item)),
+        "sources": sources,
     }
+
+
+def _sources(rows: dict[str, list[dict[str, Any]]], reach: Reach | None) -> list[dict]:
+    """Rows by file, and plugin settings by plugin, those players may see
+    first; without reach, sources say nothing of it."""
+    sources: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for category, kind in _KINDS.items():
+        for row in rows.get(category, []):
+            plugin = _unescape(row["pointer"].split("/")[1]) if kind == "plugin" else ""
+            source = sources.get((kind, row["file"], plugin))
+            if source is None:
+                source = sources[(kind, row["file"], plugin)] = {
+                    "kind": kind,
+                    "file": row["file"],
+                    **({"plugin": plugin} if kind == "plugin" else {}),
+                    "count": 0,
+                }
+                if reach and kind != "data":
+                    source["reach"], source["evidence"] = (
+                        reach.plugin(plugin) if kind == "plugin"
+                        else reach.data_file(row["file"])
+                    )
+                source["texts"] = []
+            source["count"] += 1
+            if len(source["texts"]) < SOURCE_TEXT_LIMIT:
+                source["texts"].append(
+                    {key: row[key] for key in ("pointer", "kind", "text")}
+                )
+    kinds = list(_KINDS.values())
+    return sorted(
+        sources.values(),
+        key=lambda item: (
+            not may_show(item), kinds.index(item["kind"]),
+            item["file"], item.get("plugin", ""),
+        ),
+    )
+
+
+def _unescape(part: str) -> str:
+    return part.replace("~1", "/").replace("~0", "~")
+
+
+def may_show(source: dict[str, Any]) -> bool:
+    """Whether players may see a source's text: game data and whatever no
+    evidence rules out."""
+    return source.get("reach", "unknown") in MAY_SHOW
+
+
+def read_sources(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """A preflight's sources. One prepared before sources listed its first
+    texts by category, with no reach; those texts make its sources."""
+    return document["sources"] if "sources" in document else _sources(document, None)

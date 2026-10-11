@@ -1,6 +1,11 @@
 /** Text QA as the page shows it, from the observed QA state. */
 
-import type { QaFinding, QaState } from "../../api/contracts";
+import type {
+  QaFinding,
+  QaNotTranslated,
+  QaState,
+  QaUntranslatedSource,
+} from "../../api/contracts";
 import type { StepState } from "../../ui/StepProgress";
 import { sentence } from "../../ui/displayText.ts";
 
@@ -148,6 +153,36 @@ export function qaSummary(qa: QaState) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/**
+ * Japanese never translated, as the coverage line counts it: no reviewer
+ * read it, and how much of it players may see.
+ */
+export function qaNotTranslated({ total, may_show }: QaNotTranslated) {
+  const count = `${total.toLocaleString()} never translated, so not reviewed`;
+  if (may_show === total) return count;
+  return may_show
+    ? `${count} (${may_show.toLocaleString()} may show to players)`
+    : `${count} (players don't see them now)`;
+}
+
+/** Whether players may see a source's text: no evidence rules it out. */
+export function qaMayShow(source: QaUntranslatedSource) {
+  return source.reach !== "uncalled" && source.reach !== "unread";
+}
+
+/** A source's name and what kind of text it holds. */
+export function qaSource(source: QaUntranslatedSource) {
+  return source.kind === "plugin"
+    ? { title: source.plugin || source.file, kind: "Plugin settings" }
+    : {
+        title: source.file,
+        kind:
+          source.kind === "custom"
+            ? "Custom data file"
+            : "Game data without a saved original",
+      };
 }
 
 const categoryOrder = [

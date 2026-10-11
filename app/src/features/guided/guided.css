@@ -1180,21 +1180,52 @@
 .text-qa-coverage section + section {
   margin-top: var(--space-6);
 }
-.text-qa-preflight {
+/* Never-translated Japanese by file or plugin: its name and kind, whether
+   players can reach it, then its first texts. The sheet scrolls as a whole,
+   so these lists drop the dialog's own short scrolling list. */
+.text-qa-untranslated,
+.text-qa-texts {
+  max-height: none;
+  overflow: visible;
+  line-height: 1.5;
+}
+.text-qa-untranslated {
   display: grid;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 0;
+  gap: var(--space-5);
+  margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
 }
-.text-qa-preflight li {
+.text-qa-untranslated > li {
   display: grid;
-  gap: var(--space-half);
+  justify-items: start;
+  gap: var(--space-2);
+}
+.text-qa-untranslated p {
+  max-width: var(--measure);
+  margin: 0;
+}
+.text-qa-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
   overflow-wrap: anywhere;
 }
-.text-qa-preflight small {
+.text-qa-source small {
   color: var(--color-muted);
   font-size: var(--font-small);
+}
+/* Game text, set apart from the app's own words. */
+.text-qa-texts {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--measure);
+  margin: 0;
+  padding: 0 0 0 var(--space-3);
+  border-inline-start: 2px solid var(--color-border);
+  list-style: none;
+  overflow-wrap: anywhere;
 }
 /* Each rewrap names where it is and its rows, then shows the text now and
    rewrapped; a skipped message keeps only its heading and reason. */

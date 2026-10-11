@@ -318,7 +318,13 @@ class QaQuestion(TypedDict):
 class QaCoverage(TypedDict):
     lines: Annotated[int, "Translated lines in QA's inventory."]
     not_reviewed: Annotated[int, "Lines reviewers declined and the user has not read."]
-    preflight: Annotated[int, "Japanese QA cannot correct, outside its inventory."]
+
+
+class QaNotTranslated(TypedDict):
+    """Japanese never translated, outside QA's inventory: no reviewer read it."""
+
+    total: int
+    may_show: Annotated[int, "Of those, text no evidence keeps from players."]
 
 
 class QaActivity(TypedDict):
@@ -336,21 +342,35 @@ class QaReportLine(TypedDict):
     reviewed: bool
 
 
-class QaPreflightEntry(TypedDict):
-    file: str
+class QaUntranslatedText(TypedDict):
     pointer: str
     kind: str
     text: str
+
+
+class QaUntranslatedSource(TypedDict):
+    """One file's or plugin's Japanese that was never translated."""
+
+    kind: Annotated[
+        Literal["data", "custom", "plugin"],
+        "Game data without a saved original, a custom data file, or plugin settings.",
+    ]
+    file: str
+    plugin: NotRequired[str]
+    count: int
+    # Whether players can reach a custom file's or plugin's text: something
+    # calls the plugin, it changes the game's screens itself, its file could
+    # not be read, nothing calls it, or no turned-on plugin reads the file.
+    reach: NotRequired[Literal["called", "runs", "unknown", "uncalled", "unread"]]
+    evidence: NotRequired[Annotated[str, "What the reach rests on."]]
+    texts: Annotated[list[QaUntranslatedText], "Its first texts."]
 
 
 class QaReport(TypedDict):
     """What QA could not cover, for the coverage sheet."""
 
     not_reviewed: list[QaReportLine]
-    preflight: Annotated[
-        list[QaPreflightEntry], "A sample of the Japanese QA cannot correct."
-    ]
-    preflight_total: int
+    not_translated: list[QaUntranslatedSource]
 
 
 class TextQaOperation(TypedDict):
@@ -387,6 +407,7 @@ class QaState(TypedDict):
     findings: list[QaFinding]
     questions: list[QaQuestion]
     coverage: NotRequired[QaCoverage]
+    not_translated: NotRequired[QaNotTranslated]
     activity: NotRequired[QaActivity]
     # An update changed QA's rules after this task was prepared: it is
     # outdated, and its applied corrections can no longer be undone here.

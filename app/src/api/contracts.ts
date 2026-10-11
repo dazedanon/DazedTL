@@ -603,8 +603,13 @@ export type QaCoverage = {
   lines: number;
   /** Lines reviewers declined and the user has not read. */
   not_reviewed: number;
-  /** Japanese QA cannot correct, outside its inventory. */
-  preflight: number;
+};
+
+/** Japanese never translated, outside QA's inventory: no reviewer read it. */
+export type QaNotTranslated = {
+  total: number;
+  /** Of those, text no evidence keeps from players. */
+  may_show: number;
 };
 
 export type QaActivity = {
@@ -622,19 +627,30 @@ export type QaReportLine = {
   reviewed: boolean;
 };
 
-export type QaPreflightEntry = {
-  file: string;
+export type QaUntranslatedText = {
   pointer: string;
   kind: string;
   text: string;
 };
 
+/** One file's or plugin's Japanese that was never translated. */
+export type QaUntranslatedSource = {
+  /** Game data without a saved original, a custom data file, or plugin settings. */
+  kind: "data" | "custom" | "plugin";
+  file: string;
+  plugin?: string;
+  count: number;
+  reach?: "called" | "runs" | "unknown" | "uncalled" | "unread";
+  /** What the reach rests on. */
+  evidence?: string;
+  /** Its first texts. */
+  texts: QaUntranslatedText[];
+};
+
 /** What QA could not cover, for the coverage sheet. */
 export type QaReport = {
   not_reviewed: QaReportLine[];
-  /** A sample of the Japanese QA cannot correct. */
-  preflight: QaPreflightEntry[];
-  preflight_total: number;
+  not_translated: QaUntranslatedSource[];
 };
 
 export type TextQaOperation = {
@@ -674,6 +690,7 @@ export type QaState = {
   findings: QaFinding[];
   questions: QaQuestion[];
   coverage?: QaCoverage;
+  not_translated?: QaNotTranslated;
   activity?: QaActivity;
   rules_changed?: boolean;
 };
