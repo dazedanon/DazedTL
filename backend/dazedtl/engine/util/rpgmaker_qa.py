@@ -6171,6 +6171,7 @@ def _compose_lint(
                     records[identity].get("event_code"),
                     records[identity]["live_pointers"],
                     records[identity]["live_transform"],
+                    frozenset(finding.get("allowed_flags") or ()),
                 )
             })
             if problems:
