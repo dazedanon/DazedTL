@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
 import signal
 import subprocess
 import sys
@@ -152,12 +153,14 @@ def tour(
     out.mkdir(parents=True, exist_ok=True)
     (out / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
     command = [str(binary)]
-    if sys.platform.startswith("linux"):
-        # The window is offscreen and needs no display; WebGL uses the GPU
-        # through one when there is one, and SwiftShader on the CPU when not.
+    linux = sys.platform.startswith("linux")
+    if linux:
+        # The window is offscreen and needs no display.
         command.append("--ozone-platform=headless")
-        if software or not os.environ.get("DISPLAY"):
-            command.append("--use-angle=swiftshader")
+    # WebGL draws with the GPU, through the display on Linux, and with
+    # SwiftShader on the CPU where there is none.
+    if software or linux and not os.environ.get("DISPLAY"):
+        command.append("--use-angle=swiftshader")
     command += [
         str(HARNESS), "--game", str(web_root), "--out", str(out),
         "--plan", str(out / "plan.json"), "--width", str(size[0]),
@@ -216,30 +219,42 @@ def tour(
                     f"Playing {event['index'] + 1} of {event['total']}: "
                     f"{titles.get(event['id'], event['id'])}"
                 )
-            elif event.get("progress") == "crash":
+            elif event.get("progress") == "crash" and event.get("index", 0) > 0:
+                # A game that stops before its title, as when the GPU will
+                # not draw, is still starting; the report says why.
                 status = f"The game stopped: {event['note']}"
+            elif event.get("progress") == "done":
+                break
             # Progress at least every 20 seconds, so a long stop never reads
             # as a stalled action.
             if event.get("progress") in {"stop", "crash"} or time.monotonic() - said > 20:
                 log(status)
                 said = time.monotonic()
     finally:
+        # Electron gets a moment to exit after its report, unless the user
+        # stopped the playtest; then it is ended.
+        try:
+            process.wait(timeout=0 if stopped() else 30)
+        except subprocess.TimeoutExpired:
+            pass
         if process.poll() is None:
             _end(process)
         process.wait()
+        # The tour's saves and caches, which Windows keeps locked until
+        # Electron has exited.
+        shutil.rmtree(out / ".profile", ignore_errors=True)
     try:
         return json.loads((out / "runtime.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"unavailable": "The playtest window closed before it wrote its report."}
 
 
-def _no_graphics(runtime: dict[str, Any]) -> bool:
-    """The game stopped at its start because WebGL was unavailable."""
+def _not_started(runtime: dict[str, Any]) -> bool:
+    """The game never reached its title, as when the GPU will not draw for an
+    offscreen window."""
     stops = runtime.get("stops") or []
-    return bool(stops) and stops[0].get("status") == "failed" and any(
-        "Failed to initialize graphics" in error.get("message", "")
-        or "WebGL" in error.get("message", "")
-        for error in runtime.get("errors", [])
+    return "unavailable" not in runtime and (
+        not stops or stops[0].get("status") != "done"
     )
 
 
@@ -413,8 +428,14 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
         })
     stops = runtime.get("stops", [])
     for stop in stops:
+        if stop["id"] == "screens" and stop.get("stopped"):
+            # The tour opened them without what the game sets up first, so
+            # players may never open them this way.
+            gaps.append(
+                "Plugin screens that stopped the game when the tour opened them "
+                "on their own: " + ", ".join(stop["stopped"]) + "."
+            )
         if stop["id"] == "screens" and stop.get("crashed"):
-            # Its gap names the screen; later screens waited for the next run.
             stop["note"] = (
                 "A screen the tour opened on its own stopped the game, so the "
                 "screens after it were not opened."
@@ -521,8 +542,8 @@ def run(
     log("Starting the game")
     size = resolution(data)
     runtime = tour(data.parent, target, size, extra, minutes, log, stopped)
-    if _no_graphics(runtime) and sys.platform.startswith("linux"):
-        # The GPU would not draw for an offscreen window; play on the CPU.
+    if _not_started(runtime):
+        # The GPU may not draw for an offscreen window; play on the CPU.
         log("Starting the game again without the GPU")
         runtime = tour(data.parent, target, size, extra, minutes, log, stopped, True)
     merged = merge(static, runtime, data.relative_to(game).as_posix())

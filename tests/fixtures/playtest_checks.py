@@ -261,6 +261,8 @@ runtime = {
     "stops": [
         {"id": "title", "status": "done"},
         {"id": "shop", "status": "failed", "note": "The shop did not open."},
+        # The tour went on without a screen that hung the game.
+        {"id": "screens", "status": "done", "stopped": ["Scene_Hang"]},
     ],
     "errors": [
         {
@@ -319,11 +321,12 @@ assert [(row["fix"], row["window"]) for row in gallery] == [("game", "Window_Hel
     gallery
 )
 assert problems[("runtime-error", "js/plugins/Dungeon.js", "")]["line"] == 9
-assert len(report["gaps"]) == 3, report["gaps"]
+assert len(report["gaps"]) == 4, report["gaps"]
 assert "Scene_Gallery could not be opened on its own" in report["gaps"][1], report[
     "gaps"
 ]
-assert report["coverage"]["reached"] == 1, report["coverage"]
+assert report["gaps"][3].endswith("on their own: Scene_Hang."), report["gaps"]
+assert report["coverage"]["reached"] == 2, report["coverage"]
 observed = {row["identity"]: row for row in observations(report)}
 assert observed["Items.json#/1/description"]["categories"] == ["ui"], observed
 assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed

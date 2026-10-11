@@ -191,7 +191,14 @@ function take(raw) {
   }
   if (type === "start") {
     current = value.index;
-    report.stops[value.index].status = "running";
+    // A stop played again after a crash starts afresh.
+    const { id, title, stopped } = report.stops[value.index];
+    report.stops[value.index] = {
+      id,
+      ...(title && { title }),
+      status: "running",
+      ...(stopped && { stopped }),
+    };
     say({
       progress: "stop",
       index: value.index,
@@ -252,35 +259,60 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Runs code in the page, or gives up when it does not answer. */
 function evaluate(window_, code, ms = 5000) {
   return Promise.race([
-    window_.webContents.executeJavaScript(code, true),
+    // A window that went away rejects instead of throwing.
+    Promise.resolve().then(() =>
+      window_.webContents.executeJavaScript(code, true),
+    ),
     delay(ms).then(() => {
       throw new Error("timeout");
     }),
   ]);
 }
 
-async function play(window_, url) {
+/** Plays the tour, in a new window after each crash, since a page that
+ * crashed or hung may never load again in its own. */
+async function play(open, url) {
   let from = 0;
   let gone = "";
   let loads = 0;
-  window_.webContents.on("render-process-gone", (_event, details) => {
-    gone = `The game's page stopped (${details.reason}).`;
-  });
-  if (debug)
-    window_.webContents.on("console-message", (event) =>
-      say({
-        console: event.level,
-        message: String(event.message).slice(0, 400),
-      }),
-    );
+  let window_ = null;
+  // What the tour was doing when it last answered, such as "screen Scene_X".
+  let doing = "";
+  // Screens the tour opened on its own that stopped the game.
+  const skip = [];
   // Each crash costs a reload; a game that keeps crashing ends the tour.
   while (!finished && Date.now() < deadline && loads++ <= CRASH_LIMIT) {
     gone = "";
     crash = "";
+    if (!window_ || window_.isDestroyed()) {
+      const opened = open();
+      opened.webContents.on("render-process-gone", (_event, details) => {
+        if (opened === window_)
+          gone = `The game's page stopped (${details.reason}).`;
+      });
+      window_ = opened;
+      if (debug)
+        window_.webContents.on("console-message", (event) =>
+          say({
+            console: event.level,
+            message: String(event.message).slice(0, 400),
+          }),
+        );
+    }
     await window_.loadURL(url).catch(() => {});
+    // A page reloaded after a crash may still be starting its script.
+    for (
+      let wait = 0;
+      wait < 60 &&
+      !(await evaluate(window_, "!!window.__playtest", 2000).catch(
+        () => false,
+      ));
+      wait++
+    )
+      await delay(POLL_MS);
     const started = await evaluate(
       window_,
-      `window.__playtest ? window.__playtest.start(${JSON.stringify({ ...plan, from })}) : false`,
+      `window.__playtest ? window.__playtest.start(${JSON.stringify({ ...plan, from, skip })}) : false`,
     ).catch(() => false);
     if (!started) {
       report.crashes.push({
@@ -310,6 +342,7 @@ async function play(window_, url) {
         continue;
       }
       for (const event of state.events) take(event);
+      doing = state.debug.stop;
       if (debug)
         say({ debug: state.debug, scene: state.scene, frame: state.frame });
       if (
@@ -333,8 +366,17 @@ async function play(window_, url) {
       }
     }
     if (finished || Date.now() >= deadline) break;
+    // The screens stop goes on without a screen that stopped the game.
+    const screen =
+      report.stops[current]?.id === "screens" && doing.startsWith("screen ")
+        ? doing.slice(7)
+        : "";
     if (crashed) {
       const stop = report.stops[current];
+      if (screen) {
+        skip.push(screen);
+        stop.stopped = [...skip];
+      }
       if (stop && stop.status === "running")
         Object.assign(stop, { status: "failed", note: crashed, crashed: true });
       if (
@@ -345,7 +387,9 @@ async function play(window_, url) {
         report.crashes.push({ stop: stop?.id, note: crashed });
       say({ progress: "crash", index: current, note: crashed });
     }
-    from = Math.max(from, current + 1);
+    // Saves stay in the session the next window shares.
+    window_.destroy();
+    from = Math.max(from, screen ? current : current + 1);
     if (from >= plan.stops.length) {
       finished = true;
       break;
@@ -377,52 +421,59 @@ app.whenReady().then(async () => {
       return "index.html";
     }
   })();
-  const window_ = new BrowserWindow({
-    show: false,
-    width,
-    height,
-    useContentSize: true,
-    webPreferences: {
-      offscreen: true,
-      backgroundThrottling: false,
-      contextIsolation: false,
-      nodeIntegration: false,
-      sandbox: true,
-      spellcheck: false,
-      preload: path.join(__dirname, "page.js"),
-    },
-  });
-  const contents = window_.webContents;
-  contents.setAudioMuted(true);
-  contents.setFrameRate(60);
-  // The game reaches nothing but its own folder: no links, no pop-ups, no
-  // network and no permissions.
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
-  contents.on("will-navigate", (event, url) => {
-    if (!url.startsWith(origin + "/")) event.preventDefault();
-  });
-  contents.session.setPermissionRequestHandler(
-    (_contents, _permission, answer) => answer(false),
-  );
-  contents.session.webRequest.onBeforeRequest((details, answer) =>
-    answer({
-      cancel:
-        !/^(?:data|blob|devtools|chrome-extension):/.test(details.url) &&
-        !details.url.startsWith(origin + "/"),
-    }),
-  );
+  const open = () => {
+    const window_ = new BrowserWindow({
+      show: false,
+      width: report.resolution[0],
+      height: report.resolution[1],
+      useContentSize: true,
+      webPreferences: {
+        offscreen: true,
+        backgroundThrottling: false,
+        contextIsolation: false,
+        nodeIntegration: false,
+        sandbox: true,
+        spellcheck: false,
+        preload: path.join(__dirname, "page.js"),
+      },
+    });
+    const contents = window_.webContents;
+    contents.setAudioMuted(true);
+    contents.setFrameRate(60);
+    // The game reaches nothing but its own folder: no links, no pop-ups, no
+    // network and no permissions.
+    contents.setWindowOpenHandler(() => ({ action: "deny" }));
+    contents.on("will-navigate", (event, url) => {
+      if (!url.startsWith(origin + "/")) event.preventDefault();
+    });
+    contents.session.setPermissionRequestHandler(
+      (_contents, _permission, answer) => answer(false),
+    );
+    contents.session.webRequest.onBeforeRequest((details, answer) =>
+      answer({
+        cancel:
+          !/^(?:data|blob|devtools|chrome-extension):/.test(details.url) &&
+          !details.url.startsWith(origin + "/"),
+      }),
+    );
+    return window_;
+  };
   try {
-    await play(window_, `${origin}/${token}/${entry}`);
+    await play(open, `${origin}/${token}/${entry}`);
   } catch (problem) {
     report.crashes.push({
       stop: report.stops[current]?.id,
       note: `The playtest failed: ${problem.message}`,
     });
   }
-  write();
-  say({ progress: "done", complete: finished });
-  server.close();
-  window_.destroy();
-  fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3 });
-  app.exit(0);
+  // The report goes out whatever cleaning up does.
+  try {
+    write();
+    say({ progress: "done", complete: finished });
+    server.close();
+    for (const window_ of BrowserWindow.getAllWindows())
+      if (!window_.isDestroyed()) window_.destroy();
+  } finally {
+    app.exit(0);
+  }
 });

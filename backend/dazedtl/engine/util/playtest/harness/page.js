@@ -349,6 +349,8 @@
     if (!drew || this._playtestMeasuring) return;
     const width = this.contentsWidth();
     const height = this.contentsHeight();
+    // A window too small for a line only stands in for drawing elsewhere.
+    if (width < 24 || height < 12) return;
     if (textState.x > width + 2) overflow(this, textState, "right");
     // A list scrolls, so its rows below the window are expected, and a
     // message goes on in a new page.
@@ -1176,7 +1178,7 @@
     };
   };
 
-  stops.screens = async () => {
+  stops.screens = async (config) => {
     const opened = [];
     const classes = Object.getOwnPropertyNames(window).filter(
       (name) =>
@@ -1187,9 +1189,11 @@
     );
     // A screen other screens build on, such as a custom menu framework's,
     // shows nothing of its own.
+    // A screen that stopped the game before is left out when it starts again.
     const names = classes.filter(
       (name) =>
         !state.scenes.has(name) &&
+        !(config.skip || []).includes(name) &&
         !classes.some(
           (other) =>
             other !== name && window[other].prototype instanceof window[name],
@@ -1197,17 +1201,16 @@
     );
     for (const name of names) {
       const stop = state.stop;
+      // A screen that fails keeps its name here, so its errors and a crash
+      // name it.
       state.stop = `screen ${name}`;
-      try {
-        SceneManager.push(window[name]);
-        if (await until(() => isScene(name), 10)) {
-          await settle();
-          await exploreScene(name);
-          opened.push(name);
-        }
-      } finally {
-        state.stop = stop;
+      SceneManager.push(window[name]);
+      if (await until(() => isScene(name), 10)) {
+        await settle();
+        await exploreScene(name);
+        opened.push(name);
       }
+      state.stop = stop;
       await leave("Scene_Map");
     }
     return {
