@@ -3800,6 +3800,8 @@ def _declined_scope(
     context_scenes: set[str] = set()
     declined_targets: dict[str, str] = {}
     unreviewed: set[str] = set()
+    # Clusters an accepted deep review judged, read once a deep decline needs them.
+    judged: set[str] | None = None
     items = []
     for stage in REVIEW_STAGES:
         for row in checkpoint.get(stage, {}).get("bundles", []):
@@ -3816,7 +3818,11 @@ def _declined_scope(
                     # Lines were reviewed; only these fixes are left out.
                     pass
                 elif stage == "deep":
-                    unreviewed.add(item["id"])
+                    if judged is None:
+                        judged = set(_latest_deep_reviews(checkpoint))
+                    # A declined follow-up leaves the earlier deep review standing.
+                    if item["id"] not in judged:
+                        unreviewed.add(item["id"])
                     context_scenes |= {
                         bundle["scenes"][key]["scene_id"]
                         for key in item.get("scenes") or []

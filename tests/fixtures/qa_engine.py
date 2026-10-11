@@ -425,11 +425,11 @@ else:
 assert "第1層で休む" in qa.context_view(task, "Map001.json#/events/1/pages/0/list/1")
 
 
-def deep_result(row, corrections):
+def deep_result(row, corrections, declined=("朝だ",)):
     bundle = bundle_of(row)
     reviews = []
     for item in bundle["items"]:
-        if item["source"] == "朝だ":
+        if item["source"] in declined:
             reviews.append(
                 {"id": item["id"], "disposition": "declined", "reason": "Not reviewed."}
             )
@@ -765,16 +765,41 @@ qa.record_decision(
     ],
 )["items"]
 assert any("decision" in conflict["key"] for conflict in second["conflicts"]), second
-# It opens a follow-up deep round before QA completes.
+# The coordinator relays another reviewer's report on a line already corrected.
+qa.record_observation(
+    task,
+    "coordinator",
+    "Map001.json#/events/1/pages/0/list/11",
+    ["voice"],
+    "The urge reads as a gauge here too.",
+)
+# Both open a follow-up deep round before QA completes.
 row = qa.next_bundle(task, "deep-a")
 assert qa.status(task)["stage"] == "deep"
-(power,) = bundle_of(row)["items"]
-assert power["source"] == POWER["_original"], power
+assert sorted(item["source"] for item in bundle_of(row)["items"]) == sorted(
+    [POWER["_original"], AROUSAL["_original"]]
+), bundle_of(row)
 qa.accept_result(
     task,
     result_path(
-        row["id"], deep_result(row, {POWER["_original"]: "My power, at 100%!"})
+        row["id"],
+        deep_result(
+            row,
+            {POWER["_original"]: "My power, at 100%!"},
+            declined={AROUSAL["_original"]},
+        ),
     ),
+)
+# Nobody reviews the corrected line again, so its earlier review stands.
+(waiting,) = [
+    row
+    for row in json.loads((task / "checkpoint.json").read_text())["deep"]["bundles"]
+    if row["status"] == "pending"
+]
+row = qa.next_bundle(task, "deep-b", waiting["id"])
+qa.accept_result(
+    task,
+    result_path(row["id"], deep_result(row, {}, declined={AROUSAL["_original"]})),
 )
 # Only its correction gets an editorial round; earlier verdicts stand.
 row = qa.next_bundle(task, "editor-a")
@@ -861,10 +886,12 @@ headers = [
 ]
 assert ["owner", 0, 0, 2, "Owner"] in headers[2:], headers
 assert qa.status(task)["screen"]["lint"] == {"accepted": 3, "total": 3}
-# The declined scene is a coverage gap, reported once with its reasons.
+# The declined scene and items are a coverage gap, reported once with their
+# reasons.
 assert [item["reasons"] for item in findings["declined"]] == [
     ["Outside what this reviewer reviews.", "Also declined."],
     ["Not reviewed."],
+    ["Not reviewed.", "Not reviewed."],
 ], findings["declined"]
 # Only the shared line's occurrence in that scene goes unreviewed.
 assert sorted(
