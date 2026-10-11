@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -127,6 +130,8 @@ def tour(
     stops: list[dict[str, Any]],
     minutes: float,
     log: Callable[[str], None],
+    stopped: Callable[[], bool] = lambda: False,
+    software: bool = False,
 ) -> dict[str, Any]:
     """Plays the game; the runtime part of the report, or why it could not."""
     binary = electron()
@@ -134,6 +139,8 @@ def tour(
         return {"unavailable": "The playtest needs DazedTL's Electron, which is missing."}
     if not (web_root / "index.html").is_file():
         return {"unavailable": "The game folder has no index.html to play."}
+    if not any((web_root / "js" / name).is_file() for name in ("rmmz_core.js", "rpg_core.js")):
+        return {"unavailable": "The game folder has no RPG Maker engine scripts to play."}
     plan = {
         "stops": [{"id": stop_id, "title": title} for stop_id, title in TOUR[:-1]]
         + stops
@@ -146,8 +153,11 @@ def tour(
     (out / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
     command = [str(binary)]
     if sys.platform.startswith("linux"):
-        # No display: the window is offscreen.
+        # The window is offscreen and needs no display; WebGL uses the GPU
+        # through one when there is one, and SwiftShader on the CPU when not.
         command.append("--ozone-platform=headless")
+        if software or not os.environ.get("DISPLAY"):
+            command.append("--use-angle=swiftshader")
     command += [
         str(HARNESS), "--game", str(web_root), "--out", str(out),
         "--plan", str(out / "plan.json"), "--width", str(size[0]),
@@ -168,28 +178,54 @@ def tour(
         text=True,
         encoding="utf-8",
         errors="replace",
-        **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+        # Its own process group, so a stop ends Electron's helpers with it.
+        **(
+            {"creationflags": subprocess.CREATE_NO_WINDOW}
+            if os.name == "nt"
+            else {"start_new_session": True}
+        ),
     )
-    started = time.monotonic()
-    assert process.stdout is not None
-    for line in process.stdout:
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if event.get("progress") == "stop":
-            log(
-                f"Playing {event['index'] + 1} of {event['total']}: "
-                f"{titles.get(event['id'], event['id'])}"
-            )
-        elif event.get("progress") == "crash":
-            log(f"The game stopped: {event['note']}")
-        if time.monotonic() - started > minutes * 60 + 120:
-            break
+    lines: queue.Queue[str | None] = queue.Queue()
+
+    def read() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    threading.Thread(target=read, daemon=True).start()
+    deadline = time.monotonic() + minutes * 60 + 120
+    status = "Starting the game"
+    said = time.monotonic()
     try:
-        process.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        process.kill()
+        while True:
+            if stopped():
+                raise InterruptedError("The playtest was stopped.")
+            try:
+                line = lines.get(timeout=0.5)
+            except queue.Empty:
+                line = ""
+            if line is None or time.monotonic() > deadline:
+                break
+            try:
+                event = json.loads(line) if line else {}
+            except ValueError:
+                event = {}
+            if event.get("progress") == "stop":
+                status = (
+                    f"Playing {event['index'] + 1} of {event['total']}: "
+                    f"{titles.get(event['id'], event['id'])}"
+                )
+            elif event.get("progress") == "crash":
+                status = f"The game stopped: {event['note']}"
+            # Progress at least every 20 seconds, so a long stop never reads
+            # as a stalled action.
+            if event.get("progress") in {"stop", "crash"} or time.monotonic() - said > 20:
+                log(status)
+                said = time.monotonic()
+    finally:
+        if process.poll() is None:
+            _end(process)
         process.wait()
     try:
         return json.loads((out / "runtime.json").read_text(encoding="utf-8"))
@@ -197,10 +233,39 @@ def tour(
         return {"unavailable": "The playtest window closed before it wrote its report."}
 
 
-def _seen(event: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _no_graphics(runtime: dict[str, Any]) -> bool:
+    """The game stopped at its start because WebGL was unavailable."""
+    stops = runtime.get("stops") or []
+    return bool(stops) and stops[0].get("status") == "failed" and any(
+        "Failed to initialize graphics" in error.get("message", "")
+        or "WebGL" in error.get("message", "")
+        for error in runtime.get("errors", [])
+    )
+
+
+def _end(process: subprocess.Popen) -> None:
+    """Ends Electron and the processes it started."""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
+
+
+def _seen(event: dict[str, Any], titles: dict[str, str] | None = None) -> dict[str, Any]:
+    """Where the tour saw something: its stop by title, screen, map and capture."""
+    seen = {
         key: event[key] for key in ("stop", "scene", "map", "capture") if event.get(key)
     }
+    if titles and seen.get("stop") in titles:
+        seen["stop"] = titles[seen["stop"]]
+    return seen
 
 
 def _identity(data: dict[str, Any] | None) -> str:
@@ -212,6 +277,9 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
     and the coverage the tour reached."""
     problems = [dict(problem) for problem in static["problems"]]
     gaps = list(static["gaps"])
+    titles = {
+        stop["id"]: stop.get("title") or stop["id"] for stop in runtime.get("stops", [])
+    }
     by_identity = {problem["identity"]: problem for problem in problems if problem.get("identity")}
     literals = {
         (problem["file"], text["line"]): (problem, text)
@@ -221,13 +289,21 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
     }
 
     def seen(problem: dict[str, Any], event: dict[str, Any]) -> None:
-        problem.setdefault("seen", _seen(event))
+        problem.setdefault("seen", _seen(event, titles))
 
     if "unavailable" in runtime:
-        gaps.append(f"The game was not played: {runtime['unavailable']}")
+        gaps.append(runtime["unavailable"])
         runtime = {}
     errors: dict[tuple[str, str], dict[str, Any]] = {}
+    # The engine writes the error that stopped the game to the console too.
+    crashes = [
+        event["message"] for event in runtime.get("errors", []) if event["kind"] == "crash"
+    ]
     for event in runtime.get("errors", []):
+        if event["kind"] != "crash" and any(
+            event["message"].split("\n", 1)[0] in crash for crash in crashes
+        ):
+            continue
         if event.get("stop", "").startswith("screen "):
             # The tour opened this screen itself, without what the game sets
             # up first, so its failure says nothing about the game.
@@ -256,12 +332,28 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             ) + event["message"],
             "fix": "game",
             **({"line": located["line"]} if located.get("line") else {}),
-            "seen": _seen(event),
+            "seen": _seen(event, titles),
         }
     problems += errors.values()
+    # A plugin draws its strings from a drawing call elsewhere in its code,
+    # so the text itself ties what was drawn to the string.
+    by_text: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+    for problem, text in literals.values():
+        by_text.setdefault(text["text"].strip(), []).append((problem, text))
     for event in runtime.get("japanese", []):
         located = event.get("source") or {}
         match = literals.get((located.get("file"), located.get("line")))
+        drawn = event["text"].strip()
+        found = by_text.get(drawn) or (
+            # A line a plugin wrapped from a longer string.
+            [row for key, rows in by_text.items() if drawn in key for row in rows]
+            if len(drawn) >= 4
+            else []
+        )
+        if not match and found:
+            match = next(
+                (row for row in found if row[0]["file"] == located.get("file")), found[0]
+            )
         if match:
             problem, text = match
             text.setdefault("seen", _seen(event))
@@ -294,7 +386,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             "text": event["text"],
             **({"identity": identity} if identity else {}),
             **({"line": located["line"]} if plugin and located.get("line") else {}),
-            "seen": _seen(event),
+            "seen": _seen(event, titles),
         })
     for event in runtime.get("overflow", []):
         identity = _identity(event.get("data"))
@@ -307,6 +399,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             "kind": "fit",
             "check": "overflow",
             "file": f"{data_prefix}/{event['data']['file']}" if event.get("data") else "",
+            **({"pointer": event["data"]["pointer"]} if event.get("data") else {}),
             "note": (
                 f"This text runs past the {'right' if event['edge'] == 'right' else 'bottom'} "
                 f"edge of {event['window']} on {event['scene']}"
@@ -316,14 +409,15 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
             "text": event["text"],
             "window": event["window"],
             **({"identity": identity} if identity else {}),
-            "seen": _seen(event),
+            "seen": _seen(event, titles),
         })
     stops = runtime.get("stops", [])
     for stop in stops:
         if stop["id"] == "screens" and stop.get("crashed"):
-            gaps.append(
-                "Plugin screens: a screen the tour opened on its own stopped the "
-                "game, so the screens after it were not opened."
+            # Its gap names the screen; later screens waited for the next run.
+            stop["note"] = (
+                "A screen the tour opened on its own stopped the game, so the "
+                "screens after it were not opened."
             )
             continue
         if stop["status"] in {"failed", "skipped", "not-reached"}:
@@ -350,7 +444,7 @@ def merge(static: dict[str, Any], runtime: dict[str, Any], data_prefix: str) -> 
         },
         "captures": runtime.get("captures", []),
         "resolution": runtime.get("resolution"),
-        "played": bool(stops),
+        "played": any(stop["status"] == "done" for stop in stops),
         "complete": bool(runtime.get("complete")),
     }
 
@@ -360,17 +454,39 @@ def _where(event: dict[str, Any]) -> str:
     return located.get("file") or event.get("scene") or "A script"
 
 
+def _keys(problem: dict[str, Any]) -> list[tuple]:
+    """What identifies a problem across runs: each of a group's strings, or
+    the problem's place and text."""
+    base = (problem["check"], problem["file"])
+    if problem.get("texts"):
+        return [base + (text["text"],) for text in problem["texts"]]
+    return [base + (problem.get("pointer") or problem.get("line") or "", problem.get("text", ""))]
+
+
+def compare(previous: dict[str, Any], report: dict[str, Any]) -> dict[str, int]:
+    """Problems fixed since the previous run and new in this one; a group's
+    strings count one by one. Marks the new problems."""
+    before = {key for problem in previous.get("problems", []) for key in _keys(problem)}
+    now = set()
+    new = 0
+    for problem in report["problems"]:
+        keys = _keys(problem)
+        now.update(keys)
+        if not any(key in before for key in keys):
+            problem["new"] = True
+            new += 1
+    return {"fixed": len(before - now), "new": new}
+
+
 def observations(report: dict[str, Any]) -> list[dict[str, Any]]:
     """The problems text QA can correct, as observations of its lines."""
     found = []
     for problem in report["problems"]:
         if problem.get("fix") != "text-qa" or not problem.get("identity"):
             continue
-        category = {
-            "japanese": "untranslated",
-            "fit": "fit",
-            "codes": "control-code",
-        }.get(problem["kind"], "meaning")
+        category = {"japanese": "meaning", "fit": "ui", "codes": "runtime"}.get(
+            problem["kind"], "other"
+        )
         note = problem["note"]
         if problem.get("seen"):
             note += f" Seen on {problem['seen'].get('scene', 'screen')} in the playtest."
@@ -389,17 +505,26 @@ def run(
     stops: Any = None,
     minutes: float = DEFAULT_MINUTES,
     log: Callable[[str], None] = print,
+    stopped: Callable[[], bool] = lambda: False,
+    previous: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """The full playtest of one game; writes report.json to `out`."""
+    """The full playtest of one game; writes report.json to `out`. With the
+    previous report, it counts what was fixed since and marks what is new."""
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
     target = Path(out).expanduser().resolve()
+    target.mkdir(parents=True, exist_ok=True)
     extra = read_stops(stops)
     started = time.time()
     log("Checking the game's files")
     static = static_checks(game, data)
     log("Starting the game")
-    runtime = tour(data.parent, target, resolution(data), extra, minutes, log)
+    size = resolution(data)
+    runtime = tour(data.parent, target, size, extra, minutes, log, stopped)
+    if _no_graphics(runtime) and sys.platform.startswith("linux"):
+        # The GPU would not draw for an offscreen window; play on the CPU.
+        log("Starting the game again without the GPU")
+        runtime = tour(data.parent, target, size, extra, minutes, log, stopped, True)
     merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {
         "schema": SCHEMA,
@@ -408,6 +533,8 @@ def run(
         **merged,
     }
     report["observations"] = observations(report)
+    if previous:
+        report["since"] = compare(previous, report)
     (target / "report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"
     )

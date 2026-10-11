@@ -227,6 +227,14 @@ class Workflows:
             selected["fit"] = {"widths": check["widths"], "categories": check["categories"],
                                "codes": sorted(parse_event_codes(check["codes"]) or SUPPORTED_EVENT_CODES),
                                "row_limit": check["max_rows"] if check["protect_rows"] else 0}
+        if action == "release_playtest":
+            from util.playtest.run import read_stops
+            from util.skills import RPGMAKER_QA_FOCUSES
+            if project["engine"] != "MVMZ":
+                raise ValueError("The release playtest plays RPG Maker MV and MZ games.")
+            focus = options.get("focus", "release")
+            selected = {"stops": read_stops(options.get("stops")),
+                        "focus": focus if focus in dict(RPGMAKER_QA_FOCUSES) else "release"}
         if action.startswith(("playtest_", "inspector_", "forge_")) and action != "playtest_status":
             values = SettingsStore(self.workspace).read()["values"]
             selected["playtest"] = {"hotkey": values["tlHotkey"], "forgeHotkey": values["forgeHotkey"],

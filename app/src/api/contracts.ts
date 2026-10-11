@@ -736,9 +736,132 @@ export type QaState = {
   unreadable?: QaUnreadable;
 };
 
+/** Where the playtest's tour saw a problem on screen. */
+export type PlaytestSeen = {
+  stop: string;
+  scene?: string;
+  /** Its capture, for guided_playtest_capture. */
+  capture?: string;
+};
+
+/** One string of a grouped problem, such as a plugin's Japanese. */
+export type PlaytestText = {
+  pointer?: string;
+  line?: number;
+  text: string;
+  reach?: string;
+  evidence?: string;
+  seen?: PlaytestSeen;
+};
+
+export type PlaytestFix = "text-qa" | "translate" | "plugin-files" | "game";
+
+export type PlaytestProblem = {
+  /** The game stops, Japanese shows, text doesn't fit, or a name or code is lost. */
+  kind: "crash" | "japanese" | "fit" | "codes";
+  /** Which check found it. */
+  check: string;
+  /** Game-relative path, or empty when the tour saw it with no file. */
+  file: string;
+  note: string;
+  /** The task that fixes it; game means the game's own code or data. */
+  fix: PlaytestFix;
+  pointer?: string;
+  line?: number;
+  plugin?: string;
+  text?: string;
+  original?: string;
+  /** Strings a grouped problem covers. */
+  count?: number;
+  reach?: string;
+  evidence?: string;
+  window?: string;
+  rows?: number;
+  codes?: string[];
+  reaches?: Record<string, number>;
+  /** Its first strings. */
+  texts?: PlaytestText[];
+  seen?: PlaytestSeen;
+  /** The previous playtest did not find it. */
+  new?: boolean;
+  /** Where text QA stands on a problem it corrects: in its review now, reviewed, or waiting for QA to run again. */
+  review?: "reviewing" | "reviewed" | "waiting";
+};
+
+export type PlaytestStop = {
+  id: string;
+  title?: string;
+  status: "done" | "failed" | "skipped" | "not-reached" | "running";
+  note?: string;
+};
+
+export type PlaytestCoverage = {
+  stops: PlaytestStop[];
+  reached: number;
+  messages: number;
+  choices: number;
+  battle_lines: number;
+  /** Screens the tour opened. */
+  scenes: number;
+};
+
+/** Against the playtest before it: problems fixed, and problems new. */
+export type PlaytestSince = {
+  fixed: number;
+  new: number;
+};
+
+/** The latest release playtest of the game. */
+export type PlaytestState = {
+  /** The game's data and plugins are as it played them. */
+  current: boolean;
+  problems: PlaytestProblem[];
+  /** What the playtest could not reach or read. */
+  gaps: string[];
+  report?: string;
+  finished_at?: string;
+  seconds?: number;
+  /** The tour ran; false when only the files were checked. */
+  played?: boolean;
+  complete?: boolean;
+  coverage?: PlaytestCoverage;
+  since?: PlaytestSince;
+  unreadable?: string;
+};
+
+export type PlaytestOperation = {
+  id: string;
+  status: string;
+  message: string;
+};
+
+/** Where the release playtest stands, for the assistant's project helper. */
+export type PlaytestStatus = {
+  current: boolean;
+  finished_at: string;
+  /** Problems by the task that fixes them. */
+  problems: Record<string, number>;
+  /** Problems the tour saw on screen. */
+  seen: number;
+  gaps: number;
+  /** Stops reached, as 'done of total'. */
+  reached: string;
+  /** The step to run next. */
+  next: string;
+  operation?: PlaytestOperation;
+  /** The saved report file. */
+  report?: string;
+};
+
+export type PlaytestCapture = {
+  /** A data URL of the JPEG. */
+  url: string;
+};
+
 export type Readiness = {
   publications: PublicationStatus[];
   qa: QaState;
+  playtest: PlaytestState;
   outputs: string[];
   applied: string[];
   unapplied: string[];
@@ -2283,6 +2406,18 @@ export type TranslationQaRequest = {
   choice?: "keep" | "use";
 };
 
+export type TranslationPlaytestRequest = {
+  project_id: string;
+  step: "status" | "report" | "run";
+  /** Places only the game's events reach, played after the standard tour. */
+  stops?: Record<string, unknown>[];
+};
+
+export type PlaytestCaptureRequest = {
+  project_id: string;
+  name: string;
+};
+
 export type QaReviewedRequest = {
   project_id: string;
   identities: string[];
@@ -2822,6 +2957,14 @@ export type RpcContract = {
   translation_qa: { request: TranslationQaRequest; response: TextQaStatus };
   guided_qa_report: { request: ProjectRequest; response: QaReport };
   guided_qa_reviewed: { request: QaReviewedRequest; response: QaReport };
+  translation_playtest: {
+    request: TranslationPlaytestRequest;
+    response: PlaytestStatus;
+  };
+  guided_playtest_capture: {
+    request: PlaytestCaptureRequest;
+    response: PlaytestCapture;
+  };
   translation_legacy: {
     request: TranslationLegacyRequest;
     response: Job | ExportedFiles;

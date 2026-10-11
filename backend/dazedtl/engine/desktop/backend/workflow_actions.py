@@ -26,8 +26,10 @@ LABELS = {
     "release": "Build public release ZIP", "editors": "Find code editors",
     "reference_add": "Add DazedTL reference translation", "reference_pair": "Add Japanese / English reference pair",
     "reference_remove": "Remove reference registration", "reference_build": "Build exact reference matches", "images_status": "Refresh image readiness",
+    "release_playtest": "Play the game for the release playtest",
 }
-READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "playtest_status", "editors", "images_status"}
+# The release playtest writes only its report, never the game.
+READ_ONLY = {"git_status", "rewrap_preview", "qa_status", "playtest_status", "editors", "images_status", "release_playtest"}
 LABELS.update(wolf.LABELS)
 READ_ONLY.update(wolf.READ_ONLY)
 

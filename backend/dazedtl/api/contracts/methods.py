@@ -6,7 +6,7 @@ reaches as the renderer's TypeScript contracts and the shared protocol manifest.
 """
 
 from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from dazedtl.api.contracts.common import Documents, ExportedFiles, Phase, Saved
 from dazedtl.api.contracts.guided import (
@@ -20,6 +20,8 @@ from dazedtl.api.contracts.guided import (
     GuidedState,
     GuidedStep,
     OutputFolder,
+    PlaytestCapture,
+    PlaytestStatus,
     Preview,
     QaReport,
     ReferenceFolder,
@@ -235,6 +237,22 @@ class TranslationQaRequest(TypedDict):
     findings: NotRequired[list[str]]
     question: NotRequired[str]
     choice: NotRequired[Literal["keep", "use"]]
+
+
+class TranslationPlaytestRequest(TypedDict):
+    project_id: str
+    step: Literal["status", "report", "run"]
+    stops: NotRequired[
+        Annotated[
+            list[dict[str, object]],
+            "Places only the game's events reach, played after the standard tour.",
+        ]
+    ]
+
+
+class PlaytestCaptureRequest(TypedDict):
+    project_id: str
+    name: str
 
 
 class QaReviewedRequest(TypedDict):
@@ -697,6 +715,10 @@ METHODS: dict[str, Method] = {
     "translation_qa": Method(TranslationQaRequest, TextQaStatus),
     "guided_qa_report": Method(ProjectRequest, QaReport, refresh=False),
     "guided_qa_reviewed": Method(QaReviewedRequest, QaReport),
+    "translation_playtest": Method(TranslationPlaytestRequest, PlaytestStatus),
+    "guided_playtest_capture": Method(
+        PlaytestCaptureRequest, PlaytestCapture, refresh=False
+    ),
     "translation_legacy": Method(TranslationLegacyRequest, Job | ExportedFiles),
     # Images
     "images_state": Method(ProjectRequest, ImageManagerState, refresh=False),

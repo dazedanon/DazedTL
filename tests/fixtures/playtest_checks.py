@@ -12,8 +12,9 @@ from pathlib import Path
 root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
+from util import rpgmaker_qa as qa
 from util.playtest.checks import static_checks
-from util.playtest.run import merge, observations
+from util.playtest.run import compare, merge, observations
 
 game = temporary / "game"
 data = game / "data"
@@ -324,6 +325,63 @@ assert "Scene_Gallery could not be opened on its own" in report["gaps"][1], repo
 ]
 assert report["coverage"]["reached"] == 1, report["coverage"]
 observed = {row["identity"]: row for row in observations(report)}
-assert observed["Items.json#/1/description"]["categories"] == ["fit"], observed
+assert observed["Items.json#/1/description"]["categories"] == ["ui"], observed
 assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed
+# A second run counts what the first found and it no longer does, and marks
+# what is new; a group counts its strings one by one.
+again = json.loads(json.dumps(report))
+again["problems"] = [
+    row for row in again["problems"] if row["check"] != "help-rows"
+] + [{"kind": "fit", "check": "overflow", "file": "", "text": "A new caption"}]
+plugin = next(row for row in again["problems"] if row["check"] == "plugin-text")
+plugin["texts"] = plugin["texts"][1:]
+assert compare(report, again) == {"fixed": 2, "new": 1}, compare(report, again)
+assert [row["text"] for row in again["problems"] if row.get("new")] == ["A new caption"]
+
+# Text QA takes the playtest's findings as observations when it prepares, so
+# QA with new findings is a new task, the same findings give the same task,
+# and a line its inventory lacks is left out.
+qa_game = temporary / "qa-game"
+(qa_game / "data").mkdir(parents=True)
+write(
+    qa_game / "data" / "Items.json",
+    [
+        None,
+        entry(
+            1,
+            name="Charm",
+            description="Blocks one attack.\nThen it\nshatters.",
+            _original={"name": "護符", "description": "身代わりになる。"},
+        ),
+    ],
+)
+storage = temporary / "qa"
+plain, _state = qa.prepare_task(qa_game, qa_game / "data", "database", storage)
+found = [
+    {
+        "identity": "Items.json#/1/description",
+        "categories": ["ui"],
+        "note": "Cut off in the item screen.",
+    },
+    {
+        "identity": "Items.json#/9/description",
+        "categories": ["ui"],
+        "note": "No such item.",
+    },
+]
+noted, _state = qa.prepare_task(
+    qa_game, qa_game / "data", "database", storage, observations=found
+)
+same, _state = qa.prepare_task(
+    qa_game, qa_game / "data", "database", storage, observations=found
+)
+assert plain != noted == same, (plain, noted, same)
+rows = json.loads((noted / "checkpoint.json").read_text(encoding="utf-8"))[
+    "observations"
+]
+assert [(row["worker"], row["note"]) for row in rows] == [
+    ("playtest", "Cut off in the item screen.")
+], rows
+assert "Items.json#/1/description" in qa.observed_names(noted)
+assert not qa.observed_names(plain)
 print("ok")

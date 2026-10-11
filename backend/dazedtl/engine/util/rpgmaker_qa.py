@@ -2449,6 +2449,8 @@ def prepare_task(
     fit: dict[str, Any] | None = None,
     interface: bool = False,
     progress: Callable[[str], None] | None = None,
+    observations: Iterable[dict[str, Any]] = (),
+    observer: str = "playtest",
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
@@ -2457,6 +2459,11 @@ def prepare_task(
     With *interface*, the game's interface screens are captured, and text the
     game squeezes or cuts off on them goes to deep review with its captures;
     *progress* hears which screen the capture is on.
+
+    Observations made outside QA, such as the release playtest's findings in
+    translated text, start in its checkpoint, so deep review takes their lines;
+    a task with different observations is another task, and one a line the
+    inventory lacks is left out.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -2476,10 +2483,19 @@ def prepare_task(
         "char_budget": int(screen_char_budget),
         "item_limit": int(screen_item_limit),
     }
+    observed = []
+    for entry in observations:
+        try:
+            (observation,) = _read_observations([entry], manifest)
+        except QAResultError:
+            continue
+        if all(row["identity"] != observation["identity"] for row in observed):
+            observed.append(observation)
     task_key = _sha256(
         f"{TASK_SCHEMA}\0{engine_fingerprint}\0{focus}\0"
         f"{manifest['content_sha256']}\0{context['content_sha256']}\0"
         f"{_sha256(_canonical_bytes(screen_configuration))}"
+        + (f"\0{_sha256(_canonical_bytes(observed))}" if observed else "")
     )[:16]
     task_parent = storage / _slug(game.name) / focus
     task_parent.mkdir(parents=True, exist_ok=True)
@@ -2625,6 +2641,7 @@ def prepare_task(
                 },
                 "findings_file": "",
             }
+            _note_observations(checkpoint, observed, "screen", observer)
             _atomic_write_json(staging / "task.json", task)
             _atomic_write_json(staging / "checkpoint.json", checkpoint)
             _atomic_write_text(
@@ -4167,6 +4184,18 @@ def record_observation(
         _atomic_write_json(root / "checkpoint.json", checkpoint)
         _issue_new_evidence(root, checkpoint)
     return observation
+
+
+def observed_names(task_dir: str | Path) -> set[str]:
+    """The lines a task already observes, under every name an observation
+    may give them, such as `States.json#/42/message1`."""
+    root = Path(task_dir).expanduser().resolve()
+    _root, _task, checkpoint = _read_task(root)
+    recorded = {row["identity"] for row in checkpoint.get("observations") or []}
+    if not recorded:
+        return set()
+    names = _line_names(_read_json(root / "inventory.json"))
+    return recorded | {name for name, lines in names.items() if lines & recorded}
 
 
 # Commands the context view leaves out: flow, waits, sound and picture moves.

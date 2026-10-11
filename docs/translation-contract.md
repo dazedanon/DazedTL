@@ -29,6 +29,10 @@ Text QA for RPG Maker MV/MZ and VX Ace runs with `qa`: `qa --prepare` prepares o
 Apply waits while a playtest or context question is open: the user answers it in DazedTL's Text QA task, and `qa --apply --wait MINUTES` applies once every answer is in.
 `qa --undo QA-0001` puts back one applied correction and `qa --apply-again QA-0001` applies an undone one again, each with its own checkpoint; `qa --choose QUESTION keep` or `use` records an answer the user gave the assistant.
 
+The release playtest for RPG Maker MV/MZ runs with `playtest --run --wait MINUTES`, which checks the game's files, plays it in a hidden window and returns where it stands; `--report` names the report file, and `playtest` alone the next step.
+`--stops FILE` adds places after the standard tour, a JSON list of `{"title", "do"}` objects: `map` with `map`, `x` and `y`, `event` with `event` (and `map`), `common-event` with `id`, `battle` with `troop`, `scene` with `scene`, or `script` with `script`, each optionally with `switches`, `variables` and the `seconds` to play after it.
+Its findings in translated text reach text QA by themselves; the rest name the step that fixes them.
+
 ### Sandboxed connections
 
 A network sandbox can block loopback even when DazedTL is running.

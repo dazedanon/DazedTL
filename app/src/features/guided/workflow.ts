@@ -110,6 +110,14 @@ export const workflow: WorkflowStage[] = [
         description:
           "Prepare a QA task, copy it to your assistant, then review its saved findings.",
       },
+      {
+        id: "release-playtest",
+        optional: true,
+        engine: "MVMZ",
+        title: "Playtest",
+        description:
+          "Play the game to find crashes, Japanese left on screen and text that doesn't fit.",
+      },
     ],
   },
   {

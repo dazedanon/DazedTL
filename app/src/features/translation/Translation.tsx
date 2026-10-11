@@ -40,9 +40,11 @@ import { StatusIcon } from "../../ui/StatusIcon";
 import { displayLabels, displayMarks } from "../../ui/displayStatus";
 import { useOperationEnd } from "../../state/useOperationEnd";
 import { TextQaTab } from "./TextQaTab";
+import { PlaytestTab } from "./PlaytestTab";
+import { jobTime } from "../guided/workspace/model";
 
 export type TranslationView =
-  "progress" | "options" | "context" | "images" | "qa";
+  "progress" | "options" | "context" | "images" | "qa" | "playtest";
 type View = TranslationView;
 
 export default function Translation({
@@ -110,6 +112,15 @@ function Workspace({
       ? own.readiness.qa
       : null;
   const questions = qa?.questions.filter((row) => !row.choice).length || 0;
+  // The release playtest shows once the assistant has run one.
+  const playtestJob = own?.operations
+    .filter((item) => item.action === "release_playtest")
+    .sort((a, b) => jobTime(a) - jobTime(b))
+    .at(-1);
+  const playtest =
+    own && (own.readiness.playtest.report || playtestJob)
+      ? own.readiness.playtest
+      : null;
   const finished = useOperationEnd(
     [...(own?.operations || []), ...state.jobs],
     !!application.snapshot?.application.running,
@@ -152,6 +163,21 @@ function Workspace({
                   />
                 )
               ),
+          },
+        ]
+      : []),
+    ...(playtest
+      ? [
+          {
+            id: "playtest" as const,
+            label: "Playtest",
+            status: playtest.unreadable && (
+              <StatusIcon
+                status={displayMarks.blocked}
+                label={displayLabels.blocked}
+                size={14}
+              />
+            ),
           },
         ]
       : []),
@@ -359,6 +385,16 @@ function Workspace({
             action={action}
             disabled={disabled}
             finished={finished}
+            copy={copyControl()}
+          />
+        )}
+        {view === "playtest" && playtest && (
+          <PlaytestTab
+            projectId={project.id}
+            playtest={playtest}
+            job={playtestJob}
+            action={action}
+            disabled={disabled}
             copy={copyControl()}
           />
         )}

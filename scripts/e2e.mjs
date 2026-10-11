@@ -818,6 +818,22 @@ try {
     ),
   );
 
+  await step(
+    "The playtest checks the game and says why it can't play it",
+    async () => {
+      await page.click("4Check");
+      await page.click(/^Playtest/);
+      await page.click("Run playtest");
+      // The fixture game has no engine scripts, so the playtest checks its
+      // files and reports that it could not play it.
+      await page.waitText(
+        "The playtest could not play the game. The game folder has no RPG Maker engine scripts to play.",
+        2 * 60_000,
+      );
+      await page.shot("playtest");
+    },
+  );
+
   await step("Build a patch ZIP", async () => {
     const archive = path.join(
       path.dirname(game),

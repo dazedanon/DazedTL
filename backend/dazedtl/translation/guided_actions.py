@@ -44,6 +44,7 @@ NATIVE_ACTIONS = {
     "qa_status",
     "qa_apply",
     "qa_undo",
+    "release_playtest",
     "runtime_restore",
     "playtest_install",
     "playtest_status",

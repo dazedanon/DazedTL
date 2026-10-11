@@ -222,6 +222,10 @@ class _Checks:
                     source = source if isinstance(source, str) else live
                     note = battler_name_note(self.engine, live, source)
                     if note:
+                        # Text QA's review decides the fix; the reader needs
+                        # only what goes wrong.
+                        note = note.split("; a battler-name source fix", 1)[0]
+                        note = note if note.endswith(".") else note + "."
                         self._code(name, (index, field), live, source, note, "battler-name")
         for name, fields in (
             ("Skills.json", ("message1", "message2")),

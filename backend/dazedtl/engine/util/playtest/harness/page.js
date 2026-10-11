@@ -83,20 +83,24 @@
     }
   }
 
-  /** The plugin or engine file and line in a stack, past this script. */
+  /** The file and line in a stack that drew something: the first plugin's,
+   * or else the engine's, past this script. */
   function source(stack) {
+    let engine = null;
     for (const line of String(stack).split("\n").slice(1)) {
       const match = /\/(js\/[^\s?#)]+\.js)(?:\?[^:\s)]*)?:(\d+):(\d+)/.exec(
         line,
       );
-      if (match && !match[1].includes("/libs/"))
-        return {
-          file: decodeURIComponent(match[1]),
-          line: Number(match[2]),
-          column: Number(match[3]),
-        };
+      if (!match || match[1].includes("/libs/")) continue;
+      const found = {
+        file: decodeURIComponent(match[1]),
+        line: Number(match[2]),
+        column: Number(match[3]),
+      };
+      if (found.file.startsWith("js/plugins/")) return found;
+      engine ||= found;
     }
-    return null;
+    return engine;
   }
 
   function where(extra = {}) {

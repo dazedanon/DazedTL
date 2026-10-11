@@ -1,0 +1,135 @@
+"""The release playtest, started from the Playtest task or by the assistant
+through the project helper.
+
+The app plays the game in a hidden window and keeps one report; it writes
+nothing into the game. Findings in text QA's lines go to QA's review, and
+the rest name the task that fixes them.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from dazedtl.storage import write_json
+
+from .files import read_json
+
+if TYPE_CHECKING:
+    from .guided import Guided
+    from .text_qa import TextQA
+
+STEPS = ("status", "report", "run")
+
+
+class Playtest:
+    def __init__(self, guided: Guided, text_qa: TextQA):
+        self.guided = guided
+        self.text_qa = text_qa
+
+    def run(self, project_id, step, stops=None):
+        if step not in STEPS:
+            raise ValueError("Choose a playtest step: " + ", ".join(STEPS) + ".")
+        native = self.native(project_id)
+        if step == "run":
+            self.start(project_id, stops)
+        return self.status(project_id, native, report=step == "report")
+
+    def native(self, project_id):
+        """The game's Guided workspace, which keeps the playtest's reports;
+        an Assistant-led game gets the one Guided would use."""
+        project = self.guided.projects.get(project_id)
+        if not project.get("backend_id"):
+            engine = self.guided.backend.describe(project["source"])["engine"]
+            if engine != "MVMZ":
+                raise ValueError(
+                    "The release playtest plays RPG Maker MV and MZ games."
+                )
+            self.guided.open(project_id)
+        native = self.guided.record(project_id)[1]
+        if native["engine"] != "MVMZ":
+            raise ValueError("The release playtest plays RPG Maker MV and MZ games.")
+        return native
+
+    def start(self, project_id, stops):
+        if stops is not None and not isinstance(stops, list):
+            raise ValueError("Give the playtest's stops as a list.")
+        preview = self.guided.preview(
+            project_id,
+            "release_playtest",
+            None,
+            {"stops": stops or [], "focus": self.text_qa.focus(project_id)},
+        )
+        job = self.guided.execute(project_id, preview["token"])
+        write_json(
+            self.guided.path(project_id, "playtest-operation"), {"id": job["id"]}
+        )
+
+    def operation(self, project_id):
+        """The last playtest started, with its current state."""
+        path = self.guided.path(project_id, "playtest-operation")
+        if not path.exists():
+            return None
+        identity = read_json(path)["id"]
+        operations = self.guided.backend.operations
+        job = operations.jobs.get(identity) or {}
+        state = job.get("status", "interrupted")
+        # A job reports its end before its worker exits.
+        if operations.active == identity:
+            state = "running"
+        return {
+            "id": identity,
+            "status": state,
+            "message": str(job.get("message") or ""),
+        }
+
+    def status(self, project_id, native, report=False):
+        state = self.guided.backend.guided_text_state(
+            native, self.text_qa.focus(project_id)
+        )["playtest"]
+        operation = self.operation(project_id)
+        problems = state["problems"]
+        stops = (state.get("coverage") or {}).get("stops", [])
+        if operation and operation["status"] == "running":
+            following = "The playtest is running; wait with playtest --run --wait MINUTES or check again."
+        elif not state.get("report"):
+            following = "Run playtest --run."
+        elif not state["current"]:
+            following = "The game changed after the last playtest; run playtest --run."
+        elif problems or state["gaps"]:
+            following = (
+                "Read the report: fix crashes and plugin text through their tasks, let "
+                "text QA correct its lines, add stops for what the tour could not "
+                "reach, then run playtest --run again."
+            )
+        else:
+            following = (
+                "The playtest found nothing to fix; report it with its coverage."
+            )
+        result = {
+            "current": state["current"],
+            "finished_at": state.get("finished_at", ""),
+            "problems": dict(Counter(problem["fix"] for problem in problems)),
+            "seen": sum(bool(problem.get("seen")) for problem in problems),
+            "gaps": len(state["gaps"]),
+            "reached": f"{sum(stop['status'] == 'done' for stop in stops)} of {len(stops)}",
+            "next": following,
+            **({"operation": operation} if operation else {}),
+        }
+        if report and state.get("report"):
+            from dazedtl.compatibility.playtest import STORAGE
+
+            result["report"] = str(
+                Path(self.guided.backend.workflows.folder(native["id"]))
+                / STORAGE
+                / state["report"]
+                / "report.json"
+            )
+        return result
+
+    def capture(self, project_id, name):
+        from dazedtl.compatibility.playtest import capture
+
+        native = self.guided.record(project_id)[1]
+        return capture(self.guided.backend.workflows.folder(native["id"]), name)

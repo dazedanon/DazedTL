@@ -199,7 +199,12 @@ test("the Project page continues with the next step and keeps a later saved posi
     files: [],
     runs: [],
     phaseRuns: {},
-    readiness: { outputs: [], applied: [], layout_scan: null },
+    readiness: {
+      outputs: [],
+      applied: [],
+      layout_scan: null,
+      playtest: { current: false, problems: [], gaps: [] },
+    },
     comparisons: { status: "not_needed" },
     eventText: {
       status: "missing",

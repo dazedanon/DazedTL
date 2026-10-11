@@ -29,6 +29,7 @@ from dazedtl.stdio import private_stdin
 from dazedtl.storage import WorkspaceLock
 from dazedtl.translation.assistant_tasks import AssistantTasks
 from dazedtl.translation.guided import Guided
+from dazedtl.translation.playtest import Playtest
 from dazedtl.translation.service import Translation, assistant_request
 from dazedtl.translation.text_qa import TextQA
 from dazedtl.watchdog import Watchdog
@@ -81,6 +82,7 @@ class Application:
         )
         self.assistant_tasks = AssistantTasks(self.workspace)
         self.text_qa = TextQA(self.guided)
+        self.playtest = Playtest(self.guided, self.text_qa)
         self.image_editor = ImageEditor(self.images)
         self.image_native = ImageNativeTranslation(self.images, self.image_editor)
         self.translation.image_units = self.images.progress_units
@@ -425,6 +427,11 @@ class Application:
         """One text QA step for the project's assistant or the Text QA task;
         apply and undo go through the app's publication, never a direct write."""
         return self.text_qa.run(project_id, step, findings, question, choice)
+
+    def translation_playtest(self, project_id, step, stops=None):
+        """The release playtest for the Playtest task or the project's
+        assistant; it plays the game and writes nothing into it."""
+        return self.playtest.run(project_id, step, stops)
 
     def plugins_action(self, project_id, action, options=None):
         return self._handed_off(
@@ -781,6 +788,14 @@ def routes(app):
     methods["guided_qa_report"] = (app.text_qa.report, lambda value, _params: value)
     methods["guided_qa_reviewed"] = (
         app.text_qa.reviewed,
+        lambda value, _params: value,
+    )
+    methods["translation_playtest"] = (
+        app.translation_playtest,
+        lambda value, _params: value,
+    )
+    methods["guided_playtest_capture"] = (
+        app.playtest.capture,
         lambda value, _params: value,
     )
     methods["images_action"] = (

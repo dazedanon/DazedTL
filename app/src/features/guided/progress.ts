@@ -98,6 +98,10 @@ export function completedTasks(
       ? ["package"]
       : []),
     ...(lineWidthsChecked(state) ? ["fitting"] : []),
+    // A playtest of the game as it is now has done its check.
+    ...(state.readiness.playtest.current && state.readiness.playtest.played
+      ? ["release-playtest"]
+      : []),
   ]);
 }
 

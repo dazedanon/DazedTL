@@ -104,7 +104,7 @@ Lines the AI got wrong keep their original text until you translate again.
 
 ### 4. Check
 
-Both Check tasks are optional:
+All Check tasks are optional:
 
 - **Line width check** finds applied lines wider than the saved line widths and rewraps them; **Edit settings** chooses what it covers.
 - **Text QA**: **Start text QA** copies the task, and your assistant reviews the translated text and applies the corrections it verifies.
@@ -114,6 +114,10 @@ Both Check tasks are optional:
   That includes Japanese that was never translated, which QA can't review, with whether players can see it; translate what they can in its own task, such as **Plugin files**.
   A correction that changes several lines of one scene, such as narration that switches tense, is listed and undone as one.
   To take out every correction at once, inspect **Apply QA corrections** in the Project page's **History** and choose **Review restore**.
+- **Playtest** (MV and MZ): **Run playtest** has DazedTL check the game's files and play it in a hidden window for a few minutes, writing nothing into the game.
+  It lists crashes, Japanese left in the game, text that doesn't fit and names or codes the translation lost, each with the task that fixes it; **View** shows what the game looked like when it found the problem.
+  Problems in translated text go to Text QA, which corrects them when it runs, so after fixing, run the playtest again: it counts what was fixed since the last run.
+  **1 not reached** lists what the playtest could not get to; your assistant can add those places.
 
 **Playtest tools** at the top installs TL Inspector and Forge to help you playtest MV and MZ games.
 Apply and playtest an early scene before translating everything.
@@ -156,6 +160,7 @@ GameUpdate can't update an encrypted game, so share a new patch for each update 
    **Progress** shows its phases, anything it needs from you and any API run.
    With **Image text** on, it also finds the images with text, translates them and puts them in the game; **Images** shows where that stands and lets you change the list.
    For RPG Maker games it also runs text QA: **Text QA** appears once it starts, lists each correction with **Undo** and asks you only what it can't settle, which **Progress** points out.
+   For MV and MZ games it runs the playtest too, which **Playtest** shows once it has.
    When your assistant asks you to approve an API estimate, answer it or use the approve button on **Progress**.
    If you approve there, tell your assistant so it waits for the results; **Progress** reminds you until it has checked in.
    Changing your API settings or the mode makes a waiting estimate out of date, so ask your assistant for a new one.

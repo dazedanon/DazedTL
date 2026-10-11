@@ -421,6 +421,10 @@ def run_qa(plan, log):
     folder = Path(plan["folder"])
     if plan["action"] == "qa_prepare":
         _set_aside(plan, log)
+        # What the release playtest found in the same text goes to review.
+        from .playtest import pending
+
+        observations = pending(folder, plan["guard"])
         task, _state = qa.prepare_task(
             plan["project"]["source"],
             plan["project"]["data"],
@@ -429,7 +433,10 @@ def run_qa(plan, log):
             fit=plan["options"].get("fit"),
             interface=True,
             progress=log,
+            observations=observations,
         )
+        if observations:
+            log(f"QA reviews {len(observations)} line(s) the playtest found")
         manifest = qa.build_manifest(plan["project"]["data"], plan["options"]["focus"])
         descriptor = read_json(task / "task.json")
         if (

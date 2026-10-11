@@ -139,6 +139,20 @@ def settle_qa(workspace, params, result):
     return result
 
 
+def wait_playtest(workspace, params, result, minutes):
+    """Waits while the playtest plays, then returns its status with the
+    report file."""
+    deadline = time.monotonic() + minutes * 60
+    status = {"project_id": params["project_id"], "step": "report"}
+    while (result.get("operation") or {}).get("status") == "running":
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return result
+        time.sleep(min(10, remaining))
+        result = call(workspace, "translation_playtest", status)
+    return call(workspace, "translation_playtest", status)
+
+
 def main():
     # Assistants read this through a pipe, which Windows encodes in the ANSI
     # code page; game names and text need UTF-8 however the helper is started.
@@ -228,6 +242,32 @@ def main():
         default=0,
         metavar="MINUTES",
         help="With --apply: wait up to MINUTES for the user's answers to open questions",
+    )
+    playtest = commands.add_parser(
+        "playtest",
+        help="The release playtest for RPG Maker MV/MZ: DazedTL checks the game's files and "
+        "plays it in a hidden window, then reports crashes, Japanese on screen, text "
+        "that doesn't fit and lost names or codes; it writes nothing into the game",
+    )
+    playtest_step = playtest.add_mutually_exclusive_group()
+    playtest_step.add_argument(
+        "--run", action="store_true", help="Play the game and write a new report"
+    )
+    playtest_step.add_argument(
+        "--report", action="store_true", help="Where it stands, with the report file"
+    )
+    playtest.add_argument(
+        "--stops",
+        type=Path,
+        help="With --run: a JSON file of places to visit after the standard tour, each "
+        '{"title": ..., "do": "map"|"event"|"common-event"|"battle"|"scene"|"script", ...}',
+    )
+    playtest.add_argument(
+        "--wait",
+        type=float,
+        default=0,
+        metavar="MINUTES",
+        help="Wait up to MINUTES for a running playtest to finish",
     )
     plugins = commands.add_parser(
         "plugins",
@@ -423,13 +463,22 @@ def main():
                     params.update(question=args.choose[0], choice=args.choose[1])
                 if params["step"] == "apply" and args.wait > 0:
                     awaiting_answers(args.workspace, params, args.wait)
+            if args.command == "playtest":
+                params["step"] = (
+                    "run" if args.run else "report" if args.report else "status"
+                )
+                if args.stops:
+                    params["stops"] = json.loads(
+                        args.stops.read_text(encoding="utf-8-sig")
+                    )
             if args.command == "plugins":
                 method = (
                     "plugins_continue" if args.continue_request else "plugins_state"
                 )
                 if args.continue_request:
                     params["request_id"] = args.continue_request
-            if hasattr(args, "run"):
+            # A run's ID; the playtest's --run is a flag instead.
+            if isinstance(getattr(args, "run", None), str):
                 params["run_id"] = args.run
             if args.command in {"compile", "organize", "progress", "accept"}:
                 params["input_path"] = args.input
@@ -486,6 +535,8 @@ def main():
                 result = wait(args.workspace, params, result, args.wait)
             if args.command == "qa":
                 result = settle_qa(args.workspace, params, result)
+            if args.command == "playtest" and args.wait > 0:
+                result = wait_playtest(args.workspace, params, result, args.wait)
             if getattr(args, "image_step", None) == "scan":
                 while result["scan"] == "running":
                     time.sleep(2)

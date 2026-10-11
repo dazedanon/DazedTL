@@ -75,63 +75,28 @@ Map013 event 19 page 2 had the same shape (QA-0093).
 ## Release playtest
 
 Text QA reads text; it cannot tell whether the game starts, which text reaches the screen or whether it fits there.
-The release playtest is the last check before Release: it plays the game DazedTL has applied, with its translations, QA corrections, rewraps and plugin files, and reports what a player would hit.
+The release playtest is the last check before Release: it plays the game as DazedTL applied it, with its translations, QA corrections, rewraps and plugin files, and reports what a player would hit.
+Its behavior is in [architecture](architecture.md#workflow-and-shared-presentation); its goals are text QA's, and these are its decisions and the evidence behind them.
 
 ### Where it sits
 
-- In Guided it is the third optional Check task, Playtest, after Line width check and Text QA, because it checks the text those tasks leave; like them, Release never waits for it.
-- In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and the app shows its report in a Playtest tab once one exists.
-- Each run checks the files as they are and reports what it found; a later change to the game marks the report outdated.
-
-### What is automated
-
-Every run does both parts by itself; the user starts it with one click or the assistant with the helper, and nobody plays.
-
-Static checks read the game's files in seconds, the same way for MV and MZ:
-
-- Whether it starts: every data file parses as JSON, `js/plugins.js` holds a readable plugin list, and every enabled plugin compiles as a browser script; nothing runs.
-- Japanese players can read: the fields text QA's [preflight](../backend/dazedtl/engine/util/rpgmaker_qa_preflight.py) reads, in the current text whether or not it was translated: Show Text and its nameplate, choices, scrolling text, the name-change commands, database names, descriptions and messages, and System's terms.
-  Branch labels (402), file names and plugin-command identifiers are not text; `・` and `ー` are not Japanese, and a Japanese placeholder glyph such as `◯` left in English text is.
-- Codes against the original, which the `_original` beside translated text keeps: each `%1` and `%2` of a battle message and System's message terms, an MZ battle message whose original starts with a particle such as は or の but lacks `%1`, and each event page's `\V[n]`, `\N[n]`, `\P[n]`, `\I[n]` and `\G`, counted per page so a code a rewrap moved to another line does not count as lost.
-- Descriptions with more lines than the two the standard help window shows.
-- Plugin text: every Japanese string in an enabled plugin's code, read with comments, keys, comparisons, speaker tags and asset names left out, and each given its reach: drawn directly, behind a condition that is always false, in a function nothing calls, or may show.
-
-The runtime tour then plays the game in a hidden window of DazedTL's own Electron, at the game's resolution, from a local server that serves the game folder read-only.
-It uses a fresh browser profile in the report's folder, so saves and options never reach the game, and it is muted.
-Hooks installed before the title screen record:
-
-- errors: `console.error`, uncaught errors and rejections, and the engine's own error screen;
-- Japanese actually drawn, through `Bitmap.prototype.drawText`, with the scene, map, a short stack and the plugin file and line that drew it;
-- text that runs past its window's contents, through `Window_Base` `processNewLine` and `flushTextState`, leaving out passes that only measure and `Window_NameBox`;
-- each message and choice list, tied to its event command by the identity of the interpreter's command list, and each help text to its database entry.
-
-The tour presses real keys and stops at the title, New Game with its opening messages and first choices, every main-menu screen and tab, a save and a load through the real save and load screens, a shop, a battle, each screen a plugin defines, and the title again.
-For the menus and the shop the party holds one of every item, weapon and armor and knows its skill types' skills, so every description draws once in its real help window; this state exists only in memory and the tour's own save.
-A stop that crashes the game ends with its error, and the tour reloads and goes on with the next stop.
-The assistant adds stops for what only it can find, such as a dungeon floor with a trap and a chest or the recollection room: a map position, an event, a common event, a troop, a screen, or a script that uses a debug plugin such as Forge to get there.
-
-### What the app shows
-
-The Playtest task shows where the run stands, then each problem once, with where it was seen and a capture when the tour saw it:
-
-- Crashes: the game stopped or a script failed, with the stop, screen, file and line.
-- Japanese on screen: seen in the game, or found in the files with its reach.
-- Text that doesn't fit: seen running past its window, or a description longer than its help window that no stop drew.
-- Missing names and codes: a `%1`, `\V[n]` or similar the original shows and the translation dropped.
-
-Each problem names the task that fixes it: Text QA for lines it reviews, Plugin files for plugin text, Translate for text never translated, or the game's code for crashes and window sizes, which the assistant changes.
-A coverage line counts the stops the tour reached; its sheet lists what it could not reach and why, such as a plugin screen that needs the game's own runtime.
+- In Guided it is the third optional Check task, Playtest, after Line width check and Text QA, because it checks the text those tasks leave; Release never waits for it.
+- In Assistant-led the starting prompt runs it through the project helper's `playtest` before text QA and again after QA's apply, and a Playtest tab shows its report once one exists.
 
 ### Decisions
 
-- The playtest never writes the game: no saves, settings or fixes go into the game folder, and it changes nothing a release ships.
-- Findings on lines text QA reviews reach text QA as [observations](#observations) by a `playtest` worker, when QA is prepared and while it reviews, so a deep reviewer corrects them and editorial confirms the correction before it applies by itself.
-  The playtest does not correct text, because its checks find where a problem is, not the wording that fixes it.
-- Only what the tour drew counts as seen; a static reach or line count is evidence of where to look, because fonts, plugins and custom windows decide what fits and what shows.
+- Every run checks the game's files and then plays it, with no one at the keyboard: one click in Guided, or the assistant through the helper.
+  The checks are static and the same for MV and MZ; the tour runs in a hidden window of DazedTL's own Electron, so it works the same on every system and never starts the game's executable.
+- The playtest never writes the game: no saves, settings or fixes go into the game folder.
+- Problems are fixed where their own reviewed path already applies verified fixes, never by the playtest.
+  Problems in lines text QA reviews become [observations](#observations) of a `playtest` worker, both when QA is prepared and while it reviews, so a deep reviewer corrects them and editorial confirms the correction before QA applies it by itself.
+  Plugin text goes to Plugin files, text never translated to Translate, and crashes and window sizes to the game's own code, which the assistant changes.
+  The playtest's checks find where a problem is, not the wording or code that fixes it.
+- Running it again is how kinks are ironed out, so every run is idempotent: QA prepared with the same findings is the same task, a running task records each finding once, and each report counts what was fixed since the last one and marks what is new.
+- Only what the tour drew on screen counts as seen; a static reach or line count says where to look, because fonts, plugins and custom windows decide what fits and what shows.
 - What the tour cannot reach is a coverage gap in the report, never a request for the user to play it or confirm a review.
-- The tour runs DazedTL's Electron rather than the game's NW.js, so it works the same on every system without starting the game's executable, and nothing it does touches the user's saves.
-  A plugin that needs NW.js's Node APIs fails there; its errors are coverage gaps, not crashes.
-- Text QA's battler-name check also reads the particle at the start of an MZ message's source, so the source fix that adds `%1` reaches a message whose English starts with a capital.
+  The assistant adds stops for what only it can find, such as a dungeon floor with a trap or the recollection room.
+- A screen the tour opens on its own, without what the game sets up first, and an error a plugin raises because it needs NW.js, are coverage gaps rather than crashes, because neither says anything about the game players run.
 
 ### Why the playtest
 
@@ -143,9 +108,19 @@ On 2026-10-11 a manual QA of Arina and the Succubus Curse, after text QA, found 
   Hooking `drawText` told text that shows from dead code more reliably than reading the code.
 - A Japanese placeholder glyph, `◯`, in English interface text.
 
-The manual run also found what a harness must avoid:
+On the same game before those fixes, the playtest found every one of them, the dungeon plugin's trap text once a stop triggered a trap, and two armor descriptions the manual QA had missed, clipped in the item screen.
+It reached eight of its nine stops in about 90 seconds; the ninth stopped at a custom menu framework's base screen, which the game never opens on its own.
+
+The manual run also showed what a harness must avoid:
 
 - MZ pauses while the page lacks focus, so the tour overrides `SceneManager.isGameActive`.
 - Setting `Input._currentState` directly is unreliable; real `keydown` and `keyup` events are not.
 - Loading a save over an active map makes a plugin read a map that is gone and report a crash the game does not have, so the tour loads through `Scene_Load`.
 - A hidden browser pane stops animation frames; DazedTL's offscreen window keeps them running.
+
+Building the tour added more:
+
+- A window drawn while hidden, or a message's page break, looks like overflow, so a finding counts only once its bitmap is on screen, and message windows go on in a new page.
+- An opening left mid-message holds the next stops' screens, so the tour plays it until the player can move, four times as fast.
+- A battle the tour starts on a map with no background loads the engine's default, which a game may not ship, so it shows the game's own or none.
+- Without a display Chromium has no GPU for WebGL, so the tour falls back to SwiftShader.

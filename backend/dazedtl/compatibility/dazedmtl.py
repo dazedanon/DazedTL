@@ -444,6 +444,7 @@ class ExistingBackend:
     def guided_text_state(self, native, focus="release"):
         from dazedtl.translation.publication import history
 
+        from .playtest import POINTER, playtest_state
         from .text import qa_state, qa_unreadable
 
         folder = self.workflows.folder(native["id"])
@@ -460,27 +461,35 @@ class ExistingBackend:
             "questions": [],
             "message": "No QA task prepared for this focus.",
         }
-        if (folder / ("text-qa-" + focus + ".json")).exists():
-            plan = {
-                "project_id": native["id"],
-                "project": native,
-                "folder": str(folder),
-                "options": {"focus": focus},
-            }
-            # A game file the app can't read is no fault of the QA task, and
-            # stops the rest of the project the same way.
+        playtest = {"current": False, "problems": [], "gaps": []}
+        prepared = (folder / ("text-qa-" + focus + ".json")).exists()
+        played = (folder / POINTER).exists()
+        if prepared or played:
+            # A game file the app can't read is no fault of the QA task or
+            # the playtest, and stops the rest of the project the same way.
             try:
-                plan["guard"] = self.guided_guard(native, folder)
+                guard = self.guided_guard(native, folder)
             except OSError as exc:
                 raise ValueError(
                     f"DazedTL can't read this game's files: {exc}"
                 ) from exc
-            try:
-                qa = qa_state(plan)
-            except (ValueError, OSError, KeyError, TypeError) as exc:
-                qa = qa_unreadable(plan, exc)
+            if prepared:
+                plan = {
+                    "project_id": native["id"],
+                    "project": native,
+                    "folder": str(folder),
+                    "options": {"focus": focus},
+                    "guard": guard,
+                }
+                try:
+                    qa = qa_state(plan)
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    qa = qa_unreadable(plan, exc)
+            if played:
+                playtest = playtest_state(folder, guard, focus)
         return {
             "qa": qa,
+            "playtest": playtest,
             "publications": [
                 {
                     "id": row["id"],

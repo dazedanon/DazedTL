@@ -158,8 +158,26 @@ let crash = "";
 // Errors already recorded, across reloads of the page.
 const recorded = new Set();
 
-function take(event) {
-  const { type, ...value } = event;
+// The server's address in the page's messages and stacks, which only this
+// run knows.
+let served = "";
+/** A value with the server's address taken out of its text. */
+function clean(value) {
+  if (typeof value === "string")
+    return served ? value.split(served).join("") : value;
+  if (Array.isArray(value)) return value.map(clean);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        key === "data" && typeof item === "string" ? item : clean(item),
+      ]),
+    );
+  return value;
+}
+
+function take(raw) {
+  const { type, ...value } = clean(raw);
   if (["error", "japanese", "overflow"].includes(type)) {
     const key = JSON.stringify([
       type,
@@ -346,6 +364,7 @@ app.whenReady().then(async () => {
   const server = http.createServer(serve);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
+  served = `${origin}/${token}/`;
   const entry = (() => {
     try {
       const manifest = JSON.parse(

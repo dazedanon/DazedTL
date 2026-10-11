@@ -20,6 +20,12 @@ import {
   type QaStepName,
 } from "../../qaSteps";
 import { qaPhase, qaUnsaved } from "../../qaView";
+import { PlaytestWork } from "../../Playtest";
+import {
+  playtestFailure,
+  playtestPhase,
+  playtestWaiting,
+} from "../../playtestView";
 
 export function fittingView(w: GuidedWorkspace): TaskView {
   const {
@@ -211,6 +217,7 @@ export function fittingView(w: GuidedWorkspace): TaskView {
 
 export function qaView(w: GuidedWorkspace): TaskView {
   const {
+    state,
     project,
     baseline,
     qa,
@@ -230,6 +237,10 @@ export function qaView(w: GuidedWorkspace): TaskView {
     setPanel,
   } = w;
   const phase = qaPhase(qa);
+  // Problems the playtest found in translated text, which QA reviews when
+  // it next prepares.
+  const found = playtestWaiting(state.readiness.playtest);
+  const again = found > 0 && ["applied", "clean"].includes(phase);
   // An apply that failed and rolled back says so beside its retry; one from
   // before this task was prepared belongs to an earlier task.
   const applying = operationJob("qa_apply");
@@ -293,45 +304,55 @@ export function qaView(w: GuidedWorkspace): TaskView {
     />
   );
   const content: ReactNode = (
-    <TextQaWork
-      qa={qa}
-      waiting={handoff("qa").waiting}
-      disabled={disabled}
-      feedback={feedback}
-      applyFailed={applyFailed}
-      run={step}
-      onCoverage={() => setPanel("qa-coverage")}
-      restorable
-      report={
-        qaJob && (
-          <Button variant="link" onClick={() => inspect(qaJob)}>
-            Report details
-          </Button>
-        )
-      }
-    >
-      <FieldRow id="qa-focus" label="QA focus">
-        {(props) => (
-          <select
-            {...props}
-            value={fields.text.focus}
-            disabled={disabled}
-            onChange={(event) => editText("focus", event.target.value)}
-          >
-            {[
-              ["release", "Full game text"],
-              ["database", "Database"],
-              ["dialogue", "Dialogue"],
-              ["risky-codes", "Risky event codes"],
-            ].map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        )}
-      </FieldRow>
-    </TextQaWork>
+    <>
+      {found > 0 && (
+        <Notice>
+          The playtest found {found.toLocaleString()}{" "}
+          {found === 1 ? "problem" : "problems"} in translated text; QA reviews{" "}
+          {found === 1 ? "it" : "them"}{" "}
+          {phase === "running" ? "in its next round." : "when it runs again."}
+        </Notice>
+      )}
+      <TextQaWork
+        qa={qa}
+        waiting={handoff("qa").waiting}
+        disabled={disabled}
+        feedback={feedback}
+        applyFailed={applyFailed}
+        run={step}
+        onCoverage={() => setPanel("qa-coverage")}
+        restorable
+        report={
+          qaJob && (
+            <Button variant="link" onClick={() => inspect(qaJob)}>
+              Report details
+            </Button>
+          )
+        }
+      >
+        <FieldRow id="qa-focus" label="QA focus">
+          {(props) => (
+            <select
+              {...props}
+              value={fields.text.focus}
+              disabled={disabled}
+              onChange={(event) => editText("focus", event.target.value)}
+            >
+              {[
+                ["release", "Full game text"],
+                ["database", "Database"],
+                ["dialogue", "Dialogue"],
+                ["risky-codes", "Risky event codes"],
+              ].map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          )}
+        </FieldRow>
+      </TextQaWork>
+    </>
   );
   const footer = unsaved ? (
     <ActionControl
@@ -358,8 +379,9 @@ export function qaView(w: GuidedWorkspace): TaskView {
     // Preparing again sets aside a task the app can't read.
     start("Run QA again")
   ) : phase === "applied" || phase === "clean" ? (
-    // Text edited since, such as new translation, can take another pass.
-    start("Run QA again", "default")
+    // Text edited since, such as new translation, or the playtest's
+    // findings can take another pass.
+    start("Run QA again", again ? "primary" : "default")
   ) : phase === "ready" ? (
     <ActionControl
       label={applyFailed ? "Try again" : "Apply corrections"}
@@ -383,6 +405,7 @@ export function qaView(w: GuidedWorkspace): TaskView {
       undefined,
       undefined,
       ["applied", "clean"].includes(phase) &&
+        !again &&
         (!unsaved || (action.key === "qa-save" && !!action.notice))
         ? "primary"
         : "quiet",
@@ -391,6 +414,69 @@ export function qaView(w: GuidedWorkspace): TaskView {
       title: "Text QA",
       description:
         "Your assistant reviews the game's text and applies verified corrections; you answer only what it can't settle.",
+    },
+  };
+}
+
+export function playtestView(w: GuidedWorkspace): TaskView {
+  const {
+    project,
+    state,
+    action,
+    disabled,
+    feedback,
+    advance,
+    operationJob,
+    save,
+  } = w;
+  const playtest = state.readiness.playtest;
+  const job = operationJob("release_playtest");
+  const running = job?.status === "running";
+  const phase = playtestPhase(playtest, running);
+  const content: ReactNode = (
+    <PlaytestWork
+      projectId={project.id}
+      playtest={playtest}
+      running={running}
+      progress={running ? job?.message : undefined}
+      failed={playtestFailure(playtest, job)}
+    />
+  );
+  const footer = running ? (
+    <ActionControl
+      label="Stop playtest"
+      disabled={action.busy}
+      {...feedback("playtest-stop", "Stopping…")}
+      onClick={() =>
+        action.run(() => api.stop(project.id), "", "playtest-stop")
+      }
+    />
+  ) : (
+    <ActionControl
+      label={phase === "not_started" ? "Run playtest" : "Run playtest again"}
+      variant={phase === "done" ? "default" : "primary"}
+      disabled={disabled}
+      {...feedback("playtest", "Starting…")}
+      onClick={() =>
+        action.run(
+          async () => {
+            await save();
+            await api.guided.playtest(project.id, "run");
+          },
+          "",
+          "playtest",
+        )
+      }
+    />
+  );
+  return {
+    content,
+    action: footer,
+    next: advance(undefined, undefined, phase === "done" ? "primary" : "quiet"),
+    heading: {
+      title: "Playtest",
+      description:
+        "DazedTL plays the game to find crashes, Japanese left on screen and text that doesn't fit; problems in translated text go to Text QA.",
     },
   };
 }

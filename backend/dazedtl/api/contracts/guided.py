@@ -463,9 +463,133 @@ class QaState(TypedDict):
     unreadable: NotRequired[QaUnreadable]
 
 
+class PlaytestSeen(TypedDict):
+    """Where the playtest's tour saw a problem on screen."""
+
+    stop: str
+    scene: NotRequired[str]
+    capture: NotRequired[Annotated[str, "Its capture, for guided_playtest_capture."]]
+
+
+class PlaytestText(TypedDict):
+    """One string of a grouped problem, such as a plugin's Japanese."""
+
+    pointer: NotRequired[str]
+    line: NotRequired[int]
+    text: str
+    reach: NotRequired[str]
+    evidence: NotRequired[str]
+    seen: NotRequired[PlaytestSeen]
+
+
+type PlaytestFix = Literal["text-qa", "translate", "plugin-files", "game"]
+
+
+class PlaytestProblem(TypedDict):
+    kind: Annotated[
+        Literal["crash", "japanese", "fit", "codes"],
+        "The game stops, Japanese shows, text doesn't fit, or a name or code is lost.",
+    ]
+    check: Annotated[str, "Which check found it."]
+    file: Annotated[
+        str, "Game-relative path, or empty when the tour saw it with no file."
+    ]
+    note: str
+    fix: Annotated[
+        PlaytestFix, "The task that fixes it; game means the game's own code or data."
+    ]
+    pointer: NotRequired[str]
+    line: NotRequired[int]
+    plugin: NotRequired[str]
+    text: NotRequired[str]
+    original: NotRequired[str]
+    count: NotRequired[Annotated[int, "Strings a grouped problem covers."]]
+    reach: NotRequired[str]
+    evidence: NotRequired[str]
+    window: NotRequired[str]
+    rows: NotRequired[int]
+    codes: NotRequired[list[str]]
+    reaches: NotRequired[dict[str, int]]
+    texts: NotRequired[Annotated[list[PlaytestText], "Its first strings."]]
+    seen: NotRequired[PlaytestSeen]
+    new: NotRequired[Annotated[bool, "The previous playtest did not find it."]]
+    review: NotRequired[
+        Annotated[
+            Literal["reviewing", "reviewed", "waiting"],
+            "Where text QA stands on a problem it corrects: in its review now, reviewed, or waiting for QA to run again.",
+        ]
+    ]
+
+
+class PlaytestStop(TypedDict):
+    id: str
+    title: NotRequired[str]
+    status: Literal["done", "failed", "skipped", "not-reached", "running"]
+    note: NotRequired[str]
+
+
+class PlaytestCoverage(TypedDict):
+    stops: list[PlaytestStop]
+    reached: int
+    messages: int
+    choices: int
+    battle_lines: int
+    scenes: Annotated[int, "Screens the tour opened."]
+
+
+class PlaytestSince(TypedDict):
+    """Against the playtest before it: problems fixed, and problems new."""
+
+    fixed: int
+    new: int
+
+
+class PlaytestState(TypedDict):
+    """The latest release playtest of the game."""
+
+    current: Annotated[bool, "The game's data and plugins are as it played them."]
+    problems: list[PlaytestProblem]
+    gaps: Annotated[list[str], "What the playtest could not reach or read."]
+    report: NotRequired[str]
+    finished_at: NotRequired[str]
+    seconds: NotRequired[float]
+    played: NotRequired[
+        Annotated[bool, "The tour ran; false when only the files were checked."]
+    ]
+    complete: NotRequired[bool]
+    coverage: NotRequired[PlaytestCoverage]
+    since: NotRequired[PlaytestSince]
+    unreadable: NotRequired[str]
+
+
+class PlaytestOperation(TypedDict):
+    id: str
+    status: str
+    message: str
+
+
+class PlaytestStatus(TypedDict):
+    """Where the release playtest stands, for the assistant's project helper."""
+
+    current: bool
+    finished_at: str
+    problems: Annotated[dict[str, int], "Problems by the task that fixes them."]
+    seen: Annotated[int, "Problems the tour saw on screen."]
+    gaps: int
+    reached: Annotated[str, "Stops reached, as 'done of total'."]
+    next: Annotated[str, "The step to run next."]
+    operation: NotRequired[PlaytestOperation]
+    report: NotRequired[Annotated[str, "The saved report file."]]
+
+
+class PlaytestCapture(TypedDict):
+    url: Annotated[str, "A data URL of the JPEG."]
+
+
 class Readiness(TypedDict):
     publications: list[PublicationStatus]
     qa: QaState
+    playtest: PlaytestState
     outputs: list[str]
     applied: list[str]
     unapplied: list[str]

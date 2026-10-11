@@ -317,6 +317,12 @@ export const api = {
       request("guided_qa_report", { project_id }),
     qaReviewed: (project_id: string, identities: string[]) =>
       request("guided_qa_reviewed", { project_id, identities }),
+    /** Starts the release playtest or reads where it stands, as the
+     * assistant's project helper does. */
+    playtest: (project_id: string, step: "status" | "run") =>
+      request("translation_playtest", { project_id, step }),
+    playtestCapture: (project_id: string, name: string) =>
+      request("guided_playtest_capture", { project_id, name }),
   },
   answer: (project_id: string, token: string, approved: boolean) =>
     request("guided_answer", { project_id, token, approved }),

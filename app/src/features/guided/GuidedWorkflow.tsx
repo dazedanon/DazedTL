@@ -209,6 +209,10 @@ function Workspace(
               taskId === "names" && activeOperation.action === "speaker_scan"
             ) &&
             !(
+              taskId === "release-playtest" &&
+              activeOperation.action === "release_playtest"
+            ) &&
+            !(
               ["check", "release"].includes(position.step) &&
               activeOperation.action === "ace_pack"
             ) && (
