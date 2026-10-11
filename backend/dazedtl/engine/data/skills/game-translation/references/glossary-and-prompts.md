@@ -130,8 +130,10 @@ Without this, every font variant of a name becomes a new glossary row with its o
 
 **A role label row does not teach the model how characters address that role.**
 In one game the tavern keeper's row was `店長 (Tavern Owner)` with a note to distinguish direct address from the label, and the cast calls him `店長さん`, established in the scene as "Owner-san".
-A pure-kanji term still matches before hiragana, so that row reaches every `店長さん` line, and the model copies its parenthesized English: after the system prompt gained a title-only address rule, about two thirds of those lines still read "Tavern Owner-san".
+A pure-kanji term still matches before hiragana, so that row reaches every `店長さん` line, and the model copies its parenthesized English: even with the system prompt's title-only address rule, three live gpt-6-luna reruns of the scene wrote "Owner-san" on none of the 48 `店長さん` lines (37 "Tavern Owner"; the rest "Manager-san", "Mister", "the owner" or no address).
 The setup identity rules therefore record each observed address as its own row, such as `店長さん (Owner-san)`, which the matcher sends beside the label row whenever that form appears.
+Adding only that row, three more reruns wrote "Owner-san" on all 48, while narration such as `店長は上機嫌` kept "The Tavern Owner".
+A row matches only its exact spelling: the drawn-out `店長さーん` still read "Tavern Owner" in 2 of 6 lines, so each spelling needs its own row.
 Character sections keep one row per exact source, so a second `店長` row would be dropped; a bare-title call goes in the label row's note instead.
 
 ### Disputed spellings: six-tier evidence hierarchy

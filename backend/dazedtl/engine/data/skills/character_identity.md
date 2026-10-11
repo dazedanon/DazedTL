@@ -11,6 +11,7 @@
   never merge two entries merely because they ultimately identify the same person.
 - When characters address someone by a role or title, record the address form as well as the nameplate label.
   Search the dialogue for that title with an honorific, and give each observed form its own row directly after the title's row: `隊長さん (Captain-san) - How the cast addresses the Guard Captain; the nameplate stays Guard Captain.`
+  A row matches only its exact spelling, so a drawn-out `隊長さーん` needs its own row too.
   Translate only the title the speaker says plus its honorific, without the words the label adds to tell roles apart.
   A bare title used as a call has the same source as the label row, so state its English address in that row's note instead of adding a second row.
   Translation follows a row's parenthesized English, so a note such as "distinguish direct address from the role label" does not change how the title is addressed.
