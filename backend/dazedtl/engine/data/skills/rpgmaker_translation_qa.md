@@ -108,7 +108,8 @@ that `prior_review`, and your review replaces it.
 - `screen_evidence` keeps the screening reviewer's reason and `screen_scene_contexts` every scene
   used to reach it. A `clean` review of such an item rebuts that reason concretely in its
   `evidence`; do not clear it because the problem is absent from the small `nearby_commands`
-  window. Use `{{CLI}} context --task {{TASK}} --at <identity>` for more surrounding text.
+  window. Use `{{CLI}} context --task {{TASK}} --worker <name> --at <identity>` for more
+  surrounding text.
 - `motif_contexts` holds the family-level wordplay review; reconcile scene and family evidence.
   `motif-scene-contradiction` means a scene reviewer disputed a variant of a family called
   preserved, so every variant was reopened. Set `motif_ids` only when your correction or
@@ -165,8 +166,9 @@ Prefix every command with `{{CLI}}`:
 - `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
 - `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no
   other reviewer will take a declined bundle
-- `context --task {{TASK}} --at <identity or command list>` for read-only surrounding text;
-  scenes a reviewer declined are left out
+- `context --task {{TASK}} --worker <name> --at <identity or command list>` for read-only
+  surrounding text; scenes a reviewer declined are left out unless your assigned bundle prints
+  them
 - `decide --task {{TASK}} ...` and `decisions --task {{TASK}}`
 - `rebuild-deep --task <earlier task>` when DazedTL reports that its QA rules changed after an
   earlier task's screen was complete: it reuses that screen's checked results in a new task

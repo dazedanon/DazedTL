@@ -733,7 +733,8 @@ Deep review starts while screening continues: once enough screened clusters are 
 The engine assigns, releases and times workers: `next` moves QA to its next stage once a stage is reviewed, hands a bundle whose worker has not been seen for twenty minutes, or three times a typical bundle, to the next idle worker, and `status` estimates the time left from the measured time per item and the workers seen in the last half hour.
 A reviewer that will not review an item declines it with a one-line reason, and the engine accepts the rest of its bundle and moves the declined items to a bundle of their own that only another reviewer can claim.
 They are set aside once a second reviewer declines them, or when the assistant reports no other reviewer, so content is never classified or excluded in advance.
-Set-aside lines stay out of deep review, corrections and the read-only context view, and findings report them once as not reviewed.
+Set-aside lines stay out of deep review and corrections, and findings report them once as not reviewed.
+The read-only context view leaves out every scene a reviewer declined, waiting or set aside, except for a worker that names itself and whose assigned bundle prints the scene, such as the reviewer that claimed it.
 Before screening, [lint](../backend/dazedtl/engine/util/rpgmaker_qa_lint.py) proposes exact fixes for known mechanical families: spacing after ♥, stray letters for the small っ, dakuten apostrophes on real words, list items merged onto one line, quoted titles that no longer match their title, duplicated labels and level-tag spacing.
 Screen lines show those fixes, so screening concentrates on meaning and voice, and each family's proposals are reviewed as a group in small items by scene.
 Accepted fixes become findings and also apply on top of a deep correction of the same line.

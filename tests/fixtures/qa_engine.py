@@ -273,8 +273,21 @@ for attempt in (
         assert "declined" in str(error), error
     else:
         raise AssertionError("A declined bundle was handed back or skipped.")
-# A second reviewer claims it by ID and declines too, which sets it aside.
+# A second reviewer claims it by ID, and only that reviewer reads the scene in
+# context, then declines too, which sets it aside.
 row = qa.next_bundle(task, "screen-b", waiting[0]["id"])
+FOREST = "Map001.json#/events/2/pages/0/list"
+assert "森の奥へ" in qa.context_view(task, FOREST + "/2", worker="screen-b")
+for attempt in (
+    lambda: qa.context_view(task, FOREST),
+    lambda: qa.context_view(task, FOREST, worker="screen-a"),
+):
+    try:
+        attempt()
+    except ValueError as error:
+        assert "declined" in str(error), error
+    else:
+        raise AssertionError("Another worker read a declined scene in context.")
 qa.accept_result(
     task,
     result_path(
@@ -298,10 +311,11 @@ assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 3}
 # deep review the stage instead of leaving screening current.
 qa.next_bundle(task, "deep-a")
 assert qa.status(task)["stage"] == "deep"
-# Deep review and the context view leave the declined scene out, even its
-# Japanese residue, which would otherwise force deep review.
+# Deep review and the context view leave the set-aside scene out, even its
+# Japanese residue, which would otherwise force deep review, and even for its
+# last reviewer.
 try:
-    qa.context_view(task, "Map001.json#/events/2/pages/0/list")
+    qa.context_view(task, FOREST, worker="screen-b")
 except ValueError as error:
     assert "declined" in str(error), error
 else:

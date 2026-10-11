@@ -2699,11 +2699,14 @@ def _context_text(value: Any) -> str:
     return "∅" if value is None else str(value).replace("\n", "⏎")
 
 
-def context_view(task_dir: str | Path, locator: str, radius: int = 12) -> str:
+def context_view(
+    task_dir: str | Path, locator: str, radius: int = 12, worker: str = ""
+) -> str:
     """Read-only game text around a locator, with Japanese and current English.
 
     The locator is an inventory identity or a command list such as
-    `Map001.json#/events/1/pages/0/list`. Scenes a reviewer declined stay out.
+    `Map001.json#/events/1/pages/0/list`. Scenes a reviewer declined stay out,
+    except for the worker whose assigned bundle prints them.
     """
     root, task, checkpoint = _load_task(task_dir)
     data_root = Path(task["data_root"]).resolve()
@@ -2725,8 +2728,13 @@ def context_view(task_dir: str | Path, locator: str, radius: int = 12) -> str:
     declined = _declined_scope(
         root, checkpoint, _read_json(root / "inventory.json"), waiting=True
     )
-    if scene in declined["context_scenes"]:
-        raise ValueError("A reviewer declined this scene, so it is left out of context.")
+    if scene in declined["context_scenes"] and scene not in _assigned_scenes(
+        checkpoint, worker
+    ):
+        raise ValueError(
+            "A reviewer declined this scene, so context shows it only to the worker "
+            "whose assigned bundle prints it, with --worker <name>."
+        )
     commands = _resolve_parts(document, parts[: list_index + 1])
     if list_index + 1 < len(parts):
         center = int(parts[list_index + 1])
@@ -3280,6 +3288,30 @@ def _declined_scope(
         "clusters": unreviewed,
         "identities": identities,
         "items": items,
+    }
+
+
+def _printed_scenes(bundle: dict[str, Any]) -> set[str]:
+    """The scenes a bundle prints whole: its scene items, with their copies, and
+    the scenes a deep bundle prints once."""
+    scenes = {scene["scene_id"] for scene in (bundle.get("scenes") or {}).values()}
+    for item in bundle["items"]:
+        if item.get("kind") == "scene":
+            scenes |= set(item.get("scene_copies") or [item["scene_id"]])
+    return scenes
+
+
+def _assigned_scenes(checkpoint: dict[str, Any], worker: str) -> set[str]:
+    """The scenes the worker's assigned bundles print, which its context may show
+    even after a reviewer declined them: the bundle already shows their text."""
+    if not worker:
+        return set()
+    return {
+        scene
+        for stage in REVIEW_STAGES
+        for row in checkpoint.get(stage, {}).get("bundles", [])
+        if row["status"] == "assigned" and row.get("assigned_to") == worker
+        for scene in _printed_scenes(_read_json(Path(row["path"])))
     }
 
 

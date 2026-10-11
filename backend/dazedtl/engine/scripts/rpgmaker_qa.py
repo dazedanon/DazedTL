@@ -75,6 +75,9 @@ def main() -> int:
     context.add_argument("--task", required=True, type=Path)
     context.add_argument("--at", required=True)
     context.add_argument("--radius", type=int, default=12)
+    context.add_argument(
+        "--worker", default="", help="Also show declined scenes your assigned bundle prints."
+    )
     accept = sub.add_parser("accept")
     accept.add_argument("--task", required=True, type=Path)
     accept.add_argument("--result", required=True, type=Path)
@@ -104,7 +107,7 @@ def main() -> int:
     elif args.command == "brief":
         print(rpgmaker_qa.brief(args.task, args.role))
     elif args.command == "context":
-        print(rpgmaker_qa.context_view(args.task, args.at, args.radius))
+        print(rpgmaker_qa.context_view(args.task, args.at, args.radius, args.worker))
     elif args.command == "rebuild-deep":
         task, state = rpgmaker_qa.rebuild_deep_from_screen(
             args.task, args.output_root
