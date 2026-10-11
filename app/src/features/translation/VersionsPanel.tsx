@@ -112,9 +112,11 @@ export function VersionsPanel({
       pending={action.busy && action.key === name}
       pendingText="Starting…"
       error={action.key === name ? action.error : ""}
+      // Only this update's own step reports beside its control, never the
+      // same step of an earlier update.
       job={
         !choosing || action.key === name
-          ? state.jobs.find((job) => job.action === name)
+          ? session.current.find((job) => job.action === name)
           : undefined
       }
       onClick={() => operation(name, args)}
