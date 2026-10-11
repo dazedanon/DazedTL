@@ -70,9 +70,3 @@ The same second run left defects that span a scene.
 Map010 event 120 page 2 narrates in the past tense until the climax and in the present for its last five boxes.
 Deep review could retense only the box its item named, which moved the switch one box later, so editorial withdrew that correction as no better than the text it replaced (QA-0050).
 Map013 event 19 page 2 had the same shape (QA-0093).
-
-## Order of work
-
-1. Quality and coverage: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-2. Cost: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
-3. Speed and presentation: done, described in [architecture](architecture.md#workflow-and-shared-presentation).
