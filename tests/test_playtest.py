@@ -1,4 +1,4 @@
-"""The release playtest: its static checks and the tour's in-game hooks."""
+"""The release playtest: its static checks, and how the tour's findings join them."""
 
 import unittest
 
@@ -10,6 +10,6 @@ checks = Probe("playtest_checks.py")
 
 
 class PlaytestTests(unittest.TestCase):
-    def test_static_checks_find_what_text_qa_cannot(self):
+    def test_checks_and_tour_find_what_text_qa_cannot(self):
         returncode, output = checks.result()
         self.assertEqual(returncode, 0, output)

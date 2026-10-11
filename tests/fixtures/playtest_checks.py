@@ -13,6 +13,7 @@ root, temporary = map(Path, sys.argv[1:])
 sys.path.insert(0, str(root / "backend/dazedtl/engine"))
 
 from util.playtest.checks import static_checks
+from util.playtest.run import merge, observations
 
 game = temporary / "game"
 data = game / "data"
@@ -248,4 +249,81 @@ assert texts["休んだ。"] == (
 ), texts
 glyph = found[("placeholder-glyph", "js/plugins/Dungeon.js", "Dungeon")]
 assert [row["reach"] for row in glyph["texts"]] == ["drawn"], glyph
+# What the tour saw joins the problem it confirms, or stands beside them.
+trap = next(
+    row["line"]
+    for row in found[("plugin-text", "js/plugins/Dungeon.js", "Dungeon")]["texts"]
+    if row["text"] == "罠にかかった！"
+)
+seen = {"stop": "menu", "scene": "Scene_Item", "map": 1, "capture": "002-overflow"}
+runtime = {
+    "stops": [
+        {"id": "title", "status": "done"},
+        {"id": "shop", "status": "failed", "note": "The shop did not open."},
+    ],
+    "errors": [
+        {
+            **seen,
+            "kind": "error",
+            "message": "TypeError: x is undefined",
+            "source": {"file": "js/plugins/Dungeon.js", "line": 9},
+        },
+        {**seen, "kind": "nwjs", "message": "require is not defined"},
+        {
+            **seen,
+            "stop": "screen Scene_Gallery",
+            "kind": "crash",
+            "message": "TypeError: y",
+        },
+    ],
+    "japanese": [
+        {
+            **seen,
+            "text": "罠にかかった！",
+            "source": {"file": "js/plugins/Dungeon.js", "line": trap},
+        },
+    ],
+    "overflow": [
+        {
+            **seen,
+            "window": "Window_Help",
+            "edge": "bottom",
+            "text": "Blocks one attack",
+            "data": {"file": "Items.json", "pointer": "/1/description"},
+        },
+        {
+            **seen,
+            "scene": "Scene_Gallery",
+            "window": "Window_Help",
+            "edge": "bottom",
+            "text": "A long caption",
+        },
+    ],
+    "scenes": [{"scene": "Scene_Title"}],
+    "complete": True,
+}
+report = merge(report, runtime, "data")
+problems = {
+    (row["check"], row["file"], row.get("pointer") or row.get("plugin") or ""): row
+    for row in report["problems"]
+}
+group = problems[("plugin-text", "js/plugins/Dungeon.js", "Dungeon")]
+assert group["seen"] == seen and [
+    row.get("seen") for row in group["texts"] if row["line"] == trap
+] == [seen], group
+help_rows = problems[("help-rows", "data/Items.json", "/1/description")]
+assert help_rows["seen"] == seen, help_rows
+gallery = [row for row in report["problems"] if row["check"] == "overflow"]
+assert [(row["fix"], row["window"]) for row in gallery] == [("game", "Window_Help")], (
+    gallery
+)
+assert problems[("runtime-error", "js/plugins/Dungeon.js", "")]["line"] == 9
+assert len(report["gaps"]) == 3, report["gaps"]
+assert "Scene_Gallery could not be opened on its own" in report["gaps"][1], report[
+    "gaps"
+]
+assert report["coverage"]["reached"] == 1, report["coverage"]
+observed = {row["identity"]: row for row in observations(report)}
+assert observed["Items.json#/1/description"]["categories"] == ["fit"], observed
+assert "Seen on Scene_Item" in observed["Items.json#/1/description"]["note"], observed
 print("ok")
