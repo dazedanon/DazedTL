@@ -33,6 +33,11 @@ def main() -> int:
     prepare.add_argument("--data", required=True, type=Path)
     prepare.add_argument("--focus", required=True, choices=sorted(FOCUSES))
     prepare.add_argument("--output-root", required=True, type=Path)
+    prepare.add_argument(
+        "--no-interface",
+        action="store_true",
+        help="Skip capturing the game's interface screens.",
+    )
 
     skip_declined = "Report declined bundles no other helper took as not reviewed."
     for name in ("status", "advance", "finalize"):
@@ -119,7 +124,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "prepare":
         task, state = rpgmaker_qa.prepare_task(
-            args.game_root, args.data, args.focus, args.output_root
+            args.game_root, args.data, args.focus, args.output_root,
+            interface=not args.no_interface,
         )
         _print({"task": str(task), "status": state})
     elif args.command == "status":

@@ -6,7 +6,7 @@ battler-name-source-fix
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
 helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 scene-correction family-sweep decision-log consistency-check editorial-stage regression-simulation
-app-publication-apply checkpoint-commit no-provider-api
+app-publication-apply checkpoint-commit no-provider-api interface-captures
 -->
 
 This one policy governs text QA: the task README and the copied handoff are made from it. DazedTL
@@ -140,6 +140,12 @@ that `prior_review`, and your review replaces it.
   message keeps a leading space. A `show-text-header` check means the Show Text header of the line's box
   likely shows the wrong speaker: settle it from the scene with a `source_fix`, or a `clean`
   review that says why the header is right.
+- An `interface-fit` check means the game drew this text with too little room on a screen
+  DazedTL captured while running a copy of the game: squeezed narrower than it needs, or cut off
+  at its window's edge. Open every capture the check names and look at the text there. When it is
+  cut off or hard to read, give a shorter `correction` with the same meaning, category `ui`; when
+  it reads in full, review it `clean` and say what the capture shows. Text the capture shows cut
+  off outside your items gets an observation.
 - `screen_evidence` keeps the screening reviewer's reason and `scenes` every scene used to
   reach it; an `observation` is the reason a reviewer gave for a line outside its own items,
   and the `observation` deep reason marks an item it escalated. A `clean` review of such an
@@ -198,7 +204,9 @@ Every proposal you neither reject nor decline becomes a finding.
 This is the last pass before corrections are applied. For each finding compare the source,
 current text, correction, evidence and nearby game text, and confirm publication-ready meaning,
 natural English, speaker voice, terminology and honorific policy, runtime controls, line breaks
-and fit; each target's `box` gives the width and rows it shows in. `accept` a correction that fixes a concrete defect, `revise` it with a smaller or more
+and fit; each target's `box` gives the width and rows it shows in. A correction of text the
+game drew with too little room comes with its screens captured again with the correction in
+place: open them, and `revise` one the game still squeezes or cuts off. `accept` a correction that fixes a concrete defect, `revise` it with a smaller or more
 natural `replacement` for the same defect, and `withdraw` it when the current and proposed
 wordings are equally valid. For `fluency`, `voice` and `wordplay`, confirm the `editorial_basis`
 independently. An item's `conflicts` name corrections that contradict each other, the

@@ -665,10 +665,31 @@ export type QaUntranslatedSource = {
   texts: QaUntranslatedText[];
 };
 
+/** Text the game squeezes or cuts off that QA holds no line of, such as a
+plugin's menu command. */
+export type QaInterfaceText = {
+  text: string;
+  /** The captured screen that shows it. */
+  title: string;
+};
+
+/** The game's interface screens QA captured while running a copy of it. */
+export type QaInterface = {
+  captured: number;
+  /** Lines sent to deep review because the game had too little room. */
+  squeezed?: number;
+  /** Squeezed or cut-off text QA can't correct. */
+  outside?: number;
+  /** Why no screen was captured. */
+  error?: string;
+};
+
 /** What QA could not cover, for the coverage sheet. */
 export type QaReport = {
   not_reviewed: QaReportLine[];
   not_translated: QaUntranslatedSource[];
+  interface_outside: QaInterfaceText[];
+  interface_error?: string;
 };
 
 export type TextQaOperation = {
@@ -709,6 +730,7 @@ export type QaState = {
   questions: QaQuestion[];
   coverage?: QaCoverage;
   not_translated?: QaNotTranslated;
+  interface?: QaInterface;
   activity?: QaActivity;
   rules_changed?: boolean;
   unreadable?: QaUnreadable;

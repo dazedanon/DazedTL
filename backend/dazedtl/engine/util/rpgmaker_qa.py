@@ -54,6 +54,7 @@ from util.game_settings import (
     normalize_wrap_widths,
 )
 from util.reference_games import reference_context
+from util import rpgmaker_screens
 from util.rpgmaker_rewrap import (
     DIALOGUE,
     FACE_DIALOGUE,
@@ -159,6 +160,8 @@ _ENGINE_SOURCES = (
     "rpgmaker_qa.py", "rpgmaker_qa_manifest.py", "rpgmaker_qa_lint.py",
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
     "rpgmaker_header_check.py", "rpgmaker_rewrap.py",
+    "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
+    "rpgmaker_screens/harness.js",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -712,7 +715,7 @@ def _engine_fingerprint() -> str:
     contract = {
         "policy": QA_POLICY_VERSION,
         "engine_source_sha256": _sha256(b"".join(
-            (Path(__file__).with_name(name)).read_bytes() for name in _ENGINE_SOURCES
+            (Path(__file__).parent / name).read_bytes() for name in _ENGINE_SOURCES
         )),
         "schemas": {
             "task": TASK_SCHEMA,
@@ -1550,6 +1553,228 @@ def _database_checks(
     )
 
 
+# Captures of the game's interface screens, and those taken again with a
+# finding's corrections in place, under the task's folder.
+INTERFACE_FOLDER = "interface"
+# The places one interface-fit check names before counting the rest.
+INTERFACE_PLACES_LISTED = 3
+# Control codes the game turns into colors, icons or values as it draws text.
+_DRAW_CODE_RE = re.compile(r"\\+[A-Za-z]+\[[^\]]*\]|\\+[A-Za-z{}|.!><^$]")
+_ENEMY_LETTER_RE = re.compile(r"\s?[A-ZＡ-Ｚ]$")
+# A capture's file name before its page number, and the screen that makes it.
+_CAPTURE_SCREENS = {
+    "title": "title", "menu": "menu", "items": "items", "skills": "skills",
+    "equip": "equipment", "status": "status", "shop": "shop",
+    "options": "options", "game-end": "options", "battle": "battles",
+    "choices": "choices",
+}
+
+
+def _shown_text(text: Any) -> str:
+    """Text as the game draws it, without the codes it turns into colors."""
+    return _DRAW_CODE_RE.sub("", str(text or "")).strip()
+
+
+def _capture_interface(data: Path, folder: Path) -> dict[str, Any]:
+    """Capture the game's interface screens into *folder*; how many, and why
+    none or some could not be."""
+    try:
+        listing = rpgmaker_screens.capture(data, folder)
+    except rpgmaker_screens.CaptureUnavailable as error:
+        return {"captured": 0, "error": str(error)}
+    return {
+        "captured": len(listing["screens"]),
+        **({"skipped": listing["skipped"]} if listing["skipped"] else {}),
+        **(
+            {"error": "; ".join(listing["errors"][:3])}
+            if not listing["screens"] and listing["errors"]
+            else {}
+        ),
+    }
+
+
+def _interface_places(
+    folder: Path, manifest: dict[str, Any]
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Where each cluster's text shows squeezed or cut off in the captures in
+    *folder*, and that text the inventory holds no line of, such as a
+    plugin's."""
+    listing_path = folder / "screens.json"
+    if not listing_path.is_file():
+        return {}, []
+    listing = _read_json(listing_path)
+    cluster_of = _cluster_by_identity(manifest)
+    by_text: dict[str, set[str]] = defaultdict(set)
+    for record in manifest["records"]:
+        shown = _shown_text(record["live"])
+        if shown and "\n" not in shown:
+            by_text[shown].add(cluster_of[record["identity"]])
+    places: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    outside: dict[str, dict[str, Any]] = {}
+    for screen in listing["screens"]:
+        for label in screen.get("labels") or []:
+            if not (label.get("squeezed") or label.get("clipped")):
+                continue
+            place = {
+                "title": screen["title"],
+                "capture": str(folder / screen["file"]),
+                **{key: label[key] for key in ("squeezed", "clipped") if key in label},
+            }
+            # A battle names repeated enemies with a letter, such as "Slime Ａ".
+            clusters = by_text.get(_shown_text(label["text"])) or by_text.get(
+                _ENEMY_LETTER_RE.sub("", _shown_text(label["text"]))
+            )
+            if not clusters:
+                outside.setdefault(label["text"], {"text": label["text"], **place})
+            for cluster_id in sorted(clusters or ()):
+                if place["capture"] not in {
+                    earlier["capture"] for earlier in places[cluster_id]
+                }:
+                    places[cluster_id].append(place)
+    return dict(places), list(outside.values())
+
+
+def _place_text(place: dict[str, Any]) -> str:
+    how = (
+        "cut off" if place.get("clipped")
+        else f"squeezed to {round(place['squeezed'] * 100)}% of the width it needs"
+    )
+    return f"{place['title']}: {how}, {place['capture']}"
+
+
+def _interface_checks(
+    folder: Path, manifest: dict[str, Any]
+) -> dict[str, list[dict[str, str]]]:
+    """Text the game squeezes or cuts off on a captured screen, by cluster,
+    naming the captures that show it."""
+    places, _outside = _interface_places(folder, manifest)
+    checked = {}
+    for cluster_id, found in places.items():
+        listed = "; ".join(_place_text(place) for place in found[:INTERFACE_PLACES_LISTED])
+        more = len(found) - INTERFACE_PLACES_LISTED
+        checked[cluster_id] = [{
+            "check": "interface-fit",
+            "note": "The game draws this text with too little room. "
+            + listed + (f"; and {more} more" if more > 0 else ""),
+        }]
+    return checked
+
+
+def _interface_after(
+    root: Path,
+    task: dict[str, Any],
+    manifest: dict[str, Any],
+    findings: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Captures of the screens that squeezed or cut off a finding's text, taken
+    again with the corrections in place, by finding."""
+    folder = root / INTERFACE_FOLDER
+    places, _outside = _interface_places(folder, manifest)
+    if not places:
+        return {}
+    records, _clusters = _record_maps(manifest)
+    cluster_of = _cluster_by_identity(manifest)
+    data_root = Path(task["data_root"])
+    shown_on: dict[str, list[dict[str, Any]]] = {}
+    documents: dict[str, Any] = {}
+    choices: dict[str, dict[str, Any]] = {}
+    for finding in findings:
+        if finding.get("kind") == "show-text":
+            continue
+        for change in _changes(finding):
+            touched = [
+                identity for identity in change["identities"]
+                if cluster_of.get(identity) in places
+            ]
+            if not touched:
+                continue
+            shown_on[finding["id"]] = places[cluster_of[touched[0]]]
+            for identity in change["identities"]:
+                record = records[identity]
+                if record["file"] not in documents:
+                    documents[record["file"]] = json.loads(
+                        (data_root / record["file"]).read_text(encoding="utf-8-sig")
+                    )
+                operation = {
+                    "identity": identity,
+                    "live_pointers": record["live_pointers"],
+                    "live_transform": record["live_transform"],
+                    "expected": record["live"],
+                    "replacement": change["correction"],
+                }
+                try:
+                    for pointer, value in _operation_writes(
+                        documents[record["file"]], operation
+                    ):
+                        _set_pointer(documents[record["file"]], pointer, value)
+                except ValueError:
+                    continue
+                if record.get("event_code") == 102:
+                    command = record["live_pointers"][0].split("/parameters/")[0]
+                    choices[f"{record['file']}#{command}"] = {
+                        "file": record["file"], "command": command,
+                    }
+    if not shown_on:
+        return {}
+    rounds = sorted(folder.glob("after-*"))
+    out = folder / f"after-{len(rounds) + 1}"
+    overlay = {}
+    web = rpgmaker_screens.web_root(data_root)
+    for name, document in documents.items():
+        path = out / "data" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+        overlay[(data_root.resolve() / name).relative_to(web).as_posix()] = path
+    choice_sets = []
+    for key, where in choices.items():
+        params = resolve_pointer(documents[where["file"]], where["command"] + "/parameters")
+        choice_sets.append({
+            "key": key,
+            "choices": params[0],
+            **{
+                name: params[index]
+                for index, name in enumerate(
+                    ("cancelType", "defaultType", "positionType", "background"), start=1
+                )
+                if index < len(params)
+            },
+        })
+    screens = sorted({
+        _CAPTURE_SCREENS.get(Path(place["capture"]).stem.split("-")[0], "")
+        for found in shown_on.values() for place in found
+    } - {""})
+    try:
+        listing = rpgmaker_screens.capture(
+            data_root, out, overlay=overlay, screens=screens,
+            choices=choice_sets, all_choices=True,
+        )
+    except rpgmaker_screens.CaptureUnavailable as error:
+        return {finding_id: [{"error": str(error)}] for finding_id in shown_on}
+    after: dict[str, list[dict[str, Any]]] = {}
+    for finding in findings:
+        if finding["id"] not in shown_on:
+            continue
+        texts = {_shown_text(change["correction"]) for change in _changes(finding)}
+        titles = {place["title"] for place in shown_on[finding["id"]]}
+        found = []
+        for screen in listing["screens"]:
+            labels = [
+                label for label in screen.get("labels") or []
+                if _shown_text(label["text"]) in texts
+            ]
+            if labels and (screen["title"] in titles or screen["name"].startswith("choices")):
+                worst = min(labels, key=lambda label: label.get("squeezed", 1))
+                found.append({
+                    "title": screen["title"],
+                    "capture": str(out / screen["file"]),
+                    **{key: worst[key] for key in ("squeezed", "clipped") if key in worst},
+                })
+        after[finding["id"]] = found or [{
+            "error": "The corrected text did not show on the screens captured again.",
+        }]
+    return after
+
+
 def _header_flags(data: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     """The header check's likely Show Text slips, each beside the first line of
     its box the inventory holds, or none when the box was never translated."""
@@ -2220,11 +2445,14 @@ def prepare_task(
     screen_char_budget: int = DEFAULT_SCREEN_CHAR_BUDGET,
     screen_item_limit: int = DEFAULT_SCREEN_ITEM_LIMIT,
     fit: dict[str, Any] | None = None,
+    interface: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     """Create or reuse one immutable QA task and its exhaustive screen bundles.
 
     *fit* holds the Line widths and line width check settings the task fits
     corrections to; a task already prepared keeps the ones it was made with.
+    With *interface*, the game's interface screens are captured, and text the
+    game squeezes or cuts off on them goes to deep review with its captures.
     """
     game = Path(game_root).expanduser().resolve()
     data = Path(data_root).expanduser().resolve()
@@ -2278,6 +2506,14 @@ def prepare_task(
                 _merge_candidate(
                     forced_candidates, cluster_id, [entry["check"] for entry in failed]
                 )
+            captured = (
+                _capture_interface(data, staging / INTERFACE_FOLDER) if interface else None
+            )
+            if captured is not None:
+                places, outside = _interface_places(staging / INTERFACE_FOLDER, manifest)
+                for cluster_id in places:
+                    _merge_candidate(forced_candidates, cluster_id, ["interface-fit"])
+                captured |= {"squeezed": len(places), "outside": len(outside)}
             # A likely slip in a line's Show Text header goes to deep review,
             # where a reviewer fixes the header or says why it is right.
             headers = _header_flags(data, manifest)
@@ -2339,6 +2575,7 @@ def prepare_task(
                 "engine_fingerprint": engine_fingerprint,
                 "screen_configuration": screen_configuration,
                 "layout": layout,
+                **({"interface": captured} if captured is not None else {}),
                 "manifest_sha256": manifest["content_sha256"],
                 "context_sha256": context["content_sha256"],
                 "screen_index_sha256": screen_index_document["content_sha256"],
@@ -2561,6 +2798,7 @@ def status(task_dir: str | Path) -> dict[str, Any]:
             "unresolved": task["counts"]["unresolved"],
         },
         "not_translated": _not_translated(task),
+        **({"interface": task["interface"]} if task.get("interface") else {}),
         "screen": {
             "accepted": screen["accepted_items"],
             "total": screen["total_items"],
@@ -4290,6 +4528,13 @@ def _render_editorial(item: dict) -> list[str]:
         ]
     for conflict in item.get("conflicts") or []:
         out.append(f"  CONFLICT ({conflict['kind']}): " + conflict["message"])
+    for place in item.get("after") or []:
+        if "error" in place:
+            out.append("  corrected screen: " + place["error"])
+        elif place.get("clipped") or place.get("squeezed"):
+            out.append("  corrected screen, still too long: " + _place_text(place))
+        else:
+            out.append(f"  corrected screen, fits: {place['title']}: {place['capture']}")
     if not scene:
         return out + _render_commands(item.get("nearby_commands"), "    ")
     # The whole scene, each changed line marked with its correction.
@@ -5090,6 +5335,8 @@ def _deep_items(
         by_source[cluster["source"]].append(cluster)
     data_root = Path(task["data_root"])
     failed_checks = _database_checks(manifest, context, data_root)
+    for cluster_id, found in _interface_checks(root / INTERFACE_FOLDER, manifest).items():
+        failed_checks[cluster_id] = [*failed_checks.get(cluster_id, []), *found]
     document_cache: dict[str, Any] = {}
     candidate_reasons = basis["candidates"]
     screen_evidence, screen_scenes = basis["evidence"], basis["scenes"]
@@ -6160,11 +6407,17 @@ def _editorial_items(
             for item in _read_json(Path(row["path"]))["items"]:
                 nearby[item["id"]] = item.get("nearby_commands") or []
     cache: dict[str, Any] = {}
+    # Text the game had too little room for, shown again corrected.
+    after = _interface_after(root, task, manifest, [
+        finding for finding in findings
+        if finding["id"] in conflicts or _needs_editorial(finding)
+    ])
     items = []
     for finding in findings:
         if finding["id"] not in conflicts and not _needs_editorial(finding):
             continue
         judgment = finding["category"] in EDITORIAL_JUDGMENT_CATEGORIES
+        corrected = {"after": after[finding["id"]]} if finding["id"] in after else {}
         if finding.get("kind") == "scene":
             items.append({
                 "kind": "editorial",
@@ -6207,6 +6460,7 @@ def _editorial_items(
                     ),
                 } for record in scenes[finding["scene_id"]]],
                 **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
+                **corrected,
                 "authors": sorted(set(finding.get("authors") or []) - {""}) if judgment else [],
             })
             continue
@@ -6235,6 +6489,7 @@ def _editorial_items(
                 cache,
             ),
             **({"conflicts": conflicts[finding["id"]]} if finding["id"] in conflicts else {}),
+            **corrected,
             # The authors of a judgment correction cannot confirm it.
             "authors": sorted(set(finding.get("authors") or []) - {""}) if judgment else [],
         })

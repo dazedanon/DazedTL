@@ -2,6 +2,7 @@
 
 import type {
   QaFinding,
+  QaInterface,
   QaNotTranslated,
   QaState,
   QaUntranslatedSource,
@@ -191,6 +192,17 @@ export function qaNotTranslated({ total, may_show }: QaNotTranslated) {
   return may_show
     ? `${count} (${may_show.toLocaleString()} may show to players)`
     : `${count} (players don't see them now)`;
+}
+
+/**
+ * What the game's captured screens leave to the user, as the coverage line
+ * counts it: no capture, or squeezed text QA can't correct.
+ */
+export function qaInterface(found: QaInterface | undefined) {
+  if (!found) return "";
+  if (found.error) return "Interface screens not captured";
+  if (!found.outside) return "";
+  return `${found.outside.toLocaleString()} squeezed ${found.outside === 1 ? "label" : "labels"} QA can't correct`;
 }
 
 /** Whether players may see a source's text: no evidence rules it out. */

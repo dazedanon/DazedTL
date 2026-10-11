@@ -26,6 +26,7 @@ import {
   qaActivity,
   qaCorrections,
   qaGroups,
+  qaInterface,
   qaMayShow,
   qaNotTranslated,
   qaOrigin,
@@ -88,6 +89,7 @@ export function TextQaWork({
   const phase = qaPhase(qa);
   const coverage = qa.coverage;
   const notTranslated = qa.not_translated;
+  const interfaceNote = qaInterface(qa.interface);
   // Once applied, only a proposal the user chose went into the game.
   const questions = qa.applied
     ? qa.questions.filter((row) => row.choice === "use")
@@ -156,7 +158,7 @@ export function TextQaWork({
             )}
             <p>
               {phase !== "outdated" &&
-              (coverage?.not_reviewed || notTranslated) ? (
+              (coverage?.not_reviewed || notTranslated || interfaceNote) ? (
                 <>
                   {[
                     // The summary that describes finished QA counts them.
@@ -166,6 +168,7 @@ export function TextQaWork({
                     coverage?.not_reviewed &&
                       `${coverage.not_reviewed.toLocaleString()} not reviewed (declined by the reviewer)`,
                     notTranslated && qaNotTranslated(notTranslated),
+                    interfaceNote,
                   ]
                     .filter(Boolean)
                     .join(" · ")}{" "}
@@ -623,7 +626,7 @@ export function QaCoverage({
     <Modal label="What QA did not cover" onDismiss={onClose} size="lg">
       <DialogHeader
         title="What QA did not cover"
-        description="Lines no reviewer judged, and Japanese that was never translated."
+        description="Lines no reviewer judged, Japanese that was never translated, and screen text QA can't correct."
         onClose={onClose}
       />
       <DialogBody className="text-qa-coverage">
@@ -699,6 +702,36 @@ export function QaCoverage({
                     />
                   ))}
                 </ul>
+              </section>
+            )}
+            {report.interface_error && (
+              <section aria-label="Interface screens">
+                <h3>Interface screens</h3>
+                <p className="muted">
+                  {`DazedTL couldn't run the game to capture its screens, so QA reviewed its text without them. ${report.interface_error}`}
+                </p>
+              </section>
+            )}
+            {report.interface_outside.length > 0 && (
+              <section aria-label="Too long for the screen">
+                <h3>
+                  Too long for the screen ·{" "}
+                  {report.interface_outside.length.toLocaleString()}
+                </h3>
+                <p className="muted">
+                  The game squeezes or cuts off this text, but it comes from
+                  outside the data QA corrects, such as a plugin's menu. Shorten
+                  it in its own task, such as Plugin files.
+                </p>
+                <ActionList>
+                  {report.interface_outside.map((row) => (
+                    <ActionRow
+                      key={row.text + row.title}
+                      title={row.text}
+                      description={row.title}
+                    />
+                  ))}
+                </ActionList>
               </section>
             )}
           </>

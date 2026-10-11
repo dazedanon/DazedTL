@@ -14,6 +14,7 @@ from tests.probe import Probe
 probe = Probe("qa_engine.py")
 declines = Probe("qa_declines.py")
 scenes = Probe("qa_scene.py")
+interface = Probe("qa_interface.py")
 manifest = engine_module("util/rpgmaker_qa_manifest.py")
 verify = engine_module("util/rpgmaker_qa_verify.py")
 lint = engine_module("util/rpgmaker_qa_lint.py")
@@ -132,6 +133,10 @@ class QAEngineTests(unittest.TestCase):
 
     def test_scene_corrections_apply_and_undo_as_one(self):
         returncode, output = scenes.result()
+        self.assertEqual(returncode, 0, output)
+
+    def test_squeezed_screen_text_is_reviewed_on_its_captures(self):
+        returncode, output = interface.result()
         self.assertEqual(returncode, 0, output)
 
     def test_numbers_beside_stat_letters_count(self):

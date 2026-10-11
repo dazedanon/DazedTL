@@ -388,11 +388,34 @@ class QaUntranslatedSource(TypedDict):
     texts: Annotated[list[QaUntranslatedText], "Its first texts."]
 
 
+class QaInterfaceText(TypedDict):
+    """Text the game squeezes or cuts off that QA holds no line of, such as a
+    plugin's menu command."""
+
+    text: str
+    title: Annotated[str, "The captured screen that shows it."]
+
+
+class QaInterface(TypedDict):
+    """The game's interface screens QA captured while running a copy of it."""
+
+    captured: int
+    squeezed: NotRequired[
+        Annotated[
+            int, "Lines sent to deep review because the game had too little room."
+        ]
+    ]
+    outside: NotRequired[Annotated[int, "Squeezed or cut-off text QA can't correct."]]
+    error: NotRequired[Annotated[str, "Why no screen was captured."]]
+
+
 class QaReport(TypedDict):
     """What QA could not cover, for the coverage sheet."""
 
     not_reviewed: list[QaReportLine]
     not_translated: list[QaUntranslatedSource]
+    interface_outside: list[QaInterfaceText]
+    interface_error: NotRequired[str]
 
 
 class TextQaOperation(TypedDict):
@@ -430,6 +453,7 @@ class QaState(TypedDict):
     questions: list[QaQuestion]
     coverage: NotRequired[QaCoverage]
     not_translated: NotRequired[QaNotTranslated]
+    interface: NotRequired[QaInterface]
     activity: NotRequired[QaActivity]
     # An update changed QA's rules after this task was prepared: it is
     # outdated, and its applied corrections can no longer be undone here.

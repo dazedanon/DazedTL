@@ -358,6 +358,17 @@ def qa_state(plan):
         ),
         # Known once the task is prepared, before any reviewer starts.
         **({"not_translated": untranslated} if untranslated.get("total") else {}),
+        **(
+            {
+                "interface": {
+                    key: interface[key]
+                    for key in ("captured", "squeezed", "outside", "error")
+                    if key in interface
+                }
+            }
+            if (interface := engine_status.get("interface"))
+            else {}
+        ),
         **({"activity": activity} if activity else {}),
         **({"rules_changed": True} if rules_changed else {}),
         "message": "Saved results match current project text."
@@ -370,7 +381,8 @@ def qa_state(plan):
 
 def qa_report(plan):
     """What QA could not cover: lines no reviewer judged, with whether the user
-    reviewed them, and Japanese never translated, by file and plugin."""
+    reviewed them, Japanese never translated, by file and plugin, and text the
+    game squeezes or cuts off that QA holds no line of."""
     from util import rpgmaker_qa as qa
     from util.rpgmaker_qa_preflight import read_sources
 
@@ -384,12 +396,20 @@ def qa_report(plan):
     reviewed = set(
         _task_record(plan["folder"], "text-qa-reviewed.json", str(root)) or []
     )
+    _places, outside = qa._interface_places(
+        root / qa.INTERFACE_FOLDER, qa._read_json(root / "inventory.json")
+    )
+    interface = state.get("interface") or {}
     return {
         "not_reviewed": [
             {**row, "reviewed": row["identity"] in reviewed}
             for row in document.get("not_reviewed", [])
         ],
         "not_translated": read_sources(qa._read_json(root / "preflight.json")),
+        "interface_outside": [
+            {"text": row["text"], "title": row["title"]} for row in outside
+        ],
+        **({"interface_error": interface["error"]} if "error" in interface else {}),
     }
 
 
@@ -407,6 +427,7 @@ def run_qa(plan, log):
             plan["options"]["focus"],
             folder / "text-qa",
             fit=plan["options"].get("fit"),
+            interface=True,
         )
         manifest = qa.build_manifest(plan["project"]["data"], plan["options"]["focus"])
         descriptor = read_json(task / "task.json")
