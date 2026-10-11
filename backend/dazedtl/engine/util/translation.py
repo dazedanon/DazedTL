@@ -4546,8 +4546,23 @@ def _context_block(history, kind):
     return _context_heading(kind) + "\n```\n" + "\n".join(items) + "\n```"
 
 
-def _request_context_blocks(history, context_kind, request_instructions=None):
-    """Build separate instruction and source blocks for a provider request."""
+def _delivered_context_block(delivered_context):
+    """Label the English already delivered for the preceding source lines."""
+    items = _context_items(delivered_context)
+    if not items:
+        return ""
+    return (
+        "Preceding English Translation (already delivered):\n"
+        "The English for the same preceding lines, in order. Where the scene "
+        "continues, keep its narration tense, forms of address, and voice; do "
+        "not repeat or revise it. The Japanese source and the glossary stay "
+        "authoritative.\n```\n" + "\n".join(items) + "\n```"
+    )
+
+
+def _request_context_blocks(history, context_kind, request_instructions=None,
+                            delivered_context=None):
+    """Build separate instruction, source and delivered-English blocks."""
     source_items, instruction_items = _request_context_parts(
         history, context_kind, request_instructions
     )
@@ -4556,6 +4571,9 @@ def _request_context_blocks(history, context_kind, request_instructions=None):
         blocks.append(_context_block(instruction_items, CONTEXT_INSTRUCTIONS))
     if source_items:
         blocks.append(_context_block(source_items, CONTEXT_SOURCE))
+        delivered = _delivered_context_block(delivered_context)
+        if delivered:
+            blocks.append(delivered)
     return blocks
 
 
@@ -4575,12 +4593,12 @@ def _provider_system_blocks(system, vocab_text=""):
 
 
 def _provider_user_messages(user, history, context_kind,
-                            request_instructions=None):
+                            request_instructions=None, delivered_context=None):
     """Return the identical conversational suffix used by every provider."""
     messages = [
         {"role": "user", "content": block}
         for block in _request_context_blocks(
-            history, context_kind, request_instructions
+            history, context_kind, request_instructions, delivered_context
         )
     ]
     messages.append({"role": "user", "content": f"```\n{user}\n```"})
@@ -4590,7 +4608,8 @@ def _provider_user_messages(user, history, context_kind,
 @extensions.point
 def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
                        vocab_text="", context_kind=CONTEXT_SOURCE,
-                       request_instructions=None, cache_ttl="5m"):
+                       request_instructions=None, cache_ttl="5m",
+                       delivered_context=None):
     """Build the native Anthropic request kwargs.
 
     Shared by live calls (translateText) and batch collection (translateAI) so
@@ -4604,7 +4623,7 @@ def buildClaudeRequest(system, user, history, formatType, model, numLines=None,
         ant_system[0]["cache_control"] = {"type": "ephemeral", "ttl": ttl}
 
     native_msgs = _provider_user_messages(
-        user, history, context_kind, request_instructions
+        user, history, context_kind, request_instructions, delivered_context
     )
 
     ant_kwargs = dict(
@@ -4634,7 +4653,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
                        numLines=None, vocab_text="", api_provider=None,
                        context_kind=CONTEXT_SOURCE,
                        request_instructions=None, use_cache_routing=False,
-                       api_url=None):
+                       api_url=None, delivered_context=None):
     """Build OpenAI-compatible kwargs shared by live and batch requests."""
     if not system or not str(system).strip():
         raise ValueError("System content cannot be empty")
@@ -4662,7 +4681,7 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 
     messages = [{"role": "system", "content": system_content}]
     messages.extend(_provider_user_messages(
-        user, history, context_kind, request_instructions
+        user, history, context_kind, request_instructions, delivered_context
     ))
 
     params = {"model": model, "messages": messages}
@@ -4746,11 +4765,12 @@ def buildOpenAIRequest(system, user, history, penalty, formatType, model,
 @extensions.point
 def translateText(system, user, history, penalty, formatType, model, numLines=None,
                   vocab_text="", context_kind=CONTEXT_SOURCE,
-                  request_instructions=None):
+                  request_instructions=None, delivered_context=None):
     """Send translation request to the selected API.
 
     system:     Static system prompt (data/skills/system.md). Cached by Claude.
     vocab_text: Per-batch vocabulary (dynamic, never cached to avoid cache busting).
+    delivered_context: English already delivered for the source context lines.
     """
     # Ensure system content is not empty
     if not system or not str(system).strip():
@@ -4792,7 +4812,7 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
     # Typed request context. The canonical builders below replace this list,
     # but keeping the preliminary shape correct protects provider fallbacks.
     for context_block in _request_context_blocks(
-        history, context_kind, request_instructions
+        history, context_kind, request_instructions, delivered_context
     ):
         msg.append({"role": "user", "content": context_block})
 
@@ -4890,18 +4910,20 @@ def translateText(system, user, history, penalty, formatType, model, numLines=No
             context_kind=context_kind,
             request_instructions=request_instructions,
             use_cache_routing=True,
+            delivered_context=delivered_context,
         )
         responseFormat = params.get("response_format", {"type": "text"})
 
     # Use native Anthropic SDK — the OpenAI compat endpoint strips cache_control
     # and never returns cache_read/creation_input_tokens.
     if _is_claude:
-        # Built by the shared builder so live and batch requests are
-        # byte-identical and share the same prompt cache.
+        # Built by the shared builder so live and batch requests share one
+        # layout and the same prompt cache; only live adds delivered English.
         ant_kwargs = buildClaudeRequest(
             system, user, history, formatType, model, numLines,
             vocab_text=vocab_text, context_kind=context_kind,
             request_instructions=request_instructions,
+            delivered_context=delivered_context,
         )
 
         from util.batch_providers import create_anthropic_message
@@ -5500,9 +5522,15 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
     source_batches = [
         list(item) if isinstance(item, list) else item for item in tList
     ]
+    # Live chunks also see the English delivered for those same source lines,
+    # so a scene split across chunks keeps its narration tense and address.
+    # Provider batches build every request before any result exists. The
+    # English stays out of cache identity: it derives from the keyed source.
+    delivered_batches = {}
 
     for index, tItem in enumerate(tList):
         request_history = initial_source
+        delivered_context = None
         if isinstance(tItem, list):
             if index > 0:
                 previous_source = source_batches[index - 1]
@@ -5511,6 +5539,14 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     if isinstance(previous_source, list)
                     else previous_source
                 )
+                previous_delivered = delivered_batches.get(index - 1)
+                if (
+                    not batch_phase
+                    and isinstance(previous_source, list)
+                    and isinstance(previous_delivered, list)
+                    and len(previous_delivered) == len(previous_source)
+                ):
+                    delivered_context = previous_delivered[-config.maxHistory:]
         request_context = _typed_request_context(
             request_history, persistent_instructions
         )
@@ -5738,6 +5774,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                         tList[index] = expanded_cached
                     else:
                         tList[index] = cached_result
+                    delivered_batches[index] = tList[index]
                 else:
                     tList[index] = cached_result
 
@@ -5926,6 +5963,7 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                         vocab_text=vocab_text,
                         context_kind=CONTEXT_SOURCE,
                         request_instructions=persistent_instructions,
+                        delivered_context=delivered_context,
                     )
                 except Exception as api_err:
                     err_msg = f"[API_ERROR] {api_err}"
@@ -6271,10 +6309,9 @@ def translateAI(text, history, config, filename=None, pbar=None, lock=None,
                     request_context=request_context,
                 )
 
+            tList[index] = final_translations
             if isinstance(tItem, list):
-                tList[index] = final_translations
-            else:
-                tList[index] = final_translations
+                delivered_batches[index] = final_translations
 
             if lock and pbar is not None:
                 with lock:

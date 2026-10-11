@@ -233,7 +233,7 @@ Naive substring matching floods the prompt with irrelevant approved terms that c
 - When the payload is JSON, reduce it to its string **values** before matching (strip the ```json fence, `json.loads`, collect strings) so structural keys like `Line1` never trigger a hit.
 - Parse rows with `^(.+?)\s*\(([^()]*)\)` capturing only the FIRST paren group, so a rich row like `サンク (Sank) - Male; protagonist...` still keys on `Sank`. Fall back to `^(.+?)\s+[–-]\s+(.+)$`, then to a bare line.
 
-### The user turn is two labelled, separately fenced blocks
+### The user turn is labelled, separately fenced blocks
 
 ```
 Request Instructions:
@@ -245,11 +245,16 @@ Use these lines only to understand the scene. Do not copy Japanese spellings fro
 or treat them as approved terminology; the glossary is authoritative.
 ```
 
-**Rolling context is the previous chunk's SOURCE, never prior translations.**
+**Rolling context is the previous chunk's SOURCE; prior translations never replace it.**
 Live translations and fetched batch results overwrite the working list in place, so `previous_chunk[-maxHistory:]` read from the live list feeds chunk N+1 the ENGLISH output of chunk N.
 Snapshot before any chunk is mutated (`source_batches = [list(item) for item in tList]`) and slice history from the snapshot.
-Feeding back your own output compounds drift and lets one early mistranslated name propagate through a whole file.
+Feeding back your own output in place of the source compounds drift and lets one early mistranslated name propagate through a whole file.
 The same rule covers attached constructs: pass the ORIGINAL Japanese question as context for its choices, never the translation you produced a moment earlier, or one bad rendering compounds into five.
+
+A live run may add a third block after the source, `Preceding English Translation (already delivered)`, holding the English for those same lines.
+It carries narration tense and forms of address across a chunk boundary, which source alone cannot: Japanese narration mixes past and non-past freely, so chunk N+1 otherwise picks its own tense.
+Label it as subordinate to the source and glossary, take it only from chunks that passed validation, and keep it out of the cache key, since it derives from the keyed source.
+Provider batches cannot carry it because every request is built before any result exists.
 
 Closing the source block with the demotion sentence is mandatory.
 Without it the model lifts untranslated kanji straight out of the scene context into its output, which is the classic "half the line came back in Japanese" failure.

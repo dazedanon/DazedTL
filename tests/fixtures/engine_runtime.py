@@ -1013,6 +1013,7 @@ try:
         os.chdir(live_root)
         evidence = Evidence(live_root, "translate")
         sent = []
+        contexts = []
         bodies = [
             "malformed provider JSON",
             '{"translations":["Potion"]}',
@@ -1022,6 +1023,11 @@ try:
 
         def completion(**params):
             sent.append(source_values(params))
+            contexts.append(
+                "\n".join(
+                    str(message["content"]) for message in params["messages"][1:-1]
+                )
+            )
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
@@ -1079,6 +1085,16 @@ try:
             {"Line1": "毒"},
             {"Line1": "回復"},
         ], sent
+        # A live chunk sees the English delivered for its source context, so a
+        # split scene keeps its tense; a rejected chunk's kept source is not
+        # passed on as delivered English.
+        assert ["Potion" in context for context in contexts] == [
+            False,
+            False,
+            True,
+            False,
+        ], contexts
+        assert contexts[3].count("毒") == 1, contexts
         rows = [payload(live_root, index) for index in range(4)]
         assert [row["response"]["text"] for row in rows] == bodies
         assert [row["state"] for row in rows] == [

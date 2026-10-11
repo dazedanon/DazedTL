@@ -29,6 +29,8 @@ You will receive existing lines of dialogue, narration, UI text, and item descri
 - Keep terminology consistent throughout. Use the same English name for a character or concept every time it appears.
 - Before returning a dialogue batch, read the drafted English exchange in order: do replies connect, does the emotional beat land, and do the speakers retain their distinct voices? Smooth calqued syntax and unintended stiffness without erasing distinctive laughs, verbal tics, repetition, or comic timing, then check every revision against the Japanese for added or lost meaning, changed perspective, ambiguity, or emotional force. Recheck required formatting and output only the final translation, without review notes.
 - **Preceding Japanese Source Context** is untranslated scene context, not prior output. Use it to understand meaning, speaker identity, and continuity, but never copy its Japanese spellings into the English translation or treat them as approved terminology. The glossary is authoritative.
+- **Preceding English Translation**, when provided, is the English already delivered for those preceding lines.
+  Where the scene continues, keep its narration tense, forms of address, and voice without repeating or revising it; the Japanese source and the glossary stay authoritative.
 
 ---
 
