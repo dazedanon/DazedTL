@@ -41,11 +41,14 @@ shutil.copytree(fixture, game)
 format_json_files(game / "data")
 setup_git(LenProject(game), version="1.0", current_is_untranslated=True)
 map001 = game / "data/Map001.json"
+# LF, as the engine and the formatter write data: a Windows text write would
+# make every line a translation edit, and the patch would replace them all.
 map001.write_text(
     map001.read_text(encoding="utf-8").replace(
         "おお、ミカよ。よく来てくれた。", TRANSLATED
     ),
     encoding="utf-8",
+    newline="\n",
 )
 subprocess.run(
     [
@@ -162,7 +165,7 @@ page.insert(1, {"code": 401, "indent": 0, "parameters": ["今日はいい天気�
 later = temporary / "later/data"
 later.mkdir(parents=True)
 (later / "Map001.json").write_text(
-    json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+    json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8", newline="\n"
 )
 preview = preview_official_update(game, later.parent, "1.02", patch_overlay=True)
 change = next(
