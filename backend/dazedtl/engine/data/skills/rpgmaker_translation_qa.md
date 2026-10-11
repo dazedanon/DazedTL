@@ -3,7 +3,7 @@
 <!-- qa-contract:rpgmaker-qa-v13
 single-policy role-briefs app-owned-inventory immutable-review-bundles
 scene-affine-screen sampled-screen-checks lint-group-review declined-disposition
-helper-scoped-declines evidence-preserving-deep
+helper-scoped-declines unit-declines coordinator-declines evidence-preserving-deep
 family-sweep decision-log consistency-check editorial-stage regression-simulation
 app-publication-apply checkpoint-commit no-provider-api
 -->
@@ -22,6 +22,7 @@ do not call a model-provider API.
   If you will not review an item, decline it with a one-line reason that does not repeat game text; never skip, soften or shorten it.
   Nothing is classified or excluded in advance: declining is the only way an item goes unreviewed, and DazedTL offers it to a reviewer on another AI helper before reporting it as not reviewed.
   Workers on one helper share its boundaries, so an item one of them declined never goes to another of them.
+  Decline a single lint proposal, sweep candidate or motif variant by its own ID and review the rest of its family; never reject a proposal, or call a joke preserved, on lines you did not read.
 - Never leave a concrete defect you notice outside your own items in prose alone, whether in
   `nearby_commands`, `context` output, another scene or after your result was accepted. Add an
   observation to that result or your next one, naming the line and a short concrete reason.
@@ -51,7 +52,7 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
 1. Use two to four reviewers when the helper can run parallel workers, each with a unique name.
    Give each the brief for its role: `{{CLI}} brief --task {{TASK}} --role <screen|deep|group|editorial>`.
    One worker may take every role in turn, except that a check never goes to the worker that screened its lines, and an editorial bundle never goes to a worker that wrote one of its judgment corrections.
-   A worker runs on your helper unless it names another, such as a different AI helper or model, with `--helper <name>` on its first `next`.
+   A worker runs on your helper unless it names another, such as a different AI helper or model, with `--helper <name>` on its first `next` or `decline`.
 2. Workers claim bundles with `next` and submit results with `accept` until `next` returns no
    bundle; `next` moves QA through its stages by itself. Write results only in `{{RECEIPTS}}`,
    one file per bundle named after its ID; DazedTL keeps the accepted copy. A worker that cannot
@@ -59,6 +60,7 @@ translations, then run `{{CLI}} status --task {{TASK}}`.
    bundle's time, loses its bundle to the next idle worker; the first accepted result counts.
    `status` gives the engine's estimate of the time left.
 3. Declined items move to a bundle of their own, which `next` offers only to workers on another helper; a decline there sets it aside.
+   Decline items you read and will not review, such as a scene with its lint proposals and motif variants, with `decline` under your own name while no worker holds their bundle; the rest of the bundle then reaches your workers without them.
    When no worker on another helper will take them, give `next` `--skip-declined`, and it sets them aside once the rest of their stage is reviewed.
    Screening then goes on in follow-up bundles for set-aside lines that other scenes also show, which `next` hands out like any other.
    Set-aside items are reported as not reviewed; never ask the user to review them.
@@ -157,11 +159,9 @@ that `prior_review`, and your review replaces it.
 
 ## Group reviewer
 
-A `lint-family` item lists one mechanical family's exact fixes, and a `sweep-family` item lists
-every other line an accepted correction's sweep rule changes, beside that correction. Check them
-as a group and reject only the proposals that would harm their line, such as a sentence start,
-a system label or a style this game deliberately keeps, with a note. Every proposal you do not
-reject becomes a finding.
+A `lint-family` item lists one mechanical family's exact fixes, and a `sweep-family` item lists every other line an accepted correction's sweep rule changes, beside that correction.
+Check them as a group and reject only the proposals that would harm their line, such as a sentence start, a system label or a style this game deliberately keeps, with a note.
+Every proposal you neither reject nor decline becomes a finding.
 
 ## Editorial reviewer
 
@@ -183,6 +183,7 @@ Prefix every command with `{{CLI}}`:
 - `status --task {{TASK}}`, `brief --task {{TASK}} --role <role>`
 - `next --task {{TASK}} --worker <name> [--helper <name>] [--bundle <id>] [--skip-declined]`, then read the bundle with `show --task {{TASK}} --bundle <id>`, which prints it compactly; the bundle file it names holds the same content as JSON
 - `accept --task {{TASK}} --result <result.json>`, `release --task {{TASK}} --bundle <id>`
+- `decline --task {{TASK}} --worker <name> [--helper <name>] --bundle <id> --item <id> --reason "<one line>"`, repeating `--item` and `--reason` together, for items of a bundle no other worker holds
 - `advance --task {{TASK}}` and `finalize --task {{TASK}}`, each with `--skip-declined` when no worker on another helper will take a declined bundle
 - `context --task {{TASK}} --worker <name> --at <identity or command list>` for read-only
   surrounding text; scenes a reviewer declined are left out unless your assigned bundle prints
@@ -194,9 +195,10 @@ Prefix every command with `{{CLI}}`:
 
 ## Result formats
 
-Every result names its `bundle_id` and the `bundle_sha256` that `next` returned. A declined item
-is `{"id": "<item id>", "reason": "<one line, no game text>"}` in a screen, group or editorial
-result's `declined` list, and a deep review with `"disposition": "declined"` and a `reason`.
+Every result names its `bundle_id` and the `bundle_sha256` that `next` returned.
+A declined item is `{"id": "<item id>", "reason": "<one line, no game text>"}` in a screen, group or editorial result's `declined` list, and a deep review with `"disposition": "declined"` and a `reason`.
+The `id` may name one lint proposal, sweep candidate or motif variant instead; review the rest of its family, leaving the declined one out of `rejected` and `suspect_ids`.
+Declining every one declines the family, which then gets no review.
 
 Every result may carry `observations`, each
 `{"identity": "<line>", "categories": ["speaker"], "note": "<one-line concrete reason>"}`. The

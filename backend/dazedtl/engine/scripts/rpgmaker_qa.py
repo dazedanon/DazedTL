@@ -68,10 +68,8 @@ def main() -> int:
     next_cmd.add_argument(
         "--bundle", help="Claim this waiting bundle, such as one another helper declined."
     )
-    next_cmd.add_argument(
-        "--helper",
-        help="The AI helper this worker runs on, when it is not the coordinator's.",
-    )
+    helper = "The AI helper this worker runs on, when it is not the coordinator's."
+    next_cmd.add_argument("--helper", help=helper)
     next_cmd.add_argument(
         "--skip-declined",
         action="store_true",
@@ -98,6 +96,25 @@ def main() -> int:
     release = sub.add_parser("release")
     release.add_argument("--task", required=True, type=Path)
     release.add_argument("--bundle", required=True)
+    decline = sub.add_parser(
+        "decline", help="Decline items of a bundle no other worker holds."
+    )
+    decline.add_argument("--task", required=True, type=Path)
+    decline.add_argument("--worker", required=True)
+    decline.add_argument("--helper", help=helper)
+    decline.add_argument("--bundle", required=True)
+    decline.add_argument(
+        "--item",
+        action="append",
+        required=True,
+        help="An item, lint proposal, sweep candidate or motif variant ID.",
+    )
+    decline.add_argument(
+        "--reason",
+        action="append",
+        required=True,
+        help="One line without game text, one for each --item in order.",
+    )
 
     args = parser.parse_args()
     if args.command == "prepare":
@@ -120,6 +137,19 @@ def main() -> int:
         _print(rpgmaker_qa.accept_result(args.task, args.result))
     elif args.command == "release":
         _print(rpgmaker_qa.release_bundle(args.task, args.bundle))
+    elif args.command == "decline":
+        if len(args.item) != len(args.reason):
+            parser.error("Give each --item its own --reason")
+        _print(rpgmaker_qa.decline_items(
+            args.task,
+            args.worker,
+            args.bundle,
+            [
+                {"id": item, "reason": reason}
+                for item, reason in zip(args.item, args.reason)
+            ],
+            helper=args.helper,
+        ))
     elif args.command == "advance":
         _print(rpgmaker_qa.advance(args.task, args.skip_declined))
     elif args.command == "show":

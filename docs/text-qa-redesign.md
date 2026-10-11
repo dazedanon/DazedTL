@@ -55,10 +55,12 @@ Among others, they found a state message missing its subject like the one just c
 
 ### Declines within a helper
 
-The same second run showed that declines must stay within a helper:
+The same second run showed that declines must stay within a helper and reach single family members:
 
 - `next` offered the coordinator's declined scenes to its own sub-reviewers, which run on the same helper.
   To keep them away, the coordinator gave each sub-reviewer a fixed bundle list, hid the declined items from `show` and `context`, and wrote the declines into each sub-reviewer's result, so the checkpoint named sub-reviewers as the decliners.
+- A lint family mixes proposals from many scenes, and a motif family variants from many scenes, but only whole items could be declined.
+  Proposals from declined scenes went into `rejected` with a note that nobody read them, and a motif family was called preserved with a note that two variants were unread.
 
 ## Order of work
 

@@ -95,6 +95,9 @@ DECLINE_REASON_LIMIT = 300
 DEFAULT_HELPER = "default"
 # Distinct helpers that must decline an item before it is set aside unreviewed.
 DECLINES_TO_SET_ASIDE = 2
+# Bundles that need no more review; a split bundle's items moved to new ones
+# when a worker declined some of them before anyone reviewed it.
+FINISHED_STATUSES = frozenset({"accepted", "set-aside", "split"})
 # Another reviewer screens at least this share of each reviewer's scene and
 # line targets again, starting with its first bundle.
 SCREEN_CHECK_SHARE = 0.25
@@ -1056,7 +1059,8 @@ def _motif_items(
             "id": seed["id"],
             "guidance": seed["guidance"],
             "anchors": seed["anchors"],
-            "target_count": 1,
+            # Each variant is a target, so a declined one moves on its own.
+            "target_count": len(variants),
             "variant_count": len(variants),
             "variants": variants,
             "exclusive_bundle": True,
@@ -1494,6 +1498,116 @@ def _bundle_deep(items: list[dict], first: int = 1) -> list[dict]:
     return bundles
 
 
+# A family item's own review units, which a reviewer may decline one by one.
+_UNIT_LISTS = {
+    "lint-family": "proposals", "sweep-family": "candidates", "motif-family": "variants",
+}
+
+
+def _units(item: dict[str, Any]) -> list[dict[str, Any]]:
+    """A family item's proposals, candidates or variants; nothing for others."""
+    key = _UNIT_LISTS.get(item.get("kind") or "")
+    return item[key] if key else []
+
+
+def _family_part(
+    item: dict[str, Any], units: list[dict[str, Any]], part_id: str = ""
+) -> dict[str, Any]:
+    """The family item holding only these units; a declined part has an ID of
+    its own and names the family it came from."""
+    part = {**item, _UNIT_LISTS[item["kind"]]: units, "target_count": len(units)}
+    if item["kind"] == "motif-family":
+        part["variant_count"] = len(units)
+    if part_id:
+        part["id"] = part_id
+        part["part_of"] = item.get("part_of") or item["id"]
+    return part
+
+
+def _partition(
+    bundle: dict[str, Any], reasons: dict[str, str], number: int = 0
+) -> tuple[list[dict], list[dict]]:
+    """The bundle's items split into what was declined and what remains.
+
+    A family with some of its units declined splits in two, and its declined
+    part is numbered after the bundle that will hold it.
+    """
+    declined, remaining = [], []
+    for item in bundle["items"]:
+        units = _units(item)
+        chosen = [unit for unit in units if unit["id"] in reasons]
+        if item["id"] in reasons or units and len(chosen) == len(units):
+            declined.append(item)
+        elif chosen:
+            family = item.get("part_of") or item["id"]
+            declined.append(_family_part(item, chosen, f"{family}-d{number}"))
+            remaining.append(_family_part(
+                item, [unit for unit in units if unit["id"] not in reasons]
+            ))
+        else:
+            remaining.append(item)
+    return declined, remaining
+
+
+def _result_declines(result: dict[str, Any]) -> set[str]:
+    """The items and units an accepted result declined."""
+    return {entry["id"] for entry in result.get("declined") or []}
+
+
+def _shared_context(bundle: dict[str, Any], items: list[dict]) -> dict[str, Any]:
+    """What a bundle made of some of another's items keeps from it: the scenes
+    and motif reviews a deep bundle prints once that these items name, and a
+    follow-up's own screen index for their lines."""
+    shared = _own_index(items, bundle.get("screen_index"))
+    for key in ("scenes", "motifs"):
+        named = {name for item in items for name in item.get(key) or []}
+        if named:
+            shared[key] = {
+                name: value for name, value in bundle[key].items() if name in named
+            }
+    return shared
+
+
+def _add_row(
+    root: Path,
+    checkpoint: dict[str, Any],
+    stage: str,
+    bundle: dict[str, Any],
+    fields: dict[str, Any],
+    after: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Write a bundle made from another's items and add its checkpoint row,
+    after `after` or last."""
+    path = root / "bundles" / stage / f"{bundle['bundle_id']}.json"
+    _atomic_write_json(path, bundle)
+    row = {
+        "id": bundle["bundle_id"],
+        "path": str(path),
+        "sha256": bundle["content_sha256"],
+        "item_count": bundle["item_count"],
+        "status": "pending",
+        "assigned_to": "",
+        "result_path": "",
+        **fields,
+        # The authors of its judgment corrections still cannot confirm them.
+        **(
+            {"authors": sorted({
+                author for item in bundle["items"] for author in item["authors"]
+            })}
+            if stage == "editorial" else {}
+        ),
+    }
+    rows = checkpoint[stage]["bundles"]
+    rows.insert(rows.index(after) + 1 if after else len(rows), row)
+    return row
+
+
+def _next_number(checkpoint: dict[str, Any], stage: str, origin: str) -> int:
+    return 1 + sum(
+        other.get("origin") == origin for other in checkpoint[stage]["bundles"]
+    )
+
+
 def _split_declined(
     root: Path,
     checkpoint: dict[str, Any],
@@ -1501,64 +1615,38 @@ def _split_declined(
     row: dict[str, Any],
     bundle: dict[str, Any],
     reasons: dict[str, str],
-) -> int:
+    worker: str = "",
+) -> tuple[dict[str, Any], list[dict]]:
     """Move declined items into their own bundle for a reviewer on another helper.
 
-    Returns how many targets moved. After enough distinct helpers declined
-    the same items, they are set aside unreviewed instead.
+    Returns that bundle's row and the items that remain. After enough
+    distinct helpers declined the same items, they are set aside unreviewed
+    instead. The worker that declined is the bundle's holder unless named.
     """
-    items = [item for item in bundle["items"] if item["id"] in reasons]
-    worker = str(row.get("assigned_to") or "") or "unnamed reviewer"
+    worker = worker or str(row.get("assigned_to") or "") or "unnamed reviewer"
     helper = _helper_of(checkpoint, worker)
-    declined_by = sorted({*(row.get("declined_by") or []), worker})
     declined_helpers = sorted({*(row.get("declined_helpers") or []), helper})
     origin = row.get("origin") or row["id"]
-    number = 1 + sum(
-        other.get("origin") == origin for other in checkpoint[stage]["bundles"]
+    number = _next_number(checkpoint, stage, origin)
+    items, remaining = _partition(bundle, reasons, number)
+    split = _make_bundle(
+        stage, f"{origin}-d{number}", items, _shared_context(bundle, items)
     )
-    # Deep items name the scenes and motif reviews their bundle prints once,
-    # and a follow-up's lines keep its own screen index.
-    extra = _own_index(items, bundle.get("screen_index"))
-    for key in ("scenes", "motifs"):
-        named = {name for item in items for name in item.get(key) or []}
-        if named:
-            extra[key] = {
-                name: value for name, value in bundle[key].items() if name in named
-            }
-    split = _make_bundle(stage, f"{origin}-d{number}", items, extra)
-    path = root / "bundles" / stage / f"{split['bundle_id']}.json"
-    _atomic_write_json(path, split)
-    checkpoint[stage]["bundles"].append({
-        "id": split["bundle_id"],
-        "path": str(path),
-        "sha256": split["content_sha256"],
-        "item_count": split["item_count"],
+    return _add_row(root, checkpoint, stage, split, {
         "status": (
             "set-aside"
             if len(declined_helpers) >= DECLINES_TO_SET_ASIDE else "pending"
         ),
-        "assigned_to": "",
-        "result_path": "",
         "origin": origin,
         **({"follow_up": True} if row.get("follow_up") else {}),
-        "declined_by": declined_by,
+        "declined_by": sorted({*(row.get("declined_by") or []), worker}),
         "declined_helpers": declined_helpers,
         "declines": [
             *(row.get("declines") or []),
             {"worker": worker, "helper": helper, "reasons": reasons},
         ],
-        **(
-            # The authors of its judgment corrections still cannot confirm them.
-            {
-                "round": row.get("round"),
-                "authors": sorted({
-                    author for item in items for author in item["authors"]
-                }),
-            }
-            if stage == "editorial" else {}
-        ),
-    })
-    return split["item_count"]
+        **({"round": row.get("round")} if stage == "editorial" else {}),
+    }), remaining
 
 
 def _checkable(bundle: dict[str, Any], declined: Iterable[str]) -> list[dict[str, Any]]:
@@ -2081,7 +2169,8 @@ def _estimate(checkpoint: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stage_metrics(stage: dict[str, Any], *, active: bool) -> dict[str, Any]:
-    bundles = stage["bundles"]
+    # A split bundle's items are in the bundles made from it.
+    bundles = [row for row in stage["bundles"] if row["status"] != "split"]
     assigned = [row for row in bundles if row["status"] == "assigned"]
     accepted = [row for row in bundles if row["status"] == "accepted"]
     starts = [
@@ -2271,7 +2360,7 @@ def _stage_finished(
     checkpoint: dict[str, Any], stages: list[str], skip_declined: bool = False
 ) -> bool:
     return all(
-        row["status"] in {"accepted", "set-aside"}
+        row["status"] in FINISHED_STATUSES
         or skip_declined and row["status"] == "pending" and row.get("declined_by")
         for stage in stages for row in checkpoint[stage]["bundles"]
     )
@@ -2368,6 +2457,90 @@ def _next_unlocked(
     return copy.deepcopy(pending), False
 
 
+def decline_items(
+    task_dir: str | Path,
+    worker: str,
+    bundle_id: str,
+    declined: list[dict[str, str]],
+    *,
+    helper: str | None = None,
+) -> dict[str, Any]:
+    """Decline items of a bundle that no other worker holds, without
+    reviewing the rest, as a coordinator does for items it read.
+
+    The declined items move to a bundle of their own, as a result's declines
+    do, and the rest to a new bundle in the same place and with the same
+    holder, so the next reviewer never sees what was declined.
+    """
+    root = Path(task_dir).expanduser().resolve()
+    worker = str(worker or "").strip()
+    if not worker:
+        raise ValueError("Name the worker that declines")
+    with _task_lock(root):
+        root, _task, checkpoint = _load_task(root)
+        helper = _register_worker(checkpoint, worker, helper)
+        stage, row = _bundle_row(checkpoint, bundle_id)
+        holder = str(row.get("assigned_to") or "")
+        if row["status"] == "assigned" and holder != worker:
+            raise ValueError(
+                f"{holder} holds {bundle_id} and declines items in its result"
+            )
+        if row["status"] not in {"pending", "assigned"}:
+            raise ValueError(
+                f"{bundle_id} is {row['status']}; only a waiting bundle's items "
+                "can be declined"
+            )
+        if row.get("check_of"):
+            raise ValueError(
+                f"{bundle_id} checks lines screened already; its reviewer declines "
+                "items in its result"
+            )
+        if helper in (row.get("declined_helpers") or []):
+            raise ValueError(f"A worker on the {helper} helper declined {bundle_id}")
+        bundle = _read_json(Path(row["path"]))
+        reasons = _declined_items(bundle, {"declined": declined})
+        if not reasons:
+            raise ValueError("Name each item to decline with a one-line reason")
+        split, remaining = _split_declined(
+            root, checkpoint, stage, row, bundle, reasons, worker
+        )
+        remainder = None
+        if remaining:
+            origin = row.get("origin") or row["id"]
+            rest = _make_bundle(
+                stage,
+                f"{origin}-r{_next_number(checkpoint, stage, origin)}",
+                remaining,
+                _shared_context(bundle, remaining),
+            )
+            remainder = _add_row(root, checkpoint, stage, rest, {
+                **{
+                    key: row[key]
+                    for key in (
+                        "status", "assigned_to", "assigned_at", "follow_up",
+                        "declined_by", "declined_helpers", "declines", "round",
+                    )
+                    if key in row
+                },
+                "origin": origin,
+            }, after=row)
+        row["status"] = "split"
+        row["remainder"] = remainder["id"] if remainder else ""
+        checkpoint["updated_at"] = _utc_now()
+        _atomic_write_json(root / "checkpoint.json", checkpoint)
+        return {
+            "declined": copy.deepcopy(split),
+            "remainder": copy.deepcopy(remainder),
+        }
+
+
+def _split_notice(row: dict[str, Any]) -> str:
+    return f"{row['id']} was split when a worker declined some of its items; " + (
+        f"review {row['remainder']} instead" if row.get("remainder")
+        else "every item was declined"
+    )
+
+
 def release_bundle(task_dir: str | Path, bundle_id: str) -> dict[str, Any]:
     """Return one unfinished assignment to the queue without changing coverage."""
     root = Path(task_dir).expanduser().resolve()
@@ -2444,16 +2617,23 @@ def _screen_motif_map(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _declined_items(bundle: dict, result: dict) -> dict[str, str]:
-    """The bundle items a reviewer declined, with the one-line reason for each."""
+    """The bundle items a reviewer declined, with the one-line reason for each.
+
+    A family's single proposal, candidate or variant may be declined by its
+    own ID, and the rest of the family is reviewed as usual.
+    """
     declined = result.get("declined", [])
     if not isinstance(declined, list):
         raise QAResultError("Declined items must be a list")
     items = {item["id"] for item in bundle["items"]}
+    families = {
+        unit["id"]: item["id"] for item in bundle["items"] for unit in _units(item)
+    }
     reasons: dict[str, str] = {}
     for entry in declined:
         identity = str((entry or {}).get("id") or "") if isinstance(entry, dict) else ""
         reason = str(entry.get("reason") or "").strip() if isinstance(entry, dict) else ""
-        if identity not in items or identity in reasons:
+        if identity not in items and identity not in families or identity in reasons:
             raise QAResultError(f"Invalid or duplicate declined item {identity!r}")
         if not reason or "\n" in reason or len(reason) > DECLINE_REASON_LIMIT:
             raise QAResultError(
@@ -2461,7 +2641,34 @@ def _declined_items(bundle: dict, result: dict) -> dict[str, str]:
                 f"{DECLINE_REASON_LIMIT} characters: {identity}"
             )
         reasons[identity] = reason
+    for identity in reasons:
+        if families.get(identity) in reasons:
+            raise QAResultError(
+                f"Decline {families[identity]} or some of its units, not both"
+            )
     return reasons
+
+
+def _require_reviews(
+    result: str, kind: str, reviewed: list[str], expected: Iterable[str]
+) -> None:
+    """Every assigned family reviewed once, naming the ones that are not; a
+    family whose every unit was declined is declined, not reviewed."""
+    expected = set(expected)
+    problems = [
+        f"{label} {', '.join(sorted(ids))}"
+        for label, ids in (
+            ("missing", expected - set(reviewed)),
+            ("not assigned or declined", set(reviewed) - expected),
+            ("repeated", {identity for identity in reviewed if reviewed.count(identity) > 1}),
+        )
+        if ids
+    ]
+    if problems:
+        raise QAResultError(
+            f"{result} must review every assigned {kind} exactly once: "
+            + "; ".join(problems)
+        )
 
 
 def _item_targets(item: dict[str, Any]) -> set[str]:
@@ -2592,13 +2799,9 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
         raise QAResultError("Screen result has the wrong schema")
     if result.get("reviewed_all") is not True:
         raise QAResultError("Screen result must confirm reviewed_all=true")
-    declined = _declined_items(bundle, result)
-    allowed = set(_screen_target_map(bundle)) - {
-        target
-        for item in bundle["items"]
-        if item["id"] in declined
-        for target in _item_targets(item)
-    }
+    # Declined items and units are left out of what the result must review.
+    remaining = {"items": _partition(bundle, _declined_items(bundle, result))[1]}
+    allowed = set(_screen_target_map(remaining))
     seen: set[str] = set()
     exceptions = result.get("exceptions")
     if not isinstance(exceptions, list):
@@ -2620,10 +2823,7 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
         if not str(item.get("note") or "").strip():
             raise QAResultError(f"Screen exception has no reason for {identity}")
 
-    expected_motifs = {
-        key: value for key, value in _screen_motif_map(bundle).items()
-        if key not in declined
-    }
+    expected_motifs = _screen_motif_map(remaining)
     motif_reviews = result.get("motif_reviews")
     if not isinstance(motif_reviews, list):
         raise QAResultError("Screen result motif_reviews must be a list")
@@ -2631,10 +2831,7 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
         str(item.get("id") or "") for item in motif_reviews
         if isinstance(item, dict)
     ]
-    if len(actual_motifs) != len(set(actual_motifs)) or set(actual_motifs) != set(
-        expected_motifs
-    ):
-        raise QAResultError("Screen result must review every assigned motif exactly once")
+    _require_reviews("Screen result", "motif", actual_motifs, expected_motifs)
     for review in motif_reviews:
         motif_id = review["id"]
         disposition = review.get("disposition")
@@ -2658,19 +2855,20 @@ def _validate_screen_result(bundle: dict, result: dict) -> None:
             raise QAResultError(f"Non-clean motif must name suspects for {motif_id}")
 
     expected_lint = {
-        item["id"]: item for item in bundle["items"]
-        if item.get("kind") == "lint-family" and item["id"] not in declined
+        item["id"]: item for item in remaining["items"]
+        if item.get("kind") == "lint-family"
     }
     lint_reviews = result.get("lint_reviews", [])
     if not isinstance(lint_reviews, list) or not all(
         isinstance(review, dict) for review in lint_reviews
     ):
         raise QAResultError("Screen result lint_reviews must be a list of objects")
-    reviewed = [str(review.get("id") or "") for review in lint_reviews]
-    if len(reviewed) != len(set(reviewed)) or set(reviewed) != set(expected_lint):
-        raise QAResultError(
-            "Screen result must review every assigned lint family exactly once"
-        )
+    _require_reviews(
+        "Screen result",
+        "lint family",
+        [str(review.get("id") or "") for review in lint_reviews],
+        expected_lint,
+    )
     for review in lint_reviews:
         rejected = review.get("rejected")
         allowed = {row["id"] for row in expected_lint[review["id"]]["proposals"]}
@@ -2801,18 +2999,19 @@ def _validate_sweep_rule(review: dict[str, Any], item: dict[str, Any]) -> None:
 def _validate_sweep_result(bundle: dict, result: dict) -> None:
     if result.get("schema") != SWEEP_RESULT_SCHEMA:
         raise QAResultError("Sweep result has the wrong schema")
-    declined = _declined_items(bundle, result)
     expected = {
-        item["id"]: item for item in bundle["items"] if item["id"] not in declined
+        item["id"]: item
+        for item in _partition(bundle, _declined_items(bundle, result))[1]
     }
     reviews = result.get("reviews")
     if not isinstance(reviews, list) or not all(
         isinstance(review, dict) for review in reviews
     ):
         raise QAResultError("Sweep result reviews must be a list of objects")
-    reviewed = [str(review.get("id") or "") for review in reviews]
-    if len(reviewed) != len(set(reviewed)) or set(reviewed) != set(expected):
-        raise QAResultError("Sweep result must review every assigned family exactly once")
+    _require_reviews(
+        "Sweep result", "family", [str(review.get("id") or "") for review in reviews],
+        expected,
+    )
     for review in reviews:
         rejected = review.get("rejected")
         allowed = {row["id"] for row in expected[review["id"]]["candidates"]}
@@ -2992,6 +3191,8 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         result = _read_json(Path(result_path).expanduser().resolve())
         bundle_id = str(result.get("bundle_id") or "")
         stage, row = _bundle_row(checkpoint, bundle_id)
+        if row["status"] == "split":
+            raise QAResultError(_split_notice(row))
         bundle = _read_json(Path(row["path"]))
         if result.get("bundle_sha256") != row["sha256"]:
             raise QAResultError("Result does not match the immutable bundle checksum")
@@ -3043,10 +3244,12 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
         )
         # The checked lines were screened already, so a check's declines
         # leave coverage as it is.
-        moved = (
-            _split_declined(root, checkpoint, stage, row, bundle, declined)
-            if declined and not check else 0
-        )
+        moved, remaining = 0, bundle["items"]
+        if declined and not check:
+            split, remaining = _split_declined(
+                root, checkpoint, stage, row, bundle, declined
+            )
+            moved = split["item_count"]
         _note_observations(
             checkpoint, observations, stage, str(row.get("assigned_to") or ""), bundle_id
         )
@@ -3085,14 +3288,18 @@ def accept_result(task_dir: str | Path, result_path: str | Path) -> dict[str, An
                         [f"motif-{review['disposition']}"],
                         [variant["representative_identity"]],
                     )
+            # A motif family counts once; its declined parts do not again.
             checkpoint["screen"]["motif_accepted"] = int(
                 checkpoint["screen"].get("motif_accepted", 0)
-            ) + len(result["motif_reviews"])
+            ) + sum(
+                not motifs[review["id"]].get("part_of")
+                for review in result["motif_reviews"]
+            )
             checkpoint["screen"]["lint_accepted"] = int(
                 checkpoint["screen"].get("lint_accepted", 0)
             ) + sum(
-                item["target_count"] for item in bundle["items"]
-                if item.get("kind") == "lint-family" and item["id"] not in declined
+                item["target_count"] for item in remaining
+                if item.get("kind") == "lint-family"
             )
             checkpoint["deep"]["projected_items"] = len(
                 set(candidate_reasons)
@@ -3533,6 +3740,8 @@ def render_bundle(task_dir: str | Path, bundle_id: str) -> str:
     """A bundle as compact text: what a reviewer reads instead of its JSON."""
     root, task, checkpoint = _load_task(task_dir)
     stage, row = _bundle_row(checkpoint, bundle_id)
+    if row["status"] == "split":
+        raise ValueError(_split_notice(row))
     bundle = _read_json(Path(row["path"]))
     # A follow-up or check bundle carries the index entries the task's lacks.
     screen_index = (
@@ -3690,19 +3899,25 @@ def _deep_basis(
             if scene:
                 scenes[cluster_id][scene["scene_id"]] = scene
 
+        # A declined variant was not judged with the rest.
+        declines = _result_declines(result)
         for review in result["motif_reviews"]:
             motif = motif_items[review["id"]]
+            variants = [
+                variant for variant in motif["variants"]
+                if variant["id"] not in declines
+            ]
             context = {
                 "id": motif["id"],
                 "guidance": motif["guidance"],
                 "anchors": motif["anchors"],
-                "variant_count": motif["variant_count"],
-                "variants": motif["variants"],
+                "variant_count": len(variants),
+                "variants": variants,
                 "disposition": review["disposition"],
                 "note": review["note"],
                 "suspect_ids": review["suspect_ids"],
             }
-            for variant in motif["variants"]:
+            for variant in variants:
                 motifs[variant["id"]].append(context)
 
     for observation in checkpoint.get("observations") or []:
@@ -3869,13 +4084,12 @@ def _declined_scope(
         for row in checkpoint.get(stage, {}).get("bundles", []):
             if row["status"] not in statuses or not row.get("declined_by"):
                 continue
-            reasons: dict[str, list[str]] = defaultdict(list)
-            for decline in row.get("declines") or []:
-                for item_id, reason in decline["reasons"].items():
-                    reasons[item_id].append(reason)
             bundle = _read_json(Path(row["path"]))
             for item in bundle["items"]:
                 kind = item.get("kind") or stage
+                units = [unit["id"] for unit in _units(item)]
+                # A family part was declined unit by unit, and later whole.
+                keys = {item["id"], *units}
                 if stage in {"sweep", "editorial"}:
                     # Lines were reviewed; only these fixes are left out.
                     pass
@@ -3905,8 +4119,20 @@ def _declined_scope(
                     "stage": stage,
                     "id": item["id"],
                     "kind": "deep" if stage == "deep" else kind,
+                    **(
+                        {"part_of": item["part_of"], "units": units}
+                        if item.get("part_of") else {}
+                    ),
                     "set_aside": row["status"] == "set-aside",
-                    "reasons": reasons.get(item["id"], []),
+                    # One reason a decline, however many units it named.
+                    "reasons": [
+                        reason
+                        for decline in row.get("declines") or []
+                        for reason in dict.fromkeys(
+                            reason for key, reason in decline["reasons"].items()
+                            if key in keys
+                        )
+                    ],
                     "declined_by": row["declined_by"],
                 })
     offered: dict[str, set[str]] = defaultdict(set)
@@ -4062,14 +4288,16 @@ def _lint_decisions(
         reviews = {review["id"]: review for review in result.get("lint_reviews") or []}
         if not reviews:
             continue
+        # Declined proposals were not judged; rejected ones were.
+        declines = _result_declines(result)
         for item in _read_json(Path(row["path"]))["items"]:
             review = reviews.get(item["id"])
             if item.get("kind") != "lint-family" or review is None:
                 continue
-            rejected = set(review["rejected"])
+            left_out = set(review["rejected"]) | declines
             for proposal in item["proposals"]:
                 cluster_id = proposal["cluster_id"]
-                if proposal["id"] in rejected or cluster_id in declined["clusters"]:
+                if proposal["id"] in left_out or cluster_id in declined["clusters"]:
                     continue
                 entry = accepted.setdefault(
                     cluster_id, {"families": set(), "notes": []}
@@ -4093,16 +4321,16 @@ def _add_sweep_findings(
     for row in checkpoint.get("sweep", {}).get("bundles", []):
         if row["status"] != "accepted":
             continue
-        reviews = {
-            review["id"]: review
-            for review in _read_json(Path(row["result_path"]))["reviews"]
-        }
+        result = _read_json(Path(row["result_path"]))
+        reviews = {review["id"]: review for review in result["reviews"]}
+        declines = _result_declines(result)
         for item in _read_json(Path(row["path"]))["items"]:
             review = reviews.get(item["id"])
             if review is None:
                 continue
+            left_out = set(review["rejected"]) | declines
             for candidate in item["candidates"]:
-                if candidate["id"] not in review["rejected"]:
+                if candidate["id"] not in left_out:
                     by_cluster[candidate["cluster_id"]].append((
                         {**item, "reviewer": str(row.get("assigned_to") or "")},
                         candidate,
@@ -4428,7 +4656,12 @@ def _issue_deep(root: Path, checkpoint: dict[str, Any], final: bool) -> int:
         }
         index = _read_json(root / "screen-targets.json")
         screen_rows = {row["id"]: row for row in checkpoint["screen"]["bundles"]}
-        statuses = {key: row["status"] for key, row in screen_rows.items()}
+        statuses = {}
+        for key, row in screen_rows.items():
+            # A split bundle's targets are reviewed in the bundle that remained.
+            while row["status"] == "split" and row.get("remainder"):
+                row = screen_rows[row["remainder"]]
+            statuses[key] = row["status"]
         # Bundles whose lines await a check: the checked bundle, which a
         # follow-up's targets name, and the bundle it split from, which the
         # task's targets name.
@@ -4530,7 +4763,7 @@ def _settle_declined(
             "under another worker name"
         )
     if any(
-        row["status"] not in {"accepted", "set-aside"} and row not in waiting
+        row["status"] not in FINISHED_STATUSES and row not in waiting
         for row in rows
     ):
         raise ValueError(f"Every {stage} bundle must be accepted first")
@@ -4837,13 +5070,19 @@ def _draft_document(
         if not motifs:
             continue
         result = _read_json(Path(row["result_path"]))
+        declines = _result_declines(result)
         for review in result["motif_reviews"]:
             motif = motifs[review["id"]]
+            variant_ids = [
+                variant["id"] for variant in motif["variants"]
+                if variant["id"] not in declines
+            ]
             motif_families.append({
                 "id": review["id"],
+                **({"part_of": motif["part_of"]} if motif.get("part_of") else {}),
                 "guidance": motif["guidance"],
                 "anchors": motif["anchors"],
-                "variant_count": len(motif["variants"]),
+                "variant_count": len(variant_ids),
                 "disposition": review["disposition"],
                 "note": review["note"],
                 "suspect_ids": review["suspect_ids"],
@@ -4852,7 +5091,7 @@ def _draft_document(
                     "note": review["note"],
                     "suspect_ids": review["suspect_ids"],
                 },
-                "_variant_ids": [variant["id"] for variant in motif["variants"]],
+                "_variant_ids": variant_ids,
             })
     for review, _item, row in _latest_deep_reviews(checkpoint).values():
         deep_dispositions[review["id"]] = review["disposition"]

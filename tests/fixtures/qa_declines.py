@@ -1,7 +1,8 @@
 """Declined review items in the text QA engine, on a generated game.
 
-Plays every reviewer with fixed results, so where a declined item goes and how
-the coverage report names it are checked through the engine's own commands.
+Plays every reviewer with fixed results, so where a declined item or family
+member goes, what its bundle leaves out and how the coverage report names it
+are checked through the engine's own commands.
 """
 
 import json
@@ -106,10 +107,31 @@ def refused(attempt, words):
         raise AssertionError(f"Expected a refusal naming {words!r}.")
 
 
-def screen(row, declined_scenes=()):
-    """Review a screen bundle: flag the weather line, keep the joke and the
-    lint fixes, and decline the named scenes."""
+REASON = "Outside what this reviewer reviews."
+
+
+def in_scenes(unit, scenes):
+    place = unit.get("scene") or unit.get("representative_identity") or ""
+    return any(place == scene or place.startswith(scene + "/") for scene in scenes)
+
+
+def screen(row, declined_scenes=(), declined_items=()):
+    """Review a screen bundle: flag the weather line and keep the joke and the
+    lint fixes, but decline the named scenes with their proposals and
+    variants, and the named items whole."""
     items = bundle_of(row)["items"]
+    whole = [
+        item["id"]
+        for item in items
+        if item.get("scene_id") in declined_scenes or item["id"] in declined_items
+    ]
+    reviewed = [item for item in items if item["id"] not in whole]
+    units = [
+        unit["id"]
+        for item in reviewed
+        for unit in item.get("proposals") or item.get("variants") or []
+        if in_scenes(unit, declined_scenes)
+    ]
     qa.accept_result(
         task,
         result_path(
@@ -126,9 +148,8 @@ def screen(row, declined_scenes=()):
                         "categories": ["meaning"],
                         "note": "Odd small talk.",
                     }
-                    for item in items
+                    for item in reviewed
                     if item["kind"] == "scene"
-                    and item["scene_id"] not in declined_scenes
                     for target in item["lines"]
                     if target.get("id") and target["source"] == WEATHER
                 ],
@@ -139,18 +160,16 @@ def screen(row, declined_scenes=()):
                         "note": "Each variant keeps the gag.",
                         "suspect_ids": [],
                     }
-                    for item in items
+                    for item in reviewed
                     if item["kind"] == "motif-family"
                 ],
                 "lint_reviews": [
                     {"id": item["id"], "rejected": [], "note": ""}
-                    for item in items
+                    for item in reviewed
                     if item["kind"] == "lint-family"
                 ],
                 "declined": [
-                    {"id": item["id"], "reason": "Outside what this reviewer reviews."}
-                    for item in items
-                    if item.get("scene_id") in declined_scenes
+                    {"id": identity, "reason": REASON} for identity in whole + units
                 ],
             },
         ),
@@ -158,34 +177,86 @@ def screen(row, declined_scenes=()):
 
 
 task, _state = qa.prepare_task(game, data, "release", temporary / "storage")
+lint, motif, scenes = rows("screen")
+(lint_family,) = bundle_of(lint)["items"]
+(motif_family,) = bundle_of(motif)["items"]
+(owner_fix,) = [row for row in lint_family["proposals"] if row["current"] == "Mm…♥No"]
+owner_scene = next(
+    item["id"]
+    for item in bundle_of(scenes)["items"]
+    if item["scene_id"] == SCENE.format(2)
+)
+(owner_variant,) = [
+    variant
+    for variant in motif_family["variants"]
+    if in_scenes(variant, [SCENE.format(2)])
+]
 
-# A worker declines two scenes; they wait for a reviewer on another helper and
-# never go back to a worker on its own, which only checks the rest.
+# The coordinator read the scene bundle and the joke's family and declines the
+# owner's scene and its variant before any worker claims them. The rest of
+# each bundle moves to a new one in its place, so no worker sees what it
+# declined, and the decline is the coordinator's.
+declined = qa.decline_items(
+    task, "coord", scenes["id"], [{"id": owner_scene, "reason": REASON}]
+)
+assert declined["remainder"]["id"] == "screen-0003-r2", declined
+assert declined["declined"]["declined_by"] == ["coord"], declined
+qa.decline_items(
+    task, "coord", motif["id"], [{"id": owner_variant["id"], "reason": REASON}]
+)
+refused(lambda: qa.render_bundle(task, scenes["id"]), "screen-0003-r2")
+refused(lambda: qa.context_view(task, SCENE.format(2)), "declined")
+shown = qa.render_bundle(task, "screen-0003-r2")
+assert WEATHER in shown and "んっ…♥だめ" not in shown, shown
+assert "The urge is rising." not in qa.render_bundle(task, "screen-0002-r2")
+
+# A worker on the coordinator's helper reviews the rest and declines one more
+# scene, with the lint fix and the joke's variant from those scenes. What its
+# helper declined waits for a reviewer on another helper and never comes back
+# to it or to another worker on its helper, which only checks its screening.
 while row := qa.next_bundle(task, "sub-1"):
+    assert not row.get("declined_by"), row
     screen(row, {SCENE.format(2), SCENE.format(3)})
-(waiting,) = [row for row in rows("screen") if row.get("declined_by")]
-assert waiting["declined_by"] == ["sub-1"], waiting
+assert [
+    row["id"]
+    for row in rows("screen")
+    if row.get("declined_by") and row["status"] == "pending"
+] == [
+    "screen-0003-d1",
+    "screen-0002-d1",
+    "screen-0001-d1",
+    "screen-0002-d3",
+    "screen-0003-d3",
+], rows("screen")
 row = qa.next_bundle(task, "sub-2")
-assert row["check_of"], row
+assert row["check_of"] == "screen-0003-r2", row
 screen(row)
 assert qa.next_bundle(task, "sub-2") is None
-refused(lambda: qa.next_bundle(task, "sub-2", waiting["id"]), "declined")
+refused(lambda: qa.next_bundle(task, "sub-2", "screen-0003-d1"), "declined")
 refused(lambda: qa.advance(task), "declined")
 # A worker keeps the helper it started on.
-refused(lambda: qa.next_bundle(task, "sub-1", helper="codex"), "helper")
-# A worker on another helper takes them, reviews one scene and declines the
-# other, which two helpers have declined now, so it is set aside.
-row = qa.next_bundle(task, "other-1", helper="Codex")
-assert row["id"] == waiting["id"], row
-screen(row, {SCENE.format(3)})
-assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 3}
+refused(lambda: qa.next_bundle(task, "coord", helper="codex"), "helper")
+# A worker on another helper reviews the owner's scene and variant but declines
+# the lint fix too, which two helpers have declined now, so it is set aside.
+for expected in ("screen-0003-d1", "screen-0002-d1", "screen-0001-d1"):
+    row = qa.next_bundle(task, "other-1", helper="Codex")
+    assert row["id"] == expected, row
+    screen(row, declined_items={lint_family["id"] + "-d1"})
+assert qa.status(task)["declined"] == {"waiting": 4, "set_aside": 1}
 row = qa.next_bundle(task, "sub-1")
-assert row["check_of"] == waiting["id"], row
+assert row["check_of"] == "screen-0003-d1", row
 screen(row)
+# With no worker on another helper for the rest, next sets it aside once the
+# rest of screening is reviewed, and every target is accounted for.
+assert qa.next_bundle(task, "sub-1") is None
+row = qa.next_bundle(task, "sub-1", skip_declined=True)
+assert qa.status(task)["declined"] == {"waiting": 0, "set_aside": 5}
+checkpoint = json.loads((task / "checkpoint.json").read_text(encoding="utf-8"))
+assert (
+    checkpoint["screen"]["accepted_items"] + 5 == checkpoint["screen"]["total_items"]
+), checkpoint["screen"]
 
-# A declined deep item waits too; with no worker on another helper, next sets
-# it aside once the rest of its stage is reviewed, and carries QA to the end.
-row = qa.next_bundle(task, "sub-1")
+# A declined deep item waits too, and next sets it aside the same way.
 qa.accept_result(
     task,
     result_path(
@@ -201,25 +272,55 @@ qa.accept_result(
         },
     ),
 )
+(deep,) = [row for row in rows("deep") if row.get("declined_by")]
 assert qa.next_bundle(task, "sub-1") is None
 assert qa.next_bundle(task, "sub-1", skip_declined=True) is None
 assert qa.status(task)["stage"] == "complete"
+
+# Only the lint fix a reviewer judged became a finding, and the joke counts as
+# reviewed once, on the variants its reviews covered.
 findings = json.loads((task / "findings.json").read_text(encoding="utf-8"))
-assert sorted(row["correction"] for row in findings["findings"]) == [
-    "Ah…♥ Amazing",
-    "Mm…♥ No",
-], findings["findings"]
-# The report names who declined each item.
+assert [row["correction"] for row in findings["findings"]] == ["Ah…♥ Amazing"], (
+    findings["findings"]
+)
+assert [(row["id"], row["variant_count"]) for row in findings["motif_families"]] == [
+    (motif_family["id"], 1),
+    (motif_family["id"] + "-d1", 1),
+], findings["motif_families"]
+assert qa.status(task)["screen"]["motif_families"] == {"accepted": 1, "total": 1}
+# The report names who declined each item, and a family's declined part by its
+# proposals or variants.
+forest = next(
+    item["id"]
+    for item in bundle_of(scenes)["items"]
+    if item["scene_id"] == SCENE.format(3)
+)
+(weather,) = bundle_of(deep)["items"]
 assert [
-    (row["stage"], row["declined_by"], row["reasons"]) for row in findings["declined"]
+    (row["id"], row["declined_by"], row["reasons"], row.get("units"))
+    for row in findings["declined"]
 ] == [
     (
-        "screen",
-        ["other-1", "sub-1"],
-        ["Outside what this reviewer reviews."] * 2,
+        motif_family["id"] + "-d3",
+        ["sub-1"],
+        [REASON],
+        [
+            variant["id"]
+            for variant in motif_family["variants"]
+            if in_scenes(variant, [SCENE.format(3)])
+        ],
     ),
-    ("deep", ["sub-1"], ["Not reviewed."]),
+    (forest, ["sub-1"], [REASON], None),
+    (
+        lint_family["id"] + "-d1",
+        ["other-1", "sub-1"],
+        [REASON, REASON],
+        [owner_fix["id"]],
+    ),
+    (weather["id"], ["sub-1"], ["Not reviewed."], None),
 ], findings["declined"]
+# Only lines no reviewer judged are reported as not reviewed: the owner's
+# scene was, by the other helper.
 assert {row["source"] for row in findings["not_reviewed"]} == {
     "案内人",
     "ここは暗い森だ",

@@ -644,7 +644,8 @@ else:
     raise AssertionError("Finalize skipped a declined bundle silently.")
 state = qa.finalize(task, skip_declined=True)
 # The sweep rule found the other dialogue lines with the word, not the label;
-# its reviewer accepts one and rejects the sentence start.
+# its reviewer accepts one and declines the other, which a reviewer on another
+# helper rejects: a sentence start keeps its capital.
 assert state["stage"] == "sweep", state
 assert FOREST_NOTE not in {
     evidence["note"]
@@ -663,28 +664,47 @@ assert sorted(row["current"] for row in family["candidates"]) == [
     "Arousal!",
     "The Arousal is building…",
 ], family
-qa.accept_result(
-    task,
-    result_path(
-        "sweep",
-        {
-            "schema": qa.SWEEP_RESULT_SCHEMA,
-            "bundle_id": row["id"],
-            "bundle_sha256": row["sha256"],
-            "reviews": [
-                {
-                    "id": family["id"],
-                    "rejected": [
-                        candidate["id"]
-                        for candidate in family["candidates"]
-                        if candidate["current"] == "Arousal!"
-                    ],
-                    "note": "A sentence start keeps its capital.",
-                }
-            ],
-        },
-    ),
-)
+
+
+def sweep(row, rejected=(), declined=()):
+    (family,) = bundle_of(row)["items"]
+    qa.accept_result(
+        task,
+        result_path(
+            row["id"],
+            {
+                "schema": qa.SWEEP_RESULT_SCHEMA,
+                "bundle_id": row["id"],
+                "bundle_sha256": row["sha256"],
+                "reviews": [
+                    {
+                        "id": family["id"],
+                        "rejected": [
+                            candidate["id"]
+                            for candidate in family["candidates"]
+                            if candidate["current"] in rejected
+                        ],
+                        "note": "A sentence start keeps its capital."
+                        if rejected
+                        else "",
+                    }
+                ],
+                "declined": [
+                    {"id": candidate["id"], "reason": "Not judged."}
+                    for candidate in family["candidates"]
+                    if candidate["current"] in declined
+                ],
+            },
+        ),
+    )
+
+
+sweep(row, declined={"Arousal!"})
+row = qa.next_bundle(task, "sweep-b", helper="other")
+assert [
+    candidate["current"] for candidate in bundle_of(row)["items"][0]["candidates"]
+] == ["Arousal!"], row
+sweep(row, rejected={"Arousal!"})
 qa.record_decision(
     task,
     "stratum names",
