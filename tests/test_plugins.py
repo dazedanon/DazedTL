@@ -3,7 +3,6 @@
 import json
 import unittest
 from copy import deepcopy
-from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -21,26 +20,13 @@ from dazedtl.translation.files import digest, read_json
 from dazedtl.translation.operations import lifecycle_path
 
 
-@lru_cache(maxsize=64)
-def parse_fixture(path, kind, source):
-    return Documents().parse([{"path": path, "kind": kind, "source": source}])[path]
-
-
-class FixtureDocuments:
-    """Reuse real parse results only for identical fixture inputs."""
-
-    def parse(self, files):
-        # Services and later tests must never share mutable parser results.
-        return {row["path"]: deepcopy(parse_fixture(**row)) for row in files}
-
-
 class PluginTests(unittest.TestCase):
     identity_keys = ("version", "kind", "projectId", "requestId", "binding")
 
     @classmethod
     def setUpClass(cls):
-        cls.documents = FixtureDocuments()
-        cls.addClassCleanup(parse_fixture.cache_clear)
+        # One parser for the class parses each identical fixture file once.
+        cls.documents = Documents()
 
     def setUp(self):
         temporary = TemporaryDirectory()
@@ -411,9 +397,6 @@ class PluginTests(unittest.TestCase):
             self.service.continue_task(self.identity, current["requestId"])
 
     def test_apply_cancel_stale_preview_one_use_restore_and_rollback(self):
-        # Keep the real, uncached parser boundary through investigation,
-        # translation, Apply and restore, alongside the direct parser checks.
-        self.service.documents = Documents()
         _, _, task = self.investigation()
         first = read_json(task["request"])
         paths = [row["path"] for row in first["files"]]
@@ -587,6 +570,17 @@ class PluginTests(unittest.TestCase):
                 approved,
                 {approved[0]["id"]: "Money\\C[1] Japanese"},
             )
+        # An unchanged version never starts Node again, and each caller
+        # changes only its own copy.
+        parsed["a.js"]["literals"].clear()
+        with patch(
+            "dazedtl.plugins.documents.subprocess.run",
+            side_effect=AssertionError("An unchanged version started Node again."),
+        ):
+            again = parser.parse(
+                [{"path": "a.js", "source": original.decode(), "kind": "source"}]
+            )["a.js"]
+        self.assertTrue(again["literals"])
         context = self.service.original_context(self.identity, "www/")
         self.assertIn("所持金消費", context["keys"])
         self.assertNotIn("所持金", context["keys"])

@@ -4,6 +4,8 @@ import json
 import re
 import shutil
 import subprocess
+import threading
+from collections import OrderedDict
 from pathlib import Path
 
 from dazedtl.translation.files import digest, unique_object
@@ -124,27 +126,37 @@ def same_tree(before, after, changes, path=(), depth=0):
 
 
 class Documents:
+    """Parses each exact version of a script once. A review reads the same
+    unchanged files several times, and every parse starts Node, which costs
+    most on Windows."""
+
+    def __init__(self, budget=32_000_000):
+        # Parsed versions as JSON text, least recently used first, within
+        # budget characters; every caller decodes its own copy to change.
+        self.parsed = OrderedDict()
+        self.size, self.budget = 0, budget
+        self.lock = threading.Lock()
+
     def parse(self, files):
         js = [row for row in files if row["kind"] != "json"]
+        keys = [
+            (row["path"], row["kind"], digest(row["source"].encode())) for row in js
+        ]
+        known = {}
+        with self.lock:
+            for key in keys:
+                if key in self.parsed:
+                    self.parsed.move_to_end(key)
+                    known[key] = self.parsed[key]
+        fresh = [row for row, key in zip(js, keys) if key not in known]
+        parsed = iter(syntax(fresh) if fresh else ())
         result = {}
-        if js:
-            node = shutil.which("node")
-            if not node:
-                raise ValueError(
-                    "Install the application's supported Node runtime to validate JavaScript without executing it."
-                )
-            response = subprocess.run(
-                [node, str(Path(__file__).with_name("syntax.cjs"))],
-                input=json.dumps({"files": js}, ensure_ascii=False).encode(),
-                capture_output=True,
-                timeout=max(10, len(js) * 6),
-                check=False,
-            )
-            if response.returncode:
-                raise ValueError(
-                    "The local syntax parser is unavailable. Check the application dependencies."
-                )
-            result.update((row["path"], row) for row in decode(response.stdout))
+        for row, key in zip(js, keys):
+            if key in known:
+                result[row["path"]] = json.loads(known[key])
+            else:
+                result[row["path"]] = next(parsed)
+                self.keep(key, json.dumps(result[row["path"]], ensure_ascii=False))
         for row in files:
             if row["kind"] == "json":
                 try:
@@ -157,6 +169,38 @@ class Documents:
                         "plugins": [],
                     }
         return result
+
+    def keep(self, key, text):
+        if len(text) > self.budget:
+            return
+        with self.lock:
+            old = self.parsed.pop(key, None)
+            self.size += len(text) - (len(old) if old else 0)
+            self.parsed[key] = text
+            while self.size > self.budget:
+                self.size -= len(self.parsed.popitem(last=False)[1])
+
+
+def syntax(files):
+    """Parser results for script files, in their order."""
+    node = shutil.which("node")
+    if not node:
+        raise ValueError(
+            "Install the application's supported Node runtime to validate JavaScript without executing it."
+        )
+    response = subprocess.run(
+        [node, str(Path(__file__).with_name("syntax.cjs"))],
+        input=json.dumps({"files": files}, ensure_ascii=False).encode(),
+        capture_output=True,
+        timeout=max(10, len(files) * 6),
+        check=False,
+    )
+    rows = [] if response.returncode else decode(response.stdout)
+    if [row["path"] for row in rows] != [row["path"] for row in files]:
+        raise ValueError(
+            "The local syntax parser is unavailable. Check the application dependencies."
+        )
+    return rows
 
 
 def json_document(path, source):
