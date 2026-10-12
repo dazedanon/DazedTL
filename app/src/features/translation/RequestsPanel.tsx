@@ -174,8 +174,11 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
               <ul className="translation-batch-list">
                 {job.batches.map((batch, index) => (
                   <li key={index}>
-                    {batch.id || "Unconfirmed submission"} ·{" "}
-                    {batch.api_status || batch.state}
+                    {batch.id ||
+                      (batch.state === "submitting"
+                        ? "Unconfirmed submission"
+                        : "Not sent")}{" "}
+                    · {batch.api_status || batch.state}
                     {(batch.state === "submitting" ||
                       batch.state === "unmatched") && (
                       <Button
