@@ -31,7 +31,7 @@ def saved(root, name):
 def evidence_root(root):
     path = Path(root) / "plan.json"
     if path.is_file():
-        plan = read_json(path)
+        plan = _read_cached(str(path), file_stamp(path))
         if plan.get("batch_link"):
             from desktop.backend.batches import batch_root
 

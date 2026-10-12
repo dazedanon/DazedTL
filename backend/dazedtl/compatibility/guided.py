@@ -276,6 +276,7 @@ def phased_workflows(workspace, lock, operations, manual):
 
         def _collect(self, project):
             from .preparations import temporary
+            from .process_view import _read_cached, _verified_digest, file_stamp
 
             # Reload runs in a separate tool process. Do not collect between
             # its archive, version update and file replacements.
@@ -300,7 +301,9 @@ def phased_workflows(workspace, lock, operations, manual):
             )
             same_pass = True
             if current_plan and current_plan.is_file():
-                saved = read_json(current_plan)
+                # Polls collect several times per observation, and a Batch
+                # plan for a large game holds megabytes of reserved sources.
+                saved = _read_cached(str(current_plan), file_stamp(current_plan))
                 same_pass = all(
                     versions.get(name, "")
                     == saved.get("dazedtl_source_versions", {}).get(name, "")
@@ -328,9 +331,10 @@ def phased_workflows(workspace, lock, operations, manual):
                 source = self.manual.folder(identity)
                 try:
                     plan_path = source / "plan.json"
-                    plan = read_json(plan_path)
+                    plan = _read_cached(str(plan_path), file_stamp(plan_path))
                     if (
-                        digest(plan_path.read_bytes()) != job["plan_hash"]
+                        _verified_digest(str(plan_path), file_stamp(plan_path))
+                        != job["plan_hash"]
                         or (plan.get("workflow") or {}).get("id") != project["id"]
                     ):
                         continue
