@@ -14,7 +14,9 @@ from dazedtl.translation.files import digest, project_path, read_json
 
 @lru_cache(maxsize=8)
 def _read_cached(path, signature):
-    return read_json(path, limit=64_000_000)
+    # The engine writes this evidence without a cap, and a request queue grows
+    # with the game: about 26 KB per request, 107 MB for a 970-map game.
+    return read_json(path, limit=None)
 
 
 def saved(root, name):

@@ -54,9 +54,15 @@ def decode_json(raw):
     )
 
 
-def read_json(path, *, limit=128_000_000):
+def read_json(path, *, limit: int | None = 128_000_000):
+    """A regular JSON file of at most `limit` bytes; None reads any size."""
     path = Path(path)
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or limit is not None
+        and path.stat().st_size > limit
+    ):
         raise ValueError("Choose a regular JSON file within the supported size limit.")
     return decode_json(path.read_bytes())
 
