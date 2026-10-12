@@ -18,28 +18,17 @@ def find_data_archives(game_root: Path, data_dir: Path) -> list[Path]:
     archives: list[Path] = []
     seen: set[Path] = set()
     for base in (game_root, data_dir):
-        if not base.is_dir():
-            continue
-        for pat in ("*.wolf", "*.wolf.bak"):
-            for archive in base.glob(pat):
-                resolved = archive.resolve()
-                if resolved not in seen:
-                    seen.add(resolved)
-                    archives.append(archive)
-
-    def archive_stem(path: Path) -> str:
-        name = path.name.casefold()
-        if name.endswith(".bak"):
-            name = name[:-4]
-        if name.endswith(".wolf"):
-            name = name[:-5]
-        return name
+        for archive in wolfdawn.list_archives(base, backups=True):
+            resolved = archive.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                archives.append(archive)
 
     def preferred(stem: str) -> Path | None:
-        candidates = [a for a in archives if archive_stem(a) == stem]
+        candidates = [a for a in archives if wolfdawn.archive_stem(a).casefold() == stem]
         if not candidates:
             return None
-        backups = [a for a in candidates if a.name.casefold().endswith(".wolf.bak")]
+        backups = [a for a in candidates if a.suffix.casefold() == ".bak"]
         return (backups or candidates)[0]
 
     basic = preferred("basicdata")
@@ -52,6 +41,13 @@ def find_data_archives(game_root: Path, data_dir: Path) -> list[Path]:
     if monolithic is not None:
         return [monolithic]
     return [archive for archive in (basic, maps) if archive is not None]
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copy2(source, target)
 
 
 def pristine_path_for(
@@ -94,21 +90,22 @@ def rebuild_originals_from_archives(
     data_dir = game_root / "Data"
     archives = find_data_archives(game_root, data_dir)
     if not archives:
-        emit("  ⚠ no Data/BasicData/MapData .wolf archives found to rebuild originals")
+        emit("  ⚠ no Data/BasicData/MapData archives found to rebuild originals")
         return False
 
-    emit("Rebuilding pristine originals from the game's .wolf archives…")
+    emit("Rebuilding pristine originals from the game's archives…")
     originals_dir.parent.mkdir(parents=True, exist_ok=True)
     with staging_folder(originals_dir.parent, ".wolf-originals-") as temp_root:
         unpacked = temp_root / "unpacked"
         inputs: list[str] = []
         for arc in archives:
-            if arc.suffix == ".bak":
+            if arc.suffix.casefold() == ".bak":
                 staged = temp_root / arc.with_suffix("").name
-                try:
-                    os.link(arc, staged)
-                except OSError:
-                    shutil.copy2(arc, staged)
+                _link_or_copy(arc, staged)
+                # wolf unpack reads a Wolf Pro game's key beside the archive.
+                key = wolfdawn.pro_key_file(arc.parent)
+                if key is not None and not (temp_root / key.name).exists():
+                    _link_or_copy(key, temp_root / key.name)
                 inputs.append(str(staged))
             else:
                 inputs.append(str(arc))

@@ -173,11 +173,13 @@ def take_census(
             if item.is_file() and not item.is_symlink():
                 yield item.relative_to(folder).as_posix(), item.read_bytes()
 
+    def peek(name, size):
+        return backups.peek(path, name, size)
+
     with (
-        backups.materialized(path, files=census.wanted(names), stopped=stopped) as (
-            root,
-            _manifest,
-        ),
+        backups.materialized(
+            path, files=census.wanted(names, peek), stopped=stopped
+        ) as (root, _manifest),
         tempfile.TemporaryDirectory(prefix="dazedtl-census-") as work,
     ):
         result = census.scan(
@@ -186,7 +188,7 @@ def take_census(
             engine.census_decoders(root, work),
             dump(folder) if folder else None,
             progress,
-            lambda name, size: backups.peek(path, name, size),
+            peek,
         )
     result.update(snapshot=snapshot["id"], decoded_folder=decoded or None)
     write_json(census_path(workspace, project_id), result)

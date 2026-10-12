@@ -221,6 +221,71 @@ def db_dat_sibling(project_path: PathLike) -> Path:
     return Path(project_path).with_suffix(".dat")
 
 
+# What WolfDawn reads as a data archive (wolf_archive's ARCHIVE_EXTENSIONS and
+# is_archive_file): any .wolf file, or one a Wolf Pro game renamed to another of
+# these extensions, which counts only when it starts with the DX archive magic.
+ARCHIVE_EXTENSIONS = (".wolf", ".data", ".pak", ".bin", ".assets", ".content", ".res", ".resource")
+# A Wolf Pro game with its own archive key keeps it beside its archives in a file
+# by one of these names with an archive extension; one that starts with the DX
+# magic is an ordinary archive instead (wolf_archive's PRO_KEY_FILE_NAMES).
+PRO_KEY_FILE_NAMES = ("Game", "List", "Data2", "GameFile", "BasicData2")
+_PRO_KEY_STEMS = frozenset(name.casefold() for name in PRO_KEY_FILE_NAMES)
+
+
+def _starts_with_dx(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            return handle.read(2) == b"DX"
+    except OSError:
+        return False
+
+
+def archive_stem(path: PathLike) -> str:
+    """The archive's name without its extension or the ``.bak`` a backup adds."""
+    path = Path(path)
+    if path.suffix.casefold() == ".bak":
+        path = path.with_suffix("")
+    return path.stem
+
+
+def is_archive(path: PathLike) -> bool:
+    """True when WolfDawn unpacks *path*, or the archive a ``.bak`` backed up."""
+    path = Path(path)
+    name = path.with_suffix("") if path.suffix.casefold() == ".bak" else path
+    suffix = name.suffix.casefold()
+    if suffix not in ARCHIVE_EXTENSIONS or not path.is_file():
+        return False
+    # A .wolf archive's header may be encrypted, so its name is enough, unless
+    # it is the key file, which never starts with DX.
+    if suffix == ".wolf" and name.stem.casefold() not in _PRO_KEY_STEMS:
+        return True
+    return _starts_with_dx(path)
+
+
+def list_archives(directory: PathLike, *, backups: bool = False) -> list[Path]:
+    """The archives directly inside *directory*, sorted by name, and their
+    ``.bak`` backups when *backups* is set."""
+    try:
+        entries = sorted(Path(directory).iterdir())
+    except OSError:
+        return []
+    return [
+        entry
+        for entry in entries
+        if (backups or entry.suffix.casefold() != ".bak") and is_archive(entry)
+    ]
+
+
+def pro_key_file(directory: PathLike) -> Path | None:
+    """The Wolf Pro key file ``wolf unpack`` reads beside an archive in *directory*."""
+    for name in PRO_KEY_FILE_NAMES:
+        for extension in ARCHIVE_EXTENSIONS:
+            path = Path(directory) / f"{name}{extension}"
+            if path.is_file():
+                return None if _starts_with_dx(path) else path
+    return None
+
+
 class WolfDawnError(RuntimeError):
     """Raised when the WolfDawn binary can't be located/downloaded or a command fails hard."""
 
@@ -436,20 +501,17 @@ def _emit_unpack_progress(
 
 
 def _expand_wolf_archives(inputs: Union[PathLike, Iterable[PathLike]]) -> list[Path] | None:
-    """Expand directory inputs to ``*.wolf`` files; return None if any path is invalid."""
+    """Expand directory inputs to the archives inside them; return None if a
+    path is neither an archive nor a folder."""
     if isinstance(inputs, (str, Path)):
         inputs = [inputs]
     archives: list[Path] = []
     for item in inputs:
         path = Path(item)
-        if path.is_file():
-            lower = path.name.lower()
-            if lower.endswith(".wolf") or lower.endswith(".wolf.bak"):
-                archives.append(path)
-            else:
-                return None
+        if path.is_file() and is_archive(path):
+            archives.append(path)
         elif path.is_dir():
-            archives.extend(sorted(path.glob("*.wolf")))
+            archives.extend(list_archives(path))
         else:
             return None
     return archives
@@ -473,12 +535,11 @@ def unpack_all(
     progress_fn: ProgressFn | None = None,
     progress_total: int | None = None,
 ) -> WolfResult:
-    """Unpack each ``Name.wolf`` to ``<out-dir>/Name/``.
+    """Unpack each archive, such as ``Name.wolf``, to ``<out-dir>/Name/``.
 
-    WolfDawn reads each archive entirely into memory (``std::fs::read``), so this
-    runs ``wolf unpack`` once per archive in a fresh subprocess. That way peak
-    RAM is freed between large archives instead of stacking in one long
-    ``unpack-all`` process.
+    This runs ``wolf unpack`` once per archive so progress can name each one.
+    ``wolf unpack`` opens a Wolf Pro game's archives with the key file beside
+    them (see :func:`pro_key_file`).
     """
     archives = _expand_wolf_archives(inputs)
     if archives is None:
@@ -492,7 +553,7 @@ def unpack_all(
         return WolfResult(
             returncode=4,
             stdout="",
-            stderr="no .wolf archives found in the given paths",
+            stderr="no Wolf archives found in the given paths",
             argv=["wolf", "unpack", "…"],
         )
 
@@ -505,8 +566,7 @@ def unpack_all(
     last_argv: list[str] = []
 
     for index, archive in enumerate(archives):
-        stem = archive.stem
-        target = out_root / stem
+        target = out_root / archive_stem(archive)
         if progress_fn and total > 0:
             _emit_unpack_progress(
                 progress_fn,

@@ -14,6 +14,8 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from util.wolfdawn import archive_stem, list_archives
+
 # ---------------------------------------------------------------------------
 # File categories used to decide what to import by default
 # ---------------------------------------------------------------------------
@@ -52,9 +54,10 @@ _ACE_MARKERS = {
 }
 _ACE_DATA_SCRIPTS = {".rvdata2", ".rvdata"}
 
-# WOLF RPG Editor markers. Games ship data inside .wolf archives (one Data.wolf,
-# or split BasicData/MapData/... .wolf files), or as a loose Data/ folder holding
-# the unpacked binaries (CommonEvent.dat, *.mps maps, *.project databases).
+# WOLF RPG Editor markers. Games ship data inside archives (one Data.wolf, or
+# split BasicData/MapData/... .wolf files, which a Wolf Pro game may rename), or
+# as a loose Data/ folder holding the unpacked binaries (CommonEvent.dat, *.mps
+# maps, *.project databases).
 _WOLF_LOOSE_MARKERS = ("BasicData/CommonEvent.dat", "CommonEvent.dat")
 
 _WOLF_TEXT_ARCHIVE_STEMS = ("BasicData", "MapData")
@@ -76,7 +79,8 @@ def find_wolf_text_archives(
     game_root: str | Path,
     data_dir: str | Path | None = None,
 ) -> dict[str, Path]:
-    """Return ``{BasicData|MapData: archive_path}`` for text-relevant ``.wolf`` files."""
+    """Return ``{BasicData|MapData: archive_path}`` for the text archives,
+    preferring a live archive to its ``.bak`` backup."""
     game_root = Path(game_root)
     data_dir = Path(data_dir) if data_dir else None
     found: dict[str, Path] = {}
@@ -86,16 +90,11 @@ def find_wolf_text_archives(
     if (game_root / "Data").is_dir():
         bases.append(game_root / "Data")
     for base in bases:
-        if not base.is_dir():
-            continue
+        archives = list_archives(base, backups=True)
         for stem in _WOLF_TEXT_ARCHIVE_STEMS:
-            if stem in found:
-                continue
-            for name in (f"{stem}.wolf", f"{stem}.wolf.bak"):
-                arc = base / name
-                if arc.is_file():
-                    found[stem] = arc
-                    break
+            matches = [a for a in archives if archive_stem(a).casefold() == stem.casefold()]
+            if stem not in found and matches:
+                found[stem] = min(matches, key=lambda a: a.suffix.casefold() == ".bak")
     return found
 
 
@@ -155,12 +154,12 @@ def find_data_folder(game_root: str | Path) -> tuple[Optional[Path], str]:
 
 
 def find_wolf_archives(game_root: str | Path) -> list[Path]:
-    """Return .wolf archive files in the game root (and its Data/ subfolder)."""
+    """Return the archives in the game root (and its Data/ subfolder), never a
+    Wolf Pro key file."""
     root = Path(game_root)
     archives: list[Path] = []
     for base in (root, root / "Data"):
-        if base.is_dir():
-            archives.extend(sorted(base.glob("*.wolf")))
+        archives.extend(list_archives(base))
     # De-dupe while preserving order.
     seen: set[Path] = set()
     unique: list[Path] = []
@@ -185,7 +184,7 @@ def _wolf_dir_has_loose_data(data_dir: Path) -> bool:
 
 
 def wolf_unpack_target_dir(game_root: str | Path, archive: str | Path) -> Path:
-    """Return the folder ``wolf unpack-all`` writes for *archive* (``<out>/<stem>/``)."""
+    """Return the folder an unpack writes for *archive* (``<out>/<stem>/``)."""
     archive = Path(archive)
     return wolf_unpack_out_dir(game_root, archive) / archive.stem
 
@@ -212,7 +211,7 @@ def find_wolf_unpack_gaps(
     game_root: str | Path,
     archives: list[Path] | None = None,
 ) -> list[Path]:
-    """Return ``.wolf`` archives whose unpack output folder is missing or empty.
+    """Return archives whose unpack output folder is missing or empty.
 
     Used to catch interrupted unpacks: a game may already have ``BasicData/`` loose
     while ``MapData.wolf`` was never finished, and the old ``unpacked`` flag still
@@ -225,7 +224,7 @@ def find_wolf_unpack_gaps(
 
 
 def wolf_unpack_out_dir(game_root: str | Path, archive: str | Path) -> Path:
-    """Return the ``-o`` directory for ``wolf unpack-all`` on *archive*.
+    """Return the ``-o`` directory for an unpack of *archive*.
 
     ``wolf`` unpacks ``Name.wolf`` to ``<out>/Name/``. A root-level ``Data.wolf``
     must therefore unpack to the game root (yielding ``Data/``), not into an

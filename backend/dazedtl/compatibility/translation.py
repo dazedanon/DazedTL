@@ -1123,11 +1123,12 @@ def _wolf_documents(wolfdawn, root, workdir, names):
     are unpacked first, and a file WolfDawn can't read is returned as None.
     The engine reads a loose file before the same file in an archive, so an
     archived file with a loose copy is left to the loose one."""
-    loose = {name for name in names if not name.casefold().endswith(".wolf")}
+    archived = {name for name in names if wolfdawn.is_archive(root / name)}
+    loose = set(names) - archived
     sources = []
     for index, name in enumerate(names):
         path = root / name
-        if name.casefold().endswith(".wolf"):
+        if name in archived:
             target = workdir / "wolf" / str(index)
             if not wolfdawn.unpack_all([path], target).ok:
                 raise ValueError("WolfDawn could not unpack " + name)

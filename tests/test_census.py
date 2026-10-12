@@ -7,6 +7,7 @@ import struct
 import unittest
 import zlib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from dazedtl.translation import census
 
@@ -326,6 +327,52 @@ class CensusTests(unittest.TestCase):
             [("wolf:map", "message"), ("wolf:map", "ui")],
         )
         self.assertTrue(census.protected("wolf:db", "line"))
+
+    def test_a_wolf_pro_game_hands_wolfdawn_its_key_and_renamed_archives(self):
+        # A Wolf Pro game with its own archive key keeps it beside archives it
+        # may rename. Left out of the copy WolfDawn reads, the key made the
+        # census count four runs of such a game instead of every line.
+        files = {
+            "Data/BasicData.wolf": b"\x12encrypted header",
+            "Data/MapData.pak": b"DX archive",
+            "Data/Game.wolf": b"\x11key",
+            "Data/Picture.wolf": b"DX pictures",
+            "Content/Paks/Data.pak": b"PK another engine",
+        }
+        names = sorted(files)
+
+        def head(name, size):
+            return files[name][:size]
+
+        self.assertEqual(
+            sorted(census.wanted(names, head)),
+            ["Data/BasicData.wolf", "Data/Game.wolf", "Data/MapData.pak"],
+        )
+        handed = []
+
+        class Wolf(Decoders):
+            @staticmethod
+            def wolf(names):
+                handed.extend(names)
+                return []
+
+        result = census.scan(names, files.get, Wolf(), peek=head)
+        self.assertEqual(handed, ["Data/BasicData.wolf", "Data/MapData.pak"])
+        self.assertEqual(result["opened"], handed)
+        self.assertEqual(result["needs_dump"], ["Content/Paks/Data.pak"])
+        # The engine's copy of WolfDawn's rule agrees on the same files.
+        wolfdawn = engine_package("util/wolfdawn")
+        with TemporaryDirectory() as temporary:
+            for name, data in files.items():
+                path = Path(temporary, name)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+            data = Path(temporary, "Data")
+            self.assertEqual(
+                [path.name for path in wolfdawn.list_archives(data)],
+                ["BasicData.wolf", "MapData.pak", "Picture.wolf"],
+            )
+            self.assertEqual(wolfdawn.pro_key_file(data), data / "Game.wolf")
 
     def test_ace_data_archives_and_unreadable_containers(self):
         names = [

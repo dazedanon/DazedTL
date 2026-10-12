@@ -42,6 +42,14 @@ TEXT = {
 OPENED = {".rgssad", ".rgss2a", ".rgss3a", ".asar", ".xp3"}
 WOLF = {".mps", ".dat", ".project"}
 WOLF_TEXT = {"basicdata", "mapdata", "data"}
+# A Wolf Pro game may rename its archives to another of these extensions, and
+# one with its own archive key keeps it beside them in a file by one of these
+# names, as WolfDawn's wolf-archive crate lists them (ARCHIVE_EXTENSIONS and
+# PRO_KEY_FILE_NAMES); util/wolfdawn holds the engine's copy.
+WOLF_ARCHIVES = {
+    ".wolf", ".data", ".pak", ".bin", ".assets", ".content", ".res", ".resource",
+}  # fmt: skip
+WOLF_KEYS = {"game", "list", "data2", "gamefile", "basicdata2"}
 NEEDS_DUMP = {
     ".ybn", ".pck", ".utoc", ".ucas", ".assets", ".bundle", ".unity3d",
     ".dts", ".nsa", ".sar", ".dxa", ".pfs",
@@ -56,9 +64,10 @@ SKIPPED_DIRS = {".git", ".dazedtl", "save", "saves", "locales", "swiftshader"}
 TOOL_DIRS = {"bepinex", "melonloader", "monobleedingedge"}
 
 
-def candidate(name):
+def candidate(name, head=None):
     """How the census treats a game file: 'read', 'open', 'index', 'wolf',
-    'dump' or None."""
+    'dump' or None. head(name, size) -> the file's first bytes tells a
+    renamed Wolf archive from another engine's file of the same name."""
     path = PurePosixPath(name)
     folders = [part.casefold() for part in path.parts[:-1]]
     if any(
@@ -76,9 +85,17 @@ def candidate(name):
     if suffix in INDEXED:
         return "index"
     # Wolf keeps text in BasicData and MapData, or one Data archive; the
-    # others hold pictures and sound, often gigabytes of them.
+    # others hold pictures and sound, often gigabytes of them. An archive a
+    # Wolf Pro game renamed starts with the DX archive magic.
     if suffix == ".wolf":
         return "wolf" if path.stem.casefold() in WOLF_TEXT else None
+    if (
+        suffix in WOLF_ARCHIVES
+        and path.stem.casefold() in WOLF_TEXT
+        and head is not None
+        and head(name, 2) == b"DX"
+    ):
+        return "wolf"
     if suffix in WOLF and "data" in folders:
         return "wolf"
     if path.name.casefold() in NEEDS_DUMP_NAMES or suffix in NEEDS_DUMP:
@@ -1138,9 +1155,27 @@ def summary(uncovered, limit=20):
 # --- The scan -------------------------------------------------------------------
 
 
-def wanted(names):
-    """The game files a census reads, opens or hands to WolfDawn."""
-    return [name for name in names if candidate(name) in {"read", "open", "wolf"}]
+def wanted(names, head=None):
+    """The game files a census reads, opens or hands to WolfDawn, with the key
+    file a Wolf Pro game keeps beside its archives, which WolfDawn opens them
+    with. head(name, size) -> a file's first bytes, as for candidate."""
+    chosen = [
+        name for name in names if candidate(name, head) in {"read", "open", "wolf"}
+    ]
+    folders = {
+        PurePosixPath(name).parent
+        for name in chosen
+        if PurePosixPath(name).suffix.casefold() in WOLF_ARCHIVES
+    }
+    keys = [
+        name
+        for name in names
+        if (path := PurePosixPath(name)).parent in folders
+        and path.stem.casefold() in WOLF_KEYS
+        and path.suffix.casefold() in WOLF_ARCHIVES
+        and not (head is not None and head(name, 2) == b"DX")
+    ]
+    return chosen + keys
 
 
 def scan(
@@ -1171,7 +1206,7 @@ def scan(
             found.extend(entries(rows, name, source))
 
     for count, name in enumerate(names, 1):
-        how = candidate(name)
+        how = candidate(name, head)
         if count % 500 == 0:
             progress(f"Read {count:,} of {len(names):,} files")
         if how == "dump":
@@ -1223,7 +1258,11 @@ def scan(
                     take(member, body, "tool")
     if wolf:
         progress("Reading Wolf data with WolfDawn")
-        archives = [name for name in wolf if name.casefold().endswith(".wolf")]
+        archives = [
+            name
+            for name in wolf
+            if PurePosixPath(name).suffix.casefold() in WOLF_ARCHIVES
+        ]
         try:
             documents = decoders.wolf(wolf)
         except ValueError:
