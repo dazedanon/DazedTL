@@ -449,6 +449,8 @@
         source: messageSource(),
         text: $gameMessage.allText(),
       };
+      // The opening played again after a crash was counted the first time.
+      if (state.stop === "resume") return;
       send(
         "message",
         where({
@@ -458,7 +460,8 @@
       );
     });
     after(Window_ChoiceList.prototype, "start", () => {
-      send("choice", where({ choices: $gameMessage.choices().map(clip) }));
+      if (state.stop !== "resume")
+        send("choice", where({ choices: $gameMessage.choices().map(clip) }));
     });
     // MZ names the background in Sprite_Battleback, MV in Spriteset_Battle.
     const backdrops = window.Sprite_Battleback
@@ -1320,13 +1323,15 @@
 
   async function tour(config) {
     const plan = config.stops;
-    // After a crash the page starts over; later stops need a game running.
+    // After a crash the page starts over; later stops need a game running,
+    // with the map to themselves as the opening leaves it.
     const resume = config.from || 0;
     if (resume && !["title", "new-game"].includes(plan[resume]?.id)) {
       doing("resume");
       try {
         await stops.title();
         await stops["new-game"]();
+        if (plan[resume].id !== "opening") await stops.opening(config);
       } catch (problem) {
         send("stop", {
           index: resume,
