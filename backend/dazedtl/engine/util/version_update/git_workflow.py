@@ -19,6 +19,7 @@ import stat
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Mapping
@@ -813,6 +814,23 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _asset_entries(files: Iterable[_SourceFile]) -> dict[str, _AssetManifestEntry]:
+    """Each asset's hash, size and mode, several files at once: a game holds
+    thousands of assets, and one at a time each waits on the disk."""
+    files = list(files)
+
+    def entry(source: _SourceFile) -> _AssetManifestEntry:
+        return _AssetManifestEntry(
+            _hash_file(source.path), source.path.stat().st_size, source.mode
+        )
+
+    with ThreadPoolExecutor(8) as pool:
+        return {
+            source.relative: value
+            for source, value in zip(files, pool.map(entry, files))
+        }
+
+
 @functools.lru_cache(maxsize=64)
 def _git_common_dir(repo: Path) -> Path:
     """The common directory is a fixed property of a repository root; status checks ask for it repeatedly."""
@@ -1123,19 +1141,13 @@ def _build_ignored_asset_manifest(
     source: Path, ignored_paths: Iterable[str]
 ) -> dict[str, _AssetManifestEntry]:
     ignored = set(ignored_paths)
-    manifest = {}
-    for entry in _source_files(source, format_json=False):
-        if (
-            entry.relative not in ignored
-            or _is_local_only_asset(entry.relative)
-            or _is_tool_owned_path(entry.relative)
-        ):
-            continue
-        file_stat = entry.path.stat()
-        manifest[entry.relative] = _AssetManifestEntry(
-            _hash_file(entry.path), file_stat.st_size, entry.mode
-        )
-    return manifest
+    return _asset_entries(
+        entry
+        for entry in _source_files(source, format_json=False)
+        if entry.relative in ignored
+        and not _is_local_only_asset(entry.relative)
+        and not _is_tool_owned_path(entry.relative)
+    )
 
 
 def _proposed_asset_manifest(
@@ -1159,15 +1171,13 @@ def _asset_manifest_for_source(
 ) -> dict[str, _AssetManifestEntry]:
     files = _source_files(source, format_json=False)
     ignored = _ignored_paths(repo, files, game_prefix)
-    return {
-        entry.relative: _AssetManifestEntry(
-            _hash_file(entry.path), entry.path.stat().st_size, entry.mode
-        )
+    return _asset_entries(
+        entry
         for entry in files
         if entry.relative in ignored
         and not _is_local_only_asset(entry.relative)
         and not _is_tool_owned_path(entry.relative)
-    }
+    )
 
 
 def _validate_official_asset_baseline(
