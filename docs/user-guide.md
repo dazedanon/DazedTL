@@ -62,8 +62,18 @@ Edit what it wrote in **Guidance**.
 **Add game folder** lets an earlier game in a series supply terms; copy the task again afterwards.
 **Thorough investigation** looks for names, running jokes and speech habits in three independent passes instead of one, and that step then uses about three times as much of your assistant's plan.
 
+**Event text sources**: copy the investigation to your assistant.
+It finds which variables, plugin commands and scripts hold text players see and turns those on.
+Change any choice under **Source choices**; **Other event text** in Translate translates them later.
+
 **Line widths** fills in from your assistant's measurements, which it checks in the running game, and you can change them.
 Message rows is how many rows one message window shows; Text QA keeps its corrections within it.
+
+**Cost estimate** shows what translating the whole game costs with your API key before you translate anything.
+Click **Estimate cost**: it estimates Database files, Maps & events and Other event text over all their files, with the model shown beside it, and lists each task's cost.
+Estimating is free and translates nothing; for Claude models it uses Anthropic's free token count.
+The other tasks use your assistant's plan, not your API key.
+If you change the guidance, the source choices, the game's files or the model, the estimate reads **Outdated**; click **Estimate again**.
 
 ### 3. Translate
 
@@ -80,9 +90,7 @@ Translate has five tasks.
 Approved Batch work carries on after DazedTL restarts.
 **Reload from game…** starts selected files over from the game's current text.
 
-**Other event text**: copy the investigation to your assistant.
-It finds which variables, plugin commands and scripts hold text players see and turns those on.
-Change any choice under **Source choices**, then translate like the other files.
+**Other event text** translates the sources chosen in **Event text sources**, like the other files.
 
 **Plugin files**: copy the task to your assistant, which finds and translates the player-visible text in every plugin.
 **Review & apply** shows what goes into the game.

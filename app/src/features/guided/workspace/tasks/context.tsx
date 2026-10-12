@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-/** Context: names and glossary, translation guidance and line widths. */
+/** Context: names and glossary, translation guidance, line widths and the cost estimate. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { ActionControl } from "../../../../ui/ActionControl";
@@ -12,6 +12,8 @@ import { Message } from "../../../../ui/Feedback";
 import { CheckField } from "../../../../ui/FieldRow";
 import { Section } from "../../../../ui/Section";
 import { ContextWorkspace } from "../../ContextWorkspace";
+import { CostEstimate } from "../../CostEstimate";
+import { ModelMenu } from "../../../settings/ModelMenu";
 import { GuidanceEditor } from "../../GuidanceEditor";
 import { LayoutMeasurements } from "../../LayoutMeasurements";
 import { sinceLabel } from "../../../assistant/assistantTasks";
@@ -143,11 +145,7 @@ export function namesView(w: GuidedWorkspace): TaskView {
       "Copy names & glossary task",
       done ? "default" : "primary",
     ),
-    next: advance(
-      "Continue to guidance",
-      undefined,
-      done ? "primary" : "quiet",
-    ),
+    next: advance(undefined, undefined, done ? "primary" : "quiet"),
     heading: {
       description:
         "Copy the task into your assistant to find speaker names and write the glossary and game context.",
@@ -359,5 +357,72 @@ export function layoutView(w: GuidedWorkspace): TaskView {
     action: saveControl,
     next: advance(undefined, undefined, pending ? "quiet" : "primary"),
     save: disabled ? undefined : saveLayout,
+  };
+}
+
+export function estimateView(w: GuidedWorkspace): TaskView {
+  const {
+    state,
+    values,
+    action,
+    context,
+    settings,
+    disabled,
+    advance,
+    feedback,
+    estimateCost,
+    localOperation,
+    stopOperation,
+  } = w;
+  const estimate = state.fullEstimate;
+  const working = estimate.status === "working";
+  const current = !!estimate.result && estimate.current;
+  // The estimate reads saved guidance and a configured model.
+  const blocked = !state.provider.model
+    ? "Choose a connection and model in Settings first."
+    : Object.keys(context.drafts).length
+      ? "Save or discard your Guidance edits first."
+      : "";
+  const control = feedback("full-estimate", "Estimating…");
+  const run = (
+    <ActionControl
+      label={estimate.result ? "Estimate again" : "Estimate cost"}
+      variant={current ? "default" : "primary"}
+      disabled={disabled || working || !!blocked}
+      disabledReason={blocked}
+      {...control}
+      pending={control.pending || working}
+      error={
+        control.error || (estimate.status === "failed" ? estimate.message : "")
+      }
+      onClick={() => void estimateCost()}
+    />
+  );
+  return {
+    content: <CostEstimate value={estimate} mode={values.mode} />,
+    heading: {
+      // The estimate prices the model chosen here; another model needs a new one.
+      actions: (
+        <span className="cost-estimate-model">
+          <span className="muted">Model</span>
+          <ModelMenu
+            model={state.provider.model}
+            connection={state.provider.connection}
+            disabled={working}
+            manage={() => settings("api")}
+          />
+        </span>
+      ),
+    },
+    secondary: localOperation && (
+      <Button
+        disabled={action.busy}
+        onClick={() => stopOperation(localOperation)}
+      >
+        Stop
+      </Button>
+    ),
+    action: run,
+    next: advance(undefined, undefined, current ? "primary" : "quiet"),
   };
 }

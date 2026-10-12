@@ -126,8 +126,19 @@ class GuidedRuns:
         self.comparison_files[path] = result
         return result
 
-    def inputs(self, project_id, native, phase, mode, *, guard=None, cached_only=False):
-        names = self.files(native, phase)
+    def inputs(
+        self,
+        project_id,
+        native,
+        phase,
+        mode,
+        *,
+        guard=None,
+        cached_only=False,
+        names=None,
+    ):
+        """What a phase's estimate binds to; names defaults to its selection."""
+        names = self.files(native, phase) if names is None else names
         inputs = self.guided.inputs(native)
         record = inputs.record()
         sources = inputs.sources(names, record["inputs"], self.guided.observed_digest)
@@ -509,19 +520,23 @@ class GuidedRuns:
                 }, inputs
         return {"job": None, "current": False}, inputs
 
+    def poll_guard(self, native):
+        """The guard a quote binds to. Quotes read only its shared parts, so a
+        poll hashes no game data or working copies for it."""
+        observed = self.guided.observations.files()
+        if observed is None:
+            return self.guided.backend.guided_guard(
+                native, self.guided.inputs(native).folder
+            )
+        return self.guided.observations.once(
+            ("guard context", native["id"]),
+            lambda: self.guided.backend.guided_guard_context(native, observed),
+        )
+
     def snapshot(self, project_id, native, source_status, *, run_view=None):
         estimates, phases = {}, {}
         run_view = run_view or self.guided.run_view
-        # Quotes read only the guard's shared parts, so a poll hashes no
-        # game data or working copies for it.
-        observed = self.guided.observations.files()
-        guard = (
-            self.guided.backend.guided_guard_context(native, observed)
-            if observed is not None
-            else self.guided.backend.guided_guard(
-                native, self.guided.inputs(native).folder
-            )
-        )
+        guard = self.poll_guard(native)
         mode = self.guided.preferences(native)["values"]["mode"]
         owned = self.guided.owned_runs(native)
         records = self.records(project_id)

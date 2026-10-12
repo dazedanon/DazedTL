@@ -2351,10 +2351,10 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
+    counted = None
     if est_provider == "anthropic":
         # Anthropic bills by Claude's tokenizer, which differs from the
         # approximate encoder above; count with it when the endpoint answers.
-        counted = None
         try:
             counted = claude_tokens.count(
                 _get_anthropic_client().with_options(timeout=30),
@@ -2503,6 +2503,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         "uses_prompt_cache": uses_prompt_cache,
         "cache_kind": cache_kind,
         "unestimated_thinking_tokens": unestimated_thinking,
+        # Claude bills more tokens than the approximate count holds.
+        "approximate_input": est_provider == "anthropic" and counted is None,
     }
 
 

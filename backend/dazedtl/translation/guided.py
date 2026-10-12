@@ -9,6 +9,7 @@ from dazedtl.storage import write_json
 from . import context_setup, preparation, reference_folders, speaker_setup
 from .event_text import EventText
 from .files import digest, project_path, read_json, settled
+from .full_estimate import FullEstimate
 from .guided_actions import ADVANCED_CODES, GuidedActions
 from .guided_context import GuidedContext
 from .guided_inputs import GuidedInputs
@@ -81,6 +82,7 @@ class Guided:
         self.observations = RunObservations()
         self.runs = GuidedRuns(self)
         self.event_text = EventText(self)
+        self.full_estimate = FullEstimate(self)
         from .batch_monitor import BatchMonitor
 
         self.batch_monitor = BatchMonitor(self)
@@ -673,6 +675,7 @@ class Guided:
             ),
             None,
         )
+        event_text = self.event_text.status(project_id, native)
         recovered = read_json(draft) if draft.exists() else None
         rebased = context_setup.rebase_layout_draft(native, recovered)
         if recovered != rebased:
@@ -699,7 +702,8 @@ class Guided:
             "reference_folders": reference_folders.describe(
                 self.path(project_id, "reference-folders")
             ),
-            "event_text": self.event_text.status(project_id, native),
+            "event_text": event_text,
+            "full_estimate": self.full_estimate.status(project_id, native, event_text),
             "tools": self.backend.guided_tools(native),
             "artifacts": self.release_artifacts(
                 project_id, value["jobs"], native["source"]

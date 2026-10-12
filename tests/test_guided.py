@@ -522,6 +522,51 @@ class GuidedTests(unittest.TestCase):
         )
         self.assertEqual(self.started, [])
 
+    def test_whole_game_estimate_stays_current_across_selection_and_mode(self):
+        # Context's Cost estimate prices every file of each Translate task at
+        # both Batch and Live prices. It must read current as soon as it
+        # finishes, through a new file selection or a Batch/Live switch, and
+        # outdated once its sources change.
+        self.git_configured = True
+        self.settings.translation_defaults = lambda: {
+            "model": "fixture-model",
+            "batch_supported": True,
+        }
+        self.backend.workflows.phase_workflow = lambda _owner, phase: {"phase": phase}
+        self.backend.manual.request_policy = {"model": "fixture-model"}
+        plans = []
+        self.backend.operations.start.side_effect = lambda plan: (
+            plans.append(plan) or {"id": "estimate"}
+        )
+        self.guided.full_estimate.start(self.identity)
+        options = plans[0]["options"]
+        self.assertEqual(
+            [(task["phase"], task["noSources"]) for task in options["tasks"]],
+            [("database", False), ("dialogue", False), ("advanced", True)],
+        )
+        self.backend.operations.jobs["estimate"] = {
+            "id": "estimate",
+            "action": "full_estimate",
+            "project_id": "native",
+            "created": "2026-01-01",
+            "updated": "2026-01-01",
+            "status": "complete",
+            "result": {"fingerprint": options["fingerprint"], "tasks": []},
+        }
+
+        def current():
+            with self.guided.observations.read():
+                found = self.guided.event_text.status(self.identity, self.native)
+                return self.guided.full_estimate.status(
+                    self.identity, self.native, found
+                )["current"]
+
+        self.assertTrue(current())
+        self.native.update(selected=[], mode="translate")
+        self.assertTrue(current())
+        self.native["engine_options"]["CODE356"] = True
+        self.assertFalse(current())
+
     def test_snapshots_match_estimates_on_cached_prices_without_a_lookup(self):
         # A price lookup runs a worker that a slow catalog download held past
         # its 12 s limit; snapshots waited on it once per phase, so every poll

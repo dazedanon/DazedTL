@@ -119,6 +119,18 @@ Finished Live runs clear progress and preparation labels.
 Batch rows use provider request receipts.
 The request inspector reconciles the selected run against the shared observer and reloads a selected response when its receipt state changes, without adding a polling loop.
 
+### Whole-game estimate
+
+Context's Cost estimate prices every Translate task that sends game text through the API key: Database files, Maps & events and Other event text with its chosen sources.
+It covers each task's whole file group, independent of the selection, so translating a small first scene leaves its scope unchanged.
+[full_estimate.py](../backend/dazedtl/translation/full_estimate.py) starts it as a tool operation, never as a run, so it creates no preparation, approval or history run, and no paid work can follow from it.
+The [worker](../backend/dazedtl/compatibility/full_estimate.py) builds each task's frozen plan with the engine helpers and request policy a Translate estimate uses and runs the same offline estimate worker, starting each file from its saved translation, working copy or game file as a run would, so its figures match each task's own estimate.
+[estimate_pricing.py](../backend/dazedtl/compatibility/estimate_pricing.py) then prices a Claude estimate again with Claude's own token count, as a Batch review does; it opens the network only for Anthropic's free count endpoint, and a failed count keeps the approximate figures, which the task says.
+The newest finished operation holds the saved estimate.
+It reads current while every task's estimate inputs match: files, sources, guidance, options, layout, connection and prices.
+They are computed with the Live configuration, since one estimate prices both Batch and Live; switching between them only changes which total leads.
+Stop ends the worker and keeps the previous estimate.
+
 ### Frozen request policies
 
 New API runs freeze a provider-default generation policy before estimation and review.
@@ -624,7 +636,7 @@ One task occupies the editing body and its action footer stays outside the scrol
 One copied setup task identifies speaker formats, runs local name collection, then uses those results for the glossary/context investigation, which also covers running jokes and recurring terms.
 Guidance review and layout settings follow before the named database and dialogue actions.
 Phase navigation restores the last available task saved for that project, falling back to the phase's first task when an engine-specific or removed task is unavailable.
-Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label and optional tasks marked until done; views inside one task (the Other event text steps) use secondary tabs below them.
+Every phase with multiple tasks uses the same clickable task tabs, with completion marked after each label and optional tasks marked until done; views inside one task (Event text sources' investigation and source choices, Other event text's translation and comparisons) use secondary tabs below them.
 Every task starts with the shared [TaskHeader](../app/src/features/guided/workspace/TaskHeader.tsx), whose title and description a task view may override, and its footer starts with Back and reports only that task's own state.
 Plugin files and Images host their full workspaces as the task body (Images is the shared [Image Manager](../app/src/features/images/ImageManager.tsx), with no separate screen or summary page) and fill the Guided footer slot with their own ActionBar, still starting with Back and ending with Continue.
 The stage strip is a stepper: each stage's number sits in a circle that turns accent once a task is done, fills with the accent while the stage is current, and becomes a check when its required tasks are done; the Project page's Status holds the full checklist.
@@ -639,14 +651,15 @@ Explicitly declined speaker preflight is interpreted as canceled only with verif
 Historical affected jobs retain their stored records; canceled retries reset their progress phase so a later provider failure cannot inherit cancellation.
 Other failed, stopped and interrupted paid runs keep their project ownership and recovery receipts.
 Setup investigation may inspect narrowly relevant font, window-skin or image geometry for layout, while image inventories and editing belong to Images.
-Context uses compact Names & glossary, Guidance and Line widths tasks.
+Context uses compact Names & glossary, Event text sources, Guidance, Line widths and Cost estimate tasks.
 Names & glossary shows one row per saved artifact with a consistent Saved label, plus the actual state of a running or failed local scan.
 The shared observer updates saved results and guidance without a separate refresh action, and so do Other event text findings and Text QA findings; Image Manager keeps explicit refreshes because importing a saved image report validates it first.
 Reference game folders are retained per project by [reference_folders.py](../backend/dazedtl/translation/reference_folders.py) and included as read-only source material in the copied investigation prompt.
 Adding a folder only registers its path; it does not parse, convert or index the game.
 Missing references remain listed so they can be removed or replaced.
 Earlier native reference imports and their translation matching remain intact.
-Translate task 3, Other event text, retains investigation, source choice, translation and comparison views within one task.
+Context's Event text sources holds the investigation and source choice views, so its sources are settled before the [whole-game estimate](#whole-game-estimate) prices them; Translate's Other event text keeps translation and comparisons, and views saved by earlier versions open the task that holds them now.
+Event text sources is complete once current findings are saved or a source is chosen by hand.
 Its [investigation contract](../backend/dazedtl/translation/event_text.py) binds findings to selected event files, original data and plugin dependencies, and installed parser definitions.
 The assistant applies a current report through the project helper's `event-text --apply`, and Use recommendations does the same in Source choices; either saves the recommendations and the consumed report ID in one write, and running work or a pending option draft refuses it, as for speaker findings.
 Mixed or uncertain recommendations stay off; source choices need no separate review, and each frozen run records its source settings and report.
@@ -709,12 +722,12 @@ Backup history is grouped by game versus project files and appears only after th
 Navigation never completes a task.
 Prepared originals are summarized; recent activity holds saved history, while active work and required approval remain visible across areas.
 Assistant task controls describe the expected return and report only copied instructions or saved findings, never an external process inferred from a click.
-Every task that hands work to an assistant (Names & glossary and line width measurement, Other event text, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands, in the shared display states, what comes back, and a row per expected result.
+Every task that hands work to an assistant (Names & glossary and line width measurement, Event text sources, Plugin files, Images, Text QA and Assistant-led) shows the shared [AssistantTask](../app/src/ui/AssistantTask.tsx) panel: where the task stands, in the shared display states, what comes back, and a row per expected result.
 It is a [StatusPanel](../app/src/ui/StatusPanel.tsx), the panel any work that is not the user's own uses to show its name, state and next step, such as Assistant-led's API run.
 The panel reads Needs review only while a result waits for the user's decision in that panel; a result that saved itself reads Done, or Applied once in the game, and one waiting only to go into the game reads Ready to apply.
-Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Other event text's Source choices do.
+Findings that inform a later step read Done once saved, and that step holds any choices they leave, as Event text sources' Source choices do.
 Outdated marks a saved result whose basis changed before it went into the game; edits after a task's result is applied are expected and leave it as it was.
-Other event text findings applied as source choices therefore stay current until the selection reaches event files they did not cover or the installed parser definitions change, a plugin file with nothing left to apply keeps its state until a copied task rescans every file, and Text QA reads Applied once its own task's corrections are applied.
+Event text findings applied as source choices therefore stay current until the selection reaches event files they did not cover or the installed parser definitions change, a plugin file with nothing left to apply keeps its state until a copied task rescans every file, and Text QA reads Applied once its own task's corrections are applied.
 The task's main copy action stays in its footer; an optional companion task, such as layout measurement, keeps its own on its result row.
 Each copy reply names its handoff: the task's kind, request id and the result files it expects back.
 The [Application](../backend/dazedtl/api/server.py) records it in the [assistant task registry](../backend/dazedtl/translation/assistant_tasks.py) and strips it from the reply, so features keep their own requests, reports and validation.

@@ -265,6 +265,8 @@ export const api = {
       request("guided_discard_preparation", { project_id, run_id }),
     settleEmptyEstimate: (project_id: string, run_id: string) =>
       request("guided_settle_empty_estimate", { project_id, run_id }),
+    fullEstimate: (project_id: string) =>
+      request("guided_full_estimate", { project_id }),
     batchCancelPreview: (
       project_id: string,
       run_id: string,

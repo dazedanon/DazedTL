@@ -45,6 +45,12 @@ export const workflow: WorkflowStage[] = [
           "Find speaker names and prepare the glossary and game context.",
       },
       {
+        id: "event-sources",
+        title: "Event text sources",
+        description:
+          "Find which event codes, plugin commands and scripts carry player text, and choose what Translate covers.",
+      },
+      {
         id: "guidance",
         title: "Guidance",
         description: "Edit terminology, translation style and game background.",
@@ -54,6 +60,12 @@ export const workflow: WorkflowStage[] = [
         title: "Line widths",
         description:
           "Set how many characters fit on a line, and how many rows fit in a message window.",
+      },
+      {
+        id: "estimate",
+        title: "Cost estimate",
+        description:
+          "Estimate what translating the game's text with your API key costs.",
       },
     ],
   },
@@ -76,7 +88,7 @@ export const workflow: WorkflowStage[] = [
         id: "other-event-text",
         title: "Other event text",
         description:
-          "Investigate specific text sources, review their coverage, then translate.",
+          "Translate the event codes, plugin commands and scripts chosen in Event text sources.",
       },
       {
         id: "plugins",
@@ -240,9 +252,11 @@ export function initialPosition(
       task:
         state.run?.mode === "speakers" ? "run" : translationTask(state, true),
     };
-  if (
-    ["audit", "sources", "advanced-run", "variables"].includes(state.task || "")
-  )
+  // Other event text's views saved as tasks; investigating and choosing its
+  // sources moved to Context.
+  if (["audit", "sources"].includes(state.task || ""))
+    return { step: "context", task: "event-sources" };
+  if (["advanced-run", "variables"].includes(state.task || ""))
     return { step: "translate", task: "other-event-text" };
   if (step === "translate" && ["scope", "main-text"].includes(state.task || ""))
     return { step: "translate", task: mainTextTask(state) };

@@ -35,7 +35,7 @@ export interface AssistantTaskView {
 export const assistantTaskTitles: Record<AssistantTaskKind, string> = {
   names: "Names & glossary",
   line_widths: "Line widths",
-  event_text: "Other event text",
+  event_text: "Event text sources",
   plugins: "Plugin files",
   image_discovery: "Image investigation",
   image_editing: "Image translation",
@@ -46,11 +46,7 @@ export const assistantTaskTitles: Record<AssistantTaskKind, string> = {
 const places: Record<AssistantTaskKind, AssistantTaskView["place"]> = {
   names: { step: "context", task: "names", label: "Context" },
   line_widths: { step: "context", task: "speakers", label: "Context" },
-  event_text: {
-    step: "translate",
-    task: "other-event-text",
-    label: "Translate",
-  },
+  event_text: { step: "context", task: "event-sources", label: "Context" },
   plugins: { step: "translate", task: "plugins", label: "Translate" },
   image_discovery: { step: "translate", task: "images", label: "Translate" },
   image_editing: { step: "translate", task: "images", label: "Translate" },

@@ -127,6 +127,7 @@ def guided(value, project_id):
         "speakerScan": speaker_scan(value["speaker_scan"]),
         "contextSetup": value["context_setup"],
         "eventText": value["event_text"],
+        "fullEstimate": full_estimate(value["full_estimate"]),
         "engineSchema": value["engine_schema"],
         "files": [
             pick(item, ("name", "title", "default", "size", "group"))
@@ -171,6 +172,26 @@ def guided(value, project_id):
 
 def speaker_scan(value):
     return {**value, "job": job(value["job"])}
+
+
+def full_estimate(value):
+    attempt = value["job"]
+    status = (
+        "none"
+        if attempt is None
+        else {"running": "working", "complete": "complete", "stopped": "stopped"}.get(
+            attempt["status"], "failed"
+        )
+    )
+    return {
+        "status": status,
+        "message": attempt["message"] if attempt else "",
+        "result": pick(value["result"], ("model", "batchSupported", "tasks"))
+        if value["result"]
+        else None,
+        "finished": value["finished"],
+        "current": value["current"],
+    }
 
 
 def settings(value):

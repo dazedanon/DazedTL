@@ -631,8 +631,47 @@ class GuidedProvider(TypedDict):
     enabled: bool
 
 
+class FullEstimateTask(TypedDict):
+    """One Translate task's share of the whole game's estimate."""
+
+    phase: Literal["database", "dialogue", "advanced"]
+    files: int
+    # Other event text with no source chosen has nothing to translate.
+    noSources: bool
+    requests: int
+    inputTokens: int
+    outputTokens: int
+    liveCost: float
+    # With prompt caching where the provider offers it.
+    batchCost: float
+    batchNocacheCost: float
+    promptCache: bool
+    # Claude's own token count could not run, so its input is approximate.
+    approximateInput: bool
+    # Thinking tokens are billed as output and cannot be predicted.
+    unestimatedThinking: bool
+
+
+class FullEstimateResult(TypedDict):
+    model: str
+    batchSupported: bool
+    tasks: list[FullEstimateTask]
+
+
+class FullEstimate(TypedDict):
+    """Context's whole-game cost estimate: the newest attempt's state and the
+    newest saved result, current while every task's inputs are unchanged."""
+
+    status: Literal["none", "working", "complete", "failed", "stopped"]
+    message: str
+    result: FullEstimateResult | None
+    finished: str | None
+    current: bool
+
+
 class GuidedState(TypedDict):
     eventText: EventTextState
+    fullEstimate: FullEstimate
     contextDocument: str
     contextSetup: ContextSetup
     speakerSetup: SpeakerSetup

@@ -655,6 +655,8 @@ METHODS: dict[str, Method] = {
     ),
     "guided_discard_preparation": Method(RunRequest, PreparationDiscarded),
     "guided_settle_empty_estimate": Method(RunRequest, SettledEstimate),
+    # Context's Cost estimate: every Translate task over all its files.
+    "guided_full_estimate": Method(ProjectRequest, Job),
     "guided_provider_details": Method(RunRequest, ProviderDetails, refresh=False),
     "guided_batch_cancel_preview": Method(
         GuidedBatchCancelPreviewRequest, BatchCancellation, refresh=False

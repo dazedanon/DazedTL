@@ -1,12 +1,11 @@
-/** Translate: phased runs, event text investigation and source choices. */
+/** Translate's phased runs, and the event text sources Context chooses for them. */
 import type { ReactNode } from "react";
 import { api } from "../../../../api/client";
 import { Button } from "../../../../ui/Button";
 import { Message } from "../../../../ui/Feedback";
-import { EventTextSources } from "../../EventTextSources";
 import { RunFailure } from "../../RunFailure";
 import { TranslateWorkspace } from "../../TranslateWorkspace";
-import { nothingToTranslate, sourceErrors } from "../../eventTextSelection";
+import { nothingToTranslate } from "../../eventTextSelection";
 import {
   activeRun,
   completeForSelection,
@@ -16,15 +15,9 @@ import {
   unconfirmedSubmission,
   unsettledBatches,
 } from "../../translationView";
-import { actionKey, fileCount, runNotices } from "../model";
-import { selectionNames } from "../../../../ui/displayText";
+import { actionKey, runNotices } from "../model";
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import type { TaskView } from "./view";
-import { sinceLabel } from "../../../assistant/assistantTasks";
-import {
-  AssistantTask,
-  type AssistantTaskState,
-} from "../../../../ui/AssistantTask";
 
 export function phaseView(w: GuidedWorkspace): TaskView {
   const {
@@ -92,6 +85,10 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       ),
   );
   const noRemainingWork = estimateEmpty(quote);
+  // Other event text whose chosen sources leave nothing has no run to start.
+  const nothingLeft =
+    phase === "advanced" &&
+    nothingToTranslate(state.eventText, values.engine_options);
   // The latest attempt's failure shows on the task itself, not only in Run
   // history; an unconfirmed Batch also warns before anything is sent again.
   const unconfirmed = pendingBatches.find(unconfirmedSubmission);
@@ -177,16 +174,22 @@ export function phaseView(w: GuidedWorkspace): TaskView {
       {phase === "advanced" && (
         <>
           <p>
-            {!enabledCodes.length
-              ? "No source enabled"
-              : `${enabledCodes.length} ${enabledCodes.length === 1 ? "source" : "sources"} enabled${advancedReady ? "" : " · Source choices need fixes"}`}
+            {nothingLeft
+              ? "Event text sources found no other event text to translate."
+              : !enabledCodes.length
+                ? "No source chosen yet."
+                : `${enabledCodes.length} ${enabledCodes.length === 1 ? "source" : "sources"} enabled${advancedReady ? "" : " · Source choices need fixes"}`}
           </p>
           <Button
             variant="link"
             disabled={disabled || locked}
-            onClick={() => stepTask("sources")}
+            onClick={() =>
+              stepTask(enabledCodes.length || nothingLeft ? "sources" : "audit")
+            }
           >
-            Edit source choices
+            {enabledCodes.length || nothingLeft
+              ? "Edit source choices"
+              : "Choose sources"}
           </Button>
         </>
       )}
@@ -287,7 +290,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
   return {
     content,
     secondary,
-    action: (
+    action: !nothingLeft && (
       <Button
         variant="primary"
         pending={preparing}
@@ -303,7 +306,7 @@ export function phaseView(w: GuidedWorkspace): TaskView {
         Translate
       </Button>
     ),
-    next: advance(undefined, undefined, "quiet"),
+    next: advance(undefined, undefined, nothingLeft ? "primary" : "quiet"),
     actionContext,
     heading:
       phase === "advanced"
@@ -319,206 +322,5 @@ export function phaseView(w: GuidedWorkspace): TaskView {
                 "Update variable comparisons from the audited assignments.",
             }
           : undefined,
-  };
-}
-
-export function auditView(w: GuidedWorkspace): TaskView {
-  const {
-    state,
-    values,
-    eventFiles,
-    disabled,
-    stepTask,
-    skipEventText,
-    copyTask,
-    fileSummary,
-    handoff,
-  } = w;
-  const investigating = handoff("event_text");
-  // A dismissed task no longer waits for its findings.
-  const status =
-    investigating.dismissed && state.eventText.status === "waiting"
-      ? "missing"
-      : state.eventText.status;
-  const applied = status === "ready" && state.eventText.applied;
-  const enabled = state.eventText.enabled.length;
-  const taskState: AssistantTaskState = (
-    {
-      missing: "not_started",
-      waiting: "waiting",
-      ready: "done",
-      stale: "outdated",
-      invalid: "blocked",
-    } as const
-  )[status];
-  let content: ReactNode;
-  content = (
-    <>
-      {fileSummary(
-        eventFiles.map((file) => file.name),
-        "dialogue",
-      )}
-      <AssistantTask
-        state={taskState}
-        progress={
-          status === "waiting" ? sinceLabel(investigating.since) : undefined
-        }
-        description={
-          status === "missing"
-            ? "Your assistant checks every affected use and internal reference, and returns the commands and argument keys it finds as evidence."
-            : status === "waiting"
-              ? "Findings appear here as your assistant saves them."
-              : applied
-                ? enabled
-                  ? `Recommendations applied · ${enabled} ${enabled === 1 ? "source" : "sources"} enabled.`
-                  : "Every source is off · nothing to translate."
-                : status === "ready"
-                  ? "Findings saved. Use recommendations in Source choices to apply them."
-                  : state.eventText.message
-        }
-        help="Your assistant saves findings and applies their recommendations as source choices. It does not edit engine code, start translation or call providers."
-        results={[
-          {
-            id: "findings",
-            title: "Source findings",
-            state: taskState,
-            detail:
-              status === "ready"
-                ? "Coverage evidence for each source."
-                : "Which event codes, plugin commands and scripts carry player text.",
-          },
-        ]}
-      />
-    </>
-  );
-  // Investigating comes first; choosing sources by hand and skipping stay
-  // available.
-  const ready = state.eventText.status === "ready";
-  const nothing = nothingToTranslate(state.eventText, values.engine_options);
-  return {
-    content,
-    secondary: !nothing && (
-      <Button variant="quiet" disabled={disabled} onClick={skipEventText}>
-        Skip event codes
-      </Button>
-    ),
-    action:
-      !ready && copyTask("advanced", "Copy investigation task", "primary"),
-    // Applied findings lead on to translation, or past it when they leave
-    // nothing to translate; otherwise the sources are chosen next.
-    next:
-      applied && nothing ? (
-        <Button variant="primary" disabled={disabled} onClick={skipEventText}>
-          {onwardLabel(w)}
-        </Button>
-      ) : applied && enabled ? (
-        <Button
-          variant="primary"
-          disabled={disabled}
-          onClick={() => stepTask("advanced-run")}
-        >
-          Continue to translation
-        </Button>
-      ) : (
-        <Button
-          variant={ready ? "primary" : "quiet"}
-          disabled={disabled}
-          onClick={() => stepTask("sources")}
-        >
-          {ready ? "Choose sources" : "Choose sources manually"}
-        </Button>
-      ),
-    heading: {
-      title: "Investigate sources",
-      description:
-        "Your assistant checks which event codes, plugin commands and scripts carry player text.",
-    },
-  };
-}
-
-/** Where Other event text leads once no event code needs translating. */
-const onwardLabel = (w: GuidedWorkspace) =>
-  w.state.comparisons.status !== "not_needed"
-    ? "Review comparisons"
-    : "Continue to plugin files";
-
-export function sourcesView(w: GuidedWorkspace): TaskView {
-  const {
-    state,
-    action,
-    values,
-    eventFiles,
-    enabledCodes,
-    edit,
-    disabled,
-    openSourcePicker,
-    applyRecommendations,
-    saveSources,
-    chooseFiles,
-    feedback,
-  } = w;
-  const content = (
-    <>
-      <div className="translation-source-toolbar">
-        <span>
-          {fileCount(eventFiles.length)} selected
-          {!!eventFiles.length &&
-            ` · ${selectionNames(eventFiles.map((file) => file.name))}`}
-        </span>
-        <Button
-          variant="quiet"
-          disabled={disabled}
-          onClick={() => chooseFiles("dialogue")}
-        >
-          Choose files
-        </Button>
-      </div>
-      <EventTextSources
-        state={state.eventText}
-        values={values.engine_options}
-        disabled={disabled}
-        change={(key, value) =>
-          edit("engine_options", { ...values.engine_options, [key]: value })
-        }
-        openPicker={openSourcePicker}
-        recommendationFeedback={feedback("event-text:recommendations")}
-        recommendations={applyRecommendations}
-      />
-    </>
-  );
-  // Moving on saves the choices, so the task's state follows them.
-  return {
-    content,
-    next: (
-      <Button
-        variant="primary"
-        pending={action.busy && action.key === "event-text:save"}
-        disabled={
-          disabled ||
-          (!!enabledCodes.length &&
-            !!sourceErrors(state.eventText, values.engine_options).length)
-        }
-        onClick={() =>
-          void saveSources(
-            enabledCodes.length
-              ? "advanced-run"
-              : state.comparisons.status !== "not_needed"
-                ? "variables"
-                : "plugins",
-          )
-        }
-      >
-        {enabledCodes.length
-          ? "Continue to translation"
-          : state.eventText.status === "ready"
-            ? onwardLabel(w)
-            : "Skip event codes"}
-      </Button>
-    ),
-    heading: {
-      title: "Source choices",
-      description:
-        "The event codes, plugin commands and scripts Translate covers.",
-    },
   };
 }

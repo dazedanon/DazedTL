@@ -52,6 +52,8 @@ class RunEstimate(TypedDict):
     batch_cached_cost: NotRequired[float]
     batch_nocache_cost: NotRequired[float]
     unestimated_thinking_tokens: NotRequired[bool]
+    # Claude's own token count could not run, so its input is approximate.
+    approximate_input: NotRequired[bool]
     elapsed_seconds: NotRequired[float]
 
 

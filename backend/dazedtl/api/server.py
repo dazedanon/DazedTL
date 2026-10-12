@@ -689,6 +689,10 @@ def routes(app):
             app.guided.settle_empty_estimate,
             lambda value, _params: value,
         ),
+        "guided_full_estimate": (
+            app.guided.full_estimate.start,
+            lambda value, _params: views.job(value),
+        ),
         "guided_provider_details": (
             app.guided.provider_details,
             lambda value, _params: value,

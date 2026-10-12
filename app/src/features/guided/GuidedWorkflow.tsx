@@ -120,16 +120,18 @@ function Workspace(
   useShortcut(taskKey("next"), step(next()), frame);
   // Views inside one task share the secondary tabs below the task tabs.
   const viewTabs =
-    taskId === "other-event-text"
+    taskId === "event-sources"
       ? [
           { id: "audit", label: "Investigate" },
           { id: "sources", label: "Source choices" },
-          { id: "advanced-run", label: "Translate" },
-          ...(state.comparisons.status !== "not_needed"
-            ? [{ id: "variables", label: "Update comparisons" }]
-            : []),
         ]
-      : null;
+      : taskId === "other-event-text" &&
+          state.comparisons.status !== "not_needed"
+        ? [
+            { id: "advanced-run", label: "Translate" },
+            { id: "variables", label: "Update comparisons" },
+          ]
+        : null;
   // The footer reports only this task's own state; a running backup or
   // preparation already shows its progress and pending button in the task.
   const status =

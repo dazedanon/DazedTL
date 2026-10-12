@@ -86,6 +86,7 @@ export type RunEstimate = {
   batch_cached_cost?: number;
   batch_nocache_cost?: number;
   unestimated_thinking_tokens?: boolean;
+  approximate_input?: boolean;
   elapsed_seconds?: number;
 };
 
@@ -928,8 +929,41 @@ export type GuidedProvider = {
   enabled: boolean;
 };
 
+/** One Translate task's share of the whole game's estimate. */
+export type FullEstimateTask = {
+  phase: "database" | "dialogue" | "advanced";
+  files: number;
+  noSources: boolean;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  liveCost: number;
+  batchCost: number;
+  batchNocacheCost: number;
+  promptCache: boolean;
+  approximateInput: boolean;
+  unestimatedThinking: boolean;
+};
+
+export type FullEstimateResult = {
+  model: string;
+  batchSupported: boolean;
+  tasks: FullEstimateTask[];
+};
+
+/** Context's whole-game cost estimate: the newest attempt's state and the
+newest saved result, current while every task's inputs are unchanged. */
+export type FullEstimate = {
+  status: "none" | "working" | "complete" | "failed" | "stopped";
+  message: string;
+  result: FullEstimateResult | null;
+  finished: string | null;
+  current: boolean;
+};
+
 export type GuidedState = {
   eventText: EventTextState;
+  fullEstimate: FullEstimate;
   contextDocument: string;
   contextSetup: ContextSetup;
   speakerSetup: SpeakerSetup;
@@ -2842,6 +2876,7 @@ export type RpcContract = {
     request: RunRequest;
     response: SettledEstimate;
   };
+  guided_full_estimate: { request: ProjectRequest; response: Job };
   guided_provider_details: { request: RunRequest; response: ProviderDetails };
   guided_batch_cancel_preview: {
     request: GuidedBatchCancelPreviewRequest;

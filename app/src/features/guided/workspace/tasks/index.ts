@@ -1,12 +1,13 @@
 import type { GuidedWorkspace } from "../useGuidedWorkspace";
 import { fittingView, playtestView, qaView } from "./check";
-import { namesView, guidanceView, layoutView } from "./context";
+import { estimateView, guidanceView, layoutView, namesView } from "./context";
 import { imagesView } from "./images";
 import { pluginsView } from "./plugins";
 import { packageView } from "./release";
 import { runView } from "./run";
 import { setupView } from "./setup";
-import { phaseView, auditView, sourcesView } from "./translate";
+import { auditView, sourcesView } from "./eventSources";
+import { phaseView } from "./translate";
 import type { TaskView } from "./view";
 
 const views: Record<string, (w: GuidedWorkspace) => TaskView> = {
@@ -14,6 +15,7 @@ const views: Record<string, (w: GuidedWorkspace) => TaskView> = {
   names: namesView,
   guidance: guidanceView,
   speakers: layoutView,
+  estimate: estimateView,
   database: phaseView,
   dialogue: phaseView,
   "advanced-run": phaseView,

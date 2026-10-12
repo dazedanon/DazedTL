@@ -76,14 +76,26 @@ test("saved runs choose their owning task instead of native progress labels", ()
     step: "translate",
     task: "dialogue",
   });
-  for (const task of ["audit", "sources", "advanced-run", "variables"]) {
+  // Investigating and choosing event text sources moved to Context.
+  for (const [task, step, owner] of [
+    ["audit", "context", "event-sources"],
+    ["sources", "context", "event-sources"],
+    ["advanced-run", "translate", "other-event-text"],
+    ["variables", "translate", "other-event-text"],
+  ]) {
     state.step = "translate";
     state.task = task;
     assert.deepEqual(initialPosition(state, translation), {
-      step: "translate",
-      task: "other-event-text",
+      step,
+      task: owner,
     });
   }
+  assert.deepEqual(
+    stagesFor("MVMZ")
+      .find((stage) => stage.id === "context")!
+      .tasks.map((task) => task.id),
+    ["names", "event-sources", "guidance", "speakers", "estimate"],
+  );
   assert.deepEqual(
     stagesFor("MVMZ")
       .find((stage) => stage.id === "translate")!
@@ -218,6 +230,7 @@ test("the Project page continues with the next step and keeps a later saved posi
     preparation: { complete: false },
     artifacts: [],
     operations: [],
+    fullEstimate: { status: "none", result: null, current: false },
   } as unknown as GuidedState;
   // An unfinished setup is the next step, even from a task it no longer
   // has, and needs no separate way back.
@@ -275,8 +288,9 @@ test("the Project page continues with the next step and keeps a later saved posi
   Object.assign(images.counts, { selected: 1, selectedNeedsReview: 0 });
   assert.deepEqual(finished(), ["setup", "images", "package"]);
   // An investigation that leaves nothing to translate closes Images, until
-  // a later investigation waits on the assistant, and Other event text closes
-  // once current findings are applied with no source enabled.
+  // a later investigation waits on the assistant. Saved event text findings
+  // settle Event text sources, and Other event text closes once they are
+  // applied with no source enabled.
   Object.assign(images.counts, {
     applied: 0,
     recommended: 0,
@@ -287,17 +301,33 @@ test("the Project page continues with the next step and keeps a later saved posi
   assert.deepEqual(finished(), ["setup", "package"]);
   images.discovery.status = "complete";
   state.eventText.status = "ready";
-  assert.deepEqual(finished(), ["setup", "images", "package"]);
+  assert.deepEqual(finished(), ["setup", "event-sources", "images", "package"]);
   state.eventText.applied = true;
   assert.deepEqual(finished(), [
     "setup",
+    "event-sources",
     "other-event-text",
     "images",
     "package",
   ]);
   // A source turned on since the findings were applied reopens the task.
   state.preferences.values.engine_options.CODE356 = true;
-  assert.deepEqual(finished(), ["setup", "images", "package"]);
+  assert.deepEqual(finished(), ["setup", "event-sources", "images", "package"]);
+  // A saved cost estimate stays done after a change marks it Outdated.
+  state.fullEstimate = {
+    status: "complete",
+    message: "",
+    result: { model: "m", batchSupported: true, tasks: [] },
+    finished: null,
+    current: false,
+  };
+  assert.deepEqual(finished(), [
+    "setup",
+    "event-sources",
+    "estimate",
+    "images",
+    "package",
+  ]);
 });
 
 test("a text review re-checked before Apply notices changes past the visible diff", () => {

@@ -28,6 +28,7 @@ import { investigationResults } from "../contextView";
 import {
   type SelectorKey,
   type SourcePickerDraft,
+  nothingToTranslate,
   sourceErrors,
 } from "../eventTextSelection";
 import { guidanceNames, saveGuidanceSet } from "../guidanceReview";
@@ -142,8 +143,19 @@ export function useGuidedWorkspace({
   const stage = stages.find((item) => item.id === position.step)!;
   const selectedTask = stage.tasks.find((item) => item.id === position.task);
   const taskId = selectedTask?.id || "run";
+  // Event text sources hold Other event text's first two views and its
+  // Translate task the last two; both remember the one last shown.
+  const eventView = state.eventText.view;
   const taskView =
-    taskId === "other-event-text" ? state.eventText.view : taskId;
+    taskId === "event-sources"
+      ? eventView === "sources"
+        ? "sources"
+        : "audit"
+      : taskId === "other-event-text"
+        ? eventView === "variables" && state.comparisons.status !== "not_needed"
+          ? "variables"
+          : "advanced-run"
+        : taskId;
   const taskIndex = stage.tasks.findIndex((item) => item.id === taskId);
   const showTaskTabs = stage.tasks.length > 1;
   const taskTabsId = `${stage.id}-tasks`;
@@ -287,7 +299,8 @@ export function useGuidedWorkspace({
         "git_setup",
       ].includes(activeOperation.action || "")) ||
       (taskId === "package" &&
-        ["release", "release_patch"].includes(activeOperation.action || "")))
+        ["release", "release_patch"].includes(activeOperation.action || "")) ||
+      (taskId === "estimate" && activeOperation.action === "full_estimate"))
       ? activeOperation
       : null;
   const stopOperation = (current: Job) =>
@@ -396,9 +409,10 @@ export function useGuidedWorkspace({
     action.run(
       async () => {
         await flushDrafts();
+        const sources = view === "audit" || view === "sources";
         application.navigateGuided(project.id, {
-          step: "translate",
-          task: "other-event-text",
+          step: sources ? "context" : "translate",
+          task: sources ? "event-sources" : "other-event-text",
           eventView: view,
         });
         setPanel(null);
@@ -466,9 +480,15 @@ export function useGuidedWorkspace({
       "Source choices updated.",
       "event-text:recommendations",
     );
-  const skipEventText = () =>
-    stepTask(
-      state.comparisons.status !== "not_needed" ? "variables" : "plugins",
+  /** Context's Cost estimate: every Translate task over all its files. */
+  const estimateCost = () =>
+    action.run(
+      async () => {
+        await save();
+        await api.guided.fullEstimate(project.id);
+      },
+      "",
+      "full-estimate",
     );
   /** Source choices save as the user moves on from them. */
   const saveSources = async (task: string) => {
@@ -501,6 +521,15 @@ export function useGuidedWorkspace({
       )
     );
   };
+  /** "Continue to" the next task in this stage, or the stage it starts. */
+  const continueLabel = (target: (typeof stage.tasks)[number]) =>
+    "Continue to " +
+    (stage.tasks.includes(target)
+      ? // Mid-sentence, capitalized words lower but QA stays QA.
+        target.title.replace(/\b([A-Z])(?=[a-z])/g, (letter) =>
+          letter.toLowerCase(),
+        )
+      : stages.find((item) => item.tasks.includes(target))!.short);
   const advance = (
     label?: string,
     target = next(),
@@ -516,14 +545,7 @@ export function useGuidedWorkspace({
         disabled={action.busy || draft.committing || context.committing}
         onClick={() => stepTask(target.id)}
       >
-        {label ||
-          "Continue to " +
-            (stage.tasks.includes(target)
-              ? // Mid-sentence, capitalized words lower but QA stays QA.
-                target.title.replace(/\b([A-Z])(?=[a-z])/g, (letter) =>
-                  letter.toLowerCase(),
-                )
-              : stages.find((item) => item.tasks.includes(target))!.short)}
+        {label || continueLabel(target)}
       </Button>
     );
   // Controls report their own action; fallback messages skip owned keys.
@@ -1416,32 +1438,39 @@ export function useGuidedWorkspace({
       Apply translated output
     </Button>
   );
-  const nextRun = (current: Job) => (
-    <Button
-      disabled={action.busy}
-      onClick={() =>
-        stepTask(
-          current.logicalPhase === "database"
-            ? "dialogue"
-            : current.logicalPhase === "dialogue"
-              ? "audit"
-              : current.logicalPhase === "advanced" &&
-                  state.comparisons.status !== "not_needed"
-                ? "variables"
-                : "plugins",
-        )
-      }
-    >
-      {current.logicalPhase === "database"
-        ? "Continue to maps & events"
-        : current.logicalPhase === "dialogue"
-          ? "Continue to other event text"
-          : current.logicalPhase === "advanced" &&
-              state.comparisons.status !== "not_needed"
-            ? "Review comparisons"
-            : "Continue to plugin files"}
-    </Button>
-  );
+  const nextRun = (current: Job) => {
+    // Maps & events leads past Other event text when its sources leave
+    // nothing to translate.
+    const eventTextNext =
+      current.logicalPhase === "dialogue" &&
+      !nothingToTranslate(state.eventText, values.engine_options);
+    return (
+      <Button
+        disabled={action.busy}
+        onClick={() =>
+          stepTask(
+            current.logicalPhase === "database"
+              ? "dialogue"
+              : eventTextNext
+                ? "advanced-run"
+                : current.logicalPhase === "advanced" &&
+                    state.comparisons.status !== "not_needed"
+                  ? "variables"
+                  : "plugins",
+          )
+        }
+      >
+        {current.logicalPhase === "database"
+          ? "Continue to maps & events"
+          : eventTextNext
+            ? "Continue to other event text"
+            : current.logicalPhase === "advanced" &&
+                state.comparisons.status !== "not_needed"
+              ? "Review comparisons"
+              : "Continue to plugin files"}
+      </Button>
+    );
+  };
   const completed = completedTasks(state, translation, {
     values,
     widthsDirty,
@@ -1588,8 +1617,9 @@ export function useGuidedWorkspace({
     saveSourcePicker,
     applyRecommendations,
     saveSources,
-    skipEventText,
+    estimateCost,
     advance,
+    continueLabel,
     back,
     previous,
     next,

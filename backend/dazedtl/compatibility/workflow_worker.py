@@ -52,6 +52,10 @@ def run_action(plan, log):
         from dazedtl.compatibility.speaker_scan import run_scan
 
         return run_scan(plan, log)
+    if plan["action"] == "full_estimate":
+        from dazedtl.compatibility.full_estimate import run
+
+        return run(plan, log)
     if plan["action"] == "release":
         return run_release(plan, log)
     if plan["action"] == "export_selected":

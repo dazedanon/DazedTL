@@ -90,6 +90,12 @@ export function completedTasks(
       ? ["other-event-text"]
       : []),
     ...(investigationResults(state).every((row) => row.saved) ? ["names"] : []),
+    // Current findings settle the sources, and so do sources chosen by hand.
+    ...(state.eventText.status === "ready" || state.eventText.enabled.length
+      ? ["event-sources"]
+      : []),
+    // A saved estimate stays done; a later change only marks it Outdated.
+    ...(state.fullEstimate.result ? ["estimate"] : []),
     ...(guidanceAvailability(discovery.documents).complete ? ["guidance"] : []),
     ...(discovery.layoutStatus === "saved" && !widthsDirty ? ["speakers"] : []),
     ...(ownPlugins && pluginsComplete(ownPlugins) ? ["plugins"] : []),

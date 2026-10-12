@@ -1,5 +1,5 @@
 {
-  "version": "9494e259f0e7816b",
+  "version": "da56f377b9eebaad",
   "methods": {
     "workspace_snapshot": {
       "refresh": false,
@@ -158,6 +158,10 @@
       "duringClose": false
     },
     "guided_settle_empty_estimate": {
+      "refresh": true,
+      "duringClose": false
+    },
+    "guided_full_estimate": {
       "refresh": true,
       "duringClose": false
     },
