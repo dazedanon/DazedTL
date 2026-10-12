@@ -3,6 +3,16 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.11.1] - 2026-10-12
+
+### Changed
+
+- **Plugin files:** reviewing and applying translated plugins is faster, most of all on Windows: the app checks each unchanged script once instead of again for every file in the review.
+
+### Fixed
+
+- **Plugin files:** a script check that never finishes now stops at its time limit with a message saying so, instead of an internal error.
+
 ## [2.11.0] - 2026-10-12
 
 ### Changed
@@ -431,6 +441,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.11.1]: https://github.com/dazedanon/DazedTL/compare/v2.11.0...v2.11.1
 [2.11.0]: https://github.com/dazedanon/DazedTL/compare/v2.10.0...v2.11.0
 [2.10.0]: https://github.com/dazedanon/DazedTL/compare/v2.9.1...v2.10.0
 [2.9.1]: https://github.com/dazedanon/DazedTL/compare/v2.9.0...v2.9.1
