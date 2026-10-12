@@ -79,7 +79,8 @@ def tree_hashes(root, folder):
     return result
 
 
-def describe_game(source):
+def describe_game(source, files=True):
+    """The game's layout and, unless `files` is false, its data file rows."""
     root = Path(source).expanduser().resolve(strict=True)
     if not root.is_dir() or root == root.parent:
         raise ValueError("Choose an existing game folder.")
@@ -93,8 +94,8 @@ def describe_game(source):
     if layout["plugins_js"]:
         regular(root, layout["plugins_js"])
     from util.project_scanner import list_data_files
-    files = list_data_files(data, "MVMZ") if data.is_dir() else []
-    rows = [{**item, "path": str(regular(root, item["path"]))} for item in files]
+    rows = [{**item, "path": str(regular(root, item["path"]))}
+            for item in (list_data_files(data, "MVMZ") if files and data.is_dir() else [])]
     encrypted = [str(regular(root, path)) for path in rgssad.archives(root)]
     return {"source": str(root), "engine": layout["engine"], "data": str(data),
             "plugins": str(layout["plugins_js"] or ""), "encrypted": encrypted, "files": rows}
@@ -104,12 +105,19 @@ def action_guard(project, folder):
     """Bind a confirmation to its current source, outputs and portable guidance."""
     root, folder = Path(project["source"]), Path(folder)
     layout = describe_game(root)
+    return {**guard_context(root, layout), "data": tree_hashes(root, Path(layout["data"])),
+            "files": tree_hashes(folder, folder / "files"), "translated": tree_hashes(folder, folder / "translated"),
+            "variables": file_hash(folder, folder / "log/var_translation_map.json")}
+
+
+def guard_context(root, layout, file_hash=file_hash, tree_hashes=tree_hashes):
+    """The guard's parts every phase shares: the game's layout, runtime code and
+    portable guidance. A poll passes hashers that reuse unchanged files' digests."""
     binary_data = (Path(layout['binary_data']) if layout['engine'] == 'WOLF'
                    else root / 'Data' if layout['engine'] == 'ACE' else None)
     archives = (sorted(root.glob('*.wolf*')) if layout['engine'] == 'WOLF'
                 else [Path(name) for name in layout['encrypted']] if layout['engine'] == 'ACE' else None)
     return {"layout": {key: layout[key] for key in ("source", "engine", "data", "plugins", "encrypted")},
-            "data": tree_hashes(root, Path(layout["data"])),
             "binary_data": tree_hashes(root, binary_data) if binary_data is not None else None,
             "archives": {str(path.relative_to(root)): file_hash(root, path) for path in archives} if archives is not None else None,
             "plugins": file_hash(root, Path(layout["plugins"])) if layout["plugins"] else None,
@@ -120,9 +128,7 @@ def action_guard(project, folder):
             "legacy_quirks": file_hash(root, root / "translation_quirks.txt"),
             "legacy_skills": tree_hashes(root, root / "skills"),
             "references": file_hash(root, root / ".dazedtl/reference-games.json"),
-            "skills": tree_hashes(root, root / ".dazedtl/skills"),
-            "files": tree_hashes(folder, folder / "files"), "translated": tree_hashes(folder, folder / "translated"),
-            "variables": file_hash(folder, folder / "log/var_translation_map.json")}
+            "skills": tree_hashes(root, root / ".dazedtl/skills")}
 
 
 def validate_plan(plan):

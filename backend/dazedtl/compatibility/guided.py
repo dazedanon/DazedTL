@@ -146,6 +146,60 @@ def guard(project, folder):
     return action_guard(project, folder)
 
 
+def guard_context(project, observed):
+    """The guard's parts every phase shares, for a poll: the same values as
+    action_guard's, hashing only files whose listed signature changed. A
+    folder holding anything but plain files and folders, or a file the
+    listing cannot place, gets the engine's own reading and errors."""
+    from desktop.backend import workflow_actions as engine
+
+    root = Path(project["source"])
+
+    def file_hash(root, path):
+        try:
+            relative = Path(path).relative_to(root).as_posix()
+        except ValueError:
+            relative = None
+        if relative:
+            parent, _, name = relative.rpartition("/")
+            folder = observed.folder(root, parent)
+            if folder is not None and observed.entry(folder / name):
+                return observed.digest(folder / name)
+        return engine.file_hash(root, path)
+
+    def tree_hashes(root, folder):
+        hashes = plain_tree(root, folder)
+        return engine.tree_hashes(root, folder) if hashes is None else hashes
+
+    def plain_tree(root, folder):
+        try:
+            start = observed.folder(root, Path(folder).relative_to(root).as_posix())
+        except ValueError:
+            return None
+        if start is None:
+            return None
+        result, pending = {}, [start]
+        while pending:
+            entries = observed.listing(pending.pop())
+            if entries is None:
+                return None
+            for entry in entries.values():
+                path = Path(entry.path)
+                if entry.is_symlink() or entry.is_junction():
+                    return None
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(path)
+                elif entry.is_file(follow_symlinks=False):
+                    result[path.relative_to(start).as_posix()] = observed.digest(path)
+                else:
+                    return None
+        return result
+
+    return engine.guard_context(
+        root, engine.describe_game(root, files=False), file_hash, tree_hashes
+    )
+
+
 def phased_workflows(workspace, lock, operations, manual):
     from desktop.backend.workflow import Workflows
 

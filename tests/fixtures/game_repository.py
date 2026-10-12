@@ -97,6 +97,8 @@ _run_git(raced, "read-tree", "main")
 # GameUpdate: published repositories are patches players download, so the
 # translation commit carries a working patch-config.txt that DazedTL writes
 # from the saved defaults and the origin remote, never a placeholder.
+from dazedtl.compatibility.guided import guard_context
+from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.translation import TranslationEngine
 from desktop.backend.workflow_actions import action_guard
 from util import gameupdate_config as updater
@@ -168,6 +170,29 @@ with engine.context():
     assert action_guard({"source": str(published)}, temporary / "workflow") == guard
     save_game_wrap_widths(published, {"width": 70})
     assert action_guard({"source": str(published)}, temporary / "workflow") != guard
+
+    # A poll's guard parts match the engine's, and follow a changed plugin.
+    def shared():
+        full = action_guard({"source": str(published)}, temporary / "workflow")
+        return {
+            key: value
+            for key, value in full.items()
+            if key not in {"data", "files", "translated", "variables"}
+        }
+
+    def polled():
+        with observations.read():
+            return guard_context({"source": str(published)}, observations.files())
+
+    observations = RunObservations()
+    plugin = published / "js/plugins/Polled.js"
+    plugin.parent.mkdir(exist_ok=True)
+    plugin.write_text("// first\n")
+    (published / ".dazedtl/skills/notes").mkdir(parents=True)
+    (published / ".dazedtl/skills/notes/style.md").write_text("Keep it short.\n")
+    assert polled() == shared() and polled()["skills"], polled()
+    plugin.write_text("// second\n")
+    assert polled() == shared(), polled()
     assert config.read_text().splitlines()[2:] == [
         "forge=gitlab",
         "host=gitgud.io",

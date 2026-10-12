@@ -334,6 +334,12 @@ class ExistingBackend:
         return guard(project, folder)
 
     @staticmethod
+    def guided_guard_context(project, observed):
+        from .guided import guard_context
+
+        return guard_context(project, observed)
+
+    @staticmethod
     def guided_runtime_files(source):
         from .guided import runtime_files
 

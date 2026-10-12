@@ -232,6 +232,9 @@ class GuidedTests(unittest.TestCase):
             guided_text_publication=lambda *_: {},
             phase_files=lambda _native, _phase: ["Items.json"],
             guided_guard=lambda _native, _folder: evidence(self.source, ["Items.json"]),
+            guided_guard_context=lambda native, _observed: self.backend.guided_guard(
+                native, None
+            ),
             guided_runtime_files=lambda _source: ["Items.json"],
         )
         choices = {

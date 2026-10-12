@@ -505,8 +505,15 @@ class GuidedRuns:
     def snapshot(self, project_id, native, source_status, *, run_view=None):
         estimates, phases = {}, {}
         run_view = run_view or self.guided.run_view
-        guard = self.guided.backend.guided_guard(
-            native, self.guided.inputs(native).folder
+        # Quotes read only the guard's shared parts, so a poll hashes no
+        # game data or working copies for it.
+        observed = self.guided.observations.files()
+        guard = (
+            self.guided.backend.guided_guard_context(native, observed)
+            if observed is not None
+            else self.guided.backend.guided_guard(
+                native, self.guided.inputs(native).folder
+            )
         )
         mode = self.guided.preferences(native)["values"]["mode"]
         owned = self.guided.owned_runs(native)
