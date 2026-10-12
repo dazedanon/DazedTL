@@ -9,6 +9,7 @@ from math import ceil
 
 from .files import digest
 from .project import WORK
+from .requests import scene_list
 
 VERSION = 1
 PLANS = WORK + "/work/plans/"
@@ -281,13 +282,7 @@ def plan(units, input_path, complete, lines, characters=MAX_CHARACTERS):
         for unit in members:
             scenes.setdefault(unit["scene"], []).append(unit["id"])
         if len(scenes) > 1:
-            batch["scene_context"] = (
-                "These lines come from separate scenes; keep each scene's speakers and context to its own lines:\n"
-                + "\n".join(
-                    f"- {scene}: {len(ids)} {'line' if len(ids) == 1 else 'lines'}, {ids[0]} to {ids[-1]}"
-                    for scene, ids in scenes.items()
-                )
-            )
+            batch["scene_context"] = scene_list(scenes.items())
         if request["field"]:
             batch["instruction_key"] = request["field"]
         constraints = {

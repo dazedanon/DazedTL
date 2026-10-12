@@ -1216,6 +1216,42 @@ class ManualJobs:
                     else:
                         self.assertNotIn("provider", payload.get("extra_body", {}))
 
+            # Under the line-key policy the provider reads lines keyed 1 to N,
+            # notes included; a scene note written another way keeps unit IDs
+            # so it still names its lines.
+            from dazedtl.translation.requests import LINE_KEYS, scene_list
+
+            keyed_settings = {
+                "protocol": "openai",
+                "provider": "openai",
+                "mode": "live",
+                "model": "fixture",
+                "endpoint": "https://provider.invalid/v1",
+                "lineKeys": LINE_KEYS,
+            }
+            self.assertEqual(
+                engine.payload(row, keyed_settings)["captured"]["user"],
+                row["context"]["user"],
+            )
+            organized = {
+                "batches": [
+                    {
+                        **plan["batches"][0],
+                        "scene_context": scene_list([("gate", ["line"])]),
+                    }
+                ]
+            }
+            keyed, _compiler = compile_requests(
+                engine, "unused", {}, organized, "English"
+            )
+            payload = engine.payload(keyed[0], keyed_settings)
+            self.assertIn('{"1": "行った。"}', payload["captured"]["user"])
+            self.assertIn(json.dumps({"1": note}), payload["captured"]["user"])
+            self.assertIn("- gate: line 1", payload["captured"]["request_instructions"])
+            self.assertEqual(
+                payload["response_format"]["json_schema"]["schema"]["required"], ["1"]
+            )
+
             # New OpenRouter plans require the exact source-ID schema on both
             # transports; the legacy branch above retains its saved JSON mode.
             from dazedtl.settings.openrouter import STRUCTURED_OUTPUTS, TRANSPORT

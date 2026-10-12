@@ -13,7 +13,7 @@ from typing import Any
 from dazedtl.storage import write_bytes, write_json
 from dazedtl.translation.files import digest
 from dazedtl.translation.git_status_cache import RepositoryStatusCache, file_signature
-from dazedtl.translation.requests import output_schema
+from dazedtl.translation.requests import output_schema, provider_view
 
 from . import request_parameters
 from .openrouter_batch import ResultsUnavailable
@@ -277,32 +277,29 @@ class TranslationEngine:
                 "This run's structured-output policy is invalid or unsupported."
             )
         context = request["context"]
-        instructions = [
-            context["request_instructions"],
-            (
-                "Return only a JSON object mapping each supplied source ID to its translated string. "
-                "Do not add, remove, merge, or rename IDs. Speaker labels and surrounding source are context only."
-            ),
-        ]
+        # Lines go by short keys under the run's line-key policy; see
+        # requests.provider_view.
+        view = provider_view(request, configuration)
+        instructions = [context["request_instructions"], view["reply"]]
         references = context.get("reference_translations", {})
         if references.get("matches"):
             instructions.append(
                 "Advisory reference translations; the current source and approved glossary take precedence:\n"
                 + json.dumps(references["matches"], ensure_ascii=False)
             )
-        if request["constraints"]:
+        if view["constraints"]:
             instructions.append(
                 "Per-unit constraints (protected tokens must retain their source occurrence counts):\n"
-                + json.dumps(request["constraints"], ensure_ascii=False)
+                + json.dumps(view["constraints"], ensure_ascii=False)
             )
-        if context.get("scene_context"):
+        if view["scene_context"]:
             instructions.append(
                 "Scene and runtime substitution context (not translatable source):\n"
-                + context["scene_context"]
+                + view["scene_context"]
             )
         shared = {
             "system": context["system"],
-            "user": context["user"],
+            "user": view["user"],
             "history": context["preceding_japanese_source_context"],
             "formatType": "json",
             "model": configuration["model"],
@@ -318,7 +315,7 @@ class TranslationEngine:
             params["output_config"] = {
                 "format": {
                     "type": "json_schema",
-                    "schema": output_schema(request["sources"]),
+                    "schema": output_schema(view["sources"]),
                 }
             }
         else:
@@ -336,7 +333,7 @@ class TranslationEngine:
                     "json_schema": {
                         "name": "translation",
                         "strict": True,
-                        "schema": output_schema(request["sources"]),
+                        "schema": output_schema(view["sources"]),
                     },
                 }
             )
@@ -344,7 +341,7 @@ class TranslationEngine:
             if strict_router:
                 params = request_parameters.structured_output(
                     params,
-                    output_schema(request["sources"]),
+                    output_schema(view["sources"]),
                     name="translation",
                     live=configuration["mode"] != "batch",
                 )

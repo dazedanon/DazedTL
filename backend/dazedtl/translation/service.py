@@ -30,7 +30,7 @@ from .operations import (
     require_baseline,
 )
 from .project import ADDED, WORK, ProjectWorkspace, options, scope
-from .requests import plan_input, quote
+from .requests import LINE_KEYS, plan_input, quote
 from .results import Results
 
 SCOPE_RULES = WORK + "/work/scope-rules.json"
@@ -764,6 +764,8 @@ Additional project instructions:
         cfg = configuration(self.settings, mode, cached_only=cached_only)
         batch_provider = None
         if cfg["mode"] != "agent":
+            # Earlier runs froze no policy and keep sending unit IDs.
+            cfg["lineKeys"] = LINE_KEYS
             batch_provider = self.engine.batch_supported(cfg)
             cfg["rates"]["batch_factor"] = (
                 0.5 if batch_provider and batch_provider != "openrouter" else None

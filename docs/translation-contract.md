@@ -141,6 +141,7 @@ If an exchange spans requests, include the necessary surrounding source from the
 Compile using compile --input followed by the plan's game-relative path.
 The resulting run contains the complete shared system/game instructions, matched glossary and speaker guidance, SFX evidence, field instructions, source context, and advisory reference matches.
 API requests also contain the exact provider payload and resolved connection/model settings.
+The payload keys a request's lines 1 to N instead of by unit ID, lists speakers and kinds as line ranges, leaves out lines without a speaker, and the reply is mapped back to unit IDs; runs compiled before this keep their unit-ID payloads.
 Request size and pricing use the saved model preferences; source content is never silently truncated.
 
 Tracked source files bind to their original-branch blobs so injecting English does not invalidate Japanese source identity.

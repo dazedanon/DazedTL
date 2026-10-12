@@ -15,7 +15,13 @@ from dazedtl.translation import organize
 from dazedtl.translation.files import digest, project_path
 from dazedtl.translation.jobs import Jobs, RunStore, scratch
 from dazedtl.translation.project import ProjectWorkspace, scope
-from dazedtl.translation.requests import logical_request, plan_input, result_value
+from dazedtl.translation.requests import (
+    LINE_KEYS,
+    logical_request,
+    plan_input,
+    provider_view,
+    result_value,
+)
 from dazedtl.translation.results import Results
 from dazedtl.translation.runner import Runner
 
@@ -139,6 +145,98 @@ class TranslationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             results.accept(first, {"line": "Different. ⟦P0⟧"}, {})
         self.assertEqual(results.get(first)["translations"]["line"], "Yes. ⟦P0⟧")
+
+    def test_api_requests_key_lines_by_position_and_save_replies_by_unit_id(self):
+        # Unit IDs can be long paths, and a request repeated each in every
+        # list it held and the reply; API payloads now key lines 1 to N.
+        line = "www/data/Map001.json/events/1/pages/0/list/"
+        units = organize.units_input(
+            {
+                "version": 1,
+                "units": [
+                    {
+                        "id": line + "3",
+                        "group": "Map001",
+                        "scene": "A",
+                        "source": "\\C[2]行こう。",
+                        "kind": "dialogue",
+                        "speaker": "リリ",
+                        "tokens": ["\\C[2]"],
+                    },
+                    {
+                        "id": line + "5",
+                        "group": "Map001",
+                        "scene": "A",
+                        "source": "夜が明けた。",
+                        "kind": "narration",
+                    },
+                    {
+                        "id": line + "9",
+                        "group": "Map001",
+                        "scene": "B",
+                        "source": "戻る",
+                        "kind": "ui",
+                    },
+                ],
+            }
+        )
+        batch = organize.plan(units, "work/units.json", True, 50)["batches"][0]
+        row = logical_request(
+            batch, {"user": "", "scene_context": batch["scene_context"]}
+        )
+        configuration = {"mode": "live", "model": "fixture", "lineKeys": LINE_KEYS}
+        view = provider_view(row, configuration)
+        self.assertEqual(
+            view["sources"], {"1": "\\C[2]行こう。", "2": "夜が明けた。", "3": "戻る"}
+        )
+        self.assertEqual(view["constraints"], {"1": {"tokens": ["\\C[2]"]}})
+        # Only named lines are listed; kinds and scenes go by line range.
+        self.assertIn("\nリリ: 1\n\n", view["user"])
+        self.assertIn("dialogue 1; narration 2; ui 3", view["user"])
+        self.assertTrue(view["scene_context"].endswith("\n- A: lines 1-2\n- B: line 3"))
+        self.assertNotIn("www/data", view["user"] + view["scene_context"])
+        # Earlier runs, and scene notes written another way, keep unit IDs.
+        foreign = logical_request(batch, {"user": "", "scene_context": "At the gate"})
+        for kept, policy in ((row, {}), (foreign, configuration)):
+            self.assertEqual(provider_view(kept, policy)["sources"], row["sources"])
+        row["params"] = {"model": "fixture", "messages": []}
+        replies = iter(
+            [
+                '{"1": "\\\\C[2]Let\'s go.", "2": "Dawn broke.", "3": "Back"}',
+                '{"1": "\\\\C[2]Let\'s go.", "2": "Dawn broke."}',
+            ]
+        )
+
+        class Keyed(LiveProvider):
+            def live(self, _params):
+                return {"text": next(replies)}
+
+        accepted = None
+        for state in ("accepted", "failed"):
+            (self.game / state).mkdir()
+            plan = {
+                "version": 1,
+                "kind": "translation",
+                "source": str(self.game / state),
+                "complete": True,
+                "requests": [row],
+                "configuration": configuration,
+                "batch_limits": [50, 100000],
+            }
+            job = self.store.create("project", plan, {"cost": 1})
+            self.store.authorize(job)
+            Runner(self.store, job["id"], Keyed(), lambda: None).step()
+            current, _plan = self.store.load(job["id"])
+            self.assertEqual(current["states"][row["id"]]["state"], state)
+            accepted = accepted or Results(self.game / state).get(row)
+        self.assertEqual(
+            accepted["translations"],
+            {
+                line + "3": "\\C[2]Let's go.",
+                line + "5": "Dawn broke.",
+                line + "9": "Back",
+            },
+        )
 
     def test_reviewed_correction_retains_history_and_rejects_a_stale_result_hash(self):
         row = request()

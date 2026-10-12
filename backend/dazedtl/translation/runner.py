@@ -13,6 +13,7 @@ from .refusals import (
     clarified,
     refused,
 )
+from .requests import from_provider
 from .results import Results
 
 
@@ -55,7 +56,7 @@ class Runner:
                 raise ValueError(REFUSAL_MESSAGE)
             self.results.accept(
                 request,
-                response["text"],
+                from_provider(request, self.plan["configuration"], response["text"]),
                 {
                     "run_id": self.job["id"],
                     "mode": self.plan["configuration"]["mode"],
