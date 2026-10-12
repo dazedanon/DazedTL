@@ -123,4 +123,4 @@ Building the tour added more:
 - A window drawn while hidden, or a message's page break, looks like overflow, so a finding counts only once its bitmap is on screen, and message windows go on in a new page.
 - An opening left mid-message holds the next stops' screens, so the tour plays it until the player can move, four times as fast.
 - A battle the tour starts on a map with no background loads the engine's default, which a game may not ship, so it shows the game's own or none.
-- Without a display Chromium has no GPU for WebGL, so the tour falls back to SwiftShader.
+- Chromium's headless platform gives an offscreen window a single pixel unless it has a screen size, and reaches the GPU without a display only through EGL; a game that still never starts, as on a machine without a GPU, plays with SwiftShader.

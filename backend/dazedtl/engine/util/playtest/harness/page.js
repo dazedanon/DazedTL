@@ -1,9 +1,10 @@
 // The release playtest inside the game's page: hooks that record what the
-// game shows, and the tour that plays it. Electron loads this before the
-// game's own scripts; harness/main.cjs drains `__playtest.drain()`.
+// game shows, and the tour that plays it. rpgmaker_window/launcher.cjs runs
+// this before the game's own scripts, and everything it records goes to
+// harness/main.cjs as it happens, through the launcher's bridge.
 //
 // Works on RPG Maker MV and MZ. It never writes the game folder: the page
-// runs in a browser profile of its own, so saves and options stay there.
+// runs in a session of its own, so saves and options stay there.
 "use strict";
 (() => {
   const JAPANESE = /[ぁ-ゔァ-ヴ一-龠々〆〤]/;
@@ -46,7 +47,7 @@
   const CAPTURE_LIMIT = 80;
   const TEXT_LIMIT = 200;
 
-  const outbox = [];
+  const bridge = window.dazedtlHarness;
   const seen = new Set();
   const state = {
     stop: "boot",
@@ -62,7 +63,12 @@
     // Game updates a frame: the tour plays text and battles faster.
     speed: 1,
   };
-  const send = (type, value) => outbox.push({ type, ...value });
+  const send = (type, value) => bridge.send(type, value);
+  /** Names what the tour does now, which a crash or hang interrupts. */
+  function doing(stop) {
+    state.stop = stop;
+    bridge.send("step", stop);
+  }
   const clip = (text) =>
     String(text).length > TEXT_LIMIT
       ? String(text).slice(0, TEXT_LIMIT) + "…"
@@ -214,9 +220,7 @@
       const target = event.target;
       if (target instanceof Element) {
         const url = String(target.src || target.href || "");
-        const local = url.match(
-          /^https?:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{24}\/(.*)$/,
-        );
+        const local = url.match(/^game:\/\/game\/(.*)$/);
         if (local)
           error("load", "Failed to load: " + decodeURIComponent(local[1]));
         return;
@@ -491,6 +495,16 @@
           problem.stack,
         );
       }
+      // The tour waits for the game to start, and starts where the plan
+      // says: past the stops an earlier window played.
+      tour(bridge.plan()).catch((problem) =>
+        send("stop", {
+          id: state.stop,
+          status: "failed",
+          note: problem.message,
+          crashed: true,
+        }),
+      );
     },
     true,
   );
@@ -1203,14 +1217,14 @@
       const stop = state.stop;
       // A screen that fails keeps its name here, so its errors and a crash
       // name it.
-      state.stop = `screen ${name}`;
+      doing(`screen ${name}`);
       SceneManager.push(window[name]);
       if (await until(() => isScene(name), 10)) {
         await settle();
         await exploreScene(name);
         opened.push(name);
       }
-      state.stop = stop;
+      doing(stop);
       await leave("Scene_Map");
     }
     return {
@@ -1303,7 +1317,7 @@
     // After a crash the page starts over; later stops need a game running.
     const resume = config.from || 0;
     if (resume && !["title", "new-game"].includes(plan[resume]?.id)) {
-      state.stop = "resume";
+      doing("resume");
       try {
         await stops.title();
         await stops["new-game"]();
@@ -1320,7 +1334,7 @@
     }
     for (let index = resume; index < plan.length; index++) {
       const step = plan[index];
-      state.stop = step.id;
+      doing(step.id);
       send("start", { index, id: step.id });
       const started = Date.now();
       let result;
@@ -1365,23 +1379,10 @@
   }
 
   window.__playtest = {
-    /** Starts the tour once the game is running. */
-    start(config) {
-      state.crashed = "";
-      tour(config).catch((problem) =>
-        send("stop", {
-          id: state.stop,
-          status: "failed",
-          note: problem.message,
-          crashed: true,
-        }),
-      );
-      return true;
-    },
     /** Records what is on screen now, as the tour does before it moves. */
     look: flush,
-    /** Hands the main process everything recorded since the last call. */
-    drain() {
+    /** What the tour is doing, which the launcher's --trace writes. */
+    debug() {
       let windows = [];
       try {
         windows = activeWindows().map((window_) => window_.constructor.name);
@@ -1389,42 +1390,33 @@
         // No scene yet.
       }
       return {
-        debug: {
-          stop: state.stop,
-          windows,
-          message: !!(window.$gameMessage && $gameMessage.isBusy()),
-          event: !!(
-            window.$gameMap &&
-            $gameMap.isEventRunning &&
-            $gameMap.isEventRunning()
-          ),
-          battle: window.BattleManager ? BattleManager._phase : "",
-          busy:
-            window.BattleManager && BattleManager._logWindow
-              ? [
-                  BattleManager._logWindow.isBusy(),
-                  BattleManager._spriteset && BattleManager._spriteset.isBusy(),
-                  BattleManager._spriteset &&
-                    BattleManager._spriteset.isAnimationPlaying(),
-                  !!BattleManager._subject,
-                  BattleManager._logWindow._waitMode,
-                  BattleManager._logWindow._waitCount,
-                  BattleManager._logWindow._methods
-                    .slice(0, 3)
-                    .map((method) => method.name),
-                  !!BattleManager._logWindow.parent,
-                  BattleManager._logWindow.update ===
-                    Window_BattleLog.prototype.update,
-                ]
-              : null,
-        },
-        events: outbox.splice(0, outbox.length),
-        frame: window.Graphics ? Graphics.frameCount || 0 : 0,
+        stop: state.stop,
         scene: sceneName(),
-        crashed: state.crashed,
-        size:
-          window.Graphics && Graphics.width
-            ? [Graphics.width, Graphics.height]
+        windows,
+        message: !!(window.$gameMessage && $gameMessage.isBusy()),
+        event: !!(
+          window.$gameMap &&
+          $gameMap.isEventRunning &&
+          $gameMap.isEventRunning()
+        ),
+        battle: window.BattleManager ? BattleManager._phase : "",
+        busy:
+          window.BattleManager && BattleManager._logWindow
+            ? [
+                BattleManager._logWindow.isBusy(),
+                BattleManager._spriteset && BattleManager._spriteset.isBusy(),
+                BattleManager._spriteset &&
+                  BattleManager._spriteset.isAnimationPlaying(),
+                !!BattleManager._subject,
+                BattleManager._logWindow._waitMode,
+                BattleManager._logWindow._waitCount,
+                BattleManager._logWindow._methods
+                  .slice(0, 3)
+                  .map((method) => method.name),
+                !!BattleManager._logWindow.parent,
+                BattleManager._logWindow.update ===
+                  Window_BattleLog.prototype.update,
+              ]
             : null,
       };
     },

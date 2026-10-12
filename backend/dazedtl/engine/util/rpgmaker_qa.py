@@ -161,7 +161,8 @@ _ENGINE_SOURCES = (
     "rpgmaker_qa_preflight.py", "rpgmaker_qa_reach.py", "rpgmaker_qa_checks.py",
     "rpgmaker_header_check.py", "rpgmaker_rewrap.py",
     "rpgmaker_screens/__init__.py", "rpgmaker_screens/capture.cjs",
-    "rpgmaker_screens/harness.js",
+    "rpgmaker_screens/harness.js", "rpgmaker_window/__init__.py",
+    "rpgmaker_window/launcher.cjs", "rpgmaker_window/bridge.cjs",
 )
 # Lint proposals per review item, so a decline sets aside few of them.
 LINT_ITEM_LIMIT = 60
@@ -1582,7 +1583,7 @@ def _capture_interface(
     none or some could not be."""
     try:
         listing = rpgmaker_screens.capture(data, folder, progress=progress)
-    except rpgmaker_screens.CaptureUnavailable as error:
+    except rpgmaker_screens.WindowUnavailable as error:
         return {"captured": 0, "error": str(error)}
     return {
         "captured": len(listing["screens"]),
@@ -1721,12 +1722,12 @@ def _interface_after(
     rounds = sorted(folder.glob("after-*"))
     out = folder / f"after-{len(rounds) + 1}"
     overlay = {}
-    web = rpgmaker_screens.web_root(data_root)
     for name, document in documents.items():
         path = out / "data" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
-        overlay[(data_root.resolve() / name).relative_to(web).as_posix()] = path
+        # By its path under the game's web folder, which holds the data folder.
+        overlay[f"{data_root.resolve().name}/{name}"] = path
     choice_sets = []
     for key, where in choices.items():
         params = resolve_pointer(documents[where["file"]], where["command"] + "/parameters")
@@ -1750,7 +1751,7 @@ def _interface_after(
             data_root, out, overlay=overlay, screens=screens,
             choices=choice_sets, all_choices=True,
         )
-    except rpgmaker_screens.CaptureUnavailable as error:
+    except rpgmaker_screens.WindowUnavailable as error:
         return {finding_id: [{"error": str(error)}] for finding_id in shown_on}
     after: dict[str, list[dict[str, Any]]] = {}
     for finding in findings:

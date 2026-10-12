@@ -1,75 +1,31 @@
 """Captures of an RPG Maker MV/MZ game's interface screens.
 
-The game runs read-only in a hidden Electron window (see capture.cjs and
-harness.js): its title, menu, item, skill, equipment, status, shop, options
-and battle screens open one by one with every entry filled in, and each
-capture lists the text the game drew on it, measured with the game's own
-fonts, including what it squeezed into less space than it needs or drew past
-its window. Choice lists are captured when the game cuts them off.
+The game runs read-only in a hidden Electron window (see rpgmaker_window,
+capture.cjs and harness.js): its title, menu, item, skill, equipment,
+status, shop, options and battle screens open one by one with every entry
+filled in, and each capture lists the text the game drew on it, measured with
+the game's own fonts, including what it squeezed into less space than it
+needs or drew past its window. Choice lists are captured when the game cuts
+them off.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
-import tempfile
-import threading
-import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from util.paths import PROJECT_ROOT
+from util import rpgmaker_window
+from util.rpgmaker_window import WindowUnavailable, web_root
 
 HERE = Path(__file__).resolve().parent
 # Captures of a large game take a few minutes; a game that never finishes
 # starting stops here.
 DEFAULT_TIMEOUT = 600
-# The application's Electron, which the app names for its workers.
-ELECTRON_ENV = "DAZEDTL_ELECTRON"
-# How often a running capture reports which screen it is on.
-PROGRESS_SECONDS = 10
-
-
-class CaptureUnavailable(Exception):
-    """The screens cannot be captured on this machine or for this game."""
-
-
-def electron() -> Path:
-    """The Electron that runs the capture: the app's own, or the checkout's."""
-    named = os.environ.get(ELECTRON_ENV, "").strip()
-    if named and Path(named).is_file():
-        return Path(named)
-    package = PROJECT_ROOT.parents[2] / "app" / "node_modules" / "electron"
-    try:
-        binary = package / "dist" / (package / "path.txt").read_text(encoding="utf-8").strip()
-    except OSError:
-        binary = None
-    if binary and binary.is_file():
-        return binary
-    raise CaptureUnavailable("DazedTL's Electron isn't installed, so it can't run the game.")
-
-
-def web_root(data_root: str | Path) -> Path:
-    """The folder that holds the game's index.html, beside its data folder."""
-    root = Path(data_root).resolve().parent
-    if not (root / "index.html").is_file():
-        raise CaptureUnavailable("The game has no index.html to start it from.")
-    return root
 
 
 def _load(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
-
-
-def screen_size(data_root: str | Path) -> tuple[int, int] | None:
-    """The game's screen size as MZ records it; MV's comes from its scripts."""
-    try:
-        advanced = _load(Path(data_root) / "System.json").get("advanced") or {}
-        return int(advanced["screenWidth"]), int(advanced["screenHeight"])
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return None
 
 
 def _command_lists(node: Any, pointer: str = ""):
@@ -125,12 +81,6 @@ def choice_sets(data_root: str | Path) -> list[dict[str, Any]]:
     return list(sets.values())
 
 
-def _has_display() -> bool:
-    return sys.platform in {"win32", "darwin"} or bool(
-        os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
-    )
-
-
 def capture(
     data_root: str | Path,
     out_dir: str | Path,
@@ -147,76 +97,33 @@ def capture(
     folder such as ``data/Items.json``, in place of the game's own; *screens*
     limits the capture to those screens; *choices* replaces the game's choice
     lists, each captured with *all_choices* and otherwise only when the game
-    cuts it off. *progress* hears which screen the capture is on."""
-    if not _has_display():
-        raise CaptureUnavailable("There's no display to run the game on.")
-    binary = electron()
+    cuts it off. *progress* hears which screen the capture is on, and its
+    ``stopped``, when it has one, stops the capture."""
     web = web_root(data_root)
     out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    size = screen_size(data_root)
-    plan = {
-        "web": str(web),
-        "out": str(out),
-        "timeout": timeout,
-        "choices": choice_sets(data_root) if choices is None else choices,
-        "allChoices": all_choices,
-        "screens": list(screens) if screens is not None else None,
-        "overlay": {key: str(value) for key, value in (overlay or {}).items()},
-        **({"width": size[0], "height": size[1]} if size else {}),
-    }
-    # Electron's helper processes may still hold its profile for a moment.
-    with tempfile.TemporaryDirectory(
-        prefix="dazedtl-capture-", ignore_cleanup_errors=True
-    ) as temporary:
-        plan["profile"] = str(Path(temporary) / "profile")
-        plan_path = Path(temporary) / "plan.json"
-        plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-        environment = {
-            key: value for key, value in os.environ.items()
-            if key not in {"ELECTRON_RUN_AS_NODE", "NODE_OPTIONS"}
-        }
-        # The window is never shown, so X11, which Wayland desktops also
-        # offer, serves wherever it exists.
-        platform = (
-            ["--ozone-platform=x11"] if sys.platform.startswith("linux") and os.environ.get("DISPLAY")
-            else ["--ozone-platform=wayland"] if sys.platform.startswith("linux")
-            else []
-        )
-        errors_path = Path(temporary) / "errors.log"
-        with errors_path.open("wb") as errors:
-            process = subprocess.Popen(
-                [str(binary), *platform, str(HERE / "capture.cjs"), str(plan_path)],
-                cwd=temporary,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=errors,
-            )
-            # The capture stops itself at its timeout; this stops one that hangs.
-            timer = threading.Timer(timeout + 60, process.kill)
-            timer.start()
-            try:
-                reported = 0.0
-                for line in process.stdout:
-                    try:
-                        title = json.loads(line)["title"]
-                    except (ValueError, KeyError, TypeError):
-                        continue
-                    if progress and time.monotonic() - reported >= PROGRESS_SECONDS:
-                        reported = time.monotonic()
-                        progress(f"Capturing the game's screens: {title}")
-                process.wait()
-            finally:
-                timer.cancel()
-                if process.poll() is None:
-                    process.kill()
-        tail = errors_path.read_text(encoding="utf-8", errors="replace").strip()
+    played = rpgmaker_window.run(
+        HERE / "capture.cjs",
+        web,
+        out,
+        {
+            "choices": choice_sets(data_root) if choices is None else choices,
+            "allChoices": all_choices,
+            "screens": list(screens) if screens is not None else None,
+        },
+        seconds=timeout,
+        size=rpgmaker_window.screen_size(data_root),
+        overlay=overlay,
+        starting="Capturing the game's screens",
+        status=lambda event: (
+            f"Capturing the game's screens: {event['title']}" if "captured" in event else None
+        ),
+        log=progress or (lambda _text: None),
+        stopped=getattr(progress, "stopped", lambda: False),
+    )
     listing = out / "screens.json"
     if not listing.is_file():
-        last = tail.splitlines()[-3:]
-        raise CaptureUnavailable(
+        raise WindowUnavailable(
             "The capture stopped before writing its results"
-            + (": " + " ".join(last) if last else ".")
+            + (f": {played.errors}" if played.errors else ".")
         )
     return _load(listing)

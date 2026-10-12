@@ -1,28 +1,21 @@
 """Runs the release playtest and writes the one report the app and the
 assistant read: the static checks, then the tour in a hidden window of
-DazedTL's own Electron, merged so each problem shows once with where the tour
-saw it.
+DazedTL's own Electron (see util.rpgmaker_window), merged so each problem
+shows once with where the tour saw it.
 
 The playtest writes only its output folder; the game folder is read-only to
-it, and the tour's saves stay in a browser profile it deletes afterwards.
+it, and the tour's saves stay in a session that ends with it.
 """
 
 from __future__ import annotations
 
 import json
-import os
-import queue
-import shutil
-import signal
-import subprocess
-import sys
-import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 
+from util import rpgmaker_window
 from util.playtest.checks import static_checks
-from util.rpgmaker_screens import CaptureUnavailable, electron
 
 SCHEMA = "rpgmaker-playtest-report-v1"
 HARNESS = Path(__file__).with_name("harness") / "main.cjs"
@@ -57,21 +50,6 @@ _ENGINE_SCENES = frozenset({
     "Scene_Status", "Scene_Options", "Scene_Save", "Scene_Load", "Scene_GameEnd",
     "Scene_Shop", "Scene_Name", "Scene_Battle", "Scene_Title", "Scene_Gameover",
 })
-
-
-def resolution(data: Path) -> tuple[int, int]:
-    """The game's screen size: MZ keeps it in System.json; MV starts at
-    816x624, and the tour follows a plugin that changes it."""
-    try:
-        advanced = json.loads((data / "System.json").read_text(encoding="utf-8-sig")).get(
-            "advanced"
-        ) or {}
-        width, height = int(advanced["screenWidth"]), int(advanced["screenHeight"])
-        if 160 <= width <= 4096 and 120 <= height <= 4096:
-            return width, height
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        pass
-    return 816, 624
 
 
 def battlebacks(web_root: Path) -> list[str]:
@@ -113,153 +91,56 @@ def read_stops(value: Any) -> list[dict[str, Any]]:
 
 
 def tour(
-    web_root: Path,
+    data: Path,
     out: Path,
-    size: tuple[int, int],
     stops: list[dict[str, Any]],
     minutes: float,
     log: Callable[[str], None],
     stopped: Callable[[], bool] = lambda: False,
-    software: bool = False,
 ) -> dict[str, Any]:
     """Plays the game; the runtime part of the report, or why it could not."""
     try:
-        binary = electron()
-    except CaptureUnavailable as missing:
+        web = rpgmaker_window.web_root(data)
+    except rpgmaker_window.WindowUnavailable as missing:
         return {"unavailable": str(missing)}
-    if not (web_root / "index.html").is_file():
-        return {"unavailable": "The game folder has no index.html to play."}
-    if not any((web_root / "js" / name).is_file() for name in ("rmmz_core.js", "rpg_core.js")):
-        return {"unavailable": "The game folder has no RPG Maker engine scripts to play."}
     plan = {
         "stops": [{"id": stop_id, "title": title} for stop_id, title in TOUR[:-1]]
         + stops
         + [{"id": TOUR[-1][0], "title": TOUR[-1][1]}],
         "opening": OPENING_SECONDS,
         "battle": BATTLE_SECONDS,
-        "battlebacks": battlebacks(web_root),
-    }
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-    command = [str(binary)]
-    linux = sys.platform.startswith("linux")
-    if linux:
-        # The window is offscreen and needs no display.
-        command.append("--ozone-platform=headless")
-    # WebGL draws with the GPU, through the display on Linux, and with
-    # SwiftShader on the CPU where there is none.
-    if software or linux and not os.environ.get("DISPLAY"):
-        command.append("--use-angle=swiftshader")
-    command += [
-        str(HARNESS), "--game", str(web_root), "--out", str(out),
-        "--plan", str(out / "plan.json"), "--width", str(size[0]),
-        "--height", str(size[1]), "--minutes", str(minutes),
-    ]
-    environment = {
-        key: value for key, value in os.environ.items()
-        if key not in {"ELECTRON_RUN_AS_NODE", "NODE_OPTIONS"}
+        "battlebacks": battlebacks(web),
     }
     titles = {stop["id"]: stop["title"] for stop in plan["stops"]}
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env=environment,
-        cwd=str(out),
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        # Its own process group, so a stop ends Electron's helpers with it.
-        **(
-            {"creationflags": subprocess.CREATE_NO_WINDOW}
-            if os.name == "nt"
-            else {"start_new_session": True}
-        ),
-    )
-    lines: queue.Queue[str | None] = queue.Queue()
 
-    def read() -> None:
-        assert process.stdout is not None
-        for line in process.stdout:
-            lines.put(line)
-        lines.put(None)
+    def status(event: dict[str, Any]) -> str | None:
+        if event.get("progress") == "stop":
+            return (
+                f"Playing {event['index'] + 1} of {event['total']}: "
+                f"{titles.get(event['id'], event['id'])}"
+            )
+        if event.get("progress") == "crash" and event.get("index", 0) > 0:
+            # A game that stops before its title, as when the GPU will not
+            # draw, is still starting; the report says why.
+            return f"The game stopped: {event['note']}"
+        return None
 
-    threading.Thread(target=read, daemon=True).start()
-    deadline = time.monotonic() + minutes * 60 + 120
-    status = "Starting the game"
-    said = time.monotonic()
     try:
-        while True:
-            if stopped():
-                raise InterruptedError("The playtest was stopped.")
-            try:
-                line = lines.get(timeout=0.5)
-            except queue.Empty:
-                line = ""
-            if line is None or time.monotonic() > deadline:
-                break
-            try:
-                event = json.loads(line) if line else {}
-            except ValueError:
-                event = {}
-            if event.get("progress") == "stop":
-                status = (
-                    f"Playing {event['index'] + 1} of {event['total']}: "
-                    f"{titles.get(event['id'], event['id'])}"
-                )
-            elif event.get("progress") == "crash" and event.get("index", 0) > 0:
-                # A game that stops before its title, as when the GPU will
-                # not draw, is still starting; the report says why.
-                status = f"The game stopped: {event['note']}"
-            elif event.get("progress") == "done":
-                break
-            # Progress at least every 20 seconds, so a long stop never reads
-            # as a stalled action.
-            if event.get("progress") in {"stop", "crash"} or time.monotonic() - said > 20:
-                log(status)
-                said = time.monotonic()
-    finally:
-        # Electron gets a moment to exit after its report, unless the user
-        # stopped the playtest; then it is ended.
-        try:
-            process.wait(timeout=0 if stopped() else 30)
-        except subprocess.TimeoutExpired:
-            pass
-        if process.poll() is None:
-            _end(process)
-        process.wait()
-        # The tour's saves and caches, which Windows keeps locked until
-        # Electron has exited.
-        shutil.rmtree(out / ".profile", ignore_errors=True)
+        rpgmaker_window.run(
+            HARNESS, web, out, plan,
+            seconds=minutes * 60,
+            size=rpgmaker_window.screen_size(data),
+            starting="Starting the game",
+            status=status,
+            log=log,
+            stopped=stopped,
+        )
+    except rpgmaker_window.WindowUnavailable as missing:
+        return {"unavailable": str(missing)}
     try:
         return json.loads((out / "runtime.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"unavailable": "The playtest window closed before it wrote its report."}
-
-
-def _not_started(runtime: dict[str, Any]) -> bool:
-    """The game never reached its title, as when the GPU will not draw for an
-    offscreen window."""
-    stops = runtime.get("stops") or []
-    return "unavailable" not in runtime and (
-        not stops or stops[0].get("status") != "done"
-    )
-
-
-def _end(process: subprocess.Popen) -> None:
-    """Ends Electron and the processes it started."""
-    if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-    else:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except OSError:
-            process.kill()
 
 
 def _seen(event: dict[str, Any], titles: dict[str, str] | None = None) -> dict[str, Any]:
@@ -528,13 +409,7 @@ def run(
     started = time.time()
     log("Checking the game's files")
     static = static_checks(game, data)
-    log("Starting the game")
-    size = resolution(data)
-    runtime = tour(data.parent, target, size, extra, minutes, log, stopped)
-    if _not_started(runtime):
-        # The GPU may not draw for an offscreen window; play on the CPU.
-        log("Starting the game again without the GPU")
-        runtime = tour(data.parent, target, size, extra, minutes, log, stopped, True)
+    runtime = tour(data, target, extra, minutes, log, stopped)
     merged = merge(static, runtime, data.relative_to(game).as_posix())
     report = {
         "schema": SCHEMA,

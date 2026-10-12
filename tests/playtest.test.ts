@@ -81,7 +81,15 @@ function game() {
     constructor: { name: "Scene_Item" },
     children: [shown, unseen],
   });
+  // What the page sends the main process, as plain data the way IPC copies
+  // it; a plan without stops leaves only the hooks running.
+  const sent: { type: string; value: Record<string, unknown> }[] = [];
   const context: Record<string, unknown> = {
+    dazedtlHarness: {
+      plan: () => ({ stops: [] }),
+      send: (type: string, value: Record<string, unknown>) =>
+        sent.push({ type, value: structuredClone(value) }),
+    },
     console: { ...console, error() {} },
     document: {},
     KeyboardEvent: class {},
@@ -123,15 +131,12 @@ function game() {
   context.window = context;
   vm.runInNewContext(page, context);
   for (const listener of listeners.load) listener({});
-  const playtest = context.__playtest as {
-    look(): Promise<void>;
-    drain(): { events: { type: string; [key: string]: unknown }[] };
-  };
-  return { playtest, help, hidden, Window_Base };
+  const playtest = context.__playtest as { look(): Promise<void> };
+  return { playtest, sent, help, hidden, Window_Base };
 }
 
 test("the playtest records text that runs past a window players see", async () => {
-  const { playtest, help, hidden, Window_Base } = game();
+  const { playtest, sent, help, hidden, Window_Base } = game();
   // A three-line description in a two-line help window, attributed to its
   // database entry, and a sentence too wide for it.
   help.setItem({
@@ -144,14 +149,14 @@ test("the playtest records text that runs past a window players see", async () =
   const measure = new Window_Base();
   measure.drawTextEx("One\nTwo\nThree", 0, 72);
   await playtest.look();
-  // Plain data, as the main process receives it from the page.
-  const events = JSON.parse(JSON.stringify(playtest.drain().events)) as {
-    type: string;
-    [key: string]: unknown;
-  }[];
-  const overflow = events.filter((event) => event.type === "overflow");
+  const events = (type: string) =>
+    sent.filter((event) => event.type === type).map((event) => event.value);
   assert.deepEqual(
-    overflow.map((event) => [event.edge, event.data ?? null, event.capture]),
+    events("overflow").map((event) => [
+      event.edge,
+      event.data ?? null,
+      event.capture,
+    ]),
     [
       [
         "bottom",
@@ -161,6 +166,6 @@ test("the playtest records text that runs past a window players see", async () =
       ["right", null, "001-overflow"],
     ],
   );
-  assert.equal(events.filter((event) => event.type === "japanese").length, 0);
-  assert.equal(events.filter((event) => event.type === "capture").length, 1);
+  assert.equal(events("japanese").length, 0);
+  assert.equal(events("capture").length, 1);
 });

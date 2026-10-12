@@ -1,14 +1,16 @@
 // Opens an RPG Maker MV/MZ game's interface screens one by one and captures
 // each, with every item, weapon, armor and skill in the party's hands.
 //
-// Loaded after the game's own scripts by capture.cjs. Every call to
-// Bitmap#drawText is measured with the game's fonts, so each capture lists the
-// text it shows and which of it the game squeezed into less space than it
-// needs or drew past its window.
+// The page script capture.cjs gives rpgmaker_window/launcher.cjs, which runs
+// it before the game's own scripts. Every call to Bitmap#drawText is measured
+// with the game's fonts, so each capture lists the text it shows and which of
+// it the game squeezed into less space than it needs or drew past its window.
+// After a screen stops the game, the next window leaves out the screens an
+// earlier one began.
 (() => {
   "use strict";
 
-  const api = window.dazedtlCapture;
+  const api = window.dazedtlHarness;
   const plan = api.plan();
   const drawn = [];
   let recording = false;
@@ -19,11 +21,12 @@
   // How long one screen may take to open, in frames.
   const OPEN_FRAMES = 900;
 
+  const error = (message) => api.send("error", message);
   window.addEventListener("error", (event) =>
-    api.error((event.error && event.error.stack) || event.message || String(event.error)),
+    error((event.error && event.error.stack) || event.message || String(event.error)),
   );
   window.addEventListener("unhandledrejection", (event) =>
-    api.error((event.reason && event.reason.stack) || String(event.reason)),
+    error((event.reason && event.reason.stack) || String(event.reason)),
   );
 
   const frames = (count) =>
@@ -126,7 +129,7 @@
 
   async function snap(name, title, extra = {}) {
     await frames(3);
-    await api.capture(name, { title, labels: labels(), ...extra });
+    await api.call("capture", name, { title, labels: labels(), ...extra });
   }
 
   async function go(SceneClass, ...prepare) {
@@ -162,8 +165,8 @@
   function attempt(step, action) {
     try {
       action();
-    } catch (error) {
-      api.skip(step, (error && error.message) || String(error));
+    } catch (problem) {
+      api.send("skip", { screen: step, reason: (problem && problem.message) || String(problem) });
     }
   }
 
@@ -347,14 +350,14 @@
       $gameMessage.setChoiceBackground(entry.background ?? 0);
       $gameMessage.setChoicePositionType(entry.positionType ?? 2);
       if (!(await until(() => list().isOpen(), 240))) {
-        api.skip(`choices ${index + 1}`, "The choice list did not open.");
+        api.send("skip", { screen: `choices ${index + 1}`, reason: "The choice list did not open." });
         continue;
       }
       await frames(4);
       const found = labels();
       if (plan.allChoices || found.some((label) => label.squeezed || label.clipped)) {
         shown += 1;
-        await api.capture(`choices-${String(index + 1).padStart(3, "0")}`, {
+        await api.call("capture", `choices-${String(index + 1).padStart(3, "0")}`, {
           title: "Choices",
           key: entry.key,
           labels: found,
@@ -384,28 +387,31 @@
       3600,
     );
     if (!booted) {
-      api.error("The game did not finish starting.");
+      error("The game did not finish starting.");
       return;
     }
     hookDrawing();
-    await api.size(Graphics.width, Graphics.height);
+    // The launcher sizes the window to the game's screen.
+    await until(() => window.innerWidth === Graphics.width && window.innerHeight === Graphics.height, 600);
     await frames(10);
     setUpParty();
     recording = true;
     for (const [name, screen] of Object.entries(SCREENS)) {
-      if (plan.screens && !plan.screens.includes(name)) continue;
+      if ((plan.screens && !plan.screens.includes(name)) || plan.skip.includes(name)) continue;
+      api.send("step", name);
       try {
         await screen();
-      } catch (error) {
-        api.skip(name, (error && error.message) || String(error));
+      } catch (problem) {
+        api.send("skip", { screen: name, reason: (problem && problem.message) || String(problem) });
       }
     }
   }
 
   run()
-    .catch((error) => api.error((error && error.stack) || String(error)))
+    .catch((problem) => error((problem && problem.stack) || String(problem)))
     .finally(() =>
-      api.done(
+      api.send(
+        "done",
         window.Graphics
           ? { engine: isMZ() ? "MZ" : "MV", width: Graphics.width, height: Graphics.height }
           : null,
