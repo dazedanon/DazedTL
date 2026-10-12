@@ -32,7 +32,7 @@ from util.paths import (
     unlink_with_retry,
 )
 from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
-from util import request_debug
+from util import claude_tokens, request_debug
 from util import extensions
 from util.sfx_reference import build_sfx_reference_text
 from util.vocab import decorative_glossary_alias
@@ -2321,6 +2321,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
     prefix_count = {}   # cached prefix text -> how many requests reuse it
     prefix_tokens = {}  # cached prefix text -> token count
     dynamic_tokens = 0
+    request_params = []
+    request_dynamic = []  # each request's approximate tokens after its prefix
     prompt_token_sequences = []
     output_tokens = 0
     models = set()
@@ -2331,14 +2333,8 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
             models.add(params["model"])
         if entry.get("provider"):
             providers.add(entry["provider"])
-        blocks = params.get("system") or []
-        cut = 0  # split system blocks at the cache breakpoint (0 = nothing cached)
-        for i, b in enumerate(blocks):
-            if "cache_control" in b:
-                cut = i + 1
-                break
-        prefix = "".join(b.get("text", "") for b in blocks[:cut])
-        dyn = "".join(b.get("text", "") for b in blocks[cut:])
+        # Split system blocks at the cache breakpoint ("" = nothing cached).
+        prefix, dyn = claude_tokens.split(params)
         if prefix:
             prefix_count[prefix] = prefix_count.get(prefix, 0) + 1
             if prefix not in prefix_tokens:
@@ -2346,26 +2342,41 @@ def estimateBatchCost(model=None, *, queue_file=None, log_prefix="[BATCH]"):
         msg_text = "\n".join(str(m.get("content", "")) for m in params.get("messages", []))
         message_tokens = enc.encode(msg_text)
         prompt_token_sequences.append(message_tokens)
-        dynamic_tokens += len(enc.encode(dyn)) + len(message_tokens) + 8
+        request_params.append(params)
+        request_dynamic.append(len(enc.encode(dyn)) + len(message_tokens) + 8)
+        dynamic_tokens += request_dynamic[-1]
         # Output heuristic mirrors countTokens(): payload tokens x 2.5 covers
         # the echoed JSON scaffold plus EN expansion.
         output_tokens += round(len(enc.encode(str(entry.get("payload", "")))) * 2.5)
 
     est_model = model or next(iter(models), None) or os.getenv("model", "")
     est_provider = next(iter(providers), getBatchProvider(est_model))
-    # Use Anthropic's count_tokens for the exact cached-prefix size when possible.
-    if prefix_tokens:
+    if est_provider == "anthropic":
+        # Anthropic bills by Claude's tokenizer, which differs from the
+        # approximate encoder above; count with it when the endpoint answers.
+        counted = None
         try:
-            client = _get_anthropic_client()
-            for prefix in list(prefix_tokens.keys()):
-                resp = client.messages.count_tokens(
-                    model=est_model,
-                    system=[{"type": "text", "text": prefix}],
-                    messages=[{"role": "user", "content": "x"}],
-                )
-                prefix_tokens[prefix] = resp.input_tokens
+            counted = claude_tokens.count(
+                _get_anthropic_client().with_options(timeout=30),
+                request_params,
+                request_dynamic,
+            )
         except Exception:
-            pass  # tiktoken estimate already in place
+            pass
+        if counted is None:
+            print(
+                f"{log_prefix} Claude's token count was unavailable; "
+                "input tokens are approximate.",
+                flush=True,
+            )
+        else:
+            prefix_tokens = {p: counted.prefixes[p] for p in prefix_tokens}
+            dynamic_tokens = round(dynamic_tokens * counted.scale)
+            print(
+                f"{log_prefix} Claude token count: {counted.sampled:,} of "
+                f"{len(request_params):,} requests counted whole",
+                flush=True,
+            )
 
     cache_write_tok = sum(prefix_tokens.values())
     cache_read_tok = sum(prefix_tokens[p] * (prefix_count[p] - 1) for p in prefix_count)

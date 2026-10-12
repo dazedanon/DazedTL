@@ -332,6 +332,48 @@ class CompatibilityContracts(unittest.TestCase):
                 environment.prepare(root)
             self.assertEqual(native_prepare.call_count, before)
 
+    def test_claude_estimates_scale_from_claudes_own_count_of_a_spread_sample(self):
+        # Claude's estimates once counted only the shared instructions with
+        # Claude's tokenizer and the rest approximately, understating input.
+        claude_tokens = engine_module("util/claude_tokens.py")
+        calls = []
+
+        def count_tokens(**fields):
+            calls.append(fields)
+            if fields["messages"][0]["content"] == "fail":
+                raise RuntimeError("rate limited")
+            system = "".join(block["text"] for block in fields["system"])
+            message = "".join(item["content"] for item in fields["messages"])
+            return SimpleNamespace(input_tokens=2 * len(system) + 3 * len(message))
+
+        client = SimpleNamespace(messages=SimpleNamespace(count_tokens=count_tokens))
+        requests = [
+            {
+                "model": "claude-fixture",
+                "max_tokens": 4096,
+                "system": [
+                    {"type": "text", "text": "S" * 500, "cache_control": {}},
+                    {"type": "text", "text": "G" * (index % 7 * 15)},
+                ],
+                "messages": [
+                    {"role": "user", "content": "J" * (40 + index * 37 % 360)}
+                ],
+            }
+            for index in range(100)
+        ]
+        exact = sum(count_tokens(**params).input_tokens for params in requests)
+        calls.clear()
+        estimate = claude_tokens.input_tokens(client, requests, len)
+        self.assertAlmostEqual(estimate / exact, 1, delta=0.01)
+        # The prefix once, then whole requests from the first to the last.
+        self.assertEqual(len(calls), 1 + claude_tokens.SAMPLES)
+        self.assertNotIn("max_tokens", calls[1])
+        counted = [params["messages"] for params in calls[1:]]
+        self.assertIn(requests[0]["messages"], counted)
+        self.assertIn(requests[-1]["messages"], counted)
+        requests[-1]["messages"][0]["content"] = "fail"
+        self.assertIsNone(claude_tokens.input_tokens(client, requests, len))
+
     def test_openrouter_batch_lifts_the_frozen_host_and_rejects_mixed_routes_before_submission(
         self,
     ):

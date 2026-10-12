@@ -366,6 +366,22 @@ class TranslationEngine:
             tiktoken.encoding_for_model("gpt-4").encode(text, disallowed_special=())
         )
 
+    def claude_input_tokens(self, requests, configuration, secret):
+        """Claude's own count of these requests' input, or None when its
+        endpoint can't count them; Guided's estimate counts the same way."""
+        from util import claude_tokens
+        from util.batch_providers import get_client
+
+        try:
+            client = get_client(
+                "anthropic", api_key=secret, api_url=configuration["endpoint"]
+            ).with_options(timeout=30)
+        except RuntimeError:  # A keyless connection.
+            return None
+        return claude_tokens.input_tokens(
+            client, [item["params"] for item in requests], self.token_count
+        )
+
     def batch_supported(self, configuration):
         if configuration.get("provider") == "openrouter":
             from dazedtl.settings.openrouter import validate_policy

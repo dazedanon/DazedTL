@@ -449,7 +449,9 @@ def sent_tokens(params, count_tokens):
     return count_tokens("\n".join(part for part in sent if part)) + 8
 
 
-def quote(requests, configuration, count_tokens):
+def quote(requests, configuration, count_tokens, inputs=None):
+    """Prices the requests; ``inputs`` is the provider's own input count when
+    it has one, otherwise their approximate count."""
     rates = configuration["rates"]
     if any(
         type(rates.get(key)) not in (int, float)
@@ -458,7 +460,8 @@ def quote(requests, configuration, count_tokens):
         for key in ("input", "output")
     ):
         raise ValueError("Choose valid model pricing before estimating API work.")
-    inputs = sum(sent_tokens(item["params"], count_tokens) for item in requests)
+    if inputs is None:
+        inputs = sum(sent_tokens(item["params"], count_tokens) for item in requests)
     outputs = sum(
         max(
             1,

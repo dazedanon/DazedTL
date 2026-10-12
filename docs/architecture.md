@@ -79,6 +79,8 @@ App restarts can continue the unchanged approved queue and its saved clarificati
 Legacy estimate continuation records remain readable for recovery.
 Each pending Batch or speaker approval opens once in a focused cost review with visible token counts, mode-specific pricing, prepared file scope and an explicit Decline action.
 Cost comparisons use plain labels for totals without prompt caching and with estimated prompt caching, explain reuse of repeated instructions, and include cache creation without promising savings.
+Estimates count tokens with the GPT-4 encoder, except that Claude estimates in both methods use [Claude's own count](../backend/dazedtl/engine/util/claude_tokens.py), because Anthropic bills by a tokenizer that turns the same text into more tokens.
+They send each cached instruction prefix and an evenly spread sample of 24 whole requests to Anthropic's free token-count endpoint and scale the approximate count of the rest by the sample; if any count fails, the whole estimate keeps the approximate count.
 The [Batch pricing adapter](../backend/dazedtl/compatibility/batch_pricing.py) calculates new GPT-6.1 Sol cached quotes from native token counts and frozen input/output rates using its [documented cache rates](https://developers.openai.com/api/docs/models/gpt-6.1-sol); saved historical estimates remain unchanged.
 Inspection leaves Review cost available, while Translate always prepares again.
 Approval rechecks the temporary preparation’s current inputs before the native one-use approval controls submission.

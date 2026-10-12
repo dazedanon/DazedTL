@@ -9,6 +9,7 @@ project helper, which share its one dispatch, keep their answers meanwhile.
 import hashlib
 from pathlib import Path
 
+from dazedtl.settings.execution import worker_secret
 from dazedtl.storage import write_json
 
 from . import census, organize, progress_report
@@ -147,6 +148,18 @@ def guidance_inputs(source):
     return result
 
 
+def claude_inputs(engine, workspace, cfg, requests):
+    """Anthropic bills by Claude's tokenizer, so its quote counts with it
+    when the endpoint answers; None keeps the approximate count."""
+    if cfg["protocol"] != "anthropic" or not requests:
+        return None
+    try:
+        secret = worker_secret(workspace, cfg)
+    except ValueError:
+        return None
+    return engine.claude_input_tokens(requests, cfg, secret)
+
+
 def prepare(engine, workspace, job, plan, progress):
     """Runs an organize or compile operation; its result names the new run."""
     if plan["action"] == "organize":
@@ -268,7 +281,12 @@ def compile_run(engine, workspace, job, plan, input_path, progress, read=None):
     estimate = None
     if cfg["mode"] != "agent":
         progress(f"Estimating the cost of {len(pending):,} requests")
-        estimate = quote(pending, cfg, engine.token_count)
+        estimate = quote(
+            pending,
+            cfg,
+            engine.token_count,
+            claude_inputs(engine, workspace, cfg, pending),
+        )
     progress("Saving the run")
     value = {
         "version": 1,
