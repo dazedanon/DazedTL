@@ -3,6 +3,13 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.8.2] - 2026-10-11
+
+### Fixed
+
+- **Playtest:** MV games no longer fail at Menu screens and Battle, or at every stop after a crash.
+- **Text QA:** capturing the game's screens goes on past a screen that stops or freezes the game, instead of waiting out its time limit and missing the screens after it, and it now works on Linux without a display.
+
 ## [2.8.1] - 2026-10-11
 
 ### Fixed
@@ -372,6 +379,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.8.2]: https://github.com/dazedanon/DazedTL/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/dazedanon/DazedTL/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/dazedanon/DazedTL/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/dazedanon/DazedTL/compare/v2.6.1...v2.7.0
