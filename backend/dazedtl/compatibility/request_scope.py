@@ -229,10 +229,52 @@ def requests(root, job):
             yield {**row, "state": "uncertain"}
 
 
+def strings(source):
+    # Request lines are text; nothing else can match another request's lines.
+    return [text for text in source.values() if isinstance(text, str)]
+
+
+def earliest(lookups, filename, shared):
+    """The first new request sharing a looked-up value, from a file that can
+    hold this earlier request's lines: its own, or any shared file when it
+    has none. New requests without a file can hold any."""
+    best = None
+    for index, values in lookups:
+        for value in values:
+            found = index.get(value)
+            if not found:
+                continue
+            positions = (
+                (found.get(filename), found.get(None))
+                if filename
+                else (
+                    position
+                    for name, position in found.items()
+                    if name is None or name in shared
+                )
+            )
+            for position in positions:
+                if position is not None and (best is None or position < best):
+                    best = position
+    return best
+
+
 def overlap(estimate_root, estimate_job, previous):
     current = list(requests(estimate_root, estimate_job))
     phase = estimate_job.get("logicalPhase")
     files = set(estimate_job.get("files", []))
+    # Source identities compare when both requests carry them, otherwise
+    # source text does. Index the first new request of each file holding a
+    # value, so each earlier request is checked once instead of against all.
+    keyed, texts, unkeyed = {}, {}, {}
+    for position, row in enumerate(current):
+        name = row["file"] or None
+        for key in row["keys"] or []:
+            keyed.setdefault(key, {}).setdefault(name, position)
+        for text in strings(row["source"]):
+            texts.setdefault(text, {}).setdefault(name, position)
+            if not row["keys"]:
+                unkeyed.setdefault(text, {}).setdefault(name, position)
     matches = []
     for root, job in previous:
         if (
@@ -251,34 +293,24 @@ def overlap(estimate_root, estimate_job, previous):
                 continue
             if old["file"] and old["file"] not in shared:
                 continue
-            for new in current:
-                if new["file"] and (
-                    new["file"] not in shared
-                    or old["file"]
-                    and old["file"] != new["file"]
-                ):
-                    continue
-                if old["keys"] and new["keys"]:
-                    hit = bool(set(old["keys"]).intersection(new["keys"]))
-                else:
-                    hit = bool(
-                        set(old["source"].values()).intersection(new["source"].values())
-                    )
-                    hit = (
-                        hit
-                        and (not old["file"] or old["file"] in shared)
-                        and (not new["file"] or new["file"] in shared)
-                    )
-                if hit:
-                    matches.append(
-                        {
-                            "run": job["id"],
-                            "request": old["index"] + 1,
-                            "state": old["state"],
-                            "files": [new["file"]] if new["file"] else sorted(shared),
-                        }
-                    )
-                    break
+            sources = strings(old["source"])
+            position = earliest(
+                [(keyed, old["keys"]), (unkeyed, sources)]
+                if old["keys"]
+                else [(texts, sources)],
+                old["file"],
+                shared,
+            )
+            if position is not None:
+                new = current[position]
+                matches.append(
+                    {
+                        "run": job["id"],
+                        "request": old["index"] + 1,
+                        "state": old["state"],
+                        "files": [new["file"]] if new["file"] else sorted(shared),
+                    }
+                )
         if (
             not rows
             and job.get("mode") == "translate"
