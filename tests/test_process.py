@@ -1565,6 +1565,12 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
             job.update(keptForHistory=True, created="2020-01-01", status="interrupted")
             self.assertEqual(len(request_scope.overlap(new, estimate, [(old, job)])), 1)
+            # The reader must not call a possibly paid request unsent.
+            provider = SimpleNamespace(_openai_batch_body=lambda _p, params: params)
+            with patch.dict("sys.modules", {"util.batch_providers": provider}):
+                self.assertEqual(
+                    process_view.payload(old, 0, job)["state"], "uncertain"
+                )
             write_json(
                 new / "log/estimate_requests.json", {"different-group": row("毒", [b])}
             )

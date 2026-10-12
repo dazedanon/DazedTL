@@ -319,7 +319,7 @@ class RunInspection:
             raise ValueError(
                 "This estimate kept no requests to preview. Estimates keep them when the connection supports Batch."
             )
-        return payload(folder, index)
+        return payload(folder, index, self.guided.backend.manual.jobs[run_id])
 
     def requests(self, project_id, run_id, group=None, index=None):
         """One page of a run's request group, read when the inspector needs it."""

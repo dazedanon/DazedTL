@@ -1392,7 +1392,10 @@ def live_payload(row, index, total):
     }
 
 
-def payload(root, index):
+def payload(root, index, job=None):
+    """One saved request with its responses. The run's job decides states
+    such as an unconfirmed submission, as in the request rows."""
+    job = job or {}
     if type(index) is not int or index < 0:
         raise ValueError("Choose a valid request index.")
     requests = queue(root)
@@ -1404,7 +1407,9 @@ def payload(root, index):
         entry = requests[key]
         from .request_scope import requests as source_requests
 
-        row = next(item for item in source_requests(root, {}) if item["index"] == index)
+        row = next(
+            item for item in source_requests(root, job) if item["index"] == index
+        )
         history = saved(evidence_root(root), "batch_history.json").get("batches", [])
         custom_id = next(
             (
@@ -1438,7 +1443,7 @@ def payload(root, index):
         if unused:
             # Link only the requests whose validated responses the file uses.
             states = {
-                item["index"]: item["state"] for item in source_requests(root, {})
+                item["index"]: item["state"] for item in source_requests(root, job)
             }
             unused = {
                 **unused,
