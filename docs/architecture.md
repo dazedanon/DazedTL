@@ -859,7 +859,7 @@ Cached display state never authorizes paid work or file publication.
 Each Guided observation reuses ownership, run metadata and name-reuse reads within that observation.
 It lists each game and working-copy folder once, and reuses a listed file's digest across observations while its stat signature holds, so routine polls neither resolve paths nor reread unchanged files ([ObservedFiles](../backend/dazedtl/translation/files.py)).
 A file changed within the last two seconds is read again, because a second change within one clock tick can keep its signature.
-A poll starts no process per file: Other event text reads every original it has not hashed yet through one Git process.
+A poll starts no process per file: Other event text reads every original it has not hashed yet through one Git process, and Git status runs its full inspection only after Git's metadata changes, asking `git status` alone every few seconds for the working tree ([git_status_cache.py](../backend/dazedtl/translation/git_status_cache.py)).
 The bounded [history display cache](../backend/dazedtl/compatibility/observations.py) retains compact plan headers and process summaries across observations.
 Plan hashes, in-memory job state, and artifact metadata invalidate those summaries, including new/deleted queue fragments, clarification receipts, output files and SQLite journals.
 Files changing during a read are not cached.

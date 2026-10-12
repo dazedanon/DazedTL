@@ -48,6 +48,20 @@ class RepositoryStatusCacheTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 failing.get("game", root, fail)
         self.assertEqual(len(attempts), 1)
+        # A status Git's metadata alone decides outlasts the window; a root
+        # without its own .git, and a failure, keep the window.
+        stable = RepositoryStatusCache(ttl=5, clock=lambda: now[0], stable=True)
+        reads = []
+        for name, folder in (("game", root), ("game", root), ("bare", root / "data")):
+            for _ in range(2):
+                stable.get(name, folder, lambda: reads.append(name))
+                now[0] += 60
+        self.assertEqual(reads, ["game", "bare", "bare"])
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                stable.get("failing", root, fail)
+            now[0] += 5
+        self.assertEqual(len(attempts), 3)
 
 
 if __name__ == "__main__":

@@ -66,8 +66,11 @@ class TranslationEngine:
 
         self.source = activate()
         self.profile = Path(profile).resolve()
-        self.repository_status = RepositoryStatusCache()
-        self.original_trees = RepositoryStatusCache()
+        # Git's metadata decides everything in a status but whether the
+        # working tree is clean, so only that is asked again every few seconds.
+        self.repository_status = RepositoryStatusCache(stable=True)
+        self.worktrees = RepositoryStatusCache()
+        self.original_trees = RepositoryStatusCache(stable=True)
         # Its signature covers everything the GameUpdate status reads.
         self.game_updates = RepositoryStatusCache(ttl=float("inf"))
 
@@ -420,15 +423,24 @@ class TranslationEngine:
 
     def git_status(self, source, options):
         from util.len_git import git_status
+        from util.version_update.git_workflow import worktree_clean
 
         # The UI polls status twice a second while work runs; a full inspection
-        # launches a dozen Git processes, which Windows starts slowly.
+        # launches a dozen Git processes, which Windows starts slowly (about
+        # 40 ms each). Between metadata changes a poll asks only `git status`.
         project = self.project(source, options)
-        return self.repository_status.get(
-            (str(project.game_root), digest(options)),
-            project.game_root,
-            lambda: git_status(project),
+        key = (str(project.game_root), digest(options))
+        status = self.repository_status.get(
+            key, project.game_root, lambda: git_status(project)
         )
+        if status.get("repo_root"):
+            clean = self.worktrees.get(
+                key,
+                project.game_root,
+                lambda: worktree_clean(Path(status["repo_root"])),
+            )
+            status = {**status, "worktree_clean": clean}
+        return status
 
     def game_update(self, source, defaults, action=None, repo=None):
         """GameUpdate's config status, or the result of reconciling it."""

@@ -594,6 +594,11 @@ def _cherry_pick_path(repo: Path) -> Path:
     return _git_paths(repo, "CHERRY_PICK_HEAD")["CHERRY_PICK_HEAD"]
 
 
+def worktree_clean(repo: Path) -> bool:
+    """Whether the working tree matches the index and HEAD, from one `git status`."""
+    return not _run_git(repo, "status", "--porcelain=v1", "-z").stdout
+
+
 def inspect_repository(game_root: str | Path) -> RepositoryStatus:
     selected = Path(game_root).expanduser().resolve()
     if not selected.is_dir():
@@ -613,7 +618,6 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
     translation_commit = (
         _ref_commit(repo, translation_branch) if translation_branch else None
     )
-    status = _run_git(repo, "status", "--porcelain=v1", "-z").stdout
     return RepositoryStatus(
         selected_root=selected,
         repo_root=repo,
@@ -627,7 +631,7 @@ def inspect_repository(game_root: str | Path) -> RepositoryStatus:
         translation_version=_version_from_history(
             repo, translation_branch or TRANSLATION_BRANCH, translation_commit
         ),
-        worktree_clean=not bool(status),
+        worktree_clean=worktree_clean(repo),
         pending_cherry_pick=_cherry_pick_path(repo).exists(),
         asset_sync_pending=_asset_state_path(
             repo, prefix, "pending-assets"

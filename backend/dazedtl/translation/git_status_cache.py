@@ -67,13 +67,16 @@ class RepositoryStatusCache:
     """Reuses a status while its repository signature holds, for at most `ttl` seconds.
 
     Working-tree changes do not move the signature, so the window bounds how
-    long a dirty or clean tree can be reported late. Failures are reused for
-    the same window: each attempt costs the same process launches.
+    long a dirty or clean tree can be reported late. A `stable` status, which
+    Git's metadata alone decides, is reused for as long as the signature
+    holds, unless the root has no .git of its own to sign. Failures are reused
+    for the window only: each attempt costs the same process launches.
     """
 
-    def __init__(self, ttl=5.0, clock=time.monotonic):
+    def __init__(self, ttl=5.0, clock=time.monotonic, *, stable=False):
         self.ttl = ttl
         self.clock = clock
+        self.stable = stable
         self.entries = {}
 
     def get[T](self, key, root, compute: Callable[[], T], extra=()) -> T:
@@ -81,7 +84,14 @@ class RepositoryStatusCache:
         signature = (repository_signature(root), extra)
         now = self.clock()
         entry = self.entries.get(key)
-        if not (entry and entry[0] == signature and now - entry[1] < self.ttl):
+        lasting = (
+            self.stable
+            and signature[0] is not None
+            and (entry is None or entry[3] is None)
+        )
+        if not (
+            entry and entry[0] == signature and (lasting or now - entry[1] < self.ttl)
+        ):
             try:
                 entry = (signature, now, compute(), None)
             except Exception as exc:  # noqa: BLE001
