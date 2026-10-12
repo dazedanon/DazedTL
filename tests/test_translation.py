@@ -708,6 +708,108 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(provider.calls, 2)
         self.assertEqual(self.store.load(job["id"])[0]["status"], "uncertain")
 
+    def test_cancel_during_batch_clarification_cancels_it_and_keeps_its_results(
+        self,
+    ):
+        # Cancelling while a clarification waits must cancel that Batch once,
+        # not the ended original, submit nothing more, and keep the rows and
+        # usage the provider finished before it stopped.
+        from dazedtl.translation.batch_refusals import journal
+        from dazedtl.translation.refusals import POLICY
+
+        job, plan = self.run_record(
+            "batch",
+            [request("good"), request("first"), request("second"), request("later")],
+        )
+        plan["configuration"]["refusalRetry"] = POLICY
+        # Each clarification fills a provider job's token allowance, so the
+        # second waits for the first; the last request waits in a later chunk.
+        plan["batch_limits"] = [3, 100000, 10]
+        write_json(self.store.folder(job["id"]) / "plan.json", plan)
+        job["plan_sha256"] = digest(plan)
+        self.store.save(job)
+        valid = {"text": '{"line":"Yes. ⟦P0⟧"}'}
+
+        class Provider(BatchProvider):
+            def __init__(self):
+                super().__init__()
+                self.canceled, self.collected, self.stopped = [], [], False
+
+            def input_tokens(self, _params):
+                return 10
+
+            def submit(self, items):
+                super().submit(items)
+                return {"id": "original" if self.calls == 1 else "clarification"}
+
+            def cancel(self, identity):
+                self.canceled.append(identity)
+
+            def status(self, identity):
+                ended = identity == "original" or self.stopped
+                return {
+                    "ended": ended,
+                    "terminal_failure": identity != "original" and ended,
+                    "api_status": "cancelled" if self.stopped else "in_progress",
+                    "counts": {},
+                }
+
+            def collect(self, identity, mapping):
+                self.collected.append(identity)
+                return (
+                    {
+                        key: valid
+                        if key == "good"
+                        else {"text": "I cannot translate explicit sexual content."}
+                        for key in mapping.values()
+                    },
+                    [],
+                    {"input_tokens": 8, "output_tokens": 6},
+                )
+
+            def collect_terminal(self, identity, mapping):
+                self.collected.append(identity)
+                return (
+                    {key: valid for key in mapping.values()},
+                    [],
+                    {"input_tokens": 5, "output_tokens": 4},
+                )
+
+        provider = Provider()
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        write_json(self.store.folder(job["id"]) / "cancel.json", {"requested": True})
+        # A restarted worker does not ask the provider again.
+        for _ in range(2):
+            Runner(self.store, job["id"], provider, lambda: None).step()
+        current, _ = self.store.load(job["id"])
+        self.assertEqual(current["status"], "waiting")
+        self.assertEqual(provider.canceled, ["clarification"])
+        provider.stopped = True
+        Runner(self.store, job["id"], provider, lambda: None).step()
+        current, _ = self.store.load(job["id"])
+        self.assertEqual(provider.calls, 2)
+        self.assertEqual(provider.canceled, ["clarification"])
+        self.assertEqual(provider.collected, ["original", "clarification"])
+        self.assertEqual(
+            {key: value["state"] for key, value in current["states"].items()},
+            {
+                "good": "accepted",
+                "first": "accepted",
+                "second": "failed",
+                "later": "failed",
+            },
+        )
+        self.assertEqual(current["usage"]["input_tokens"], 13)
+        self.assertEqual(current["usage"]["output_tokens"], 10)
+        self.assertEqual(current["status"], "failed")
+        self.assertTrue(current["message"].startswith("Canceled."))
+        record = json.loads(
+            journal(self.store.folder(job["id"]), "original").read_bytes()
+        )
+        self.assertEqual(
+            [batch["state"] for batch in record["batches"]], ["complete", "failed"]
+        )
+
     def test_clarification_journal_keeps_its_scope_and_continues_earlier_records(
         self,
     ):

@@ -129,6 +129,7 @@ Live retains both attempts and their usage; Batch submits only refused rows thro
 The [retry journal](../backend/dazedtl/translation/batch_refusals.py) records intent before submission and saves returned job IDs before polling, including across restarts.
 It keeps the original Batch's responses and the clarified payloads it sends; the original payloads stay with the run.
 A clarification can wait for hours, so its polls read this small journal instead of downloading the original output again.
+Cancelling an Assistant-led run then asks the provider once to cancel each submitted clarification, records that request in the journal and submits no waiting one; the run keeps the rows and usage they finished.
 The guided adapter waits before native consume, while the background monitor can finish the same authorized retry after interruption.
 Uncertain submissions are never retried automatically, and repeated refusals remain untranslated.
 Original payloads and responses remain available beside the clarification evidence.

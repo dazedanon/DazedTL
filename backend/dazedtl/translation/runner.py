@@ -354,18 +354,18 @@ class Runner:
                         else "The provider submission must be reconciled before retrying.",
                     )
                     return
-            if cancel and not chunk.get("cancel_requested"):
+            policy = self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
+            # A clarification journal starts only after this job ended, so a
+            # cancellation then belongs to the clarification Batches.
+            journaled = policy and started(self.folder, chunk["id"])
+            if cancel and not journaled and not chunk.get("cancel_requested"):
                 try:
                     self.provider.cancel(chunk["id"])
                 except Exception as exc:  # noqa: BLE001
                     chunk["cancel_error"] = type(exc).__name__
                 chunk["cancel_requested"] = True
                 self.save()
-            clarifying = (
-                self.plan["configuration"].get("refusalRetry") == REFUSAL_POLICY
-                and not cancel
-            )
-            if clarifying and started(self.folder, chunk["id"]):
+            if journaled:
                 # The clarification journal holds this job's responses, and a
                 # clarification can wait for hours, so a poll does not
                 # download the job's whole output again.
@@ -375,7 +375,8 @@ class Runner:
                 if collected is None:
                     return
                 responses, usage = collected
-            if clarifying:
+            # A canceled run starts no clarification but settles a started one.
+            if journaled or policy and not cancel:
                 from contextlib import contextmanager
 
                 @contextmanager
@@ -400,6 +401,7 @@ class Runner:
                     limits=self.plan["batch_limits"],
                     input_tokens=getattr(self.provider, "input_tokens", lambda _: 0),
                     commit=retry_commit,
+                    cancel=cancel,
                 )
                 # The journal keeps the clarified payloads and responses, and
                 # this record is saved on every poll, so it keeps an outline.
@@ -433,6 +435,8 @@ class Runner:
                         "uncertain" if retried.get("uncertain") else "waiting",
                         "Reconcile the clarification Batch submission."
                         if retried.get("uncertain")
+                        else "Cancellation requested. Waiting for the provider's final status and any completed results."
+                        if cancel
                         else "Waiting for the Batch clarification of refused requests.",
                     )
                     return
@@ -450,7 +454,8 @@ class Runner:
             chunk.update(state="complete", usage=usage)
             self.record_batch_usage()
             self.save()
-            if any(
+            # A canceled run submits nothing more, so it settles every chunk.
+            if not cancel and any(
                 self.job["states"][item["request"]]["state"] == "failed"
                 for item in chunk["items"]
             ):
@@ -542,10 +547,14 @@ class Runner:
                 "complete",
                 "All requested translations are saved. Injection and runtime QA remain separate checkpoints.",
             )
+        elif "uncertain" in states:
+            self.save("uncertain", "Review unresolved requests before continuing.")
         else:
             self.save(
-                "uncertain" if "uncertain" in states else "failed",
-                "Review unresolved requests before continuing.",
+                "failed",
+                "Canceled. Completed results are saved; review unresolved requests before continuing."
+                if self.store.cancel_requested(self.job["id"])
+                else "Review unresolved requests before continuing.",
             )
 
     def step(self, recover=True):

@@ -94,6 +94,7 @@ def advance(
     input_tokens=lambda _: 0,
     commit: Callable[[], AbstractContextManager[Any]] = nullcontext,
     allow_submit=True,
+    cancel=False,
     reserve=lambda _items: nullcontext(True),
 ):
     """Clarifies the original Batch's refused requests in Batches of their own.
@@ -102,6 +103,8 @@ def advance(
     once its journal has started, which keeps them. Every outcome carries the
     Batch's responses and usage so far: the original ones while a
     clarification is unfinished, merged with the clarified ones once all end.
+    `cancel` submits nothing more and asks the provider to cancel each
+    submitted clarification once; their completed rows are still collected.
     """
     path = journal(root, batch_id)
     if path.exists():
@@ -166,6 +169,25 @@ def advance(
             "usage": record["original_usage"],
             "batches": record["batches"],
         }
+
+    if cancel:
+        changed = False
+        for batch in record["batches"]:
+            if batch["state"] == "pending":
+                batch["state"] = "failed"
+            elif batch["state"] == "submitted" and not batch.get("cancel_requested"):
+                try:
+                    provider.cancel(batch["id"])
+                except Exception as exc:  # noqa: BLE001
+                    # An ended Batch refuses cancellation; its status decides.
+                    batch["cancel_error"] = type(exc).__name__
+                # Recorded, so a restarted worker does not ask again.
+                batch["cancel_requested"] = True
+            else:
+                continue
+            changed = True
+        if changed:
+            save(path, record)
 
     for batch in record["batches"]:
         if batch["state"] in {"complete", "failed"}:
