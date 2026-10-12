@@ -613,10 +613,12 @@ export function useGuidedWorkspace({
       [actionKey(value.action, value.options)]: result,
     }));
     executed.current = { token: value.token, job: result };
+    // Maps & events and Other event text apply the same files, so an apply
+    // confirms only the task that ran it.
     if (value.action === "export_selected")
       setAppliedFiles((previous) => ({
         ...previous,
-        [result.id]: value.paths.join("\n"),
+        [result.id]: [phase, ...value.paths].join("\n"),
       }));
     setPreview(null);
     leaveCheckpoint(value.action);
@@ -831,7 +833,8 @@ export function useGuidedWorkspace({
     const appliedHere =
       name === "export_selected" &&
       finishedHere &&
-      appliedFiles[current.id] === files?.join("\n");
+      !!files &&
+      appliedFiles[current.id] === [phase, ...files].join("\n");
     // Applying fitting closes its review and the page returns to scanning,
     // so the scan control confirms an apply from this visit.
     const fittingApplied = operationJob("rewrap_apply");
