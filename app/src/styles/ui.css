@@ -462,7 +462,7 @@ pre {
   margin-top: var(--field-row-gap);
 }
 /* Fields lead into the actions they configure with the same gap as a section. */
-:is(.field-row, .check-field) + .action-list {
+:is(.field-row, .check-field) + :is(.action-list, .actions) {
   margin-top: var(--space-5);
 }
 .check-field {

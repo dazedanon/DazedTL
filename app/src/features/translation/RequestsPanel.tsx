@@ -10,6 +10,7 @@ import { useAction } from "../../state/useAction";
 import { flushDrafts } from "../../state/leaveGuards";
 import { ActionControl } from "../../ui/ActionControl";
 import { Button } from "../../ui/Button";
+import { FieldRow } from "../../ui/FieldRow";
 import { Section } from "../../ui/Section";
 import { Message } from "../../ui/Feedback";
 import { RequestLines } from "./RequestLines";
@@ -429,35 +430,43 @@ export function RequestsPanel({ state }: { state: TranslationState }) {
           The starting prompt handles this automatically. You can also compile
           an engine adapter's saved plan here.
         </p>
-        <label>
-          Plan file, relative to the game
-          <input
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
+        <FieldRow
+          id="request-plan-path"
+          label="Plan file, relative to the game"
+          wide
+        >
+          {(props) => (
+            <input
+              {...props}
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+            />
+          )}
+        </FieldRow>
+        <div className="actions">
+          <ActionControl
+            label="Compile and review remaining work"
+            disabled={state.active || action.busy || !path}
+            pending={action.busy && action.key === "compile"}
+            pendingText="Starting…"
+            error={action.key === "compile" ? action.error : ""}
+            job={state.jobs.find((job) => job.id === compiling)}
+            onClick={() =>
+              void action.run(
+                async () => {
+                  await flushDrafts();
+                  const started = await api.translation.compile(
+                    state.projectId,
+                    path,
+                  );
+                  setCompiling(started.id);
+                },
+                "",
+                "compile",
+              )
+            }
           />
-        </label>
-        <ActionControl
-          label="Compile and review remaining work"
-          disabled={state.active || action.busy || !path}
-          pending={action.busy && action.key === "compile"}
-          pendingText="Starting…"
-          error={action.key === "compile" ? action.error : ""}
-          job={state.jobs.find((job) => job.id === compiling)}
-          onClick={() =>
-            void action.run(
-              async () => {
-                await flushDrafts();
-                const started = await api.translation.compile(
-                  state.projectId,
-                  path,
-                );
-                setCompiling(started.id);
-              },
-              "",
-              "compile",
-            )
-          }
-        />
+        </div>
       </Section>
     </>
   );
