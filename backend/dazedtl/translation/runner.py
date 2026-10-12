@@ -5,7 +5,7 @@ import time
 
 from dazedtl.storage import write_json
 
-from .batch_refusals import advance, started
+from .batch_refusals import advance, outline, started
 from .files import digest, read_json
 from .refusals import (
     MESSAGE as REFUSAL_MESSAGE,
@@ -401,7 +401,11 @@ class Runner:
                     input_tokens=getattr(self.provider, "input_tokens", lambda _: 0),
                     commit=retry_commit,
                 )
-                chunk["clarification_batches"] = retried["batches"]
+                # The journal keeps the clarified payloads and responses, and
+                # this record is saved on every poll, so it keeps an outline.
+                chunk["clarification_batches"] = [
+                    outline(batch) for batch in retried["batches"]
+                ]
                 responses, usage = retried["responses"], retried["usage"]
                 if not retried["ready"]:
                     usage_keys = set(usage).union(

@@ -12,23 +12,24 @@ from .files import digest, project_path, read_json
 from .refusals import clarified, clarifies, refused
 
 
+def outline(batch):
+    """A clarification Batch without its payloads and responses."""
+    return {
+        **{
+            key: batch[key]
+            for key in ("id", "state", "api_status", "counts", "usage")
+            if key in batch
+        },
+        "items": [
+            {key: item[key] for key in ("key", "custom_id")} for item in batch["items"]
+        ],
+    }
+
+
 def summary(record):
     return {
         "original_id": record["original_id"],
-        "batches": [
-            {
-                **{
-                    key: batch[key]
-                    for key in ("id", "state", "api_status", "counts", "usage")
-                    if key in batch
-                },
-                "items": [
-                    {key: item[key] for key in ("key", "custom_id")}
-                    for item in batch["items"]
-                ],
-            }
-            for batch in record["batches"]
-        ],
+        "batches": [outline(batch) for batch in record["batches"]],
     }
 
 
