@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from util.playtest.checks import static_checks
+from util.rpgmaker_screens import CaptureUnavailable, electron
 
 SCHEMA = "rpgmaker-playtest-report-v1"
 HARNESS = Path(__file__).with_name("harness") / "main.cjs"
@@ -56,19 +57,6 @@ _ENGINE_SCENES = frozenset({
     "Scene_Status", "Scene_Options", "Scene_Save", "Scene_Load", "Scene_GameEnd",
     "Scene_Shop", "Scene_Name", "Scene_Battle", "Scene_Title", "Scene_Gameover",
 })
-
-
-def electron() -> Path | None:
-    """DazedTL's own Electron, beside the engine in its checkout."""
-    for parent in Path(__file__).resolve().parents:
-        package = parent / "app" / "node_modules" / "electron"
-        try:
-            name = (package / "path.txt").read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
-        binary = package / "dist" / name
-        return binary if binary.is_file() else None
-    return None
 
 
 def resolution(data: Path) -> tuple[int, int]:
@@ -135,9 +123,10 @@ def tour(
     software: bool = False,
 ) -> dict[str, Any]:
     """Plays the game; the runtime part of the report, or why it could not."""
-    binary = electron()
-    if binary is None:
-        return {"unavailable": "The playtest needs DazedTL's Electron, which is missing."}
+    try:
+        binary = electron()
+    except CaptureUnavailable as missing:
+        return {"unavailable": str(missing)}
     if not (web_root / "index.html").is_file():
         return {"unavailable": "The game folder has no index.html to play."}
     if not any((web_root / "js" / name).is_file() for name in ("rmmz_core.js", "rpg_core.js")):
