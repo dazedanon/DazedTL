@@ -189,13 +189,6 @@ class RequestPage(TypedDict):
     next: int | None
 
 
-class FreshStart(TypedDict):
-    eligible: bool
-    reason: str
-    failed: NotRequired[int]
-    remaining: NotRequired[int]
-
-
 class ProviderBatch(TypedDict):
     id: str
     status: str
@@ -237,7 +230,6 @@ class RunProcess(TypedDict):
     groups: NotRequired[list[RequestGroup]]
     attention: NotRequired[list[ProcessRequest]]
     requestRevision: NotRequired[str]
-    freshStart: NotRequired[FreshStart | None]
     sourceItems: NotRequired[int | None]
     submittedItems: NotRequired[int | None]
     batches: NotRequired[list[ProviderBatch]]

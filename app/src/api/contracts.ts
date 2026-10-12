@@ -220,13 +220,6 @@ export type RequestPage = {
   next: number | null;
 };
 
-export type FreshStart = {
-  eligible: boolean;
-  reason: string;
-  failed?: number;
-  remaining?: number;
-};
-
 export type ProviderBatch = {
   id: string;
   status: string;
@@ -268,7 +261,6 @@ export type RunProcess = {
   groups?: RequestGroup[];
   attention?: ProcessRequest[];
   requestRevision?: string;
-  freshStart?: FreshStart | null;
   sourceItems?: number | null;
   submittedItems?: number | null;
   batches?: ProviderBatch[];
