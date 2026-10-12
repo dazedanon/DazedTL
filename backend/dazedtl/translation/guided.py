@@ -136,6 +136,9 @@ class Guided:
         self.speakers = self.context.speakers
 
     def observed_digest(self, path):
+        files = self.observations.files()
+        if files is not None:
+            return files.digest(path)
         path = Path(path)
         if path.is_symlink():
             raise ValueError("Observed artifacts cannot be symbolic links.")
@@ -149,6 +152,13 @@ class Guided:
             self.observed_files.clear()
         self.observed_files[path] = (signature, value)
         return value
+
+    def observed_path(self, root, relative):
+        """project_path, answered from one listing per folder during a poll."""
+        files = self.observations.files()
+        if files is not None:
+            return files.project_path(root, relative)
+        return project_path(root, relative)
 
     def idle(self, *, isolated_workers=False):
         # Apply and reload can coexist with frozen translation workers. Tool
@@ -315,6 +325,7 @@ class Guided:
             self.translation.engine.source_bindings,
             self.translation.engine.original_bytes,
             native_exports=native["engine"] == "ACE",
+            observations=self.observations,
         )
 
     def owned_runs(self, native):
@@ -417,7 +428,9 @@ class Guided:
             for name in {name for name, _ in built_from} | set(recorded):
                 found = {recorded[name]} if name in recorded else set()
                 try:
-                    found.add(self.observed_digest(project_path(native["data"], name)))
+                    found.add(
+                        self.observed_digest(self.observed_path(native["data"], name))
+                    )
                 except OSError, ValueError:
                     pass
                 pending = list(found)
@@ -434,16 +447,17 @@ class Guided:
 
     def readiness(self, project_id, native, value, source_status=None):
         folder = self.backend.workflows.folder(native["id"])
+        inputs = self.inputs(native)
         outputs = [
             row["name"]
             for row in native["files"]
-            if self.inputs(native).path("translated", row["name"]).is_file()
+            if inputs.saved("translated", row["name"])
         ]
         applied = []
         edited = []
         versions = self.applied_versions(native)
         for name in outputs:
-            source = project_path(
+            source = self.observed_path(
                 native["source"],
                 (Path(native["data"]) / name).relative_to(native["source"]).as_posix(),
             )
@@ -472,7 +486,8 @@ class Guided:
                 and not source_status["changed"]
                 and review["evidence"]
                 and all(
-                    self.observed_digest(project_path(native["source"], name)) == sha
+                    self.observed_digest(self.observed_path(native["source"], name))
+                    == sha
                     for name, sha in review["evidence"].items()
                 )
             )
@@ -724,7 +739,7 @@ class Guided:
             native,
             self.backend.workflows.folder(native["id"]),
             active=active,
-            observed=self.observed_digest,
+            observed=self.observations.files(),
         )
 
     def require_preparation(self, project_id, native):

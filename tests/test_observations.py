@@ -1,7 +1,9 @@
 """Warm history must stay cheap without hiding changed ownership or receipts."""
 
 import os
+import re
 import sqlite3
+import time
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -14,7 +16,7 @@ from dazedtl.compatibility.dazedmtl import ExistingBackend
 from dazedtl.compatibility.observations import RunObservations
 from dazedtl.compatibility.run_evidence import Evidence
 from dazedtl.storage import write_json
-from dazedtl.translation.files import digest
+from dazedtl.translation.files import digest, project_path
 
 
 class ObservationTests(unittest.TestCase):
@@ -210,3 +212,63 @@ class ObservationTests(unittest.TestCase):
                     self.assertTrue(view["retryBlocked"])
             finally:
                 connection.close()
+
+    def test_a_polls_file_view_answers_like_project_path_and_rereads_changed_files(
+        self,
+    ):
+        # Polls list each folder once and reuse digests by stat signature. A
+        # wrong answer would let a link through or show a changed game file's
+        # estimate as current; a file rewritten within one clock tick keeps
+        # its signature.
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            path = root / "www/data/Map001.json"
+            write_json(path, {"text": "one"})
+            cache = RunObservations()
+
+            def observed(read):
+                with cache.read():
+                    return read(cache.files())
+
+            self.assertEqual(
+                observed(
+                    lambda files: files.project_path(root, "www/data/Map001.json")
+                ),
+                project_path(root, "www/data/Map001.json"),
+            )
+            try:
+                (root / "www/data/Linked.json").symlink_to(path)
+            except OSError:  # Windows without the symbolic link privilege
+                pass
+            for relative in (
+                "www/data/Linked.json",
+                "www/data/Missing.json",
+                "../Map001.json",
+                "www\\data\\Map001.json",
+            ):
+                with self.assertRaises(ValueError) as expected:
+                    project_path(root, relative)
+                with self.assertRaisesRegex(
+                    ValueError, re.escape(str(expected.exception))
+                ):
+                    observed(lambda files: files.project_path(root, relative))
+            self.assertEqual(
+                observed(lambda files: files.digest(path)), digest(path.read_bytes())
+            )
+            stamp = path.stat()
+            path.write_bytes(path.read_bytes().replace(b"one", b"two"))
+            os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            self.assertEqual(
+                observed(lambda files: files.digest(path)), digest(path.read_bytes())
+            )
+            # A settled file is read once, then again only after it changes.
+            settled = time.time_ns() - 3600 * 10**9
+            os.utime(path, ns=(settled, settled))
+            current = observed(lambda files: files.digest(path))
+            with patch("builtins.open", side_effect=AssertionError("read again")):
+                self.assertEqual(observed(lambda files: files.digest(path)), current)
+            write_json(path, {"text": "three"})
+            os.utime(path, ns=(settled, settled))
+            self.assertEqual(
+                observed(lambda files: files.digest(path)), digest(path.read_bytes())
+            )

@@ -1,12 +1,13 @@
 """Bounded display caches; execution and inspection keep their fresh readers."""
 
 import stat
+import threading
 from collections import OrderedDict
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
-from dazedtl.translation.files import digest
+from dazedtl.translation.files import ObservedFiles, digest
 
 from . import process_view
 
@@ -50,10 +51,21 @@ def process_stamp(root):
 
 class RunObservations:
     def __init__(self):
-        self.session = None
+        # Each thread has its own observation, so a background thread never
+        # answers from the interface's poll.
+        self.local = threading.local()
         self.plans = OrderedDict()
         self.processes = OrderedDict()
         self.request_rows = 0
+        self.digests = {}
+
+    @property
+    def session(self):
+        return getattr(self.local, "session", None)
+
+    @session.setter
+    def session(self, value):
+        self.local.session = value
 
     @contextmanager
     def read(self):
@@ -70,6 +82,12 @@ class RunObservations:
         if key not in self.session:
             self.session[key] = read()
         return self.session[key]
+
+    def files(self):
+        """This observation's look at project files, or None outside one."""
+        if self.session is None:
+            return None
+        return self.once(("files",), lambda: ObservedFiles(self.digests))
 
     def configuration(self, backend, identity):
         if self.session is None:

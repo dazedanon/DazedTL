@@ -6,7 +6,7 @@ from contextlib import closing
 
 from dazedtl.storage import write_json
 
-from .files import digest, project_path, read_json
+from .files import digest, read_json
 
 PHASES = ("database", "dialogue", "advanced", "variables")
 JAPANESE = re.compile(
@@ -60,13 +60,21 @@ class GuidedRuns:
     def working_path(self, native, name, source):
         inputs = self.guided.inputs(native)
         for group in ("translated", "files"):
-            path = inputs.path(group, name)
-            if path.is_file():
-                return path
-        return project_path(inputs.source, source["relative"])
+            if inputs.saved(group, name):
+                return inputs.path(group, name)
+        return inputs.game_path(source["relative"])
 
-    def working_bytes(self, native, name, source):
-        return self.working_path(native, name, source).read_bytes()
+    def working_digest(self, native, name, source):
+        # A poll's phases share each file's digest, reused while the file is
+        # unchanged; execution reads it afresh.
+        if self.guided.observations.files() is None:
+            return digest(self.working_path(native, name, source).read_bytes())
+        return self.guided.observations.once(
+            ("working digest", native["id"], name, source["relative"]),
+            lambda: self.guided.observed_digest(
+                self.working_path(native, name, source)
+            ),
+        )
 
     def comparison_literals(self, path):
         fingerprint = self.guided.observed_digest(path)
@@ -148,8 +156,7 @@ class GuidedRuns:
             "source_pass": record.get("last_refresh"),
             "files": names,
             "working": {
-                name: digest(self.working_bytes(native, name, sources[name]))
-                for name in names
+                name: self.working_digest(native, name, sources[name]) for name in names
             },
             "configuration": configuration,
             "reused_names": reused_names,
@@ -255,6 +262,11 @@ class GuidedRuns:
         }, self.guided.observed_digest(path)
 
     def comparisons(self, native):
+        return self.guided.observations.once(
+            ("comparisons", native["id"]), lambda: self._comparisons(native)
+        )
+
+    def _comparisons(self, native):
         try:
             cache, _ = self.cache(native)
             names = self.files(native, "variables")

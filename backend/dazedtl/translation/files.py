@@ -2,9 +2,22 @@
 
 import hashlib
 import json
+import os
+import stat
+import time
 from pathlib import Path
 
 from dazedtl.storage import write_json
+
+# File times advance in ticks of milliseconds, so a file written twice within
+# one tick can keep its stat signature. Caches keyed by signatures keep only
+# files that have been still for longer than this.
+SETTLED_NS = 2_000_000_000
+
+
+def settled(*modified_ns):
+    """Whether every one of these modification times is safely in the past."""
+    return time.time_ns() - max(modified_ns) > SETTLED_NS
 
 
 def digest(value):
@@ -71,6 +84,94 @@ def project_path(root, relative, *, exists=True):
     if exists and not path.is_file():
         raise ValueError("The selected project file is missing.")
     return path
+
+
+class ObservedFiles:
+    """One observation's look at project files.
+
+    A poll asks the same questions of hundreds of game files: is each a
+    regular file inside its folder, and what does it hold. Each folder is
+    listed once per observation, and a listed file's digest is reused across
+    observations while its listed stat signature holds, so routine polls
+    neither resolve paths nor reread unchanged files. Whatever a listing
+    cannot settle, such as a missing file, a link or a name in another case,
+    gets project_path's own answer or error. Execution and explicit
+    inspection keep project_path and fresh reads.
+    """
+
+    def __init__(self, digests):
+        # Shared by every observation; bounded below. Paths are kept as
+        # strings: a poll looks up thousands, and pathlib's own equality and
+        # hashing would cost more than the listing saves.
+        self.digests = digests
+        self.roots, self.folders, self.listings = {}, {}, {}
+
+    def listing(self, folder):
+        """A folder's entries by name, or None when it cannot be listed."""
+        key = os.fspath(folder)
+        if key not in self.listings:
+            try:
+                with os.scandir(key) as entries:
+                    self.listings[key] = {entry.name: entry for entry in entries}
+            except OSError:
+                self.listings[key] = None
+        return self.listings[key]
+
+    def entry(self, path):
+        """A regular file's listing entry, or None for anything else."""
+        folder, name = os.path.split(os.fspath(path))
+        entries = self.listing(folder)
+        entry = entries.get(name) if entries else None
+        return (
+            entry
+            if entry is not None and entry.is_file(follow_symlinks=False)
+            else None
+        )
+
+    def folder(self, root, relative):
+        """project_path's checks for a game folder, once per observation."""
+        key = (os.fspath(root), relative)
+        if key not in self.folders:
+            try:
+                root = Path(root).resolve(strict=True)
+                path = project_path(root, relative, exists=False) if relative else root
+                self.folders[key] = path if path.is_dir() else None
+            except ValueError, OSError:
+                self.folders[key] = None
+        return self.folders[key]
+
+    def project_path(self, root, relative):
+        """project_path(root, relative) for an existing file."""
+        if isinstance(relative, str) and "\\" not in relative:
+            parent, _, name = relative.rpartition("/")
+            folder = self.folder(root, parent)
+            if (
+                folder is not None
+                and name.casefold() not in {"", ".", "..", ".git"}
+                and self.entry(os.path.join(folder, name)) is not None
+            ):
+                return folder / name
+        return project_path(root, relative)
+
+    def digest(self, path):
+        """A file's content digest, read again only after its listed stat
+        signature changes."""
+        key = os.fspath(path)
+        entry = self.entry(key)
+        info = entry.stat(follow_symlinks=False) if entry else os.lstat(key)
+        if stat.S_ISLNK(info.st_mode):
+            raise ValueError("Observed artifacts cannot be symbolic links.")
+        signature = (info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        cached = self.digests.get(key)
+        if cached and cached[0] == signature:
+            return cached[1]
+        with open(key, "rb") as stream:
+            value = digest(stream.read())
+        if settled(info.st_mtime_ns):
+            if len(self.digests) > 20_000:
+                self.digests.clear()
+            self.digests[key] = (signature, value)
+        return value
 
 
 def evidence(root, paths):

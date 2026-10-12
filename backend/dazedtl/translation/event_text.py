@@ -62,7 +62,7 @@ class EventText:
         root = Path(native["source"])
         for name, source in sources.items():
             identity, relative = source["identity"], source["relative"]
-            path = project_path(root, relative)
+            path = self.guided.observed_path(root, relative)
             if "original" in identity:
                 originals[relative] = identity["original"]
                 dependencies[relative] = None
@@ -86,7 +86,7 @@ class EventText:
             self.guided.translation.engine.source_bindings(root, paths) if paths else {}
         )
         for relative in paths:
-            path = project_path(root, relative)
+            path = self.guided.observed_path(root, relative)
             runtime_dependencies[relative] = self.guided.observed_digest(path)
             if relative in bindings:
                 originals[relative] = bindings[relative]
@@ -463,6 +463,12 @@ After saving, run `{command} --apply`. It validates the report and saves its rec
         return errors
 
     def status(self, project_id, native):
+        # A poll reads it for the task and again for the advanced phase's quote.
+        return self.guided.observations.once(
+            ("event text", project_id), lambda: self._status(project_id, native)
+        )
+
+    def _status(self, project_id, native):
         try:
             findings = self.inspect(project_id, native)
         except (OSError, ValueError, UnicodeError, KeyError, TypeError) as exc:

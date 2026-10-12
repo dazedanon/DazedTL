@@ -38,6 +38,7 @@ def require_data(native):
 
 
 def fingerprint(native, observed=None):
+    """The prepared files' content; a poll passes its ObservedFiles."""
     root, data = Path(native["source"]), Path(native["data"])
     paths = list(data.rglob("*.json"))
     if native.get("plugins"):
@@ -47,16 +48,16 @@ def fingerprint(native, observed=None):
     paths.extend((root / "gameupdate").rglob("*"))
     files = {}
     for path in paths:
-        if path.is_file():
+        if (observed and observed.entry(path)) or path.is_file():
             relative = path.relative_to(root).as_posix()
             if relative == UPDATER_CONFIG:
                 # Each game's config follows Settings and its repository after
                 # preparation; the Project page reports it.
                 continue
-            checked = project_path(root, relative)
-            files[relative] = (
-                observed(checked) if observed else digest(checked.read_bytes())
-            )
+            if observed:
+                files[relative] = observed.digest(observed.project_path(root, relative))
+            else:
+                files[relative] = digest(project_path(root, relative).read_bytes())
     return digest(files)
 
 

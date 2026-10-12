@@ -1,5 +1,6 @@
 """Manage phased working copies without replacing saved work on selection changes."""
 
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -23,12 +24,30 @@ def original_bindings(record):
 
 class GuidedInputs:
     def __init__(
-        self, folder, source, data, bindings, original_bytes, *, native_exports=False
+        self,
+        folder,
+        source,
+        data,
+        bindings,
+        original_bytes,
+        *,
+        native_exports=False,
+        observations=None,
     ):
         self.folder, self.source, self.data = Path(folder), Path(source), Path(data)
         self.bindings, self.original_bytes = bindings, original_bytes
         self.native_exports = native_exports
         self.index = self.folder / "source-inputs.json"
+        self.observations = observations
+
+    @property
+    def observed(self):
+        """A poll's shared look at these files; execution, outside any
+        observation, reads them afresh."""
+        return self.observations.files() if self.observations else None
+
+    def once(self, key, read):
+        return self.observations.once(key, read) if self.observations else read()
 
     def path(self, group, name):
         if (
@@ -45,7 +64,40 @@ class GuidedInputs:
             raise ValueError("A working copy must be a regular file.")
         return path
 
+    def saved(self, group, name):
+        """Whether a working copy exists; a poll answers from one listing of
+        its folder, and anything else gets path()'s checks."""
+        observed = self.observed
+        if observed is not None and isinstance(name, str):
+            entries = self.once(
+                ("working copies", str(self.folder), group),
+                lambda: (
+                    None
+                    if self.folder.is_symlink() or (self.folder / group).is_symlink()
+                    else observed.listing(self.folder / group)
+                ),
+            )
+            if (
+                entries is not None
+                and Path(name).name == name
+                and name.endswith(".json")
+            ):
+                entry = entries.get(name)
+                if entry is None:
+                    return False
+                if entry.is_file(follow_symlinks=False):
+                    return True
+        return self.path(group, name).is_file()
+
+    def game_path(self, relative):
+        if self.observed is not None:
+            return self.observed.project_path(self.source, relative)
+        return project_path(self.source, relative)
+
     def record(self):
+        return self.once(("source inputs", str(self.index)), self._record)
+
+    def _record(self):
         value = (
             read_json(self.index)
             if self.index.exists()
@@ -89,9 +141,19 @@ class GuidedInputs:
         }
 
     def sources(self, names, previous, fingerprint=None, *, fresh=False):
+        if self.observed is not None:
+            fingerprint = self.observed.digest
         fingerprint = fingerprint or (lambda path: digest(path.read_bytes()))
+        # The data folder's own path once, not each name's through pathlib.
+        prefix = self.data.relative_to(self.source).as_posix() if names else ""
         paths = {
-            name: (self.data / name).relative_to(self.source).as_posix()
+            name: (
+                prefix + "/" + name
+                if prefix != "."
+                and name not in {"", "."}
+                and os.path.basename(name) == name
+                else (self.data / name).relative_to(self.source).as_posix()
+            )
             for name in names
         }
         native_paths = (
@@ -99,51 +161,71 @@ class GuidedInputs:
             if self.native_exports
             else {}
         )
-        originals = self.bindings(
-            self.source, [*paths.values(), *native_paths.values()]
-        )
+        # A poll's phases share each file's row and its original binding.
+        rows = {} if fresh else self.once(("source rows", str(self.folder)), dict)
+        originals = self.original_bindings([*paths.values(), *native_paths.values()])
         result = {}
         for name, relative in paths.items():
-            if (
-                not fresh
-                and name in previous
-                and (
-                    self.path("files", name).is_file()
-                    or self.path("translated", name).is_file()
-                )
-            ):
-                result[name] = previous[name]
+            if name in rows and rows[name][0] == previous.get(name):
+                result[name] = rows[name][1]
                 continue
-            path = project_path(self.source, relative)
-            if relative in originals:
-                identity = {"original": originals[relative]}
-            elif native_paths.get(name) in originals:
-                identity = {
-                    "native_original": {
-                        "path": native_paths[name],
-                        "blob": originals[native_paths[name]],
-                    }
-                }
-            else:
-                identity = {"sha256": fingerprint(path)}
-                # Ace exports are runtime inputs too. Applying our exact saved
-                # output must not look like a different untranslated source.
-                output = self.path("translated", name)
-                saved = previous.get(name)
-                if (
-                    saved
-                    and output.is_file()
-                    and fingerprint(output) == identity["sha256"]
-                ):
-                    identity = saved["identity"]
-            result[name] = {"relative": relative, "identity": identity}
+            result[name] = self.source_row(
+                name, relative, native_paths, originals, previous, fingerprint, fresh
+            )
+            if not fresh:
+                rows[name] = (previous.get(name), result[name])
         return result
+
+    def original_bindings(self, relatives):
+        """Original blobs by path; a poll asks Git's cached listing once per path."""
+        known = self.once(("original bindings", str(self.source)), dict)
+        unknown = [relative for relative in relatives if relative not in known]
+        if unknown:
+            found = self.bindings(self.source, unknown)
+            known.update({relative: found.get(relative) for relative in unknown})
+        return {
+            relative: known[relative]
+            for relative in relatives
+            if known.get(relative) is not None
+        }
+
+    def source_row(
+        self, name, relative, native_paths, originals, previous, fingerprint, fresh
+    ):
+        if (
+            not fresh
+            and name in previous
+            and (self.saved("files", name) or self.saved("translated", name))
+        ):
+            return previous[name]
+        path = self.game_path(relative)
+        if relative in originals:
+            identity = {"original": originals[relative]}
+        elif native_paths.get(name) in originals:
+            identity = {
+                "native_original": {
+                    "path": native_paths[name],
+                    "blob": originals[native_paths[name]],
+                }
+            }
+        else:
+            identity = {"sha256": fingerprint(path)}
+            # Ace exports are runtime inputs too. Applying our exact saved
+            # output must not look like a different untranslated source.
+            saved = previous.get(name)
+            if (
+                saved
+                and self.saved("translated", name)
+                and fingerprint(self.path("translated", name)) == identity["sha256"]
+            ):
+                identity = saved["identity"]
+        return {"relative": relative, "identity": identity}
 
     def status(self, names, fingerprint=None) -> dict[str, Any]:
         previous = self.record()["inputs"]
         current = self.sources(names, previous, fingerprint)
         return {
-            "ready": [name for name in names if self.path("files", name).is_file()],
+            "ready": [name for name in names if self.saved("files", name)],
             "changed": [
                 name
                 for name in names
