@@ -4,6 +4,7 @@ Saved findings apply their recommendations as the project's source choices.
 """
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,9 @@ CODES = (
 SELECTORS = {"CODE357": "ENABLED_PLUGINS_357", "CODE355655": "ENABLED_PATTERNS_355655"}
 FIELDS = (*CODES, "CODE122_VAR_RANGES", *SELECTORS.values())
 REPORT = ".dazedtl/guided/event-text-findings.json"
+# The ways JSON without \u escapes can write a command code of 357, 355 or
+# 655: that number, or any number with a fraction or exponent.
+SELECTED_CODES = re.compile(rb'"code"\s*:\s*(?:(?:35[57]|655)(?![0-9])|-?[0-9]+[.eE])')
 # The project record key naming the report whose recommendations were applied.
 RECEIPT = "guided_event_text"
 VIEWS = {"audit", "sources", "advanced-run", "variables"}
@@ -114,13 +118,13 @@ class EventText:
         ):
             self.originals[blob] = digest(raw)
             if blob in unmatched:
-                self.match(raw, self.originals[blob], catalog)
+                self.match(lambda raw=raw: raw, self.originals[blob], catalog)
         for relative, blob in originals.items():
             dependencies[relative] = self.originals[blob]
         hits = {key: [] for key in SELECTORS}
         for relative, (identity, path) in event_inputs.items():
             if "original" not in identity:
-                self.match(None, dependencies[relative], catalog, path)
+                self.match(path.read_bytes, dependencies[relative], catalog)
             for key in SELECTORS:
                 hits[key].extend(
                     self.hits[(dependencies[relative], catalog["fingerprint"])][key]
@@ -138,9 +142,9 @@ class EventText:
         }
         return {**value, "fingerprint": digest(value)}
 
-    def match(self, raw, fingerprint, catalog, path=None):
+    def match(self, read, fingerprint, catalog):
         """Records the registered built-ins one event file's commands use, once
-        per file content and parser definitions."""
+        per file content and parser definitions; `read` returns its bytes."""
         signature = (fingerprint, catalog["fingerprint"])
         if signature in self.hits:
             return
@@ -156,9 +160,16 @@ class EventText:
                     if key != "_original":
                         yield from commands(item)
 
-        raw = path.read_bytes() if raw is None else raw
+        raw = read()
         found = {key: [] for key in SELECTORS}
-        for command in commands(json.loads(raw.decode("utf-8-sig"))):
+        # Only commands coded 357, 355 or 655 hold built-ins; a file whose
+        # text has none of these codes skips the parse.
+        parsed = (
+            json.loads(raw.decode("utf-8-sig"))
+            if b"\\u" in raw or SELECTED_CODES.search(raw)
+            else []
+        )
+        for command in commands(parsed):
             key = (
                 "CODE357"
                 if command["code"] == 357

@@ -97,7 +97,14 @@ class GuidedRuns:
         # Selection, mappings, IGNORETLTEXT and review are checked on every read.
         raw = path.read_bytes()
         literals = []
-        for index, command in enumerate(commands(json.loads(raw.decode("utf-8-sig")))):
+        # Most files never name a variable; JSON without \u escapes spells it
+        # only one way, so they skip the parse.
+        parsed = (
+            json.loads(raw.decode("utf-8-sig"))
+            if b"$gameVariables" in raw or b"\\u" in raw
+            else []
+        )
+        for index, command in enumerate(commands(parsed)):
             for parameter in command.get("parameters", []):
                 if isinstance(parameter, str) and "$gameVariables" in parameter:
                     variables = sorted(
