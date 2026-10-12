@@ -290,14 +290,11 @@ class Guided:
                 if self.settings.translation_defaults().get("batch_supported")
                 else "translate"
             )
+        supported = self.supported_files(native)
         return {
             "revision": native["revision"],
             "values": {
-                "selected": [
-                    name
-                    for name in native["selected"]
-                    if name in self.supported_files(native)
-                ],
+                "selected": [name for name in native["selected"] if name in supported],
                 "mode": mode,
                 "engine_options": native["engine_options"],
                 "widths": native["widths"],

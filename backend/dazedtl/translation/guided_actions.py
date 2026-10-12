@@ -538,10 +538,9 @@ class GuidedActions:
         options: dict[str, Any] = context.options
         paths = []
         if action == "import":
+            supported = self.guided.supported_files(native)
             if not isinstance(files, list) or any(
-                not isinstance(name, str)
-                or name not in self.guided.supported_files(native)
-                for name in files
+                not isinstance(name, str) or name not in supported for name in files
             ):
                 raise ValueError(
                     "Select supported RPG Maker files from this project's list."
