@@ -61,17 +61,23 @@ def _relative(name):
 
 
 def _child(root, name, folders=None):
-    """``name`` under ``root``, refusing a link at any step. A snapshot passes
-    ``folders`` to check each folder once rather than once per file; its
-    final inventory walk would still find a link that appears later."""
+    """``name`` under ``root``, refusing a link at any step."""
+    *parents, leaf = _relative(name).split("/")
+    path = _folder(root, parents, folders) / leaf
+    _refuse_link(path)
+    return path
+
+
+def _folder(root, parts, folders=None):
+    """The folder ``parts`` under ``root``, refusing a link at any step. A
+    snapshot passes ``folders`` to check each folder once rather than once
+    per file; its final inventory walk would still find a link that appears
+    later."""
     path = Path(root)
     _refuse_link(path, folders)
-    *parents, leaf = _relative(name).split("/")
-    for part in parents:
+    for part in parts:
         path /= part
         _refuse_link(path, folders)
-    path /= leaf
-    _refuse_link(path)
     return path
 
 
@@ -175,10 +181,10 @@ def _inventory(source, source_game, stopped):
     return files, sorted(directories)
 
 
-def _object(root, fingerprint, folders=None):
+def _object(root, fingerprint):
     if not isinstance(fingerprint, str) or not _HASH.fullmatch(fingerprint):
         raise ValueError("Invalid backup content hash.")
-    return _child(root, "objects/" + fingerprint[:2] + "/" + fingerprint, folders)
+    return _child(root, "objects/" + fingerprint[:2] + "/" + fingerprint)
 
 
 # Several files at once hide each file's waits for its creation and disk
@@ -193,13 +199,16 @@ class _Contents:
     """What one snapshot's threads stored, with each content hash stored or
     checked by one thread: Windows refuses to replace a file another thread
     is reading, as happens when a game holds two identical files. ``folders``
-    holds the folders already checked for links."""
+    holds the folders already checked for links, ``made`` the object folders
+    known to exist: on Windows, making one that exists costs a failed
+    create and another look."""
 
     def __init__(self):
         self.lock = threading.Lock()
         self.claims = {}
         self.created = {}
         self.folders = set()
+        self.made = set()
 
     def claim(self, fingerprint):
         """True for the first thread with this content; later ones wait for it."""
@@ -245,10 +254,13 @@ def _keep(root, source, name, signature, contents, stopped):
 def _store_content(root, path, fingerprint, size, data, contents, stopped):
     """Content the store holds is checked by size, as reading it back costs
     more than the backup: its file was synced before taking its name, and
-    restores check its hash. New content is synced before taking its name."""
-    output = _object(root, fingerprint, contents.folders)
+    restores check its hash. New content is synced before taking its name.
+    One lstat both finds the object and refuses a link in its place, and a
+    temporary file's exclusive creation refuses anything in its place."""
+    shard = _folder(root, ("objects", fingerprint[:2]), contents.folders)
+    output = shard / fingerprint
     try:
-        held = output.stat()
+        held = output.lstat()
     except FileNotFoundError:
         pass
     else:
@@ -257,7 +269,7 @@ def _store_content(root, path, fingerprint, size, data, contents, stopped):
                 "Stored backup content is damaged. Preserve the store and recover it from a trusted copy."
             )
         return
-    temporary = _child(root, "temporary/" + uuid.uuid4().hex, contents.folders)
+    temporary = _folder(root, ("temporary",), contents.folders) / uuid.uuid4().hex
     try:
         with temporary.open("xb") as outgoing:
             if data is None:
@@ -275,7 +287,9 @@ def _store_content(root, path, fingerprint, size, data, contents, stopped):
                 outgoing.write(data)
             outgoing.flush()
             os.fsync(outgoing.fileno())
-        output.parent.mkdir(exist_ok=True)
+        if shard not in contents.made:
+            shard.mkdir(exist_ok=True)
+            contents.made.add(shard)
         temporary.replace(output)
     except BaseException:
         temporary.unlink(missing_ok=True)
