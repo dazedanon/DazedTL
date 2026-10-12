@@ -3,6 +3,20 @@
 Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 [release.mjs](scripts/release.mjs) writes each entry from [release/notes.md](release/notes.md).
 
+## [2.9.1] - 2026-10-12
+
+### Added
+
+- **Assistant-led:** Wolf Pro games that keep their own archive key beside their archives now open and unpack, including archives renamed to .data, .pak and similar.
+- **Assistant-led:** the bundled Wolf tools read and rewrite data files protected by Wolf 2.x and Wolf Pro 3.1 to 3.5.
+
+### Fixed
+
+- **Guided:** large games no longer make the app slow to answer; on a 5,000-file game each refresh took 2 to 3 seconds on Windows and every click waited behind it, and now takes under a tenth of a second.
+- **Set up:** on large games the Context page opens as soon as Save version finishes, instead of about 20 seconds later on Windows; setting up a 2.5 GB test game on Windows went from about 1.5 minutes to under 1.
+- **Project:** Wolf games whose archives sit in a Data folder no longer stay at "Investigation pending".
+- **Assistant-led:** unpacking a Wolf archive reports how many files it held, instead of "? files" and a total of 0.
+
 ## [2.9.0] - 2026-10-11
 
 ### Changed
@@ -385,6 +399,7 @@ Every DazedTL release, newest first, in the [Keep a Changelog](https://keepachan
 - The first release of DazedTL as a desktop app, installed from a ZIP with a START launcher and updated from inside the app.
 - **Guided steps** for RPG Maker MV, MZ and VX Ace games, and **Assistant-led** for any game.
 
+[2.9.1]: https://github.com/dazedanon/DazedTL/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/dazedanon/DazedTL/compare/v2.8.2...v2.9.0
 [2.8.2]: https://github.com/dazedanon/DazedTL/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/dazedanon/DazedTL/compare/v2.8.0...v2.8.1
