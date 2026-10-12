@@ -25,6 +25,13 @@ contextBridge.exposeInMainWorld("dazedtl", {
   chooseFolder: () => invoke("dazedtl:choose-folder"),
   chooseEditor: () => invoke("dazedtl:choose-editor"),
   openFolder: (kind, target) => invoke("dazedtl:open-folder", kind, target),
+  notify: (message) => invoke("dazedtl:notify", message),
+  sound: {
+    read: () => invoke("dazedtl:sound-read"),
+    choose: () => invoke("dazedtl:sound-choose"),
+    save: (sound) => invoke("dazedtl:sound-save", sound),
+    clear: () => invoke("dazedtl:sound-clear"),
+  },
   onClose: (handler, cancelled) => {
     let activeToken = 0;
     const respond = async (token) => {

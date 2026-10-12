@@ -6,6 +6,7 @@ const {
   shell,
   clipboard,
   screen,
+  Notification,
 } = require("electron");
 const os = require("node:os");
 const path = require("node:path");
@@ -15,6 +16,7 @@ const { Diagnostics } = require("./diagnostics.cjs");
 const { windowSize } = require("./window-size.cjs");
 const { rendererRecovery } = require("./renderer-recovery.cjs");
 const { Updates } = require("./updates.cjs");
+const { NotificationSound } = require("./sound.cjs");
 
 app.setName("DazedTL");
 if (process.platform === "win32") app.setAppUserModelId("dev.dazedtl.app");
@@ -36,6 +38,8 @@ const protocol = require("../../backend/dazedtl/api/protocol.json");
 const methods = new Set(Object.keys(protocol.methods));
 const outputs = new Set();
 const backupFolders = new Set();
+// Shown notifications stay referenced so their click still focuses the window.
+const notices = new Set();
 let window,
   backend,
   diagnostics,
@@ -456,6 +460,61 @@ app
         );
       const error = await shell.openPath(folder);
       if (error) throw new Error(error);
+    });
+    // The taskbar entry lights up with a notification until the user returns.
+    window.on("focus", () => window.flashFrame(false));
+    ipcMain.handle("dazedtl:notify", (event, message) => {
+      trusted(event);
+      const { title, body, test } = message || {};
+      if (
+        typeof title !== "string" ||
+        typeof body !== "string" ||
+        title.length > 200 ||
+        body.length > 1000
+      )
+        throw new Error("Choose a short notification.");
+      if (window.isFocused() && !test) return;
+      if (!Notification.isSupported())
+        throw new Error("This system does not show desktop notifications.");
+      if (!window.isFocused()) window.flashFrame(true);
+      const notice = new Notification({
+        title,
+        body,
+        icon: path.join(root, "resources/icon.png"),
+        // The chime, when chosen, is the app's own sound.
+        silent: true,
+      });
+      notices.add(notice);
+      const forget = () => notices.delete(notice);
+      notice.on("click", () => {
+        forget();
+        if (window.isDestroyed()) return;
+        if (window.isMinimized()) window.restore();
+        window.show();
+        window.focus();
+      });
+      notice.on("close", forget);
+      notice.on("failed", forget);
+      notice.show();
+    });
+    const sound = new NotificationSound(
+      path.join(app.getPath("userData"), "notification-sound"),
+    );
+    ipcMain.handle("dazedtl:sound-read", (event) => {
+      trusted(event);
+      return sound.read();
+    });
+    ipcMain.handle("dazedtl:sound-choose", (event) => {
+      trusted(event);
+      return sound.choose(window, dialog);
+    });
+    ipcMain.handle("dazedtl:sound-save", (event, value) => {
+      trusted(event);
+      sound.save(value);
+    });
+    ipcMain.handle("dazedtl:sound-clear", (event) => {
+      trusted(event);
+      sound.clear();
     });
     ipcMain.handle("dazedtl:close-ready", async (event, reply) => {
       trusted(event);

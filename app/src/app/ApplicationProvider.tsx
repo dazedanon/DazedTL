@@ -9,6 +9,8 @@ import {
 import { api } from "../api/client";
 import { onMutation } from "../api/transport";
 import { ApplicationStore } from "./applicationStore";
+import { notify } from "./notifications";
+import { WorkAlerts } from "./workAlerts";
 import { flushDrafts } from "../state/leaveGuards";
 
 const Context = createContext<ApplicationStore | null>(null);
@@ -37,6 +39,16 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
         },
       }),
   );
+  // Observations reach the alerts as they arrive, whether or not the window
+  // is drawing.
+  useEffect(() => {
+    const alerts = new WorkAlerts();
+    return store.subscribe(() => {
+      const { snapshot } = store.getSnapshot();
+      const alert = snapshot && alerts.observe(snapshot, Date.now());
+      if (alert) notify(alert).catch(() => undefined);
+    });
+  }, [store]);
   useEffect(() => {
     store.start();
     const close = window.dazedtl.onClose(

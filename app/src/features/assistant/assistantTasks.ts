@@ -7,6 +7,7 @@ import type {
   ImageReportState,
   PluginState,
   TranslationMethod,
+  WorkspaceSnapshot,
 } from "../../api/contracts.ts";
 import type { DisplayState } from "../../ui/displayStatus.ts";
 import { investigationResults } from "../guided/contextView.ts";
@@ -70,6 +71,23 @@ export interface AssistantSources {
   guided?: GuidedState | null;
   images?: ImageManagerState | null;
   plugins?: PluginState | null;
+}
+
+/** The open project's copied tasks and the feature states they read. */
+export function assistantSources(
+  snapshot: WorkspaceSnapshot,
+): AssistantSources | null {
+  const project = snapshot.application.project;
+  if (!project) return null;
+  const own = <T extends { projectId: string }>(value?: T | null) =>
+    value && value.projectId === project.id ? value : null;
+  return {
+    records: snapshot.assistantTasks,
+    method: project.method,
+    guided: own(snapshot.guided),
+    images: own(snapshot.images),
+    plugins: own(snapshot.plugins),
+  };
 }
 
 const waiting = (detail = ""): Standing => ({ state: "waiting", detail });
@@ -243,6 +261,17 @@ export function assistantTasks(sources: AssistantSources): AssistantTaskView[] {
   return tasks
     .sort((a, b) => a.copiedAt.localeCompare(b.copiedAt))
     .map(({ copiedAt: _copiedAt, ...task }) => task);
+}
+
+/** Where each copied task stands, finished and idle ones included. */
+export function copiedTaskStandings(sources: AssistantSources) {
+  return sources.records
+    .filter((record) => !record.dismissed)
+    .map((record) => ({
+      kind: record.kind,
+      copiedAt: record.copiedAt,
+      ...standing(record.kind, record, sources),
+    }));
 }
 
 /**

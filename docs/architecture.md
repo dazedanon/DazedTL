@@ -797,7 +797,7 @@ An unapplied one reads as outdated, and an applied one keeps its corrections und
 A prepared task the app can't read or trust, such as one whose files lost the app's access, reads as blocked with the reason, never as not started; Run QA again, or the helper's `qa --prepare`, renames it beside the others with an `-unreadable` suffix and prepares a fresh one, and the helper's status names its folder and error so an assistant that can restore access continues it instead.
 An Assistant-led MV/MZ or Ace game gets the Guided game workspace for this the first time its assistant uses QA, and its checkpoint reuses the runtime manifest of its last one.
 There the starting prompt runs QA through the helper after the checkpoint, the Text QA tab appears once a task exists, and Progress takes QA's stage and counts from the task while it runs and points out open questions; whether QA is done stays the assistant's report, since new translation after an apply reopens it.
-The app has no notifications beyond these: the top bar's assistant task count and Progress show the questions QA waits on.
+The top bar's assistant task count and Progress show the questions QA waits on, and [notifications](#notifications) call the user back for new ones.
 The release playtest, Check's third task and an Assistant-led tab once it has a report, checks the game's files and then plays the game; [its design](text-qa-redesign.md#release-playtest) holds the decisions.
 Its [static checks](../backend/dazedtl/engine/util/playtest/checks.py) report data files and plugins that would stop the game, Japanese left in translated text and placeholder glyphs, text never translated through the preflight above, battle messages, System terms and event pages that lost a `%n`, battler name or shown code their `_original` has, descriptions longer than the help window's two lines, and Japanese strings in plugin code with their reach, which [code.cjs](../backend/dazedtl/engine/util/playtest/code.cjs) reads by compiling each plugin with V8 and parsing it with Acorn.
 The [tour](../backend/dazedtl/engine/util/playtest/harness/main.cjs) plays the game in the same game window as the interface capture; [its page script](../backend/dazedtl/engine/util/playtest/harness/page.js) records errors, Japanese drawn, text past its window and messages, each kept once its bitmap is on screen and captured, while it plays the title, New Game and its opening, every menu screen with every item and skill in hand, a save and a load, a shop, a battle, plugin screens and the assistant's stops.
@@ -963,6 +963,16 @@ Account usage outside the tracked Guided runs still needs headroom; the local es
 Older preferences need no rewrite, and older runs retain their native default or saved sequential limit.
 [API setup](user-guide.md#api-setup) describes where to override it.
 Existing plans without a policy retain their original behavior; provider cache and batch adjustments remain in the engine.
+
+### Notifications
+
+[WorkAlerts](../app/src/app/workAlerts.ts) reads every observation the store publishes, outside rendering, so a window in the background still notices; the first observation of a game only notes where its work stands.
+It calls the user back for work they started that ran at least ten seconds and then ended or waited for approval, measured from when it started working, so an approval given in the window starts the clock again.
+That is every Guided run and step; an Assistant-led game's helper steps belong to its assistant, so only its API runs and Start over count.
+It also calls them back when a copied task leaves waiting with the same copy, which a dismissal never does, when text QA has new questions, and when an Assistant-led run is blocked, done or waiting for an estimate's approval.
+The choices are a browser-profile preference read by [notifications.ts](../app/src/app/notifications.ts), which plays the sound itself.
+A chosen sound file is kept by the main process in the app profile ([sound.cjs](../app/electron/sound.cjs)), only after the interface has decoded it, so an unplayable file leaves the current sound; it plays for at most ten seconds.
+The main process shows the desktop notification only while the window is not focused, except for the Settings test, and lights up the taskbar entry until the window regains focus.
 
 ## API changes
 

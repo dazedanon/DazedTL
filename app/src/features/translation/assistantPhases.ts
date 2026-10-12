@@ -1,4 +1,5 @@
 import type { QaState, TranslationProgress } from "../../api/contracts";
+import type { AssistantTaskState } from "../../ui/AssistantTask";
 import type { StepState } from "../../ui/StepProgress";
 import { displayLabels } from "../../ui/displayStatus.ts";
 import { qaActivity, qaPhase } from "../guided/qaView.ts";
@@ -48,6 +49,20 @@ function qaStep(
       detail: qaActivity(qa) || undefined,
     };
   return null;
+}
+
+/** Where the assistant's whole run stands, from its saved reports. */
+export function assistantRunState(
+  progress: TranslationProgress | null,
+  started: boolean,
+): AssistantTaskState {
+  if (!progress?.updated_at) return started ? "waiting" : "not_started";
+  if (progress.blocker) return "blocked";
+  return Object.values(progress.phases).every((phase) =>
+    ["complete", "out_of_scope"].includes(phase),
+  )
+    ? "done"
+    : "waiting";
 }
 
 /**

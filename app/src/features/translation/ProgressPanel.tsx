@@ -5,14 +5,13 @@ import type {
   QaState,
   TranslationJob,
   TranslationOptions,
-  TranslationProgress,
   TranslationState,
 } from "../../api/contracts";
 import { flushDrafts } from "../../state/leaveGuards";
 import { useMinute } from "../../state/useMinute";
 import type { useAction } from "../../state/useAction";
 import { ActionControl } from "../../ui/ActionControl";
-import { AssistantTask, type AssistantTaskState } from "../../ui/AssistantTask";
+import { AssistantTask } from "../../ui/AssistantTask";
 import { Button } from "../../ui/Button";
 import { DialogBody, DialogHeader } from "../../ui/Dialog";
 import { HelpPopover } from "../../ui/HelpPopover";
@@ -35,7 +34,7 @@ import {
   finishingRun,
   latestApiRun,
 } from "./apiRun";
-import { phaseStates } from "./assistantPhases";
+import { assistantRunState, phaseStates } from "./assistantPhases";
 import { DeclinedLines } from "./DeclinedLines";
 import { modeLabels } from "./OptionsPanel";
 import { StartOver } from "./StartOver";
@@ -43,19 +42,6 @@ import { StartOver } from "./StartOver";
 /** The assistant reports at least every 10 minutes while it works. */
 const QUIET_MINUTES = 20;
 const money = (value: number) => "$" + value.toFixed(2);
-
-function taskState(
-  progress: TranslationProgress | null,
-  started: boolean,
-): AssistantTaskState {
-  if (!progress?.updated_at) return started ? "waiting" : "not_started";
-  if (progress.blocker) return "blocked";
-  return Object.values(progress.phases).every((phase) =>
-    ["complete", "out_of_scope"].includes(phase),
-  )
-    ? "done"
-    : "waiting";
-}
 
 /**
  * Where the assistant's run stands, from its saved reports: what it needs,
@@ -91,7 +77,7 @@ export function ProgressPanel({
   // the report's time stands in only for projects from before DazedTL noted
   // helper use.
   const activity = state.assistantSeenAt || progress?.updated_at || undefined;
-  const status = taskState(progress, !!activity);
+  const status = assistantRunState(progress, !!activity);
   const text = progress?.metrics.text;
   const images = progress?.metrics.images;
   const attempt = attemptJobs(state);

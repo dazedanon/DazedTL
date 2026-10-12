@@ -2,6 +2,7 @@ import type { AssistantTaskKind } from "../../api/contracts";
 import { useApplication } from "../../app/ApplicationProvider";
 import {
   type AssistantSources,
+  assistantSources,
   assistantTasks,
   assistantWaiting,
   noHandoff,
@@ -10,17 +11,7 @@ import {
 /** The current project's copied tasks and the feature states they read. */
 export function useAssistantSources(): AssistantSources | null {
   const snapshot = useApplication().snapshot;
-  const project = snapshot?.application.project;
-  if (!snapshot || !project) return null;
-  const own = <T extends { projectId: string }>(value?: T | null) =>
-    value && value.projectId === project.id ? value : null;
-  return {
-    records: snapshot.assistantTasks,
-    method: project.method,
-    guided: own(snapshot.guided),
-    images: own(snapshot.images),
-    plugins: own(snapshot.plugins),
-  };
+  return snapshot ? assistantSources(snapshot) : null;
 }
 
 export function useAssistantTasks() {

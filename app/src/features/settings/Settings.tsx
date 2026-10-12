@@ -10,6 +10,7 @@ import { ModelMenu } from "./ModelMenu";
 import TranslationDefaults from "./TranslationDefaults";
 import GameUpdateSettings from "./GameUpdateSettings";
 import Updates from "./Updates";
+import Notifications from "./Notifications";
 import { updateAttention, useUpdates } from "../../app/updates";
 import { RemoveConnection } from "./RemoveConnection";
 import { PageLayout, PageHeader, PageBody } from "../../ui/PageLayout";
@@ -26,6 +27,7 @@ const sections = [
   { id: "api", label: "API connections" },
   { id: "preferences", label: "Translation defaults" },
   { id: "gameupdate", label: "GameUpdate" },
+  { id: "notifications", label: "Notifications" },
   { id: "updates", label: "Updates" },
 ] as const;
 export type SettingsSection = (typeof sections)[number]["id"];
@@ -126,6 +128,10 @@ export default function Settings({
       {section === "updates" ? (
         <TabPanel id="settings" value={section}>
           <Updates running={running} />
+        </TabPanel>
+      ) : section === "notifications" ? (
+        <TabPanel id="settings" value={section}>
+          <Notifications />
         </TabPanel>
       ) : !config ? (
         <PageBody>

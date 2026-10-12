@@ -55,6 +55,8 @@ export type UpdateState = {
    */
   notes: { releases: ReleaseNotes[]; recent: number };
 };
+/** A sound file's name and bytes. */
+export type NotificationSound = { name: string; data: Uint8Array };
 /** One release's Keep a Changelog entry; a prerelease has no date. */
 export type ReleaseNotes = {
   version: string;
@@ -79,6 +81,20 @@ declare global {
           "project" | "workspace" | "projectWorkspace" | "output" | "backup",
         path?: string,
       ): Promise<void>;
+      /** A desktop notification while the window is in the background. */
+      notify(message: {
+        title: string;
+        body: string;
+        /** Shown even in front, so Settings can try it. */
+        test?: boolean;
+      }): Promise<void>;
+      /** The user's own notification sound, kept in the profile. */
+      sound: {
+        read(): Promise<NotificationSound | null>;
+        choose(): Promise<NotificationSound | null>;
+        save(sound: NotificationSound): Promise<void>;
+        clear(): Promise<void>;
+      };
       onClose(handler: () => Promise<void>, cancelled: () => void): () => void;
       onStopped(handler: (message: string) => void): () => void;
       updates: {
