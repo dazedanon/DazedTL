@@ -184,8 +184,9 @@ export function EventTextSources({
               <p>{row.coverage}</p>
               {!!row.builtins.length && (
                 <p>
-                  Built-in coverage when enabled: {row.builtins.join(", ")}.
-                  These have no individual switches.
+                  Built-in coverage when enabled:{" "}
+                  {row.builtins.map((name) => name.trim()).join(", ")}. These
+                  have no individual switches.
                 </p>
               )}
               {!!row.observations.length && (

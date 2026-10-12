@@ -113,7 +113,7 @@ export function EventTextPicker({
           <summary>Built-in handlers are also used · View coverage</summary>
           <p>{row.coverage}</p>
           <p>
-            {row.builtins.join(", ") ||
+            {row.builtins.map((name) => name.trim()).join(", ") ||
               "No additional built-in handlers listed."}
           </p>
         </details>
