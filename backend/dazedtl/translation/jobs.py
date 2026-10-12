@@ -121,7 +121,9 @@ class RunStore:
     def load(self, identity, project_id=None):
         folder = self.folder(identity)
         job = self.record(identity, project_id)
-        plan = read_json(folder / "plan.json")
+        # A large game's run holds thousands of requests, each with its full
+        # guidance and provider payload; 2,648 of them made 165 MB.
+        plan = read_json(folder / "plan.json", limit=None)
         if (
             not isinstance(plan, dict)
             or plan.get("version") != 1
