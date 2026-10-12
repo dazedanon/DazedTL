@@ -25,7 +25,12 @@ from functools import lru_cache, wraps
 from dotenv import load_dotenv
 from pathlib import Path
 from retry import retry
-from util.paths import DATA_DIR, read_active_glossary
+from util.paths import (
+    DATA_DIR,
+    read_active_glossary,
+    replace_with_retry,
+    unlink_with_retry,
+)
 from util.provider_costs import cache_write_multiplier, has_billed_cache_writes
 from util import request_debug
 from util import extensions
@@ -1585,7 +1590,8 @@ def _write_batch_file(path, data):
     tmp_file = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with open(tmp_file, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, ensure_ascii=False)
-    tmp_file.replace(path)
+    # The app's poll reads queue snapshots and fragments while they change.
+    replace_with_retry(tmp_file, path)
 
 
 def _active_batch_queue_file():
@@ -1683,7 +1689,7 @@ def _clear_batch_queue_parts(*, strict=False, queue_file=None):
                         f"Unexpected directory in batch queue fragments: {path}"
                     )
                 continue
-            path.unlink()
+            unlink_with_retry(path)
         except Exception:
             if strict:
                 raise

@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from util.paths import replace_with_retry
 from util.project_preparation import rpgmaker_layout
 from util.rpgmaker_qa_manifest import pointer, resolve_pointer, _mechanical_evidence
 from util.runtime_text import protect_script_codes, validate_control_codes
@@ -25,7 +26,8 @@ def atomic_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
-    temporary.replace(path)
+    # The app's poll may be reading the target, which blocks Windows replaces.
+    replace_with_retry(temporary, path)
 
 
 def extract_records(filename: str, document) -> list[dict]:

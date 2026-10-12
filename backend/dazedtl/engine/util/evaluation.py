@@ -48,6 +48,7 @@ from util.paths import (
     LEGACY_GAME_SKILLS_RELATIVE,
     read_active_glossary,
     read_game_glossary,
+    replace_with_retry,
     staging_folder,
 )
 from util.provider_costs import cache_write_multiplier
@@ -97,9 +98,6 @@ REVIEW_QUALITY_METRICS = (
 )
 MAX_OUTPUT_TOKENS_PER_REQUEST = DEFAULT_MAX_OUTPUT_TOKENS
 LIVE_REQUEST_MAX_ATTEMPTS = 3
-ATOMIC_REPLACE_MAX_ATTEMPTS = 8
-ATOMIC_REPLACE_INITIAL_DELAY_SECONDS = 0.05
-ATOMIC_REPLACE_MAX_DELAY_SECONDS = 0.5
 JAPANESE_RE = re.compile(r"[一-龠々〆〤ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]")
 LANGUAGE_REGEX = r"[一-龠ぁ-ゔァ-ヴーａ-ｚＡ-Ｚ０-９\uFF61-\uFF9F]+"
 OPENROUTER_MODEL_API = "https://openrouter.ai/api/v1/model/"
@@ -426,31 +424,6 @@ def _validate_result_artifact(
                 )
 
 
-def _is_retryable_replace_error(exc: OSError) -> bool:
-    """Return whether a replace may succeed after a transient file lock clears."""
-    return isinstance(exc, PermissionError) or getattr(exc, "winerror", None) in {
-        5,   # ERROR_ACCESS_DENIED
-        32,  # ERROR_SHARING_VIOLATION
-        33,  # ERROR_LOCK_VIOLATION
-    }
-
-
-def _replace_with_retry(temporary: Path, path: Path) -> None:
-    delay = ATOMIC_REPLACE_INITIAL_DELAY_SECONDS
-    for attempt in range(1, ATOMIC_REPLACE_MAX_ATTEMPTS + 1):
-        try:
-            os.replace(temporary, path)
-            return
-        except OSError as exc:
-            if (
-                not _is_retryable_replace_error(exc)
-                or attempt == ATOMIC_REPLACE_MAX_ATTEMPTS
-            ):
-                raise
-            time.sleep(delay)
-            delay = min(delay * 2, ATOMIC_REPLACE_MAX_DELAY_SECONDS)
-
-
 def _atomic_write_text_exact(path: Path, value: str) -> None:
     """Write text through a unique sibling and atomically replace the target."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -465,7 +438,7 @@ def _atomic_write_text_exact(path: Path, value: str) -> None:
         descriptor = -1  # The stream now owns and closes the descriptor.
         with stream:
             stream.write(value)
-        _replace_with_retry(temporary, path)
+        replace_with_retry(temporary, path)
     finally:
         if descriptor != -1:
             os.close(descriptor)

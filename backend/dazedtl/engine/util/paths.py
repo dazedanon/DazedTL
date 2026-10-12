@@ -7,6 +7,7 @@ import secrets
 import shutil
 import stat
 import tempfile
+import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -294,6 +295,42 @@ def game_metadata_dir(game_root: str | Path, *, create: bool = False) -> Path:
     if create:
         metadata.mkdir(exist_ok=True)
     return metadata
+
+
+def _retryable_file_error(error: OSError) -> bool:
+    """Whether a replace or delete may succeed once another handle closes.
+
+    Windows refuses to replace or delete a file that another reader has open,
+    such as the app's poll reading a run's evidence while its worker writes.
+    """
+    return isinstance(error, PermissionError) or getattr(error, "winerror", None) in {
+        5,  # ERROR_ACCESS_DENIED
+        32,  # ERROR_SHARING_VIOLATION
+        33,  # ERROR_LOCK_VIOLATION
+    }
+
+
+def _retry_file_operation(operation) -> None:
+    delay = 0.05
+    for attempt in range(8):
+        try:
+            operation()
+            return
+        except OSError as error:
+            if not _retryable_file_error(error) or attempt == 7:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.5)
+
+
+def replace_with_retry(source: str | Path, target: str | Path) -> None:
+    """os.replace that waits up to about two seconds for a reader to finish."""
+    _retry_file_operation(lambda: os.replace(source, target))
+
+
+def unlink_with_retry(path: str | Path) -> None:
+    """Path.unlink that waits up to about two seconds for a reader to finish."""
+    _retry_file_operation(Path(path).unlink)
 
 
 def new_folder(parent: str | Path, prefix: str) -> Path:
