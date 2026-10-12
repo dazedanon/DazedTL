@@ -1007,6 +1007,9 @@ Python's `mode=0o700`, which `tempfile.mkdtemp` and `TemporaryDirectory` use, ma
 So a folder that stays in the workspace, a game or an output folder, or whose files move there, comes from `new_folder` or `staging_folder` in [storage](../backend/dazedtl/storage.py) or the engine's [paths](../backend/dazedtl/engine/util/paths.py), and keeps the permissions of the folder it is made in; tempfile remains for scratch that nothing moves out of.
 
 A compiled plan freezes sources, full context, field constraints, provider parameters, rates, and connection identity.
+Its plan.json keeps each long context text that repeats, such as the system prompt every request and its provider payload hold, once under its hash ([plan_file](../backend/dazedtl/translation/plan_file.py)), which made a 2,648-request plan 55 MB instead of 165 MB.
+Reading it rebuilds the identical plan, and the run's record and approval bind the file's exact bytes; plans saved whole before this keep loading by their digest.
+A worker reads its plan once and rereads only the run's record each time it polls a Batch.
 Tracked game-source dependencies bind to their original-branch blobs; untracked source exports, project guidance and the plan file bind to their exact bytes.
 Both API transports consume the same logical request builder.
 Request IDs, speaker/scene context and protected tokens survive adapter conversion.

@@ -60,7 +60,7 @@ def run(workspace, identity, owner_pid, owner_token):
 
 
 def run_locked(workspace, identity, store):
-    job, plan = store.load(identity)
+    job, plan = store.load(identity, reuse=True)
     engine = TranslationEngine(workspace / "engine")
     os.environ.update(
         PYTHON_DOTENV_DISABLED="1", DAZEDTL_DESKTOP_WORKSPACE=str(engine.profile)
@@ -173,11 +173,11 @@ def run_locked(workspace, identity, store):
                         break
                     time.sleep(0.2)
     except InterruptedError as exc:
-        job, _plan = store.load(identity)
+        job = store.record(identity)
         job.update(status="stopped", message=str(exc))
         store.save(job)
     except Exception as exc:  # noqa: BLE001
-        job, _plan = store.load(identity)
+        job = store.record(identity)
         # Provider exceptions can contain request bodies or auth details; retain only their class.
         message = engine.error_message(exc)
         job.update(status="failed", message=message)

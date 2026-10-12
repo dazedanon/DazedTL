@@ -672,7 +672,7 @@ class TranslationTests(unittest.TestCase):
                 self.assertIsNone(Results(self.game).get(plan["requests"][0]))
 
     def test_approval_binds_project_plan_and_quote_and_boolean_is_insufficient(self):
-        job, _plan = self.run_record()
+        job, plan = self.run_record()
         self.assertTrue(self.store.authorized(job))
         with self.assertRaises(ValueError):
             self.store.load(job["id"], "another-project")
@@ -683,11 +683,58 @@ class TranslationTests(unittest.TestCase):
         self.assertTrue(job["approved"])
         self.assertFalse(self.store.authorized(job))
         path = self.store.folder(job["id"]) / "plan.json"
-        changed = json.loads(path.read_text())
-        changed["requests"][0]["sources"]["line"] = "Changed source"
-        write_json(path, changed)
+        saved = path.read_bytes()
+        path.write_bytes(saved.replace("はい。".encode(), "いいえ".encode()))
         with self.assertRaises(ValueError):
             self.store.load(job["id"])
+        # Plans saved whole, before shared guidance, stay bound by their digest.
+        write_json(path, plan)
+        job["plan_sha256"] = digest(plan)
+        self.store.save(job)
+        self.assertEqual(self.store.load(job["id"])[1], plan)
+        write_json(path, {**plan, "complete": False})
+        with self.assertRaises(ValueError):
+            self.store.load(job["id"])
+
+    def test_saved_plans_hold_repeated_guidance_once_and_read_back_exactly(self):
+        # Each request of a large game held the system prompt in its context
+        # and again in its payload: 2,648 requests made a 165 MB plan.
+        system = "Keep every speaker's voice. " * 50
+        rows = []
+        for index in range(3):
+            user = f"Translate scene {index}. " * 60
+            row = logical_request(
+                {"id": f"scene-{index}", "sources": {"line": "はい。"}},
+                {"system": system, "user": user, "glossary": "リリ = Lili"},
+            )
+            row["params"] = {
+                # OpenAI-compatible routes join the system blocks into one
+                # string; Anthropic sends the shared one as its own block.
+                "system": [{"type": "text", "text": f"```\n{system}\n```"}],
+                "messages": [
+                    {"role": "system", "content": f"```\n{system}\n```\n\nリリ = Lili"},
+                    {"role": "user", "content": f"```\n{user}\n```"},
+                ],
+            }
+            rows.append(row)
+        plan = {
+            "version": 1,
+            "kind": "translation",
+            "source": str(self.game),
+            "complete": True,
+            "requests": rows,
+            "configuration": {"mode": "batch", "model": "fixture"},
+            "batch_limits": [50, 100000],
+        }
+        job = self.store.create("project", plan, {"cost": 1})
+        saved = (self.store.folder(job["id"]) / "plan.json").read_bytes()
+        for text in (system, rows[0]["context"]["user"]):
+            self.assertEqual(saved.count(text.encode()), 1)
+        # The provider receives exactly the payload bytes that were approved.
+        self.assertEqual(
+            json.dumps(self.store.load(job["id"])[1], ensure_ascii=False),
+            json.dumps(plan, ensure_ascii=False),
+        )
 
     def test_stale_sources_stop_before_any_provider_call(self):
         job, _plan = self.run_record()

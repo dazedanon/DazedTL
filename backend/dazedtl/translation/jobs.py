@@ -19,6 +19,7 @@ from pathlib import Path
 from dazedtl.diagnostics import FOLDER
 from dazedtl.storage import WorkspaceError, WorkspaceLock, write_bytes, write_json
 
+from . import plan_file
 from .files import digest, read_json
 from .results import Results
 
@@ -73,6 +74,7 @@ class RunStore:
         self.root = self.workspace / "translation/runs"
         self.owner_alive = owner_alive
         self.warnings = []
+        self.kept = {}
 
     def folder(self, identity):
         if not isinstance(identity, str) or not re.fullmatch(r"[0-9a-f]{32}", identity):
@@ -106,30 +108,40 @@ class RunStore:
                 "The saved run index no longer matches its request states."
             )
         if job["kind"] == "operation" and "action" not in job:
-            plan = read_json(folder / "plan.json")
-            if (
-                not isinstance(plan, dict)
-                or plan.get("version") != 1
-                or digest(plan) != job["plan_sha256"]
-            ):
-                raise ValueError("The saved operation plan changed.")
+            try:
+                plan = self.plan(folder, job)
+            except ValueError:
+                raise ValueError("The saved operation plan changed.") from None
             job["action"] = plan.get("action")
             # Enrich older indexes once, retaining their original timestamps and plan.
             write_json(folder / "job.json", job)
         return job
 
-    def load(self, identity, project_id=None):
-        folder = self.folder(identity)
+    def plan(self, folder, job):
+        """The frozen plan the run's record names."""
+        path = folder / "plan.json"
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("The saved request plan is unavailable.")
+        # A large game's run holds thousands of requests, so a plan of any
+        # size is read; see plan_file for how they share their guidance.
+        plan = plan_file.read(path, job["plan_sha256"])
+        if not isinstance(plan, dict) or plan.get("version") != 1:
+            raise ValueError(plan_file.CHANGED)
+        return plan
+
+    def load(self, identity, project_id=None, *, reuse=False):
+        """The run's record and frozen plan. With reuse, the plan this store
+        read last comes back again while the record still names it: a worker
+        polling a Batch rereads the record every few seconds, and a large
+        game's plan costs far more to read. Whoever reuses a plan must not
+        change it."""
         job = self.record(identity, project_id)
-        # A large game's run holds thousands of requests, each with its full
-        # guidance and provider payload; 2,648 of them made 165 MB.
-        plan = read_json(folder / "plan.json", limit=None)
-        if (
-            not isinstance(plan, dict)
-            or plan.get("version") != 1
-            or digest(plan) != job["plan_sha256"]
-        ):
-            raise ValueError("The saved request plan changed. It cannot be executed.")
+        kept = self.kept.get(identity)
+        if reuse and kept and kept[0] == job["plan_sha256"]:
+            return job, kept[1]
+        plan = self.plan(self.folder(identity), job)
+        if reuse:
+            self.kept = {identity: (job["plan_sha256"], plan)}
         return job, plan
 
     def save(self, job):
@@ -140,7 +152,8 @@ class RunStore:
         identity = uuid.uuid4().hex
         folder = self.root / identity
         folder.mkdir(parents=True)
-        write_json(folder / "plan.json", plan)
+        saved = plan_file.encode(plan)
+        write_bytes(folder / "plan.json", saved)
         states = {}
         if plan["kind"] == "translation":
             results = Results(plan["source"])
@@ -160,7 +173,7 @@ class RunStore:
             "updated": now(),
             "status": "ready",
             "message": "Ready",
-            "plan_sha256": digest(plan),
+            "plan_sha256": digest(saved),
             "configuration_sha256": digest(plan["configuration"])
             if "configuration" in plan
             else None,
@@ -275,7 +288,7 @@ class RunStore:
         return (self.folder(identity) / "cancel.json").exists()
 
     def stop(self, identity, project_id):
-        self.load(identity, project_id)
+        self.record(identity, project_id)
         write_json(self.folder(identity) / "stop.json", {"requested": now()})
 
     def settled(self, job):
@@ -467,7 +480,7 @@ class Jobs:
                 continue
             self.processes.pop(identity)
             remove_scratch(identity)
-            job, _plan = self.store.load(identity)
+            job = self.store.record(identity)
             if job["status"] in {"running", "waiting"}:
                 job.update(
                     status="interrupted",
@@ -600,7 +613,7 @@ class Jobs:
     def close(self):
         self.owner_path.unlink(missing_ok=True)
         for identity in self.processes:
-            job, _plan = self.store.load(identity)
+            job = self.store.record(identity)
             self.store.stop(identity, job["project_id"])
         self.wait(4)
         for process in self.processes.values():

@@ -22,7 +22,9 @@ class Runner:
         self, store, identity, provider, validate_current, checkpoint=lambda: None
     ):
         self.store = store
-        self.job, self.plan = store.load(identity)
+        # A worker builds a runner for every poll; the record may have changed
+        # since, the frozen plan cannot have.
+        self.job, self.plan = store.load(identity, reuse=True)
         self.provider = provider
         self.validate_current = validate_current
         self.checkpoint = checkpoint
