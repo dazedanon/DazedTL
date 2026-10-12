@@ -242,7 +242,8 @@ function ProjectStatus({
   return (
     <>
       <PageBody className="project-status">
-        {active && <JobStatus job={operation} />}
+        {/* Other methods' status card already names the operation. */}
+        {active && guided && <JobStatus job={operation} />}
         {!project.available || !project.method ? (
           <ActionList>
             <ActionRow
