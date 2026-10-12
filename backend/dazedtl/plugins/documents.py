@@ -188,13 +188,19 @@ def syntax(files):
         raise ValueError(
             "Install the application's supported Node runtime to validate JavaScript without executing it."
         )
-    response = subprocess.run(
-        [node, str(Path(__file__).with_name("syntax.cjs"))],
-        input=json.dumps({"files": files}, ensure_ascii=False).encode(),
-        capture_output=True,
-        timeout=max(10, len(files) * 6),
-        check=False,
-    )
+    limit = max(10, len(files) * 6)
+    try:
+        response = subprocess.run(
+            [node, str(Path(__file__).with_name("syntax.cjs"))],
+            input=json.dumps({"files": files}, ensure_ascii=False).encode(),
+            capture_output=True,
+            timeout=limit,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(
+            f"The local syntax parser did not finish within {limit} seconds. Try again, or check the application dependencies."
+        ) from exc
     rows = [] if response.returncode else decode(response.stdout)
     if [row["path"] for row in rows] != [row["path"] for row in files]:
         raise ValueError(
